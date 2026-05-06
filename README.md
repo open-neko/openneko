@@ -52,18 +52,28 @@ pnpm dev               # web + worker
 
 ### Required CLI tooling
 
-`pnpm install` brings in every Node dep, but the worker shells out to three external CLIs that are **not** on npm's dep tree. Install them once on your host (or bake into your container image):
-
-| CLI | When you need it | Install |
-|---|---|---|
-| `graphjin` | Always — the metric agent runs `graphjin cli` against your data source | macOS: `brew install dosco/tap/graphjin` · Linux: tarball from [graphjin releases](https://github.com/dosco/graphjin/releases) |
-| `claude` | Only if you select the **Claude Agent** backend in `/settings/agent`. `@anthropic-ai/claude-agent-sdk` (already a Node dep) spawns it under the hood — without it on PATH every agent call fails with `spawn claude ENOENT` | `npm i -g @anthropic-ai/claude-code` |
-| `hermes` | Only if you select the **Hermes** backend in `/settings/agent`. Same story as `claude` — the package is the binary, no auto-install | Run the Nous Research installer: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \| bash`. Requires Python 3.11+ and `uv`. See [hermes-agent](https://github.com/NousResearch/hermes-agent) for prerequisites and updates. |
-
-The wizard at `/settings/agent` lets you flip between backends after setup, so you can install only the one you plan to use. Quick sanity check after install:
+`pnpm install` brings in every Node dep, but the worker shells out to three external CLIs that are **not** on npm's dep tree. Install them with the bundled script:
 
 ```bash
-which graphjin claude hermes   # the ones you installed should resolve
+./scripts/install-clis.sh                 # all three
+./scripts/install-clis.sh --skip-hermes   # only graphjin + claude
+./scripts/install-clis.sh --skip-claude   # only graphjin + hermes
+```
+
+The script handles macOS (Homebrew) and Debian/Ubuntu (apt + direct installers). For other distros, read [scripts/install-clis.sh](scripts/install-clis.sh) and adapt — it's short.
+
+What gets installed and why:
+
+| CLI | When you need it | How the script installs it |
+|---|---|---|
+| `graphjin` | Always — the metric agent runs `graphjin cli` against your data source | macOS: `brew install dosco/tap/graphjin` · Linux: tarball from [graphjin releases](https://github.com/dosco/graphjin/releases) |
+| `claude` | Only if you pick **Claude Agent** in `/settings/agent`. `@anthropic-ai/claude-agent-sdk` (already a Node dep) spawns this binary under the hood — without it on PATH every agent call fails with `spawn claude ENOENT` | `npm i -g @anthropic-ai/claude-code` |
+| `hermes` | Only if you pick **Hermes** in `/settings/agent`. Same story — the SDK spawns it, not bundled | Nous Research installer (Python 3.11+, `uv`). See [hermes-agent](https://github.com/NousResearch/hermes-agent) for prerequisites and updates. |
+
+The wizard at `/settings/agent` lets you flip between backends after setup, so you can install only the one you plan to use. Quick sanity check:
+
+```bash
+which graphjin claude hermes
 ```
 
 Then open <http://localhost:3000>. On first boot you're sent to `/settings`, which renders a linear setup wizard until first-run is finished:
