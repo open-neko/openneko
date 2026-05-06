@@ -183,6 +183,13 @@ export const metric = pgTable(
     cadence: text("cadence").notNull().default("daily"),
     active: boolean("active").notNull().default(true),
     created_by_job: uuid("created_by_job").references(() => processing_job.id),
+    // Denormalized refresh status — read by /api/briefing so the dashboard
+    // can render pending vs failed cards without joining processing_job.
+    // Writers: metric-refresh.ts (success/failure) and bootstrap-metrics-build.ts
+    // ('pending' on insert).
+    last_refresh_status: text("last_refresh_status"),
+    last_refresh_error: text("last_refresh_error"),
+    last_refresh_job_id: uuid("last_refresh_job_id").references(() => processing_job.id),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
@@ -195,6 +202,9 @@ export const metric = pgTable(
     org_role_active_idx: index("metric_org_role_active_idx")
       .on(t.org_id, t.role)
       .where(sql`${t.active}`),
+    org_refresh_status_idx: index("metric_org_refresh_status_idx")
+      .on(t.org_id, t.last_refresh_status)
+      .where(sql`${t.last_refresh_status} is not null`),
   }),
 );
 

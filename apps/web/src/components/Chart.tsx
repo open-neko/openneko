@@ -35,7 +35,11 @@ export default function Chart({ type, accent = "#6B5CE7", h = 130, data, centerL
   }
 
   if (resolvedType === "kpi") {
-    // KPI delta is shown inline by the card, not in the chart slot.
+    // kpi data isn't a visualization — it's a headline number with a
+    // baseline. Use <KpiHeadline> for that. Chart returns null here so
+    // any caller that accidentally passes kpi to Chart silently no-ops
+    // instead of rendering empty axes; lint/tests should catch the
+    // misuse but this is a defensive fallback.
     return null;
   }
 

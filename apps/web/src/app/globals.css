@@ -79,6 +79,12 @@ body {
   color: var(--accent);
   background: var(--accent-soft);
 }
+.settings-link.is-disabled {
+  color: var(--text3);
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .settings-backlink {
   display: inline-flex;
   align-items: center;
@@ -156,12 +162,19 @@ body {
 .mdot { width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; flex-shrink: 0; }
 .icontent { flex: 1; }
 .itext { font-size: 16px; font-weight: 500; line-height: 1.45; }
-.imeta { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
-.imetric {
+/* KpiHeadline component — single shared style family for the metric +
+   label + delta row. Used by BriefingCard (size="card") and ChatBubble
+   (size="chat"). The two sizes only differ in the headline metric font. */
+.kpi { display: flex; align-items: baseline; gap: 14px; margin-top: 4px; flex-wrap: wrap; }
+.kpi-metric {
   font-family: var(--font-display), 'Archivo', sans-serif;
-  font-size: 15px; font-weight: 700; color: var(--accent);
+  font-weight: 700; color: var(--accent); line-height: 1.1;
 }
-.ilabel { font-size: 14px; color: var(--text3); }
+.kpi-card .kpi-metric { font-size: 15px; }
+.kpi-chat { margin-top: 0; margin-bottom: 8px; }
+.kpi-chat .kpi-metric { font-size: 28px; }
+.kpi-label { font-size: 14px; color: var(--text3); }
+.kpi-delta { font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
 .iactions {
   position: absolute; top: 12px; right: 12px;
   display: flex; gap: 6px; opacity: 0; transition: opacity 0.2s;

@@ -6,8 +6,12 @@
  *      (we're already authenticated as `neko` via the bootstrap default).
  *   2. Persist the new password to `~/.config/neko/config.json` so the next
  *      process boot picks it up.
- *   3. Drain the pool so the in-process app reconnects with the new
- *      password without a restart.
+ *   3. Drain the web's pool so subsequent queries use the new password.
+ *   4. Fire-and-forget POST /admin/reconnect to the worker so its
+ *      pg-boss singleton (which holds the OLD credentials in its own
+ *      pool, separate from the web's @neko/db pool) restarts with fresh
+ *      creds. Tolerates the worker being down — the password still
+ *      rotates successfully on the web side.
  *
  * The body must contain a non-empty password. The default `"secret"` is
  * rejected — we want a real change. Length minimum is intentionally
@@ -61,6 +65,18 @@ export async function POST(request: NextRequest) {
 
     // Drain the pool so subsequent queries use the new password.
     await reconnectPool();
+
+    // Tell the worker process to restart so its pg-boss singleton
+    // (created at boot with old creds) gets rebuilt. Best-effort —
+    // the worker may not be running yet during /setup, and that's fine.
+    try {
+      await fetch("http://127.0.0.1:4100/admin/reconnect", {
+        method: "POST",
+        signal: AbortSignal.timeout(2000),
+      });
+    } catch {
+      // worker down / not yet listening / network blip — non-fatal
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

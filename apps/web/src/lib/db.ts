@@ -8,9 +8,36 @@
 
 export { getOrgId } from "@neko/db";
 
+export type StageKind =
+  | "business_profile_build"
+  | "industry_insights_build"
+  | "bootstrap_metrics_build"
+  | "metric_refresh";
+
+export type CurrentStage = {
+  kind: StageKind;
+  message: string | null;
+};
+
+export type MetricsProgress = {
+  total: number;
+  completed: number;
+  failed: number;
+};
+
 export type OnboardingStatus =
   | { state: "needs_wizard" }
-  | { state: "processing"; jobId: string }
-  | { state: "ready"; profileVersion: number; seats: string[] }
+  | {
+      state: "processing";
+      jobId: string;
+      currentStage?: CurrentStage;
+      metricsProgress?: MetricsProgress;
+    }
+  | {
+      state: "ready";
+      profileVersion: number;
+      seats: string[];
+      metricsProgress?: MetricsProgress;
+    }
   | { state: "failed"; jobId: string; message: string }
   | { state: "db_error"; message: string };

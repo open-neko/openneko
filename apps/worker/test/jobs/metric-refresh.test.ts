@@ -235,6 +235,67 @@ describeIfDb("runMetricRefresh", () => {
     });
   });
 
+  describe("metric.last_refresh_status bookkeeping", () => {
+    it("stamps last_refresh_status='ok' on success", async () => {
+      const metricId = await insertMetric(orgId, "ok-status");
+      const jobId = await insertProcessingJob(orgId, { metricId });
+      await runMetricRefresh(jobId, orgId);
+
+      const rows = await db()
+        .select({
+          status: metric.last_refresh_status,
+          err: metric.last_refresh_error,
+          jobRef: metric.last_refresh_job_id,
+        })
+        .from(metric)
+        .where(eq(metric.id, metricId));
+      expect(rows[0].status).toBe("ok");
+      expect(rows[0].err).toBeNull();
+      expect(rows[0].jobRef).toBe(jobId);
+    });
+
+    it("stamps last_refresh_status='failed' + error on validation failure", async () => {
+      mockRunMetricAgent.mockResolvedValueOnce(stubResult({ mood: "ecstatic" }));
+      const metricId = await insertMetric(orgId, "fail-status-mood");
+      const jobId = await insertProcessingJob(orgId, { metricId });
+
+      await expect(runMetricRefresh(jobId, orgId)).rejects.toThrow();
+
+      const rows = await db()
+        .select({
+          status: metric.last_refresh_status,
+          err: metric.last_refresh_error,
+          jobRef: metric.last_refresh_job_id,
+        })
+        .from(metric)
+        .where(eq(metric.id, metricId));
+      expect(rows[0].status).toBe("failed");
+      expect(rows[0].err).toMatch(/invalid mood/);
+      expect(rows[0].jobRef).toBe(jobId);
+
+      // Snapshot should not exist on failure path.
+      const snaps = await snapshotsForOrg(orgId);
+      expect(snaps).toHaveLength(0);
+    });
+
+    it("stamps last_refresh_status='failed' on sentinel-headline rejection", async () => {
+      mockRunMetricAgent.mockResolvedValueOnce(
+        stubResult({ headlineMetric: "Error" }),
+      );
+      const metricId = await insertMetric(orgId, "fail-status-sentinel");
+      const jobId = await insertProcessingJob(orgId, { metricId });
+
+      await expect(runMetricRefresh(jobId, orgId)).rejects.toThrow(/sentinel/);
+
+      const rows = await db()
+        .select({ status: metric.last_refresh_status, err: metric.last_refresh_error })
+        .from(metric)
+        .where(eq(metric.id, metricId));
+      expect(rows[0].status).toBe("failed");
+      expect(rows[0].err).toMatch(/sentinel/);
+    });
+  });
+
   describe("validation", () => {
     it("rejects an agent result with an invalid mood (no snapshot written)", async () => {
       mockRunMetricAgent.mockResolvedValueOnce(stubResult({ mood: "ecstatic" }));

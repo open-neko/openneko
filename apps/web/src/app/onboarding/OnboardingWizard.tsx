@@ -93,7 +93,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      router.push("/processing");
+      router.push("/business-profile");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSubmitting(false);

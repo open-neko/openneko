@@ -17,7 +17,7 @@ export default function InputBar({ value, onChange, onSend, disabled }: {
           onKeyDown={(e) => e.key === "Enter" && !disabled && onSend()}
           disabled={disabled}
         />
-        <button className="sendbtn" onClick={onSend} disabled={disabled} style={{ opacity: disabled ? 0.5 : 1 }}>↑</button>
+        <button className="sendbtn" onClick={() => onSend()} disabled={disabled} style={{ opacity: disabled ? 0.5 : 1 }}>↑</button>
       </div>
     </div>
   );

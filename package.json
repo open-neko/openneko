@@ -13,6 +13,7 @@
     "url": "https://github.com/open-neko/neko/issues"
   },
   "scripts": {
+    "bootstrap": "AX_SKIP_SKILL_INSTALL=1 pnpm install && [ -f db/graphjin/dev.example.yml ] && [ ! -f db/graphjin/dev.yml ] && cp db/graphjin/dev.example.yml db/graphjin/dev.yml || true",
     "dev": "concurrently -n web,worker -c blue,magenta \"pnpm dev:web\" \"pnpm dev:worker\"",
     "dev:web": "pnpm --filter @neko/web dev",
     "dev:worker": "pnpm --filter @neko/worker dev",

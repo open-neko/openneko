@@ -3,37 +3,49 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Markdown from "react-markdown";
+import type { StageKind } from "@/lib/db";
 
 type Phase = "processing" | "review";
 type Tab = "profile" | "insights";
 type InsightsStatus = "ready" | "processing" | "disabled" | "pending";
 
+const STAGE_LABELS: Record<StageKind, string> = {
+  business_profile_build: "Profile",
+  industry_insights_build: "Industry insights",
+  bootstrap_metrics_build: "Picking metrics",
+  metric_refresh: "Computing metrics",
+};
+const STAGE_ORDER: StageKind[] = [
+  "business_profile_build",
+  "industry_insights_build",
+  "bootstrap_metrics_build",
+];
+// Default copy when the server hasn't reported a progress.message for the
+// current stage yet (typical during the first few hundred ms of a stage).
+const STAGE_FALLBACK_COPY: Record<StageKind, string> = {
+  business_profile_build: "Reading your data sources…",
+  industry_insights_build: "Researching your industry…",
+  bootstrap_metrics_build: "Picking the metrics that matter…",
+  metric_refresh: "Computing your numbers…",
+};
+
 export default function ProcessingPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("processing");
   const [tab, setTab] = useState<Tab>("profile");
-  const [message, setMessage] = useState("Reading your data sources…");
+  const [stageKind, setStageKind] = useState<StageKind | null>(null);
+  const [stageMessage, setStageMessage] = useState<string | null>(null);
   const [profile, setProfile] = useState("");
   const [insights, setInsights] = useState("");
   const [insightsStatus, setInsightsStatus] = useState<InsightsStatus>("processing");
 
-  // Phase 1: poll for profile readiness, cycle status messages.
+  // Phase 1: poll for profile readiness; surface the worker's reported
+  // stage + progress.message so the user sees real progress instead of a
+  // rotating placeholder.
   useEffect(() => {
     if (phase !== "processing") return;
 
     let cancelled = false;
-    const messages = [
-      "Reading your data sources…",
-      "Understanding your business…",
-      "Picking the metrics that matter…",
-      "Writing your first briefing…",
-    ];
-    let i = 0;
-    const tick = setInterval(() => {
-      if (cancelled) return;
-      i = (i + 1) % messages.length;
-      setMessage(messages[i]);
-    }, 2200);
 
     const poll = async () => {
       while (!cancelled) {
@@ -50,6 +62,11 @@ export default function ProcessingPage() {
             }
             if (!cancelled) setPhase("review");
             return;
+          }
+          if (status.state === "processing" && !cancelled) {
+            const cs = status.currentStage as { kind?: StageKind; message?: string | null } | undefined;
+            setStageKind(cs?.kind ?? null);
+            setStageMessage(cs?.message ?? null);
           }
           if (status.state === "needs_wizard") {
             router.replace("/onboarding");
@@ -72,7 +89,6 @@ export default function ProcessingPage() {
 
     return () => {
       cancelled = true;
-      clearInterval(tick);
     };
   }, [phase, router]);
 
@@ -136,6 +152,9 @@ export default function ProcessingPage() {
 
   // ─── Phase 1: Processing ───
   if (phase === "processing") {
+    const message =
+      stageMessage ??
+      (stageKind ? STAGE_FALLBACK_COPY[stageKind] : "Reading your data sources…");
     return (
       <div className="root" style={{ paddingTop: 120, textAlign: "center" }}>
         <div className="brand" style={{ justifyContent: "center" }}>
@@ -144,7 +163,8 @@ export default function ProcessingPage() {
         </div>
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
-        <div className="date-note" style={{ marginTop: 32 }}>{message}</div>
+        <StageStrip current={stageKind} />
+        <div className="date-note" style={{ marginTop: 24 }}>{message}</div>
       </div>
     );
   }
@@ -245,6 +265,48 @@ export default function ProcessingPage() {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function StageStrip({ current }: { current: StageKind | null }) {
+  // We render only the three stages the user is on /business-profile for —
+  // metric_refresh runs after the page transitions to /review and the
+  // dashboard, so it's not relevant here.
+  const idx = current ? STAGE_ORDER.indexOf(current) : 0;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        justifyContent: "center",
+        marginTop: 36,
+      }}
+    >
+      {STAGE_ORDER.map((kind, i) => {
+        const state = i < idx ? "done" : i === idx ? "active" : "pending";
+        const dot =
+          state === "done" ? "✓" : state === "active" ? "●" : "○";
+        return (
+          <div
+            key={kind}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 999,
+              border: "1px solid var(--border)",
+              background: state === "active" ? "var(--accent-soft)" : "transparent",
+              color: state === "done" ? "var(--text2)" : state === "active" ? "var(--accent)" : "var(--text3)",
+              fontSize: 13,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 11 }}>{dot}</span>
+            <span>{STAGE_LABELS[kind]}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

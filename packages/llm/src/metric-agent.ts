@@ -133,6 +133,7 @@ HARD CONSTRAINTS (violating any of these is a critical failure):
 - Never compute a sum-of-products (revenue = price × qty per row) by multiplying avg_<price> × sum_<quantity> — mathematically wrong. Use sum(expr: { mul: [...] }) instead.
 - Watch the silent 20-row default limit on every query level (top AND nested) — set explicit limit or use distinct+aggregation.
 - Never invent or interpolate. If a query returned no rows, the answer is "no data", not a guess.
+- If your queries fail or return data you cannot reason from, DO NOT narrate the failure as a metric. The worker treats this as a successful run and the dashboard renders your error string as if it were data. Instead: exit with the raw error text on stdout (any non-JSON output triggers a job failure → automatic retry). Specifically: do NOT emit \`headlineMetric\` values like "Error" / "errors" / "N/A" / "Unavailable" / "Data Unavailable" / "No data" / "—" / "TBD" / pure punctuation — those are rejected by the validator anyway.
 
 TIME WINDOW (always declared in output):
 Every card's headline is computed against a specific time window. The window

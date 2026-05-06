@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { applyMessage, getResolvedComponents } from "@/a2ui/surface";
 import type { A2UIMessage, SurfaceState, A2UIComponent } from "@/a2ui/types";
@@ -11,6 +11,17 @@ import type { BriefingCardData } from "@/components/BriefingCard";
 import { ChatBubble, TypingIndicator } from "@/components/ChatSection";
 import type { ChatMsg } from "@/components/ChatSection";
 import InputBar from "@/components/InputBar";
+
+/**
+ * What we persist to localStorage per chat message — identity references
+ * only, no volatile card data. AI cards are rehydrated from the server
+ * via /api/briefing/by-metric so a stale browser entry can never desync
+ * from the DB. User messages keep their text since the prompt itself
+ * isn't on the server.
+ */
+type StoredChatMsg =
+  | { id?: string; type: "user"; text: string }
+  | { id?: string; type: "ai"; metricId: string };
 
 export default function Dashboard() {
   const router = useRouter();
@@ -44,7 +55,7 @@ export default function Dashboard() {
           return;
         }
         if (status.state === "processing") {
-          router.replace("/processing");
+          router.replace("/business-profile");
           return;
         }
         const seats: string[] = Array.isArray(status.seats) ? status.seats : [];
@@ -87,9 +98,12 @@ export default function Dashboard() {
   const surfaceId = `briefing-${role.toLowerCase()}`;
   const surface = surfaces.get(surfaceId);
 
-  // Fetch briefing from API when role changes
-  const fetchBriefing = useCallback(async (r: string) => {
-    setLoading(true);
+  // Fetch briefing from API. `silent=true` skips the loading toggle so
+  // background polls (pending-card refresh, retry, dismiss) don't unmount
+  // the entire briefing+chat tree by flipping the page-level loading
+  // ternary. Only the initial role-change fetch should show "Loading…".
+  const fetchBriefing = useCallback(async (r: string, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/briefing?role=${r}`);
       const messages: A2UIMessage[] = await res.json();
@@ -102,7 +116,7 @@ export default function Dashboard() {
         return next;
       });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -114,6 +128,97 @@ export default function Dashboard() {
     }
     fetchBriefing(role);
   }, [role, fetchBriefing, gateChecked]);
+
+  // Track whether the current role's surface has any cards still pending
+  // (no snapshot yet, refresh job not yet succeeded). Computed below from
+  // resolved components; used by the polling effect that follows.
+  const hasPendingCards = useMemo(() => {
+    if (!surface) return false;
+    const comps = getResolvedComponents(surface).filter(
+      (c) => c.component === "BriefingCard",
+    );
+    return comps.some((c) => {
+      const p = c as unknown as BriefingCardProps;
+      return p.state === "pending";
+    });
+  }, [surface]);
+
+  // While any card is pending, re-fetch /api/briefing every 30s so the
+  // dashboard reflects newly-completed metric_refresh jobs without the
+  // user reloading. Without this, the briefing API result is fetched
+  // once on role-change (the effect above) and never again — which
+  // means even successful snapshots stay invisible until reload. 30s
+  // is comfortable: each metric_refresh takes 30–90s, so we'll catch
+  // freshly-landed snapshots within one cycle without burning fetches.
+  useEffect(() => {
+    if (!hasPendingCards || !role) return;
+    const id = setInterval(() => {
+      fetchBriefing(role, true);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [hasPendingCards, role, fetchBriefing]);
+
+  // Cross-role progress tracker for the metric_refresh fan-out. When the
+  // user lands on / immediately after onboarding, bootstrap_metrics_build
+  // has just enqueued N refresh jobs; we surface "X of Y" as a banner so
+  // the otherwise-quiet dashboard isn't a black box.
+  const [metricsProgress, setMetricsProgress] = useState<
+    { total: number; completed: number; failed: number } | null
+  >(null);
+  useEffect(() => {
+    if (!gateChecked) return;
+    let cancelled = false;
+    let stopped = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/onboarding/status");
+        const status = await res.json();
+        if (cancelled) return;
+        if (status.metricsProgress) {
+          // Avoid setState on every poll when the counts haven't moved —
+          // a fresh object identity would re-render the dashboard tree
+          // and replay the briefing animations even though nothing
+          // changed visually.
+          setMetricsProgress((prev) => {
+            const next = status.metricsProgress;
+            if (
+              prev &&
+              prev.total === next.total &&
+              prev.completed === next.completed &&
+              prev.failed === next.failed
+            ) {
+              return prev;
+            }
+            return next;
+          });
+          // Once all jobs settle, stop polling.
+          const settled =
+            status.metricsProgress.completed + status.metricsProgress.failed;
+          if (settled >= status.metricsProgress.total) {
+            stopped = true;
+          }
+        } else {
+          setMetricsProgress((prev) => (prev === null ? prev : null));
+          stopped = true;
+        }
+      } catch {
+        // ignore — try again next tick
+      }
+    };
+    tick();
+    const id = setInterval(() => {
+      if (stopped) {
+        clearInterval(id);
+        return;
+      }
+      tick();
+    }, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [gateChecked]);
 
   // Extract resolved components from the surface
   const resolved = surface ? getResolvedComponents(surface) : [];
@@ -132,6 +237,8 @@ export default function Dashboard() {
       id: props.id,
       metricId: props.metricId,
       source: props.source,
+      state: props.state,
+      error: props.error,
       mood: props.mood,
       text: props.text,
       metric: props.metric,
@@ -148,7 +255,18 @@ export default function Dashboard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ metricId, active: false }),
     });
-    fetchBriefing(role);
+    fetchBriefing(role, true);
+  };
+
+  const retryCard = async (metricId: string) => {
+    await fetch("/api/briefing/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metricId }),
+    });
+    // Force a refetch immediately so the card re-skeletons; the polling
+    // effect below will keep refreshing while the new run is pending.
+    fetchBriefing(role, true);
   };
 
   const rerunQuestion = (userMsgId: string) => {
@@ -230,17 +348,26 @@ export default function Dashboard() {
       if (result.mock) {
         clearTyping();
         const a = result.answer as {
-          text: string; metric: string; label: string;
+          text: string; metric: string; label: string; mood: string; detail: string;
           chartType: string; chartData: Array<{ d: string; v: number; t?: number }>;
         };
         updateRoleMsgs(askedRole, (p) => [...p, {
           type: "ai",
           id: result.chatId,
           text: a.text,
-          metric: a.metric,
-          label: a.label,
-          chartType: a.chartType,
-          chartData: a.chartData,
+          card: {
+            id: result.chatId,
+            metricId: result.chatId,
+            source: "chat",
+            state: "ok" as const,
+            mood: a.mood,
+            text: a.text,
+            metric: a.metric,
+            label: a.label,
+            detail: a.detail,
+            chart: a.chartType,
+            chartData: a.chartData,
+          },
         }]);
         return;
       }
@@ -258,28 +385,50 @@ export default function Dashboard() {
       };
       updateRoleMsgs(askedRole, (p) => [...p, skeletonMsg]);
 
-      // Pass 2: poll for result
-      const pollInterval = 3000;
-      const maxPolls = 120; // 6 minutes max
-      for (let i = 0; i < maxPolls; i++) {
-        await new Promise((r) => setTimeout(r, pollInterval));
+      // Pass 2: poll for result. No max-polls cap — the worker queue can
+      // sit behind a slow run for 5+ minutes when pg-boss workers are
+      // saturated, and giving up before the job lands leaves the user's
+      // chat bubble visibly stuck on the skeleton even though the
+      // metric_snapshot has actually been written. Backoff: 3s for the
+      // first ~minute, then 10s after that to keep the network quiet
+      // while still picking up the answer within one cycle.
+      let polls = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const interval = polls < 20 ? 3000 : 10_000;
+        await new Promise((r) => setTimeout(r, interval));
+        polls++;
         try {
           const statusRes = await fetch(`/api/briefing/status?jobId=${jobId}`);
           const statusData = await statusRes.json();
 
           if (statusData.status === "succeeded" && statusData.payload) {
             const p = statusData.payload;
+            // Build a BriefingCard-shaped result so the chat bubble
+            // renders the same card chrome the dashboard does (mood +
+            // kpi/chart + expandable detail). Concatenating insight +
+            // detail mirrors what /api/briefing GET does for dashboard
+            // cards (see briefing/route.ts:dbInsights).
+            const card = {
+              id: chatId,
+              metricId: statusData.metricId,
+              source: statusData.source ?? "chat",
+              state: "ok" as const,
+              mood: p.mood ?? "watch",
+              text: statusData.title ?? skeleton.text,
+              metric: p.headlineMetric ?? "",
+              label: p.headlineLabel ?? "",
+              detail: [p.insightText, p.detailText].filter(Boolean).join(" "),
+              chart: p.chartType ?? skeleton.chartType,
+              chartData: p.chartData ?? [],
+            };
             updateRoleMsgs(askedRole, (prev) =>
               prev.map((m) =>
                 m.id === chatId
                   ? {
                       ...m,
                       metricId: statusData.metricId,
-                      text: p.insightText ?? skeleton.text,
-                      metric: p.headlineMetric,
-                      label: p.headlineLabel,
-                      chartType: p.chartType ?? skeleton.chartType,
-                      chartData: p.chartData ?? [],
+                      card,
                     }
                   : m,
               ),
@@ -319,34 +468,139 @@ export default function Dashboard() {
   }, [msgs, isTyping]);
 
   // Lazy-load this role's chat from localStorage the first time it becomes
-  // the active role. Once loaded into chatByRole, the in-memory Map is the
-  // source of truth — no need to reload on subsequent switches.
+  // the active role. localStorage stores ONLY identity references — id,
+  // type, user text (or AI metricId). Volatile card data (mood, headline,
+  // chart) is fetched fresh from the server via /api/briefing/by-metric
+  // so a stale browser entry can never desync from the DB. AI messages
+  // without a metricId (transient errors, in-flight skeletons that
+  // didn't land before the user reloaded) are dropped on rehydrate.
   useEffect(() => {
     if (!role || chatByRole.has(role)) return;
-    let parsed: ChatMsg[] = [];
+    let stored: StoredChatMsg[] = [];
     try {
-      const stored = localStorage.getItem(`app_chat:${role}`);
-      if (stored) {
-        // Backfill ids on legacy user msgs that predate the rerun/edit
-        // feature so the hover actions can identify them.
-        parsed = (JSON.parse(stored) as ChatMsg[]).map((m) =>
-          m.type === "user" && !m.id ? { ...m, id: crypto.randomUUID() } : m,
-        );
-      }
+      const raw = localStorage.getItem(`app_chat:${role}`);
+      if (raw) stored = JSON.parse(raw) as StoredChatMsg[];
     } catch {}
+
+    const aiNeedingHydration = stored.filter(
+      (m): m is StoredChatMsg & { metricId: string } =>
+        m.type === "ai" && typeof m.metricId === "string",
+    );
+    // Reserve the role's slot synchronously so concurrent renders don't
+    // re-trigger this effect while the fetches are in flight.
     setChatByRole((prev) => {
       if (prev.has(role)) return prev;
       const next = new Map(prev);
-      next.set(role, parsed);
+      next.set(
+        role,
+        stored
+          // Drop AI messages with no metricId — they were transient
+          // (network errors, in-flight skeletons that never resolved).
+          .filter((m) => m.type !== "ai" || m.metricId)
+          .map((m): ChatMsg => {
+            if (m.type === "user") {
+              return {
+                type: "user",
+                id: m.id ?? crypto.randomUUID(),
+                text: m.text ?? "",
+              };
+            }
+            // AI placeholder until /api/briefing/by-metric resolves.
+            return {
+              type: "ai",
+              id: m.id ?? crypto.randomUUID(),
+              metricId: m.metricId,
+              text: "Loading…",
+            };
+          }),
+      );
       return next;
     });
+
+    if (aiNeedingHydration.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      aiNeedingHydration.map(async (m) => {
+        try {
+          const res = await fetch(`/api/briefing/by-metric?metricId=${m.metricId}`);
+          if (!res.ok) return null;
+          const body = (await res.json()) as {
+            metricId: string;
+            title: string | null;
+            source: string | null;
+            payload: {
+              mood?: string;
+              headlineMetric?: string;
+              headlineLabel?: string;
+              insightText?: string;
+              detailText?: string;
+              chartType?: string;
+              chartData?: Array<{ d: string; v: number; t?: number }>;
+            } | null;
+          };
+          return { msgId: m.id, body };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((resolved) => {
+      if (cancelled) return;
+      const byMsgId = new Map<string, (typeof resolved)[number]>();
+      for (const r of resolved) {
+        if (r && r.msgId) byMsgId.set(r.msgId, r);
+      }
+      updateRoleMsgs(role, (prev) =>
+        prev.map((m) => {
+          if (m.type !== "ai" || !m.id) return m;
+          const r = byMsgId.get(m.id);
+          if (!r || !r.body) return m;
+          const p = r.body.payload;
+          if (!p) {
+            // Snapshot not landed yet (job still running) — keep skeleton.
+            return { ...m, text: "Fetching…" };
+          }
+          return {
+            ...m,
+            text: p.insightText ?? "",
+            card: {
+              id: m.id,
+              metricId: r.body.metricId,
+              source: r.body.source ?? "chat",
+              state: "ok" as const,
+              mood: p.mood ?? "watch",
+              text: r.body.title ?? p.insightText ?? "",
+              metric: p.headlineMetric ?? "",
+              label: p.headlineLabel ?? "",
+              detail: [p.insightText, p.detailText].filter(Boolean).join(" "),
+              chart: p.chartType ?? "kpi",
+              chartData: p.chartData ?? [],
+            },
+          };
+        }),
+      );
+    });
+
+    return () => { cancelled = true; };
   }, [role, chatByRole]);
 
-  // Persist each loaded role's chat (last 6). Switching roles doesn't mutate
-  // any other role's entry, so there's no cross-persona overwrite.
+  // Persist each loaded role's chat (last 6) as identity-only references.
+  // Volatile card data is excluded by design — the rehydrate path fetches
+  // fresh data from the server via /api/briefing/by-metric.
   useEffect(() => {
-    for (const [r, m] of chatByRole) {
-      try { localStorage.setItem(`app_chat:${r}`, JSON.stringify(m.slice(-6))); } catch {}
+    for (const [r, msgs] of chatByRole) {
+      const stored: StoredChatMsg[] = [];
+      for (const m of msgs.slice(-6)) {
+        if (m.type === "user") {
+          stored.push({ id: m.id, type: "user", text: m.text });
+        } else if (m.metricId) {
+          stored.push({ id: m.id, type: "ai", metricId: m.metricId });
+        }
+        // AI without metricId = transient (network error, in-flight
+        // skeleton); not worth persisting.
+      }
+      try {
+        localStorage.setItem(`app_chat:${r}`, JSON.stringify(stored));
+      } catch {}
     }
   }, [chatByRole]);
 
@@ -365,6 +619,15 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            {gateChecked && !gateError ? (
+              <Link href="/business-profile" className="settings-link">
+                Business Profile
+              </Link>
+            ) : (
+              <span className="settings-link is-disabled" aria-disabled="true">
+                Business Profile
+              </span>
+            )}
             <Link href="/settings" className="settings-link">
               Settings
             </Link>
@@ -405,6 +668,25 @@ export default function Dashboard() {
             <div className="greet" style={{ animation: "fadeUp 0.5s ease both" }}>{greeting}</div>
             <div className="greet-sub" style={{ animation: "fadeUp 0.5s ease 0.05s both" }}>{subtitle}</div>
 
+            {metricsProgress &&
+              metricsProgress.completed + metricsProgress.failed < metricsProgress.total && (
+                <div
+                  role="status"
+                  style={{
+                    marginTop: 16,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                    background: "var(--accent-soft)",
+                    color: "var(--accent)",
+                    fontSize: 13,
+                    display: "inline-block",
+                  }}
+                >
+                  Building your briefing — {metricsProgress.completed + metricsProgress.failed} of {metricsProgress.total} cards complete
+                </div>
+              )}
+
             <div style={{ marginBottom: 24 }}>
               <div className="label">Today&apos;s Briefing</div>
               {briefingCards.map((ins, i) => (
@@ -413,6 +695,7 @@ export default function Dashboard() {
                   ins={ins}
                   index={i}
                   onDismiss={() => dismissCard(ins.metricId)}
+                  onRetry={retryCard}
                 />
               ))}
             </div>

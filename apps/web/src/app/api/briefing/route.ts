@@ -52,23 +52,27 @@ function genKpiData(metric: string, currentRaw: number, prevRaw: number) {
   return [{ d: metric, v: currentRaw, t: prevRaw }];
 }
 
-function moodGreeting(insights: Array<{ mood: string; metric: string }>) {
-  const counts = { good: 0, watch: 0, bad: 0, fetching: 0 };
+function moodGreeting(
+  insights: Array<{ mood: string; state?: string; metric: string }>,
+) {
+  const counts = { good: 0, watch: 0, bad: 0, pending: 0, failed: 0 };
   for (const ins of insights) {
-    if (ins.metric === "Fetching…") counts.fetching++;
+    if (ins.state === "failed") counts.failed++;
+    else if (ins.state === "pending" || ins.metric === "Fetching…") counts.pending++;
     else if (ins.mood === "good") counts.good++;
     else if (ins.mood === "bad") counts.bad++;
     else counts.watch++;
   }
-  if (counts.fetching > insights.length / 2) {
+  if (counts.pending > insights.length / 2) {
     return {
       greeting: "Just a moment.",
       subtitle: "Reading the latest numbers for you.",
     };
   }
-  if (counts.bad > 0) {
+  if (counts.bad > 0 || counts.failed > 0) {
+    const flags = counts.bad + counts.failed;
     return {
-      greeting: counts.bad === 1 ? "One thing to flag." : `${counts.bad} things to flag.`,
+      greeting: flags === 1 ? "One thing to flag." : `${flags} things to flag.`,
       subtitle: "Worth your attention right now.",
     };
   }
@@ -180,19 +184,42 @@ export async function GET(request: NextRequest) {
     const snap = m.snapshots?.[0];
     const p = snap?.payload as SnapshotPayload;
     const hasData = !!p;
+    // Card state — read by BriefingCard to render the right chrome:
+    //   ok      → snapshot present, render data
+    //   failed  → last metric_refresh failed; render error + Retry
+    //   pending → no snapshot yet (or status unknown); render skeleton
+    // Failure trumps a stale snapshot: a card that failed on its most
+    // recent refresh should show the error even if an older snapshot
+    // exists, because the user's last action expected fresh data.
+    const state =
+      m.last_refresh_status === "failed"
+        ? "failed"
+        : hasData
+          ? "ok"
+          : "pending";
     return {
       id: m.slug,
       metricId: m.id,
       source: m.source,
-      mood: (snap?.status ?? "watch") as string,
+      state,
+      error: state === "failed" ? (m.last_refresh_error ?? "Unknown error") : undefined,
+      mood: state === "failed" ? "bad" : ((snap?.status ?? "watch") as string),
       text: m.title,
-      metric: hasData ? (p?.headlineMetric ?? "—") : "Fetching…",
-      label: hasData ? (p?.headlineLabel ?? "") : "",
-      detail: hasData
-        ? [p?.insightText, p?.detailText].filter(Boolean).join(" ")
-        : (m.why ?? ""),
+      metric:
+        state === "failed"
+          ? "Couldn't load"
+          : hasData
+            ? (p?.headlineMetric ?? "—")
+            : "Fetching…",
+      label: state === "ok" ? (p?.headlineLabel ?? "") : "",
+      detail:
+        state === "failed"
+          ? (m.last_refresh_error ?? "Unknown error")
+          : hasData
+            ? [p?.insightText, p?.detailText].filter(Boolean).join(" ")
+            : (m.why ?? ""),
       chartType: p?.chartType ?? m.chart_hint ?? "line",
-      chartDataOverride: hasData ? p?.chartData : [],
+      chartDataOverride: state === "ok" && hasData ? p?.chartData : [],
       fromDb: true,
     };
   });
@@ -228,7 +255,10 @@ export async function GET(request: NextRequest) {
           : (override && override.length > 0 ? override : genChartData(ins.chartType, ins.metric));
         return [
           ins.id,
-          { ...ins, chartData },
+          // state defaults to "ok" for the example/mock-data path so the
+          // BriefingCard component doesn't see undefined when reading
+          // /insights/<id>/state for hardcoded ROLE_DATA cards.
+          { state: "ok", error: undefined, ...ins, chartData },
         ];
       })
     ),
@@ -259,6 +289,8 @@ export async function GET(request: NextRequest) {
       component: "BriefingCard",
       metricId: { path: `/insights/${ins.id}/metricId` },
       source: { path: `/insights/${ins.id}/source` },
+      state: { path: `/insights/${ins.id}/state` },
+      error: { path: `/insights/${ins.id}/error` },
       mood: { path: `/insights/${ins.id}/mood` },
       text: { path: `/insights/${ins.id}/text` },
       metric: { path: `/insights/${ins.id}/metric` },

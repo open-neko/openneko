@@ -40,18 +40,15 @@ pnpm dev:worker
 
 The web app and the worker talk to Postgres directly via Drizzle ORM (`@neko/db`). There is no internal GraphJin service to run for Neko itself.
 
-> **Note:** `@ax-llm/ax` auto-installs Claude Code skills into `.claude/skills/`
-> on every install. We keep those at user scope (`~/.claude/skills/`) instead,
-> so set `AX_SKIP_SKILL_INSTALL=1` in your shell rc to prevent pnpm from
-> recreating the project-scope copy.
-
 ### First-time setup
 
 ```bash
-pnpm install
+pnpm bootstrap         # pnpm install (with AX_SKIP_SKILL_INSTALL=1) + copies db/graphjin/dev.example.yml → dev.yml
 docker compose up -d   # starts neko-db, applies migrations
 pnpm dev               # web + worker
 ```
+
+`pnpm bootstrap` sets `AX_SKIP_SKILL_INSTALL=1` for you so `@ax-llm/ax`'s postinstall doesn't write `.claude/skills/` into the repo — we keep those at user scope instead. If you ever invoke `pnpm install` directly, set `AX_SKIP_SKILL_INSTALL=1` in your shell rc.
 
 Then open <http://localhost:3000>. On first boot you're sent to the `/setup` wizard, which walks through:
 
@@ -62,7 +59,7 @@ Then open <http://localhost:3000>. On first boot you're sent to the `/setup` wiz
 
 After `/setup` finishes, the `/onboarding` business wizard becomes reachable, and from then on the briefing surface lives at `/`. Ongoing edits to providers, data source, and agent live under `/settings`.
 
-The web and worker apps don't read env vars (only `DEMO=true` is honored on the web side, to flip into the canned-mock briefing flow for screenshots / video). All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
+The web and worker apps don't read env vars from disk by default. The one allowed knob is `DEMO=true` on the web side — drop it into `apps/web/.env` to flip into the canned-mock briefing flow for screenshots / video without real data. All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
 
 ## Docker Compose
 
@@ -91,13 +88,7 @@ No org or data-source rows are seeded. The app's `getOrgId()` auto-bootstraps a 
 
 If you don't already have a customer GraphJin running, opt into the self-contained AdventureWorks stack. This adds `adventureworks-db` (Postgres loaded with the AdventureWorks 2014 OLTP sample) and a `graphjin` server pointed at it.
 
-One-time setup — copy the example GraphJin config to its active filename (gitignored):
-
-```bash
-cp db/graphjin/dev.example.yml db/graphjin/dev.yml
-```
-
-Bring everything up:
+`pnpm bootstrap` already copied `db/graphjin/dev.example.yml` → `db/graphjin/dev.yml` for you (the active config file is gitignored). Bring everything up:
 
 ```bash
 docker compose -f compose.yml -f compose.adventureworks.yml up -d

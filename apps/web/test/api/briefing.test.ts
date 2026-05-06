@@ -137,5 +137,57 @@ describeIfDb("/api/briefing GET", () => {
       metric: "$5.20M",
       mood: "good",
     });
+    // OK state for cards with a snapshot.
+    expect(dataValue.insights["revenue-mtd"]).toMatchObject({ state: "ok" });
+  });
+
+  it("renders state='pending' when a metric has no snapshot yet", async () => {
+    await db().insert(metric).values({
+      org_id: orgId,
+      role: "CEO",
+      slug: "still-pending",
+      source: "bootstrap",
+      title: "Still loading",
+      why: "Just kicked off",
+      chart_hint: "kpi",
+      active: true,
+      last_refresh_status: "pending",
+    });
+
+    const res = await callRoute(GET, { url: "http://localhost/api/briefing?role=CEO" });
+    const messages = res.body as A2UIMessage[];
+    const dataMsg = messages[1] as Extract<A2UIMessage, { updateDataModel: unknown }>;
+    const dataValue = dataMsg.updateDataModel.value as {
+      insights: Record<string, { state?: string; metric: string }>;
+    };
+    expect(dataValue.insights["still-pending"].state).toBe("pending");
+    expect(dataValue.insights["still-pending"].metric).toBe("Fetching…");
+  });
+
+  it("renders state='failed' + error when last refresh failed", async () => {
+    await db().insert(metric).values({
+      org_id: orgId,
+      role: "CEO",
+      slug: "broke",
+      source: "bootstrap",
+      title: "Broken metric",
+      why: "Data source died",
+      chart_hint: "kpi",
+      active: true,
+      last_refresh_status: "failed",
+      last_refresh_error: "graphjin returned 500",
+    });
+
+    const res = await callRoute(GET, { url: "http://localhost/api/briefing?role=CEO" });
+    const messages = res.body as A2UIMessage[];
+    const dataMsg = messages[1] as Extract<A2UIMessage, { updateDataModel: unknown }>;
+    const dataValue = dataMsg.updateDataModel.value as {
+      insights: Record<string, { state?: string; error?: string; metric: string }>;
+    };
+    expect(dataValue.insights["broke"]).toMatchObject({
+      state: "failed",
+      error: "graphjin returned 500",
+      metric: "Couldn't load",
+    });
   });
 });

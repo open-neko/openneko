@@ -89,8 +89,10 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   })();
 
   // Step 1: data source — one root URL, /api/v1/{graphql,mcp} derived on save.
+  // Pre-fill the localhost default when nothing is configured yet so the
+  // documented AdventureWorks-on-:8080 happy path is one Continue away.
   const [data, setData] = useState({
-    rootUrl: deriveRoot(initial.dataSource.graphqlUrl),
+    rootUrl: deriveRoot(initial.dataSource.graphqlUrl) || "http://localhost:8080",
     label: initial.dataSource.label || "primary",
   });
   const [savingData, setSavingData] = useState(false);
@@ -126,6 +128,12 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   });
   const [savingResearch, setSavingResearch] = useState(false);
   const [finishing, setFinishing] = useState(false);
+
+  // Per-step inline validation errors. Cleared when the user edits the
+  // step's inputs or moves to a different step.
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [primaryError, setPrimaryError] = useState<string | null>(null);
+  const [researchError, setResearchError] = useState<string | null>(null);
 
   // Backend-coupled provider lock for step 2
   const providerOptions = useMemo<ProviderOption[]>(() => {
@@ -211,8 +219,22 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
   async function saveDataAndAdvance() {
     setSavingData(true);
+    setDataError(null);
     try {
       const { graphqlUrl, mcpUrl } = deriveEndpoints(data.rootUrl);
+      // Gate: live connectivity test before save. Reuses the same endpoint
+      // the explicit Test button uses; on failure we surface the error
+      // inline and DO NOT save — the user shouldn't move past a step with
+      // a broken URL only to fail mid-onboarding minutes later.
+      const testRes = await fetch("/api/settings/data-source/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graphqlUrl, mcpUrl }),
+      });
+      const testBody = await testRes.json().catch(() => ({}));
+      if (!testRes.ok) {
+        throw new Error(testBody.error ?? "Connection test failed.");
+      }
       const res = await fetch("/api/settings/data-source", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -220,10 +242,15 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Save failed");
-      toast.success("Data source saved.");
+      toast.success(
+        testBody.mcpOk === false
+          ? "Data source saved. (MCP unreachable — fine for the agent path.)"
+          : "Data source saved.",
+      );
       setStep(step + 1);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setDataError(msg);
     } finally {
       setSavingData(false);
     }
@@ -233,7 +260,29 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
   async function savePrimaryAndAdvance() {
     setSavingPrimary(true);
+    setPrimaryError(null);
     try {
+      // Gate: validate the provider key with a real one-shot LLM call
+      // BEFORE saving anything. A bad key would otherwise pass step 2
+      // silently and only manifest minutes later as a failed
+      // business_profile_build job — surfacing the error here saves
+      // the user from a long-tail failure.
+      const testRes = await fetch("/api/settings/provider/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "primary",
+          provider: primary.provider,
+          model: primary.model,
+          enabled: true,
+          config: primary.config,
+          secrets: primary.secrets,
+        }),
+      });
+      const testBody = await testRes.json().catch(() => ({}));
+      if (!testRes.ok) {
+        throw new Error(testBody.error ?? "Provider test failed.");
+      }
       // Save backend choice + concurrency. One UI value drives both the
       // worker-wide pull cap and the in-process Claude Agent semaphore.
       const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
@@ -266,7 +315,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       toast.success("Agent and provider saved.");
       setStep(step + 1);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setPrimaryError(msg);
     } finally {
       setSavingPrimary(false);
     }
@@ -294,6 +344,20 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
             config: {},
             secrets: {},
           };
+      // Gate: validate the research key with a real one-shot call before
+      // saving — only when enabled. Skipping the test for the explicit
+      // "disabled" path lets users finish setup without a Perplexity key.
+      if (researchEnabled) {
+        const testRes = await fetch("/api/settings/provider/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const testBody = await testRes.json().catch(() => ({}));
+        if (!testRes.ok) {
+          throw new Error(testBody.error ?? "Research provider test failed.");
+        }
+      }
       const res = await fetch("/api/settings/provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -308,6 +372,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
   async function finish(skipResearch: boolean) {
     setFinishing(true);
+    setResearchError(null);
     try {
       if (!skipResearch) await saveResearchOnly();
       else {
@@ -337,7 +402,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       // window.location.assign forces a fresh server fetch.
       window.location.assign("/onboarding");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setResearchError(msg);
       setFinishing(false);
     }
   }
@@ -414,7 +480,10 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               className="settings-input"
               value={data.rootUrl}
               placeholder="http://localhost:8080"
-              onChange={(e) => setData((p) => ({ ...p, rootUrl: e.target.value }))}
+              onChange={(e) => {
+                setDataError(null);
+                setData((p) => ({ ...p, rootUrl: e.target.value }));
+              }}
             />
             <span className="settings-help">
               Just the base URL — Neko handles the GraphQL and MCP endpoints automatically.
@@ -428,6 +497,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               onChange={(e) => setData((p) => ({ ...p, label: e.target.value }))}
             />
           </Field>
+          <InlineError message={dataError} />
           <div className="settings-actions">
             <button
               type="button"
@@ -521,6 +591,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
             </span>
           </Field>
 
+          <InlineError message={primaryError} />
+
           <div className="settings-actions">
             <button type="button" className="pill" onClick={() => setStep(step - 1)} disabled={savingPrimary}>
               Back
@@ -531,7 +603,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               onClick={savePrimaryAndAdvance}
               disabled={savingPrimary}
             >
-              {savingPrimary ? "Saving…" : "Continue"}
+              {savingPrimary ? "Validating & saving…" : "Continue"}
             </button>
           </div>
         </Step>
@@ -607,6 +679,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
             </>
           )}
 
+          <InlineError message={researchError} />
+
           <div className="settings-actions">
             <button type="button" className="pill" onClick={() => setStep(step - 1)} disabled={finishing || savingResearch}>
               Back
@@ -676,6 +750,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="settings-label">{label}</span>
       {children}
     </label>
+  );
+}
+
+function InlineError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div role="alert" className="settings-error">
+      {message}
+    </div>
   );
 }
 

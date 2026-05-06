@@ -48,6 +48,8 @@ export interface BriefingCardProps {
   component: "BriefingCard";
   metricId: string;   // DB UUID — needed for pin/dashboard API calls
   source: string;     // "bootstrap" | "chat"
+  state?: "ok" | "pending" | "failed"; // discriminator for the card chrome
+  error?: string;     // populated when state="failed"
   mood: Mood;
   text: string;       // headline
   metric: string;     // e.g. "$4.7M"

@@ -17,6 +17,7 @@ import {
   QUEUE,
   type ProcessingJobPayload,
 } from "@neko/db/jobs";
+import { createAdminHandler } from "./admin-server.js";
 import {
   db,
   eq,
@@ -159,17 +160,17 @@ async function runMetricRefreshSweep() {
 }
 
 // ───────────────────────────────────────────────────────────────────────
-// HTTP server — liveness only. Sync LLM RPCs moved to @neko/llm so web
-// calls them in-process; nothing routes to the worker over HTTP anymore.
+// HTTP server — liveness + admin reconnect. Sync LLM RPCs moved to
+// @neko/llm so web calls them in-process; the only thing routing to the
+// worker over HTTP is the local /admin/reconnect signal that the web
+// app's /api/admin/change-password handler fires after rotating the
+// Postgres password (see route.ts). The worker exits cleanly so the
+// supervisor (`tsx watch` in dev, Cloud Run min-instances=1 in prod)
+// restarts it with fresh creds — pg-boss doesn't expose a clean way to
+// re-register handlers against a fresh pool.
 // ───────────────────────────────────────────────────────────────────────
 
-const server = createServer((req, res) => {
-  if (req.method === "GET" && req.url === "/health") {
-    res.writeHead(200).end("ok");
-    return;
-  }
-  res.writeHead(404).end();
-});
+const server = createServer(createAdminHandler());
 
 // ───────────────────────────────────────────────────────────────────────
 // Boot.
@@ -224,20 +225,26 @@ await b.work(
   }),
 );
 
-// metric_refresh is the chat-path latency-critical queue. batchSize fetches
-// up to N jobs per poll and the handler runs them concurrently (see
-// makeHandler). Lower polling interval so a freshly-enqueued chat question
-// gets picked up sub-second instead of the 2s default.
-await b.work(
-  QUEUE.METRIC_REFRESH,
-  {
-    batchSize: concurrency.globalCap,
-    pollingIntervalSeconds: 0.5,
-  },
-  makeHandler<ProcessingJobPayload>(async (jobId, orgId) => {
+// metric_refresh is the chat-path latency-critical queue. globalCap is a
+// SHARED POOL: any task can use any free slot, regardless of what the
+// other slots are doing. pg-boss v10 doesn't expose `teamSize`, so we
+// realize that semantic by registering N independent workers, each with
+// batchSize=1. Each worker polls on its own loop (every 0.5s) and grabs
+// one job at a time, so a slow run can't head-of-line-block a freshly
+// enqueued chat question — a free worker picks the new job up within
+// the polling interval.
+const metricRefreshHandler = makeHandler<ProcessingJobPayload>(
+  async (jobId, orgId) => {
     await runMetricRefresh(jobId, orgId);
-  }),
+  },
 );
+for (let i = 0; i < concurrency.globalCap; i++) {
+  await b.work(
+    QUEUE.METRIC_REFRESH,
+    { batchSize: 1, pollingIntervalSeconds: 0.5 },
+    metricRefreshHandler,
+  );
+}
 
 await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();

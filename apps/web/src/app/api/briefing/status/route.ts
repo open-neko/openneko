@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     // For chat metrics: metric.created_by_job = jobId.
     // For bootstrap cards: trigger_payload.metricId → metric_snapshot.
     const metricRows = await db()
-      .select({ id: metric.id })
+      .select({ id: metric.id, title: metric.title, source: metric.source })
       .from(metric)
       .where(eq(metric.created_by_job, jobId))
       .limit(1);
@@ -76,6 +76,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       status: "succeeded",
       metricId: metricRow?.id ?? null,
+      title: metricRow?.title ?? null,
+      source: metricRow?.source ?? null,
       payload,
     });
   }

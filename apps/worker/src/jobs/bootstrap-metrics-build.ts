@@ -131,6 +131,9 @@ export async function runBootstrapMetricsBuild(jobId: string, orgId: string) {
         why: m.why,
         chart_hint: m.chart_hint,
         created_by_job: jobId,
+        // Mark pending so the dashboard shows skeletons until the chained
+        // metric_refresh jobs (enqueued below) succeed or fail.
+        last_refresh_status: "pending",
       })
       .returning({ id: metric.id });
     const newId = ins[0]?.id;

@@ -99,13 +99,20 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
 
     if (existingId) {
       metricRowId = existingId;
-      // Re-link to the current job. The status endpoint locates the snapshot
-      // via metric.created_by_job, so without this update a rerun (or any
-      // re-ask that hits the same slug) leaves the row pointing at the first
-      // job's id, and the status route returns payload=null.
+      // Re-link to the current job + reset refresh status. The status endpoint
+      // locates the snapshot via metric.created_by_job, so without this update
+      // a rerun (or any re-ask that hits the same slug) leaves the row pointing
+      // at the first job's id, and the status route returns payload=null. The
+      // last_refresh_status reset moves the card back to "pending" so the
+      // dashboard re-skeletons while the new run is in flight.
       await db()
         .update(metric)
-        .set({ created_by_job: jobId })
+        .set({
+          created_by_job: jobId,
+          last_refresh_status: "pending",
+          last_refresh_error: null,
+          last_refresh_job_id: jobId,
+        })
         .where(eq(metric.id, existingId));
     } else {
       const ins = await db()
@@ -120,6 +127,8 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
           chart_hint: chartHint,
           active: false,
           created_by_job: jobId,
+          last_refresh_status: "pending",
+          last_refresh_job_id: jobId,
         })
         .returning({ id: metric.id });
       const newId = ins[0]?.id;
@@ -136,34 +145,86 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
 
   await updateProgress(jobId, "Running agent");
   const backendId = await resolveAgentBackendId(orgId);
-  const release = await acquireAgentSlot(backendId);
-  let result: MetricAgentResult;
+
+  // Stamp metric.last_refresh_status on BOTH the success and failure paths
+  // so the briefing API can render a Retry button without joining
+  // processing_job (which only knows the job id, not the metric id). The
+  // outer makeHandler still marks processing_job.status='failed' on rethrow.
   try {
-    result = await runMetricAgent({ ...input, jobId });
-  } finally {
-    release();
+    const release = await acquireAgentSlot(backendId);
+    let result: MetricAgentResult;
+    try {
+      result = await runMetricAgent({ ...input, jobId });
+    } finally {
+      release();
+    }
+
+    const validationError = validateResult(result);
+    if (validationError) {
+      throw new Error(`metric agent output invalid: ${validationError}`);
+    }
+
+    await updateProgress(jobId, "Saving snapshot");
+
+    await db().insert(metric_snapshot).values({
+      metric_id: metricRowId,
+      status: result.mood,
+      payload: result,
+    });
+
+    await db()
+      .update(metric)
+      .set({
+        last_refresh_status: "ok",
+        last_refresh_error: null,
+        last_refresh_job_id: jobId,
+        updated_at: new Date(),
+      })
+      .where(eq(metric.id, metricRowId));
+
+    console.log(
+      `[metric_refresh] org=${orgId} metric=${input.slug} mood=${result.mood} "${result.headlineMetric}"`,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await db()
+      .update(metric)
+      .set({
+        last_refresh_status: "failed",
+        last_refresh_error: msg.slice(0, 500),
+        last_refresh_job_id: jobId,
+        updated_at: new Date(),
+      })
+      .where(eq(metric.id, metricRowId));
+    throw e;
   }
-
-  const validationError = validateResult(result);
-  if (validationError) {
-    throw new Error(`metric agent output invalid: ${validationError}`);
-  }
-
-  await updateProgress(jobId, "Saving snapshot");
-
-  await db().insert(metric_snapshot).values({
-    metric_id: metricRowId,
-    status: result.mood,
-    payload: result,
-  });
-
-  console.log(
-    `[metric_refresh] org=${orgId} metric=${input.slug} mood=${result.mood} "${result.headlineMetric}"`,
-  );
 }
 
 const VALID_MOODS = new Set(["good", "watch", "bad"]);
 const VALID_CHART_TYPES = new Set(["kpi", "line", "bar", "donut", "area"]);
+// Headline strings that mean "the agent failed to fetch real data and is
+// narrating the failure." Treat them as a job failure — the worker marks
+// the job failed and the briefing UI surfaces a Retry button for the card.
+// Without this gate, the result row goes into metric_snapshot with
+// `headlineMetric: "Error"` and the dashboard renders the error narrative
+// as if it were a metric.
+const FAIL_SENTINELS = new Set([
+  "error",
+  "errors",
+  "n/a",
+  "na",
+  "unavailable",
+  "data unavailable",
+  "data unavilable", // tolerate the agent's typo seen in the wild
+  "no data",
+  "null",
+  "undefined",
+  "—",
+  "-",
+  "?",
+  "tbd",
+]);
+const ALL_PUNCT_RE = /^[\s\-—?_.]+$/;
 const VALID_TIME_GRAINS = new Set([
   "day",
   "week",
@@ -176,7 +237,11 @@ const VALID_TIME_GRAINS = new Set([
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function validateResult(r: MetricAgentResult): string | null {
-  if (!r.headlineMetric) return "empty headlineMetric";
+  if (!r.headlineMetric || !r.headlineMetric.trim()) return "empty headlineMetric";
+  const headlineNorm = r.headlineMetric.trim().toLowerCase();
+  if (FAIL_SENTINELS.has(headlineNorm) || ALL_PUNCT_RE.test(headlineNorm)) {
+    return `agent emitted error sentinel as headlineMetric: "${r.headlineMetric}"`;
+  }
   if (!r.headlineLabel) return "empty headlineLabel";
   if (!r.insightText) return "empty insightText";
   if (!VALID_MOODS.has(r.mood)) return `invalid mood: ${r.mood}`;

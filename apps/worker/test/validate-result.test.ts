@@ -192,4 +192,49 @@ describe("validateResult — agent output quality gate", () => {
       }
     });
   });
+
+  describe("headlineMetric error sentinels", () => {
+    // The agent occasionally narrates a failed data fetch by emitting
+    // headlineMetric: "Error" with a chart payload describing the error.
+    // Without rejection, the snapshot row lands and the dashboard renders
+    // the error narrative as if it were a real metric.
+    it.each([
+      "Error",
+      "errors",
+      "N/A",
+      "n/a",
+      "Unavailable",
+      "Data Unavailable",
+      "Data Unavilable", // tolerate the agent's typo seen in the wild
+      "No data",
+      "null",
+      "undefined",
+      "—",
+      "-",
+      "?",
+      "tbd",
+      "  Error  ",
+      "ERROR",
+    ])("rejects sentinel headline %j", (headline) => {
+      expect(validateResult({ ...valid, headlineMetric: headline })).toMatch(
+        /sentinel/,
+      );
+    });
+
+    it.each(["-—", "???", "    ", "..."])(
+      "rejects pure-punctuation headline %j",
+      (headline) => {
+        expect(validateResult({ ...valid, headlineMetric: headline })).toMatch(
+          /sentinel|empty/,
+        );
+      },
+    );
+
+    it.each(["$1.2M", "31,465", "+8%", "1.8x", "26.3%", "$45.00M"])(
+      "accepts legitimate headline %j",
+      (headline) => {
+        expect(validateResult({ ...valid, headlineMetric: headline })).toBeNull();
+      },
+    );
+  });
 });

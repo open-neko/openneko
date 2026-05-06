@@ -1,14 +1,16 @@
 /**
  * Per-backend concurrency cap for the metric agent.
  *
- * Why: pg-boss `batchSize` decides how many jobs we PULL per poll, but it
- * doesn't know about per-org backend choice. Without a runtime cap, all
- * jobs in a batch could land on `claude-agent`, which runs in-process and
- * shares the worker's event loop / V8 heap. A semaphore protects the
- * worker from a thundering herd on the SDK path.
+ * Why: globalCap is realized as N independent pg-boss workers (see
+ * apps/worker/src/index.ts), so the queue-level pool is shared across
+ * tasks. Inside the JS process, claude-agent additionally needs a
+ * smaller cap because it runs in-process via the Anthropic SDK and
+ * shares the worker's event loop / V8 heap. This semaphore protects
+ * the worker from a thundering herd on the SDK path.
  *
- * The Hermes path doesn't need a per-backend cap (the global `batchSize`
- * already bounds concurrency, and each Hermes run is its own subprocess).
+ * Hermes is no-op here — each run is its own subprocess, so the only
+ * bound it needs is globalCap (already enforced by the pg-boss worker
+ * registrations).
  *
  * Cap source: DB scope='agent' on the admin org → default (8). Source of
  * truth is /settings/agent. Changes require a worker restart.

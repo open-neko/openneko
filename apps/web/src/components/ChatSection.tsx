@@ -2,14 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { Copy, Pencil, RotateCcw, Trash2 } from "lucide-react";
-import Chart from "./Chart";
+import BriefingCard, { type BriefingCardData } from "./BriefingCard";
 import type { ChartDataPoint } from "./Chart";
 
+/**
+ * AI chat answers render as a BriefingCard so they get the same treatment
+ * as dashboard cards: mood dot, title, headline metric/delta (kpi) or
+ * chart (non-kpi), expandable insight + detail text. Anything we render
+ * as just text is a code-path bug — see commit history for why.
+ *
+ * `text` on AI messages is reserved for transient states the briefing
+ * card shape can't represent (network errors, demo-mode mock answers).
+ * Once `card` is populated, `text` is ignored.
+ */
 export interface ChatMsg {
   id?: string;
   metricId?: string;
   type: "user" | "ai";
   text: string;
+  /** Populated once a metric_refresh succeeds — drives the BriefingCard render. */
+  card?: BriefingCardData;
+  /** Skeleton chart for the in-flight state, used until `card` lands. */
   metric?: string;
   label?: string;
   chartType?: string;
@@ -129,16 +142,22 @@ export function ChatBubble({
     );
   }
 
+  // Once the worker job succeeds, the AI answer is a fully-formed card —
+  // render it with the same BriefingCard component the dashboard uses so
+  // it gets mood, kpi-or-chart, and the expandable detail text.
+  if (msg.card) {
+    return (
+      <div className="cbubble cbai">
+        <BriefingCard ins={msg.card} index={0} onDismiss={() => { /* no-op in chat */ }} />
+      </div>
+    );
+  }
+
+  // Pre-result fallback: skeleton or a transient text-only message
+  // (network error, demo-mode mock).
   return (
     <div className="cbubble cbai">
-      <div className="bub">
-        {msg.text}
-        {msg.chartType && msg.chartData && (
-          <div className="cchart">
-            <Chart type={msg.chartType} h={110} data={msg.chartData} centerLabel={msg.metric} valueLabel={msg.label} />
-          </div>
-        )}
-      </div>
+      <div className="bub">{msg.text}</div>
     </div>
   );
 }
