@@ -36,9 +36,6 @@ jobs:
             pnpm build
             sudo /usr/bin/systemctl restart neko-web
             sudo /usr/bin/systemctl restart neko-worker
-            sleep 3
-            sudo /usr/bin/systemctl status neko-web --no-pager | head -5
-            sudo /usr/bin/systemctl status neko-worker --no-pager | head -5
           EOF
 
       - name: Smoke test
@@ -46,7 +43,7 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
         run: |
           for i in 1 2 3 4 5; do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' "http://$SSH_HOST:8080/" || echo 000)
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "http://$SSH_HOST/" || echo 000)
             if [ "$code" = "200" ] || [ "$code" = "307" ] || [ "$code" = "302" ]; then
               echo "web responded with $code"
               exit 0
