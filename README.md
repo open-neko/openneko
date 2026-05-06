@@ -50,6 +50,22 @@ pnpm dev               # web + worker
 
 `pnpm bootstrap` sets `AX_SKIP_SKILL_INSTALL=1` for you so `@ax-llm/ax`'s postinstall doesn't write `.claude/skills/` into the repo — we keep those at user scope instead. If you ever invoke `pnpm install` directly, set `AX_SKIP_SKILL_INSTALL=1` in your shell rc.
 
+### Required CLI tooling
+
+`pnpm install` brings in every Node dep, but the worker shells out to three external CLIs that are **not** on npm's dep tree. Install them once on your host (or bake into your container image):
+
+| CLI | When you need it | Install |
+|---|---|---|
+| `graphjin` | Always — the metric agent runs `graphjin cli` against your data source | macOS: `brew install dosco/tap/graphjin` · Linux: tarball from [graphjin releases](https://github.com/dosco/graphjin/releases) |
+| `claude` | Only if you select the **Claude Agent** backend in `/settings/agent`. `@anthropic-ai/claude-agent-sdk` (already a Node dep) spawns it under the hood — without it on PATH every agent call fails with `spawn claude ENOENT` | `npm i -g @anthropic-ai/claude-code` |
+| `hermes` | Only if you select the **Hermes** backend in `/settings/agent`. Same story as `claude` — the package is the binary, no auto-install | Run the Nous Research installer: `curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \| bash`. Requires Python 3.11+ and `uv`. See [hermes-agent](https://github.com/NousResearch/hermes-agent) for prerequisites and updates. |
+
+The wizard at `/settings/agent` lets you flip between backends after setup, so you can install only the one you plan to use. Quick sanity check after install:
+
+```bash
+which graphjin claude hermes   # the ones you installed should resolve
+```
+
 Then open <http://localhost:3000>. On first boot you're sent to `/settings`, which renders a linear setup wizard until first-run is finished:
 
 1. Setting an admin DB password (writes to `~/.config/neko/config.json`)
