@@ -1,0 +1,19 @@
+import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+
+const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
+
+export default defineConfig({
+  test: {
+    include: ["test/**/*.test.ts"],
+    pool: "forks",
+    poolOptions: { forks: { singleFork: true } },
+    testTimeout: 10_000,
+    alias: {
+      // Match the Next.js TS path alias from tsconfig.json.
+      "@/": `${here("./src/")}`,
+      // server-only would otherwise throw at import time outside Next.
+      "server-only": here("./test/stubs/server-only.ts"),
+    },
+  },
+});

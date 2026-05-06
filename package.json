@@ -1,0 +1,28 @@
+{
+  "name": "neko",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "author": "Amit Deshmukh (https://github.com/amitdeshmukh)",
+  "homepage": "https://getneko.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/open-neko/neko.git"
+  },
+  "bugs": {
+    "url": "https://github.com/open-neko/neko/issues"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,worker -c blue,magenta \"pnpm dev:web\" \"pnpm dev:worker\"",
+    "dev:web": "pnpm --filter @neko/web dev",
+    "dev:worker": "pnpm --filter @neko/worker dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @neko/worker test:e2e"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "packageManager": "pnpm@9.14.1"
+}

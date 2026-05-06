@@ -1,0 +1,29 @@
+node_modules/
+.next/
+
+docs/
+.turbo/
+dist/
+build/
+out/
+*.log
+.DS_Store
+
+.env
+.env.local
+.env.*.local
+
+# local GraphJin config (per-developer; copy from db/graphjin/dev.example.yml)
+db/graphjin/dev.yml
+
+# local onboarding scratch
+adventureworks-onboarding.md
+
+# editor
+.vscode/
+.idea/
+*.swp
+
+# local agent / Claude config
+.agents/
+.claude/

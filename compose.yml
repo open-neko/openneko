@@ -1,0 +1,41 @@
+services:
+  neko-db:
+    image: postgres:16-alpine
+    container_name: neko-db
+    restart: unless-stopped
+    # Initial credentials are hardcoded. The /setup wizard forces an
+    # admin-chosen password on first run and writes it to ~/.config/neko/config.json
+    # via ALTER USER. After that the app reads the new password from the
+    # config file; the values below stay only as the bootstrap baseline
+    # for the postgres container itself.
+    environment:
+      POSTGRES_USER: neko
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: neko
+    ports:
+      - "5432:5432"
+    volumes:
+      - neko-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U neko -d neko
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  neko-db-init:
+    image: postgres:16-alpine
+    container_name: neko-db-init
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - /workspace/db/init-neko-db.sh
+    restart: "no"
+    volumes:
+      - ./:/workspace:ro
+
+volumes:
+  neko-db-data:

@@ -1,0 +1,26 @@
+{
+  "name": "@neko/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts 2>&1 | tee /tmp/neko-worker.log",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "dependencies": {
+    "@neko/db": "workspace:*",
+    "@neko/llm": "workspace:*",
+    "dotenv": "^17.4.1",
+    "pg": "^8.20.0",
+    "pg-boss": "^10.1.5",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "vitest": "^2.1.8"
+  }
+}

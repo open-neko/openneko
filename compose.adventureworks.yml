@@ -1,0 +1,65 @@
+services:
+  adventureworks-db:
+    image: postgres:16-alpine
+    container_name: adventureworks-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CUSTOMER_PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    ports:
+      - "${CUSTOMER_PGPORT:-5433}:5432"
+    volumes:
+      - adventureworks-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${CUSTOMER_PGUSER:-postgres}
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  adventureworks-init:
+    image: node:20-slim
+    container_name: adventureworks-init
+    depends_on:
+      adventureworks-db:
+        condition: service_healthy
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      ADVENTUREWORKS_DB: ${ADVENTUREWORKS_DB:-adventureworks}
+      ADVENTUREWORKS_CACHE_DIR: /cache
+      ADVENTUREWORKS_INSTALL_SQL: /workspace/db/seeds/dev/adventureworks-install.sql
+    entrypoint:
+      - /bin/sh
+      - /workspace/db/load-adventureworks.sh
+    restart: "no"
+    volumes:
+      - ./:/workspace:ro
+      - adventureworks-cache:/cache
+
+  graphjin:
+    image: dosco/graphjin:3.18.10
+    container_name: graphjin
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    ports:
+      - "${GRAPHJIN_PORT:-8080}:8080"
+    environment:
+      GJ_DATABASE_HOST: adventureworks-db
+      GJ_DATABASE_PORT: 5432
+      GJ_DATABASE_USER: ${CUSTOMER_PGUSER:-postgres}
+      GJ_DATABASE_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      GJ_DATABASE_DBNAME: ${ADVENTUREWORKS_DB:-adventureworks}
+    volumes:
+      - ./db/graphjin:/config:ro
+    command: ["serve", "--path", "/config"]
+
+volumes:
+  adventureworks-db-data:
+  adventureworks-cache:
