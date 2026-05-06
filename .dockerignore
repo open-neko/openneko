@@ -43,8 +43,12 @@ adventureworks-onboarding.md
 README.md
 LICENSE
 
-# Tests — image is for production; keeps build context small
-**/test
+# Tests — image is for production; keeps build context small.
+# Scoped to package-level test directories so we don't strip
+# Next route segments named "test" (e.g. /api/.../test/route.ts).
+packages/*/test
+apps/*/test
+**/__tests__
 **/*.test.ts
 **/*.test.tsx
 **/vitest.config.ts
