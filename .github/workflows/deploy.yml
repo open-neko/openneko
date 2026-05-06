@@ -34,11 +34,11 @@ jobs:
             export AX_SKIP_SKILL_INSTALL=1
             pnpm install --frozen-lockfile
             pnpm build
-            sudo /bin/systemctl restart neko-web
-            sudo /bin/systemctl restart neko-worker
+            sudo /usr/bin/systemctl restart neko-web
+            sudo /usr/bin/systemctl restart neko-worker
             sleep 3
-            sudo /bin/systemctl status neko-web --no-pager | head -5
-            sudo /bin/systemctl status neko-worker --no-pager | head -5
+            sudo /usr/bin/systemctl status neko-web --no-pager | head -5
+            sudo /usr/bin/systemctl status neko-worker --no-pager | head -5
           EOF
 
       - name: Smoke test
