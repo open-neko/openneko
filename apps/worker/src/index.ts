@@ -201,24 +201,26 @@ const b = await boss();
 // Reconcile orphaned processing_job rows from a previous worker crash
 // (SIGKILL, redeploy mid-handler, OOM, etc.). At this point there are
 // no workers polling yet, so any row in 'running' is by definition
-// abandoned — its handler can't finish. Mark them failed so the UI
-// unblocks immediately. If pg-boss eventually re-delivers the underlying
-// job (via its own expireInSeconds watchdog), our handler's markRunning
-// will flip the row back to 'running' on retry — that path is unchanged.
+// abandoned — its handler can't finish. Reset them to 'queued' so the
+// UI shows pending instead of stuck-running. pg-boss will re-deliver
+// the underlying job once expireInSeconds elapses; markRunning then
+// flips the row back to 'running' on retry — unchanged from the
+// happy path.
 {
   const orphans = await db()
     .update(processing_job)
     .set({
-      status: "failed",
-      finished_at: new Date(),
-      error: "worker restarted before job completed",
+      status: "queued",
+      started_at: null,
+      finished_at: null,
+      error: null,
       updated_at: new Date(),
     })
     .where(eq(processing_job.status, "running"))
     .returning({ id: processing_job.id });
   if (orphans.length > 0) {
     console.log(
-      `[worker] reconciled ${orphans.length} orphaned processing_job row(s) from previous crash`,
+      `[worker] reset ${orphans.length} orphaned processing_job row(s) to queued; pg-boss will redeliver`,
     );
   }
 }
