@@ -1,0 +1,58 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Pull, build, restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          GIT_REF: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "$SSH_USER@$SSH_HOST" bash -se <<EOF
+            set -euo pipefail
+            cd /opt/neko
+            git fetch origin main
+            git reset --hard "$GIT_REF"
+            export AX_SKIP_SKILL_INSTALL=1
+            pnpm install --frozen-lockfile
+            pnpm build
+            sudo /bin/systemctl restart neko-web
+            sudo /bin/systemctl restart neko-worker
+            sleep 3
+            sudo /bin/systemctl status neko-web --no-pager | head -5
+            sudo /bin/systemctl status neko-worker --no-pager | head -5
+          EOF
+
+      - name: Smoke test
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "http://$SSH_HOST:8080/" || echo 000)
+            if [ "$code" = "200" ] || [ "$code" = "307" ] || [ "$code" = "302" ]; then
+              echo "web responded with $code"
+              exit 0
+            fi
+            echo "attempt $i: web returned $code, retrying in 3s"
+            sleep 3
+          done
+          echo "web did not respond after restart"
+          exit 1
