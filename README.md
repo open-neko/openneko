@@ -17,27 +17,28 @@ packages/
   llm/                 Shared LLM machinery: providers, agents, classifier
 db/
   migrations/          SQL migrations for neko-db
-  seeds/dev/           Idempotent dev seeds + vendored AdventureWorks install.sql
+  seeds/dev/           Vendored AdventureWorks install.sql
   graphjin/            GraphJin config (dev.example.yml committed; dev.yml local-only)
   init-neko-db.sh      Sidecar entrypoint for neko-db-init
   load-adventureworks.sh  Sidecar entrypoint for adventureworks-init
 ```
 
-## Dev
+## Run
 
-Three processes, three terminals:
+Three things need to be running:
+
+1. **A customer data source** — a GraphJin endpoint Neko can profile (your own, or use the vendored AdventureWorks stack — see [Optional: vendored AdventureWorks + GraphJin](#optional-vendored-adventureworks--graphjin) below)
+2. **Neko's metadata DB** — Postgres, easiest via `docker compose up -d` (see [Docker Compose](#docker-compose))
+3. **The web + worker** — from the repo root:
 
 ```bash
-# 1. AdventureWorks GraphJin (customer data, MCP-enabled)   :8080
-# 2. Worker
-pnpm dev:worker
-# 3. Web
+pnpm dev          # runs web + worker concurrently
+# or in separate terminals:
 pnpm dev:web
+pnpm dev:worker
 ```
 
-Neko's database is plain Postgres. The web app and the worker
-talk to it directly via Drizzle ORM (`@neko/db`). No internal
-GraphJin service to run.
+The web app and the worker talk to Postgres directly via Drizzle ORM (`@neko/db`). There is no internal GraphJin service to run for Neko itself.
 
 > **Note:** `@ax-llm/ax` auto-installs Claude Code skills into `.claude/skills/`
 > on every install. We keep those at user scope (`~/.claude/skills/`) instead,
@@ -48,95 +49,47 @@ GraphJin service to run.
 
 ```bash
 pnpm install
-
-# Per-app env files (each app loads its own — Next reads apps/web/.env,
-# the worker reads apps/worker/.env via dotenv. There is no shared root .env.)
-cp apps/web/.env.example apps/web/.env
-cp apps/worker/.env.example apps/worker/.env
-
-# Create the Neko database
-PGPASSWORD=postgres psql -h localhost -U postgres -c "create database neko"
-PGPASSWORD=postgres psql -h localhost -U postgres -d neko -f db/migrations/0001_init.sql
-PGPASSWORD=postgres psql -h localhost -U postgres -d neko -f db/seeds/dev/0001_dev_bootstrap.sql
+docker compose up -d   # starts neko-db, applies migrations
+pnpm dev               # web + worker
 ```
+
+Then open <http://localhost:3000>. On first boot you're sent to the `/setup` wizard, which walks through:
+
+1. Setting an admin DB password (writes to `~/.config/neko/config.json`)
+2. Connecting your customer data source (the GraphJin endpoint from #1 above)
+3. Picking the agent + primary LLM provider
+4. Optional industry-research provider
+
+After `/setup` finishes, the `/onboarding` business wizard becomes reachable, and from then on the briefing surface lives at `/`. Ongoing edits to providers, data source, and agent live under `/settings`.
+
+The web and worker apps don't read env vars (only `DEMO=true` is honored on the web side, to flip into the canned-mock briefing flow for screenshots / video). All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
 
 ## Docker Compose
 
-If you want Docker to run the Neko database for you, use the root [compose.yml](compose.yml). Works with any Docker that resolves `host.docker.internal` (OrbStack, Docker Desktop, Rancher Desktop; on Linux Docker Engine add `--add-host=host.docker.internal:host-gateway`).
+`compose.yml` brings up the metadata DB. Works with any Docker that resolves `host.docker.internal` (OrbStack, Docker Desktop, Rancher Desktop; on Linux Docker Engine add `--add-host=host.docker.internal:host-gateway`).
 
 What it does:
 
-- Starts `neko-db` (Postgres 16) on `localhost:5432`
-- Runs a one-shot `neko-db-init` sidecar that:
-  - waits for `neko-db`
-  - runs the consolidated schema file [db/migrations/0001_init.sql](db/migrations/0001_init.sql) if the schema is still empty
-  - applies an idempotent dev seed from [db/seeds/dev/0001_dev_bootstrap.sql](db/seeds/dev/0001_dev_bootstrap.sql)
+- Starts `neko-db` (Postgres 16) on `localhost:5432` with hardcoded creds `neko/secret/neko`
+- Runs a one-shot `neko-db-init` sidecar that waits for `neko-db` and applies every file in [db/migrations/](db/migrations/) — the baseline [0001_init.sql](db/migrations/0001_init.sql) on an empty schema, then any incremental migrations on every restart (each must be idempotent)
 
-No manual `create database` step is needed for the compose path. The Postgres
-container creates the `neko` database on first boot, and `neko-db-init`
-handles migrations plus the dev seed.
-
-Start the stack:
+The bootstrap creds in [compose.yml](compose.yml) are the **baseline only**. The `/setup` wizard rotates the password on first run and persists the new value to `~/.config/neko/config.json` on the host.
 
 ```bash
-docker compose up -d
+docker compose up -d            # start
+docker compose down             # stop
+docker compose down -v          # reset (drops the volume)
 ```
 
-Stop it:
+Compose has no parameterized variables. Port `5432:5432` is fixed; if it conflicts on your host, edit the published port in [compose.yml](compose.yml) directly.
 
-```bash
-docker compose down
-```
+### First-run state
 
-Reset the Neko database completely:
-
-```bash
-docker compose down -v
-```
-
-Important compose variables:
-
-- `METADATA_PGUSER`
-- `METADATA_PGPASSWORD`
-- `METADATA_PGDATABASE`
-- `METADATA_PGPORT`
-- `DEV_ORG_ID`
-- `DEV_ORG_NAME`
-- `CUSTOMER_GRAPHQL_URL`
-- `CUSTOMER_MCP_URL`
-
-Defaults are baked into [compose.yml](compose.yml), so the simplest path is just:
-
-```bash
-docker compose up -d
-```
-
-If `5432` is already in use on your machine, remap the published host port:
-
-```bash
-METADATA_PGPORT=55432 docker compose up -d
-```
-
-### Customer data source wiring
-
-`compose.yml` only brings up Neko's own database. The seeded `data_source` row still needs to point at a customer-facing GraphJin endpoint for profiling and metric refresh.
-
-By default the seed uses:
-
-- GraphQL: `http://host.docker.internal:8080/api/v1/graphql`
-- MCP: `http://host.docker.internal:8080/api/v1/mcp`
-
-Override those before `docker compose up -d` if your customer GraphJin is elsewhere:
-
-```bash
-export CUSTOMER_GRAPHQL_URL="http://host.docker.internal:8080/api/v1/graphql"
-export CUSTOMER_MCP_URL="http://host.docker.internal:8080/api/v1/mcp"
-docker compose up -d
-```
+No org or data-source rows are seeded. The app's `getOrgId()` auto-bootstraps a single organization row (random UUID, name `"My Workspace"`) the first time it runs, and the `/setup` wizard creates the `data_source` row when you paste your GraphJin URL.
 
 ### Optional: vendored AdventureWorks + GraphJin
 
-If you don't already have a customer GraphJin running on `:8080`, you can opt into a self-contained AdventureWorks stack. This adds `adventureworks-db` (Postgres loaded with the AdventureWorks 2014 OLTP sample) and a `graphjin` server pointed at it.
+If you don't already have a customer GraphJin running, opt into the self-contained AdventureWorks stack. This adds `adventureworks-db` (Postgres loaded with the AdventureWorks 2014 OLTP sample) and a `graphjin` server pointed at it.
 
 One-time setup — copy the example GraphJin config to its active filename (gitignored):
 
@@ -144,7 +97,7 @@ One-time setup — copy the example GraphJin config to its active filename (giti
 cp db/graphjin/dev.example.yml db/graphjin/dev.yml
 ```
 
-Then bring everything up:
+Bring everything up:
 
 ```bash
 docker compose -f compose.yml -f compose.adventureworks.yml up -d
@@ -156,48 +109,37 @@ What it does on first run:
 - Runs a one-shot `adventureworks-init` sidecar ([db/load-adventureworks.sh](db/load-adventureworks.sh) → [apps/worker/scripts/load-adventureworks.ts](apps/worker/scripts/load-adventureworks.ts)) that downloads Microsoft's [AdventureWorks-oltp-install-script.zip](https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks-oltp-install-script.zip), converts the BCP-formatted CSVs to tab-delimited, then loads [db/seeds/dev/adventureworks-install.sql](db/seeds/dev/adventureworks-install.sql) (a vendored copy of [lorint/AdventureWorks-for-Postgres](https://github.com/lorint/AdventureWorks-for-Postgres)) into a fresh `adventureworks` database
 - Starts `graphjin` ([dosco/graphjin](https://hub.docker.com/r/dosco/graphjin) v3.18.10) on `localhost:8080`, configured from [db/graphjin/dev.example.yml](db/graphjin/dev.example.yml)
 
-GraphJin reads its config from `db/graphjin/`. The committed `dev.example.yml` is loaded by default; copy it to `dev.yml` (gitignored) if you want local-only edits.
+When prompted by the `/setup` wizard for a data source, point it at:
 
-To wipe the AdventureWorks volume and re-load from scratch:
+- GraphQL: `http://host.docker.internal:8080/api/v1/graphql`
+- MCP: `http://host.docker.internal:8080/api/v1/mcp`
+
+Variables this stack reads (all optional, defaults are baked in):
+
+- `CUSTOMER_PGUSER` (default `postgres`)
+- `CUSTOMER_PGPASSWORD` (default `postgres`)
+- `ADVENTUREWORKS_DB` (default `adventureworks`)
+
+Wipe the AdventureWorks volume and re-load from scratch:
 
 ```bash
 docker compose -f compose.yml -f compose.adventureworks.yml down -v
 ```
 
-### What gets seeded
-
-The dev seed ensures there is always at least one dev org matching the app's current hardcoded tenant:
-
-- `organization.id = 'default-org'` (override via `DEV_ORG_ID`)
-- one `data_source` row for that org if none exists yet
-
-If you already have tables, `neko-db-init` skips schema creation and only reapplies the idempotent seed.
-
 ## Model Providers
 
-Neko supports per-org provider configuration from the app UI at `/settings`.
+All provider configuration lives in the app's `/settings` UI, scoped per-org. Two scopes:
 
-- Primary provider: used for profiling, chat classification, bootstrap card generation, and metric refreshes.
-- Industry research provider: used for the onboarding industry-briefing step.
+- **Primary** — used for profiling, chat classification, bootstrap card generation, and metric refreshes
+- **Industry research** — optional; used during the onboarding industry-briefing step
 
-You can configure providers in one of two ways:
-
-1. Instance defaults via environment variables in `apps/web/.env` and/or `apps/worker/.env` (mirror shared values in both — there is no root `.env`)
-2. Org-level overrides via the settings screen
-
-Resolution order is:
-
-```text
-org settings -> env defaults -> unconfigured
-```
-
-If no primary provider is configured, the worker still starts so you can open `/settings`, but AI-backed flows will fail until a provider is set.
+Without a primary provider configured the worker still starts (so `/settings` remains reachable), but AI-backed flows fail until one is set.
 
 ### Vertex note
 
-`vertex` remains supported as a special provider for the existing Vertex MaaS path. It uses Google Application Default Credentials, so local auth typically means either:
+`vertex` uses Google Application Default Credentials, so local auth is one of:
 
 - `gcloud auth application-default login`
 - `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
 
-Set `GCP_PROJECT_ID` and optionally `GCP_REGION` in env or in the settings screen.
+The GCP project id is set in `/settings` (per-org secret, not an env var).
