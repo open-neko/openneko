@@ -198,10 +198,38 @@ console.log(
 
 const b = await boss();
 
+// Reconcile orphaned processing_job rows from a previous worker crash
+// (SIGKILL, redeploy mid-handler, OOM, etc.). At this point there are
+// no workers polling yet, so any row in 'running' is by definition
+// abandoned — its handler can't finish. Mark them failed so the UI
+// unblocks immediately. If pg-boss eventually re-delivers the underlying
+// job (via its own expireInSeconds watchdog), our handler's markRunning
+// will flip the row back to 'running' on retry — that path is unchanged.
+{
+  const orphans = await db()
+    .update(processing_job)
+    .set({
+      status: "failed",
+      finished_at: new Date(),
+      error: "worker restarted before job completed",
+      updated_at: new Date(),
+    })
+    .where(eq(processing_job.status, "running"))
+    .returning({ id: processing_job.id });
+  if (orphans.length > 0) {
+    console.log(
+      `[worker] reconciled ${orphans.length} orphaned processing_job row(s) from previous crash`,
+    );
+  }
+}
+
 // Ensure every queue we'll consume from exists. pg-boss v10 doesn't auto-
-// create on send() or work(); calling createQueue is idempotent.
+// create on send() or work(); calling createQueue is idempotent. Setting
+// expireInSeconds at the queue level shortens the time pg-boss waits before
+// returning a worker-killed 'active' job to 'created' for re-delivery —
+// 10 min beats the 15-min default while still tolerating long agent runs.
 for (const name of Object.values(QUEUE)) {
-  await b.createQueue(name);
+  await b.createQueue(name, { name, expireInSeconds: 600 });
 }
 
 await b.work(
