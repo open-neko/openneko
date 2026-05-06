@@ -15,7 +15,7 @@ const body = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Neko",
+  title: "OpenNeko",
   description: "Executive intelligence for CXOs",
 };
 
