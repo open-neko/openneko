@@ -41,8 +41,14 @@ export async function boss(): Promise<PgBoss> {
   if (_boss) return _boss;
   if (_starting) return _starting;
   _starting = (async () => {
+    const cfg = buildPoolConfig();
     const instance = new PgBoss({
-      ...buildPoolConfig(),
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.user,
+      password: typeof cfg.password === "string" ? cfg.password : undefined,
+      database: cfg.database,
+      ssl: cfg.ssl,
       // Keep retention conservative for a CXO briefing tool — failed jobs
       // stay 7 days for forensic value, completed jobs purge sooner.
       retentionDays: 7,
