@@ -26,29 +26,104 @@ body {
 /* ─── LAYOUT ─── */
 .root { max-width: 740px; margin: 0 auto; padding: 36px 20px 130px; min-height: 100vh; }
 
+/* ─── APP HEADER ─── */
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  /* Match a .pill's rendered height (border 1.5×2 + padding 8×2 + 14.5px
+     text × ~1.5 line-height ≈ 40.75px). The brand sits in this strip and
+     vertically centers its icon+text within the same band. */
+  min-height: 41px;
+}
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.app-header .brand {
+  /* Anchored to the top of the header so it sits on the first wrapped row
+     of left content, with its visual center matching the pill row. */
+  align-self: flex-start;
+  height: 41px;
+}
+
 /* ─── BRAND ─── */
+/* Match the marketing site's brand lockup (apps/web/.. ↔ Website/..) so
+   the app feels like a continuation of getneko.app: same Archivo display
+   face, same heavy 800 weight, same tight -0.04em tracking. */
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   user-select: none;
+  color: var(--text);
+  transition: opacity 0.18s;
+}
+.brand:hover {
+  opacity: 0.78;
 }
 .brand-icon {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   display: block;
   flex: 0 0 auto;
 }
 .brand-name {
-  font-family: var(--font-display), 'Archivo', serif;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  color: var(--text);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   line-height: 1;
-  position: relative;
-  top: 1px;
+}
+/* ─── CREATOR CREDIT ─── */
+/* Tiny attribution badge fixed to the bottom-right of the viewport.
+   Default placement (mobile/tablet): floats just above the dashboard
+   input bar (~100px tall) so it never overlaps the send button. On
+   pages without an input bar this just gives the badge a comfortable
+   margin from the viewport edge. */
+.creator-credit {
+  position: fixed;
+  bottom: 100px;
+  right: 16px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 11px;
+  /* Acid-green pill — same palette the marketing site (getneko.app)
+     uses for its primary CTAs, so the badge reads as a piece of
+     OpenNeko branding rather than generic app chrome. */
+  font-weight: 600;
+  color: #113719;
+  background: #6cff7f;
+  border: 1px solid #58f26c;
+  text-decoration: none;
+  letter-spacing: 0.1px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(17, 55, 25, 0.08);
+  /* Above the input bar (z-index 100). */
+  z-index: 110;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+.creator-credit:hover {
+  background: #58f26c;
+  box-shadow: 0 4px 14px rgba(17, 55, 25, 0.16);
+  transform: translateY(-1px);
+}
+/* Desktop placement: slot the badge into the right margin beside the
+   input bar's centered 740px column. Math: viewport must be > 1160 for
+   credit (right:24, ~170 wide) not to overlap the inputwrap edge. */
+@media (min-width: 1200px) {
+  .creator-credit {
+    bottom: 32px;
+    right: 24px;
+  }
 }
 
 /* ─── TOP BAR ─── */
@@ -61,6 +136,19 @@ body {
   font-size: 13px; color: var(--text3); letter-spacing: 0.2px;
   white-space: nowrap;
 }
+
+/* Dashboard secondary nav (Business Profile, Settings, date) — its own
+   full-width row beneath the AppHeader so it isn't squeezed by the brand
+   mark on the right. With this layout these three items always fit on a
+   single line, regardless of how many persona pills the user has set up. */
+.dash-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: -8px;
+  margin-bottom: 32px;
+}
 .settings-link,
 .settings-backlink {
   text-decoration: none;
@@ -72,6 +160,7 @@ body {
   padding: 8px 14px;
   transition: all 0.2s;
   background: rgba(255,255,255,0.55);
+  white-space: nowrap;
 }
 .settings-link:hover,
 .settings-backlink:hover {
@@ -106,15 +195,9 @@ body {
 .settings-backlink:hover .settings-backlink-arrow {
   transform: translateX(-3px);
 }
-.settings-topbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-}
 
 /* ─── PILLS ─── */
-.pills { display: flex; gap: 7px; }
+.pills { display: flex; gap: 7px; flex-wrap: wrap; }
 .pill {
   padding: 8px 18px; border-radius: 100px; border: 1.5px solid var(--border);
   background: transparent; font-family: var(--font-body), 'Manrope', sans-serif;
@@ -536,7 +619,6 @@ body {
 }
 
 @media (max-width: 720px) {
-  .settings-topbar,
   .settings-card-head,
   .topbar {
     flex-direction: column;

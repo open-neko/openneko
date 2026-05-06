@@ -1,5 +1,10 @@
 /**
- * Demo mode — flipped on with env var DEMO=true.
+ * Demo mode — flipped on with env var NEXT_PUBLIC_DEMO=true (preferred) or
+ * the legacy DEMO=true server-side flag.
+ *
+ * NEXT_PUBLIC_DEMO is inlined into the client bundle by Next, so client
+ * components (AppHeader's creator credit, etc.) can read the same flag
+ * without a separate server roundtrip.
  *
  * When on, the app ignores the DB for user-facing data and serves canned
  * mock content:
@@ -15,7 +20,9 @@
 import type { ChartDataPoint } from "@/a2ui/catalog";
 
 export function isDemoMode(): boolean {
-  return process.env.DEMO === "true";
+  return (
+    process.env.NEXT_PUBLIC_DEMO === "true" || process.env.DEMO === "true"
+  );
 }
 
 type MockCard = {

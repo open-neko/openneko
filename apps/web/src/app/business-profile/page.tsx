@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import AppHeader from "@/components/AppHeader";
 import Markdown from "react-markdown";
 import type { StageKind } from "@/lib/db";
 
@@ -156,11 +157,8 @@ export default function ProcessingPage() {
       stageMessage ??
       (stageKind ? STAGE_FALLBACK_COPY[stageKind] : "Reading your data sources…");
     return (
-      <div className="root" style={{ paddingTop: 120, textAlign: "center" }}>
-        <div className="brand" style={{ justifyContent: "center" }}>
-          <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-          <span className="brand-name">OpenNeko</span>
-        </div>
+      <div className="root" style={{ textAlign: "center" }}>
+        <AppHeader />
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
         <StageStrip current={stageKind} />
@@ -173,8 +171,8 @@ export default function ProcessingPage() {
   const insightsPending = !insights && insightsStatus !== "disabled";
 
   return (
-    <div className="root" style={{ paddingTop: 60 }}>
-      <Brand />
+    <div className="root">
+      <AppHeader back={{ href: "/", label: "Back to briefing" }} />
       <div className="greet" style={{ marginTop: 40, animation: "fadeUp 0.5s ease 0.1s both" }}>
         Here&apos;s what we found.
       </div>
@@ -350,15 +348,6 @@ function InsightsDisabled() {
       <div className="pm-p" style={{ color: "var(--text2)" }}>
         Enable Perplexity-backed industry research later from Settings.
       </div>
-    </div>
-  );
-}
-
-function Brand() {
-  return (
-    <div className="brand" style={{ justifyContent: "center", animation: "fadeUp 0.5s ease both" }}>
-      <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-      <span className="brand-name">OpenNeko</span>
     </div>
   );
 }

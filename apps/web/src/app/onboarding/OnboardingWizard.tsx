@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
 
@@ -107,13 +108,9 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
     !submitting;
 
   return (
-    <div className="root" style={{ paddingTop: 60 }}>
-      <div className="brand">
-        <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-        <span className="brand-name">OpenNeko</span>
-      </div>
-
-      <div className="greet" style={{ marginTop: 32 }}>Let&apos;s set you up.</div>
+    <div className="root">
+      <AppHeader />
+      <div className="greet" style={{ marginTop: 8 }}>Let&apos;s set you up.</div>
       <div className="greet-sub">A couple of quick questions, then we&apos;ll do the rest.</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 28, marginTop: 36 }}>

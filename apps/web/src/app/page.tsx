@@ -11,6 +11,8 @@ import type { BriefingCardData } from "@/components/BriefingCard";
 import { ChatBubble, TypingIndicator } from "@/components/ChatSection";
 import type { ChatMsg } from "@/components/ChatSection";
 import InputBar from "@/components/InputBar";
+import AppHeader from "@/components/AppHeader";
+import CreatorCredit from "@/components/CreatorCredit";
 
 /**
  * What we persist to localStorage per chat message — identity references
@@ -604,34 +606,53 @@ export default function Dashboard() {
     }
   }, [chatByRole]);
 
-  const now = new Date();
-  const ds = now.toLocaleDateString("en-IN", { weekday: "long", month: "long", day: "numeric" });
+  // Render the formatted date only after mount. toLocaleDateString depends
+  // on the runtime's ICU data, which can differ between the Node.js server
+  // and the user's browser — leading to a hydration mismatch if the two
+  // emit different strings (e.g. "Wed" vs "Wednesday"). Empty initial value
+  // → server and first client render agree → safe; useEffect populates the
+  // real string after hydration. Short weekday + long month keeps it
+  // compact enough to share a row with the nav links on narrow viewports.
+  const [ds, setDs] = useState("");
+  useEffect(() => {
+    setDs(
+      new Date().toLocaleDateString("en-IN", {
+        weekday: "short",
+        month: "long",
+        day: "numeric",
+      }),
+    );
+  }, []);
 
   return (
     <>
       <div className="root">
-        <div className="topbar">
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div className="pills">
-              {roles.map((k) => (
-                <button key={k} className={`pill${role === k ? " on" : ""}`} onClick={() => setRole(k)}>
-                  {k}
-                </button>
-              ))}
-            </div>
-            {gateChecked && !gateError ? (
-              <Link href="/business-profile" className="settings-link">
-                Business Profile
-              </Link>
-            ) : (
-              <span className="settings-link is-disabled" aria-disabled="true">
-                Business Profile
-              </span>
-            )}
-            <Link href="/settings" className="settings-link">
-              Settings
-            </Link>
+        <AppHeader>
+          <div className="pills">
+            {roles.map((k) => (
+              <button key={k} className={`pill${role === k ? " on" : ""}`} onClick={() => setRole(k)}>
+                {k}
+              </button>
+            ))}
           </div>
+        </AppHeader>
+
+        {/* Secondary nav strip — full row beneath the AppHeader so the
+            brand on the right doesn't crowd this group. Stays on one
+            line at any pill count. */}
+        <div className="dash-meta">
+          {gateChecked && !gateError ? (
+            <Link href="/business-profile" className="settings-link">
+              Business Profile
+            </Link>
+          ) : (
+            <span className="settings-link is-disabled" aria-disabled="true">
+              Business Profile
+            </span>
+          )}
+          <Link href="/settings" className="settings-link">
+            Settings
+          </Link>
           <div className="topbar-date">{ds}</div>
         </div>
 
@@ -726,6 +747,7 @@ export default function Dashboard() {
       </div>
 
       <InputBar value={inp} onChange={setInp} onSend={send} disabled={isBusy} />
+      <CreatorCredit />
     </>
   );
 }

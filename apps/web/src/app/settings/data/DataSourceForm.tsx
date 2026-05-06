@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
+import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 
 type DataSourcePayload = {
@@ -77,21 +77,10 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
   }
 
   return (
-    <div className="root" style={{ paddingTop: 44 }}>
-      <div className="settings-topbar">
-        <div>
-          <div className="brand">
-            <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">OpenNeko</span>
-          </div>
-          <div className="greet" style={{ marginTop: 28 }}>Data source.</div>
-          <div className="greet-sub">GraphQL endpoint OpenNeko reads business data from.</div>
-        </div>
-        <Link className="settings-backlink inline-flex items-center gap-2 whitespace-nowrap" href="/settings">
-          <span aria-hidden="true" className="settings-backlink-arrow text-base leading-none">←</span>
-          <span>All settings</span>
-        </Link>
-      </div>
+    <div className="root">
+      <AppHeader back={{ href: "/settings", label: "All settings" }} />
+      <div className="greet">Data source.</div>
+      <div className="greet-sub" style={{ marginBottom: 24 }}>GraphQL endpoint OpenNeko reads business data from.</div>
 
       <section className="settings-card">
         <div className="settings-field-stack">

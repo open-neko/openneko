@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
 
@@ -411,13 +412,9 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   // ---------------- Render ----------------
 
   return (
-    <div className="root" style={{ paddingTop: 44 }}>
-      <div className="brand">
-        <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-        <span className="brand-name">OpenNeko</span>
-      </div>
-
-      <div className="greet" style={{ marginTop: 28 }}>Get your workspace ready.</div>
+    <div className="root">
+      <AppHeader />
+      <div className="greet">Get your workspace ready.</div>
       <div className="greet-sub">
         A few quick steps for whoever sets up the data plumbing. Your business team takes over
         once this is done.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AppHeader from "@/components/AppHeader";
 import { getOrgId } from "@/lib/db";
 import { hasDataSourceSetup } from "@/lib/data-source-settings";
 import {
@@ -50,22 +51,11 @@ export default async function SettingsIndex() {
   ];
 
   return (
-    <div className="root" style={{ paddingTop: 44 }}>
-      <div className="settings-topbar">
-        <div>
-          <div className="brand">
-            <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">OpenNeko</span>
-          </div>
-          <div className="greet" style={{ marginTop: 28 }}>Workspace settings.</div>
-          <div className="greet-sub">
-            Operator-side configuration. The business onboarding lives at /onboarding.
-          </div>
-        </div>
-        <Link className="settings-backlink inline-flex items-center gap-2 whitespace-nowrap" href="/">
-          <span aria-hidden="true" className="settings-backlink-arrow text-base leading-none">←</span>
-          <span>Back to briefing</span>
-        </Link>
+    <div className="root">
+      <AppHeader back={{ href: "/", label: "Back to briefing" }} />
+      <div className="greet">Workspace settings.</div>
+      <div className="greet-sub" style={{ marginBottom: 24 }}>
+        Operator-side configuration. The business onboarding lives at /onboarding.
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>

@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
 
@@ -143,22 +143,11 @@ export default function AgentForm({
   }
 
   return (
-    <div className="root" style={{ paddingTop: 44 }}>
-      <div className="settings-topbar">
-        <div>
-          <div className="brand">
-            <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">OpenNeko</span>
-          </div>
-          <div className="greet" style={{ marginTop: 28 }}>Agent.</div>
-          <div className="greet-sub">
-            Pick the runtime that drives the metric agent and the model it uses.
-          </div>
-        </div>
-        <Link className="settings-backlink inline-flex items-center gap-2 whitespace-nowrap" href="/settings">
-          <span aria-hidden="true" className="settings-backlink-arrow text-base leading-none">←</span>
-          <span>All settings</span>
-        </Link>
+    <div className="root">
+      <AppHeader back={{ href: "/settings", label: "All settings" }} />
+      <div className="greet">Agent.</div>
+      <div className="greet-sub" style={{ marginBottom: 24 }}>
+        Pick the runtime that drives the metric agent and the model it uses.
       </div>
 
       <section className="settings-card">

@@ -59,7 +59,7 @@ Then open <http://localhost:3000>. On first boot you're sent to the `/setup` wiz
 
 After `/setup` finishes, the `/onboarding` business wizard becomes reachable, and from then on the briefing surface lives at `/`. Ongoing edits to providers, data source, and agent live under `/settings`.
 
-The web and worker apps don't read env vars from disk by default. The one allowed knob is `DEMO=true` on the web side — drop it into `apps/web/.env` to flip into the canned-mock briefing flow for screenshots / video without real data. All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
+The web and worker apps don't read env vars from disk by default. The one allowed knob is `NEXT_PUBLIC_DEMO=true` on the web side — drop it into `apps/web/.env.local` (see [apps/web/.env.example](apps/web/.env.example)) to flip into the canned-mock briefing flow for screenshots / video without real data. The `NEXT_PUBLIC_` prefix lets both server and client code read the same flag; the legacy `DEMO=true` still works server-side for backward compatibility. All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
 
 ## Docker Compose
 
