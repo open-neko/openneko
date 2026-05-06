@@ -26,6 +26,7 @@ import {
   processing_job,
 } from "@neko/db";
 import {
+  cancelAllAgents,
   provisionHostConfig,
   resolveAgentConcurrency,
   verifyAiCredentials,
@@ -306,6 +307,16 @@ server.listen(PORT, () => {
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   server.close();
+  // Cancel every in-flight agent call up-front so jobs reject quickly
+  // instead of blocking pg-boss graceful stop on long-running hermes /
+  // claude calls. pg-boss returns the active jobs to created on graceful
+  // stop, so the next worker boot retries them. Without this the systemd
+  // unit hits TimeoutStopSec, gets SIGKILL'd, and orphan grandchildren
+  // (Python venv, browser tools) survive across redeploys.
+  const cancelled = cancelAllAgents();
+  if (cancelled > 0) {
+    console.log(`[worker] cancelled ${cancelled} in-flight agent call(s)`);
+  }
   try {
     await b.stop({ graceful: true });
   } catch (e) {

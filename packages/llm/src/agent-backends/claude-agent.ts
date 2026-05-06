@@ -23,6 +23,7 @@ import {
   type AgentBackend,
   type AgentRunOptions,
 } from "../agent-backend";
+import { registerAgentCanceller } from "../agent-shutdown";
 
 let _claudeOnPathChecked = false;
 let _claudeOnPath = false;
@@ -104,6 +105,9 @@ export class ClaudeAgentBackend implements AgentBackend {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), timeoutMs);
     const tagSuffix = tag ? ` tag=${tag}` : "";
+    // Register so the worker's SIGTERM handler can fail-fast every
+    // in-flight Claude Agent call alongside any Hermes children.
+    const unregisterCancel = registerAgentCanceller(() => abort.abort());
 
     try {
       const stream = query({
@@ -155,6 +159,7 @@ export class ClaudeAgentBackend implements AgentBackend {
       return out;
     } finally {
       clearTimeout(timer);
+      unregisterCancel();
     }
   }
 }

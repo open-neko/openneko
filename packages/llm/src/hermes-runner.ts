@@ -26,10 +26,22 @@
  * removed on every run (success or failure) so disks don't fill up.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { registerAgentCanceller } from "./agent-shutdown";
+
+function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (!child.pid) return;
+  try {
+    // Negative pid targets the process group. Requires the child to have
+    // been spawned with `detached: true`.
+    process.kill(-child.pid, signal);
+  } catch {
+    // ESRCH if already exited; ignore.
+  }
+}
 
 export type HermesRunOptions = {
   prompt: string;
@@ -91,10 +103,18 @@ async function spawnOnce(
   const keepScratch = false;
 
   return new Promise<string>((resolve, reject) => {
+    // detached: true puts the child in its own process group. Hermes
+    // spawns its own subprocesses (Python venv, browser tools, etc.)
+    // which inherit the pgid; killing the group with kill(-pgid) takes
+    // the whole tree down. Without this, on worker SIGTERM the hermes
+    // grandchildren outlive the worker process and survive even
+    // systemd's cgroup SIGKILL when they re-parent to init.
     const child = spawn("hermes", ["-z", prompt], {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: scratch,
+      detached: true,
     });
+    const unregister = registerAgentCanceller(() => killProcessGroup(child, "SIGKILL"));
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -135,6 +155,7 @@ async function spawnOnce(
     });
 
     child.on("error", (e) => {
+      unregister();
       settleReject(new Error(`hermes spawn failed: ${e.message}`));
       // For spawn errors like ENOENT the close event may not fire — clean
       // up here as a fallback. Idempotent via the `cleaned` flag.
@@ -142,6 +163,7 @@ async function spawnOnce(
     });
 
     child.on("close", (code) => {
+      unregister();
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       cleanup();
@@ -153,7 +175,7 @@ async function spawnOnce(
     });
 
     timer = setTimeout(() => {
-      child.kill("SIGTERM");
+      killProcessGroup(child, "SIGTERM");
       settleReject(new Error(`hermes timed out after ${timeoutMs}ms`));
       // Don't cleanup here — wait for child.on("close") to fire once
       // SIGTERM lands. The child still has file handles open in scratch
