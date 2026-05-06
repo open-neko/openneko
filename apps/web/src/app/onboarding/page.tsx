@@ -17,7 +17,7 @@ export default async function OnboardingPage() {
   const orgId = await getOrgId();
   const setupCompleteAt = await getSetupCompleteAt(orgId);
   if (!setupCompleteAt) {
-    redirect("/setup");
+    redirect("/settings");
   }
 
   const [wizardRows, orgRows] = await Promise.all([

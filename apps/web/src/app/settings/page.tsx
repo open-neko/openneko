@@ -1,28 +1,64 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import { hasCustomPassword } from "@neko/db";
 import AppHeader from "@/components/AppHeader";
 import { getOrgId } from "@/lib/db";
-import { hasDataSourceSetup } from "@/lib/data-source-settings";
+import { getSetupCompleteAt } from "@/lib/org-state";
 import {
+  getDataSourceSettings,
+  hasDataSourceSetup,
+} from "@/lib/data-source-settings";
+import {
+  getProviderSettingsPayload,
   hasPrimaryProviderSetup,
   resolveResearchStatus,
 } from "@/lib/provider-settings";
-import { getAgentBackendSettings } from "@/lib/agent-backend-settings";
+import {
+  getAgentBackendSettings,
+  getAgentSettingsPayload,
+} from "@/lib/agent-backend-settings";
+import SetupWizard from "./SetupWizard";
 
 /**
- * Settings index — one card per concern. Each links to a dedicated page
- * so the operator only sees the form they came to edit. This replaces
- * the old single-page settings (3 stacked cards) which mixed unrelated
- * concerns and made the settings + onboarding flow read as one mixed-
- * persona experience.
+ * Single admin surface — wizard until first-run is finished, then a
+ * card index for ongoing edits. The wizard's gating (linear steps,
+ * required-prereqs check on Finish) is preserved; the only thing
+ * collapsed is the URL surface — admins no longer juggle /setup +
+ * /settings as separate pages.
+ *
+ * The branch is decided server-side by setup_complete_at, so admins
+ * can't bypass first-run gating by hitting a different URL.
  */
-export default async function SettingsIndex() {
+export default async function SettingsPage() {
   await connection();
+  const orgId = await getOrgId();
+  const setupCompleteAt = await getSetupCompleteAt(orgId);
+
+  // ── First-run mode: render the linear wizard. ──
+  if (!setupCompleteAt) {
+    const [dataSource, providers, agent] = await Promise.all([
+      getDataSourceSettings(orgId),
+      getProviderSettingsPayload(orgId),
+      getAgentSettingsPayload(orgId),
+    ]);
+    return (
+      <SetupWizard
+        initial={{
+          dataSource,
+          providers,
+          agent,
+          passwordChanged: hasCustomPassword(),
+        }}
+      />
+    );
+  }
+
+  // ── Ongoing-edits mode: card index linking to focused sub-pages. ──
   const [dataReady, primaryReady, researchStatus, agent] = await Promise.all([
-    hasDataSourceSetup((await getOrgId())),
-    hasPrimaryProviderSetup((await getOrgId())),
-    resolveResearchStatus((await getOrgId())),
-    getAgentBackendSettings((await getOrgId())),
+    hasDataSourceSetup(orgId),
+    hasPrimaryProviderSetup(orgId),
+    resolveResearchStatus(orgId),
+    getAgentBackendSettings(orgId),
   ]);
 
   const cards = [

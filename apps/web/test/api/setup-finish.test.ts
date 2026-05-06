@@ -1,5 +1,5 @@
 /**
- * /setup/finish contract tests. Asserts the endpoint refuses to flip
+ * /settings/finish contract tests. Asserts the endpoint refuses to flip
  * setup_complete_at when prerequisites aren't met.
  */
 
@@ -48,12 +48,12 @@ async function readSetupCompleteAt(orgId: string): Promise<Date | null> {
   return rows[0]?.ts ?? null;
 }
 
-describeIfDb("/setup/finish", () => {
+describeIfDb("/settings/finish", () => {
   let orgId: string;
-  let POST: typeof import("@/app/setup/finish/route").POST;
+  let POST: typeof import("@/app/settings/finish/route").POST;
 
   beforeAll(async () => {
-    const mod = await import("@/app/setup/finish/route");
+    const mod = await import("@/app/settings/finish/route");
     POST = mod.POST;
   });
 

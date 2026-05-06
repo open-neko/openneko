@@ -393,13 +393,13 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
         });
       }
 
-      const res = await fetch("/setup/finish", { method: "POST" });
+      const res = await fetch("/settings/finish", { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Finish failed");
       toast.success("Setup complete. Now describe your business.");
       // Hard navigation: router.push reuses Next's RSC client cache, which
       // may still have the pre-finish /onboarding response (where it
-      // redirected back to /setup because setup_complete_at was null).
+      // redirected back to /settings because setup_complete_at was null).
       // window.location.assign forces a fresh server fetch.
       window.location.assign("/onboarding");
     } catch (e) {

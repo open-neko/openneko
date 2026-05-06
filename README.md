@@ -50,14 +50,14 @@ pnpm dev               # web + worker
 
 `pnpm bootstrap` sets `AX_SKIP_SKILL_INSTALL=1` for you so `@ax-llm/ax`'s postinstall doesn't write `.claude/skills/` into the repo — we keep those at user scope instead. If you ever invoke `pnpm install` directly, set `AX_SKIP_SKILL_INSTALL=1` in your shell rc.
 
-Then open <http://localhost:3000>. On first boot you're sent to the `/setup` wizard, which walks through:
+Then open <http://localhost:3000>. On first boot you're sent to `/settings`, which renders a linear setup wizard until first-run is finished:
 
 1. Setting an admin DB password (writes to `~/.config/neko/config.json`)
 2. Connecting your customer data source (the GraphJin endpoint from #1 above)
 3. Picking the agent + primary LLM provider
 4. Optional industry-research provider
 
-After `/setup` finishes, the `/onboarding` business wizard becomes reachable, and from then on the briefing surface lives at `/`. Ongoing edits to providers, data source, and agent live under `/settings`.
+After the wizard finishes, the `/onboarding` business wizard becomes reachable, the briefing surface lives at `/`, and `/settings` flips into a card index for ongoing edits to providers, data source, and agent.
 
 The web and worker apps don't read env vars from disk by default. The one allowed knob is `NEXT_PUBLIC_DEMO=true` on the web side — drop it into `apps/web/.env.local` (see [apps/web/.env.example](apps/web/.env.example)) to flip into the canned-mock briefing flow for screenshots / video without real data. The `NEXT_PUBLIC_` prefix lets both server and client code read the same flag; the legacy `DEMO=true` still works server-side for backward compatibility. All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
 
@@ -82,7 +82,7 @@ Compose has no parameterized variables. Port `5432:5432` is fixed; if it conflic
 
 ### First-run state
 
-No org or data-source rows are seeded. The app's `getOrgId()` auto-bootstraps a single organization row (random UUID, name `"My Workspace"`) the first time it runs, and the `/setup` wizard creates the `data_source` row when you paste your GraphJin URL.
+No org or data-source rows are seeded. The app's `getOrgId()` auto-bootstraps a single organization row (random UUID, name `"My Workspace"`) the first time it runs, and the `/settings` setup wizard creates the `data_source` row when you paste your GraphJin URL.
 
 ### Optional: vendored AdventureWorks + GraphJin
 
@@ -100,7 +100,7 @@ What it does on first run:
 - Runs a one-shot `adventureworks-init` sidecar ([db/load-adventureworks.sh](db/load-adventureworks.sh) → [apps/worker/scripts/load-adventureworks.ts](apps/worker/scripts/load-adventureworks.ts)) that downloads Microsoft's [AdventureWorks-oltp-install-script.zip](https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks-oltp-install-script.zip), converts the BCP-formatted CSVs to tab-delimited, then loads [db/seeds/dev/adventureworks-install.sql](db/seeds/dev/adventureworks-install.sql) (a vendored copy of [lorint/AdventureWorks-for-Postgres](https://github.com/lorint/AdventureWorks-for-Postgres)) into a fresh `adventureworks` database
 - Starts `graphjin` ([dosco/graphjin](https://hub.docker.com/r/dosco/graphjin) v3.18.10) on `localhost:8080`, configured from [db/graphjin/dev.example.yml](db/graphjin/dev.example.yml)
 
-When prompted by the `/setup` wizard for a data source, point it at:
+When prompted by the `/settings` setup wizard for a data source, point it at:
 
 - GraphQL: `http://host.docker.internal:8080/api/v1/graphql`
 - MCP: `http://host.docker.internal:8080/api/v1/mcp`

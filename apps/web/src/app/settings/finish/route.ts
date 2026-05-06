@@ -40,7 +40,7 @@ export async function POST() {
   // throws "static generation store missing".
   try {
     revalidatePath("/onboarding");
-    revalidatePath("/setup");
+    revalidatePath("/settings");
   } catch {}
 
   return NextResponse.json({ ok: true });
