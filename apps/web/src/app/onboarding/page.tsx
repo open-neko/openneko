@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { db, eq, onboarding_wizard, organization } from "@neko/db";
 import { getOrgId } from "@/lib/db";
@@ -49,5 +50,9 @@ export default async function OnboardingPage() {
     priorities: row?.priorities ?? [],
   };
 
-  return <OnboardingWizard initial={initial} />;
+  return (
+    <Suspense fallback={null}>
+      <OnboardingWizard initial={initial} />
+    </Suspense>
+  );
 }
