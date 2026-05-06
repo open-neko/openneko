@@ -159,7 +159,7 @@ export default function ProcessingPage() {
       <div className="root" style={{ paddingTop: 120, textAlign: "center" }}>
         <div className="brand" style={{ justifyContent: "center" }}>
           <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-          <span className="brand-name">Neko</span>
+          <span className="brand-name">OpenNeko</span>
         </div>
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
@@ -334,7 +334,7 @@ function ProfileEmpty() {
         Your business profile is being assembled
       </div>
       <div className="pm-p" style={{ color: "var(--text2)" }}>
-        Neko reads what you shared in onboarding plus signals from your connected
+        OpenNeko reads what you shared in onboarding plus signals from your connected
         data sources. The profile will appear here as soon as it&apos;s ready.
       </div>
     </div>
@@ -358,7 +358,7 @@ function Brand() {
   return (
     <div className="brand" style={{ justifyContent: "center", animation: "fadeUp 0.5s ease both" }}>
       <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-      <span className="brand-name">Neko</span>
+      <span className="brand-name">OpenNeko</span>
     </div>
   );
 }

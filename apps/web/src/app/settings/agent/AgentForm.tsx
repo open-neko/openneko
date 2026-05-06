@@ -148,7 +148,7 @@ export default function AgentForm({
         <div>
           <div className="brand">
             <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">Neko</span>
+            <span className="brand-name">OpenNeko</span>
           </div>
           <div className="greet" style={{ marginTop: 28 }}>Agent.</div>
           <div className="greet-sub">

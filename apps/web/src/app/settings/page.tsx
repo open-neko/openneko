@@ -26,7 +26,7 @@ export default async function SettingsIndex() {
     {
       href: "/settings/data",
       title: "Data source",
-      copy: "GraphQL endpoint Neko reads business data from.",
+      copy: "GraphQL endpoint OpenNeko reads business data from.",
       status: dataReady ? "Configured" : "Not set",
       statusOk: dataReady,
     },
@@ -55,7 +55,7 @@ export default async function SettingsIndex() {
         <div>
           <div className="brand">
             <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">Neko</span>
+            <span className="brand-name">OpenNeko</span>
           </div>
           <div className="greet" style={{ marginTop: 28 }}>Workspace settings.</div>
           <div className="greet-sub">

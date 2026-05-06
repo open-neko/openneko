@@ -414,7 +414,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
     <div className="root" style={{ paddingTop: 44 }}>
       <div className="brand">
         <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-        <span className="brand-name">Neko</span>
+        <span className="brand-name">OpenNeko</span>
       </div>
 
       <div className="greet" style={{ marginTop: 28 }}>Get your workspace ready.</div>
@@ -428,7 +428,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       {stepName === "password" && (
         <Step
           title="Choose a database password"
-          description="Neko's storage ships with a default password. Pick something only you know — you won't need to enter it again."
+          description="OpenNeko's storage ships with a default password. Pick something only you know — you won't need to enter it again."
         >
           <Field label="New password (min 8 chars)">
             <input
@@ -473,7 +473,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       {stepName === "data" && (
         <Step
           title="Connect your data"
-          description="Point Neko at your GraphJin server. The metric agent uses this for every read."
+          description="Point OpenNeko at your GraphJin server. The metric agent uses this for every read."
         >
           <Field label="GraphJin URL *">
             <input
@@ -486,7 +486,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               }}
             />
             <span className="settings-help">
-              Just the base URL — Neko handles the GraphQL and MCP endpoints automatically.
+              Just the base URL — OpenNeko handles the GraphQL and MCP endpoints automatically.
             </span>
           </Field>
           <Field label="Label">

@@ -110,7 +110,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
     <div className="root" style={{ paddingTop: 60 }}>
       <div className="brand">
         <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-        <span className="brand-name">Neko</span>
+        <span className="brand-name">OpenNeko</span>
       </div>
 
       <div className="greet" style={{ marginTop: 32 }}>Let&apos;s set you up.</div>

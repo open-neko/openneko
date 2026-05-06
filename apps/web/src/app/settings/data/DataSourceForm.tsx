@@ -82,10 +82,10 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
         <div>
           <div className="brand">
             <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">Neko</span>
+            <span className="brand-name">OpenNeko</span>
           </div>
           <div className="greet" style={{ marginTop: 28 }}>Data source.</div>
-          <div className="greet-sub">GraphQL endpoint Neko reads business data from.</div>
+          <div className="greet-sub">GraphQL endpoint OpenNeko reads business data from.</div>
         </div>
         <Link className="settings-backlink inline-flex items-center gap-2 whitespace-nowrap" href="/settings">
           <span aria-hidden="true" className="settings-backlink-arrow text-base leading-none">←</span>
@@ -104,7 +104,7 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
               onChange={(e) => setData((p) => ({ ...p, rootUrl: e.target.value }))}
             />
             <span className="settings-help">
-              Just the base URL — Neko handles the GraphQL and MCP endpoints automatically.
+              Just the base URL — OpenNeko handles the GraphQL and MCP endpoints automatically.
             </span>
           </label>
           <label className="settings-field">

@@ -108,11 +108,11 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
         <div>
           <div className="brand">
             <img className="brand-icon" src="/cat.png" alt="" width={32} height={32} />
-            <span className="brand-name">Neko</span>
+            <span className="brand-name">OpenNeko</span>
           </div>
           <div className="greet" style={{ marginTop: 28 }}>Industry research.</div>
           <div className="greet-sub">
-            Optional. When enabled, Neko enriches the business profile with industry context during onboarding.
+            Optional. When enabled, OpenNeko enriches the business profile with industry context during onboarding.
           </div>
         </div>
         <Link className="settings-backlink inline-flex items-center gap-2 whitespace-nowrap" href="/settings">
