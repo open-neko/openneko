@@ -1,0 +1,57 @@
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Per-package build / install output
+**/node_modules
+**/.next
+**/dist
+**/build
+**/out
+**/.turbo
+**/*.tsbuildinfo
+
+# Logs / scratch
+*.log
+.npm
+.pnpm-store
+**/.cache
+
+# Local-only configs the entrypoint will materialize at runtime instead
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Repo-local agent / Claude config
+.agents
+.claude
+
+# Compose stack artefacts (the production image doesn't need them)
+compose.yml
+compose.adventureworks.yml
+db/graphjin/dev.yml
+
+# Dev docs & samples not needed at runtime
+docs
+adventureworks-onboarding.md
+README.md
+LICENSE
+
+# Tests — image is for production; keeps build context small
+**/test
+**/*.test.ts
+**/*.test.tsx
+**/vitest.config.ts
+**/vitest.e2e.config.ts
+
+# Don't recursively COPY ourselves. entrypoint.sh is needed by the
+# Dockerfile's COPY step, so it stays in the build context.
+Dockerfile
+.dockerignore
+cloudbuild.yaml
