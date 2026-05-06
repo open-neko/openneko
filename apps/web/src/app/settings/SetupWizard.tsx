@@ -796,14 +796,17 @@ const GRAPHQL_SUFFIX = "/api/v1/graphql";
 const MCP_SUFFIX = "/api/v1/mcp";
 
 function deriveEndpoints(rootUrl: string): { graphqlUrl: string; mcpUrl: string } {
-  const root = rootUrl.trim().replace(/\/+$/, "");
+  const root = deriveRoot(rootUrl);
   return { graphqlUrl: `${root}${GRAPHQL_SUFFIX}`, mcpUrl: `${root}${MCP_SUFFIX}` };
 }
 
-function deriveRoot(graphqlUrl: string): string {
-  const trimmed = graphqlUrl.trim().replace(/\/+$/, "");
-  if (trimmed.toLowerCase().endsWith(GRAPHQL_SUFFIX)) {
-    return trimmed.slice(0, -GRAPHQL_SUFFIX.length);
-  }
-  return trimmed;
+// Accept whatever the user pastes — bare root, trailing slash, or a full
+// GraphJin endpoint URL — and reduce it to a clean root so deriveEndpoints
+// can append the canonical suffixes without doubling them.
+function deriveRoot(input: string): string {
+  let s = input.trim().replace(/\/+$/, "");
+  const lower = s.toLowerCase();
+  if (lower.endsWith(GRAPHQL_SUFFIX)) s = s.slice(0, -GRAPHQL_SUFFIX.length);
+  else if (lower.endsWith(MCP_SUFFIX)) s = s.slice(0, -MCP_SUFFIX.length);
+  return s.replace(/\/+$/, "");
 }
