@@ -12,7 +12,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { dbReachable } from "./_helpers";
-import { buildConnectionString } from "../../src/connection";
+import { buildPoolConfig } from "../../src/connection";
 import { pool } from "../../src";
 
 const reachable = await dbReachable();
@@ -30,12 +30,6 @@ function uniqueDbName(): string {
   return `vitest_migrations_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function buildConnectionStringFor(database: string): string {
-  // Reuse the production builder but swap the database segment so we
-  // connect to the temp DB without re-deriving credentials.
-  const base = buildConnectionString();
-  return base.replace(/\/[^/]+(?=$|\?)/, `/${database}`);
-}
 
 async function withTempDb<T>(
   fn: (client: pg.Client) => Promise<T>,
@@ -48,7 +42,7 @@ async function withTempDb<T>(
     adminClient.release();
   }
 
-  const tempClient = new pg.Client({ connectionString: buildConnectionStringFor(dbName) });
+  const tempClient = new pg.Client(buildPoolConfig({ database: dbName }));
   await tempClient.connect();
   try {
     return await fn(tempClient);

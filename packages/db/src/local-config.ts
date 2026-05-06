@@ -33,6 +33,7 @@ export type LocalPgConfig = {
   user?: string;
   password?: string;
   database?: string;
+  sslmode?: string;
 };
 
 export type LocalConfig = {

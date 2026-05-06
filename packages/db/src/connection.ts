@@ -1,7 +1,7 @@
 /**
- * Postgres connection-string builder.
+ * Postgres pool config builder.
  *
- * No env vars. The connection details come from `~/.config/neko/config.json`
+ * The connection details come from `~/.config/neko/config.json`
  * (written by /setup) merged with hardcoded defaults that match what the
  * docker compose stack ships with:
  *
@@ -16,10 +16,14 @@
  * `ALTER USER neko WITH PASSWORD '<new>'` and writes the new password to
  * the config file. From then on the file's value takes precedence.
  *
- * Production deploys pre-populate `~/.config/neko/config.json` via init container
- * / volume mount / secrets-manager — there is no env override path.
+ * Production deploys pre-populate `~/.config/neko/config.json` via the
+ * Docker entrypoint, which materializes it from NEKO_PG_* env vars.
+ *
+ * `sslmode: "require"` in the config enables TLS with `rejectUnauthorized:
+ * false` (matches Cloud SQL public-IP usage with its self-signed CA).
  */
 
+import type { PoolConfig } from "pg";
 import { readLocalConfig } from "./local-config";
 
 const DEFAULT_PG = {
@@ -30,12 +34,20 @@ const DEFAULT_PG = {
   database: "neko",
 } as const;
 
-export function buildConnectionString(): string {
+export function buildPoolConfig(overrides: { database?: string } = {}): PoolConfig {
   const cfg = readLocalConfig().pg ?? {};
-  const host = cfg.host ?? DEFAULT_PG.host;
-  const port = cfg.port ?? DEFAULT_PG.port;
-  const user = cfg.user ?? DEFAULT_PG.user;
-  const password = cfg.password ?? DEFAULT_PG.password;
-  const database = cfg.database ?? DEFAULT_PG.database;
-  return `postgres://${user}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+  const poolCfg: PoolConfig = {
+    host: cfg.host ?? DEFAULT_PG.host,
+    port: cfg.port ?? DEFAULT_PG.port,
+    user: cfg.user ?? DEFAULT_PG.user,
+    password: cfg.password ?? DEFAULT_PG.password,
+    database: overrides.database ?? cfg.database ?? DEFAULT_PG.database,
+    max: 10,
+  };
+
+  if (cfg.sslmode === "require") {
+    poolCfg.ssl = { rejectUnauthorized: false };
+  }
+
+  return poolCfg;
 }

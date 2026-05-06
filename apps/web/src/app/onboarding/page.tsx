@@ -1,17 +1,15 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { db, eq, onboarding_wizard, organization } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 import { getSetupCompleteAt } from "@/lib/org-state";
 import OnboardingWizard, { type WizardInitial } from "./OnboardingWizard";
 
-// Tombstone for the auto-create stub in `getOrgId()`. When the org has
-// never been named, prefill the wizard's company name field with empty
-// so the required-validation kicks in instead of letting the user submit
-// the placeholder.
 const ORG_NAME_STUB = "My Workspace";
 
 export default async function OnboardingPage() {
+  await connection();
   // Single gate: business onboarding only opens after admin setup is done.
   // /setup writes setup_complete_at on its Finish handler. Mixing the
   // 3-predicate config check here used to push the business user into

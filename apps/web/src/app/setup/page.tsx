@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { hasCustomPassword } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 import { getSetupCompleteAt } from "@/lib/org-state";
@@ -21,6 +22,7 @@ import SetupWizard from "./SetupWizard";
  * ongoing-edits surface where each concern has its own page.
  */
 export default async function SetupPage() {
+  await connection();
   const orgId = await getOrgId();
   const setupCompleteAt = await getSetupCompleteAt(orgId);
   if (setupCompleteAt) {

@@ -5,11 +5,11 @@
  * and the boss singleton are aligned. Backed by the same Postgres as the
  * Drizzle client; pg-boss auto-creates its `pgboss.*` schema on first start.
  *
- * Connection comes from buildConnectionString() (see ./connection.ts).
+ * Connection comes from buildPoolConfig() (see ./connection.ts).
  */
 
 import PgBoss from "pg-boss";
-import { buildConnectionString } from "./connection";
+import { buildPoolConfig } from "./connection";
 
 export const QUEUE = {
   BUSINESS_PROFILE_BUILD: "business_profile_build",
@@ -42,7 +42,7 @@ export async function boss(): Promise<PgBoss> {
   if (_starting) return _starting;
   _starting = (async () => {
     const instance = new PgBoss({
-      connectionString: buildConnectionString(),
+      ...buildPoolConfig(),
       // Keep retention conservative for a CXO briefing tool — failed jobs
       // stay 7 days for forensic value, completed jobs purge sooner.
       retentionDays: 7,

@@ -5,7 +5,7 @@
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { buildConnectionString } from "./connection";
+import { buildPoolConfig } from "./connection";
 import * as schema from "./schema";
 
 export { schema };
@@ -41,7 +41,7 @@ let _db: NodePgDatabase<typeof schema> | null = null;
 
 export function pool(): pg.Pool {
   if (_pool) return _pool;
-  _pool = new pg.Pool({ connectionString: buildConnectionString(), max: 10 });
+  _pool = new pg.Pool(buildPoolConfig());
   return _pool;
 }
 

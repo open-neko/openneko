@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import AppHeader from "@/components/AppHeader";
 import { getOrgId } from "@/lib/db";
 import { hasDataSourceSetup } from "@/lib/data-source-settings";
@@ -16,6 +17,7 @@ import { getAgentBackendSettings } from "@/lib/agent-backend-settings";
  * persona experience.
  */
 export default async function SettingsIndex() {
+  await connection();
   const [dataReady, primaryReady, researchStatus, agent] = await Promise.all([
     hasDataSourceSetup((await getOrgId())),
     hasPrimaryProviderSetup((await getOrgId())),
