@@ -23,4 +23,9 @@ export {
   type AgentConcurrency,
 } from "./agent-backend-resolver";
 export { cancelAllAgents, registerAgentCanceller } from "./agent-shutdown";
+export {
+  UpstreamProviderError,
+  detectUpstreamError,
+} from "./agent-error";
 export { provisionHostConfig } from "./host-provision";
+export * from "./work";

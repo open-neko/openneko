@@ -29,6 +29,7 @@ import {
   cancelAllAgents,
   provisionHostConfig,
   resolveAgentConcurrency,
+  UpstreamProviderError,
   verifyAiCredentials,
 } from "@neko/llm";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
@@ -106,6 +107,18 @@ function makeHandler<P extends ProcessingJobPayload>(
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await markFailed(processingJobId, msg);
+          // Upstream provider errors (Gemini 503, etc.) are not worth
+          // retrying — the same overloaded backend will reject the next
+          // attempt the same way. Mark failed in our table, return
+          // cleanly so pg-boss treats the job as completed and skips
+          // its retry loop. The user can re-run via the card retry
+          // button when ready.
+          if (e instanceof UpstreamProviderError) {
+            console.warn(
+              `[worker] job ${processingJobId} upstream provider unavailable; skipping pg-boss retry: ${msg}`,
+            );
+            return;
+          }
           console.warn(
             `[worker] job ${processingJobId} attempt failed; pg-boss may retry: ${msg}`,
           );
