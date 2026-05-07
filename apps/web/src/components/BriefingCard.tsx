@@ -5,6 +5,22 @@ import Chart from "./Chart";
 import type { ChartDataPoint } from "./Chart";
 import KpiHeadline from "./KpiHeadline";
 
+async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
+  const lines: string[] = [];
+  if (ins.text) lines.push(ins.text);
+  if (ins.metric || ins.label) {
+    lines.push(`${ins.metric}${ins.label ? ` (${ins.label})` : ""}`.trim());
+  }
+  if (ins.detail) lines.push(ins.detail);
+  const text = lines.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard write can fail in non-secure contexts or older browsers.
+    // Silent — the user will notice nothing landed in their clipboard.
+  }
+}
+
 const MOOD_STYLES: Record<string, { bg: string; dot: string }> = {
   good: { bg: "#E8F5EC", dot: "#4CAF82" },
   watch: { bg: "#FFF4E5", dot: "#E9A23B" },
@@ -77,21 +93,35 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
         </div>
       </div>
       <div className="iactions">
-        {state === "failed" && onRetry && (
+        {onRetry && ins.metricId && (
           <button
             className="ipin"
             onClick={handleRetry}
             disabled={retrying}
-            title="Retry this metric"
+            title="Re-run this metric"
+            aria-label="Re-run this metric"
             style={{ marginRight: 6 }}
           >
-            {retrying ? "↻" : "Retry"}
+            <span style={{ display: "inline-block", transform: retrying ? "rotate(0deg)" : "none", animation: retrying ? "spin 0.9s linear infinite" : "none" }}>↻</span>
           </button>
         )}
         <button
           className="ipin"
+          onClick={async (e) => {
+            e.stopPropagation();
+            await copyCardToClipboard(ins);
+          }}
+          title="Copy card text"
+          aria-label="Copy card text"
+          style={{ marginRight: 6 }}
+        >
+          ⧉
+        </button>
+        <button
+          className="ipin"
           onClick={(e) => { e.stopPropagation(); onDismiss(); }}
           title="Dismiss"
+          aria-label="Dismiss"
         >
           ✕
         </button>
