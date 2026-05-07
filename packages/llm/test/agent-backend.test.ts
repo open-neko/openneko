@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_BACKEND_IDS,
   AGENT_BACKEND_OPTIONS,
-  AGENT_DEFAULT_CLAUDE_AGENT_CAP,
   AGENT_DEFAULT_GLOBAL_CAP,
   AgentBackendConfigError,
   isAgentBackendId,
@@ -38,15 +37,9 @@ describe("AGENT_BACKEND_OPTIONS / AGENT_BACKEND_IDS integrity", () => {
   });
 });
 
-describe("default concurrency caps", () => {
+describe("default concurrency cap", () => {
   it("globalCap default is positive", () => {
     expect(AGENT_DEFAULT_GLOBAL_CAP).toBeGreaterThan(0);
-  });
-  it("claudeAgentCap default is positive", () => {
-    expect(AGENT_DEFAULT_CLAUDE_AGENT_CAP).toBeGreaterThan(0);
-  });
-  it("claudeAgentCap is <= globalCap (sane defaults; SDK is in-process)", () => {
-    expect(AGENT_DEFAULT_CLAUDE_AGENT_CAP).toBeLessThanOrEqual(AGENT_DEFAULT_GLOBAL_CAP);
   });
 });
 

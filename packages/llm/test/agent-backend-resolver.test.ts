@@ -22,7 +22,6 @@ import {
   resolveAgentConcurrency,
 } from "../src/agent-backend-resolver";
 import {
-  AGENT_DEFAULT_CLAUDE_AGENT_CAP,
   AGENT_DEFAULT_GLOBAL_CAP,
   AgentBackendConfigError,
 } from "../src/agent-backend";
@@ -220,39 +219,26 @@ describeIfDb("resolveAgentConcurrency", () => {
   it("returns defaults with no row", async () => {
     const c = await resolveAgentConcurrency(orgId);
     expect(c.globalCap).toBe(AGENT_DEFAULT_GLOBAL_CAP);
-    expect(c.claudeAgentCap).toBe(AGENT_DEFAULT_CLAUDE_AGENT_CAP);
   });
 
-  it("returns DB values when row exists", async () => {
+  it("returns DB value when row exists", async () => {
     await seedProvider(orgId, {
       scope: "agent",
       provider: "hermes",
-      config: { backend: "hermes", globalCap: 50, claudeAgentCap: 12 },
+      config: { backend: "hermes", globalCap: 50 },
     });
     const c = await resolveAgentConcurrency(orgId);
     expect(c.globalCap).toBe(50);
-    expect(c.claudeAgentCap).toBe(12);
   });
 
-  it("malformed values fall back to default", async () => {
+  it("malformed value falls back to default", async () => {
     await seedProvider(orgId, {
       scope: "agent",
       provider: "hermes",
-      config: { backend: "hermes", globalCap: "not-a-number", claudeAgentCap: -5 },
+      config: { backend: "hermes", globalCap: "not-a-number" },
     });
     const c = await resolveAgentConcurrency(orgId);
     expect(c.globalCap).toBe(AGENT_DEFAULT_GLOBAL_CAP);
-    expect(c.claudeAgentCap).toBe(AGENT_DEFAULT_CLAUDE_AGENT_CAP);
-  });
-
-  it("claudeAgentCap of 0 is allowed (means no semaphore)", async () => {
-    await seedProvider(orgId, {
-      scope: "agent",
-      provider: "hermes",
-      config: { backend: "hermes", globalCap: 10, claudeAgentCap: 0 },
-    });
-    const c = await resolveAgentConcurrency(orgId);
-    expect(c.claudeAgentCap).toBe(0);
   });
 });
 

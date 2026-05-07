@@ -24,17 +24,14 @@ export const AGENT_BACKEND_IDS = ["hermes", "claude-agent"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
 /**
- * Default concurrency caps for the metric agent. Overridable per-org via
+ * Default concurrency cap for the metric agent. Overridable per-org via
  * /settings/agent (persisted in llm_provider_config scope='agent').
  *
- * - globalCap: pg-boss `batchSize` for the metric_refresh queue. Bounds
- *   how many jobs the worker pulls per poll.
- * - claudeAgentCap: in-process semaphore guarding concurrent claude-agent
- *   runs. The Hermes path is subprocess-based and doesn't need a separate
- *   cap (the global cap already bounds it). 0 disables the semaphore.
+ * Realized as N pg-boss workers (each batchSize=1) on the metric_refresh
+ * queue and as the size of the in-process semaphore on the claude-agent
+ * path. Single knob, applied uniformly regardless of backend.
  */
 export const AGENT_DEFAULT_GLOBAL_CAP = 20;
-export const AGENT_DEFAULT_CLAUDE_AGENT_CAP = 8;
 
 export const AGENT_BACKEND_OPTIONS = [
   {

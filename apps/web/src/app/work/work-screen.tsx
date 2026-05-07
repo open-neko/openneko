@@ -1,7 +1,6 @@
 "use client";
 
 import "@/a2ui/components";
-import Link from "next/link";
 import {
   ArrowUp,
   Loader2,
@@ -542,9 +541,6 @@ export default function WorkScreen() {
                   Structured analysis when it helps, plain chat when it doesn&apos;t.
                 </div>
               </div>
-              <Link href="/settings/agent" className="settings-link">
-                Agent settings
-              </Link>
             </div>
 
             <div className="work-transcript">

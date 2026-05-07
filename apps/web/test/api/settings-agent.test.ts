@@ -87,18 +87,17 @@ describeIfDb("/api/settings/agent", () => {
     await pool().end();
   });
 
-  it("GET returns the default payload (hermes, 20, 8) when no row", async () => {
+  it("GET returns the default payload (hermes, 20) when no row", async () => {
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     const body = res.body as {
-      agent: { backend: string; globalCap: number; claudeAgentCap: number; source: string };
+      agent: { backend: string; globalCap: number; source: string };
       options: unknown[];
     };
     expect(body.agent).toMatchObject({
       source: "default",
       backend: "hermes",
       globalCap: 20,
-      claudeAgentCap: 8,
     });
     expect(body.options.length).toBeGreaterThanOrEqual(2);
   });
@@ -106,7 +105,7 @@ describeIfDb("/api/settings/agent", () => {
   it("PUT { backend: 'hermes' } persists and calls provisionHostConfig", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
-      body: { backend: "hermes", globalCap: 30, claudeAgentCap: 5 },
+      body: { backend: "hermes", globalCap: 30 },
     });
     expect(res.status).toBe(200);
     const body = res.body as { backend: string; globalCap: number };

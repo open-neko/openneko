@@ -36,7 +36,7 @@ describe("acquireAgentSlot — hermes", () => {
 });
 
 describe("acquireAgentSlot — claude-agent", () => {
-  it("caps concurrent acquires at claudeAgentCap (cap=2)", async () => {
+  it("caps concurrent acquires at semaphore capacity (cap=2)", async () => {
     _setClaudeSdkCapacityForTesting(2);
 
     const r1 = await acquireAgentSlot("claude-agent");

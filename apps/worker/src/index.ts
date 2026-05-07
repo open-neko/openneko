@@ -195,7 +195,7 @@ console.log(
 
 const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 console.log(
-  `[worker] concurrency: globalCap=${concurrency.globalCap} claudeAgentCap=${concurrency.claudeAgentCap} (configure in /settings/agent; restart required)`,
+  `[worker] concurrency: globalCap=${concurrency.globalCap} (configure in /settings/agent; restart required)`,
 );
 
 const b = await boss();

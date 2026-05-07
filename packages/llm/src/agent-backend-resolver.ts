@@ -14,7 +14,6 @@
 
 import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
-  AGENT_DEFAULT_CLAUDE_AGENT_CAP,
   AGENT_DEFAULT_GLOBAL_CAP,
   AgentBackendConfigError,
   isAgentBackendId,
@@ -78,7 +77,6 @@ export async function resolveAgentBackendId(orgId: string): Promise<AgentBackend
 
 export type AgentConcurrency = {
   globalCap: number;
-  claudeAgentCap: number;
 };
 
 function readPositiveInt(
@@ -103,10 +101,9 @@ function readPositiveInt(
  */
 export async function resolveAgentConcurrency(orgId: string): Promise<AgentConcurrency> {
   const row = await loadRow(orgId, "agent");
-  const cfg = (row?.config ?? {}) as { globalCap?: unknown; claudeAgentCap?: unknown };
+  const cfg = (row?.config ?? {}) as { globalCap?: unknown };
   return {
     globalCap: readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP),
-    claudeAgentCap: readPositiveInt(cfg.claudeAgentCap, AGENT_DEFAULT_CLAUDE_AGENT_CAP, { min: 0 }),
   };
 }
 

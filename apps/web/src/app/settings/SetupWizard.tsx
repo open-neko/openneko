@@ -40,10 +40,9 @@ type AgentSettingsPayload = {
     source: "org" | "default";
     backend: "hermes" | "claude-agent";
     globalCap: number;
-    claudeAgentCap: number;
   };
   options: readonly AgentBackendOption[];
-  defaults: { globalCap: number; claudeAgentCap: number };
+  defaults: { globalCap: number };
 };
 
 type DataSourcePayload = {
@@ -290,7 +289,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       const agentRes = await fetch("/api/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backend, globalCap: cap, claudeAgentCap: cap }),
+        body: JSON.stringify({ backend, globalCap: cap }),
       });
       if (!agentRes.ok) {
         const body = await agentRes.json();

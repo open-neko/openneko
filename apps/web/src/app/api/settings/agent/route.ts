@@ -17,7 +17,6 @@ export async function PUT(request: NextRequest) {
     const saved = await saveAgentBackendDraft((await getOrgId()), {
       backend: String(body.backend ?? ""),
       globalCap: body.globalCap,
-      claudeAgentCap: body.claudeAgentCap,
     });
     // Backend switch may flip the primary provider (auto-coerce to Anthropic
     // for claude-agent). Reprovision so Hermes config matches the new state.

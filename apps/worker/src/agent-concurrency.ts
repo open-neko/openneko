@@ -1,19 +1,16 @@
 /**
- * Per-backend concurrency cap for the metric agent.
+ * In-process concurrency cap for the claude-agent backend.
  *
- * Why: globalCap is realized as N independent pg-boss workers (see
- * apps/worker/src/index.ts), so the queue-level pool is shared across
- * tasks. Inside the JS process, claude-agent additionally needs a
- * smaller cap because it runs in-process via the Anthropic SDK and
- * shares the worker's event loop / V8 heap. This semaphore protects
- * the worker from a thundering herd on the SDK path.
+ * pg-boss already bounds the metric_refresh queue (N workers, batchSize=1
+ * each) so the queue-level cap is the same. This semaphore is a
+ * defense-in-depth bound for the in-process Anthropic SDK path that shares
+ * the worker's event loop / V8 heap — without it a thundering herd can
+ * exhaust connections before pg-boss ever rebalances.
  *
- * Hermes is no-op here — each run is its own subprocess, so the only
- * bound it needs is globalCap (already enforced by the pg-boss worker
- * registrations).
+ * Hermes is a subprocess per run and is no-op here; pg-boss alone bounds it.
  *
- * Cap source: DB scope='agent' on the admin org → default (8). Source of
- * truth is /settings/agent. Changes require a worker restart.
+ * Cap source: DB scope='agent'.config.globalCap → default. Source of truth
+ * is /settings/agent. Changes require a worker restart.
  */
 
 import { getOrgId } from "@neko/db";
@@ -51,8 +48,8 @@ let claudeAgentSem: Semaphore | null = null;
 async function getClaudeSdkSemaphore(): Promise<Semaphore> {
   if (claudeAgentSem) return claudeAgentSem;
   const orgId = await getOrgId();
-  const { claudeAgentCap } = await resolveAgentConcurrency(orgId);
-  claudeAgentSem = new Semaphore(claudeAgentCap);
+  const { globalCap } = await resolveAgentConcurrency(orgId);
+  claudeAgentSem = new Semaphore(globalCap);
   return claudeAgentSem;
 }
 
