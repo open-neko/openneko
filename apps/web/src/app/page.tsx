@@ -13,6 +13,7 @@ import type { ChatMsg } from "@/components/ChatSection";
 import InputBar from "@/components/InputBar";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
+import SectionNav from "@/components/SectionNav";
 
 /**
  * What we persist to localStorage per chat message — identity references
@@ -628,6 +629,10 @@ export default function Dashboard() {
     <>
       <div className="root">
         <AppHeader>
+          <SectionNav current="dashboard" />
+        </AppHeader>
+
+        <div className="dash-meta">
           <div className="pills">
             {roles.map((k) => (
               <button key={k} className={`pill${role === k ? " on" : ""}`} onClick={() => setRole(k)}>
@@ -635,24 +640,6 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-        </AppHeader>
-
-        {/* Secondary nav strip — full row beneath the AppHeader so the
-            brand on the right doesn't crowd this group. Stays on one
-            line at any pill count. */}
-        <div className="dash-meta">
-          {gateChecked && !gateError ? (
-            <Link href="/business-profile" className="settings-link">
-              Business Profile
-            </Link>
-          ) : (
-            <span className="settings-link is-disabled" aria-disabled="true">
-              Business Profile
-            </span>
-          )}
-          <Link href="/settings" className="settings-link">
-            Settings
-          </Link>
           <div className="topbar-date">{ds}</div>
         </div>
 

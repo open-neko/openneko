@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import SectionNav from "@/components/SectionNav";
 import Markdown from "react-markdown";
 import type { StageKind } from "@/lib/db";
 
@@ -158,7 +159,9 @@ export default function ProcessingPage() {
       (stageKind ? STAGE_FALLBACK_COPY[stageKind] : "Reading your data sources…");
     return (
       <div className="root" style={{ textAlign: "center" }}>
-        <AppHeader />
+        <AppHeader>
+          <SectionNav current="business-profile" />
+        </AppHeader>
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
         <StageStrip current={stageKind} />
@@ -172,7 +175,9 @@ export default function ProcessingPage() {
 
   return (
     <div className="root">
-      <AppHeader back={{ href: "/", label: "Back to briefing" }} />
+      <AppHeader>
+        <SectionNav current="business-profile" />
+      </AppHeader>
       <div className="greet" style={{ marginTop: 40, animation: "fadeUp 0.5s ease 0.1s both" }}>
         Here&apos;s what we found.
       </div>

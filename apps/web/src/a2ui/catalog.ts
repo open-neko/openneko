@@ -18,6 +18,8 @@ export const CATALOG_ID = "urn:app:catalog:briefing:v1";
 export const ComponentTypes = {
   Briefing: "Briefing",
   BriefingCard: "BriefingCard",
+  MetricCard: "MetricCard",
+  ChatResponse: "ChatResponse",
 } as const;
 
 // Mood enum shared across components

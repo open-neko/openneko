@@ -57,7 +57,7 @@ services:
       GJ_DATABASE_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
       GJ_DATABASE_DBNAME: ${ADVENTUREWORKS_DB:-adventureworks}
     volumes:
-      - ./db/graphjin:/config:ro
+      - ./db/graphjin:/config
     command: ["serve", "--path", "/config"]
 
 volumes:

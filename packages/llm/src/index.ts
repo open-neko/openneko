@@ -24,3 +24,4 @@ export {
 } from "./agent-backend-resolver";
 export { cancelAllAgents, registerAgentCanceller } from "./agent-shutdown";
 export { provisionHostConfig } from "./host-provision";
+export * from "./work";

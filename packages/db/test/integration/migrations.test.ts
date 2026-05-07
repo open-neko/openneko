@@ -2,7 +2,7 @@
  * Migration tests against a real Postgres.
  *
  * Each test creates a fresh, empty database (via the admin connection),
- * applies 0001 + 0002 against it, asserts behaviour, then drops it.
+ * applies the schema migrations against it, asserts behaviour, then drops it.
  * A temp database — not just a schema — is the only way the migration's
  * global pg_constraint guard runs in isolation.
  */
@@ -25,6 +25,10 @@ if (!reachable) {
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
 const M_0001 = join(REPO_ROOT, "db", "migrations", "0001_init.sql");
 const M_0002 = join(REPO_ROOT, "db", "migrations", "0002_agent_backend_and_setup.sql");
+const M_0003 = join(REPO_ROOT, "db", "migrations", "0003_rename_claude_sdk_to_claude_agent.sql");
+const M_0004 = join(REPO_ROOT, "db", "migrations", "0004_drop_organization_plan.sql");
+const M_0005 = join(REPO_ROOT, "db", "migrations", "0005_metric_refresh_status.sql");
+const M_0006 = join(REPO_ROOT, "db", "migrations", "0006_work_runtime.sql");
 
 function uniqueDbName(): string {
   return `vitest_migrations_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -60,6 +64,12 @@ async function withTempDb<T>(
 async function applyFile(client: pg.Client, path: string) {
   const sql = await readFile(path, "utf8");
   await client.query(sql);
+}
+
+async function applyAll(client: pg.Client) {
+  for (const path of [M_0001, M_0002, M_0003, M_0004, M_0005, M_0006]) {
+    await applyFile(client, path);
+  }
 }
 
 describeIfDb("schema migrations", () => {
@@ -180,6 +190,45 @@ describeIfDb("schema migrations", () => {
           ["chk2", scope],
         );
       }
+    });
+  });
+
+  it("0006 creates the work runtime tables", async () => {
+    await withTempDb(async (client) => {
+      await applyAll(client);
+      const tables = await client.query<{ table_name: string }>(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' order by table_name`,
+      );
+      const names = tables.rows.map((row) => row.table_name);
+      for (const expected of [
+        "work_thread",
+        "work_run",
+        "work_message",
+        "work_run_event",
+      ]) {
+        expect(names, `missing ${expected}`).toContain(expected);
+      }
+    });
+  });
+
+  it("0006 enforces one sequence slot per run event", async () => {
+    await withTempDb(async (client) => {
+      await applyAll(client);
+      await client.query(`
+        insert into organization (id, name) values ('work-org', 'Work Org');
+        insert into work_thread (id, org_id, title) values ('00000000-0000-0000-0000-000000000001', 'work-org', 'Thread');
+        insert into work_run (id, org_id, thread_id, backend, status)
+        values ('00000000-0000-0000-0000-000000000002', 'work-org', '00000000-0000-0000-0000-000000000001', 'hermes', 'running');
+        insert into work_run_event (org_id, thread_id, run_id, seq, kind, payload)
+        values ('work-org', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 1, 'status', '{"type":"status","message":"ok"}');
+      `);
+      await expect(
+        client.query(`
+          insert into work_run_event (org_id, thread_id, run_id, seq, kind, payload)
+          values ('work-org', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 1, 'status', '{"type":"status","message":"dup"}')
+        `),
+      ).rejects.toThrow(/unique/i);
     });
   });
 });

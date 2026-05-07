@@ -359,3 +359,103 @@ export const llm_provider_config = pgTable(
     org_idx: index("llm_provider_config_org_idx").on(t.org_id),
   }),
 );
+
+export const work_thread = pgTable(
+  "work_thread",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    backend_state: jsonb("backend_state").notNull().default(sql`'{}'::jsonb`),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+    last_message_at: ts("last_message_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_recent_idx: index("work_thread_org_recent_idx").on(
+      t.org_id,
+      t.last_message_at.desc(),
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+export const work_run = pgTable(
+  "work_run",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => work_thread.id, { onDelete: "cascade" }),
+    backend: text("backend").notNull(),
+    status: text("status").notNull().default("running"),
+    error: text("error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+    finished_at: ts("finished_at"),
+  },
+  (t) => ({
+    thread_created_idx: index("work_run_thread_created_idx").on(
+      t.thread_id,
+      t.created_at.asc(),
+    ),
+  }),
+);
+
+export const work_message = pgTable(
+  "work_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => work_thread.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id").references(() => work_run.id, { onDelete: "set null" }),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    thread_created_idx: index("work_message_thread_created_idx").on(
+      t.thread_id,
+      t.created_at.asc(),
+    ),
+  }),
+);
+
+export const work_run_event = pgTable(
+  "work_run_event",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => work_thread.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    run_seq_unique: uniqueIndex("work_run_event_run_seq_unique").on(
+      t.run_id,
+      t.seq,
+    ),
+    thread_seq_idx: index("work_run_event_thread_seq_idx").on(
+      t.thread_id,
+      t.seq.asc(),
+    ),
+  }),
+);

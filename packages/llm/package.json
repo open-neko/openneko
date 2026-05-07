@@ -19,7 +19,8 @@
     "@ax-llm/ax": "^20.0.0",
     "@neko/db": "workspace:*",
     "google-auth-library": "^10.6.2",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",
