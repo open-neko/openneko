@@ -1,15 +1,298 @@
-import type { AgentBackend, AgentRunOptions } from "../agent-backend";
-import { runHermes } from "../hermes-runner";
+/**
+ * Hermes backend — spawn `hermes -z prompt`. Used by both Dashboard
+ * (sync metric_refresh) and Work (streaming chat). The presence of
+ * `opts.onEvent` flips behavior:
+ *
+ *   - sync mode: cwd is a tmpdir scratch (cleaned up after), retries on
+ *     transport failure, returns final stdout as `finalText`.
+ *   - streaming mode: cwd is the per-org workspace.orgRoot, PATH is
+ *     prepended with workspace.binRoot (graphjin guard), `--skills` is
+ *     forwarded if set, lifecycle events (status, message, error) are
+ *     emitted via onEvent. No retries — Work is one-shot per turn.
+ *
+ * In both modes HERMES_HOME is NOT overridden — Hermes reads its provider
+ * config from the global ~/.hermes/config.yaml (provisionHostConfig writes
+ * it from /settings/agent). Same model on Dashboard and Work, always.
+ */
+
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  type AgentBackend,
+  type AgentRunOptions,
+  type AgentRunResult,
+  type AgentSurfaceMessage,
+} from "../agent-backend";
+import { registerAgentCanceller } from "../agent-shutdown";
+
+function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (!child.pid) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // ESRCH if already exited; ignore.
+  }
+}
+
+const FENCE_RE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
 
 /**
- * Hermes backend — wraps the existing `runHermes` spawn helper. No
- * behavior change; this exists so callers depend on the AgentBackend
- * interface instead of a single implementation.
+ * Tolerant JSON parser. Tries: raw → strip ```json fence → slice
+ * first '{' to last '}'. Throws with a head-of-output excerpt on failure
+ * so the caller can surface a useful error.
+ *
+ * Exported here for the metric-agent path which still parses Hermes'
+ * stdout as a structured JSON blob.
  */
+export function parseJsonFromOutput(raw: string): unknown {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(FENCE_RE);
+  const candidate = (fenced?.[1] ?? trimmed).trim();
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const first = candidate.indexOf("{");
+    const last = candidate.lastIndexOf("}");
+    if (first === -1 || last === -1 || last < first) {
+      throw new Error(
+        `hermes output not parseable as JSON (no object braces found): ${candidate.slice(0, 200)}`,
+      );
+    }
+    return JSON.parse(candidate.slice(first, last + 1));
+  }
+}
+
+const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+
 export class HermesBackend implements AgentBackend {
   readonly id = "hermes" as const;
 
-  run(opts: AgentRunOptions): Promise<string> {
-    return runHermes(opts);
+  async run(opts: AgentRunOptions): Promise<AgentRunResult> {
+    const {
+      prompt,
+      userMessage,
+      timeoutMs = DEFAULT_TIMEOUT_MS,
+      retries = 1,
+      debug = false,
+      tag,
+      workspace,
+      skills,
+      signal,
+      onEvent,
+      backendState = {},
+    } = opts;
+
+    const fullPrompt = userMessage
+      ? `${prompt}\n\nCurrent user message:\n${userMessage}`
+      : prompt;
+
+    const args = ["-z", fullPrompt];
+    if (skills && skills.length > 0) args.push("--skills", skills.join(","));
+
+    if (onEvent) {
+      await onEvent({ type: "status", message: "Hermes is working…" });
+    }
+
+    // Streaming mode (Work): one shot, no retries, fail-soft via result.
+    // Sync mode (Dashboard): retry on transport failure, fail-soft via result.
+    const maxAttempts = onEvent ? 1 : retries + 1;
+    let lastErr: Error | undefined;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const rawText = await spawnOnce({
+          args,
+          timeoutMs,
+          debug,
+          tag,
+          workspace,
+          signal,
+        });
+        let finalText = rawText;
+        if (onEvent) {
+          // Hermes can't call MCP tools, so the prompt asks it to emit
+          // structured cards as a fenced ```neko_a2ui block. Pull those
+          // out into a surface event and strip the fence from the text
+          // we emit/return so the UI doesn't show raw JSON.
+          const parsed = extractSurfaceMessages(rawText);
+          finalText = parsed.text;
+          if (parsed.messages.length > 0) {
+            await onEvent({ type: "surface", messages: parsed.messages });
+          }
+          if (finalText) {
+            await onEvent({ type: "message", role: "assistant", content: finalText });
+          }
+        }
+        return {
+          finalText,
+          status: signal?.aborted ? "cancelled" : "completed",
+          backendState,
+        };
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e));
+        if (debug) {
+          console.warn(
+            `[hermes] attempt ${attempt + 1}/${maxAttempts} failed: ${lastErr.message}`,
+          );
+        }
+      }
+    }
+
+    const message = lastErr?.message ?? "hermes: unknown failure";
+    if (signal?.aborted) {
+      return { finalText: "", status: "cancelled", backendState };
+    }
+    if (onEvent) {
+      await onEvent({ type: "error", message });
+    }
+    return { finalText: "", status: "failed", backendState, error: message };
+  }
+}
+
+type SpawnArgs = {
+  args: string[];
+  timeoutMs: number;
+  debug: boolean;
+  tag: string | undefined;
+  workspace: AgentRunOptions["workspace"];
+  signal: AbortSignal | undefined;
+};
+
+async function spawnOnce({
+  args,
+  timeoutMs,
+  debug,
+  tag,
+  workspace,
+  signal,
+}: SpawnArgs): Promise<string> {
+  // cwd: per-org workspace for streaming (so file tools see org files);
+  // tmp scratch for sync (so concurrent Dashboard runs don't collide).
+  let cwd: string;
+  let cleanupScratch: (() => Promise<void>) | undefined;
+  if (workspace) {
+    cwd = workspace.orgRoot;
+  } else {
+    const safeTag = tag?.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+    cwd = safeTag
+      ? await (async () => {
+          const exact = join(tmpdir(), safeTag);
+          try {
+            await mkdir(exact);
+            return exact;
+          } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+            return mkdtemp(join(tmpdir(), `${safeTag}-`));
+          }
+        })()
+      : await mkdtemp(join(tmpdir(), "neko-hermes-"));
+    cleanupScratch = () =>
+      rm(cwd, { recursive: true, force: true }).catch(() => {});
+  }
+
+  // PATH prepend with the per-run binRoot lets the graphjin guard wrapper
+  // intercept agent calls. Skipped in sync mode (no per-run guard there).
+  const env = workspace
+    ? {
+        ...process.env,
+        PATH: `${workspace.binRoot}:${process.env.PATH || ""}`,
+      }
+    : { ...process.env };
+
+  return new Promise<string>((resolve, reject) => {
+    // detached: true so killing the pgid takes the whole subprocess tree
+    // (Hermes spawns Python venvs / browser tools that re-parent to init
+    // otherwise).
+    const child = spawn("hermes", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd,
+      env,
+      detached: true,
+    });
+    const unregister = registerAgentCanceller(() =>
+      killProcessGroup(child, "SIGKILL"),
+    );
+
+    const onAbort = () => killProcessGroup(child, "SIGTERM");
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let timer: NodeJS.Timeout | null = null;
+    let settled = false;
+
+    const finish = () => {
+      if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", onAbort);
+      unregister();
+      cleanupScratch?.();
+    };
+    const settleResolve = (out: string) => {
+      if (settled) return;
+      settled = true;
+      finish();
+      resolve(out);
+    };
+    const settleReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      finish();
+      reject(err);
+    };
+
+    child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
+    child.stderr.on("data", (c: Buffer) => {
+      stderrChunks.push(c);
+      if (debug) process.stderr.write(c);
+    });
+
+    child.on("error", (e) => {
+      settleReject(new Error(`hermes spawn failed: ${e.message}`));
+    });
+
+    child.on("close", (code) => {
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (code !== 0) {
+        settleReject(
+          new Error(`hermes exited ${code}: ${stderr.slice(-500) || "(no stderr)"}`),
+        );
+        return;
+      }
+      settleResolve(stdout.trim());
+    });
+
+    timer = setTimeout(() => {
+      killProcessGroup(child, "SIGTERM");
+      settleReject(new Error(`hermes timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+}
+
+const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;
+
+/**
+ * Pull a fenced ```neko_a2ui block out of Hermes' stdout, return the
+ * remaining prose as `text` and the parsed messages array. Used in
+ * streaming mode to surface cards as their own event and keep the
+ * chat bubble free of raw JSON.
+ */
+export function extractSurfaceMessages(raw: string): {
+  text: string;
+  messages: AgentSurfaceMessage[];
+} {
+  const match = raw.match(NEKO_A2UI_FENCE_RE);
+  if (!match) return { text: raw.trim(), messages: [] };
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    const messages = Array.isArray(parsed) ? (parsed as AgentSurfaceMessage[]) : [];
+    const text = raw.replace(match[0], "").trim();
+    return { text, messages };
+  } catch {
+    return { text: raw.trim(), messages: [] };
   }
 }

@@ -4,7 +4,7 @@ import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WorkAgentWorkspace } from "./types";
+import type { AgentWorkspace } from "../agent-backend";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILTIN_SKILLS_ROOT = resolve(HERE, "..", "..", "assets", "builtin-skills");
@@ -28,17 +28,12 @@ export function getOrgAgentRoot(orgId: string): string {
   );
 }
 
-export async function ensureOrgWorkspace(orgId: string): Promise<{
-  orgRoot: string;
-  skillsRoot: string;
-  memoryRoot: string;
-  knowledgeRoot: string;
-  uploadsRoot: string;
-  runsRoot: string;
-  claudeProjectRoot: string;
-  claudeConfigRoot: string;
-  hermesHome: string;
-}> {
+export type OrgWorkspaceRoots = Omit<
+  AgentWorkspace,
+  "threadUploadsRoot" | "runRoot" | "artifactRoot" | "binRoot"
+>;
+
+export async function ensureOrgWorkspace(orgId: string): Promise<OrgWorkspaceRoots> {
   const orgRoot = getOrgAgentRoot(orgId);
   const skillsRoot = join(orgRoot, "skills");
   const memoryRoot = join(orgRoot, "memory");
@@ -47,7 +42,6 @@ export async function ensureOrgWorkspace(orgId: string): Promise<{
   const runsRoot = join(orgRoot, "runs");
   const claudeProjectRoot = orgRoot;
   const claudeConfigRoot = join(orgRoot, "claude", "config");
-  const hermesHome = join(orgRoot, "hermes");
 
   for (const dir of [
     orgRoot,
@@ -57,7 +51,6 @@ export async function ensureOrgWorkspace(orgId: string): Promise<{
     uploadsRoot,
     runsRoot,
     claudeConfigRoot,
-    hermesHome,
   ]) {
     await mkdir(dir, { recursive: true });
   }
@@ -65,7 +58,6 @@ export async function ensureOrgWorkspace(orgId: string): Promise<{
   await seedBuiltinSkills(skillsRoot);
   await ensureKnowledgeFiles(knowledgeRoot);
   await ensureLink(join(claudeProjectRoot, ".claude", "skills"), skillsRoot);
-  await ensureLink(join(hermesHome, "skills"), skillsRoot);
 
   return {
     orgRoot,
@@ -76,7 +68,6 @@ export async function ensureOrgWorkspace(orgId: string): Promise<{
     runsRoot,
     claudeProjectRoot,
     claudeConfigRoot,
-    hermesHome,
   };
 }
 
@@ -84,7 +75,7 @@ export async function ensureWorkWorkspace(
   orgId: string,
   threadId: string,
   runId: string,
-): Promise<WorkAgentWorkspace> {
+): Promise<AgentWorkspace> {
   const base = await ensureOrgWorkspace(orgId);
   const threadUploadsRoot = join(base.uploadsRoot, safeSegment(threadId));
   const runRoot = join(base.runsRoot, safeSegment(runId));

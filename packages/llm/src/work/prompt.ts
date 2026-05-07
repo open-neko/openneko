@@ -1,7 +1,6 @@
-import type { AgentBackendId } from "../agent-backend";
-import type { WorkAgentWorkspace, WorkTranscriptMessage } from "./types";
+import type { AgentBackendId, AgentChatMessage, AgentWorkspace } from "../agent-backend";
 
-function formatTranscript(messages: WorkTranscriptMessage[]): string {
+function formatTranscript(messages: AgentChatMessage[]): string {
   if (messages.length === 0) return "No prior messages.";
   return messages
     .map((message, index) => {
@@ -13,8 +12,8 @@ function formatTranscript(messages: WorkTranscriptMessage[]): string {
 
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
-  workspace: WorkAgentWorkspace;
-  messages: WorkTranscriptMessage[];
+  workspace: AgentWorkspace;
+  messages: AgentChatMessage[];
   currentUserMessage: string;
   supportsCardTool: boolean;
   supportsSkillTool: boolean;

@@ -18,7 +18,7 @@
  */
 
 import { resolveAgentBackend } from "./agent-backend-resolver";
-import { parseJsonFromOutput } from "./hermes-runner";
+import { parseJsonFromOutput } from "./agent-backends/hermes";
 
 export type BootstrapMetric = {
   role: string;
@@ -147,11 +147,15 @@ export async function runBootstrapMetricsWriter(args: {
 
   onProgress?.("Generating bootstrap metrics");
   const startedAt = Date.now();
-  const stdout = await backend.run({
+  const result = await backend.run({
     prompt,
     tag: jobId ?? orgId,
     debug: debug === true,
   });
+  if (result.status !== "completed") {
+    throw new Error(result.error ?? `${backend.id} returned status=${result.status}`);
+  }
+  const stdout = result.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
 
   const parsed = parseJsonFromOutput(stdout) as { metrics?: unknown };

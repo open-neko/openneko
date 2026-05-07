@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseJsonFromOutput } from "../src/hermes-runner";
+import { parseJsonFromOutput } from "../src/agent-backends/hermes";
 
 describe("parseJsonFromOutput", () => {
   it("parses raw JSON object", () => {

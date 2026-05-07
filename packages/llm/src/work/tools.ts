@@ -1,12 +1,12 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { writeWorkSkill } from "./skills";
-import type { WorkEvent, WorkSurfaceMessage } from "./types";
+import type { AgentEvent, AgentSurfaceMessage } from "../agent-backend";
 
 const a2uiMessageSchema = z.object({ version: z.literal("v0.9") }).passthrough();
 
 export function buildRenderCardsServer(
-  emit: (event: WorkEvent) => Promise<void> | void,
+  emit: (event: AgentEvent) => Promise<void> | void,
 ) {
   const renderCards = tool(
     "render_cards",
@@ -19,7 +19,7 @@ export function buildRenderCardsServer(
       messages: z.array(a2uiMessageSchema).min(1),
     },
     async (args) => {
-      const messages = args.messages as WorkSurfaceMessage[];
+      const messages = args.messages as AgentSurfaceMessage[];
       await emit({ type: "surface", messages });
       return {
         content: [

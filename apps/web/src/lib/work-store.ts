@@ -11,7 +11,7 @@ import {
   work_run_event,
   work_thread,
 } from "@neko/db";
-import type { AgentBackendId, WorkEvent } from "@neko/llm";
+import type { AgentBackendId, AgentEvent } from "@neko/llm";
 
 export type WorkThreadSummary = {
   id: string;
@@ -49,7 +49,7 @@ export type WorkThreadBundle = {
   };
   runs: WorkRunRecord[];
   messages: WorkMessageRecord[];
-  eventsByRun: Record<string, WorkEvent[]>;
+  eventsByRun: Record<string, AgentEvent[]>;
 };
 
 export async function listWorkThreads(orgId: string): Promise<WorkThreadSummary[]> {
@@ -176,7 +176,7 @@ export async function appendWorkRunEvent(args: {
   threadId: string;
   runId: string;
   seq: number;
-  event: WorkEvent;
+  event: AgentEvent;
 }) {
   await db().insert(work_run_event).values({
     org_id: args.orgId,
@@ -188,7 +188,7 @@ export async function appendWorkRunEvent(args: {
   });
 }
 
-export async function getWorkRunEvents(orgId: string, runId: string): Promise<WorkEvent[]> {
+export async function getWorkRunEvents(orgId: string, runId: string): Promise<AgentEvent[]> {
   const rows = await db()
     .select({
       payload: work_run_event.payload,
@@ -201,7 +201,7 @@ export async function getWorkRunEvents(orgId: string, runId: string): Promise<Wo
       ),
     )
     .orderBy(asc(work_run_event.seq));
-  return rows.map((row) => row.payload as WorkEvent);
+  return rows.map((row) => row.payload as AgentEvent);
 }
 
 export async function getWorkThreadBundle(
@@ -248,10 +248,10 @@ export async function getWorkThreadBundle(
       .orderBy(asc(work_run_event.seq)),
   ]);
 
-  const eventsByRun: Record<string, WorkEvent[]> = {};
+  const eventsByRun: Record<string, AgentEvent[]> = {};
   for (const row of events) {
     if (!eventsByRun[row.runId]) eventsByRun[row.runId] = [];
-    eventsByRun[row.runId].push(row.payload as WorkEvent);
+    eventsByRun[row.runId].push(row.payload as AgentEvent);
   }
 
   return {

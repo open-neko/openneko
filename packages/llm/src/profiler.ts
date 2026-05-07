@@ -206,11 +206,15 @@ export async function runProfiler(args: {
   // "running" beat now and one "drafted" beat at the end.
   if (onProgress) onProgress("Running profiler agent (1–2 minutes)…");
   const startedAt = Date.now();
-  const stdout = await backend.run({
+  const result = await backend.run({
     prompt,
     tag: jobId ?? orgId,
     debug: debug === true,
   });
+  if (result.status !== "completed") {
+    throw new Error(result.error ?? `${backend.id} returned status=${result.status}`);
+  }
+  const stdout = result.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
   console.log(
     `[profiler] org=${orgId} done in ${elapsedSec}s (${stdout.length} chars)`,

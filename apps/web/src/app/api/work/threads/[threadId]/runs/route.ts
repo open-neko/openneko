@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  buildRenderCardsServer,
+  buildSkillBuilderServer,
+  buildWorkPrompt,
   ensureGraphjinGuard,
   ensureWorkWorkspace,
+  resolveAgentBackend,
   resolveBinaryOnPath,
-  resolveWorkAgentBackend,
-  type WorkEvent,
-  type WorkTranscriptMessage,
+  type AgentChatMessage,
+  type AgentEvent,
 } from "@neko/llm";
 import { getOrgId } from "@/lib/db";
 import { registerWorkRun } from "@/lib/work-run-registry";
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
-  const backend = await resolveWorkAgentBackend(orgId);
+  const backend = await resolveAgentBackend(orgId);
   const run = await createWorkRun(orgId, threadId, backend.id);
   const workspace = await ensureWorkWorkspace(orgId, threadId, run.id);
   const graphjinBinary = await resolveBinaryOnPath("graphjin");
@@ -100,7 +103,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           }
         };
 
-        const emit = async (event: WorkEvent) => {
+        const emit = async (event: AgentEvent) => {
           seq += 1;
           await appendWorkRunEvent({
             orgId,
@@ -125,24 +128,38 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         void (async () => {
           try {
+            const supportsCardTool = backend.id === "claude-agent";
+            const supportsSkillTool = backend.id === "claude-agent";
+            const messages: AgentChatMessage[] = bundle.messages.map((row) => ({
+              id: row.id,
+              role: row.role,
+              content: row.content,
+              runId: row.runId,
+              createdAt: row.createdAt,
+            }));
+            const prompt = buildWorkPrompt({
+              backend: backend.id,
+              workspace,
+              messages,
+              currentUserMessage: message,
+              supportsCardTool,
+              supportsSkillTool,
+            });
+            const mcpServers = supportsCardTool
+              ? {
+                  neko_ui: buildRenderCardsServer(emit),
+                  neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
+                }
+              : undefined;
             const result = await backend.run({
-              orgId,
-              threadId,
-              runId: run.id,
+              prompt,
+              userMessage: message,
               workspace,
               backendState: bundle.thread.backendState,
-              messages: bundle.messages.map(
-                (row): WorkTranscriptMessage => ({
-                  id: row.id,
-                  role: row.role,
-                  content: row.content,
-                  runId: row.runId,
-                  createdAt: row.createdAt,
-                }),
-              ),
-              currentUserMessage: message,
               signal: abortController.signal,
               onEvent: emit,
+              mcpServers,
+              tag: `work ${run.id}`,
             });
             if (result.backendState && result.backendState !== bundle.thread.backendState) {
               await setWorkThreadBackendState(threadId, result.backendState);

@@ -1,14 +1,18 @@
 /**
- * Claude Agent backend — drives Anthropic's @anthropic-ai/claude-agent-sdk
- * (which itself spawns the Claude Code CLI as a subprocess and proxies messages
- * over stdio). From our worker's perspective it's another opaque "give it a
- * prompt, get a string" backend.
+ * Claude Agent backend — wraps the @anthropic-ai/claude-agent-sdk (which
+ * itself spawns the Claude Code CLI as a subprocess and proxies messages
+ * over stdio). Handles both Dashboard (sync) and Work (streaming) calls.
  *
- * Trust boundary: full Claude Code tool preset (Bash, Read, Write, Edit,
- * Grep, Glob, etc.) — same as the Hermes backend, which by default grants
- * its agent access to file ops + shell. permissionMode='bypassPermissions'
- * runs without human-in-the-loop. The worker process is already trusted to
- * spawn arbitrary subprocesses, so this is parity, not a new surface.
+ *   - sync mode: pass `prompt` as the SDK input; collect the final
+ *     `result.subtype === "success"` text; return as `finalText`. No
+ *     workspace, no resume, no events.
+ *   - streaming mode: with `onEvent`, additionally:
+ *       - cwd = workspace.claudeProjectRoot
+ *       - CLAUDE_CONFIG_DIR = workspace.claudeConfigRoot
+ *       - PATH prepended with workspace.binRoot (graphjin guard)
+ *       - resume from backendState["claude-agent"].sessionId if present
+ *       - emit tool_start/tool_end/message events from the SDK stream
+ *       - install MCP servers passed in via opts.mcpServers
  *
  * Auth: pulls the Anthropic API key + Claude model from the primary
  * `llm_provider_config` row. UI enforces (and `agent-backend-resolver` re-
@@ -22,6 +26,7 @@ import {
   AgentBackendConfigError,
   type AgentBackend,
   type AgentRunOptions,
+  type AgentRunResult,
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
 
@@ -31,10 +36,6 @@ let _claudeOnPath = false;
 function claudeBinaryAvailable(): boolean {
   if (_claudeOnPathChecked) return _claudeOnPath;
   _claudeOnPathChecked = true;
-  // The SDK spawns the `claude` CLI under the hood. Without it on PATH
-  // (or without pathToClaudeCodeExecutable pointed at a real binary),
-  // every call would fail with an unhelpful spawn error. Surface a
-  // typed error up-front instead.
   const r = spawnSync("which", ["claude"], { stdio: "ignore" });
   _claudeOnPath = r.status === 0;
   return _claudeOnPath;
@@ -47,7 +48,6 @@ export type ClaudeAgentBackendConfig = {
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_RETRIES = 1;
-// Hardcoded; surface as a setting on /settings/agent if/when there's a need.
 const MAX_TURNS = 25;
 
 export class ClaudeAgentBackend implements AgentBackend {
@@ -71,111 +71,254 @@ export class ClaudeAgentBackend implements AgentBackend {
     }
   }
 
-  async run(opts: AgentRunOptions): Promise<string> {
+  async run(opts: AgentRunOptions): Promise<AgentRunResult> {
     const {
       prompt,
+      userMessage,
       timeoutMs = DEFAULT_TIMEOUT_MS,
       retries = DEFAULT_RETRIES,
       debug = false,
       tag,
+      workspace,
+      signal,
+      onEvent,
+      backendState = {},
+      mcpServers,
     } = opts;
 
+    const streaming = !!onEvent;
+    // Streaming mode is one-shot per turn — Work runs commit user state
+    // before invoking us, retrying would double-write events.
+    const maxAttempts = streaming ? 1 : retries + 1;
+
     let lastErr: Error | undefined;
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    let lastSessionId: string | undefined;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        return await this.runOnce(prompt, timeoutMs, debug, tag);
+        const out = await this.runOnce({
+          prompt,
+          userMessage,
+          timeoutMs,
+          debug,
+          tag,
+          workspace,
+          signal,
+          onEvent,
+          backendState,
+          mcpServers,
+        });
+        if (out.sessionId) lastSessionId = out.sessionId;
+        if (out.error) {
+          lastErr = new Error(out.error);
+          if (debug) {
+            console.warn(
+              `[claude-agent] attempt ${attempt + 1}/${maxAttempts} failed: ${out.error}`,
+            );
+          }
+          continue;
+        }
+        if (streaming && out.finalText) {
+          await onEvent!({ type: "message", role: "assistant", content: out.finalText });
+        }
+        return {
+          finalText: out.finalText,
+          status: signal?.aborted ? "cancelled" : "completed",
+          backendState: nextBackendState(backendState, out.sessionId ?? lastSessionId),
+        };
       } catch (e) {
         lastErr = e instanceof Error ? e : new Error(String(e));
         if (debug) {
           console.warn(
-            `[claude-agent] attempt ${attempt + 1}/${retries + 1} failed: ${lastErr.message}`,
+            `[claude-agent] attempt ${attempt + 1}/${maxAttempts} failed: ${lastErr.message}`,
           );
         }
       }
     }
-    throw lastErr ?? new Error("claude-agent: unknown failure");
+
+    const message = lastErr?.message ?? "claude-agent: unknown failure";
+    if (signal?.aborted) {
+      return {
+        finalText: "",
+        status: "cancelled",
+        backendState: nextBackendState(backendState, lastSessionId),
+      };
+    }
+    if (streaming) await onEvent!({ type: "error", message });
+    return {
+      finalText: "",
+      status: "failed",
+      backendState: nextBackendState(backendState, lastSessionId),
+      error: message,
+    };
   }
 
-  private async runOnce(
-    prompt: string,
-    timeoutMs: number,
-    debug: boolean,
-    tag: string | undefined,
-  ): Promise<string> {
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), timeoutMs);
+  private async runOnce(args: {
+    prompt: string;
+    userMessage: string | undefined;
+    timeoutMs: number;
+    debug: boolean;
+    tag: string | undefined;
+    workspace: AgentRunOptions["workspace"];
+    signal: AbortSignal | undefined;
+    onEvent: AgentRunOptions["onEvent"];
+    backendState: Record<string, unknown>;
+    mcpServers: AgentRunOptions["mcpServers"];
+  }): Promise<{ finalText: string; sessionId?: string; error?: string }> {
+    const {
+      prompt,
+      userMessage,
+      timeoutMs,
+      debug,
+      tag,
+      workspace,
+      signal,
+      onEvent,
+      backendState,
+      mcpServers,
+    } = args;
+
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), timeoutMs);
+    if (signal) {
+      if (signal.aborted) abortController.abort();
+      else signal.addEventListener("abort", () => abortController.abort(), { once: true });
+    }
     const tagSuffix = tag ? ` tag=${tag}` : "";
-    // Register so the worker's SIGTERM handler can fail-fast every
-    // in-flight Claude Agent call alongside any Hermes children.
-    const unregisterCancel = registerAgentCanceller(() => abort.abort());
+    const unregister = registerAgentCanceller(() => abortController.abort());
+
+    const resume = readSessionId(backendState["claude-agent"]);
+    let sessionId = resume;
+    let lastAssistantText = "";
+    let finalText = "";
+
+    // SDK input vs system prompt:
+    //   - sync mode: prompt = the entire single-shot prompt → SDK prompt
+    //   - streaming mode: caller already includes history/system in prompt;
+    //     userMessage (when set) is the separate fresh user input. We pass
+    //     userMessage as the SDK prompt so Claude's sees the latest turn,
+    //     and stuff the system context via systemPrompt.append.
+    const sdkPrompt = userMessage ?? prompt;
+    const sdkOptions: Record<string, unknown> = {
+      model: this.config.model,
+      maxTurns: MAX_TURNS,
+      permissionMode: "bypassPermissions",
+      tools: { type: "preset", preset: "claude_code" },
+      env: {
+        ...process.env,
+        ANTHROPIC_API_KEY: this.config.apiKey,
+        ...(workspace
+          ? {
+              CLAUDE_CONFIG_DIR: workspace.claudeConfigRoot,
+              PATH: `${workspace.binRoot}:${process.env.PATH || ""}`,
+            }
+          : {}),
+      },
+      abortController,
+      stderr: debug
+        ? (data: string) => process.stderr.write(`[claude-agent${tagSuffix}] ${data}`)
+        : undefined,
+    };
+    if (workspace) {
+      sdkOptions.cwd = workspace.claudeProjectRoot;
+      sdkOptions.allowDangerouslySkipPermissions = true;
+      sdkOptions.skills = "all";
+      if (mcpServers) sdkOptions.mcpServers = mcpServers;
+      if (resume) sdkOptions.resume = resume;
+      if (userMessage) {
+        sdkOptions.systemPrompt = { type: "preset", preset: "claude_code", append: prompt };
+      }
+    }
 
     try {
-      const stream = query({
-        prompt,
-        options: {
-          abortController: abort,
-          model: this.config.model,
-          maxTurns: MAX_TURNS,
-          permissionMode: "bypassPermissions",
-          // Full Claude Code tool preset (Bash, Read, Write, Edit, Grep,
-          // Glob, etc.). Matches Hermes's default-tool surface so the two
-          // backends compete on equal footing. The metric agent's prompt
-          // tells the agent to use Bash for graphjin queries; nothing
-          // obliges it to ignore other tools if they help.
-          tools: { type: "preset", preset: "claude_code" },
-          env: {
-            ...process.env,
-            ANTHROPIC_API_KEY: this.config.apiKey,
-          },
-          stderr: debug
-            ? (data: string) => process.stderr.write(`[claude-agent${tagSuffix}] ${data}`)
-            : undefined,
-        },
-      });
-
-      let finalResult: string | null = null;
-      let lastAssistantText = "";
+      const stream = query({ prompt: sdkPrompt, options: sdkOptions });
 
       for await (const message of stream) {
-        if (message.type === "assistant" && !message.error) {
-          const text = extractAssistantText(message);
-          if (text) lastAssistantText = text;
-        } else if (message.type === "result") {
-          if (message.subtype === "success") {
-            finalResult = message.result;
-          } else {
-            throw new Error(
-              `claude-agent error: ${(message as { subtype?: string }).subtype ?? "unknown"}`,
-            );
+        const record = message as Record<string, unknown>;
+        if (record.type === "system" && record.subtype === "init") {
+          if (typeof record.session_id === "string") sessionId = record.session_id;
+          continue;
+        }
+        if (record.type === "assistant") {
+          const blocks =
+            (record.message as { content?: unknown[] } | undefined)?.content ?? [];
+          for (const block of blocks as Array<Record<string, unknown>>) {
+            if (block.type === "text" && typeof block.text === "string") {
+              const text = block.text.trim();
+              if (text) lastAssistantText = text;
+            } else if (block.type === "tool_use" && onEvent) {
+              await onEvent({
+                type: "tool_start",
+                id: String(block.id ?? ""),
+                name: String(block.name ?? "unknown"),
+                input: block.input,
+              });
+            }
           }
-          break;
+          continue;
+        }
+        if (record.type === "user" && onEvent) {
+          const blocks =
+            (record.message as { content?: unknown[] } | undefined)?.content ?? [];
+          for (const block of blocks as Array<Record<string, unknown>>) {
+            if (block.type !== "tool_result") continue;
+            const text = extractToolResultText(block.content);
+            await onEvent({
+              type: "tool_end",
+              id: String(block.tool_use_id ?? ""),
+              result: text || undefined,
+              error: block.is_error ? text || "Tool failed" : undefined,
+            });
+          }
+          continue;
+        }
+        if (record.type === "result") {
+          if (typeof record.session_id === "string") sessionId = record.session_id;
+          if (record.subtype === "success") {
+            finalText = String(record.result ?? lastAssistantText ?? "").trim();
+          } else {
+            return {
+              finalText: "",
+              sessionId,
+              error: String(record.result ?? `claude-agent ${record.subtype ?? "failed"}`),
+            };
+          }
         }
       }
 
-      const out = finalResult ?? lastAssistantText;
-      if (!out) {
-        throw new Error("claude-agent produced no assistant output");
-      }
-      return out;
+      return { finalText: (finalText || lastAssistantText).trim(), sessionId };
     } finally {
       clearTimeout(timer);
-      unregisterCancel();
+      unregister();
     }
   }
 }
 
-type AssistantMessageLike = {
-  message?: {
-    content?: Array<{ type?: string; text?: string }> | string;
-  };
-};
+function readSessionId(state: unknown): string | undefined {
+  if (state && typeof state === "object") {
+    const sid = (state as { sessionId?: unknown }).sessionId;
+    if (typeof sid === "string") return sid;
+  }
+  return undefined;
+}
 
-function extractAssistantText(msg: unknown): string {
-  const m = (msg as AssistantMessageLike).message;
-  if (!m || !m.content) return "";
-  if (typeof m.content === "string") return m.content;
-  return m.content
-    .filter((block) => block.type === "text" && typeof block.text === "string")
-    .map((block) => block.text!)
+function nextBackendState(
+  current: Record<string, unknown>,
+  sessionId: string | undefined,
+): Record<string, unknown> {
+  if (!sessionId) return current;
+  return {
+    ...current,
+    "claude-agent": { sessionId },
+  };
+}
+
+function extractToolResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((item) => {
+      const block = item as Record<string, unknown>;
+      return block.type === "text" && typeof block.text === "string" ? block.text : "";
+    })
     .join("");
 }

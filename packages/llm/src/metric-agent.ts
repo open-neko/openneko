@@ -15,7 +15,7 @@
 
 import { data_source, db, eq } from "@neko/db";
 import { resolveAgentBackend } from "./agent-backend-resolver";
-import { parseJsonFromOutput } from "./hermes-runner";
+import { parseJsonFromOutput } from "./agent-backends/hermes";
 
 export type MetricAgentInput = {
   orgId: string;
@@ -284,22 +284,21 @@ export async function runMetricAgent(
   );
 
   const startedAt = Date.now();
-  let stdout: string;
-  try {
-    stdout = await backend.run({
-      prompt,
-      tag: input.jobId,
-      debug,
-    });
-  } catch (e) {
+  const result_ = await backend.run({
+    prompt,
+    tag: input.jobId,
+    debug,
+  });
+  if (result_.status !== "completed") {
+    const message = result_.error ?? `${backend.id} returned status=${result_.status}`;
     console.error(
       `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} run failed after ${(
         (Date.now() - startedAt) / 1000
-      ).toFixed(0)}s: ${e instanceof Error ? e.message : String(e)}`,
+      ).toFixed(0)}s: ${message}`,
     );
-    if (e instanceof Error && e.stack) console.error(e.stack);
-    throw e;
+    throw new Error(message);
   }
+  const stdout = result_.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
 
   let parsed: Partial<MetricAgentResult>;
