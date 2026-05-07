@@ -16,6 +16,7 @@
 import { data_source, db, eq } from "@neko/db";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
+import { detectUpstreamError } from "./agent-error";
 
 export type MetricAgentInput = {
   orgId: string;
@@ -300,6 +301,19 @@ export async function runMetricAgent(
   }
   const stdout = result_.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
+
+  // First, check if the agent gave up because of an upstream provider
+  // error (Gemini 503, etc.) and printed its own error to stdout. We
+  // throw a typed error so the worker can short-circuit pg-boss retries
+  // — re-running the job against a load-shed provider just multiplies
+  // the failure.
+  const upstream = detectUpstreamError(stdout);
+  if (upstream) {
+    console.warn(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} upstream provider error: ${upstream.message}`,
+    );
+    throw upstream;
+  }
 
   let parsed: Partial<MetricAgentResult>;
   try {
