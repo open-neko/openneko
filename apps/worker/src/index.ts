@@ -109,6 +109,7 @@ function makeHandler<P extends ProcessingJobPayload>(
           console.warn(
             `[worker] job ${processingJobId} attempt failed; pg-boss may retry: ${msg}`,
           );
+          if (e instanceof Error && e.stack) console.warn(e.stack);
           throw e;
         }
       }),

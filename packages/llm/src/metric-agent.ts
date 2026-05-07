@@ -284,14 +284,34 @@ export async function runMetricAgent(
   );
 
   const startedAt = Date.now();
-  const stdout = await backend.run({
-    prompt,
-    tag: input.jobId,
-    debug,
-  });
+  let stdout: string;
+  try {
+    stdout = await backend.run({
+      prompt,
+      tag: input.jobId,
+      debug,
+    });
+  } catch (e) {
+    console.error(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} run failed after ${(
+        (Date.now() - startedAt) / 1000
+      ).toFixed(0)}s: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    if (e instanceof Error && e.stack) console.error(e.stack);
+    throw e;
+  }
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
 
-  const parsed = parseJsonFromOutput(stdout) as Partial<MetricAgentResult>;
+  let parsed: Partial<MetricAgentResult>;
+  try {
+    parsed = parseJsonFromOutput(stdout) as Partial<MetricAgentResult>;
+  } catch (e) {
+    console.error(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} parse failed; full stdout follows (${stdout.length}B):`,
+    );
+    console.error(stdout);
+    throw e;
+  }
 
   const tw = (parsed.timeWindow ?? {}) as Partial<TimeWindow>;
   const result: MetricAgentResult = {

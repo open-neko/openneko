@@ -328,14 +328,24 @@ export async function POST(request: NextRequest) {
   }
 
   const role = (surfaceId?.replace("briefing-", "") ?? "ceo").toUpperCase();
+  const orgId = await getOrgId();
+
+  console.log(
+    `[chat] org=${orgId} role=${role} surface=${surfaceId} q=${JSON.stringify(message).slice(0, 500)}`,
+  );
 
   // Pass 1: classify the question in-process (~2-5s LLM call). Was an HTTP
   // round-trip to the worker before @neko/llm extraction.
   let card;
   try {
-    card = await classifyQuestion(message, role, (await getOrgId()));
+    card = await classifyQuestion(message, role, orgId);
+    console.log(
+      `[chat] org=${orgId} classify -> slug=${card.slug} chartHint=${card.chartHint} title=${JSON.stringify(card.title).slice(0, 200)}`,
+    );
   } catch (e) {
     const err = e instanceof Error ? e.message : "classify failed";
+    console.error(`[chat] org=${orgId} classify failed: ${err}`);
+    if (e instanceof Error && e.stack) console.error(e.stack);
     return NextResponse.json({ error: err }, { status: 500 });
   }
 
@@ -343,7 +353,7 @@ export async function POST(request: NextRequest) {
   const inserted = await db()
     .insert(processing_job)
     .values({
-      org_id: (await getOrgId()),
+      org_id: orgId,
       kind: "metric_refresh",
       status: "queued",
       trigger: "chat",
@@ -359,13 +369,15 @@ export async function POST(request: NextRequest) {
     .returning({ id: processing_job.id });
   const jobId = inserted[0]?.id;
   if (!jobId) {
+    console.error(`[chat] org=${orgId} insert processing_job returned no id`);
     return NextResponse.json({ error: "failed to enqueue job" }, { status: 500 });
   }
 
   await enqueue(QUEUE.METRIC_REFRESH, {
     processingJobId: jobId,
-    orgId: (await getOrgId()),
+    orgId,
   });
+  console.log(`[chat] org=${orgId} enqueued metric_refresh job=${jobId}`);
 
   return NextResponse.json({
     jobId,
