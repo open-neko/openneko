@@ -537,9 +537,6 @@ export default function WorkScreen() {
                 <div className="greet" style={{ fontSize: 28, marginBottom: 4 }}>
                   {bundle?.thread.title || "Work"}
                 </div>
-                <div className="greet-sub" style={{ marginBottom: 0 }}>
-                  Structured analysis when it helps, plain chat when it doesn&apos;t.
-                </div>
               </div>
             </div>
 
@@ -562,11 +559,7 @@ export default function WorkScreen() {
                     ) : null}
                   </div>
                 ))
-              ) : (
-                <div className="work-empty">
-                  Ask about a KPI, upload a file, or have the agent explore your data.
-                </div>
-              )}
+              ) : null}
 
               {streamError ? (
                 <div className="work-error">{streamError}</div>
