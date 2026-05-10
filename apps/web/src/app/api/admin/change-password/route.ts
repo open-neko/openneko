@@ -4,7 +4,7 @@
  * Bootstraps the admin's chosen DB password on first run. Steps:
  *   1. Run `ALTER USER neko WITH PASSWORD '<new>'` against the live DB
  *      (we're already authenticated as `neko` via the bootstrap default).
- *   2. Persist the new password to `~/.config/neko/config.json` so the next
+ *   2. Persist the new password to `~/.config/openneko/config.json` so the next
  *      process boot picks it up.
  *   3. Drain the web's pool so subsequent queries use the new password.
  *   4. Fire-and-forget POST /admin/reconnect to the worker so its
