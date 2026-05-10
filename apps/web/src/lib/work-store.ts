@@ -22,4 +22,5 @@ export {
   getWorkRun,
   getWorkThreadBundle,
   suggestWorkThreadTitle,
+  truncateWorkThreadFromRun,
 } from "@neko/llm/work";

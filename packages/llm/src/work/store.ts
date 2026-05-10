@@ -4,6 +4,7 @@ import {
   db,
   desc,
   eq,
+  gte,
   work_message,
   work_run,
   work_run_event,
@@ -83,6 +84,56 @@ export async function deleteWorkThread(orgId: string, threadId: string): Promise
     .where(and(eq(work_thread.org_id, orgId), eq(work_thread.id, threadId)))
     .returning({ id: work_thread.id });
   return rows.length > 0;
+}
+
+// Truncates the thread at and after the given run: deletes that run plus
+// every later run in the thread (events cascade via FK), wipes the user
+// + assistant messages tied to those runs, and clears the thread's
+// backendState so a Claude-agent resume can't re-inject the dropped turns
+// from its persisted SDK session. Returns the run's `created_at` so the
+// caller can verify it pointed at a real row.
+export async function truncateWorkThreadFromRun(
+  orgId: string,
+  threadId: string,
+  runId: string,
+): Promise<{ ok: boolean }> {
+  const targetRows = await db()
+    .select({ created_at: work_run.created_at })
+    .from(work_run)
+    .where(
+      and(
+        eq(work_run.org_id, orgId),
+        eq(work_run.thread_id, threadId),
+        eq(work_run.id, runId),
+      ),
+    )
+    .limit(1);
+  const target = targetRows[0];
+  if (!target) return { ok: false };
+
+  await db()
+    .delete(work_message)
+    .where(
+      and(
+        eq(work_message.org_id, orgId),
+        eq(work_message.thread_id, threadId),
+        gte(work_message.created_at, target.created_at),
+      ),
+    );
+  await db()
+    .delete(work_run)
+    .where(
+      and(
+        eq(work_run.org_id, orgId),
+        eq(work_run.thread_id, threadId),
+        gte(work_run.created_at, target.created_at),
+      ),
+    );
+  await db()
+    .update(work_thread)
+    .set({ backend_state: {}, updated_at: new Date(), last_message_at: new Date() })
+    .where(eq(work_thread.id, threadId));
+  return { ok: true };
 }
 
 export async function getWorkThread(orgId: string, threadId: string) {

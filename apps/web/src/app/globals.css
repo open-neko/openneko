@@ -503,6 +503,90 @@ body {
 }
 .work-bubble-row.is-user {
   justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.work-bubble-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.work-bubble-row.is-user:hover .work-bubble-actions,
+.work-bubble-row.is-user:focus-within .work-bubble-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+.work-bubble-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text2);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.work-bubble-actions button:hover {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+}
+.work-bubble.is-editing {
+  width: min(780px, 86%);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.work-bubble-edit {
+  width: 100%;
+  resize: vertical;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.55;
+  outline: none;
+}
+.work-bubble-edit::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+.work-bubble-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.work-bubble-edit-actions button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.work-bubble-edit-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+.work-bubble-edit-actions button.is-primary {
+  background: #fff;
+  color: var(--accent);
+}
+.work-bubble-edit-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .work-bubble {
   max-width: min(780px, 86%);

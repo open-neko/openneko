@@ -5,9 +5,12 @@ import {
   ArrowUp,
   Brain,
   Check,
+  Copy,
   Loader2,
   Paperclip,
+  Pencil,
   Plus,
+  RefreshCw,
   Sparkles,
   Square,
   Trash2,
@@ -324,6 +327,64 @@ export default function WorkScreen({
     setDraft("");
     setFiles([]);
 
+    await postAndStreamRun(threadId, message);
+  }
+
+  async function copyUserMessage(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // clipboard permission denied or insecure context — silently no-op
+    }
+  }
+
+  async function retryOrEditUserMessage(
+    messageId: string,
+    text: string,
+  ): Promise<void> {
+    if (sending) return;
+    if (!activeThreadId || !text.trim()) return;
+    const threadId = activeThreadId;
+    setSending(true);
+    setStreamError(null);
+    if (activeRunId) {
+      await fetch(`/api/work/runs/${activeRunId}/cancel`, { method: "POST" }).catch(
+        () => {},
+      );
+    }
+    const res = await fetch(`/api/work/threads/${threadId}/truncate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setSending(false);
+      setStreamError(err.error ?? `Could not truncate (HTTP ${res.status})`);
+      return;
+    }
+    await loadThread(threadId);
+    setBundle((prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: [
+              ...prev.messages,
+              {
+                id: `temp-${Date.now()}`,
+                runId: null,
+                role: "user",
+                content: text,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }
+        : prev,
+    );
+    await postAndStreamRun(threadId, text);
+  }
+
+  async function postAndStreamRun(threadId: string, message: string) {
     const res = await fetch(`/api/work/threads/${threadId}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -565,9 +626,35 @@ export default function WorkScreen({
                       </div>
                     );
                   }
+                  const isPersistedUser =
+                    message.role === "user" &&
+                    !!message.runId &&
+                    !message.id.startsWith("temp-");
                   return (
                     <div key={`${message.id}-${index}`} className="work-turn">
-                      <MessageBubble message={message} />
+                      <MessageBubble
+                        message={message}
+                        onCopy={
+                          isPersistedUser
+                            ? () => void copyUserMessage(message.content)
+                            : undefined
+                        }
+                        onRetry={
+                          isPersistedUser && !sending
+                            ? () =>
+                                void retryOrEditUserMessage(
+                                  message.id,
+                                  message.content,
+                                )
+                            : undefined
+                        }
+                        onEdit={
+                          isPersistedUser && !sending
+                            ? (text) =>
+                                void retryOrEditUserMessage(message.id, text)
+                            : undefined
+                        }
+                      />
                     </div>
                   );
                 })
@@ -716,23 +803,129 @@ function PendingMemoryPanel({
   );
 }
 
-function MessageBubble({ message }: { message: MessageRecord }) {
-  if (message.role === "user") {
+function MessageBubble({
+  message,
+  onCopy,
+  onRetry,
+  onEdit,
+}: {
+  message: MessageRecord;
+  onCopy?: () => void;
+  onRetry?: () => void;
+  onEdit?: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
+  const [copied, setCopied] = useState(false);
+
+  if (message.role !== "user") {
     return (
-      <div className="work-bubble-row is-user">
-        <div className="work-bubble is-user">
-          <div className="work-markdown user-copy">{message.content}</div>
+      <div className="work-bubble-row">
+        <div className="work-bubble">
+          <div className="work-markdown">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          </div>
         </div>
       </div>
     );
   }
-  return (
-    <div className="work-bubble-row">
-      <div className="work-bubble">
-        <div className="work-markdown">
-          <ReactMarkdown>{message.content}</ReactMarkdown>
+
+  if (editing && onEdit) {
+    const trimmed = editText.trim();
+    const dirty = trimmed.length > 0 && trimmed !== message.content.trim();
+    const cancel = () => {
+      setEditing(false);
+      setEditText(message.content);
+    };
+    const save = () => {
+      if (!dirty) return;
+      setEditing(false);
+      onEdit(trimmed);
+    };
+    return (
+      <div className="work-bubble-row is-user">
+        <div className="work-bubble is-user is-editing">
+          <textarea
+            className="work-bubble-edit"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                cancel();
+              } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                save();
+              }
+            }}
+            rows={Math.min(8, Math.max(2, editText.split("\n").length))}
+            autoFocus
+          />
+          <div className="work-bubble-edit-actions">
+            <button type="button" onClick={cancel}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="is-primary"
+              onClick={save}
+              disabled={!dirty}
+            >
+              Save & run
+            </button>
+          </div>
         </div>
       </div>
+    );
+  }
+
+  const showActions = onCopy || onRetry || onEdit;
+  return (
+    <div className="work-bubble-row is-user has-actions">
+      <div className="work-bubble is-user">
+        <div className="work-markdown user-copy">{message.content}</div>
+      </div>
+      {showActions ? (
+        <div className="work-bubble-actions">
+          {onCopy ? (
+            <button
+              type="button"
+              title={copied ? "Copied" : "Copy"}
+              aria-label="Copy"
+              onClick={() => {
+                onCopy();
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1200);
+              }}
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+          ) : null}
+          {onRetry ? (
+            <button
+              type="button"
+              title="Retry"
+              aria-label="Retry"
+              onClick={onRetry}
+            >
+              <RefreshCw size={12} />
+            </button>
+          ) : null}
+          {onEdit ? (
+            <button
+              type="button"
+              title="Edit"
+              aria-label="Edit"
+              onClick={() => {
+                setEditText(message.content);
+                setEditing(true);
+              }}
+            >
+              <Pencil size={12} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
