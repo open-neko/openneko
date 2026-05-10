@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
@@ -823,7 +824,7 @@ function MessageBubble({
       <div className="work-bubble-row">
         <div className="work-bubble">
           <div className="work-markdown">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
           </div>
         </div>
       </div>
@@ -1059,7 +1060,7 @@ function RunTimeline({
         <div className="work-bubble-row">
           <div className="work-bubble">
             <div className="work-markdown">
-              <ReactMarkdown>{fallbackContent}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{fallbackContent}</ReactMarkdown>
             </div>
           </div>
         </div>
@@ -1071,7 +1072,7 @@ function RunTimeline({
             <div key={`text-${index}`} className="work-bubble-row">
               <div className="work-bubble">
                 <div className="work-markdown">
-                  <ReactMarkdown>{item.content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown>
                 </div>
               </div>
             </div>
