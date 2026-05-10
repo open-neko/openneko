@@ -40,10 +40,9 @@ type AgentSettingsPayload = {
     source: "org" | "default";
     backend: "hermes" | "claude-agent";
     globalCap: number;
-    claudeAgentCap: number;
   };
   options: readonly AgentBackendOption[];
-  defaults: { globalCap: number; claudeAgentCap: number };
+  defaults: { globalCap: number };
 };
 
 type DataSourcePayload = {
@@ -62,7 +61,7 @@ type Initial = {
 };
 
 // Step 0 ("Password") is shown only when the admin hasn't picked one yet.
-// Once changed, ~/.config/neko/config.json has pg.password and we skip
+// Once changed, ~/.config/openneko/config.json has pg.password and we skip
 // straight to Data on subsequent visits.
 const STEPS_WITH_PASSWORD = ["Password", "Data", "Agent", "Research"] as const;
 const STEPS_WITHOUT_PASSWORD = ["Data", "Agent", "Research"] as const;
@@ -290,7 +289,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       const agentRes = await fetch("/api/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backend, globalCap: cap, claudeAgentCap: cap }),
+        body: JSON.stringify({ backend, globalCap: cap }),
       });
       if (!agentRes.ok) {
         const body = await agentRes.json();

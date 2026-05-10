@@ -1,7 +1,7 @@
 /**
  * Postgres pool config builder.
  *
- * The connection details come from `~/.config/neko/config.json`
+ * The connection details come from `~/.config/openneko/config.json`
  * (written by /setup) merged with hardcoded defaults that match what the
  * docker compose stack ships with:
  *
@@ -16,7 +16,7 @@
  * `ALTER USER neko WITH PASSWORD '<new>'` and writes the new password to
  * the config file. From then on the file's value takes precedence.
  *
- * Production deploys pre-populate `~/.config/neko/config.json` via the
+ * Production deploys pre-populate `~/.config/openneko/config.json` via the
  * Docker entrypoint, which materializes it from NEKO_PG_* env vars.
  *
  * `sslmode: "require"` in the config enables TLS with `rejectUnauthorized:

@@ -1,40 +1,7 @@
-/**
- * Agent backend interface — abstraction over "give the agent a prompt
- * and get its final reply as a string." The metric agent (and any future
- * tool-using agent) calls `backend.run(opts)` instead of binding to a
- * specific implementation.
- *
- * Backends today:
- *   - HermesBackend     (subprocess; multi-provider via ~/.hermes/config.yaml)
- *   - ClaudeAgentBackend  (in-process; locked to Anthropic via @anthropic-ai/claude-agent-sdk)
- *
- * The contract is intentionally narrow:
- *   - input: a prompt string + transport-level knobs (timeout, retries, debug)
- *   - output: the agent's final assistant text — caller parses JSON itself
- *     (parseJsonFromOutput in hermes-runner.ts handles fence + brace-slice)
- *
- * Working directory is NOT part of the contract. Hermes uses a per-call
- * scratch dir for debug forensics (KEEP_SCRATCH=true) but the metric agent's
- * tools (`graphjin cli execute_graphql ...`) read global config from
- * ~/.config/graphjin/client.json, so cwd has no effect on correctness.
- * In-process backends like the Claude Agent simply share the worker's cwd.
- */
-
 export const AGENT_BACKEND_IDS = ["hermes", "claude-agent"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
-/**
- * Default concurrency caps for the metric agent. Overridable per-org via
- * /settings/agent (persisted in llm_provider_config scope='agent').
- *
- * - globalCap: pg-boss `batchSize` for the metric_refresh queue. Bounds
- *   how many jobs the worker pulls per poll.
- * - claudeAgentCap: in-process semaphore guarding concurrent claude-agent
- *   runs. The Hermes path is subprocess-based and doesn't need a separate
- *   cap (the global cap already bounds it). 0 disables the semaphore.
- */
 export const AGENT_DEFAULT_GLOBAL_CAP = 20;
-export const AGENT_DEFAULT_CLAUDE_AGENT_CAP = 8;
 
 export const AGENT_BACKEND_OPTIONS = [
   {
@@ -53,30 +20,83 @@ export function isAgentBackendId(value: string): value is AgentBackendId {
   return (AGENT_BACKEND_IDS as readonly string[]).includes(value);
 }
 
+export function shellToolName(backendId: AgentBackendId): string {
+  return backendId === "claude-agent" ? "Bash" : "terminal";
+}
+
+export type AgentSurfaceMessage = {
+  version: "v0.9";
+  [key: string]: unknown;
+};
+
+export type AgentArtifact = {
+  path: string;
+  label: string;
+  mimeType?: string;
+};
+
+export type AgentEvent =
+  | { type: "message"; role: "user" | "assistant"; content: string }
+  | { type: "tool_start"; id: string; name: string; input?: unknown }
+  | { type: "tool_delta"; id: string; delta: unknown }
+  | { type: "tool_end"; id: string; result?: unknown; error?: string }
+  | { type: "surface"; messages: AgentSurfaceMessage[] }
+  | { type: "artifact"; artifact: AgentArtifact }
+  | { type: "status"; message: string }
+  | { type: "error"; message: string }
+  | { type: "done"; result?: unknown };
+
+export type AgentChatMessage = {
+  id?: string;
+  role: "user" | "assistant";
+  content: string;
+  runId?: string | null;
+  createdAt?: string;
+};
+
+export type AgentWorkspace = {
+  orgRoot: string;
+  skillsRoot: string;
+  memoryRoot: string;
+  knowledgeRoot: string;
+  uploadsRoot: string;
+  runsRoot: string;
+  threadUploadsRoot: string;
+  runRoot: string;
+  artifactRoot: string;
+  binRoot: string;
+  claudeProjectRoot: string;
+  claudeConfigRoot: string;
+};
+
 export type AgentRunOptions = {
   prompt: string;
-  /** Hard cap on the run lifetime. Default 5 minutes. */
+  userMessage?: string;
   timeoutMs?: number;
-  /** Total attempts on transport-level failure (spawn/timeout/non-zero exit). Default 1 retry. */
   retries?: number;
-  /** Pipe backend stderr / progress output to the parent process's stderr. */
   debug?: boolean;
-  /** Identifier for correlation (e.g. processing_job UUID). Embedded in log lines and, for Hermes, the scratch dir name. */
   tag?: string;
+  orgId?: string;
+  workspace?: AgentWorkspace;
+  skills?: string[];
+  signal?: AbortSignal;
+  onEvent?: (event: AgentEvent) => Promise<void> | void;
+  backendState?: Record<string, unknown>;
+  mcpServers?: Record<string, unknown>;
+};
+
+export type AgentRunResult = {
+  finalText: string;
+  status: "completed" | "failed" | "cancelled";
+  backendState?: Record<string, unknown>;
+  error?: string;
 };
 
 export interface AgentBackend {
   readonly id: AgentBackendId;
-  /** Returns the agent's final assistant text. Throws on transport-level failure. */
-  run(opts: AgentRunOptions): Promise<string>;
+  run(opts: AgentRunOptions): Promise<AgentRunResult>;
 }
 
-/**
- * Misconfiguration that the user can fix in /settings (e.g. picked
- * claude-agent but no Anthropic key on the primary provider). Distinct from
- * generic Errors so callers can render a "go fix your settings" message
- * instead of a stack trace.
- */
 export class AgentBackendConfigError extends Error {
   constructor(message: string) {
     super(message);

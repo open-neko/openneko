@@ -11,19 +11,6 @@ import {
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { getOrgId } from "@/lib/db";
 
-/**
- * POST /api/briefing/retry  { metricId }
- *
- * Re-enqueues a metric_refresh job for a single failed (or stuck) card.
- * Idempotent: if a queued/running job already exists for this metric we
- * return its id without inserting a duplicate. The card-side state
- * machine resets to "pending" via the metric.last_refresh_status update
- * so the briefing UI re-skeletons immediately.
- *
- * The call site is the BriefingCard's Retry button (rendered when
- * state="failed"); the dashboard's polling loop picks the new job up
- * via /api/briefing on the next refetch.
- */
 export async function POST(request: NextRequest) {
   let body: { metricId?: string };
   try {
@@ -41,8 +28,6 @@ export async function POST(request: NextRequest) {
 
   const orgId = await getOrgId();
 
-  // Verify the metric belongs to this org. Without the org check anyone
-  // could trigger refreshes on metrics they don't own once auth lands.
   const metricRows = await db()
     .select({ id: metric.id })
     .from(metric)
@@ -52,9 +37,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "metric not found" }, { status: 404 });
   }
 
-  // Idempotency — return the existing in-flight job if there is one.
-  // pg-boss does not dedupe, so without this we'd double-enqueue and
-  // get two snapshot rows for the same card.
   const inFlight = await db()
     .select({ id: processing_job.id })
     .from(processing_job)
@@ -76,12 +58,19 @@ export async function POST(request: NextRequest) {
       .limit(1);
     const payload = row[0]?.trigger_payload as { metricId?: string } | null;
     if (payload?.metricId === metricId) {
+      await db()
+        .update(metric)
+        .set({
+          last_refresh_status: "pending",
+          last_refresh_error: null,
+          last_refresh_job_id: job.id,
+          updated_at: new Date(),
+        })
+        .where(eq(metric.id, metricId));
       return NextResponse.json({ jobId: job.id, alreadyRunning: true });
     }
   }
 
-  // Insert a fresh processing_job + enqueue. The worker will mark
-  // metric.last_refresh_status='ok' or 'failed' when it finishes.
   const inserted = await db()
     .insert(processing_job)
     .values({
@@ -110,7 +99,24 @@ export async function POST(request: NextRequest) {
     })
     .where(eq(metric.id, metricId));
 
-  await enqueue(QUEUE.METRIC_REFRESH, { processingJobId: jobId, orgId });
+  try {
+    await enqueue(QUEUE.METRIC_REFRESH, { processingJobId: jobId, orgId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const now = new Date();
+    await db()
+      .update(processing_job)
+      .set({ status: "failed", error: `enqueue failed: ${msg}`, finished_at: now, updated_at: now })
+      .where(eq(processing_job.id, jobId));
+    await db()
+      .update(metric)
+      .set({ last_refresh_status: "failed", last_refresh_error: `enqueue failed: ${msg}`, updated_at: now })
+      .where(eq(metric.id, metricId));
+    return NextResponse.json(
+      { error: `enqueue failed: ${msg}` },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({ jobId, alreadyRunning: false });
 }

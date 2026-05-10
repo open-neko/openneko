@@ -16,6 +16,9 @@ out/
 # local GraphJin config (per-developer; copy from db/graphjin/dev.example.yml)
 db/graphjin/dev.yml
 
+# GraphJin runtime cache (server writes here; bind-mount leaks onto host)
+db/graphjin/queries/
+
 # local onboarding scratch
 adventureworks-onboarding.md
 

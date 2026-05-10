@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { hasCustomPassword } from "@neko/db";
 import AppHeader from "@/components/AppHeader";
+import SectionNav from "@/components/SectionNav";
 import { getOrgId } from "@/lib/db";
 import { getSetupCompleteAt } from "@/lib/org-state";
 import {
@@ -90,7 +91,9 @@ export default async function SettingsPage() {
 
   return (
     <div className="root">
-      <AppHeader back={{ href: "/", label: "Back to briefing" }} />
+      <AppHeader>
+        <SectionNav current="settings" />
+      </AppHeader>
       <div className="greet">Workspace settings.</div>
       <div className="greet-sub" style={{ marginBottom: 24 }}>
         Operator-side configuration. The business onboarding lives at /onboarding.

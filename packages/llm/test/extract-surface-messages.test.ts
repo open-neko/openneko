@@ -1,0 +1,53 @@
+import { describe, expect, it } from "vitest";
+import { extractSurfaceMessages } from "../src/agent-backends/hermes";
+
+describe("extractSurfaceMessages", () => {
+  it("returns text and empty messages when no fence is present", () => {
+    const result = extractSurfaceMessages("Just some prose, no cards.");
+    expect(result.text).toBe("Just some prose, no cards.");
+    expect(result.messages).toEqual([]);
+  });
+
+  it("trims surrounding whitespace when no fence is present", () => {
+    const result = extractSurfaceMessages("\n\n  hello  \n\n");
+    expect(result.text).toBe("hello");
+  });
+
+  it("extracts messages and strips the fence from text", () => {
+    const raw = [
+      "Here are the KPIs:",
+      "```neko_a2ui",
+      JSON.stringify([
+        { version: "v0.9", surfaceId: "kpis", components: [] },
+      ]),
+      "```",
+      "Anything else?",
+    ].join("\n");
+    const result = extractSurfaceMessages(raw);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].version).toBe("v0.9");
+    expect(result.text).toContain("Here are the KPIs:");
+    expect(result.text).toContain("Anything else?");
+    expect(result.text).not.toContain("neko_a2ui");
+    expect(result.text).not.toContain("v0.9");
+  });
+
+  it("falls back to text when JSON inside fence is malformed", () => {
+    const raw = "Prose. ```neko_a2ui\n{not json}\n``` more prose.";
+    const result = extractSurfaceMessages(raw);
+    expect(result.messages).toEqual([]);
+    expect(result.text).toContain("Prose.");
+  });
+
+  it("returns empty messages when JSON parses but isn't an array", () => {
+    const raw = '```neko_a2ui\n{"version": "v0.9"}\n```';
+    const result = extractSurfaceMessages(raw);
+    expect(result.messages).toEqual([]);
+  });
+
+  it("matches the fence regardless of casing", () => {
+    const raw = '```NEKO_A2UI\n[{"version": "v0.9"}]\n```';
+    const result = extractSurfaceMessages(raw);
+    expect(result.messages).toHaveLength(1);
+  });
+});

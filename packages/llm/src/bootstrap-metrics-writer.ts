@@ -1,24 +1,5 @@
-/**
- * Bootstrap metrics writer — backend-agnostic.
- *
- * Per-org backend (Hermes or Claude Agent) is resolved from
- * llm_provider_config (scope='agent') by `resolveAgentBackend`. Same
- * mechanism the profiler and metric agents use, so the three stay in
- * lockstep.
- *
- * Reads business_profile + industry_insights and proposes 4 starter
- * dashboard cards per CXO seat selected in onboarding, grounded strictly
- * in facts named in the business_profile. No tools needed — the agent
- * generates JSON directly from the inline context.
- *
- * Critical grounding rule: cards must be measurable from the business_profile.
- * industry_insights is interpretation context only — it does NOT introduce new
- * product lines, markets, or segments. e.g. if the profile lists only mountain
- * and road bikes, do NOT propose e-bike metrics.
- */
-
 import { resolveAgentBackend } from "./agent-backend-resolver";
-import { parseJsonFromOutput } from "./hermes-runner";
+import { parseJsonFromOutput } from "./agent-backends/hermes";
 
 export type BootstrapMetric = {
   role: string;
@@ -64,7 +45,7 @@ function buildPrompt(args: {
 
   return `You are a senior BI consultant designing the first dashboard a new customer sees. You are handed a business_profile (what the company actually does) and an industry_insights briefing (industry context). You must propose exactly ${total} starter dashboard cards: 4 per role for ${seats.join(", ")}.
 
-NO TOOLS NEEDED. Do not call Bash, Read, Write, or any other tool — every fact you need is inline below. Generate the JSON directly as your final answer.
+NO TOOLS NEEDED. Do not call any tool — not \`terminal\`/\`Bash\`, not \`read_file\`/\`Read\`, not \`write_file\`/\`Write\`, not \`execute_code\`, not search/web/browser tools — every fact you need is inline below. Generate the JSON directly as your final answer.
 
 GROUNDING RULE — non-negotiable:
 - Every card must measure something the company ACTUALLY does, sells, operates, or employs, as named in the business_profile (products, channels, geographies, workforce, currencies, work centers, sales territories, etc.).
@@ -128,10 +109,8 @@ export async function runBootstrapMetricsWriter(args: {
   businessProfile: string;
   industryInsights: string;
   seats: string[];
-  /** processing_job.id — tags Hermes's scratch dir for DB correlation. */
   jobId?: string;
   onProgress?: BootstrapMetricsProgress;
-  /** Pipe backend stderr to the parent process. Test harness only. */
   debug?: boolean;
 }): Promise<{ metrics: BootstrapMetric[] }> {
   const { orgId, orgName, businessProfile, industryInsights, seats, jobId, onProgress, debug } = args;
@@ -147,11 +126,16 @@ export async function runBootstrapMetricsWriter(args: {
 
   onProgress?.("Generating bootstrap metrics");
   const startedAt = Date.now();
-  const stdout = await backend.run({
+  const result = await backend.run({
     prompt,
+    orgId,
     tag: jobId ?? orgId,
     debug: debug === true,
   });
+  if (result.status !== "completed") {
+    throw new Error(result.error ?? `${backend.id} returned status=${result.status}`);
+  }
+  const stdout = result.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
 
   const parsed = parseJsonFromOutput(stdout) as { metrics?: unknown };

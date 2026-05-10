@@ -17,6 +17,7 @@ export const QUEUE = {
   BOOTSTRAP_METRICS_BUILD: "bootstrap_metrics_build",
   METRIC_REFRESH: "metric_refresh",
   METRIC_REFRESH_SCHEDULED_SWEEP: "metric_refresh_scheduled_sweep",
+  WORK_RUN: "work_run",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -28,6 +29,15 @@ export type ProcessingJobPayload = {
 
 export type MetricRefreshPayload = ProcessingJobPayload & {
   trigger?: string;
+};
+
+export type WorkRunPayload = ProcessingJobPayload & {
+  /** work_run.id — the row the worker will update. */
+  runId: string;
+  /** work_thread.id this run belongs to. */
+  threadId: string;
+  /** The user message that kicked off this run. */
+  message: string;
 };
 
 let _boss: PgBoss | null = null;

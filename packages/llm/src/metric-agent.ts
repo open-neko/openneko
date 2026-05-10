@@ -1,21 +1,15 @@
-/**
- * Metric agent — backend-agnostic snapshot runner.
- *
- * Per-org backend choice (Hermes vs Claude Agent) is resolved from the
- * DB by `resolveAgentBackend`. Provider/model/key for the chosen backend
- * come from `llm_provider_config` and are pushed to Hermes's host config
- * by `provisionHostConfig` (called from worker boot + every settings save).
- *
- * Output contract: stdout MUST be JSON parseable into MetricAgentResult.
- * The shape is load-bearing because apps/web/src/app/api/briefing/route.ts
- * reads metric_snapshot.payload to assemble A2UI v0.9 messages
- * (BriefingCard component in apps/web/src/a2ui/catalog.ts). Validation lives
- * in apps/worker/src/jobs/metric-refresh.ts:validateResult.
- */
-
 import { data_source, db, eq } from "@neko/db";
+import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
-import { parseJsonFromOutput } from "./hermes-runner";
+import { parseJsonFromOutput } from "./agent-backends/hermes";
+import { detectUpstreamError } from "./agent-error";
+import {
+  discoveryUrlFromMcpUrl,
+  knowledgePackPaths,
+  prefetchKnowledgePack,
+  type KnowledgePackPaths,
+} from "./knowledge-pack";
+import { ensureOrgWorkspace } from "./work/workspace";
 
 export type MetricAgentInput = {
   orgId: string;
@@ -24,39 +18,26 @@ export type MetricAgentInput = {
   title: string;
   why: string;
   chartHint: "kpi" | "line" | "bar" | "donut" | "area";
-  /** processing_job.id — tags Hermes's scratch dir for DB correlation. */
   jobId?: string;
-  /** Pipe Hermes stderr to the parent process. Test harness only. */
   debug?: boolean;
 };
 
 export const TIME_WINDOW_GRAINS = [
-  "day",       // today / yesterday / a specific day
-  "week",      // this week / last 7 days / a specific week
-  "month",     // this month / last 30 days / MTD / a specific month
-  "quarter",   // this quarter / QTD / TTM3M
-  "year",      // YTD / TTM / FY-to-date / a specific year
-  "all_time",  // cumulative since data began (rare — only when card explicitly asks)
-  "snapshot",  // not-time-bound; current state (employee count, open opps)
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "all_time",
+  "snapshot",
 ] as const;
 
 export type TimeWindowGrain = (typeof TIME_WINDOW_GRAINS)[number];
 
-/**
- * The time window the agent computed the headline against. Always populated.
- *
- * `grain` is the enumerated window category (day/week/month/quarter/year/
- * all_time/snapshot). `start` and `end` give the exact range — required for
- * everything except `all_time` (where start may be null) and `snapshot`
- * (where start === end === today).
- */
 export type TimeWindow = {
   grain: TimeWindowGrain;
-  /** ISO yyyy-mm-dd. Null only allowed for grain='all_time'. */
   start: string | null;
-  /** ISO yyyy-mm-dd. Null only allowed for grain='all_time'. */
   end: string | null;
-  /** Short label the briefing UI displays — "TTM", "YTD", "Q3 2025", "Last 30 days", "All time", "Snapshot". 1–4 words. */
   label: string;
 };
 
@@ -72,36 +53,25 @@ export type MetricAgentResult = {
   timeWindow: TimeWindow;
 };
 
-async function fetchKnowledge(apiBase: string, section: string): Promise<string> {
-  const url = `${apiBase}/discovery/${section}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) {
-    throw new Error(
-      `graphjin discovery fetch failed: ${res.status} ${res.statusText} (${url})`,
-    );
-  }
-  return res.text();
-}
-
-type Knowledge = { tables: string; insights: string; syntax: string };
-
-async function fetchGraphJinKnowledge(mcpUrl: string): Promise<Knowledge> {
-  const apiBase = mcpUrl.replace(/\/mcp\/?$/, "");
-  const [tables, insights, syntax] = await Promise.all([
-    fetchKnowledge(apiBase, "tables?limit=500"),
-    fetchKnowledge(apiBase, "insights"),
-    fetchKnowledge(apiBase, "syntax"),
-  ]);
-  return { tables, insights, syntax };
-}
-
-function buildPrompt(input: MetricAgentInput, k: Knowledge): string {
+function buildPrompt(
+  input: MetricAgentInput,
+  knowledge: KnowledgePackPaths,
+  shellTool: string,
+): string {
   return `You answer ONE dashboard card by writing GraphQL queries and executing them against a GraphJin server, then returning a single JSON object describing the snapshot.
 
 EXECUTION PATTERN:
-1. Read the three knowledge sections below (Tables, Insights, Syntax) — together they are the authoritative DSL + table/column/FK index for this database. Don't run any schema-discovery commands; that information is already inline.
+1. Read the GraphJin knowledge pack on disk before writing any query — its INDEX.md tells you which file covers what. Don't run any schema-discovery commands; that information is already on disk.
+
+   Knowledge files (read with your \`${shellTool}\` tool, e.g. \`cat\`):
+   - ${knowledge.files.index} (start here — index of the rest)
+   - ${knowledge.files.tables} (every table, schema, column count)
+   - ${knowledge.files.namespaces} (multi-DB namespace routing)
+   - ${knowledge.files.insights} (hub tables, hot relationships, query templates, data-quality flags)
+   - ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates)
+
 2. Write ONE bulk GraphQL query that computes both the current value AND a baseline (prior period of equal length) in the same request when possible. Prefer one bulk query over many small ones.
-3. Run it via Bash:
+3. Run it via the \`${shellTool}\` tool:
      graphjin cli execute_graphql --args '{"query":"<your graphql>"}'
    (\`graphjin cli\` is already pointed at the running server. Use --args-file - and stdin if the query is large enough to be awkward to escape inline.)
 4. If the response contains an "errors" array, use:
@@ -110,15 +80,15 @@ EXECUTION PATTERN:
 5. When you have the data, emit the final JSON object exactly per the OUTPUT CONTRACT. No prose around it.
 
 DATA ACCESS — READ-ONLY:
-The database is queried exclusively via \`graphjin cli\` run through the Bash tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate.
+The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
-- Every database read goes through \`graphjin cli execute_graphql\` via Bash.
-- DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is already inline below.
+- Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
+- DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is on disk in the knowledge files listed in step 1.
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the output must trace back to a \`graphjin cli execute_graphql\` response from this run.
 
 QUERY CONSTRUCTION — let the database aggregate:
-Prefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (full details in the Reference below):
+Prefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (consult \`syntax.json\` for full DSL reference):
 
 - Expression aggregates — sum(expr: {...}), ratio(expr: {...}) — USE THESE FIRST when the metric involves arithmetic across columns (e.g. SUM(price × qty), margin %). They express what single-column sum_/count_/avg_ cannot.
 - Joined-column access via dot-notation: { col: "product.standardcost" } works across FKs up to 3 hops — unlocks revenue × cost calculations in a single server-side aggregate.
@@ -186,24 +156,6 @@ chartType MUST match the shape of chartData. Mismatches will not render:
 - If you have multiple categories (e.g. 3 countries, 5 work centers), the chartType is donut or bar — never kpi. kpi is for a single number only.
 
 ================================================================================
-Tables — every table in the database (name, schema, column_count):
-================================================================================
-
-${k.tables}
-
-================================================================================
-Insights — hub tables, hot relationships, query templates, data-quality flags:
-================================================================================
-
-${k.insights}
-
-================================================================================
-Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagination):
-================================================================================
-
-${k.syntax}
-
-================================================================================
 OUTPUT CONTRACT — respond with ONE JSON object, exactly this shape, no prose:
 ================================================================================
 
@@ -269,38 +221,58 @@ export async function runMetricAgent(
     `[metric-agent] org=${input.orgId} role=${input.role} slug=${input.slug} mcp=${mcpUrl}`,
   );
 
-  const knowledge = await fetchGraphJinKnowledge(mcpUrl);
-  console.log(
-    `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge tables=${knowledge.tables.length}B insights=${knowledge.insights.length}B syntax=${knowledge.syntax.length}B`,
-  );
-
-  const prompt = buildPrompt(input, knowledge);
+  const workspace = await ensureOrgWorkspace(input.orgId);
+  const refreshResult = await prefetchKnowledgePack({
+    discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
+    destDir: workspace.knowledgeRoot,
+  });
+  if (refreshResult.ok) {
+    const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
+    console.log(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refreshed (${refreshResult.files.length} files, ${totalBytes}B)`,
+    );
+  } else {
+    console.warn(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refresh failed (${refreshResult.error}); proceeding with on-disk pack`,
+    );
+  }
+  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
 
   const backend = await resolveAgentBackend(input.orgId);
   const debug = input.debug === true;
+
+  const prompt = buildPrompt(input, knowledge, shellToolName(backend.id));
 
   console.log(
     `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id}`,
   );
 
   const startedAt = Date.now();
-  let stdout: string;
-  try {
-    stdout = await backend.run({
-      prompt,
-      tag: input.jobId,
-      debug,
-    });
-  } catch (e) {
+  const result_ = await backend.run({
+    prompt,
+    orgId: input.orgId,
+    tag: input.jobId,
+    debug,
+  });
+  if (result_.status !== "completed") {
+    const message = result_.error ?? `${backend.id} returned status=${result_.status}`;
     console.error(
       `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} run failed after ${(
         (Date.now() - startedAt) / 1000
-      ).toFixed(0)}s: ${e instanceof Error ? e.message : String(e)}`,
+      ).toFixed(0)}s: ${message}`,
     );
-    if (e instanceof Error && e.stack) console.error(e.stack);
-    throw e;
+    throw new Error(message);
   }
+  const stdout = result_.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
+
+  const upstream = detectUpstreamError(stdout);
+  if (upstream) {
+    console.warn(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} upstream provider error: ${upstream.message}`,
+    );
+    throw upstream;
+  }
 
   let parsed: Partial<MetricAgentResult>;
   try {

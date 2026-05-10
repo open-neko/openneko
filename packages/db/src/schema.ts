@@ -8,6 +8,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  real,
   smallint,
   text,
   timestamp,
@@ -357,5 +358,227 @@ export const llm_provider_config = pgTable(
       t.scope,
     ),
     org_idx: index("llm_provider_config_org_idx").on(t.org_id),
+  }),
+);
+
+export const work_thread = pgTable(
+  "work_thread",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    backend_state: jsonb("backend_state").notNull().default(sql`'{}'::jsonb`),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+    last_message_at: ts("last_message_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_recent_idx: index("work_thread_org_recent_idx").on(
+      t.org_id,
+      t.last_message_at.desc(),
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+export const work_run = pgTable(
+  "work_run",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => work_thread.id, { onDelete: "cascade" }),
+    backend: text("backend").notNull(),
+    status: text("status").notNull().default("running"),
+    error: text("error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+    finished_at: ts("finished_at"),
+  },
+  (t) => ({
+    thread_created_idx: index("work_run_thread_created_idx").on(
+      t.thread_id,
+      t.created_at.asc(),
+    ),
+  }),
+);
+
+export const work_message = pgTable(
+  "work_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => work_thread.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id").references(() => work_run.id, { onDelete: "set null" }),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    thread_created_idx: index("work_message_thread_created_idx").on(
+      t.thread_id,
+      t.created_at.asc(),
+    ),
+  }),
+);
+
+export const work_run_event = pgTable(
+  "work_run_event",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => work_thread.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    run_seq_unique: uniqueIndex("work_run_event_run_seq_unique").on(
+      t.run_id,
+      t.seq,
+    ),
+    thread_seq_idx: index("work_run_event_thread_seq_idx").on(
+      t.thread_id,
+      t.seq.asc(),
+    ),
+  }),
+);
+
+export const work_memory = pgTable(
+  "work_memory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    scope: text("scope").notNull(),
+    scope_id: text("scope_id"),
+    text: text("text").notNull(),
+    pinned: boolean("pinned").notNull().default(false),
+    confidence: real("confidence").notNull().default(0.8),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    source_run_id: uuid("source_run_id").references(() => work_run.id, {
+      onDelete: "set null",
+    }),
+    source_thread_id: uuid("source_thread_id").references(() => work_thread.id, {
+      onDelete: "set null",
+    }),
+    use_count: integer("use_count").notNull().default(0),
+    last_used_at: ts("last_used_at"),
+    archived_at: ts("archived_at"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_active_idx: index("work_memory_org_active_idx").on(
+      t.org_id,
+      t.archived_at,
+      t.updated_at.desc(),
+    ),
+    org_scope_idx: index("work_memory_org_scope_idx").on(
+      t.org_id,
+      t.scope,
+      t.scope_id,
+      t.archived_at,
+    ),
+    org_pinned_idx: index("work_memory_org_pinned_idx").on(
+      t.org_id,
+      t.pinned,
+      t.archived_at,
+      t.updated_at.desc(),
+    ),
+  }),
+);
+
+export const work_memory_event = pgTable(
+  "work_memory_event",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    memory_id: uuid("memory_id").references(() => work_memory.id, {
+      onDelete: "set null",
+    }),
+    run_id: uuid("run_id").references(() => work_run.id, { onDelete: "set null" }),
+    thread_id: uuid("thread_id").references(() => work_thread.id, {
+      onDelete: "set null",
+    }),
+    action: text("action").notNull(),
+    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    memory_idx: index("work_memory_event_memory_idx").on(t.memory_id, t.id.desc()),
+    org_recent_idx: index("work_memory_event_org_recent_idx").on(
+      t.org_id,
+      t.id.desc(),
+    ),
+  }),
+);
+
+export const work_pending_memory = pgTable(
+  "work_pending_memory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    thread_id: uuid("thread_id").references(() => work_thread.id, {
+      onDelete: "cascade",
+    }),
+    run_id: uuid("run_id").references(() => work_run.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("proposed"),
+    draft_text: text("draft_text").notNull(),
+    draft_kind: text("draft_kind").notNull(),
+    draft_scope: text("draft_scope").notNull(),
+    draft_scope_id: text("draft_scope_id"),
+    confidence: real("confidence").notNull(),
+    reasoning: text("reasoning"),
+    conflict: jsonb("conflict"),
+    decision_text: text("decision_text"),
+    decided_at: ts("decided_at"),
+    memory_id: uuid("memory_id").references(() => work_memory.id, {
+      onDelete: "set null",
+    }),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    thread_status_idx: index("work_pending_memory_thread_status_idx").on(
+      t.org_id,
+      t.thread_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+    run_status_idx: index("work_pending_memory_run_status_idx").on(
+      t.org_id,
+      t.run_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+    org_status_idx: index("work_pending_memory_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
   }),
 );

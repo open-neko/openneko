@@ -1,31 +1,3 @@
-/**
- * Host-side config provisioning for the metric agent.
- *
- * Replaces the old `packages/llm/scripts/hermes-bootstrap.sh` operator script
- * — instead of asking a human to set env vars and run a shell command, the
- * worker reads everything from the DB on boot and writes the host config
- * files itself. The web app calls the same function from the settings save
- * handlers so changes apply without a worker restart.
- *
- * Files written:
- *   - GraphJin client config: tells `graphjin cli` which server to talk to.
- *       macOS:   ~/Library/Application Support/graphjin/client.json
- *       linux:   ~/.config/graphjin/client.json
- *     Format: { server, token: "", expires_at: "0001-01-01T00:00:00Z" }
- *
- *   - Hermes config (only when agent backend = hermes):
- *       ~/.hermes/config.yaml — model.default, model.provider, agent.max_turns
- *       ~/.hermes/.env       — provider key (e.g. ANTHROPIC_API_KEY=...)
- *
- * The Claude Agent backend has no host config — its API key is passed
- * per-call via `env` in the SDK options, sourced from the same DB row.
- *
- * Single-host assumption: the worker process must run on the same machine
- * whose home directory we provision. Multi-host deployments will need to
- * shift to in-process credentials for Hermes too (pass via flags or a
- * temp config dir), or sync the home dir across hosts.
- */
-
 import { mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
@@ -72,9 +44,6 @@ async function loadProviderRow(
 }
 
 function getHome(): string {
-  // Prefer process.env.HOME so tests can redirect writes to a temp dir.
-  // os.homedir() can ignore env overrides on some platforms (and is
-  // sometimes cached at first call), which makes it unsafe for tests.
   return process.env.HOME || homedir();
 }
 
@@ -86,9 +55,6 @@ function graphjinConfigPath(): string {
 }
 
 function deriveServerBase(graphqlUrl: string): string | null {
-  // graphjin cli wants the server's base URL, not the GraphQL endpoint.
-  // Strip the standard /api/v1/graphql suffix; if the URL doesn't match,
-  // fall back to dropping the path entirely.
   try {
     const u = new URL(graphqlUrl);
     if (u.pathname.endsWith("/api/v1/graphql")) {
@@ -125,8 +91,6 @@ async function provisionGraphJin(orgId: string): Promise<void> {
   );
 }
 
-// Map a Neko provider id → the (provider, key-env-var) Hermes expects.
-// `custom` is Hermes's "OpenAI-compat with explicit base_url" mode.
 function mapHermesProvider(neko: string): {
   provider: string;
   keyVar: string;
@@ -171,6 +135,16 @@ function decryptSecrets(secrets: Record<string, unknown> | null): Record<string,
   return out;
 }
 
+export function hermesHomeForOrg(orgId: string): string {
+  const override = process.env.HERMES_HOME?.trim();
+  if (override) return override;
+  const xdg = process.env.XDG_CONFIG_HOME?.trim();
+  const base = xdg && xdg.length > 0
+    ? xdg
+    : join(getHome(), ".config");
+  return join(base, "openneko", "hermes", orgId);
+}
+
 async function provisionHermes(orgId: string): Promise<void> {
   const row = await loadProviderRow(orgId, "primary");
   if (!row || !row.enabled) return;
@@ -182,7 +156,7 @@ async function provisionHermes(orgId: string): Promise<void> {
   const apiKey = secrets.apiKey;
   const model = row.model ?? "";
 
-  const hermesHome = process.env.HERMES_HOME || join(getHome(), ".hermes");
+  const hermesHome = hermesHomeForOrg(orgId);
   await mkdir(hermesHome, { recursive: true });
 
   const yamlLines = [
@@ -192,8 +166,6 @@ async function provisionHermes(orgId: string): Promise<void> {
   ];
   if (baseUrl) yamlLines.push(`  base_url: "${escapeYamlString(baseUrl)}"`);
   if (provider === "custom" && needsBaseUrl && !baseUrl) {
-    // Don't fail boot — just skip; the user will see Hermes's own startup
-    // error when a job runs. Logging here is enough.
     console.warn(
       `[host-provision] hermes: provider=custom but no base_url for ${row.provider}; user must add it in /settings/agent`,
     );
@@ -214,16 +186,6 @@ function escapeYamlString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-/**
- * Write the host config files for `orgId` based on the current DB state.
- *
- * Always provisions GraphJin (both backends shell out to `graphjin cli`).
- * Provisions Hermes only when the resolved agent backend is hermes — the
- * Claude Agent takes its key per-call.
- *
- * Best-effort: failures (missing rows, file-system errors) log a warning
- * and return so the caller (worker boot or settings PUT) can keep going.
- */
 export async function provisionHostConfig(orgId: string): Promise<void> {
   try {
     await provisionGraphJin(orgId);

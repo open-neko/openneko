@@ -1,5 +1,5 @@
 /**
- * Local config file at `~/.config/neko/config.json` (XDG base dir).
+ * Local config file at `~/.config/openneko/config.json` (XDG base dir).
  *
  * Stores per-host bootstrap state that can't live in the metadata DB
  * (because the app needs it before the DB connection exists). Currently:
@@ -20,7 +20,7 @@
  * ALTER USER. Presence of `pg.password` here is the signal that the admin
  * has finished the password-change step.
  *
- * Sister file in the same dir: `~/.config/neko/secret-key` (at-rest key).
+ * Sister file in the same dir: `~/.config/openneko/secret-key` (at-rest key).
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -41,19 +41,19 @@ export type LocalConfig = {
 };
 
 function configDir(): string {
-  // Respect XDG_CONFIG_HOME when set; otherwise XDG default of ~/.config/neko.
+  // Respect XDG_CONFIG_HOME when set; otherwise XDG default of ~/.config/openneko.
   const xdg = process.env.XDG_CONFIG_HOME?.trim();
   const base = xdg && xdg.length > 0
     ? xdg
     : join(process.env.HOME || homedir(), ".config");
-  return join(base, "neko");
+  return join(base, "openneko");
 }
 
 export function localConfigPath(): string {
   return join(configDir(), "config.json");
 }
 
-/** Reads ~/.config/neko/config.json. Returns {} when the file is missing or malformed. */
+/** Reads ~/.config/openneko/config.json. Returns {} when the file is missing or malformed. */
 export function readLocalConfig(): LocalConfig {
   try {
     const raw = readFileSync(localConfigPath(), "utf8");

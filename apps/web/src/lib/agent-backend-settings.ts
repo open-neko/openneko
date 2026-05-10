@@ -4,7 +4,6 @@ import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   AGENT_BACKEND_OPTIONS,
   AGENT_DEFAULT_GLOBAL_CAP,
-  AGENT_DEFAULT_CLAUDE_AGENT_CAP,
   getDefaultPrimaryModel,
   isAgentBackendId,
   type AgentBackendId,
@@ -17,7 +16,6 @@ export type AgentBackendSettings = {
   source: "org" | "default";
   backend: AgentBackendId;
   globalCap: number;
-  claudeAgentCap: number;
 };
 
 export type AgentSettingsPayload = {
@@ -25,7 +23,6 @@ export type AgentSettingsPayload = {
   options: typeof AGENT_BACKEND_OPTIONS;
   defaults: {
     globalCap: number;
-    claudeAgentCap: number;
   };
 };
 
@@ -33,28 +30,24 @@ async function loadAgentRow(orgId: string): Promise<{
   id: string;
   config: Record<string, unknown> | null;
 } | null> {
-  try {
-    const rows = await db()
-      .select({
-        id: llm_provider_config.id,
-        config: llm_provider_config.config,
-      })
-      .from(llm_provider_config)
-      .where(
-        and(
-          eq(llm_provider_config.org_id, orgId),
-          eq(llm_provider_config.scope, AGENT_SCOPE),
-        ),
-      )
-      .limit(1);
-    return (
-      (rows[0] as
-        | { id: string; config: Record<string, unknown> | null }
-        | undefined) ?? null
-    );
-  } catch {
-    return null;
-  }
+  const rows = await db()
+    .select({
+      id: llm_provider_config.id,
+      config: llm_provider_config.config,
+    })
+    .from(llm_provider_config)
+    .where(
+      and(
+        eq(llm_provider_config.org_id, orgId),
+        eq(llm_provider_config.scope, AGENT_SCOPE),
+      ),
+    )
+    .limit(1);
+  return (
+    (rows[0] as
+      | { id: string; config: Record<string, unknown> | null }
+      | undefined) ?? null
+  );
 }
 
 function readPositiveInt(
@@ -75,23 +68,16 @@ export async function getAgentBackendSettings(
   const cfg = (row?.config ?? {}) as {
     backend?: unknown;
     globalCap?: unknown;
-    claudeAgentCap?: unknown;
   };
   const backend =
     typeof cfg.backend === "string" && isAgentBackendId(cfg.backend)
       ? cfg.backend
       : "hermes";
   const globalCap = readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP);
-  const claudeAgentCap = readPositiveInt(
-    cfg.claudeAgentCap,
-    AGENT_DEFAULT_CLAUDE_AGENT_CAP,
-    { min: 0 },
-  );
   return {
     source: row ? "org" : "default",
     backend,
     globalCap,
-    claudeAgentCap,
   };
 }
 
@@ -104,7 +90,6 @@ export async function getAgentSettingsPayload(
     options: AGENT_BACKEND_OPTIONS,
     defaults: {
       globalCap: AGENT_DEFAULT_GLOBAL_CAP,
-      claudeAgentCap: AGENT_DEFAULT_CLAUDE_AGENT_CAP,
     },
   };
 }
@@ -112,7 +97,6 @@ export async function getAgentSettingsPayload(
 export type AgentSaveDraft = {
   backend: string;
   globalCap?: number | string;
-  claudeAgentCap?: number | string;
 };
 
 export async function saveAgentBackendDraft(
@@ -123,10 +107,6 @@ export async function saveAgentBackendDraft(
     throw new Error(`Unsupported agent backend: ${draft.backend}`);
   }
 
-  // When switching to claude-agent, atomically coerce the primary provider
-  // row to Anthropic if it isn't already. The user still needs to paste a
-  // Claude API key — but we never leave the DB in an inconsistent state
-  // where the resolver would reject every job.
   if (draft.backend === "claude-agent") {
     await ensurePrimaryIsAnthropic(orgId);
   }
@@ -134,18 +114,12 @@ export async function saveAgentBackendDraft(
   const existing = await loadAgentRow(orgId);
   const existingCfg = (existing?.config ?? {}) as {
     globalCap?: unknown;
-    claudeAgentCap?: unknown;
   };
   const globalCap = readPositiveInt(
     draft.globalCap ?? existingCfg.globalCap,
     AGENT_DEFAULT_GLOBAL_CAP,
   );
-  const claudeAgentCap = readPositiveInt(
-    draft.claudeAgentCap ?? existingCfg.claudeAgentCap,
-    AGENT_DEFAULT_CLAUDE_AGENT_CAP,
-    { min: 0 },
-  );
-  const config = { backend: draft.backend, globalCap, claudeAgentCap };
+  const config = { backend: draft.backend, globalCap };
 
   if (existing) {
     await db()
@@ -167,7 +141,7 @@ export async function saveAgentBackendDraft(
     });
   }
 
-  return { source: "org", backend: draft.backend, globalCap, claudeAgentCap };
+  return { source: "org", backend: draft.backend, globalCap };
 }
 
 async function ensurePrimaryIsAnthropic(orgId: string): Promise<void> {

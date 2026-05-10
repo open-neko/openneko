@@ -60,13 +60,12 @@ describeIfDb("agent-backend-settings", () => {
   });
 
   describe("getAgentBackendSettings", () => {
-    it("returns default { hermes, 20, 8 } with no row", async () => {
+    it("returns default { hermes, 20 } with no row", async () => {
       const got = await getAgentBackendSettings(orgId);
       expect(got).toEqual({
         source: "default",
         backend: "hermes",
         globalCap: 20,
-        claudeAgentCap: 8,
       });
     });
 
@@ -74,14 +73,13 @@ describeIfDb("agent-backend-settings", () => {
       await seedProvider(orgId, {
         scope: "agent",
         provider: "claude-agent",
-        config: { backend: "claude-agent", globalCap: 30, claudeAgentCap: 5 },
+        config: { backend: "claude-agent", globalCap: 30 },
       });
       const got = await getAgentBackendSettings(orgId);
       expect(got).toMatchObject({
         source: "org",
         backend: "claude-agent",
         globalCap: 30,
-        claudeAgentCap: 5,
       });
     });
   });
@@ -91,7 +89,7 @@ describeIfDb("agent-backend-settings", () => {
       const payload = await getAgentSettingsPayload(orgId);
       expect(payload.agent.backend).toBe("hermes");
       expect(payload.options.length).toBeGreaterThanOrEqual(2);
-      expect(payload.defaults).toEqual({ globalCap: 20, claudeAgentCap: 8 });
+      expect(payload.defaults).toEqual({ globalCap: 20 });
     });
   });
 
@@ -147,37 +145,23 @@ describeIfDb("agent-backend-settings", () => {
     });
   });
 
-  describe("saveAgentBackendDraft — concurrency caps", () => {
-    it("persists valid numeric caps", async () => {
+  describe("saveAgentBackendDraft — concurrency cap", () => {
+    it("persists valid numeric cap", async () => {
       await saveAgentBackendDraft(orgId, {
         backend: "hermes",
         globalCap: 50,
-        claudeAgentCap: 12,
       });
       const got = await getAgentBackendSettings(orgId);
       expect(got.globalCap).toBe(50);
-      expect(got.claudeAgentCap).toBe(12);
     });
 
-    it("falls back to defaults for invalid values", async () => {
+    it("falls back to default for invalid value", async () => {
       await saveAgentBackendDraft(orgId, {
         backend: "hermes",
         globalCap: "not-a-number" as never,
-        claudeAgentCap: -1,
       });
       const got = await getAgentBackendSettings(orgId);
       expect(got.globalCap).toBe(20);
-      expect(got.claudeAgentCap).toBe(8);
-    });
-
-    it("claudeAgentCap=0 is valid (no semaphore)", async () => {
-      await saveAgentBackendDraft(orgId, {
-        backend: "hermes",
-        globalCap: 10,
-        claudeAgentCap: 0,
-      });
-      const got = await getAgentBackendSettings(orgId);
-      expect(got.claudeAgentCap).toBe(0);
     });
   });
 

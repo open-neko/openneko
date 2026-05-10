@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import SectionNav from "@/components/SectionNav";
 import Markdown from "react-markdown";
 import type { StageKind } from "@/lib/db";
 
@@ -21,14 +22,22 @@ const STAGE_ORDER: StageKind[] = [
   "industry_insights_build",
   "bootstrap_metrics_build",
 ];
-// Default copy when the server hasn't reported a progress.message for the
-// current stage yet (typical during the first few hundred ms of a stage).
-const STAGE_FALLBACK_COPY: Record<StageKind, string> = {
-  business_profile_build: "Reading your data sources…",
-  industry_insights_build: "Researching your industry…",
-  bootstrap_metrics_build: "Picking the metrics that matter…",
-  metric_refresh: "Computing your numbers…",
+const STAGE_FALLBACK_COPY: Record<StageKind, readonly string[]> = {
+  business_profile_build: [
+    "Reading your data sources…",
+    "Mapping tables and relationships…",
+    "Drafting your business profile…",
+  ],
+  industry_insights_build: [
+    "Researching your industry…",
+    "Gathering competitive context…",
+    "Distilling industry trends…",
+  ],
+  bootstrap_metrics_build: ["Picking the metrics that matter…"],
+  metric_refresh: ["Computing your numbers…"],
 };
+const FALLBACK_DEFAULT = "Reading your data sources…";
+const FALLBACK_CYCLE_MS = 3500;
 
 export default function ProcessingPage() {
   const router = useRouter();
@@ -36,13 +45,11 @@ export default function ProcessingPage() {
   const [tab, setTab] = useState<Tab>("profile");
   const [stageKind, setStageKind] = useState<StageKind | null>(null);
   const [stageMessage, setStageMessage] = useState<string | null>(null);
+  const [fallbackIdx, setFallbackIdx] = useState(0);
   const [profile, setProfile] = useState("");
   const [insights, setInsights] = useState("");
   const [insightsStatus, setInsightsStatus] = useState<InsightsStatus>("processing");
 
-  // Phase 1: poll for profile readiness; surface the worker's reported
-  // stage + progress.message so the user sees real progress instead of a
-  // rotating placeholder.
   useEffect(() => {
     if (phase !== "processing") return;
 
@@ -66,23 +73,23 @@ export default function ProcessingPage() {
           }
           if (status.state === "processing" && !cancelled) {
             const cs = status.currentStage as { kind?: StageKind; message?: string | null } | undefined;
-            setStageKind(cs?.kind ?? null);
-            setStageMessage(cs?.message ?? null);
+            const nextStage = cs?.kind ?? null;
+            const nextMsg = cs?.message ?? null;
+            setStageKind((prev) => {
+              if (prev !== nextStage) setFallbackIdx(0);
+              return nextStage;
+            });
+            setStageMessage(nextMsg);
           }
           if (status.state === "needs_wizard") {
             router.replace("/onboarding");
             return;
           }
           if (status.state === "failed") {
-            // Flag only — wizard fetches the actual message from the
-            // status route. Don't pass the message through the URL;
-            // that's a toast-spoofing vector.
             router.replace("/onboarding?failed=1");
             return;
           }
-        } catch {
-          // ignore, retry
-        }
+        } catch {}
         await new Promise((r) => setTimeout(r, 3000));
       }
     };
@@ -93,8 +100,15 @@ export default function ProcessingPage() {
     };
   }, [phase, router]);
 
-  // On entering review: idempotently ensure an industry_insights_build job
-  // exists (heals a broken chain from a failed/orphaned prior run).
+  useEffect(() => {
+    if (phase !== "processing") return;
+    if (stageMessage) return;
+    const id = setInterval(() => {
+      setFallbackIdx((i) => i + 1);
+    }, FALLBACK_CYCLE_MS);
+    return () => clearInterval(id);
+  }, [phase, stageMessage, stageKind]);
+
   useEffect(() => {
     if (phase !== "review") return;
     if (insights || insightsStatus === "disabled") return;
@@ -116,14 +130,11 @@ export default function ProcessingPage() {
         } else {
           setInsightsStatus("processing");
         }
-      } catch {
-        // fall through — poll below will recover
-      }
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, [phase, insights, insightsStatus]);
 
-  // Review phase: keep polling /api/profile until insights land (or research is off).
   useEffect(() => {
     if (phase !== "review") return;
     if (insights || insightsStatus === "disabled") return;
@@ -141,9 +152,7 @@ export default function ProcessingPage() {
               return;
             }
           }
-        } catch {
-          // ignore, retry
-        }
+        } catch {}
         await new Promise((r) => setTimeout(r, 4000));
       }
     };
@@ -151,28 +160,42 @@ export default function ProcessingPage() {
     return () => { cancelled = true; };
   }, [phase, insights, insightsStatus]);
 
-  // ─── Phase 1: Processing ───
   if (phase === "processing") {
-    const message =
-      stageMessage ??
-      (stageKind ? STAGE_FALLBACK_COPY[stageKind] : "Reading your data sources…");
+    let message: string;
+    if (stageMessage) {
+      message = stageMessage;
+    } else if (stageKind) {
+      const cycle = STAGE_FALLBACK_COPY[stageKind];
+      message = cycle[fallbackIdx % cycle.length] ?? FALLBACK_DEFAULT;
+    } else {
+      message = FALLBACK_DEFAULT;
+    }
     return (
       <div className="root" style={{ textAlign: "center" }}>
-        <AppHeader />
+        <AppHeader>
+          <SectionNav current="business-profile" />
+        </AppHeader>
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
         <StageStrip current={stageKind} />
-        <div className="date-note" style={{ marginTop: 24 }}>{message}</div>
+        <div
+          key={message}
+          className="date-note"
+          style={{ marginTop: 24, animation: "fadeUp 0.5s ease both" }}
+        >
+          {message}
+        </div>
       </div>
     );
   }
 
-  // ─── Phase 2: Review (tabs) ───
   const insightsPending = !insights && insightsStatus !== "disabled";
 
   return (
     <div className="root">
-      <AppHeader back={{ href: "/", label: "Back to briefing" }} />
+      <AppHeader>
+        <SectionNav current="business-profile" />
+      </AppHeader>
       <div className="greet" style={{ marginTop: 40, animation: "fadeUp 0.5s ease 0.1s both" }}>
         Here&apos;s what we found.
       </div>
@@ -253,9 +276,7 @@ export default function ProcessingPage() {
                   setInsightsStatus("processing");
                   setTab("insights");
                 }
-              } catch {
-                // non-fatal; poll will eventually reflect state
-              }
+              } catch {}
             }}
             style={{ padding: "14px 24px", fontSize: 14 }}
           >
@@ -268,9 +289,6 @@ export default function ProcessingPage() {
 }
 
 function StageStrip({ current }: { current: StageKind | null }) {
-  // We render only the three stages the user is on /business-profile for —
-  // metric_refresh runs after the page transitions to /review and the
-  // dashboard, so it's not relevant here.
   const idx = current ? STAGE_ORDER.indexOf(current) : 0;
   return (
     <div
@@ -346,7 +364,7 @@ function InsightsDisabled() {
         Industry research is off
       </div>
       <div className="pm-p" style={{ color: "var(--text2)" }}>
-        Enable Perplexity-backed industry research later from Settings.
+        Enable industry research from Settings.
       </div>
     </div>
   );

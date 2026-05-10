@@ -11,11 +11,11 @@ import { join } from "node:path";
 /**
  * App secret used to encrypt LLM API keys at rest in `llm_provider_config`.
  *
- * Resolution: read `~/.config/neko/secret-key` file (mode 0600) → if
+ * Resolution: read `~/.config/openneko/secret-key` file (mode 0600) → if
  * missing, generate 32 random bytes and persist. Cached after first read.
  *
  * Local dev: nothing to configure — the file is auto-created on first run.
- * Prod: pre-populate `~/.config/neko/secret-key` via init container /
+ * Prod: pre-populate `~/.config/openneko/secret-key` via init container /
  * secrets-manager mount before the app starts.
  *
  * No env override — same policy as the rest of app config. XDG_CONFIG_HOME
@@ -34,7 +34,7 @@ function appSecretKeyPath(): string {
   const base = xdg && xdg.length > 0
     ? xdg
     : join(process.env.HOME || homedir(), ".config");
-  return join(base, "neko", "secret-key");
+  return join(base, "openneko", "secret-key");
 }
 
 function generateAndPersist(): string {

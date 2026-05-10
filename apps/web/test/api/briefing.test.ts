@@ -1,8 +1,3 @@
-/**
- * /api/briefing GET contract tests. Asserts the v0.9 message sequence
- * and that DB-backed snapshots flow through to the dataModel.
- */
-
 import {
   afterAll,
   afterEach,
@@ -88,13 +83,10 @@ describeIfDb("/api/briefing GET", () => {
     const componentsMsg = messages[2] as Extract<A2UIMessage, { updateComponents: unknown }>;
     const root = componentsMsg.updateComponents.components.find((c) => c.id === "root");
     expect(root).toBeDefined();
-    // No DB rows → flagged as example (legacy ROLE_DATA mock).
     expect((root as { isExample?: boolean }).isExample).toBe(true);
   });
 
   it("uses DB snapshots when seeded metrics exist", async () => {
-    // Seed a metric + snapshot. The route should return real data and
-    // mark the surface as not-example.
     const ins = await db()
       .insert(metric)
       .values({
@@ -137,7 +129,6 @@ describeIfDb("/api/briefing GET", () => {
       metric: "$5.20M",
       mood: "good",
     });
-    // OK state for cards with a snapshot.
     expect(dataValue.insights["revenue-mtd"]).toMatchObject({ state: "ok" });
   });
 
@@ -162,6 +153,47 @@ describeIfDb("/api/briefing GET", () => {
     };
     expect(dataValue.insights["still-pending"].state).toBe("pending");
     expect(dataValue.insights["still-pending"].metric).toBe("Fetching…");
+  });
+
+  it("renders state='pending' when a re-run is in flight over an existing snapshot", async () => {
+    const ins = await db()
+      .insert(metric)
+      .values({
+        org_id: orgId,
+        role: "CEO",
+        slug: "rerunning",
+        source: "bootstrap",
+        title: "Re-running revenue",
+        why: "Quick read on the top line",
+        chart_hint: "kpi",
+        active: true,
+        last_refresh_status: "pending",
+      })
+      .returning({ id: metric.id });
+    await db().insert(metric_snapshot).values({
+      metric_id: ins[0]!.id,
+      status: "good",
+      payload: {
+        headlineMetric: "$5.20M",
+        headlineLabel: "Revenue MTD",
+        insightText: "Old number from a previous run.",
+        detailText: "Stale.",
+        chartType: "kpi",
+        chartData: [{ d: "Revenue MTD", v: 5_200_000 }],
+      },
+    });
+
+    const res = await callRoute(GET, { url: "http://localhost/api/briefing?role=CEO" });
+    const messages = res.body as A2UIMessage[];
+    const dataMsg = messages[1] as Extract<A2UIMessage, { updateDataModel: unknown }>;
+    const dataValue = dataMsg.updateDataModel.value as {
+      insights: Record<string, { state?: string; metric: string; label: string }>;
+    };
+    expect(dataValue.insights["rerunning"]).toMatchObject({
+      state: "pending",
+      metric: "Fetching…",
+      label: "",
+    });
   });
 
   it("renders state='failed' + error when last refresh failed", async () => {

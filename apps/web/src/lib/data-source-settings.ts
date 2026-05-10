@@ -28,23 +28,19 @@ export type DataSourceDraft = {
 const DEFAULT_KIND = "graphjin";
 
 async function loadRow(orgId: string): Promise<DataSourceRow | null> {
-  try {
-    const rows = await db()
-      .select({
-        id: data_source.id,
-        org_id: data_source.org_id,
-        kind: data_source.kind,
-        graphql_url: data_source.graphql_url,
-        mcp_url: data_source.mcp_url,
-        label: data_source.label,
-      })
-      .from(data_source)
-      .where(eq(data_source.org_id, orgId))
-      .limit(1);
-    return (rows[0] as DataSourceRow | undefined) ?? null;
-  } catch {
-    return null;
-  }
+  const rows = await db()
+    .select({
+      id: data_source.id,
+      org_id: data_source.org_id,
+      kind: data_source.kind,
+      graphql_url: data_source.graphql_url,
+      mcp_url: data_source.mcp_url,
+      label: data_source.label,
+    })
+    .from(data_source)
+    .where(eq(data_source.org_id, orgId))
+    .limit(1);
+  return (rows[0] as DataSourceRow | undefined) ?? null;
 }
 
 function publicFromRow(row: DataSourceRow | null): PublicDataSource {
@@ -145,17 +141,13 @@ export async function saveDataSourceDraft(
 }
 
 export async function hasDataSourceSetup(orgId: string): Promise<boolean> {
-  try {
-    const row = await loadRow(orgId);
-    if (!row) return false;
-    return validateDraft({
-      graphqlUrl: row.graphql_url,
-      mcpUrl: row.mcp_url,
-      label: row.label,
-    }).length === 0;
-  } catch {
-    return false;
-  }
+  const row = await loadRow(orgId);
+  if (!row) return false;
+  return validateDraft({
+    graphqlUrl: row.graphql_url,
+    mcpUrl: row.mcp_url,
+    label: row.label,
+  }).length === 0;
 }
 
 export async function testDataSourceDraft(
@@ -164,10 +156,6 @@ export async function testDataSourceDraft(
   const errors = validateDraft(draft);
   if (errors.length > 0) throw new Error(errors.join(" "));
 
-  // Ping with a deliberately empty query — every GraphQL server (including
-  // GraphJin, which doesn't support standard introspection) will reply with a
-  // structured JSON response. Getting back a body with either `data` or
-  // `errors` is sufficient proof the endpoint speaks GraphQL.
   const gqlRes = await fetch(draft.graphqlUrl.trim(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

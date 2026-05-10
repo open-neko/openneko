@@ -1,5 +1,5 @@
 /**
- * local-config.ts: ~/.config/neko/config.json reader/writer.
+ * local-config.ts: ~/.config/openneko/config.json reader/writer.
  * Pure FS, no DB — runs in any environment. Uses a temp $HOME so we
  * don't touch the developer's real file.
  */
@@ -15,7 +15,7 @@ import {
   writeLocalConfig,
 } from "../src/local-config";
 
-describe("local-config (~/.config/neko/config.json)", () => {
+describe("local-config (~/.config/openneko/config.json)", () => {
   let tempHome: string;
   const ORIGINAL_HOME = process.env.HOME;
   const ORIGINAL_XDG = process.env.XDG_CONFIG_HOME;
@@ -33,13 +33,13 @@ describe("local-config (~/.config/neko/config.json)", () => {
     await rm(tempHome, { recursive: true, force: true });
   });
 
-  it("path is rooted at ~/.config/neko (XDG default)", () => {
-    expect(localConfigPath()).toBe(join(tempHome, ".config", "neko", "config.json"));
+  it("path is rooted at ~/.config/openneko (XDG default)", () => {
+    expect(localConfigPath()).toBe(join(tempHome, ".config", "openneko", "config.json"));
   });
 
   it("respects XDG_CONFIG_HOME when set", () => {
     process.env.XDG_CONFIG_HOME = join(tempHome, "custom-xdg");
-    expect(localConfigPath()).toBe(join(tempHome, "custom-xdg", "neko", "config.json"));
+    expect(localConfigPath()).toBe(join(tempHome, "custom-xdg", "openneko", "config.json"));
   });
 
   it("readLocalConfig returns empty object when the file doesn't exist", () => {

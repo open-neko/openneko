@@ -15,10 +15,7 @@ async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   const text = lines.join("\n");
   try {
     await navigator.clipboard.writeText(text);
-  } catch {
-    // Clipboard write can fail in non-secure contexts or older browsers.
-    // Silent — the user will notice nothing landed in their clipboard.
-  }
+  } catch {}
 }
 
 const MOOD_STYLES: Record<string, { bg: string; dot: string }> = {
@@ -56,9 +53,11 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
   const state: BriefingCardState = ins.state ?? "ok";
   const m = MOOD_STYLES[ins.mood] ?? MOOD_STYLES.good;
 
+  const refreshing = retrying || state === "pending";
+
   const handleRetry = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!onRetry || !ins.metricId) return;
+    if (!onRetry || !ins.metricId || refreshing) return;
     setRetrying(true);
     try {
       await onRetry(ins.metricId);
@@ -77,19 +76,19 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
         <div className="mdot" style={{ background: m.dot, boxShadow: `0 0 0 4px ${m.bg}` }} />
         <div className="icontent">
           <div className="itext">{ins.text}</div>
-          {/* Always render the meta row — for failed/pending cards the
-              metric text is "Couldn't load" / "Fetching…" and the user
-              still wants to see that status in the headline area. The
-              delta arrow only computes when chartData has a baseline,
-              so it naturally hides for non-ok states. */}
-          {ins.metric && (
+          {state === "pending" ? (
+            <div className="iskel" aria-label="Refreshing metric" aria-busy="true">
+              <div className="skel skel-metric" />
+              <div className="skel skel-label" />
+            </div>
+          ) : ins.metric ? (
             <KpiHeadline
               metric={ins.metric}
               label={ins.label}
               data={state === "ok" ? ins.chartData : undefined}
               size="card"
             />
-          )}
+          ) : null}
         </div>
       </div>
       <div className="iactions">
@@ -97,12 +96,13 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
           <button
             className="ipin"
             onClick={handleRetry}
-            disabled={retrying}
-            title="Re-run this metric"
+            disabled={refreshing}
+            title={refreshing ? "Re-running…" : "Re-run this metric"}
             aria-label="Re-run this metric"
+            aria-busy={refreshing}
             style={{ marginRight: 6 }}
           >
-            <span style={{ display: "inline-block", transform: retrying ? "rotate(0deg)" : "none", animation: retrying ? "spin 0.9s linear infinite" : "none" }}>↻</span>
+            <span style={{ display: "inline-block", animation: refreshing ? "spin 0.9s linear infinite" : "none" }}>↻</span>
           </button>
         )}
         <button
@@ -127,7 +127,14 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
         </button>
       </div>
       <div className={`idetail${open ? " open" : ""}`}>
-        <div className="dtext">{ins.detail}</div>
+        {state === "pending" ? (
+          <div className="dskel" aria-hidden="true">
+            <div className="skel skel-line" />
+            <div className="skel skel-line skel-line-short" />
+          </div>
+        ) : (
+          <div className="dtext">{ins.detail}</div>
+        )}
         {state === "ok" && ins.chartData?.length > 1 && (
           <div className="dchart">
             <Chart type={ins.chart} data={ins.chartData} centerLabel={ins.metric} valueLabel={ins.label} baselineLabel="Prior Period" />
