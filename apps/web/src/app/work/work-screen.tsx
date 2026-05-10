@@ -101,7 +101,11 @@ type PendingMemory = {
   conflicts: Array<{ memoryId: string; text: string; similarity: number }>;
 };
 
-export default function WorkScreen() {
+export default function WorkScreen({
+  initialThreadId,
+}: {
+  initialThreadId?: string;
+} = {}) {
   const router = useRouter();
   const [gateChecked, setGateChecked] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
@@ -156,9 +160,9 @@ export default function WorkScreen() {
 
   useEffect(() => {
     if (!gateChecked || gateError) return;
-    void loadThreads();
+    void loadThreads(initialThreadId);
     void loadMemories();
-  }, [gateChecked, gateError]);
+  }, [gateChecked, gateError, initialThreadId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -170,11 +174,14 @@ export default function WorkScreen() {
       const res = await fetch("/api/work/threads");
       const data = (await res.json()) as { threads: ThreadSummary[] };
       setThreads(data.threads ?? []);
-      const nextId =
-        preferredThreadId ??
-        activeThreadId ??
-        data.threads?.[0]?.id ??
-        null;
+      const nextId = preferredThreadId ?? data.threads?.[0]?.id ?? null;
+      // No preferredThreadId means we landed on /work bare. Mirror the
+      // selection into the URL so the thread is shareable; the resulting
+      // navigation re-mounts this screen with the right initialThreadId.
+      if (!preferredThreadId && nextId) {
+        router.replace(`/work/${nextId}`);
+        return;
+      }
       setActiveThreadId(nextId);
       if (nextId) {
         await loadThread(nextId);
@@ -219,6 +226,7 @@ export default function WorkScreen() {
     setThreads(remaining);
     if (activeThreadId === threadId) {
       const nextId = remaining[0]?.id ?? null;
+      router.replace(nextId ? `/work/${nextId}` : "/work");
       setActiveThreadId(nextId);
       if (nextId) {
         await loadThread(nextId);
@@ -265,6 +273,7 @@ export default function WorkScreen() {
       eventsByRun: {},
     });
     setPendingMemories([]);
+    router.replace(`/work/${nextId}`);
     return nextId;
   }
 
@@ -556,7 +565,6 @@ export default function WorkScreen() {
                     thread={thread}
                     active={thread.id === activeThreadId}
                     running={thread.id === activeThreadId && Boolean(activeRunId)}
-                    onSelect={() => void loadThread(thread.id)}
                     onDelete={() => void deleteThread(thread.id)}
                   />
                 ))
@@ -752,29 +760,27 @@ function ThreadRow({
   thread,
   active,
   running,
-  onSelect,
   onDelete,
 }: {
   thread: ThreadSummary;
   active: boolean;
   running: boolean;
-  onSelect: () => void;
   onDelete: () => void;
 }) {
   return (
     <div className={`work-thread-row${active ? " is-active" : ""}`}>
-      <button
-        type="button"
+      <Link
+        href={`/work/${thread.id}`}
         className="work-thread-row-main"
-        onClick={onSelect}
         title={thread.title || "Untitled thread"}
+        prefetch={false}
       >
         <span className={`work-thread-dot${running ? " is-running" : ""}`} aria-hidden="true" />
         <span className="work-thread-row-body">
           <span className="work-thread-row-title">{thread.title || "Untitled thread"}</span>
           <span className="work-thread-row-time">{formatDate(thread.lastMessageAt)}</span>
         </span>
-      </button>
+      </Link>
       <button
         type="button"
         className="work-thread-delete"

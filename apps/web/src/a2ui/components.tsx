@@ -58,7 +58,7 @@ registerComponent("BriefingCard", (comp: A2UIComponent, ctx: RenderContext) => {
       key={props.id}
       ins={insight}
       index={index}
-      onDismiss={() => extras?.onDismiss?.(props.id)}
+      onDismiss={extras?.onDismiss ? () => extras.onDismiss?.(props.id) : undefined}
     />
   );
 });
