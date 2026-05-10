@@ -3,11 +3,13 @@
 import "@/a2ui/components";
 import {
   ArrowUp,
+  Check,
   Loader2,
   Paperclip,
   Plus,
   Square,
   Wrench,
+  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -45,7 +47,7 @@ type RunRecord = {
 };
 
 type WorkEvent =
-  | { type: "hello"; runId: string; threadId: string }
+  | { type: "hello"; runId: string; threadId: string; backend?: RunRecord["backend"] }
   | { type: "message"; role: "user" | "assistant"; content: string }
   | { type: "tool_start"; id: string; name: string; input?: unknown }
   | { type: "tool_delta"; id: string; delta: unknown }
@@ -80,6 +82,26 @@ type WorkAssets = {
   memory: Array<{ name: string; path: string }>;
 };
 
+type MemoryRecord = {
+  id: string;
+  kind: string;
+  scope: string;
+  scopeId: string | null;
+  text: string;
+  pinned: boolean;
+  confidence: number;
+};
+
+type PendingMemory = {
+  id: string;
+  draftText: string;
+  draftKind: string;
+  draftScope: string;
+  confidence: number;
+  reasoning: string | null;
+  conflicts: Array<{ memoryId: string; text: string; similarity: number }>;
+};
+
 export default function WorkScreen() {
   const router = useRouter();
   const [gateChecked, setGateChecked] = useState(false);
@@ -88,6 +110,8 @@ export default function WorkScreen() {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<ThreadBundle | null>(null);
   const [assets, setAssets] = useState<WorkAssets>({ skills: [], memory: [] });
+  const [memories, setMemories] = useState<MemoryRecord[]>([]);
+  const [pendingMemories, setPendingMemories] = useState<PendingMemory[]>([]);
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -136,6 +160,7 @@ export default function WorkScreen() {
     if (!gateChecked || gateError) return;
     void loadThreads();
     void loadAssets();
+    void loadMemories();
   }, [gateChecked, gateError]);
 
   useEffect(() => {
@@ -175,6 +200,7 @@ export default function WorkScreen() {
       const data = (await res.json()) as ThreadBundle;
       setBundle(data);
       setActiveThreadId(threadId);
+      await loadPendingMemories(threadId);
     } finally {
       setLoadingThread(false);
     }
@@ -188,6 +214,20 @@ export default function WorkScreen() {
       skills: data.skills ?? [],
       memory: data.memory ?? [],
     });
+  }
+
+  async function loadMemories() {
+    const res = await fetch("/api/work/memories");
+    if (!res.ok) return;
+    const data = (await res.json()) as { memories: MemoryRecord[] };
+    setMemories(data.memories ?? []);
+  }
+
+  async function loadPendingMemories(threadId: string) {
+    const res = await fetch(`/api/work/memories/pending?threadId=${encodeURIComponent(threadId)}`);
+    if (!res.ok) return;
+    const data = (await res.json()) as { pending: PendingMemory[] };
+    setPendingMemories(data.pending ?? []);
   }
 
   async function createThread(): Promise<string> {
@@ -212,6 +252,7 @@ export default function WorkScreen() {
       messages: [],
       eventsByRun: {},
     });
+    setPendingMemories([]);
     return nextId;
   }
 
@@ -309,7 +350,7 @@ export default function WorkScreen() {
                     ...prev.runs,
                     {
                       id: runId!,
-                      backend: "hermes",
+                      backend: event.backend ?? "hermes",
                       status: "running",
                       error: null,
                       createdAt: new Date().toISOString(),
@@ -328,7 +369,11 @@ export default function WorkScreen() {
 
     setSending(false);
     setActiveRunId(null);
-    await Promise.all([loadThreads(threadId), loadThread(threadId), loadAssets()]);
+    await Promise.all([loadThreads(threadId), loadThread(threadId), loadAssets(), loadMemories()]);
+    window.setTimeout(() => {
+      void loadPendingMemories(threadId);
+      void loadMemories();
+    }, 1500);
   }
 
   function applyIncomingEvent(runId: string, event: WorkEvent) {
@@ -397,6 +442,21 @@ export default function WorkScreen() {
   async function cancelRun() {
     if (!activeRunId) return;
     await fetch(`/api/work/runs/${activeRunId}/cancel`, { method: "POST" });
+  }
+
+  async function decidePendingMemory(
+    id: string,
+    action: "accept" | "decline",
+    overrides: { scope?: string; scopeId?: string | null } = {},
+  ) {
+    const res = await fetch("/api/work/memories/decide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action, ...overrides }),
+    });
+    if (!res.ok) return;
+    if (activeThreadId) await loadPendingMemories(activeThreadId);
+    await loadMemories();
   }
 
   const runLookup = useMemo(() => {
@@ -512,19 +572,14 @@ export default function WorkScreen() {
             <div className="work-sidebar-section">
               <div className="work-sidebar-subtitle">Memory</div>
               <div className="work-asset-list">
-                {assets.memory.length === 0 ? (
-                  <div className="work-empty is-compact">No memory files yet.</div>
+                {memories.length === 0 ? (
+                  <div className="work-empty is-compact">No saved memories yet.</div>
                 ) : (
-                  assets.memory.map((entry) => (
-                    <a
-                      key={entry.name}
-                      href={entry.path}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="work-asset-row"
-                    >
-                      {entry.name}
-                    </a>
+                  memories.slice(0, 8).map((memory) => (
+                    <div key={memory.id} className="work-memory-row" title={memory.text}>
+                      <div className="work-memory-kind">{memory.kind.replace(/_/g, " ")}</div>
+                      <div className="work-memory-text">{memory.text}</div>
+                    </div>
                   ))
                 )}
               </div>
@@ -568,6 +623,16 @@ export default function WorkScreen() {
             </div>
 
             <div className="work-composer">
+              {pendingMemories.length > 0 ? (
+                <PendingMemoryPanel
+                  pending={pendingMemories}
+                  threadId={activeThreadId}
+                  onDecide={(id, action, overrides) =>
+                    void decidePendingMemory(id, action, overrides)
+                  }
+                />
+              ) : null}
+
               {files.length > 0 ? (
                 <div className="work-files">
                   {files.map((file, index) => (
@@ -641,6 +706,59 @@ export default function WorkScreen() {
   );
 }
 
+function PendingMemoryPanel({
+  pending,
+  threadId,
+  onDecide,
+}: {
+  pending: PendingMemory[];
+  threadId: string | null;
+  onDecide: (
+    id: string,
+    action: "accept" | "decline",
+    overrides?: { scope?: string; scopeId?: string | null },
+  ) => void;
+}) {
+  const item = pending[0];
+  if (!item) return null;
+  return (
+    <div className="work-memory-prompt">
+      <div className="work-memory-prompt-copy">
+        <div className="work-memory-kind">Memory suggestion</div>
+        <div>{item.draftText}</div>
+        {pending.length > 1 ? (
+          <div className="work-memory-prompt-count">+{pending.length - 1} more</div>
+        ) : null}
+      </div>
+      <div className="work-memory-prompt-actions">
+        <button type="button" onClick={() => onDecide(item.id, "decline")} title="Dismiss">
+          <X size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onDecide(item.id, "accept", { scope: "global" })}
+          title="Save globally"
+        >
+          <Check size={14} />
+          <span>Global</span>
+        </button>
+        {threadId ? (
+          <button
+            type="button"
+            onClick={() =>
+              onDecide(item.id, "accept", { scope: "thread", scopeId: threadId })
+            }
+            title="Save for this thread only"
+          >
+            <Check size={14} />
+            <span>Thread</span>
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: MessageRecord }) {
   if (message.role === "user") {
     return (
@@ -677,10 +795,16 @@ function RunActivity({
       .filter((event): event is Extract<WorkEvent, { type: "tool_end" }> => event.type === "tool_end")
       .map((event) => [event.id, event]),
   );
+  const toolDeltas = new Map(
+    events
+      .filter((event): event is Extract<WorkEvent, { type: "tool_delta" }> => event.type === "tool_delta")
+      .map((event) => [event.id, event.delta]),
+  );
   const statuses = events.filter((event): event is Extract<WorkEvent, { type: "status" }> => event.type === "status");
   const errors = events.filter((event): event is Extract<WorkEvent, { type: "error" }> => event.type === "error");
+  const tools = collectToolActivity(toolStarts, toolDeltas, toolEnds);
 
-  if (toolStarts.length === 0 && statuses.length === 0 && errors.length === 0 && !pending && !run) {
+  if (tools.length === 0 && statuses.length === 0 && errors.length === 0 && !pending && !run) {
     return null;
   }
 
@@ -692,16 +816,8 @@ function RunActivity({
           <span>{status.message}</span>
         </div>
       ))}
-      {toolStarts.map((call) => (
-        <details key={call.id} className="work-tool-row">
-          <summary>
-            <span>{call.name}</span>
-            <span>{toolEnds.get(call.id)?.error ? "failed" : toolEnds.get(call.id) ? "done" : "running"}</span>
-          </summary>
-          <pre>{JSON.stringify(call.input ?? {}, null, 2)}</pre>
-          {toolEnds.get(call.id)?.result ? <pre>{String(toolEnds.get(call.id)?.result ?? "")}</pre> : null}
-          {toolEnds.get(call.id)?.error ? <pre>{toolEnds.get(call.id)?.error}</pre> : null}
-        </details>
+      {tools.map((tool) => (
+        <ToolActivityRow key={tool.id} tool={tool} />
       ))}
       {errors.map((error, index) => (
         <div key={`error-${index}`} className="work-error">
@@ -711,6 +827,60 @@ function RunActivity({
       {pending ? <div className="work-status-row"><Loader2 className="work-status-spin" size={13} /><span>Running…</span></div> : null}
       {run?.error ? <div className="work-error">{run.error}</div> : null}
     </div>
+  );
+}
+
+type ToolActivity = {
+  id: string;
+  name: string;
+  input?: unknown;
+  delta?: unknown;
+  end?: Extract<WorkEvent, { type: "tool_end" }>;
+};
+
+function collectToolActivity(
+  starts: Array<Extract<WorkEvent, { type: "tool_start" }>>,
+  deltas: Map<string, unknown>,
+  ends: Map<string, Extract<WorkEvent, { type: "tool_end" }>>,
+): ToolActivity[] {
+  const byId = new Map<string, ToolActivity>();
+  for (const start of starts) {
+    byId.set(start.id, {
+      id: start.id,
+      name: start.name,
+      input: start.input,
+      delta: deltas.get(start.id),
+      end: ends.get(start.id),
+    });
+  }
+  for (const [id, delta] of deltas) {
+    if (!byId.has(id)) {
+      byId.set(id, { id, name: "tool", delta, end: ends.get(id) });
+    }
+  }
+  for (const [id, end] of ends) {
+    if (!byId.has(id)) {
+      byId.set(id, { id, name: "tool result", end });
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function ToolActivityRow({ tool }: { tool: ToolActivity }) {
+  const status = tool.end?.error ? "failed" : tool.end ? "done" : "running";
+  return (
+    <details className="work-tool-row" open={status === "running"}>
+      <summary>
+        <span>{tool.name}</span>
+        <span>{status}</span>
+      </summary>
+      {tool.delta ? (
+        <div className="work-tool-delta">{describeToolDelta(tool.delta)}</div>
+      ) : null}
+      {tool.input !== undefined ? <pre>{formatToolPayload(tool.input)}</pre> : null}
+      {tool.end?.result ? <pre>{formatToolPayload(tool.end.result)}</pre> : null}
+      {tool.end?.error ? <pre>{tool.end.error}</pre> : null}
+    </details>
   );
 }
 
@@ -762,6 +932,29 @@ function formatDate(value: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function describeToolDelta(delta: unknown): string {
+  if (!delta || typeof delta !== "object") {
+    return typeof delta === "string" ? delta : "Working…";
+  }
+  const info = delta as { message?: unknown; elapsedSeconds?: unknown };
+  if (typeof info.message === "string" && info.message.trim()) {
+    return info.message.trim();
+  }
+  if (typeof info.elapsedSeconds === "number" && Number.isFinite(info.elapsedSeconds)) {
+    return `Running for ${info.elapsedSeconds.toFixed(1)}s`;
+  }
+  return "Working…";
+}
+
+function formatToolPayload(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function joinMessageWithAttachments(

@@ -15,10 +15,21 @@ export function buildWorkPrompt(args: {
   workspace: AgentWorkspace;
   messages: AgentChatMessage[];
   currentUserMessage: string;
+  memoryContext?: string;
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
+  supportsMemoryTool: boolean;
 }): string {
-  const { backend, workspace, messages, currentUserMessage, supportsCardTool, supportsSkillTool } =
+  const {
+    backend,
+    workspace,
+    messages,
+    currentUserMessage,
+    memoryContext,
+    supportsCardTool,
+    supportsSkillTool,
+    supportsMemoryTool,
+  } =
     args;
 
   const cardInstructions = supportsCardTool
@@ -36,12 +47,27 @@ export function buildWorkPrompt(args: {
     ? "When the user asks you to create or update a skill, prefer `mcp__neko_skills__create_skill`."
     : "When the user asks you to create or update a skill, write agentskills.io-style files directly under the shared skills directory.";
 
+  const memoryInstructions = supportsMemoryTool
+    ? [
+        "Long-term memory is available through `mcp__neko_memory__search`, `mcp__neko_memory__remember`, and `mcp__neko_memory__forget`.",
+        "Search memory when the user asks about prior decisions, preferences, recurring metric definitions, business rules, company context, or older thread context.",
+        "Remember only explicit durable instructions, corrections, or preferences. Do not save ordinary one-off filters or analysis results.",
+        "When saving memory, use `global` unless the user says it is only for this Work thread; then use `thread`.",
+      ].join(" ")
+    : [
+        "Core memory is provided below. If the user explicitly asks you to remember or forget something, explain that durable memory writes require the Claude Agent backend.",
+      ].join(" ");
+
   return [
     `You are Neko Work running on the ${backend} backend.`,
     "",
     "You are helping the user analyze their business data, inspect uploaded files, and create durable skills or artifacts when useful.",
     cardInstructions,
     skillInstructions,
+    memoryInstructions,
+    "",
+    "Loaded memory:",
+    memoryContext?.trim() || "No core memories are currently saved for this workspace or thread.",
     "",
     "Shared directories:",
     `- Skills: ${workspace.skillsRoot}`,

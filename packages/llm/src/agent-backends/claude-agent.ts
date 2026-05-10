@@ -188,8 +188,11 @@ export class ClaudeAgentBackend implements AgentBackend {
 
     const resume = readSessionId(backendState["claude-agent"]);
     let sessionId = resume;
+    let partialAssistantText = "";
     let lastAssistantText = "";
+    let lastEmittedAssistantText = "";
     let finalText = "";
+    const toolNames = new Map<string, string>();
 
     // SDK input vs system prompt:
     //   - sync mode: prompt = the entire single-shot prompt → SDK prompt
@@ -222,6 +225,9 @@ export class ClaudeAgentBackend implements AgentBackend {
       sdkOptions.cwd = workspace.claudeProjectRoot;
       sdkOptions.allowDangerouslySkipPermissions = true;
       sdkOptions.skills = "all";
+      sdkOptions.includeHookEvents = true;
+      sdkOptions.includePartialMessages = true;
+      sdkOptions.agentProgressSummaries = true;
       if (mcpServers) sdkOptions.mcpServers = mcpServers;
       if (resume) sdkOptions.resume = resume;
       if (userMessage) {
@@ -238,21 +244,92 @@ export class ClaudeAgentBackend implements AgentBackend {
           if (typeof record.session_id === "string") sessionId = record.session_id;
           continue;
         }
+        if (record.type === "system" && onEvent) {
+          const statusMessage = describeSystemStatus(record);
+          if (statusMessage) {
+            await onEvent({ type: "status", message: statusMessage });
+          }
+          continue;
+        }
+        if (record.type === "tool_progress" && onEvent) {
+          const toolUseId = String(record.tool_use_id ?? "");
+          const toolName = String(record.tool_name ?? "tool");
+          toolNames.set(toolUseId, toolName);
+          await onEvent({
+            type: "tool_delta",
+            id: toolUseId,
+            delta: {
+              elapsedSeconds: Number(record.elapsed_time_seconds ?? 0),
+              message: `${toolName} is running…`,
+            },
+          });
+          continue;
+        }
+        if (record.type === "tool_use_summary" && onEvent) {
+          const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+          if (summary) {
+            await onEvent({ type: "status", message: summary });
+          }
+          continue;
+        }
+        if (record.type === "auth_status" && onEvent) {
+          if (record.isAuthenticating) {
+            await onEvent({ type: "status", message: "Authenticating Claude Agent…" });
+          }
+          continue;
+        }
+        if (record.type === "stream_event" && onEvent) {
+          const deltaText = extractPartialAssistantText(record.event);
+          if (deltaText) {
+            partialAssistantText += deltaText;
+            const streamedText = partialAssistantText.trim();
+            if (streamedText && streamedText !== lastEmittedAssistantText) {
+              lastAssistantText = streamedText;
+              lastEmittedAssistantText = streamedText;
+              await onEvent({
+                type: "message",
+                role: "assistant",
+                content: streamedText,
+              });
+            }
+          }
+          continue;
+        }
         if (record.type === "assistant") {
           const blocks =
             (record.message as { content?: unknown[] } | undefined)?.content ?? [];
+          let sawText = false;
           for (const block of blocks as Array<Record<string, unknown>>) {
             if (block.type === "text" && typeof block.text === "string") {
               const text = block.text.trim();
-              if (text) lastAssistantText = text;
+              if (text) {
+                partialAssistantText = text;
+                lastAssistantText = text;
+                sawText = true;
+              }
             } else if (block.type === "tool_use" && onEvent) {
+              const toolId = String(block.id ?? "");
+              const toolName = String(block.name ?? "unknown");
+              toolNames.set(toolId, toolName);
               await onEvent({
                 type: "tool_start",
-                id: String(block.id ?? ""),
-                name: String(block.name ?? "unknown"),
+                id: toolId,
+                name: toolName,
                 input: block.input,
               });
+              await onEvent({
+                type: "status",
+                message: `Using ${toolName}…`,
+              });
             }
+          }
+          if (sawText && onEvent && lastAssistantText !== lastEmittedAssistantText) {
+            lastEmittedAssistantText = lastAssistantText;
+            await onEvent({
+              type: "message",
+              role: "assistant",
+              content: lastAssistantText,
+            });
           }
           continue;
         }
@@ -262,12 +339,22 @@ export class ClaudeAgentBackend implements AgentBackend {
           for (const block of blocks as Array<Record<string, unknown>>) {
             if (block.type !== "tool_result") continue;
             const text = extractToolResultText(block.content);
+            const toolUseId = String(block.tool_use_id ?? "");
             await onEvent({
               type: "tool_end",
-              id: String(block.tool_use_id ?? ""),
+              id: toolUseId,
               result: text || undefined,
               error: block.is_error ? text || "Tool failed" : undefined,
             });
+            const toolName = toolNames.get(toolUseId);
+            if (toolName) {
+              await onEvent({
+                type: "status",
+                message: block.is_error
+                  ? `${toolName} failed.`
+                  : `${toolName} finished.`,
+              });
+            }
           }
           continue;
         }
@@ -321,4 +408,64 @@ function extractToolResultText(content: unknown): string {
       return block.type === "text" && typeof block.text === "string" ? block.text : "";
     })
     .join("");
+}
+
+function extractPartialAssistantText(event: unknown): string {
+  if (!event || typeof event !== "object") return "";
+  const payload = event as {
+    type?: unknown;
+    delta?: { text?: unknown };
+  };
+  if (payload.type !== "content_block_delta") return "";
+  return typeof payload.delta?.text === "string" ? payload.delta.text : "";
+}
+
+function describeSystemStatus(record: Record<string, unknown>): string | null {
+  switch (record.subtype) {
+    case "status": {
+      const status = record.status;
+      if (status === "requesting") return "Claude is reasoning…";
+      if (status === "compacting") return "Claude is compacting context…";
+      if (record.compact_result === "failed" && typeof record.compact_error === "string") {
+        return `Context compaction failed: ${record.compact_error}`;
+      }
+      return null;
+    }
+    case "task_started": {
+      const description = typeof record.description === "string" ? record.description.trim() : "";
+      return description || "Started a task…";
+    }
+    case "task_progress": {
+      const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+      if (summary) return summary;
+      const description = typeof record.description === "string" ? record.description.trim() : "";
+      const lastToolName =
+        typeof record.last_tool_name === "string" ? record.last_tool_name.trim() : "";
+      if (description && lastToolName) return `${description} (${lastToolName})`;
+      return description || null;
+    }
+    case "task_updated": {
+      const patch = record.patch as { status?: unknown; error?: unknown } | undefined;
+      if (patch?.status === "completed") return "Task completed.";
+      if (patch?.status === "failed") {
+        return typeof patch.error === "string" && patch.error
+          ? `Task failed: ${patch.error}`
+          : "Task failed.";
+      }
+      return null;
+    }
+    case "hook_progress":
+    case "hook_response": {
+      const output = typeof record.output === "string" ? record.output.trim() : "";
+      if (output) return output;
+      const stderr = typeof record.stderr === "string" ? record.stderr.trim() : "";
+      if (stderr) return stderr;
+      const stdout = typeof record.stdout === "string" ? record.stdout.trim() : "";
+      if (stdout) return stdout;
+      const hookName = typeof record.hook_name === "string" ? record.hook_name : "hook";
+      return `${hookName} is running…`;
+    }
+    default:
+      return null;
+  }
 }

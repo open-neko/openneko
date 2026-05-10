@@ -29,7 +29,7 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import { db, eq, data_source, pool } from "@neko/db";
-import { provisionHostConfig } from "../src/host-provision";
+import { hermesHomeForOrg, provisionHostConfig } from "../src/host-provision";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -199,6 +199,40 @@ describeIfDb("provisionHostConfig", () => {
 
   it("does not throw when no data source exists (graphjin write skipped)", async () => {
     await expect(provisionHostConfig(orgId)).resolves.toBeUndefined();
+  });
+
+  it("writes hermes config under ~/.config/openneko/hermes/{orgId} when HERMES_HOME is unset", async () => {
+    // Default path is per-org so the credential pool Hermes maintains
+    // in <hermesHome>/auth.json can't drift across orgs (or be poisoned
+    // by the host user's own `hermes login` sessions in ~/.hermes/).
+    delete process.env.HERMES_HOME;
+    await seedDataSource(orgId);
+    await seedProvider(orgId, {
+      scope: "agent",
+      provider: "hermes",
+      config: { backend: "hermes" },
+    });
+    await seedProvider(orgId, {
+      scope: "primary",
+      provider: "google-gemini",
+      model: "gemini-pro-latest",
+      secrets: { apiKey: "test-default-path-key" },
+    });
+
+    await provisionHostConfig(orgId);
+
+    const expectedHome = join(tempHome, ".config", "openneko", "hermes", orgId);
+    expect(hermesHomeForOrg(orgId)).toBe(expectedHome);
+
+    const yaml = await readFile(join(expectedHome, "config.yaml"), "utf8");
+    expect(yaml).toContain('default: "gemini-pro-latest"');
+    const env = await readFile(join(expectedHome, ".env"), "utf8");
+    expect(env).toContain("GEMINI_API_KEY=test-default-path-key");
+
+    // Per-org isolation: a different org's path must not collide.
+    expect(hermesHomeForOrg("other-org")).toBe(
+      join(tempHome, ".config", "openneko", "hermes", "other-org"),
+    );
   });
 
   it("writes empty .env when key is missing but provider row exists", async () => {

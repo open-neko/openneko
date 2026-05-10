@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  buildRenderCardsServer,
-  buildSkillBuilderServer,
-  buildWorkPrompt,
-  ensureGraphjinGuard,
-  ensureWorkWorkspace,
   resolveAgentBackend,
-  resolveBinaryOnPath,
   type AgentChatMessage,
   type AgentEvent,
 } from "@neko/llm";
+import {
+  buildRenderCardsServer,
+  buildSkillBuilderServer,
+  buildWorkMemoryServer,
+  buildWorkPrompt,
+  ensureGraphjinGuard,
+  ensureWorkWorkspace,
+  formatWorkMemoryPromptContext,
+  resolveBinaryOnPath,
+  runWorkAutoMemoryPipeline,
+} from "@neko/llm/work";
 import { getOrgId } from "@/lib/db";
 import { registerWorkRun } from "@/lib/work-run-registry";
 import {
@@ -19,6 +24,7 @@ import {
   finishWorkRun,
   getWorkThread,
   getWorkThreadBundle,
+  saveAssistantWorkMessage,
   setWorkThreadBackendState,
   suggestWorkThreadTitle,
   touchWorkThread,
@@ -36,6 +42,10 @@ const SSE_HEADERS = {
   "cache-control": "no-cache, no-transform",
   connection: "keep-alive",
 };
+
+function backendLabel(id: string): string {
+  return id === "claude-agent" ? "Claude Agent" : "Hermes";
+}
 
 function frame(data: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
@@ -113,23 +123,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
             event,
           });
           if (event.type === "message" && event.role === "assistant") {
-            await createWorkMessage({
+            await saveAssistantWorkMessage({
               orgId,
               threadId,
               runId: run.id,
-              role: "assistant",
               content: event.content,
             });
           }
           safeEnqueue(event);
         };
 
-        safeEnqueue({ type: "hello", runId: run.id, threadId });
+        safeEnqueue({ type: "hello", runId: run.id, threadId, backend: backend.id });
 
         void (async () => {
           try {
+            await emit({
+              type: "status",
+              message: `Starting ${backendLabel(backend.id)}…`,
+            });
             const supportsCardTool = backend.id === "claude-agent";
             const supportsSkillTool = backend.id === "claude-agent";
+            const supportsMemoryTool = backend.id === "claude-agent";
             const messages: AgentChatMessage[] = bundle.messages.map((row) => ({
               id: row.id,
               role: row.role,
@@ -137,23 +151,44 @@ export async function POST(request: NextRequest, context: RouteContext) {
               runId: row.runId,
               createdAt: row.createdAt,
             }));
+            await emit({
+              type: "status",
+              message: "Loading shared skills and memory…",
+            });
+            const memoryContext = await formatWorkMemoryPromptContext({
+              orgId,
+              threadId,
+              runId: run.id,
+            });
             const prompt = buildWorkPrompt({
               backend: backend.id,
               workspace,
               messages,
               currentUserMessage: message,
+              memoryContext,
               supportsCardTool,
               supportsSkillTool,
+              supportsMemoryTool,
             });
-            const mcpServers = supportsCardTool
+            const mcpServers = backend.id === "claude-agent"
               ? {
-                  neko_ui: buildRenderCardsServer(emit),
-                  neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
+                  ...(supportsCardTool ? { neko_ui: buildRenderCardsServer(emit) } : {}),
+                  ...(supportsSkillTool ? { neko_skills: buildSkillBuilderServer(workspace.skillsRoot) } : {}),
+                  ...(supportsMemoryTool
+                    ? {
+                        neko_memory: buildWorkMemoryServer({
+                          orgId,
+                          threadId,
+                          runId: run.id,
+                        }),
+                      }
+                    : {}),
                 }
               : undefined;
             const result = await backend.run({
               prompt,
               userMessage: message,
+              orgId,
               workspace,
               backendState: bundle.thread.backendState,
               signal: abortController.signal,
@@ -165,6 +200,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
               await setWorkThreadBackendState(threadId, result.backendState);
             }
             await finishWorkRun(run.id, result.status, result.error ?? null);
+            if (result.status === "completed" && result.finalText.trim()) {
+              void runWorkAutoMemoryPipeline({
+                orgId,
+                threadId,
+                runId: run.id,
+                userMessage: message,
+                agentAnswer: result.finalText,
+              });
+            }
             await emit({ type: "done", result: { status: result.status } });
           } catch (error) {
             const message =

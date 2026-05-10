@@ -164,6 +164,51 @@ describeIfDb("/api/briefing GET", () => {
     expect(dataValue.insights["still-pending"].metric).toBe("Fetching…");
   });
 
+  it("renders state='pending' when a re-run is in flight over an existing snapshot", async () => {
+    // A re-run flips last_refresh_status to 'pending' but leaves the
+    // old snapshot in place until the new one lands. The API must not
+    // keep showing the stale value as state='ok' — the user expects a
+    // skeleton until fresh data arrives.
+    const ins = await db()
+      .insert(metric)
+      .values({
+        org_id: orgId,
+        role: "CEO",
+        slug: "rerunning",
+        source: "bootstrap",
+        title: "Re-running revenue",
+        why: "Quick read on the top line",
+        chart_hint: "kpi",
+        active: true,
+        last_refresh_status: "pending",
+      })
+      .returning({ id: metric.id });
+    await db().insert(metric_snapshot).values({
+      metric_id: ins[0]!.id,
+      status: "good",
+      payload: {
+        headlineMetric: "$5.20M",
+        headlineLabel: "Revenue MTD",
+        insightText: "Old number from a previous run.",
+        detailText: "Stale.",
+        chartType: "kpi",
+        chartData: [{ d: "Revenue MTD", v: 5_200_000 }],
+      },
+    });
+
+    const res = await callRoute(GET, { url: "http://localhost/api/briefing?role=CEO" });
+    const messages = res.body as A2UIMessage[];
+    const dataMsg = messages[1] as Extract<A2UIMessage, { updateDataModel: unknown }>;
+    const dataValue = dataMsg.updateDataModel.value as {
+      insights: Record<string, { state?: string; metric: string; label: string }>;
+    };
+    expect(dataValue.insights["rerunning"]).toMatchObject({
+      state: "pending",
+      metric: "Fetching…",
+      label: "",
+    });
+  });
+
   it("renders state='failed' + error when last refresh failed", async () => {
     await db().insert(metric).values({
       org_id: orgId,

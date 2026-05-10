@@ -30,28 +30,29 @@ async function loadAgentRow(orgId: string): Promise<{
   id: string;
   config: Record<string, unknown> | null;
 } | null> {
-  try {
-    const rows = await db()
-      .select({
-        id: llm_provider_config.id,
-        config: llm_provider_config.config,
-      })
-      .from(llm_provider_config)
-      .where(
-        and(
-          eq(llm_provider_config.org_id, orgId),
-          eq(llm_provider_config.scope, AGENT_SCOPE),
-        ),
-      )
-      .limit(1);
-    return (
-      (rows[0] as
-        | { id: string; config: Record<string, unknown> | null }
-        | undefined) ?? null
-    );
-  } catch {
-    return null;
-  }
+  // No try/catch — DB errors must propagate so the page renders an
+  // error instead of an empty wizard. Same swallow-pattern bug as in
+  // org-state, data-source-settings, and provider-settings: a stale
+  // pool blip used to read as "no agent configured" and looped users
+  // through the wizard with blank fields.
+  const rows = await db()
+    .select({
+      id: llm_provider_config.id,
+      config: llm_provider_config.config,
+    })
+    .from(llm_provider_config)
+    .where(
+      and(
+        eq(llm_provider_config.org_id, orgId),
+        eq(llm_provider_config.scope, AGENT_SCOPE),
+      ),
+    )
+    .limit(1);
+  return (
+    (rows[0] as
+      | { id: string; config: Record<string, unknown> | null }
+      | undefined) ?? null
+  );
 }
 
 function readPositiveInt(

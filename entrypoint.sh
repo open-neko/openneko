@@ -20,7 +20,7 @@
 # wizard handles password rotation in that mode.
 set -eu
 
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/neko"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openneko"
 mkdir -p "$CONFIG_DIR" "$HOME/.hermes"
 
 if [ -n "${NEKO_PG_HOST:-}" ]; then

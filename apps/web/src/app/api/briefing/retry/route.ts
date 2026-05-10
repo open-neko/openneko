@@ -76,12 +76,34 @@ export async function POST(request: NextRequest) {
       .limit(1);
     const payload = row[0]?.trigger_payload as { metricId?: string } | null;
     if (payload?.metricId === metricId) {
+      // The job is already queued/running — but the metric's
+      // last_refresh_status may still be the previous 'ok'/'failed'
+      // value (e.g. when the in-flight job was enqueued by the
+      // 24h cron sweep, which doesn't touch last_refresh_status).
+      // Without flipping it here, the card keeps showing the prior
+      // snapshot and the user's retry click looks like a no-op even
+      // though we did the right thing server-side. Stamp pending so
+      // the next /api/briefing fetch returns state='pending' and the
+      // card flips to its skeleton.
+      await db()
+        .update(metric)
+        .set({
+          last_refresh_status: "pending",
+          last_refresh_error: null,
+          last_refresh_job_id: job.id,
+          updated_at: new Date(),
+        })
+        .where(eq(metric.id, metricId));
       return NextResponse.json({ jobId: job.id, alreadyRunning: true });
     }
   }
 
-  // Insert a fresh processing_job + enqueue. The worker will mark
-  // metric.last_refresh_status='ok' or 'failed' when it finishes.
+  // Insert a fresh processing_job + flip the metric to pending +
+  // enqueue. pg-boss runs on its own pool so these can't be one
+  // transaction; if the enqueue throws after the row is in place the
+  // metric would skeleton forever waiting for a job that never runs.
+  // Roll the row + metric back to a failed terminal state on enqueue
+  // error so the user can hit retry again immediately.
   const inserted = await db()
     .insert(processing_job)
     .values({
@@ -110,7 +132,24 @@ export async function POST(request: NextRequest) {
     })
     .where(eq(metric.id, metricId));
 
-  await enqueue(QUEUE.METRIC_REFRESH, { processingJobId: jobId, orgId });
+  try {
+    await enqueue(QUEUE.METRIC_REFRESH, { processingJobId: jobId, orgId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const now = new Date();
+    await db()
+      .update(processing_job)
+      .set({ status: "failed", error: `enqueue failed: ${msg}`, finished_at: now, updated_at: now })
+      .where(eq(processing_job.id, jobId));
+    await db()
+      .update(metric)
+      .set({ last_refresh_status: "failed", last_refresh_error: `enqueue failed: ${msg}`, updated_at: now })
+      .where(eq(metric.id, metricId));
+    return NextResponse.json(
+      { error: `enqueue failed: ${msg}` },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({ jobId, alreadyRunning: false });
 }

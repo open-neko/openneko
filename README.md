@@ -78,14 +78,14 @@ which graphjin claude hermes
 
 Then open <http://localhost:3000>. On first boot you're sent to `/settings`, which renders a linear setup wizard until first-run is finished:
 
-1. Setting an admin DB password (writes to `~/.config/neko/config.json`)
+1. Setting an admin DB password (writes to `~/.config/openneko/config.json`)
 2. Connecting your customer data source (the GraphJin endpoint from #1 above)
 3. Picking the agent + primary LLM provider
 4. Optional industry-research provider
 
 After the wizard finishes, the `/onboarding` business wizard becomes reachable, the briefing surface lives at `/`, and `/settings` flips into a card index for ongoing edits to providers, data source, and agent.
 
-The web and worker apps don't read env vars from disk by default. The one allowed knob is `NEXT_PUBLIC_DEMO=true` on the web side — drop it into `apps/web/.env.local` (see [apps/web/.env.example](apps/web/.env.example)) to flip into the canned-mock briefing flow for screenshots / video without real data. The `NEXT_PUBLIC_` prefix lets both server and client code read the same flag; the legacy `DEMO=true` still works server-side for backward compatibility. All other configuration comes from `~/.config/neko/config.json` plus rows in the metadata DB itself.
+The web and worker apps don't read env vars from disk by default. The one allowed knob is `NEXT_PUBLIC_DEMO=true` on the web side — drop it into `apps/web/.env.local` (see [apps/web/.env.example](apps/web/.env.example)) to flip into the canned-mock briefing flow for screenshots / video without real data. The `NEXT_PUBLIC_` prefix lets both server and client code read the same flag; the legacy `DEMO=true` still works server-side for backward compatibility. All other configuration comes from `~/.config/openneko/config.json` plus rows in the metadata DB itself.
 
 ## Docker Compose
 
@@ -96,7 +96,7 @@ What it does:
 - Starts `neko-db` (Postgres 16) on `localhost:5432` with hardcoded creds `neko/secret/neko`
 - Runs a one-shot `neko-db-init` sidecar that waits for `neko-db` and applies every file in [db/migrations/](db/migrations/) — the baseline [0001_init.sql](db/migrations/0001_init.sql) on an empty schema, then any incremental migrations on every restart (each must be idempotent)
 
-The bootstrap creds in [compose.yml](compose.yml) are the **baseline only**. The `/setup` wizard rotates the password on first run and persists the new value to `~/.config/neko/config.json` on the host.
+The bootstrap creds in [compose.yml](compose.yml) are the **baseline only**. The `/setup` wizard rotates the password on first run and persists the new value to `~/.config/openneko/config.json` on the host.
 
 ```bash
 docker compose up -d            # start

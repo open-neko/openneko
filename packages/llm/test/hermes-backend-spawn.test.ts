@@ -1,11 +1,15 @@
 /**
  * HermesBackend spawn invariants — narrow tests around the env / argv
- * passed to `hermes` so a regression on the global-config rule doesn't
- * silently re-introduce the per-org HERMES_HOME bug we fixed.
+ * passed to `hermes`. We mock node:child_process.spawn to capture what
+ * HermesBackend would have invoked and then immediately resolve the
+ * run, so no real binary is exec'd.
  *
- * We mock node:child_process.spawn to capture what HermesBackend would
- * have invoked and then immediately resolve the run, so no real binary
- * is exec'd.
+ * The HERMES_HOME contract: if `opts.orgId` is set, the backend MUST
+ * set HERMES_HOME to `hermesHomeForOrg(orgId)` so Hermes' credential
+ * pool can't drift across orgs or be poisoned by the host user's
+ * global ~/.hermes/. If `orgId` is absent (debug scripts, legacy
+ * tests), the backend leaves HERMES_HOME alone — we inherit whatever
+ * the parent process has (or nothing).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -74,6 +78,7 @@ afterEach(() => {
 });
 
 const { HermesBackend } = await import("../src/agent-backends/hermes");
+const { hermesHomeForOrg } = await import("../src/host-provision");
 
 const FAKE_WORKSPACE = {
   orgRoot: "/tmp/neko-test/org",
@@ -91,14 +96,23 @@ const FAKE_WORKSPACE = {
 } as const;
 
 describe("HermesBackend spawn invariants", () => {
-  it("never sets HERMES_HOME — always inherits the global ~/.hermes config", async () => {
+  it("sets HERMES_HOME to the per-org path when orgId is supplied", async () => {
+    const backend = new HermesBackend();
+    await backend.run({ prompt: "ping", orgId: "org-abc-123", workspace: FAKE_WORKSPACE });
+
+    expect(spawnCalls).toHaveLength(1);
+    const env = spawnCalls[0].options.env ?? {};
+    expect(env.HERMES_HOME).toBe(hermesHomeForOrg("org-abc-123"));
+  });
+
+  it("leaves HERMES_HOME alone when orgId is absent (debug / legacy callers)", async () => {
     const backend = new HermesBackend();
     await backend.run({ prompt: "ping", workspace: FAKE_WORKSPACE });
 
     expect(spawnCalls).toHaveLength(1);
     const env = spawnCalls[0].options.env ?? {};
-    // Must not be set by the backend; if the user has it in their shell
-    // env we inherit (...process.env) but never override it.
+    // We inherit whatever the parent process has (...process.env) — no
+    // override from the backend itself.
     if (process.env.HERMES_HOME) {
       expect(env.HERMES_HOME).toBe(process.env.HERMES_HOME);
     } else {

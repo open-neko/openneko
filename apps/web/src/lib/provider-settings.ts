@@ -102,31 +102,32 @@ async function loadStoredConfig(
   orgId: string,
   scope: ProviderScope,
 ): Promise<StoredProviderConfigRow | null> {
-  try {
-    const rows = await db()
-      .select({
-        id: llm_provider_config.id,
-        org_id: llm_provider_config.org_id,
-        scope: llm_provider_config.scope,
-        provider: llm_provider_config.provider,
-        model: llm_provider_config.model,
-        label: llm_provider_config.label,
-        enabled: llm_provider_config.enabled,
-        config: llm_provider_config.config,
-        secrets: llm_provider_config.secrets,
-      })
-      .from(llm_provider_config)
-      .where(
-        and(
-          eq(llm_provider_config.org_id, orgId),
-          eq(llm_provider_config.scope, scope),
-        ),
-      )
-      .limit(1);
-    return (rows[0] as StoredProviderConfigRow | undefined) ?? null;
-  } catch {
-    return null;
-  }
+  // No try/catch — DB errors must propagate so the page renders an
+  // error instead of silently rendering an empty wizard. A bare catch
+  // here used to make a stale-pool blip indistinguishable from "no
+  // provider configured yet", which sent users back through the
+  // wizard with blank fields even though their data was on disk.
+  const rows = await db()
+    .select({
+      id: llm_provider_config.id,
+      org_id: llm_provider_config.org_id,
+      scope: llm_provider_config.scope,
+      provider: llm_provider_config.provider,
+      model: llm_provider_config.model,
+      label: llm_provider_config.label,
+      enabled: llm_provider_config.enabled,
+      config: llm_provider_config.config,
+      secrets: llm_provider_config.secrets,
+    })
+    .from(llm_provider_config)
+    .where(
+      and(
+        eq(llm_provider_config.org_id, orgId),
+        eq(llm_provider_config.scope, scope),
+      ),
+    )
+    .limit(1);
+  return (rows[0] as StoredProviderConfigRow | undefined) ?? null;
 }
 
 function readSecrets(row: StoredProviderConfigRow | null): Record<string, string> {
@@ -427,19 +428,19 @@ export async function resolveResearchStatus(orgId: string): Promise<"enabled" | 
 }
 
 export async function hasPrimaryProviderSetup(orgId: string): Promise<boolean> {
-  try {
-    const stored = await loadStoredConfig(orgId, "primary");
-    if (stored && isPrimaryProvider(stored.provider)) {
-      const resolved = toEditable(stored);
-      return resolved.enabled && validateConfig(resolved).length === 0;
-    }
+  // No try/catch — let DB errors surface. A bare catch here makes a
+  // pool blip look like "primary not configured", which fails the
+  // /settings/finish gate even when the DB has the row, looping the
+  // user back into the wizard.
+  const stored = await loadStoredConfig(orgId, "primary");
+  if (stored && isPrimaryProvider(stored.provider)) {
+    const resolved = toEditable(stored);
+    return resolved.enabled && validateConfig(resolved).length === 0;
+  }
 
-    const env = readPrimaryProviderConfigFromEnv();
-    if (env && env.scope === "primary") {
-      return env.enabled && validateConfig(env).length === 0;
-    }
-  } catch {
-    return false;
+  const env = readPrimaryProviderConfigFromEnv();
+  if (env && env.scope === "primary") {
+    return env.enabled && validateConfig(env).length === 0;
   }
 
   return false;

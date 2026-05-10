@@ -61,7 +61,7 @@ type Initial = {
 };
 
 // Step 0 ("Password") is shown only when the admin hasn't picked one yet.
-// Once changed, ~/.config/neko/config.json has pg.password and we skip
+// Once changed, ~/.config/openneko/config.json has pg.password and we skip
 // straight to Data on subsequent visits.
 const STEPS_WITH_PASSWORD = ["Password", "Data", "Agent", "Research"] as const;
 const STEPS_WITHOUT_PASSWORD = ["Data", "Agent", "Research"] as const;

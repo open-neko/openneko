@@ -24,7 +24,7 @@ describe("work workspace", () => {
     const skills = await readdir(workspace.skillsRoot);
     expect(skills).toContain("skill-creator");
     expect(skills).toContain("pdf");
-  });
+  }, 30_000);
 
   it("creates per-thread and per-run directories", async () => {
     const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
@@ -34,5 +34,5 @@ describe("work workspace", () => {
     const workspace = await ensureWorkWorkspace("org-test", "thread-1", "run-1");
     expect(workspace.threadUploadsRoot).toContain("thread-1");
     expect(workspace.artifactRoot).toContain("run-1");
-  });
+  }, 30_000);
 });

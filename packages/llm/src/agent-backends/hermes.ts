@@ -10,9 +10,12 @@
  *     forwarded if set, lifecycle events (status, message, error) are
  *     emitted via onEvent. No retries — Work is one-shot per turn.
  *
- * In both modes HERMES_HOME is NOT overridden — Hermes reads its provider
- * config from the global ~/.hermes/config.yaml (provisionHostConfig writes
- * it from /settings/agent). Same model on Dashboard and Work, always.
+ * HERMES_HOME is set per-org (via `hermesHomeForOrg(opts.orgId)`) so the
+ * credential pool Hermes maintains in `<HERMES_HOME>/auth.json` is
+ * isolated from the host's global ~/.hermes/. That isolation is what
+ * stops a stale `hermes login` token from another terminal poisoning a
+ * long-running Work agent. provisionHostConfig writes config.yaml +
+ * .env to the same per-org path so the writer and reader agree.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -26,6 +29,7 @@ import {
   type AgentSurfaceMessage,
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
+import { hermesHomeForOrg } from "../host-provision";
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
@@ -77,6 +81,7 @@ export class HermesBackend implements AgentBackend {
       retries = 1,
       debug = false,
       tag,
+      orgId,
       workspace,
       skills,
       signal,
@@ -106,8 +111,14 @@ export class HermesBackend implements AgentBackend {
           timeoutMs,
           debug,
           tag,
+          orgId,
           workspace,
           signal,
+          onStatus: onEvent
+            ? (message) => {
+                void onEvent({ type: "status", message });
+              }
+            : undefined,
         });
         let finalText = rawText;
         if (onEvent) {
@@ -155,8 +166,10 @@ type SpawnArgs = {
   timeoutMs: number;
   debug: boolean;
   tag: string | undefined;
+  orgId: string | undefined;
   workspace: AgentRunOptions["workspace"];
   signal: AbortSignal | undefined;
+  onStatus?: (message: string) => void;
 };
 
 async function spawnOnce({
@@ -164,8 +177,10 @@ async function spawnOnce({
   timeoutMs,
   debug,
   tag,
+  orgId,
   workspace,
   signal,
+  onStatus,
 }: SpawnArgs): Promise<string> {
   // cwd: per-org workspace for streaming (so file tools see org files);
   // tmp scratch for sync (so concurrent Dashboard runs don't collide).
@@ -193,12 +208,18 @@ async function spawnOnce({
 
   // PATH prepend with the per-run binRoot lets the graphjin guard wrapper
   // intercept agent calls. Skipped in sync mode (no per-run guard there).
-  const env = workspace
+  // HERMES_HOME points at the per-org dir provisionHostConfig populated;
+  // when orgId is missing (legacy callers, tests with no org context) we
+  // leave HERMES_HOME alone so the process inherits whatever the host has.
+  const env: NodeJS.ProcessEnv = workspace
     ? {
         ...process.env,
         PATH: `${workspace.binRoot}:${process.env.PATH || ""}`,
       }
     : { ...process.env };
+  if (orgId) {
+    env.HERMES_HOME = hermesHomeForOrg(orgId);
+  }
 
   return new Promise<string>((resolve, reject) => {
     // detached: true so killing the pgid takes the whole subprocess tree
@@ -222,6 +243,7 @@ async function spawnOnce({
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
+    let stderrLineBuffer = "";
     let timer: NodeJS.Timeout | null = null;
     let settled = false;
 
@@ -247,6 +269,13 @@ async function spawnOnce({
     child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
     child.stderr.on("data", (c: Buffer) => {
       stderrChunks.push(c);
+      if (onStatus) {
+        const { lines, rest } = consumeStatusLines(stderrLineBuffer + c.toString("utf8"));
+        stderrLineBuffer = rest;
+        for (const line of lines) {
+          onStatus(line);
+        }
+      }
       if (debug) process.stderr.write(c);
     });
 
@@ -257,6 +286,10 @@ async function spawnOnce({
     child.on("close", (code) => {
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (onStatus && stderrLineBuffer.trim()) {
+        onStatus(cleanStatusLine(stderrLineBuffer));
+        stderrLineBuffer = "";
+      }
       if (code !== 0) {
         settleReject(
           new Error(`hermes exited ${code}: ${stderr.slice(-500) || "(no stderr)"}`),
@@ -271,6 +304,20 @@ async function spawnOnce({
       settleReject(new Error(`hermes timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
+}
+
+function consumeStatusLines(raw: string): { lines: string[]; rest: string } {
+  const parts = raw.split(/\r?\n/);
+  const rest = parts.pop() ?? "";
+  const lines = parts
+    .map(cleanStatusLine)
+    .filter(Boolean)
+    .slice(-5);
+  return { lines, rest };
+}
+
+function cleanStatusLine(raw: string): string {
+  return raw.replace(/\u001b\[[0-9;]*m/g, "").trim();
 }
 
 const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;

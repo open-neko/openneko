@@ -2,7 +2,7 @@ import "server-only";
 
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
-import { ensureOrgWorkspace } from "@neko/llm";
+import { ensureOrgWorkspace } from "@neko/llm/work";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".csv": "text/csv; charset=utf-8",

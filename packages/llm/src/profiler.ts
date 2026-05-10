@@ -15,6 +15,7 @@
  * verbatim into customer_profile.business_profile.
  */
 
+import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 
 const DISCOVERY_RETRIES = 4;
@@ -54,15 +55,16 @@ function buildPrompt(args: {
   orgName: string;
   companyNote: string;
   k: Knowledge;
+  shellTool: string;
 }): string {
-  const { orgName, companyNote, k } = args;
+  const { orgName, companyNote, k, shellTool } = args;
   return `You build a short markdown business profile about a customer company by querying its database via GraphJin.
 
 EXECUTION PATTERN:
 1. Read the three knowledge sections below (Tables, Insights, Syntax) — together they are the authoritative DSL + table/column/FK index for this database. Don't run any schema-discovery commands; that information is already inline.
 2. Skim Tables + Insights to identify what this business actually does (industry, offering, business model). Pick the handful of tables that matter.
 3. Run a small set of GraphQL queries to gather facts: main business event (date range, recent volume + value), top categories / products / services, geography, who is served, who does the work.
-4. Run queries via Bash:
+4. Run queries via the \`${shellTool}\` tool:
      graphjin cli execute_graphql --args '{"query":"<your graphql>"}'
    (\`graphjin cli\` is already pointed at the running server. Use --args-file - and stdin if a query is large enough to be awkward to escape inline.)
 5. If a response contains an "errors" array, use:
@@ -71,9 +73,9 @@ EXECUTION PATTERN:
 6. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.
 
 DATA ACCESS — READ-ONLY:
-The database is queried exclusively via \`graphjin cli\` run through the Bash tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate.
+The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
-- Every database read goes through \`graphjin cli execute_graphql\` via Bash.
+- Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
 - DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is already inline below.
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the profile must trace back to a \`graphjin cli execute_graphql\` response from this run.
@@ -200,6 +202,7 @@ export async function runProfiler(args: {
     orgName,
     companyNote,
     k: { tables, insights, syntax },
+    shellTool: shellToolName(backend.id),
   });
 
   // 3. Run. Backends don't surface per-turn progress, so we emit one
@@ -208,6 +211,7 @@ export async function runProfiler(args: {
   const startedAt = Date.now();
   const result = await backend.run({
     prompt,
+    orgId,
     tag: jobId ?? orgId,
     debug: debug === true,
   });

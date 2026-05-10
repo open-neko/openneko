@@ -185,41 +185,46 @@ export async function GET(request: NextRequest) {
     const p = snap?.payload as SnapshotPayload;
     const hasData = !!p;
     // Card state — read by BriefingCard to render the right chrome:
-    //   ok      → snapshot present, render data
+    //   ok      → snapshot present and not currently refreshing
     //   failed  → last metric_refresh failed; render error + Retry
-    //   pending → no snapshot yet (or status unknown); render skeleton
+    //   pending → refresh in flight (no snapshot yet OR re-run queued
+    //             over an existing snapshot); render skeleton
     // Failure trumps a stale snapshot: a card that failed on its most
     // recent refresh should show the error even if an older snapshot
-    // exists, because the user's last action expected fresh data.
+    // exists. A pending refresh also trumps the stale snapshot — if the
+    // user just clicked re-run, they don't want to keep staring at the
+    // old number until the new one lands.
     const state =
       m.last_refresh_status === "failed"
         ? "failed"
-        : hasData
-          ? "ok"
-          : "pending";
+        : m.last_refresh_status === "pending"
+          ? "pending"
+          : hasData
+            ? "ok"
+            : "pending";
     return {
       id: m.slug,
       metricId: m.id,
       source: m.source,
       state,
       error: state === "failed" ? (m.last_refresh_error ?? "Unknown error") : undefined,
-      mood: state === "failed" ? "bad" : ((snap?.status ?? "watch") as string),
+      mood: state === "failed" ? "bad" : state === "pending" ? "watch" : ((snap?.status ?? "watch") as string),
       text: m.title,
       metric:
         state === "failed"
           ? "Couldn't load"
-          : hasData
+          : state === "ok"
             ? (p?.headlineMetric ?? "—")
             : "Fetching…",
       label: state === "ok" ? (p?.headlineLabel ?? "") : "",
       detail:
         state === "failed"
           ? (m.last_refresh_error ?? "Unknown error")
-          : hasData
+          : state === "ok"
             ? [p?.insightText, p?.detailText].filter(Boolean).join(" ")
             : (m.why ?? ""),
       chartType: p?.chartType ?? m.chart_hint ?? "line",
-      chartDataOverride: state === "ok" && hasData ? p?.chartData : [],
+      chartDataOverride: state === "ok" ? p?.chartData : [],
       fromDb: true,
     };
   });

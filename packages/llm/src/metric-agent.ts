@@ -14,6 +14,7 @@
  */
 
 import { data_source, db, eq } from "@neko/db";
+import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
 import { detectUpstreamError } from "./agent-error";
@@ -96,13 +97,13 @@ async function fetchGraphJinKnowledge(mcpUrl: string): Promise<Knowledge> {
   return { tables, insights, syntax };
 }
 
-function buildPrompt(input: MetricAgentInput, k: Knowledge): string {
+function buildPrompt(input: MetricAgentInput, k: Knowledge, shellTool: string): string {
   return `You answer ONE dashboard card by writing GraphQL queries and executing them against a GraphJin server, then returning a single JSON object describing the snapshot.
 
 EXECUTION PATTERN:
 1. Read the three knowledge sections below (Tables, Insights, Syntax) — together they are the authoritative DSL + table/column/FK index for this database. Don't run any schema-discovery commands; that information is already inline.
 2. Write ONE bulk GraphQL query that computes both the current value AND a baseline (prior period of equal length) in the same request when possible. Prefer one bulk query over many small ones.
-3. Run it via Bash:
+3. Run it via the \`${shellTool}\` tool:
      graphjin cli execute_graphql --args '{"query":"<your graphql>"}'
    (\`graphjin cli\` is already pointed at the running server. Use --args-file - and stdin if the query is large enough to be awkward to escape inline.)
 4. If the response contains an "errors" array, use:
@@ -111,9 +112,9 @@ EXECUTION PATTERN:
 5. When you have the data, emit the final JSON object exactly per the OUTPUT CONTRACT. No prose around it.
 
 DATA ACCESS — READ-ONLY:
-The database is queried exclusively via \`graphjin cli\` run through the Bash tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate.
+The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
-- Every database read goes through \`graphjin cli execute_graphql\` via Bash.
+- Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
 - DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is already inline below.
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the output must trace back to a \`graphjin cli execute_graphql\` response from this run.
@@ -275,10 +276,15 @@ export async function runMetricAgent(
     `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge tables=${knowledge.tables.length}B insights=${knowledge.insights.length}B syntax=${knowledge.syntax.length}B`,
   );
 
-  const prompt = buildPrompt(input, knowledge);
-
+  // Resolve the backend first so the prompt can reference its actual
+  // shell-tool name (Hermes calls it `terminal`, Claude Agent calls it
+  // `Bash`). Without this, Hermes would see "via the Bash tool" — a
+  // tool name it doesn't have — and reach for `execute_code` (Python)
+  // instead, bypassing graphjin cli entirely.
   const backend = await resolveAgentBackend(input.orgId);
   const debug = input.debug === true;
+
+  const prompt = buildPrompt(input, knowledge, shellToolName(backend.id));
 
   console.log(
     `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id}`,
@@ -287,6 +293,7 @@ export async function runMetricAgent(
   const startedAt = Date.now();
   const result_ = await backend.run({
     prompt,
+    orgId: input.orgId,
     tag: input.jobId,
     debug,
   });

@@ -16,11 +16,13 @@
  *     failure). True misconfiguration still throws AgentBackendConfigError
  *     at construction time, which the resolver catches.
  *
- * LLM provider config is GLOBAL: every run reads ~/.hermes/config.yaml. A
- * backend MUST NOT override HERMES_HOME or otherwise install a per-org
- * provider config. /settings/agent → provisionHostConfig is the single
- * source of truth, so a chat answer and a dashboard card always run on the
- * same model.
+ * LLM provider config is per-org: every run reads
+ * <hermesHomeForOrg(orgId)>/config.yaml. /settings/agent →
+ * provisionHostConfig writes the same path, so a chat answer and a
+ * dashboard card for the same org always run on the same model. The
+ * Hermes backend sets HERMES_HOME on spawn so the host's global
+ * ~/.hermes/ (where the user's own `hermes` CLI sessions live) cannot
+ * leak credential-pool drift into our long-running agents.
  */
 
 export const AGENT_BACKEND_IDS = ["hermes", "claude-agent"] as const;
@@ -51,6 +53,19 @@ export const AGENT_BACKEND_OPTIONS = [
 
 export function isAgentBackendId(value: string): value is AgentBackendId {
   return (AGENT_BACKEND_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * The name of the shell-execution tool the agent will see in its tool
+ * palette. Used by prompt builders so we instruct the agent with the
+ * actual tool name it has access to, instead of a generic "Bash" that
+ * doesn't exist in Hermes' palette.
+ *
+ *   claude-agent → "Bash"     (matches @anthropic-ai/claude-agent-sdk preset)
+ *   hermes       → "terminal" (matches Hermes' built-in `terminal` toolset)
+ */
+export function shellToolName(backendId: AgentBackendId): string {
+  return backendId === "claude-agent" ? "Bash" : "terminal";
 }
 
 /* ─── Workspace / streaming types (shared by Dashboard and Work) ─── */
@@ -89,9 +104,10 @@ export type AgentChatMessage = {
  * Per-org / per-run filesystem layout passed to streaming runs. Dashboard
  * runs leave this undefined and let the backend pick a scratch dir.
  *
- * Notably absent: `hermesHome`. Hermes always uses ~/.hermes (configured
- * by provisionHostConfig). Per-org override would lose the global LLM
- * provider config.
+ * `hermesHome` is intentionally not on this struct — it's resolved from
+ * `orgId` by `hermesHomeForOrg(orgId)` in host-provision.ts, which keeps
+ * the writer (provisionHostConfig) and the reader (HermesBackend.spawn)
+ * agreeing on the path by construction.
  */
 export type AgentWorkspace = {
   orgRoot: string;
@@ -130,6 +146,14 @@ export type AgentRunOptions = {
   debug?: boolean;
   /** Identifier for correlation (e.g. processing_job UUID). */
   tag?: string;
+  /**
+   * Owning org id. The Hermes backend uses it to resolve a per-org
+   * HERMES_HOME so the credential pool is isolated from the host's
+   * global ~/.hermes/. Optional for backward compatibility — when
+   * absent, the backend falls back to whatever HERMES_HOME the host
+   * has set (or Hermes' default ~/.hermes/).
+   */
+  orgId?: string;
   /** Per-org / per-run filesystem layout. Streaming callers pass this; sync callers don't. */
   workspace?: AgentWorkspace;
   /** Skill names to expose (`--skills` for Hermes; SDK `skills` for Claude). */

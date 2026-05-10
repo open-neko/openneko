@@ -29,6 +29,7 @@ const M_0003 = join(REPO_ROOT, "db", "migrations", "0003_rename_claude_sdk_to_cl
 const M_0004 = join(REPO_ROOT, "db", "migrations", "0004_drop_organization_plan.sql");
 const M_0005 = join(REPO_ROOT, "db", "migrations", "0005_metric_refresh_status.sql");
 const M_0006 = join(REPO_ROOT, "db", "migrations", "0006_work_runtime.sql");
+const M_0007 = join(REPO_ROOT, "db", "migrations", "0007_work_memory.sql");
 
 function uniqueDbName(): string {
   return `vitest_migrations_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -67,7 +68,7 @@ async function applyFile(client: pg.Client, path: string) {
 }
 
 async function applyAll(client: pg.Client) {
-  for (const path of [M_0001, M_0002, M_0003, M_0004, M_0005, M_0006]) {
+  for (const path of [M_0001, M_0002, M_0003, M_0004, M_0005, M_0006, M_0007]) {
     await applyFile(client, path);
   }
 }
@@ -229,6 +230,24 @@ describeIfDb("schema migrations", () => {
           values ('work-org', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 1, 'status', '{"type":"status","message":"dup"}')
         `),
       ).rejects.toThrow(/unique/i);
+    });
+  });
+
+  it("0007 creates work memory tables", async () => {
+    await withTempDb(async (client) => {
+      await applyAll(client);
+      const tables = await client.query<{ table_name: string }>(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' order by table_name`,
+      );
+      const names = tables.rows.map((row) => row.table_name);
+      for (const expected of [
+        "work_memory",
+        "work_memory_event",
+        "work_pending_memory",
+      ]) {
+        expect(names, `missing ${expected}`).toContain(expected);
+      }
     });
   });
 });

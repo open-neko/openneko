@@ -7,7 +7,7 @@ set -eu
 #
 # Credentials are hardcoded to match what the postgres container ships
 # with (see compose.yml). The /setup wizard later changes the password
-# and persists the new value to ~/.config/neko/config.json on the host running
+# and persists the new value to ~/.config/openneko/config.json on the host running
 # the app. The container's own role can keep using the bootstrap password
 # inside Docker — only the app needs to know the changed value.
 

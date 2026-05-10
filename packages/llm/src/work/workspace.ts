@@ -21,7 +21,7 @@ export function getOrgAgentRoot(orgId: string): string {
   return join(
     getHome(),
     ".config",
-    "neko",
+    "openneko",
     "agents",
     "orgs",
     safeSegment(orgId),

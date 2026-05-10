@@ -28,23 +28,23 @@ export type DataSourceDraft = {
 const DEFAULT_KIND = "graphjin";
 
 async function loadRow(orgId: string): Promise<DataSourceRow | null> {
-  try {
-    const rows = await db()
-      .select({
-        id: data_source.id,
-        org_id: data_source.org_id,
-        kind: data_source.kind,
-        graphql_url: data_source.graphql_url,
-        mcp_url: data_source.mcp_url,
-        label: data_source.label,
-      })
-      .from(data_source)
-      .where(eq(data_source.org_id, orgId))
-      .limit(1);
-    return (rows[0] as DataSourceRow | undefined) ?? null;
-  } catch {
-    return null;
-  }
+  // No try/catch — DB errors must propagate so the page renders an
+  // error instead of an empty wizard. Returning null on error
+  // indistinguishably from "no row yet" caused users to refill the
+  // wizard from scratch every time the pool hit a transient blip.
+  const rows = await db()
+    .select({
+      id: data_source.id,
+      org_id: data_source.org_id,
+      kind: data_source.kind,
+      graphql_url: data_source.graphql_url,
+      mcp_url: data_source.mcp_url,
+      label: data_source.label,
+    })
+    .from(data_source)
+    .where(eq(data_source.org_id, orgId))
+    .limit(1);
+  return (rows[0] as DataSourceRow | undefined) ?? null;
 }
 
 function publicFromRow(row: DataSourceRow | null): PublicDataSource {
@@ -145,17 +145,17 @@ export async function saveDataSourceDraft(
 }
 
 export async function hasDataSourceSetup(orgId: string): Promise<boolean> {
-  try {
-    const row = await loadRow(orgId);
-    if (!row) return false;
-    return validateDraft({
-      graphqlUrl: row.graphql_url,
-      mcpUrl: row.mcp_url,
-      label: row.label,
-    }).length === 0;
-  } catch {
-    return false;
-  }
+  // No try/catch — let DB errors surface. Same swallow-pattern bug:
+  // a stale-pool blip used to look like "data source not configured",
+  // which fails the /settings/finish gate even when the row exists,
+  // looping the user back into the wizard.
+  const row = await loadRow(orgId);
+  if (!row) return false;
+  return validateDraft({
+    graphqlUrl: row.graphql_url,
+    mcpUrl: row.mcp_url,
+    label: row.label,
+  }).length === 0;
 }
 
 export async function testDataSourceDraft(

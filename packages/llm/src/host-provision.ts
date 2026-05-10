@@ -14,11 +14,22 @@
  *     Format: { server, token: "", expires_at: "0001-01-01T00:00:00Z" }
  *
  *   - Hermes config (only when agent backend = hermes):
- *       ~/.hermes/config.yaml — model.default, model.provider, agent.max_turns
- *       ~/.hermes/.env       — provider key (e.g. ANTHROPIC_API_KEY=...)
+ *       <hermesHome>/config.yaml — model.default, model.provider, agent.max_turns
+ *       <hermesHome>/.env       — provider key (e.g. ANTHROPIC_API_KEY=...)
  *
- * The Claude Agent backend has no host config — its API key is passed
- * per-call via `env` in the SDK options, sourced from the same DB row.
+ *     Where `<hermesHome>` is resolved by `hermesHomeForOrg(orgId)`:
+ *       1. process.env.HERMES_HOME (test fixture / operator escape hatch), or
+ *       2. ~/.config/openneko/hermes/{orgId}/  (per-org isolation — default)
+ *
+ *     Per-org isolation matters because Hermes maintains a credential pool
+ *     in `<hermesHome>/auth.json` that's shared across every `hermes`
+ *     invocation reading the same home. If we used the user's global
+ *     ~/.hermes/, anything they did in their own terminal (`hermes login`,
+ *     stale OAuth tokens from `claude_code`, etc.) could poison our
+ *     long-running agents. Per-org dirs sidestep that drift entirely.
+ *
+ *   The Claude Agent backend has no host config — its API key is passed
+ *   per-call via `env` in the SDK options, sourced from the same DB row.
  *
  * Single-host assumption: the worker process must run on the same machine
  * whose home directory we provision. Multi-host deployments will need to
@@ -171,6 +182,31 @@ function decryptSecrets(secrets: Record<string, unknown> | null): Record<string,
   return out;
 }
 
+/**
+ * Resolve the HERMES_HOME path used for `orgId`.
+ *
+ *   1. process.env.HERMES_HOME — explicit override (tests, operators).
+ *   2. ~/.config/openneko/hermes/{orgId}/ — per-org default.
+ *
+ * The XDG_CONFIG_HOME convention is honored via the same path that
+ * secrets.ts and local-config.ts use, so a custom XDG dir lands all of
+ * Neko's per-host config under one tree.
+ *
+ * This is the ONE place that decides where Hermes' home lives. Both
+ * `provisionHermes` (writes config.yaml + .env) and the Hermes backend
+ * (sets HERMES_HOME on spawn) call it, so the writer and the reader
+ * agree by construction.
+ */
+export function hermesHomeForOrg(orgId: string): string {
+  const override = process.env.HERMES_HOME?.trim();
+  if (override) return override;
+  const xdg = process.env.XDG_CONFIG_HOME?.trim();
+  const base = xdg && xdg.length > 0
+    ? xdg
+    : join(getHome(), ".config");
+  return join(base, "openneko", "hermes", orgId);
+}
+
 async function provisionHermes(orgId: string): Promise<void> {
   const row = await loadProviderRow(orgId, "primary");
   if (!row || !row.enabled) return;
@@ -182,7 +218,7 @@ async function provisionHermes(orgId: string): Promise<void> {
   const apiKey = secrets.apiKey;
   const model = row.model ?? "";
 
-  const hermesHome = process.env.HERMES_HOME || join(getHome(), ".hermes");
+  const hermesHome = hermesHomeForOrg(orgId);
   await mkdir(hermesHome, { recursive: true });
 
   const yamlLines = [

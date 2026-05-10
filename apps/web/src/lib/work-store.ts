@@ -171,6 +171,44 @@ export async function createWorkMessage(args: {
   return rows[0];
 }
 
+export async function saveAssistantWorkMessage(args: {
+  orgId: string;
+  threadId: string;
+  runId: string;
+  content: string;
+}) {
+  const existing = await db()
+    .select({ id: work_message.id })
+    .from(work_message)
+    .where(
+      and(
+        eq(work_message.org_id, args.orgId),
+        eq(work_message.thread_id, args.threadId),
+        eq(work_message.run_id, args.runId),
+        eq(work_message.role, "assistant"),
+      ),
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    const rows = await db()
+      .update(work_message)
+      .set({ content: args.content })
+      .where(eq(work_message.id, existing[0].id))
+      .returning();
+    await touchWorkThread(args.threadId);
+    return rows[0];
+  }
+
+  return createWorkMessage({
+    orgId: args.orgId,
+    threadId: args.threadId,
+    runId: args.runId,
+    role: "assistant",
+    content: args.content,
+  });
+}
+
 export async function appendWorkRunEvent(args: {
   orgId: string;
   threadId: string;

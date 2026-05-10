@@ -23,13 +23,25 @@ const STAGE_ORDER: StageKind[] = [
   "bootstrap_metrics_build",
 ];
 // Default copy when the server hasn't reported a progress.message for the
-// current stage yet (typical during the first few hundred ms of a stage).
-const STAGE_FALLBACK_COPY: Record<StageKind, string> = {
-  business_profile_build: "Reading your data sources…",
-  industry_insights_build: "Researching your industry…",
-  bootstrap_metrics_build: "Picking the metrics that matter…",
-  metric_refresh: "Computing your numbers…",
+// current stage yet. Only the long-running profile + insights stages
+// cycle through multiple lines (those run for minutes and one static
+// line gets stale). The shorter metric stages keep a single line.
+const STAGE_FALLBACK_COPY: Record<StageKind, readonly string[]> = {
+  business_profile_build: [
+    "Reading your data sources…",
+    "Mapping tables and relationships…",
+    "Drafting your business profile…",
+  ],
+  industry_insights_build: [
+    "Researching your industry…",
+    "Gathering competitive context…",
+    "Distilling industry trends…",
+  ],
+  bootstrap_metrics_build: ["Picking the metrics that matter…"],
+  metric_refresh: ["Computing your numbers…"],
 };
+const FALLBACK_DEFAULT = "Reading your data sources…";
+const FALLBACK_CYCLE_MS = 3500;
 
 export default function ProcessingPage() {
   const router = useRouter();
@@ -37,6 +49,11 @@ export default function ProcessingPage() {
   const [tab, setTab] = useState<Tab>("profile");
   const [stageKind, setStageKind] = useState<StageKind | null>(null);
   const [stageMessage, setStageMessage] = useState<string | null>(null);
+  // Cycle index for the per-stage fallback messages. Only advances
+  // while we're still in the processing phase; reset whenever the
+  // worker reports a new specific stageMessage so users always see the
+  // newest information first instead of a stale cycle position.
+  const [fallbackIdx, setFallbackIdx] = useState(0);
   const [profile, setProfile] = useState("");
   const [insights, setInsights] = useState("");
   const [insightsStatus, setInsightsStatus] = useState<InsightsStatus>("processing");
@@ -67,8 +84,17 @@ export default function ProcessingPage() {
           }
           if (status.state === "processing" && !cancelled) {
             const cs = status.currentStage as { kind?: StageKind; message?: string | null } | undefined;
-            setStageKind(cs?.kind ?? null);
-            setStageMessage(cs?.message ?? null);
+            const nextStage = cs?.kind ?? null;
+            const nextMsg = cs?.message ?? null;
+            // Reset the fallback cycle when the stage flips so the
+            // first message of the new stage shows immediately rather
+            // than picking up at whatever index the previous stage
+            // happened to land on.
+            setStageKind((prev) => {
+              if (prev !== nextStage) setFallbackIdx(0);
+              return nextStage;
+            });
+            setStageMessage(nextMsg);
           }
           if (status.state === "needs_wizard") {
             router.replace("/onboarding");
@@ -93,6 +119,18 @@ export default function ProcessingPage() {
       cancelled = true;
     };
   }, [phase, router]);
+
+  // Cycle through the per-stage fallback messages while we're in the
+  // processing phase. Only runs when the worker hasn't reported a
+  // specific stageMessage — that one is more informative and stays put.
+  useEffect(() => {
+    if (phase !== "processing") return;
+    if (stageMessage) return; // worker is talking; let it speak
+    const id = setInterval(() => {
+      setFallbackIdx((i) => i + 1);
+    }, FALLBACK_CYCLE_MS);
+    return () => clearInterval(id);
+  }, [phase, stageMessage, stageKind]);
 
   // On entering review: idempotently ensure an industry_insights_build job
   // exists (heals a broken chain from a failed/orphaned prior run).
@@ -154,9 +192,15 @@ export default function ProcessingPage() {
 
   // ─── Phase 1: Processing ───
   if (phase === "processing") {
-    const message =
-      stageMessage ??
-      (stageKind ? STAGE_FALLBACK_COPY[stageKind] : "Reading your data sources…");
+    let message: string;
+    if (stageMessage) {
+      message = stageMessage;
+    } else if (stageKind) {
+      const cycle = STAGE_FALLBACK_COPY[stageKind];
+      message = cycle[fallbackIdx % cycle.length] ?? FALLBACK_DEFAULT;
+    } else {
+      message = FALLBACK_DEFAULT;
+    }
     return (
       <div className="root" style={{ textAlign: "center" }}>
         <AppHeader>
@@ -165,7 +209,16 @@ export default function ProcessingPage() {
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
         <StageStrip current={stageKind} />
-        <div className="date-note" style={{ marginTop: 24 }}>{message}</div>
+        {/* Key by message so React unmounts the old text and mounts the
+            new one — triggers the fadeUp keyframe each cycle for a
+            soft hand-off instead of a jarring text swap. */}
+        <div
+          key={message}
+          className="date-note"
+          style={{ marginTop: 24, animation: "fadeUp 0.5s ease both" }}
+        >
+          {message}
+        </div>
       </div>
     );
   }
@@ -351,7 +404,7 @@ function InsightsDisabled() {
         Industry research is off
       </div>
       <div className="pm-p" style={{ color: "var(--text2)" }}>
-        Enable Perplexity-backed industry research later from Settings.
+        Enable industry research from Settings.
       </div>
     </div>
   );

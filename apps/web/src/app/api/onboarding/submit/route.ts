@@ -62,8 +62,13 @@ export async function POST(request: NextRequest) {
     submitted_at: new Date(),
   });
 
-  // 3. Enqueue a business_profile_build job. The worker chains
-  // industry_insights_build automatically once this one succeeds.
+  // 3. Insert + enqueue. pg-boss runs on its own pool so we can't wrap
+  // these in a single Postgres transaction. If `enqueue()` throws after
+  // the row is inserted, the worker would never see this job and the
+  // user would stare at a "needs_wizard"/"processing" UI with nothing
+  // behind it. Cover the gap by finalizing the row to `failed` on
+  // enqueue error so the reconciler doesn't have to and the API caller
+  // gets a real 500 to surface in the UI.
   const inserted = await db()
     .insert(processing_job)
     .values({
@@ -74,11 +79,32 @@ export async function POST(request: NextRequest) {
     })
     .returning({ id: processing_job.id });
   const jobId = inserted[0]?.id;
-  if (jobId) {
+  if (!jobId) {
+    return NextResponse.json(
+      { error: "failed to record job" },
+      { status: 500 },
+    );
+  }
+  try {
     await enqueue(QUEUE.BUSINESS_PROFILE_BUILD, {
       processingJobId: jobId,
       orgId,
     });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await db()
+      .update(processing_job)
+      .set({
+        status: "failed",
+        error: `enqueue failed: ${msg}`,
+        finished_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where(eq(processing_job.id, jobId));
+    return NextResponse.json(
+      { error: `enqueue failed: ${msg}` },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ jobId });

@@ -36,12 +36,21 @@ import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
 import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
 import { runMetricRefresh } from "./jobs/metric-refresh.js";
+import { reconcileStaleProcessingJobs } from "./reconciler.js";
 
 // Hardcoded transport / scheduling constants. Surface these via /settings/agent
 // (or a new /settings/worker page) the day an operator needs to tune them.
 // Typed as `number` to keep the literal-narrowing branches below valid.
 const PORT: number = 4100;
 const MAX_JOB_RETRIES: number = 2;
+
+// Periodic reconciler sweep — catches drift mid-uptime (the boot
+// reconciler only fires once). minAgeMs must exceed the longest
+// realistic gap between markRunning and the matching ack write so we
+// don't trample a healthy in-flight handler. pg-boss expire_in is
+// 600s; an extra 60s buffer is comfortable.
+const RECONCILE_SWEEP_INTERVAL_MS: number = 60_000;
+const RECONCILE_SWEEP_MIN_AGE_MS: number = 660_000;
 const SCHEDULED_REFRESH_HOURS: number = 24;
 
 // Concurrency caps come from the DB row (scope='agent'). Single-tenant
@@ -213,29 +222,21 @@ console.log(
 
 const b = await boss();
 
-// Reconcile orphaned processing_job rows from a previous worker crash
-// (SIGKILL, redeploy mid-handler, OOM, etc.). At this point there are
-// no workers polling yet, so any row in 'running' is by definition
-// abandoned — its handler can't finish. Reset them to 'queued' so the
-// UI shows pending instead of stuck-running. pg-boss will re-deliver
-// the underlying job once expireInSeconds elapses; markRunning then
-// flips the row back to 'running' on retry — unchanged from the
-// happy path.
+// Reconcile non-terminal processing_job rows against pg-boss's
+// authoritative state. Catches: handler crashed mid-flight, pg-boss
+// expire_in fired while the handler kept running, ack write blipped,
+// or the API route inserted a row but enqueue() failed afterwards.
+// Each non-terminal row is mirrored to its pg-boss state — succeeded,
+// failed, or reset to queued for redelivery if pg-boss is still on it.
+// See apps/worker/src/reconciler.ts for the full state-mapping table.
 {
-  const orphans = await db()
-    .update(processing_job)
-    .set({
-      status: "queued",
-      started_at: null,
-      finished_at: null,
-      error: null,
-      updated_at: new Date(),
-    })
-    .where(eq(processing_job.status, "running"))
-    .returning({ id: processing_job.id });
-  if (orphans.length > 0) {
+  const summary = await reconcileStaleProcessingJobs();
+  if (
+    summary.succeeded + summary.failed + summary.requeued + summary.lost >
+    0
+  ) {
     console.log(
-      `[worker] reset ${orphans.length} orphaned processing_job row(s) to queued; pg-boss will redeliver`,
+      `[worker] reconciled processing_job rows on boot: succeeded=${summary.succeeded} failed=${summary.failed} requeued=${summary.requeued} lost=${summary.lost}`,
     );
   }
 }
@@ -312,6 +313,29 @@ if (SCHEDULED_REFRESH_HOURS > 0) {
   );
 }
 
+// Periodic reconciler sweep — catches mid-uptime drift between
+// processing_job and pg-boss (handler crash, expire_in firing while
+// the handler kept running, ack write failing, orphaned-by-failed-
+// enqueue inserts). minAgeMs is set above pg-boss expire_in so an
+// honestly in-flight handler is never touched.
+const reconcileTimer = setInterval(() => {
+  reconcileStaleProcessingJobs({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
+    .then((s) => {
+      const total = s.succeeded + s.failed + s.requeued + s.lost;
+      if (total > 0) {
+        console.log(
+          `[worker] reconcile sweep: succeeded=${s.succeeded} failed=${s.failed} requeued=${s.requeued} lost=${s.lost}`,
+        );
+      }
+    })
+    .catch((e) => {
+      console.warn(
+        `[worker] reconcile sweep failed: ${e instanceof Error ? e.message : e}`,
+      );
+    });
+}, RECONCILE_SWEEP_INTERVAL_MS);
+reconcileTimer.unref();
+
 server.listen(PORT, () => {
   console.log(
     `[worker] pg-boss running; /health on http://localhost:${PORT}`,
@@ -320,6 +344,7 @@ server.listen(PORT, () => {
 
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
+  clearInterval(reconcileTimer);
   server.close();
   // Cancel every in-flight agent call up-front so jobs reject quickly
   // instead of blocking pg-boss graceful stop on long-running hermes /

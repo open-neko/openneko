@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
-    "./secrets": "./src/secrets.ts"
+    "./secrets": "./src/secrets.ts",
+    "./work": "./src/work/index.ts"
   },
   "scripts": {
     "test": "vitest run",

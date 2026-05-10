@@ -343,6 +343,29 @@ body {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.work-memory-row {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.work-memory-kind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.work-memory-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .work-thread-row-title {
   font-size: 14px;
   font-weight: 600;
@@ -439,6 +462,11 @@ body {
   font-weight: 600;
   color: var(--text2);
 }
+.work-tool-delta {
+  padding: 0 12px 10px;
+  font-size: 11px;
+  color: var(--text3);
+}
 .work-tool-row pre {
   margin: 0;
   padding: 0 12px 12px;
@@ -456,6 +484,54 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.work-memory-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.82);
+  border-radius: 16px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+}
+.work-memory-prompt-copy {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.work-memory-prompt-count {
+  margin-top: 4px;
+  color: var(--text3);
+  font-size: 11px;
+}
+.work-memory-prompt-actions {
+  display: inline-flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.work-memory-prompt-actions button {
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.work-memory-prompt-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .work-files {
   display: flex;
@@ -569,7 +645,8 @@ body {
   font-size: 14px; color: var(--text3); transition: all 0.2s;
 }
 .ipin.on { color: var(--accent); background: var(--accent-soft); }
-.ipin:hover { background: var(--accent-soft); color: var(--accent); }
+.ipin:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
+.ipin:disabled { cursor: default; opacity: 0.6; }
 
 .idetail {
   max-height: 0; overflow: hidden; opacity: 0; margin-top: 0;
@@ -919,6 +996,25 @@ body {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+
+/* Skeleton bars for cards in the "pending" state (re-run in flight,
+   or first refresh hasn't returned yet). Used by BriefingCard. */
+.iskel { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.dskel { display: flex; flex-direction: column; gap: 6px; }
+.skel {
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 0%, #F5F2EC 50%, var(--border) 100%);
+  background-size: 200% 100%;
+  animation: skel-shimmer 1.4s ease-in-out infinite;
+}
+.skel-metric { height: 16px; width: 70%; }
+.skel-label  { height: 11px; width: 45%; }
+.skel-line   { height: 11px; width: 100%; }
+.skel-line-short { width: 65%; }
+@keyframes skel-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 
 @media (max-width: 720px) {

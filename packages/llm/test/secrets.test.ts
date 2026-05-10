@@ -1,5 +1,5 @@
 /**
- * Secrets are always encrypted: file at ~/.config/neko/secret-key →
+ * Secrets are always encrypted: file at ~/.config/openneko/secret-key →
  * auto-generated 32-byte random key. No env override. Tests use a temp
  * HOME so they don't touch the dev's real key file.
  */

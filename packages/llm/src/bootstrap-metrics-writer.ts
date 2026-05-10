@@ -64,7 +64,7 @@ function buildPrompt(args: {
 
   return `You are a senior BI consultant designing the first dashboard a new customer sees. You are handed a business_profile (what the company actually does) and an industry_insights briefing (industry context). You must propose exactly ${total} starter dashboard cards: 4 per role for ${seats.join(", ")}.
 
-NO TOOLS NEEDED. Do not call Bash, Read, Write, or any other tool — every fact you need is inline below. Generate the JSON directly as your final answer.
+NO TOOLS NEEDED. Do not call any tool — not \`terminal\`/\`Bash\`, not \`read_file\`/\`Read\`, not \`write_file\`/\`Write\`, not \`execute_code\`, not search/web/browser tools — every fact you need is inline below. Generate the JSON directly as your final answer.
 
 GROUNDING RULE — non-negotiable:
 - Every card must measure something the company ACTUALLY does, sells, operates, or employs, as named in the business_profile (products, channels, geographies, workforce, currencies, work centers, sales territories, etc.).
@@ -149,6 +149,7 @@ export async function runBootstrapMetricsWriter(args: {
   const startedAt = Date.now();
   const result = await backend.run({
     prompt,
+    orgId,
     tag: jobId ?? orgId,
     debug: debug === true,
   });
