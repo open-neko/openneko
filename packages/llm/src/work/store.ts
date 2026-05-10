@@ -77,6 +77,14 @@ export async function createWorkThread(orgId: string, title = "") {
   return rows[0];
 }
 
+export async function deleteWorkThread(orgId: string, threadId: string): Promise<boolean> {
+  const rows = await db()
+    .delete(work_thread)
+    .where(and(eq(work_thread.org_id, orgId), eq(work_thread.id, threadId)))
+    .returning({ id: work_thread.id });
+  return rows.length > 0;
+}
+
 export async function getWorkThread(orgId: string, threadId: string) {
   const rows = await db()
     .select()

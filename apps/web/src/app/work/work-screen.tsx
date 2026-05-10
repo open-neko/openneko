@@ -3,18 +3,23 @@
 import "@/a2ui/components";
 import {
   ArrowUp,
+  Brain,
   Check,
   Loader2,
   Paperclip,
   Plus,
+  Sparkles,
   Square,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
@@ -77,11 +82,6 @@ type UploadedWorkFile = {
   absolutePath: string;
 };
 
-type WorkAssets = {
-  skills: Array<{ name: string; path: string }>;
-  memory: Array<{ name: string; path: string }>;
-};
-
 type MemoryRecord = {
   id: string;
   kind: string;
@@ -109,7 +109,6 @@ export default function WorkScreen() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<ThreadBundle | null>(null);
-  const [assets, setAssets] = useState<WorkAssets>({ skills: [], memory: [] });
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [pendingMemories, setPendingMemories] = useState<PendingMemory[]>([]);
   const [draft, setDraft] = useState("");
@@ -159,7 +158,6 @@ export default function WorkScreen() {
   useEffect(() => {
     if (!gateChecked || gateError) return;
     void loadThreads();
-    void loadAssets();
     void loadMemories();
   }, [gateChecked, gateError]);
 
@@ -206,14 +204,29 @@ export default function WorkScreen() {
     }
   }
 
-  async function loadAssets() {
-    const res = await fetch("/api/work/assets");
-    if (!res.ok) return;
-    const data = (await res.json()) as WorkAssets;
-    setAssets({
-      skills: data.skills ?? [],
-      memory: data.memory ?? [],
+  async function deleteThread(threadId: string) {
+    const target = threads.find((t) => t.id === threadId);
+    const label = target?.title || "Untitled thread";
+    const ok = await confirmDialog({
+      title: `Delete "${label}"?`,
+      description: "This also removes its run history.",
+      confirmLabel: "Delete",
+      destructive: true,
     });
+    if (!ok) return;
+    const res = await fetch(`/api/work/threads/${threadId}`, { method: "DELETE" });
+    if (!res.ok) return;
+    const remaining = threads.filter((t) => t.id !== threadId);
+    setThreads(remaining);
+    if (activeThreadId === threadId) {
+      const nextId = remaining[0]?.id ?? null;
+      setActiveThreadId(nextId);
+      if (nextId) {
+        await loadThread(nextId);
+      } else {
+        setBundle(null);
+      }
+    }
   }
 
   async function loadMemories() {
@@ -367,7 +380,7 @@ export default function WorkScreen() {
 
     setSending(false);
     setActiveRunId(null);
-    await Promise.all([loadThreads(threadId), loadThread(threadId), loadAssets(), loadMemories()]);
+    await Promise.all([loadThreads(threadId), loadThread(threadId), loadMemories()]);
     window.setTimeout(() => {
       void loadPendingMemories(threadId);
       void loadMemories();
@@ -518,12 +531,17 @@ export default function WorkScreen() {
         <div className="work-layout">
           <aside className="work-sidebar">
             <div className="work-sidebar-head">
-              <div>
-                <div className="label" style={{ marginBottom: 8 }}>Work</div>
-                <div className="work-sidebar-title">Threads</div>
+              <div className="work-sidebar-eyebrow">
+                <span>Threads</span>
+                <span className="work-sidebar-count">{threads.length}</span>
               </div>
-              <button className="work-icon-btn" onClick={() => void createThread()} title="New thread">
-                <Plus size={16} strokeWidth={2} />
+              <button
+                className="work-icon-btn is-ghost"
+                onClick={() => void createThread()}
+                title="New thread"
+                aria-label="New thread"
+              >
+                <Plus size={15} strokeWidth={2} />
               </button>
             </div>
 
@@ -534,53 +552,30 @@ export default function WorkScreen() {
                 <div className="work-empty">Start a thread to use Work.</div>
               ) : (
                 threads.map((thread) => (
-                  <button
+                  <ThreadRow
                     key={thread.id}
-                    className={`work-thread-row${thread.id === activeThreadId ? " is-active" : ""}`}
-                    onClick={() => void loadThread(thread.id)}
-                  >
-                    <div className="work-thread-row-title">{thread.title || "Untitled thread"}</div>
-                    <div className="work-thread-row-time">{formatDate(thread.lastMessageAt)}</div>
-                  </button>
+                    thread={thread}
+                    active={thread.id === activeThreadId}
+                    running={thread.id === activeThreadId && Boolean(activeRunId)}
+                    onSelect={() => void loadThread(thread.id)}
+                    onDelete={() => void deleteThread(thread.id)}
+                  />
                 ))
               )}
             </div>
 
-            <div className="work-sidebar-section">
-              <div className="work-sidebar-subtitle">Skills</div>
-              <div className="work-asset-list">
-                {assets.skills.length === 0 ? (
-                  <div className="work-empty is-compact">No skills yet.</div>
-                ) : (
-                  assets.skills.map((skill) => (
-                    <a
-                      key={skill.name}
-                      href={skill.path}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="work-asset-row"
-                    >
-                      {skill.name}
-                    </a>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="work-sidebar-section">
-              <div className="work-sidebar-subtitle">Memory</div>
-              <div className="work-asset-list">
-                {memories.length === 0 ? (
-                  <div className="work-empty is-compact">No saved memories yet.</div>
-                ) : (
-                  memories.slice(0, 8).map((memory) => (
-                    <div key={memory.id} className="work-memory-row" title={memory.text}>
-                      <div className="work-memory-kind">{memory.kind.replace(/_/g, " ")}</div>
-                      <div className="work-memory-text">{memory.text}</div>
-                    </div>
-                  ))
-                )}
-              </div>
+            <div className="work-sidebar-footer">
+              <Link href="/skills" className="work-sidebar-link">
+                <Sparkles size={14} strokeWidth={2} />
+                <span>Skills</span>
+              </Link>
+              <Link href="/memory" className="work-sidebar-link">
+                <Brain size={14} strokeWidth={2} />
+                <span>Memory</span>
+                {pendingMemories.length > 0 ? (
+                  <span className="work-sidebar-badge">{pendingMemories.length}</span>
+                ) : null}
+              </Link>
             </div>
           </aside>
 
@@ -753,6 +748,50 @@ function PendingMemoryPanel({
           </button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function ThreadRow({
+  thread,
+  active,
+  running,
+  onSelect,
+  onDelete,
+}: {
+  thread: ThreadSummary;
+  active: boolean;
+  running: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className={`work-thread-row${active ? " is-active" : ""}`}>
+      <button
+        type="button"
+        className="work-thread-row-main"
+        onClick={onSelect}
+        title={thread.title || "Untitled thread"}
+      >
+        <span className={`work-thread-dot${running ? " is-running" : ""}`} aria-hidden="true" />
+        <span className="work-thread-row-body">
+          <span className="work-thread-row-title">{thread.title || "Untitled thread"}</span>
+          <span className="work-thread-row-time">{formatDate(thread.lastMessageAt)}</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        className="work-thread-delete"
+        title="Delete thread"
+        aria-label="Delete thread"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onDelete();
+        }}
+      >
+        <Trash2 size={13} strokeWidth={2} />
+      </button>
     </div>
   );
 }
