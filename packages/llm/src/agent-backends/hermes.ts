@@ -203,17 +203,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
   });
   const tagSuffix = tag ? ` tag=${tag}` : "";
 
+  // Hermes' ACP adapter logs at INFO to stderr — including a "Prompt on
+  // session <id>: <full system prompt>" line. Forwarding that as status
+  // events leaks the system prompt into the UI. Useful progress pills
+  // ("Queued for…", "Loading skills…") are emitted explicitly by the API
+  // route and the worker; the agent-side notifications stream covers the
+  // rest. So we just buffer stderr for debug + crash dumps.
   const stderrChunks: Buffer[] = [];
-  let stderrLineBuffer = "";
   child.stderr?.on("data", (c: Buffer) => {
     stderrChunks.push(c);
-    if (onEvent) {
-      const { lines, rest } = consumeStatusLines(stderrLineBuffer + c.toString("utf8"));
-      stderrLineBuffer = rest;
-      for (const line of lines) {
-        void onEvent({ type: "status", message: line });
-      }
-    }
     if (debug) process.stderr.write(c);
   });
 
@@ -366,9 +364,6 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       killProcessGroup(child, "SIGTERM");
     }
     await closedPromise.catch(() => {});
-    if (onEvent && stderrLineBuffer.trim()) {
-      void onEvent({ type: "status", message: cleanStatusLine(stderrLineBuffer) });
-    }
     if (debug) {
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       if (stderr) process.stderr.write(stderr);
@@ -381,16 +376,5 @@ function extractErrorText(raw: unknown): string {
   if (typeof raw === "string") return raw;
   if (raw && typeof raw === "object") return JSON.stringify(raw);
   return "Tool failed";
-}
-
-function consumeStatusLines(raw: string): { lines: string[]; rest: string } {
-  const parts = raw.split(/\r?\n/);
-  const rest = parts.pop() ?? "";
-  const lines = parts.map(cleanStatusLine).filter(Boolean).slice(-5);
-  return { lines, rest };
-}
-
-function cleanStatusLine(raw: string): string {
-  return raw.replace(/\[[0-9;]*m/g, "").trim();
 }
 
