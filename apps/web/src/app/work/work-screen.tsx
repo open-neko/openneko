@@ -848,32 +848,44 @@ function MessageBubble({
           <textarea
             className="work-bubble-edit"
             value={editText}
-            onChange={(e) => setEditText(e.target.value)}
+            onChange={(e) => {
+              setEditText(e.target.value);
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+            }}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 e.preventDefault();
                 cancel();
-              } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              } else if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 save();
               }
             }}
-            rows={Math.min(8, Math.max(2, editText.split("\n").length))}
+            ref={(el) => {
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+              }
+            }}
+            rows={1}
             autoFocus
           />
-          <div className="work-bubble-edit-actions">
-            <button type="button" onClick={cancel}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="is-primary"
-              onClick={save}
-              disabled={!dirty}
-            >
-              Save & run
-            </button>
-          </div>
+        </div>
+        <div className="work-bubble-edit-hint">
+          <span>Enter to send · Esc to cancel</span>
+          <button type="button" onClick={cancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="is-primary"
+            onClick={save}
+            disabled={!dirty}
+          >
+            Send
+          </button>
         </div>
       </div>
     );
