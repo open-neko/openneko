@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockSpawn, makeController } from "./helpers/fake-acp-process";
 
-type SpawnCall = {
-  command: string;
-  args: string[];
-  options: { cwd?: string; env?: NodeJS.ProcessEnv };
-};
-
-const spawnCalls: SpawnCall[] = [];
+const controller = makeController();
 
 vi.mock("node:child_process", async () => {
   const actual = await vi.importActual<typeof import("node:child_process")>(
@@ -14,48 +9,13 @@ vi.mock("node:child_process", async () => {
   );
   return {
     ...actual,
-    spawn: (
-      command: string,
-      args: string[],
-      options: { cwd?: string; env?: NodeJS.ProcessEnv },
-    ) => {
-      spawnCalls.push({ command, args, options });
-      const stdout = makeStream("OK");
-      const stderr = makeStream("");
-      const child = {
-        pid: 12345,
-        stdout,
-        stderr,
-        on(event: string, cb: (...a: unknown[]) => void) {
-          if (event === "close") {
-            setImmediate(() => cb(0));
-          }
-          return child;
-        },
-        kill() {},
-      };
-      return child as unknown as ReturnType<typeof actual.spawn>;
-    },
+    spawn: createMockSpawn(controller),
   };
 });
 
-function makeStream(text: string) {
-  const listeners = new Map<string, Array<(arg: unknown) => void>>();
-  const stream = {
-    on(event: string, cb: (arg: unknown) => void) {
-      if (!listeners.has(event)) listeners.set(event, []);
-      listeners.get(event)!.push(cb);
-      if (event === "data" && text) {
-        setImmediate(() => cb(Buffer.from(text)));
-      }
-      return stream;
-    },
-  };
-  return stream;
-}
-
 beforeEach(() => {
-  spawnCalls.length = 0;
+  controller.spawnCalls.length = 0;
+  controller.setScript({});
 });
 
 afterEach(() => {
@@ -85,8 +45,8 @@ describe("HermesBackend spawn invariants", () => {
     const backend = new HermesBackend();
     await backend.run({ prompt: "ping", orgId: "org-abc-123", workspace: FAKE_WORKSPACE });
 
-    expect(spawnCalls).toHaveLength(1);
-    const env = spawnCalls[0].options.env ?? {};
+    expect(controller.spawnCalls).toHaveLength(1);
+    const env = controller.spawnCalls[0].options.env ?? {};
     expect(env.HERMES_HOME).toBe(hermesHomeForOrg("org-abc-123"));
   });
 
@@ -94,8 +54,8 @@ describe("HermesBackend spawn invariants", () => {
     const backend = new HermesBackend();
     await backend.run({ prompt: "ping", workspace: FAKE_WORKSPACE });
 
-    expect(spawnCalls).toHaveLength(1);
-    const env = spawnCalls[0].options.env ?? {};
+    expect(controller.spawnCalls).toHaveLength(1);
+    const env = controller.spawnCalls[0].options.env ?? {};
     if (process.env.HERMES_HOME) {
       expect(env.HERMES_HOME).toBe(process.env.HERMES_HOME);
     } else {
@@ -103,31 +63,19 @@ describe("HermesBackend spawn invariants", () => {
     }
   });
 
-  it("invokes hermes with -z prompt as args", async () => {
+  it("invokes hermes with `acp --accept-hooks` (no positional prompt)", async () => {
     const backend = new HermesBackend();
     await backend.run({ prompt: "explain Q1 revenue" });
-    expect(spawnCalls[0].command).toBe("hermes");
-    expect(spawnCalls[0].args).toEqual(["-z", "explain Q1 revenue"]);
+    expect(controller.spawnCalls[0].command).toBe("hermes");
+    expect(controller.spawnCalls[0].args).toEqual(["acp", "--accept-hooks"]);
   });
 
-  it("appends userMessage to prompt when supplied", async () => {
+  it("does not leak prompt text into argv (prompt goes over JSON-RPC stdin)", async () => {
     const backend = new HermesBackend();
     await backend.run({ prompt: "system instructions", userMessage: "hi" });
-    const argText = spawnCalls[0].args[1];
-    expect(argText).toContain("system instructions");
-    expect(argText).toContain("hi");
-  });
-
-  it("forwards --skills <list> when skills are passed", async () => {
-    const backend = new HermesBackend();
-    await backend.run({
-      prompt: "p",
-      workspace: FAKE_WORKSPACE,
-      skills: ["pdf", "xlsx"],
-    });
-    expect(spawnCalls[0].args).toContain("--skills");
-    const skillsIdx = spawnCalls[0].args.indexOf("--skills");
-    expect(spawnCalls[0].args[skillsIdx + 1]).toBe("pdf,xlsx");
+    const args = controller.spawnCalls[0].args;
+    expect(args).not.toContain("system instructions");
+    expect(args).not.toContain("hi");
   });
 
   it("uses workspace.orgRoot as cwd in streaming mode", async () => {
@@ -137,17 +85,40 @@ describe("HermesBackend spawn invariants", () => {
       workspace: FAKE_WORKSPACE,
       onEvent: () => {},
     });
-    expect(spawnCalls[0].options.cwd).toBe(FAKE_WORKSPACE.orgRoot);
+    expect(controller.spawnCalls[0].options.cwd).toBe(FAKE_WORKSPACE.orgRoot);
   });
 
   it("prepends workspace.binRoot to PATH (so the per-run graphjin guard wins)", async () => {
     const backend = new HermesBackend();
     await backend.run({ prompt: "p", workspace: FAKE_WORKSPACE });
-    const path = spawnCalls[0].options.env?.PATH ?? "";
+    const path = controller.spawnCalls[0].options.env?.PATH ?? "";
     expect(path.startsWith(`${FAKE_WORKSPACE.binRoot}:`)).toBe(true);
   });
 
+  it("spawns with detached:true so we own the process group for SIGKILL", async () => {
+    const backend = new HermesBackend();
+    await backend.run({ prompt: "p", workspace: FAKE_WORKSPACE });
+    expect(controller.spawnCalls[0].options.detached).toBe(true);
+  });
+
   it("emits status + message events when onEvent is provided", async () => {
+    controller.setScript({
+      notificationsByMethod: {
+        "session/prompt": [
+          {
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: {
+              sessionId: "sess-1",
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "OK" },
+              },
+            },
+          },
+        ],
+      },
+    });
     const backend = new HermesBackend();
     const events: Array<{ type: string }> = [];
     const result = await backend.run({
