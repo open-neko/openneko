@@ -286,7 +286,6 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
 
     let accumulatedText = "";
     let lastEmittedAssistantText = "";
-    const toolNames = new Map<string, string>();
 
     client.onNotification((notif) => {
       const update = notif.update;
@@ -310,18 +309,16 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         }
         case "tool_call": {
           if (!onEvent) return;
-          const id = update.toolCallId;
-          const name = update.kind || update.title || "tool";
-          toolNames.set(id, name);
           void onEvent({
             type: "tool_start",
-            id,
-            name,
-            input: update.locations ?? update.rawInput,
+            id: update.toolCallId,
+            name: update.kind || "tool",
+            input: {
+              ...(update.title ? { title: update.title } : {}),
+              ...(update.locations ? { locations: update.locations } : {}),
+              ...(update.rawInput !== undefined ? { rawInput: update.rawInput } : {}),
+            },
           });
-          if (update.title) {
-            void onEvent({ type: "status", message: update.title });
-          }
           return;
         }
         case "tool_call_update": {
@@ -335,13 +332,6 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
               result: status === "completed" ? update.rawOutput ?? update.content : undefined,
               error: status === "failed" ? extractErrorText(update.content ?? update.rawOutput) : undefined,
             });
-            const name = toolNames.get(id);
-            if (name) {
-              void onEvent({
-                type: "status",
-                message: status === "failed" ? `${name} failed.` : `${name} finished.`,
-              });
-            }
           } else {
             void onEvent({
               type: "tool_delta",

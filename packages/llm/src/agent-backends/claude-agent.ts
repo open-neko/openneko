@@ -185,7 +185,6 @@ export class ClaudeAgentBackend implements AgentBackend {
     let lastEmittedAssistantText = "";
     let finalText = "";
     let surfaceMessages: import("../agent-backend").AgentSurfaceMessage[] = [];
-    const toolNames = new Map<string, string>();
     const toolDurations = new Map<string, number>();
 
     const sdkPrompt = userMessage ?? prompt;
@@ -267,21 +266,23 @@ export class ClaudeAgentBackend implements AgentBackend {
         }
         if (record.type === "tool_progress" && onEvent) {
           const toolUseId = String(record.tool_use_id ?? "");
-          const toolName = String(record.tool_name ?? "tool");
-          toolNames.set(toolUseId, toolName);
           await onEvent({
             type: "tool_delta",
             id: toolUseId,
-            delta: {
-              elapsedSeconds: Number(record.elapsed_time_seconds ?? 0),
-              message: `${toolName} is running…`,
-            },
+            delta: { elapsedSeconds: Number(record.elapsed_time_seconds ?? 0) },
           });
           continue;
         }
         if (record.type === "tool_use_summary" && onEvent) {
           const summary = typeof record.summary === "string" ? record.summary.trim() : "";
-          if (summary) await onEvent({ type: "status", message: summary });
+          const ids = Array.isArray(record.preceding_tool_use_ids)
+            ? (record.preceding_tool_use_ids as unknown[]).map(String)
+            : [];
+          if (summary && ids.length > 0) {
+            for (const id of ids) {
+              await onEvent({ type: "tool_delta", id, delta: { summary } });
+            }
+          }
           continue;
         }
         if (record.type === "auth_status" && onEvent) {
@@ -314,16 +315,12 @@ export class ClaudeAgentBackend implements AgentBackend {
                 sawText = true;
               }
             } else if (block.type === "tool_use" && onEvent) {
-              const toolId = String(block.id ?? "");
-              const toolName = String(block.name ?? "unknown");
-              toolNames.set(toolId, toolName);
               await onEvent({
                 type: "tool_start",
-                id: toolId,
-                name: toolName,
+                id: String(block.id ?? ""),
+                name: String(block.name ?? "unknown"),
                 input: block.input,
               });
-              await onEvent({ type: "status", message: `Using ${toolName}…` });
             }
           }
           if (sawText && onEvent && accumulatedText !== lastEmittedAssistantText) {
@@ -353,13 +350,6 @@ export class ClaudeAgentBackend implements AgentBackend {
               result: text || undefined,
               error: block.is_error ? text || "Tool failed" : undefined,
             });
-            const toolName = toolNames.get(toolUseId);
-            if (toolName) {
-              await onEvent({
-                type: "status",
-                message: block.is_error ? `${toolName} failed.` : `${toolName} finished.`,
-              });
-            }
           }
           continue;
         }

@@ -11,7 +11,6 @@ import {
   Sparkles,
   Square,
   Trash2,
-  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -826,99 +825,239 @@ function RunActivity({
   events: WorkEvent[];
   pending: boolean;
 }) {
-  const toolStarts = events.filter((event): event is Extract<WorkEvent, { type: "tool_start" }> => event.type === "tool_start");
-  const toolEnds = new Map(
-    events
-      .filter((event): event is Extract<WorkEvent, { type: "tool_end" }> => event.type === "tool_end")
-      .map((event) => [event.id, event]),
-  );
-  const toolDeltas = new Map(
-    events
-      .filter((event): event is Extract<WorkEvent, { type: "tool_delta" }> => event.type === "tool_delta")
-      .map((event) => [event.id, event.delta]),
-  );
-  const statuses = events.filter((event): event is Extract<WorkEvent, { type: "status" }> => event.type === "status");
-  const errors = events.filter((event): event is Extract<WorkEvent, { type: "error" }> => event.type === "error");
-  const tools = collectToolActivity(toolStarts, toolDeltas, toolEnds);
+  const items = useMemo(() => buildActivityItems(events), [events]);
 
-  if (tools.length === 0 && statuses.length === 0 && errors.length === 0 && !pending && !run) {
-    return null;
-  }
+  if (items.length === 0 && !pending && !run) return null;
 
   return (
     <div className="work-activity">
-      {statuses.map((status, index) => (
-        <div key={`status-${index}`} className="work-status-row">
-          {pending ? <Loader2 className="work-status-spin" size={13} /> : <Wrench size={13} />}
-          <span>{status.message}</span>
+      {items.map((item, index) => {
+        if (item.kind === "tools") {
+          return <ToolGroup key={`tools-${index}`} tools={item.tools} />;
+        }
+        if (item.kind === "status") {
+          return (
+            <div key={`status-${index}`} className="work-status-row">
+              <Sparkles size={12} />
+              <span>{item.message}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={`error-${index}`} className="work-error">
+            {item.message}
+          </div>
+        );
+      })}
+      {pending ? (
+        <div className="work-status-row">
+          <Loader2 className="work-status-spin" size={12} />
+          <span>Running…</span>
         </div>
-      ))}
-      {tools.map((tool) => (
-        <ToolActivityRow key={tool.id} tool={tool} />
-      ))}
-      {errors.map((error, index) => (
-        <div key={`error-${index}`} className="work-error">
-          {error.message}
-        </div>
-      ))}
-      {pending ? <div className="work-status-row"><Loader2 className="work-status-spin" size={13} /><span>Running…</span></div> : null}
+      ) : null}
       {run?.error ? <div className="work-error">{run.error}</div> : null}
     </div>
   );
 }
 
-type ToolActivity = {
+type ToolItem = {
   id: string;
   name: string;
   input?: unknown;
-  delta?: unknown;
+  deltas: unknown[];
   end?: Extract<WorkEvent, { type: "tool_end" }>;
 };
 
-function collectToolActivity(
-  starts: Array<Extract<WorkEvent, { type: "tool_start" }>>,
-  deltas: Map<string, unknown>,
-  ends: Map<string, Extract<WorkEvent, { type: "tool_end" }>>,
-): ToolActivity[] {
-  const byId = new Map<string, ToolActivity>();
-  for (const start of starts) {
-    byId.set(start.id, {
-      id: start.id,
-      name: start.name,
-      input: start.input,
-      delta: deltas.get(start.id),
-      end: ends.get(start.id),
-    });
-  }
-  for (const [id, delta] of deltas) {
-    if (!byId.has(id)) {
-      byId.set(id, { id, name: "tool", delta, end: ends.get(id) });
+type ActivityItem =
+  | { kind: "tools"; tools: ToolItem[] }
+  | { kind: "status"; message: string }
+  | { kind: "error"; message: string };
+
+function buildActivityItems(events: WorkEvent[]): ActivityItem[] {
+  const items: ActivityItem[] = [];
+  const toolsById = new Map<string, ToolItem>();
+  let openGroup: ToolItem[] | null = null;
+  let lastStatus: string | null = null;
+
+  const closeGroup = () => {
+    if (openGroup && openGroup.length > 0) {
+      items.push({ kind: "tools", tools: openGroup });
+    }
+    openGroup = null;
+  };
+
+  for (const event of events) {
+    switch (event.type) {
+      case "tool_start": {
+        if (!openGroup) openGroup = [];
+        const item: ToolItem = {
+          id: event.id,
+          name: event.name,
+          input: event.input,
+          deltas: [],
+        };
+        toolsById.set(event.id, item);
+        openGroup.push(item);
+        break;
+      }
+      case "tool_delta": {
+        const item = toolsById.get(event.id);
+        if (item) item.deltas.push(event.delta);
+        break;
+      }
+      case "tool_end": {
+        const item = toolsById.get(event.id);
+        if (item) item.end = event;
+        break;
+      }
+      case "status": {
+        if (event.message === lastStatus) break;
+        closeGroup();
+        items.push({ kind: "status", message: event.message });
+        lastStatus = event.message;
+        break;
+      }
+      case "error": {
+        closeGroup();
+        items.push({ kind: "error", message: event.message });
+        break;
+      }
+      default:
+        break;
     }
   }
-  for (const [id, end] of ends) {
-    if (!byId.has(id)) {
-      byId.set(id, { id, name: "tool result", end });
-    }
-  }
-  return Array.from(byId.values());
+  closeGroup();
+  return items;
 }
 
-function ToolActivityRow({ tool }: { tool: ToolActivity }) {
-  const status = tool.end?.error ? "failed" : tool.end ? "done" : "running";
+function ToolGroup({ tools }: { tools: ToolItem[] }) {
+  const inflight = tools.filter((t) => !t.end).length;
+  const failed = tools.filter((t) => t.end?.error).length;
+  const showHeader = tools.length > 1;
+  const [open, setOpen] = useState(tools.length <= 2 || inflight > 0);
+
+  useEffect(() => {
+    if (inflight > 0) setOpen(true);
+  }, [inflight]);
+
+  if (!showHeader) {
+    return (
+      <div className="work-tool-group work-tool-group-single">
+        <ToolRow tool={tools[0]} />
+      </div>
+    );
+  }
+
   return (
-    <details className="work-tool-row" open={status === "running"}>
-      <summary>
-        <span>{tool.name}</span>
-        <span>{status}</span>
-      </summary>
-      {tool.delta ? (
-        <div className="work-tool-delta">{describeToolDelta(tool.delta)}</div>
+    <div className="work-tool-group">
+      <button
+        type="button"
+        className="work-tool-group-head"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
+        <span className="work-tool-group-count">
+          {tools.length} tool {tools.length === 1 ? "call" : "calls"}
+        </span>
+        {inflight > 0 ? (
+          <span className="work-tool-group-badge running">
+            <Loader2 className="work-status-spin" size={11} /> running
+          </span>
+        ) : null}
+        {failed > 0 ? (
+          <span className="work-tool-group-badge failed">
+            {failed} failed
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="work-tool-group-body">
+          {tools.map((tool) => (
+            <ToolRow key={tool.id} tool={tool} />
+          ))}
+        </div>
       ) : null}
-      {tool.input !== undefined ? <pre>{formatToolPayload(tool.input)}</pre> : null}
-      {tool.end?.result ? <pre>{formatToolPayload(tool.end.result)}</pre> : null}
-      {tool.end?.error ? <pre>{tool.end.error}</pre> : null}
-    </details>
+    </div>
   );
+}
+
+function ToolRow({ tool }: { tool: ToolItem }) {
+  const [open, setOpen] = useState(false);
+  const status: "running" | "done" | "failed" = tool.end?.error
+    ? "failed"
+    : tool.end
+      ? "done"
+      : "running";
+  const subtitle = toolSubtitle(tool);
+  const hasDetail =
+    tool.input !== undefined ||
+    tool.deltas.length > 0 ||
+    tool.end?.result !== undefined ||
+    tool.end?.error !== undefined;
+
+  return (
+    <div className={`work-tool-row work-tool-row-${status}`}>
+      <button
+        type="button"
+        className="work-tool-row-head"
+        onClick={() => hasDetail && setOpen((v) => !v)}
+        disabled={!hasDetail}
+        aria-expanded={open}
+      >
+        <span className={`work-tool-row-icon work-tool-row-icon-${status}`}>
+          {status === "running" ? (
+            <Loader2 className="work-status-spin" size={12} />
+          ) : status === "failed" ? (
+            <X size={12} />
+          ) : (
+            <Check size={12} />
+          )}
+        </span>
+        <span className="work-tool-row-name">{tool.name}</span>
+        {subtitle ? <span className="work-tool-row-subtitle">{subtitle}</span> : null}
+      </button>
+      {open ? (
+        <div className="work-tool-row-detail">
+          {tool.input !== undefined ? (
+            <pre className="work-tool-row-pre">{formatToolPayload(tool.input)}</pre>
+          ) : null}
+          {tool.deltas.map((delta, i) => {
+            const text = describeToolDelta(delta);
+            return text ? (
+              <div key={i} className="work-tool-delta">
+                {text}
+              </div>
+            ) : null;
+          })}
+          {tool.end?.result ? (
+            <pre className="work-tool-row-pre">{formatToolPayload(tool.end.result)}</pre>
+          ) : null}
+          {tool.end?.error ? (
+            <pre className="work-tool-row-pre work-tool-row-pre-error">{tool.end.error}</pre>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function toolSubtitle(tool: ToolItem): string {
+  for (const delta of tool.deltas) {
+    if (delta && typeof delta === "object" && "summary" in delta) {
+      const s = (delta as { summary?: unknown }).summary;
+      if (typeof s === "string" && s.trim()) return s.trim();
+    }
+  }
+  if (tool.input && typeof tool.input === "object") {
+    const obj = tool.input as Record<string, unknown>;
+    if (typeof obj.title === "string" && obj.title.trim()) return obj.title.trim();
+    if (typeof obj.command === "string" && obj.command.trim()) return obj.command.trim();
+    if (typeof obj.description === "string" && obj.description.trim()) {
+      return obj.description.trim();
+    }
+  }
+  return "";
 }
 
 function RunSurfaces({ events }: { events: WorkEvent[] }) {
@@ -973,16 +1112,32 @@ function formatDate(value: string): string {
 
 function describeToolDelta(delta: unknown): string {
   if (!delta || typeof delta !== "object") {
-    return typeof delta === "string" ? delta : "Working…";
+    return typeof delta === "string" ? delta : "";
   }
-  const info = delta as { message?: unknown; elapsedSeconds?: unknown };
+  const info = delta as {
+    message?: unknown;
+    summary?: unknown;
+    elapsedSeconds?: unknown;
+    durationMs?: unknown;
+  };
+  if (typeof info.summary === "string" && info.summary.trim()) {
+    return info.summary.trim();
+  }
   if (typeof info.message === "string" && info.message.trim()) {
     return info.message.trim();
+  }
+  if (typeof info.durationMs === "number" && Number.isFinite(info.durationMs)) {
+    return `Took ${formatDuration(info.durationMs)}`;
   }
   if (typeof info.elapsedSeconds === "number" && Number.isFinite(info.elapsedSeconds)) {
     return `Running for ${info.elapsedSeconds.toFixed(1)}s`;
   }
-  return "Working…";
+  return "";
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function formatToolPayload(value: unknown): string {
