@@ -16,8 +16,10 @@ This directory holds JSON files prefetched from the running GraphJin
 server's HTTP discovery endpoints (\`/api/v1/discovery/{section}\`),
 plus this index. The four JSONs are regenerated on every worker boot
 and on demand. Do NOT run \`graphjin cli list_tables\` /
-\`describe_table\` / \`get_query_syntax\` / etc. — that information is
-already on disk here.
+\`describe_table\` / \`get_query_syntax\` / \`find_path\` /
+\`explore_relationships\` / \`get_schema_insights\` /
+\`get_discovery_schema\` — every one of those calls returns
+information that is already on disk in the JSONs below.
 
 ## Files
 
@@ -30,11 +32,12 @@ already on disk here.
   default namespace is fine; consult this only when a query has to
   target a non-default database.
 
-- **\`insights.json\`** — hub tables, hot relationships, query
-  templates, data-quality flags. Read this **first** when planning a
-  multi-table query; it surfaces the central tables, the most common
-  joins, and where GraphJin has detected likely-duplicate /
-  denormalised data you should treat carefully.
+- **\`insights.json\`** — hub tables, hot relationships,
+  pre-computed \`relationship_paths\` (i.e. how to join any two tables
+  in N hops), query templates, data-quality flags. Read this **first**
+  when planning a multi-table query; it answers the questions
+  \`graphjin cli find_path\` / \`explore_relationships\` would, without
+  a round-trip.
 
 - **\`syntax.json\`** — the GraphJin DSL reference (operators,
   aggregations, pagination, ordering, expression aggregates,

@@ -83,7 +83,7 @@ DATA ACCESS — READ-ONLY:
 The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
 - Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
-- DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is on disk in the knowledge files listed in step 1.
+- DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`find_path\` / \`explore_relationships\` / \`get_schema_insights\` / \`get_discovery_schema\` — every one of those returns information already on disk in the knowledge files listed in step 1 (\`insights.json\` covers relationship paths and hub tables; \`tables.json\` covers schemas and column counts; \`syntax.json\` covers query syntax).
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the output must trace back to a \`graphjin cli execute_graphql\` response from this run.
 

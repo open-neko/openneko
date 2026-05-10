@@ -78,7 +78,7 @@ export function buildWorkPrompt(args: {
     "",
     "DATA ACCESS — the configured GraphJin database is the authoritative source for any operational question (revenue, customers, orders, inventory, employees, sales, products, etc.). Uploaded files are auxiliary — only use them if the user explicitly references them (e.g. \"in the file I just uploaded\") or the database genuinely doesn't have what they're asking for.",
     "",
-    "GraphJin knowledge pack — read these files with your `" + shellTool + "` tool BEFORE writing any query (the schema info is on disk; do not run `graphjin cli list_tables` / `describe_table` / `get_query_syntax`):",
+    "GraphJin knowledge pack — read these files with your `" + shellTool + "` tool BEFORE writing any query. The schema, relationships, and syntax cheat-sheet are all on disk; do NOT run `graphjin cli list_tables` / `describe_table` / `get_query_syntax` / `find_path` / `explore_relationships` / `get_schema_insights` / `get_discovery_schema` — every one of those returns information already in these files (`insights.json` covers relationship paths and hub tables):",
     `- ${knowledge.files.index} (start here — index of the rest)`,
     `- ${knowledge.files.tables} (every table, schema, column count)`,
     `- ${knowledge.files.namespaces} (multi-DB namespace routing, if any)`,
