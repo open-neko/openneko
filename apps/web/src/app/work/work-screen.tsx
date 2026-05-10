@@ -21,6 +21,7 @@ import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import WorkSidebar from "./WorkSidebar";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
@@ -342,13 +343,22 @@ export default function WorkScreen({
       prev
         ? {
             ...prev,
-            messages: prev.messages.map((message, index) =>
-              index === prev.messages.length - 1 &&
-              message.role === "user" &&
-              message.runId === null
-                ? { ...message, runId }
-                : message,
-            ),
+            messages: [
+              ...prev.messages.map((message, index) =>
+                index === prev.messages.length - 1 &&
+                message.role === "user" &&
+                message.runId === null
+                  ? { ...message, runId }
+                  : message,
+              ),
+              {
+                id: `assistant-${runId}`,
+                runId,
+                role: "assistant" as const,
+                content: "",
+                createdAt: new Date().toISOString(),
+              },
+            ],
             runs: [
               ...prev.runs,
               {
@@ -537,80 +547,37 @@ export default function WorkScreen({
         </AppHeader>
 
         <div className="work-layout">
-          <aside className="work-sidebar">
-            <div className="work-sidebar-head">
-              <div className="work-sidebar-eyebrow">
-                <span>Threads</span>
-                <span className="work-sidebar-count">{threads.length}</span>
-              </div>
-              <button
-                className="work-icon-btn is-ghost"
-                onClick={() => void createThread()}
-                title="New thread"
-                aria-label="New thread"
-              >
-                <Plus size={15} strokeWidth={2} />
-              </button>
-            </div>
-
-            <div className="work-thread-list">
-              {loadingThreads ? (
-                <div className="work-empty">Loading threads…</div>
-              ) : threads.length === 0 ? (
-                <div className="work-empty">Start a thread to use Work.</div>
-              ) : (
-                threads.map((thread) => (
-                  <ThreadRow
-                    key={thread.id}
-                    thread={thread}
-                    active={thread.id === activeThreadId}
-                    running={thread.id === activeThreadId && Boolean(activeRunId)}
-                    onDelete={() => void deleteThread(thread.id)}
-                  />
-                ))
-              )}
-            </div>
-
-            <div className="work-sidebar-footer">
-              <Link href="/skills" className="work-sidebar-link">
-                <Sparkles size={14} strokeWidth={2} />
-                <span>Skills</span>
-              </Link>
-              <Link href="/memory" className="work-sidebar-link">
-                <Brain size={14} strokeWidth={2} />
-                <span>Memory</span>
-                {pendingMemories.length > 0 ? (
-                  <span className="work-sidebar-badge">{pendingMemories.length}</span>
-                ) : null}
-              </Link>
-            </div>
-          </aside>
+          <WorkSidebar activeRunId={activeRunId} />
 
           <section className="work-panel">
             <div className="work-transcript">
               {loadingThread ? (
                 <div className="work-empty">Loading thread…</div>
               ) : bundle?.messages.length ? (
-                bundle.messages.map((message, index) => (
-                  <div key={`${message.id}-${index}`} className="work-turn">
-                    {message.role === "user" ? (
+                bundle.messages.map((message, index) => {
+                  if (message.role === "assistant" && message.runId) {
+                    // Assistant turns are reconstructed chronologically from the
+                    // run event stream (text segments interleaved with tool calls
+                    // and the final surface artifact). The persisted message
+                    // content is the fallback for runs missing event history.
+                    const events = bundle.eventsByRun[message.runId] ?? [];
+                    return (
+                      <div key={`${message.id}-${index}`} className="work-turn">
+                        <RunTimeline
+                          run={runLookup.get(message.runId) ?? null}
+                          events={events}
+                          pending={sending && latestRunId === message.runId}
+                          fallbackContent={message.content}
+                        />
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={`${message.id}-${index}`} className="work-turn">
                       <MessageBubble message={message} />
-                    ) : null}
-                    {message.role === "user" && message.runId ? (
-                      <RunActivity
-                        run={runLookup.get(message.runId) ?? null}
-                        events={bundle.eventsByRun[message.runId] ?? []}
-                        pending={sending && latestRunId === message.runId}
-                      />
-                    ) : null}
-                    {message.role === "assistant" && message.runId ? (
-                      <RunSurfaces events={bundle.eventsByRun[message.runId] ?? []} />
-                    ) : null}
-                    {message.role === "assistant" ? (
-                      <MessageBubble message={message} />
-                    ) : null}
-                  </div>
-                ))
+                    </div>
+                  );
+                })
               ) : null}
 
               {streamError ? (
@@ -756,48 +723,6 @@ function PendingMemoryPanel({
   );
 }
 
-function ThreadRow({
-  thread,
-  active,
-  running,
-  onDelete,
-}: {
-  thread: ThreadSummary;
-  active: boolean;
-  running: boolean;
-  onDelete: () => void;
-}) {
-  return (
-    <div className={`work-thread-row${active ? " is-active" : ""}`}>
-      <Link
-        href={`/work/${thread.id}`}
-        className="work-thread-row-main"
-        title={thread.title || "Untitled thread"}
-        prefetch={false}
-      >
-        <span className={`work-thread-dot${running ? " is-running" : ""}`} aria-hidden="true" />
-        <span className="work-thread-row-body">
-          <span className="work-thread-row-title">{thread.title || "Untitled thread"}</span>
-          <span className="work-thread-row-time">{formatDate(thread.lastMessageAt)}</span>
-        </span>
-      </Link>
-      <button
-        type="button"
-        className="work-thread-delete"
-        title="Delete thread"
-        aria-label="Delete thread"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onDelete();
-        }}
-      >
-        <Trash2 size={13} strokeWidth={2} />
-      </button>
-    </div>
-  );
-}
-
 function MessageBubble({ message }: { message: MessageRecord }) {
   if (message.role === "user") {
     return (
@@ -819,49 +744,6 @@ function MessageBubble({ message }: { message: MessageRecord }) {
   );
 }
 
-function RunActivity({
-  run,
-  events,
-  pending,
-}: {
-  run: RunRecord | null;
-  events: WorkEvent[];
-  pending: boolean;
-}) {
-  const items = useMemo(() => buildActivityItems(events), [events]);
-
-  if (items.length === 0 && !pending && !run) return null;
-
-  return (
-    <div className="work-activity">
-      {items.map((item, index) => {
-        if (item.kind === "tools") {
-          return <ToolGroup key={`tools-${index}`} tools={item.tools} />;
-        }
-        if (item.kind === "status") {
-          return (
-            <div key={`status-${index}`} className="work-status-row">
-              <span>{item.message}</span>
-            </div>
-          );
-        }
-        return (
-          <div key={`error-${index}`} className="work-error">
-            {item.message}
-          </div>
-        );
-      })}
-      {pending ? (
-        <div className="work-status-row">
-          <Loader2 className="work-status-spin" size={12} />
-          <span>Running…</span>
-        </div>
-      ) : null}
-      {run?.error ? <div className="work-error">{run.error}</div> : null}
-    </div>
-  );
-}
-
 type ToolItem = {
   id: string;
   name: string;
@@ -870,28 +752,49 @@ type ToolItem = {
   end?: Extract<WorkEvent, { type: "tool_end" }>;
 };
 
-type ActivityItem =
-  | { kind: "tools"; tools: ToolItem[] }
-  | { kind: "status"; message: string }
+type TimelineItem =
+  | { kind: "text"; content: string }
+  | { kind: "tool"; tool: ToolItem }
   | { kind: "error"; message: string };
 
-function buildActivityItems(events: WorkEvent[]): ActivityItem[] {
-  const items: ActivityItem[] = [];
+// Walks a run's event stream chronologically and produces an interleaved
+// timeline: text segments split at tool boundaries, with each tool placed
+// inline where it ran. Hermes emits cumulative text monotonically; claude-agent
+// resets the cumulative buffer at every assistant block boundary, so a
+// non-prefix transition is treated as a new segment.
+function buildRunTimeline(events: WorkEvent[]): {
+  items: TimelineItem[];
+  lastStatus: string | null;
+  surfaceMessages: A2UIMessage[];
+} {
+  const items: TimelineItem[] = [];
   const toolsById = new Map<string, ToolItem>();
-  let openGroup: ToolItem[] | null = null;
+  const surfaceMessages: A2UIMessage[] = [];
+  let cumulative = "";
+  let committedLength = 0;
   let lastStatus: string | null = null;
 
-  const closeGroup = () => {
-    if (openGroup && openGroup.length > 0) {
-      items.push({ kind: "tools", tools: openGroup });
-    }
-    openGroup = null;
+  const flushTextSegment = () => {
+    const tail = cumulative.slice(committedLength);
+    if (tail.trim()) items.push({ kind: "text", content: tail });
+    committedLength = cumulative.length;
   };
 
   for (const event of events) {
     switch (event.type) {
+      case "message": {
+        if (event.role !== "assistant") break;
+        if (event.content.startsWith(cumulative)) {
+          cumulative = event.content;
+        } else {
+          flushTextSegment();
+          cumulative = event.content;
+          committedLength = 0;
+        }
+        break;
+      }
       case "tool_start": {
-        if (!openGroup) openGroup = [];
+        flushTextSegment();
         const item: ToolItem = {
           id: event.id,
           name: event.name,
@@ -899,7 +802,7 @@ function buildActivityItems(events: WorkEvent[]): ActivityItem[] {
           deltas: [],
         };
         toolsById.set(event.id, item);
-        openGroup.push(item);
+        items.push({ kind: "tool", tool: item });
         break;
       }
       case "tool_delta": {
@@ -913,82 +816,93 @@ function buildActivityItems(events: WorkEvent[]): ActivityItem[] {
         break;
       }
       case "status": {
-        if (event.message === lastStatus) break;
-        closeGroup();
-        items.push({ kind: "status", message: event.message });
         lastStatus = event.message;
         break;
       }
       case "error": {
-        closeGroup();
+        flushTextSegment();
         items.push({ kind: "error", message: event.message });
+        break;
+      }
+      case "surface": {
+        for (const msg of event.messages) surfaceMessages.push(msg);
         break;
       }
       default:
         break;
     }
   }
-  closeGroup();
-
-  // Keep only the most recent status pill — earlier ones are stale state
-  // transitions and clutter the timeline once tool work has happened.
-  let lastStatusIdx = -1;
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].kind === "status") lastStatusIdx = i;
-  }
-  return lastStatusIdx === -1
-    ? items
-    : items.filter((it, i) => it.kind !== "status" || i === lastStatusIdx);
+  flushTextSegment();
+  return { items, lastStatus, surfaceMessages };
 }
 
-function ToolGroup({ tools }: { tools: ToolItem[] }) {
-  const inflight = tools.filter((t) => !t.end).length;
-  const failed = tools.filter((t) => t.end?.error).length;
-  const showHeader = tools.length > 1;
-  const [open, setOpen] = useState(tools.length <= 2 || inflight > 0);
+function RunTimeline({
+  run,
+  events,
+  pending,
+  fallbackContent,
+}: {
+  run: RunRecord | null;
+  events: WorkEvent[];
+  pending: boolean;
+  fallbackContent: string;
+}) {
+  const { items, lastStatus, surfaceMessages } = useMemo(
+    () => buildRunTimeline(events),
+    [events],
+  );
 
-  useEffect(() => {
-    if (inflight > 0) setOpen(true);
-  }, [inflight]);
-
-  if (!showHeader) {
-    return (
-      <div className="work-tool-group work-tool-group-single">
-        <ToolRow tool={tools[0]} />
-      </div>
-    );
-  }
+  const hasContent = items.length > 0 || surfaceMessages.length > 0;
 
   return (
-    <div className="work-tool-group">
-      <button
-        type="button"
-        className="work-tool-group-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
-        <span className="work-tool-group-count">
-          {tools.length} tool {tools.length === 1 ? "call" : "calls"}
-        </span>
-        {inflight > 0 ? (
-          <span className="work-tool-group-badge running">
-            <Loader2 className="work-status-spin" size={11} /> running
-          </span>
-        ) : null}
-        {failed > 0 ? (
-          <span className="work-tool-group-badge failed">
-            {failed} failed
-          </span>
-        ) : null}
-      </button>
-      {open ? (
-        <div className="work-tool-group-body">
-          {tools.map((tool) => (
-            <ToolRow key={tool.id} tool={tool} />
-          ))}
+    <div className="work-timeline">
+      {!hasContent && !pending && fallbackContent.trim() ? (
+        <div className="work-bubble-row">
+          <div className="work-bubble">
+            <div className="work-markdown">
+              <ReactMarkdown>{fallbackContent}</ReactMarkdown>
+            </div>
+          </div>
         </div>
       ) : null}
+
+      {items.map((item, index) => {
+        if (item.kind === "text") {
+          return (
+            <div key={`text-${index}`} className="work-bubble-row">
+              <div className="work-bubble">
+                <div className="work-markdown">
+                  <ReactMarkdown>{item.content}</ReactMarkdown>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        if (item.kind === "tool") {
+          return (
+            <div key={item.tool.id} className="work-tool-group work-tool-group-single">
+              <ToolRow tool={item.tool} />
+            </div>
+          );
+        }
+        return (
+          <div key={`error-${index}`} className="work-error">
+            {item.message}
+          </div>
+        );
+      })}
+
+      {surfaceMessages.length > 0 ? (
+        <SurfaceBlock messages={surfaceMessages} />
+      ) : null}
+
+      {pending ? (
+        <div className="work-status-row">
+          <Loader2 className="work-status-spin" size={12} />
+          <span>{lastStatus ?? "Running…"}</span>
+        </div>
+      ) : null}
+      {!pending && run?.error ? <div className="work-error">{run.error}</div> : null}
     </div>
   );
 }
@@ -1080,14 +994,6 @@ function toolSubtitle(tool: ToolItem): string {
   return "";
 }
 
-function RunSurfaces({ events }: { events: WorkEvent[] }) {
-  const messages = events
-    .filter((event): event is Extract<WorkEvent, { type: "surface" }> => event.type === "surface")
-    .flatMap((event) => event.messages);
-  if (messages.length === 0) return null;
-  return <SurfaceBlock messages={messages} />;
-}
-
 function SurfaceBlock({ messages }: { messages: A2UIMessage[] }) {
   const surfaces = useMemo(() => {
     let next = new Map<string, SurfaceState>();
@@ -1120,14 +1026,6 @@ function SurfaceBlock({ messages }: { messages: A2UIMessage[] }) {
 
   if (nodes.length === 0) return null;
   return <div className="work-surface-stack">{nodes}</div>;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return date.toLocaleDateString("en-IN", {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 function describeToolDelta(delta: unknown): string {

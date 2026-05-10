@@ -5,6 +5,8 @@ import { Brain, Pin, Trash2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
+import SectionNav from "@/components/SectionNav";
+import WorkSidebar from "@/app/work/WorkSidebar";
 
 type MemoryRow = {
   id: string;
@@ -96,9 +98,14 @@ export default function MemoryPage() {
   return (
     <>
       <div className="root">
-        <AppHeader back={{ href: "/work", label: "Back to Work" }} />
+        <AppHeader>
+          <SectionNav current="work" />
+        </AppHeader>
 
-        <div className="library-head">
+        <div className="work-layout">
+          <WorkSidebar />
+          <section className="work-panel">
+            <div className="library-head">
           <div className="library-head-icon">
             <Brain size={16} strokeWidth={2} />
           </div>
@@ -200,6 +207,8 @@ export default function MemoryPage() {
             </ul>
           )}
         </section>
+          </section>
+        </div>
       </div>
       <CreatorCredit />
     </>
