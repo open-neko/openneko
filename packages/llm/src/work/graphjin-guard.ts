@@ -24,12 +24,23 @@ export async function ensureGraphjinGuard(
   graphjinBinary: string,
 ): Promise<string> {
   const wrapperPath = join(binRoot, "graphjin");
+  // Two case statements: the first does substring matches on graphql operation
+  // keywords (so we still catch `mutation` inside a JSON --args payload); the
+  // second pads the args with spaces and matches whole-word subcommands so
+  // names like "preserve" or "newest" don't false-positive.
   const script = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
     "joined=\"$*\"",
     "case \"$joined\" in",
-    "  *mutation*|*Mutation*|*subscription*|*Subscription*|* serve *|serve\\ *|* config *|config\\ *|* migrate *|migrate\\ *|* secret*|secret*|* admin *|admin\\ *|* new *|new\\ *)",
+    "  *mutation*|*Mutation*|*subscription*|*Subscription*)",
+    "    echo \"Neko Work blocks GraphJin mutations and server-changing commands. Read/query only.\" >&2",
+    "    exit 2",
+    "    ;;",
+    "esac",
+    "padded=\" $joined \"",
+    "case \"$padded\" in",
+    "  *' serve '*|*' config '*|*' migrate '*|*' admin '*|*' new '*|*' secret '*|*' secrets '*)",
     "    echo \"Neko Work blocks GraphJin mutations and server-changing commands. Read/query only.\" >&2",
     "    exit 2",
     "    ;;",
