@@ -1,4 +1,5 @@
-import type { AgentBackendId, AgentChatMessage, AgentWorkspace } from "../agent-backend";
+import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
+import { knowledgePackPaths } from "../knowledge-pack";
 
 function formatTranscript(messages: AgentChatMessage[]): string {
   if (messages.length === 0) return "No prior messages.";
@@ -31,6 +32,8 @@ export function buildWorkPrompt(args: {
     supportsMemoryTool,
   } =
     args;
+  const shellTool = shellToolName(backend);
+  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
 
   const cardInstructions = supportsCardTool
     ? [
@@ -73,6 +76,23 @@ export function buildWorkPrompt(args: {
     "Loaded memory:",
     memoryContext?.trim() || "No core memories are currently saved for this workspace or thread.",
     "",
+    "DATA ACCESS — the configured GraphJin database is the authoritative source for any operational question (revenue, customers, orders, inventory, employees, sales, products, etc.). Uploaded files are auxiliary — only use them if the user explicitly references them (e.g. \"in the file I just uploaded\") or the database genuinely doesn't have what they're asking for.",
+    "",
+    "GraphJin knowledge pack — read these files with your `" + shellTool + "` tool BEFORE writing any query (the schema info is on disk; do not run `graphjin cli list_tables` / `describe_table` / `get_query_syntax`):",
+    `- ${knowledge.files.index} (start here — index of the rest)`,
+    `- ${knowledge.files.tables} (every table, schema, column count)`,
+    `- ${knowledge.files.namespaces} (multi-DB namespace routing, if any)`,
+    `- ${knowledge.files.insights} (hub tables, hot relationships, query templates)`,
+    `- ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates)`,
+    "",
+    "Run queries via the `" + shellTool + "` tool:",
+    "  graphjin cli execute_graphql --args '{\"query\":\"<your read-only graphql>\"}'",
+    "If a response contains an `errors` array, run:",
+    "  graphjin cli fix_query_error --args '{\"query\":\"<failing>\",\"error\":\"<msg>\"}'",
+    "to get a corrected query, then run execute_graphql again.",
+    "",
+    "DO NOT use `execute_code`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only `" + shellTool + "` running `graphjin cli`. Mutations and subscriptions are blocked at the tool gate.",
+    "",
     "Shared directories:",
     `- Skills: ${workspace.skillsRoot}`,
     `- Memory: ${workspace.memoryRoot}`,
@@ -83,7 +103,6 @@ export function buildWorkPrompt(args: {
     "Rules:",
     "- Read and write within those shared directories when needed.",
     "- Save generated reports or files under the run artifact directory.",
-    "- Use the graphjin CLI for read/query work only. Mutation, subscription, config, and server-changing commands are blocked.",
     "- Keep answers concise and useful.",
     "",
     "Conversation so far:",

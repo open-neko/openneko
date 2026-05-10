@@ -14,6 +14,8 @@
  */
 
 import {
+  discoveryUrlFromMcpUrl,
+  prefetchKnowledgePack,
   resolveAgentBackend,
   type AgentChatMessage,
   type AgentEvent,
@@ -36,6 +38,7 @@ import {
   saveAssistantWorkMessage,
   setWorkThreadBackendState,
 } from "@neko/llm/work";
+import { data_source, db, eq } from "@neko/db";
 
 function backendLabel(id: string): string {
   return id === "claude-agent" ? "Claude Agent" : "Hermes";
@@ -61,6 +64,28 @@ export async function runWorkRun(
 
   const backend = await resolveAgentBackend(orgId);
   const workspace = await ensureWorkWorkspace(orgId, threadId, runId);
+
+  // Refresh the on-disk knowledge pack the prompt points at. Cheap
+  // local REST fetch; best-effort. If graphjin is transiently
+  // unreachable we proceed with whatever's already on disk from a
+  // prior run (or boot's prefetch).
+  const sources = await db()
+    .select({ mcp_url: data_source.mcp_url })
+    .from(data_source)
+    .where(eq(data_source.org_id, orgId))
+    .limit(1);
+  const mcpUrl = sources[0]?.mcp_url;
+  if (mcpUrl) {
+    const refresh = await prefetchKnowledgePack({
+      discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
+      destDir: workspace.knowledgeRoot,
+    });
+    if (!refresh.ok) {
+      console.warn(
+        `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
+      );
+    }
+  }
 
   // Seed the seq counter from any events already written to this run
   // — covers the (rare) pg-boss retry case where the job ran once,

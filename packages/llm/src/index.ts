@@ -28,4 +28,11 @@ export {
   detectUpstreamError,
 } from "./agent-error";
 export { provisionHostConfig } from "./host-provision";
+export {
+  prefetchKnowledgePack,
+  knowledgePackPaths,
+  discoveryUrlFromMcpUrl,
+  type PrefetchKnowledgeResult,
+  type KnowledgePackPaths,
+} from "./knowledge-pack";
 export * from "./work";

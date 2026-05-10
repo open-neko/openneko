@@ -18,6 +18,13 @@ import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
 import { detectUpstreamError } from "./agent-error";
+import {
+  discoveryUrlFromMcpUrl,
+  knowledgePackPaths,
+  prefetchKnowledgePack,
+  type KnowledgePackPaths,
+} from "./knowledge-pack";
+import { ensureOrgWorkspace } from "./work/workspace";
 
 export type MetricAgentInput = {
   orgId: string;
@@ -74,34 +81,23 @@ export type MetricAgentResult = {
   timeWindow: TimeWindow;
 };
 
-async function fetchKnowledge(apiBase: string, section: string): Promise<string> {
-  const url = `${apiBase}/discovery/${section}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) {
-    throw new Error(
-      `graphjin discovery fetch failed: ${res.status} ${res.statusText} (${url})`,
-    );
-  }
-  return res.text();
-}
-
-type Knowledge = { tables: string; insights: string; syntax: string };
-
-async function fetchGraphJinKnowledge(mcpUrl: string): Promise<Knowledge> {
-  const apiBase = mcpUrl.replace(/\/mcp\/?$/, "");
-  const [tables, insights, syntax] = await Promise.all([
-    fetchKnowledge(apiBase, "tables?limit=500"),
-    fetchKnowledge(apiBase, "insights"),
-    fetchKnowledge(apiBase, "syntax"),
-  ]);
-  return { tables, insights, syntax };
-}
-
-function buildPrompt(input: MetricAgentInput, k: Knowledge, shellTool: string): string {
+function buildPrompt(
+  input: MetricAgentInput,
+  knowledge: KnowledgePackPaths,
+  shellTool: string,
+): string {
   return `You answer ONE dashboard card by writing GraphQL queries and executing them against a GraphJin server, then returning a single JSON object describing the snapshot.
 
 EXECUTION PATTERN:
-1. Read the three knowledge sections below (Tables, Insights, Syntax) — together they are the authoritative DSL + table/column/FK index for this database. Don't run any schema-discovery commands; that information is already inline.
+1. Read the GraphJin knowledge pack on disk before writing any query — its INDEX.md tells you which file covers what. Don't run any schema-discovery commands; that information is already on disk.
+
+   Knowledge files (read with your \`${shellTool}\` tool, e.g. \`cat\`):
+   - ${knowledge.files.index} (start here — index of the rest)
+   - ${knowledge.files.tables} (every table, schema, column count)
+   - ${knowledge.files.namespaces} (multi-DB namespace routing)
+   - ${knowledge.files.insights} (hub tables, hot relationships, query templates, data-quality flags)
+   - ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates)
+
 2. Write ONE bulk GraphQL query that computes both the current value AND a baseline (prior period of equal length) in the same request when possible. Prefer one bulk query over many small ones.
 3. Run it via the \`${shellTool}\` tool:
      graphjin cli execute_graphql --args '{"query":"<your graphql>"}'
@@ -115,12 +111,12 @@ DATA ACCESS — READ-ONLY:
 The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
 - Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
-- DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is already inline below.
+- DO NOT call \`graphjin cli list_tables\`, \`describe_table\`, \`get_query_syntax\`, etc. — that info is on disk in the knowledge files listed in step 1.
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the output must trace back to a \`graphjin cli execute_graphql\` response from this run.
 
 QUERY CONSTRUCTION — let the database aggregate:
-Prefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (full details in the Reference below):
+Prefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (consult \`syntax.json\` for full DSL reference):
 
 - Expression aggregates — sum(expr: {...}), ratio(expr: {...}) — USE THESE FIRST when the metric involves arithmetic across columns (e.g. SUM(price × qty), margin %). They express what single-column sum_/count_/avg_ cannot.
 - Joined-column access via dot-notation: { col: "product.standardcost" } works across FKs up to 3 hops — unlocks revenue × cost calculations in a single server-side aggregate.
@@ -188,24 +184,6 @@ chartType MUST match the shape of chartData. Mismatches will not render:
 - If you have multiple categories (e.g. 3 countries, 5 work centers), the chartType is donut or bar — never kpi. kpi is for a single number only.
 
 ================================================================================
-Tables — every table in the database (name, schema, column_count):
-================================================================================
-
-${k.tables}
-
-================================================================================
-Insights — hub tables, hot relationships, query templates, data-quality flags:
-================================================================================
-
-${k.insights}
-
-================================================================================
-Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagination):
-================================================================================
-
-${k.syntax}
-
-================================================================================
 OUTPUT CONTRACT — respond with ONE JSON object, exactly this shape, no prose:
 ================================================================================
 
@@ -271,10 +249,28 @@ export async function runMetricAgent(
     `[metric-agent] org=${input.orgId} role=${input.role} slug=${input.slug} mcp=${mcpUrl}`,
   );
 
-  const knowledge = await fetchGraphJinKnowledge(mcpUrl);
-  console.log(
-    `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge tables=${knowledge.tables.length}B insights=${knowledge.insights.length}B syntax=${knowledge.syntax.length}B`,
-  );
+  // Knowledge is read by the agent from disk (workspace.knowledgeRoot)
+  // — no longer inlined into the prompt. Refresh on every run so a
+  // schema change is reflected without restarting the worker; the
+  // discovery endpoint is local and cheap. Best-effort: if the
+  // refresh fails (graphjin transiently unreachable) we proceed with
+  // whatever's already on disk from a prior boot/run.
+  const workspace = await ensureOrgWorkspace(input.orgId);
+  const refreshResult = await prefetchKnowledgePack({
+    discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
+    destDir: workspace.knowledgeRoot,
+  });
+  if (refreshResult.ok) {
+    const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
+    console.log(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refreshed (${refreshResult.files.length} files, ${totalBytes}B)`,
+    );
+  } else {
+    console.warn(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refresh failed (${refreshResult.error}); proceeding with on-disk pack`,
+    );
+  }
+  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
 
   // Resolve the backend first so the prompt can reference its actual
   // shell-tool name (Hermes calls it `terminal`, Claude Agent calls it

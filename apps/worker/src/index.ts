@@ -20,6 +20,7 @@ import {
 } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
 import {
+  data_source,
   db,
   eq,
   getOrgId,
@@ -28,11 +29,14 @@ import {
 } from "@neko/db";
 import {
   cancelAllAgents,
+  discoveryUrlFromMcpUrl,
+  prefetchKnowledgePack,
   provisionHostConfig,
   resolveAgentConcurrency,
   UpstreamProviderError,
   verifyAiCredentials,
 } from "@neko/llm";
+import { ensureOrgWorkspace } from "@neko/llm/work";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
 import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
@@ -216,6 +220,42 @@ await provisionHostConfig(ADMIN_ORG_ID);
 console.log(
   `[worker] host config provisioned from DB (data_source + llm_provider_config)`,
 );
+
+// Prefetch the GraphJin knowledge pack onto disk under the admin
+// org's workspace.knowledgeRoot. The prompts point agents at these
+// files instead of inlining 30-40KB of discovery JSON every turn.
+// Best-effort: if graphjin isn't reachable yet, skip — runs will
+// re-fetch lazily and the agent's first attempt will see an empty
+// pack until the next refresh.
+{
+  const sources = await db()
+    .select({ mcp_url: data_source.mcp_url })
+    .from(data_source)
+    .where(eq(data_source.org_id, ADMIN_ORG_ID))
+    .limit(1);
+  const mcpUrl = sources[0]?.mcp_url;
+  if (mcpUrl) {
+    const workspace = await ensureOrgWorkspace(ADMIN_ORG_ID);
+    const refresh = await prefetchKnowledgePack({
+      discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
+      destDir: workspace.knowledgeRoot,
+    });
+    if (refresh.ok) {
+      const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
+      console.log(
+        `[worker] knowledge pack prefetched at ${workspace.knowledgeRoot} (${refresh.files.length} files, ${totalBytes}B)`,
+      );
+    } else {
+      console.warn(
+        `[worker] knowledge pack prefetch failed (${refresh.error}); agents will refresh lazily on first run`,
+      );
+    }
+  } else {
+    console.warn(
+      "[worker] no data_source.mcp_url configured; skipping knowledge pack prefetch",
+    );
+  }
+}
 
 const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 console.log(
