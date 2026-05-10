@@ -83,8 +83,11 @@ DATA ACCESS — READ-ONLY:
 The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
 - Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
-- DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`find_path\` / \`explore_relationships\` / \`get_schema_insights\` / \`get_discovery_schema\` — every one of those returns information already on disk in the knowledge files listed in step 1 (\`insights.json\` covers relationship paths and hub tables; \`tables.json\` covers schemas and column counts; \`syntax.json\` covers query syntax).
-- Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli health\` (sanity check).
+- DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` — every one of those returns a bulk dump already on disk in the knowledge files (\`insights.json\` covers hub tables and common relationship paths; \`tables.json\` covers schemas and column counts; \`syntax.json\` covers query syntax).
+- DO reach for these targeted schema queries when the pair / table you need isn't in \`insights.json\`:
+  - \`graphjin cli find_path --args '{"from":"<table>","to":"<table>"}'\` — exact join path between two specific tables.
+  - \`graphjin cli explore_relationships --args '{"table":"<name>"}'\` — every table connected to one focal table.
+- Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli fix_query_error --args '{"query":"...","error":"..."}'\` (get a corrected query); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the output must trace back to a \`graphjin cli execute_graphql\` response from this run.
 
 QUERY CONSTRUCTION — let the database aggregate:
