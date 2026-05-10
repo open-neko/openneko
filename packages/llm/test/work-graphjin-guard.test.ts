@@ -28,8 +28,31 @@ describe("isGraphjinCommandSafe", () => {
     ).toBe(false);
   });
 
-  it("blocks config-changing commands", () => {
-    expect(isGraphjinCommandSafe(["config", "set", "admin_secret", "x"])).toBe(false);
+  it("blocks the documented write subcommands", () => {
+    for (const sub of [
+      "save_workflow",
+      "update_current_config",
+      "apply_schema_changes",
+      "reload_schema",
+      "apply_database_setup",
+      "preview_schema_changes",
+    ]) {
+      expect(isGraphjinCommandSafe(["cli", sub, "--args", "{}"])).toBe(false);
+    }
+  });
+
+  it("does NOT false-positive on identifiers containing serve/config/etc.", () => {
+    // The previous overbroad guard blocked anything matching /serve|config|.../.
+    // The agent legitimately uses column names like `newest`, `serverside`,
+    // `config_value`, etc. inside graphql queries.
+    expect(
+      isGraphjinCommandSafe([
+        "cli",
+        "execute_graphql",
+        "--args",
+        '{"query":"{ products(order_by: { newest: desc }) { config_value preserve_id } }"}',
+      ]),
+    ).toBe(true);
   });
 });
 
@@ -71,18 +94,35 @@ describe("ensureGraphjinGuard wrapper script", () => {
     expect(r.stderr).toContain("blocks GraphJin mutations");
   });
 
-  it("blocks `serve` as a whole-word subcommand", () => {
-    const r = spawnSync(wrapper, ["serve"], { encoding: "utf8" });
+  it("blocks `save_workflow` as a whole-word subcommand", () => {
+    const r = spawnSync(wrapper, ["cli", "save_workflow", "--args", "{}"], {
+      encoding: "utf8",
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("blocks GraphJin write");
+  });
+
+  it("blocks `apply_schema_changes` even without `cli`", () => {
+    const r = spawnSync(wrapper, ["apply_schema_changes"], { encoding: "utf8" });
     expect(r.status).toBe(2);
   });
 
-  it("does NOT false-positive on whole-word `preserve` or `newest`", () => {
+  it("does NOT false-positive on column names like `newest`/`config_value`/`preserve_id`", () => {
     const r = spawnSync(wrapper, [
       "cli",
       "execute_graphql",
       "--args",
-      '{"query":"{ products(order_by: { newest: desc }) { id } }"}',
+      '{"query":"{ products(order_by: { newest: desc }) { config_value preserve_id } }"}',
     ], { encoding: "utf8" });
     expect(r.status).toBe(0);
+  });
+
+  it("allows `graphjin serve` to pass through (it is the server, not a write subcommand)", () => {
+    // The agent doesn't run this — but the wrapper shouldn't pretend it's
+    // dangerous either. The legitimate gate is on actual write subcommands
+    // like save_workflow / apply_schema_changes / reload_schema.
+    const r = spawnSync(wrapper, ["serve"], { encoding: "utf8" });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("serve");
   });
 });
