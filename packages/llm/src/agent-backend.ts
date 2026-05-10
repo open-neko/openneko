@@ -83,6 +83,19 @@ export type AgentRunOptions = {
   onEvent?: (event: AgentEvent) => Promise<void> | void;
   backendState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  forkSession?: boolean;
+  agents?: Record<string, unknown>;
+  hooks?: Record<string, unknown>;
+  canUseTool?: (
+    toolName: string,
+    input: Record<string, unknown>,
+    options: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
+  onElicitation?: (
+    request: Record<string, unknown>,
+    options: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
 };
 
 export type AgentRunResult = {

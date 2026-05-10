@@ -23,7 +23,6 @@ import {
   type AgentBackend,
   type AgentRunOptions,
   type AgentRunResult,
-  type AgentSurfaceMessage,
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
 import { hermesHomeForOrg } from "../host-provision";
@@ -33,6 +32,9 @@ import {
   type AcpClient,
   type AcpNotification,
 } from "./hermes-acp-client";
+import { extractSurfaceMessages } from "./surface";
+
+export { extractSurfaceMessages } from "./surface";
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
@@ -284,7 +286,6 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
 
     let accumulatedText = "";
     let lastEmittedAssistantText = "";
-    const toolNames = new Map<string, string>();
 
     client.onNotification((notif) => {
       const update = notif.update;
@@ -308,18 +309,16 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         }
         case "tool_call": {
           if (!onEvent) return;
-          const id = update.toolCallId;
-          const name = update.kind || update.title || "tool";
-          toolNames.set(id, name);
           void onEvent({
             type: "tool_start",
-            id,
-            name,
-            input: update.locations ?? update.rawInput,
+            id: update.toolCallId,
+            name: update.kind || "tool",
+            input: {
+              ...(update.title ? { title: update.title } : {}),
+              ...(update.locations ? { locations: update.locations } : {}),
+              ...(update.rawInput !== undefined ? { rawInput: update.rawInput } : {}),
+            },
           });
-          if (update.title) {
-            void onEvent({ type: "status", message: update.title });
-          }
           return;
         }
         case "tool_call_update": {
@@ -333,13 +332,6 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
               result: status === "completed" ? update.rawOutput ?? update.content : undefined,
               error: status === "failed" ? extractErrorText(update.content ?? update.rawOutput) : undefined,
             });
-            const name = toolNames.get(id);
-            if (name) {
-              void onEvent({
-                type: "status",
-                message: status === "failed" ? `${name} failed.` : `${name} finished.`,
-              });
-            }
           } else {
             void onEvent({
               type: "tool_delta",
@@ -431,20 +423,3 @@ function cleanStatusLine(raw: string): string {
   return raw.replace(/\[[0-9;]*m/g, "").trim();
 }
 
-const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;
-
-export function extractSurfaceMessages(raw: string): {
-  text: string;
-  messages: AgentSurfaceMessage[];
-} {
-  const match = raw.match(NEKO_A2UI_FENCE_RE);
-  if (!match) return { text: raw.trim(), messages: [] };
-  try {
-    const parsed = JSON.parse(match[1].trim());
-    const messages = Array.isArray(parsed) ? (parsed as AgentSurfaceMessage[]) : [];
-    const text = raw.replace(match[0], "").trim();
-    return { text, messages };
-  } catch {
-    return { text: raw.trim(), messages: [] };
-  }
-}

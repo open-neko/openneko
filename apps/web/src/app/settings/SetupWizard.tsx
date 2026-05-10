@@ -469,7 +469,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       {stepName === "data" && (
         <Step
           title="Connect your data"
-          description="Point OpenNeko at your GraphJin server. The metric agent uses this for every read."
+          description="Graphjin server endpoint OpenNeko should connect to."
         >
           <Field label="GraphJin URL *">
             <input

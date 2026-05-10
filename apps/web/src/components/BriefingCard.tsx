@@ -45,7 +45,7 @@ export interface BriefingCardData {
 export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
   ins: BriefingCardData;
   index: number;
-  onDismiss: () => void;
+  onDismiss?: () => void;
   onRetry?: (metricId: string) => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -117,14 +117,16 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
         >
           ⧉
         </button>
-        <button
-          className="ipin"
-          onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-          title="Dismiss"
-          aria-label="Dismiss"
-        >
-          ✕
-        </button>
+        {onDismiss ? (
+          <button
+            className="ipin"
+            onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+            title="Dismiss"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        ) : null}
       </div>
       <div className={`idetail${open ? " open" : ""}`}>
         {state === "pending" ? (

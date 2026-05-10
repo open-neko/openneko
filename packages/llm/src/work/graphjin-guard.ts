@@ -3,20 +3,46 @@ import { constants as fsConstants } from "node:fs";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 
-const BLOCKED_PATTERNS = [
-  /\bmutation\b/i,
-  /\bsubscription\b/i,
-  /\bserve\b/i,
-  /\bconfig\b/i,
-  /\bmigrate\b/i,
-  /\bsecrets?\b/i,
-  /\badmin\b/i,
-  /\bnew\b/i,
-];
+/**
+ * GraphJin write-path subcommands. Even when the agent goes through
+ * `graphjin cli`, these mutate server state and must be blocked.
+ *
+ * Mirrors Reckon's `inspectBashForGraphjinMutations` denylist.
+ */
+const WRITE_SUBCOMMANDS = [
+  "save_workflow",
+  "update_current_config",
+  "apply_schema_changes",
+  "reload_schema",
+  "apply_database_setup",
+  "preview_schema_changes",
+] as const;
 
+const EXECUTOR_SUBCOMMANDS = [
+  "execute_graphql",
+  "execute_saved_query",
+  "execute_workflow",
+] as const;
+
+/**
+ * Allowlist gate: the agent's contract is `graphjin cli <subcommand>` only.
+ * Anything else (`serve`, `migrate`, `admin`, bare invocation, etc.) is
+ * denied. Within `cli`, write subcommands and mutation/subscription ops
+ * are denied; everything else passes.
+ */
 export function isGraphjinCommandSafe(args: string[]): boolean {
-  const joined = args.join(" ");
-  return !BLOCKED_PATTERNS.some((pattern) => pattern.test(joined));
+  if (args.length === 0) return false;
+  if (args[0] !== "cli") return false;
+
+  const sub = args[1];
+  if (!sub) return false;
+  if ((WRITE_SUBCOMMANDS as readonly string[]).includes(sub)) return false;
+
+  if ((EXECUTOR_SUBCOMMANDS as readonly string[]).includes(sub)) {
+    const joined = args.slice(2).join(" ");
+    if (/\b(mutation|subscription)\b/i.test(joined)) return false;
+  }
+  return true;
 }
 
 export async function ensureGraphjinGuard(
@@ -24,16 +50,35 @@ export async function ensureGraphjinGuard(
   graphjinBinary: string,
 ): Promise<string> {
   const wrapperPath = join(binRoot, "graphjin");
+  const writeAlt = WRITE_SUBCOMMANDS.join("|");
+  const execAlt = EXECUTOR_SUBCOMMANDS.join("|");
   const script = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
-    "joined=\"$*\"",
-    "case \"$joined\" in",
-    "  *mutation*|*Mutation*|*subscription*|*Subscription*|* serve *|serve\\ *|* config *|config\\ *|* migrate *|migrate\\ *|* secret*|secret*|* admin *|admin\\ *|* new *|new\\ *)",
-    "    echo \"Neko Work blocks GraphJin mutations and server-changing commands. Read/query only.\" >&2",
+    "",
+    "if [[ \"${1:-}\" != \"cli\" ]]; then",
+    "  echo \"Neko Work allows only 'graphjin cli <subcommand>'. Direct '${1:-(none)}' invocations are not permitted.\" >&2",
+    "  exit 2",
+    "fi",
+    "",
+    "sub=\"${2:-}\"",
+    "case \"$sub\" in",
+    `  ${writeAlt})`,
+    "    echo \"Neko Work blocks GraphJin write subcommands. Read/query only.\" >&2",
     "    exit 2",
     "    ;;",
     "esac",
+    "",
+    "case \"$sub\" in",
+    `  ${execAlt})`,
+    "    rest=\"${*:3}\"",
+    "    if [[ \"$rest\" =~ (^|[^[:alnum:]_])(mutation|subscription)([^[:alnum:]_]|$) ]]; then",
+    "      echo \"Neko Work blocks GraphJin mutations and subscriptions. Read/query only.\" >&2",
+    "      exit 2",
+    "    fi",
+    "    ;;",
+    "esac",
+    "",
     `exec "${graphjinBinary}" "$@"`,
     "",
   ].join("\n");

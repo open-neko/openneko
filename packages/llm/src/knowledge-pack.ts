@@ -16,8 +16,20 @@ This directory holds JSON files prefetched from the running GraphJin
 server's HTTP discovery endpoints (\`/api/v1/discovery/{section}\`),
 plus this index. The four JSONs are regenerated on every worker boot
 and on demand. Do NOT run \`graphjin cli list_tables\` /
-\`describe_table\` / \`get_query_syntax\` / etc. — that information is
-already on disk here.
+\`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` /
+\`get_discovery_schema\` — every one of those returns a bulk dump
+that is already on disk in the JSONs below.
+
+For *targeted* schema questions, two precision subcommands are
+useful and should be reached for instead of guessing:
+
+- \`graphjin cli find_path --args '{"from":"<table>","to":"<table>"}'\`
+  — exact relationship path (with FK columns) between two specific
+  tables. Use this when \`insights.json:relationship_paths\` doesn't
+  cover the pair you need.
+- \`graphjin cli explore_relationships --args '{"table":"<name>"}'\`
+  — every table connected to one focal table, with the FK that joins
+  them. Use this when planning a star-shaped query around one hub.
 
 ## Files
 
@@ -30,11 +42,12 @@ already on disk here.
   default namespace is fine; consult this only when a query has to
   target a non-default database.
 
-- **\`insights.json\`** — hub tables, hot relationships, query
-  templates, data-quality flags. Read this **first** when planning a
-  multi-table query; it surfaces the central tables, the most common
-  joins, and where GraphJin has detected likely-duplicate /
-  denormalised data you should treat carefully.
+- **\`insights.json\`** — hub tables, hot relationships,
+  pre-computed \`relationship_paths\` (i.e. how to join the most
+  common table pairs in N hops), query templates, data-quality flags.
+  Read this **first** when planning a multi-table query. If the
+  specific pair you need isn't here, fall back to
+  \`graphjin cli find_path\` / \`explore_relationships\`.
 
 - **\`syntax.json\`** — the GraphJin DSL reference (operators,
   aggregations, pagination, ordering, expression aggregates,

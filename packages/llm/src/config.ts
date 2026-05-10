@@ -207,7 +207,8 @@ export function isResearchProvider(value: string): value is ResearchProviderId {
 export function maskSecret(value: string | undefined): string {
   if (!value) return "";
   if (value.length <= 8) return "•".repeat(value.length);
-  return `${value.slice(0, 3)}${"•".repeat(Math.max(4, value.length - 7))}${value.slice(-4)}`;
+  const middle = "•".repeat(Math.min(Math.max(4, value.length - 7), 12));
+  return `${value.slice(0, 3)}${middle}${value.slice(-4)}`;
 }
 
 // Provider config is read from llm_provider_config in the DB only.
