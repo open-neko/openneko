@@ -3,12 +3,12 @@
 # Single Dockerfile, two targets (web + worker), shared base layers.
 # Build with `--target=web` or `--target=worker`.
 #
-# Runtime config strategy: the app reads ~/.config/neko/config.json (DB
-# connection) and ~/.config/neko/secret-key (at-rest encryption key) on
-# every boot. To support read-only container filesystems (e.g. Cloud Run),
-# HOME + XDG_CONFIG_HOME point at writable /tmp paths and entrypoint.sh
-# materializes those files from env vars before exec'ing the app.
-# See entrypoint.sh for the env var contract.
+# Runtime config strategy: the app reads ~/.config/openneko/config.json
+# (DB connection) and ~/.config/openneko/secret-key (at-rest encryption
+# key) on every boot. To support read-only container filesystems (e.g.
+# Cloud Run), HOME + XDG_CONFIG_HOME point at writable /tmp paths and
+# entrypoint.sh materializes those files from env vars before exec'ing
+# the app. See entrypoint.sh for the env var contract.
 
 # ─── 1. base: node + system tooling ────────────────────────────────────
 FROM node:22-bookworm-slim AS base
@@ -60,8 +60,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080 \
     HOSTNAME=0.0.0.0 \
-    HOME=/tmp/neko-home \
-    XDG_CONFIG_HOME=/tmp/neko-config \
+    HOME=/tmp/openneko-home \
+    XDG_CONFIG_HOME=/tmp/openneko-config \
     NEXT_TELEMETRY_DISABLED=1
 RUN useradd --system --create-home --uid 1001 neko
 # Standalone output is self-contained (server.js + traced node_modules).
@@ -86,8 +86,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=4100 \
     HOSTNAME=0.0.0.0 \
-    HOME=/tmp/neko-home \
-    XDG_CONFIG_HOME=/tmp/neko-config
+    HOME=/tmp/openneko-home \
+    XDG_CONFIG_HOME=/tmp/openneko-config
 RUN useradd --system --create-home --uid 1001 neko
 COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
 COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules

@@ -40,27 +40,37 @@ export type LocalConfig = {
   pg?: LocalPgConfig;
 };
 
-function configDir(): string {
-  // Respect XDG_CONFIG_HOME when set; otherwise XDG default of ~/.config/openneko.
+function configBase(): string {
   const xdg = process.env.XDG_CONFIG_HOME?.trim();
-  const base = xdg && xdg.length > 0
+  return xdg && xdg.length > 0
     ? xdg
     : join(process.env.HOME || homedir(), ".config");
-  return join(base, "openneko");
+}
+
+function configDir(): string {
+  return join(configBase(), "openneko");
+}
+
+// Pre-rebrand path. Long-lived hosts may still have the file here from
+// before the neko → openneko rename; readers fall back to it (writers
+// always go to the new path).
+function legacyConfigDir(): string {
+  return join(configBase(), "neko");
 }
 
 export function localConfigPath(): string {
   return join(configDir(), "config.json");
 }
 
-/** Reads ~/.config/openneko/config.json. Returns {} when the file is missing or malformed. */
 export function readLocalConfig(): LocalConfig {
-  try {
-    const raw = readFileSync(localConfigPath(), "utf8");
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") return parsed as LocalConfig;
-  } catch {
-    // missing / malformed → empty config
+  for (const path of [localConfigPath(), join(legacyConfigDir(), "config.json")]) {
+    try {
+      const raw = readFileSync(path, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return parsed as LocalConfig;
+    } catch {
+      // missing / malformed → try next, fall through to {}
+    }
   }
   return {};
 }
