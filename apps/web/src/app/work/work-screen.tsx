@@ -299,73 +299,86 @@ export default function WorkScreen() {
     setDraft("");
     setFiles([]);
 
+    // POST enqueues the run; the worker (not Next.js) will run the
+    // agent. The response just hands back the runId we then tail
+    // via SSE on a separate endpoint.
     const res = await fetch(`/api/work/threads/${threadId}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
     });
-    if (!res.ok || !res.body) {
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
       setSending(false);
-      setStreamError(`HTTP ${res.status}`);
+      setStreamError(errBody.error ?? `HTTP ${res.status}`);
       await loadThread(threadId);
       return;
     }
+    const { runId, backend } = (await res.json()) as {
+      runId: string;
+      backend: string;
+    };
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let runId: string | null = null;
-    let buffer = "";
+    setActiveRunId(runId);
+    setBundle((prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: prev.messages.map((message, index) =>
+              index === prev.messages.length - 1 &&
+              message.role === "user" &&
+              message.runId === null
+                ? { ...message, runId }
+                : message,
+            ),
+            runs: [
+              ...prev.runs,
+              {
+                id: runId,
+                backend: (backend as "hermes" | "claude-agent") ?? "hermes",
+                status: "running",
+                error: null,
+                createdAt: new Date().toISOString(),
+                finishedAt: null,
+              },
+            ],
+          }
+        : prev,
+    );
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
-        const data = frame
-          .split("\n")
-          .filter((line) => line.startsWith("data: "))
-          .map((line) => line.slice(6))
-          .join("\n");
-        if (!data) continue;
-        const event = JSON.parse(data) as WorkEvent;
-        if (event.type === "hello") {
-          runId = event.runId;
-          setActiveRunId(runId);
-          setBundle((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  messages: prev.messages.map((message, index) =>
-                    index === prev.messages.length - 1 &&
-                    message.role === "user" &&
-                    message.runId === null
-                      ? { ...message, runId }
-                      : message,
-                  ),
-                  runs: [
-                    ...prev.runs,
-                    {
-                      id: runId!,
-                      backend: event.backend ?? "hermes",
-                      status: "running",
-                      error: null,
-                      createdAt: new Date().toISOString(),
-                      finishedAt: null,
-                    },
-                  ],
-                }
-              : prev,
-          );
-          continue;
+    // Open an SSE EventSource on the events endpoint. The browser
+    // auto-reconnects on transient errors and sends Last-Event-ID
+    // so the server can resume without replaying. We close locally
+    // when we see `done` (terminal status) or `error`.
+    await new Promise<void>((resolve) => {
+      const es = new EventSource(
+        `/api/work/threads/${threadId}/runs/${runId}/events`,
+      );
+      const finish = () => {
+        es.close();
+        resolve();
+      };
+      es.onmessage = (msgEvent) => {
+        let event: WorkEvent;
+        try {
+          event = JSON.parse(msgEvent.data) as WorkEvent;
+        } catch {
+          return;
         }
-        if (!runId) continue;
+        // Server-side `hello` is informational — the runId/backend
+        // were already locked in from the POST response. Skip.
+        if (event.type === "hello") return;
         applyIncomingEvent(runId, event);
-      }
-    }
+        if (event.type === "done") finish();
+      };
+      es.onerror = () => {
+        // EventSource keeps reconnecting on transient errors; we
+        // only break out when the server actively closes after a
+        // terminal `done` event. If the run is genuinely stuck the
+        // user can navigate away, which aborts the request via
+        // EventSource's default close on page hide.
+      };
+    });
 
     setSending(false);
     setActiveRunId(null);

@@ -8,3 +8,4 @@ export {
 } from "./tools";
 export * from "./memory";
 export * from "./auto-memory";
+export * from "./store";

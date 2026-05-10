@@ -1,31 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  resolveAgentBackend,
-  type AgentChatMessage,
-  type AgentEvent,
-} from "@neko/llm";
-import {
-  buildRenderCardsServer,
-  buildSkillBuilderServer,
-  buildWorkMemoryServer,
-  buildWorkPrompt,
-  ensureGraphjinGuard,
-  ensureWorkWorkspace,
-  formatWorkMemoryPromptContext,
-  resolveBinaryOnPath,
-  runWorkAutoMemoryPipeline,
-} from "@neko/llm/work";
-import { getOrgId } from "@/lib/db";
-import { registerWorkRun } from "@/lib/work-run-registry";
+import { resolveAgentBackend } from "@neko/llm";
 import {
   appendWorkRunEvent,
-  createWorkMessage,
   createWorkRun,
   finishWorkRun,
+} from "@neko/llm/work";
+import {
+  db,
+  eq,
+  processing_job,
+} from "@neko/db";
+import { enqueue, QUEUE } from "@neko/db/jobs";
+import { getOrgId } from "@/lib/db";
+import {
+  createWorkMessage,
   getWorkThread,
-  getWorkThreadBundle,
-  saveAssistantWorkMessage,
-  setWorkThreadBackendState,
   suggestWorkThreadTitle,
   touchWorkThread,
 } from "@/lib/work-store";
@@ -37,20 +26,21 @@ type RouteContext = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SSE_HEADERS = {
-  "content-type": "text/event-stream; charset=utf-8",
-  "cache-control": "no-cache, no-transform",
-  connection: "keep-alive",
-};
-
-function backendLabel(id: string): string {
-  return id === "claude-agent" ? "Claude Agent" : "Hermes";
-}
-
-function frame(data: unknown): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
-}
-
+/**
+ * POST /api/work/threads/{threadId}/runs
+ *
+ * Enqueues a work_run job onto pg-boss. The agent itself runs in
+ * the worker process (apps/worker/src/jobs/work-run.ts) — no
+ * inline Hermes spawn from Next.js. The browser receives the new
+ * runId here, then opens an EventSource on
+ * `/api/work/threads/{threadId}/runs/{runId}/events` to tail
+ * AgentEvents the worker writes to work_run_event.
+ *
+ * Atomic-ish: insert work_run + processing_job, then enqueue. If
+ * the enqueue throws after either insert, both rows (plus the
+ * work_run) are finalized to `failed` so the user can re-submit
+ * without staring at a stuck "running" state.
+ */
 export async function POST(request: NextRequest, context: RouteContext) {
   const { threadId } = await context.params;
   const body = await request.json().catch(() => ({}));
@@ -65,22 +55,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
+  // Resolve backend up-front so we record what was selected at
+  // enqueue time. The worker re-resolves at pickup as the source of
+  // truth, but stamping it now also gives the SSE `hello` event
+  // something to render before the worker starts.
   const backend = await resolveAgentBackend(orgId);
   const run = await createWorkRun(orgId, threadId, backend.id);
-  const workspace = await ensureWorkWorkspace(orgId, threadId, run.id);
-  const graphjinBinary = await resolveBinaryOnPath("graphjin");
-  if (!graphjinBinary) {
-    await finishWorkRun(run.id, "failed", "graphjin CLI is not installed on PATH.");
-    return NextResponse.json(
-      { error: "graphjin CLI is not installed on PATH." },
-      { status: 500 },
-    );
-  }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
 
-  const title = !thread.title ? suggestWorkThreadTitle(message) : undefined;
-  if (title) {
-    await touchWorkThread(threadId, { title });
+  // Title the thread from the first user message if it's still
+  // unset, then save the user message itself.
+  if (!thread.title) {
+    await touchWorkThread(threadId, { title: suggestWorkThreadTitle(message) });
   }
   await createWorkMessage({
     orgId,
@@ -90,148 +75,77 @@ export async function POST(request: NextRequest, context: RouteContext) {
     content: message,
   });
 
-  const bundle = await getWorkThreadBundle(orgId, threadId);
-  if (!bundle) {
-    await finishWorkRun(run.id, "failed", "Thread disappeared before run start.");
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  // Emit a single "hello" event at seq=1 so the SSE tail has
+  // something to show immediately on first poll, before the worker
+  // has had a chance to pick the job up. Same shape the inline
+  // route used to emit; keeps the client renderer unchanged.
+  await appendWorkRunEvent({
+    orgId,
+    threadId,
+    runId: run.id,
+    seq: 1,
+    event: { type: "status", message: `Queued for ${backend.id}…` } as never,
+  });
+
+  // Insert the processing_job row + enqueue. Any failure in either
+  // path finalizes the work_run so the UI doesn't spin forever.
+  let processingJobId: string;
+  try {
+    const inserted = await db()
+      .insert(processing_job)
+      .values({
+        org_id: orgId,
+        kind: "work_run",
+        status: "queued",
+        trigger: "work_message",
+        trigger_payload: {
+          runId: run.id,
+          threadId,
+          message,
+        },
+      })
+      .returning({ id: processing_job.id });
+    processingJobId = inserted[0]!.id;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await finishWorkRun(run.id, "failed", `processing_job insert failed: ${msg}`);
+    return NextResponse.json(
+      { error: `processing_job insert failed: ${msg}` },
+      { status: 500 },
+    );
   }
 
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        const abortController = new AbortController();
-        const unregister = registerWorkRun(run.id, abortController);
-        let seq = 0;
-        let closed = false;
+  try {
+    await enqueue(QUEUE.WORK_RUN, {
+      processingJobId,
+      orgId,
+      runId: run.id,
+      threadId,
+      message,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const now = new Date();
+    await db()
+      .update(processing_job)
+      .set({
+        status: "failed",
+        error: `enqueue failed: ${msg}`,
+        finished_at: now,
+        updated_at: now,
+      })
+      .where(eq(processing_job.id, processingJobId));
+    await finishWorkRun(run.id, "failed", `enqueue failed: ${msg}`);
+    return NextResponse.json(
+      { error: `enqueue failed: ${msg}` },
+      { status: 500 },
+    );
+  }
 
-        const safeEnqueue = (payload: unknown) => {
-          if (closed) return;
-          try {
-            controller.enqueue(frame(payload));
-          } catch {
-            closed = true;
-          }
-        };
-
-        const emit = async (event: AgentEvent) => {
-          seq += 1;
-          await appendWorkRunEvent({
-            orgId,
-            threadId,
-            runId: run.id,
-            seq,
-            event,
-          });
-          if (event.type === "message" && event.role === "assistant") {
-            await saveAssistantWorkMessage({
-              orgId,
-              threadId,
-              runId: run.id,
-              content: event.content,
-            });
-          }
-          safeEnqueue(event);
-        };
-
-        safeEnqueue({ type: "hello", runId: run.id, threadId, backend: backend.id });
-
-        void (async () => {
-          try {
-            await emit({
-              type: "status",
-              message: `Starting ${backendLabel(backend.id)}…`,
-            });
-            const supportsCardTool = backend.id === "claude-agent";
-            const supportsSkillTool = backend.id === "claude-agent";
-            const supportsMemoryTool = backend.id === "claude-agent";
-            const messages: AgentChatMessage[] = bundle.messages.map((row) => ({
-              id: row.id,
-              role: row.role,
-              content: row.content,
-              runId: row.runId,
-              createdAt: row.createdAt,
-            }));
-            await emit({
-              type: "status",
-              message: "Loading shared skills and memory…",
-            });
-            const memoryContext = await formatWorkMemoryPromptContext({
-              orgId,
-              threadId,
-              runId: run.id,
-            });
-            const prompt = buildWorkPrompt({
-              backend: backend.id,
-              workspace,
-              messages,
-              currentUserMessage: message,
-              memoryContext,
-              supportsCardTool,
-              supportsSkillTool,
-              supportsMemoryTool,
-            });
-            const mcpServers = backend.id === "claude-agent"
-              ? {
-                  ...(supportsCardTool ? { neko_ui: buildRenderCardsServer(emit) } : {}),
-                  ...(supportsSkillTool ? { neko_skills: buildSkillBuilderServer(workspace.skillsRoot) } : {}),
-                  ...(supportsMemoryTool
-                    ? {
-                        neko_memory: buildWorkMemoryServer({
-                          orgId,
-                          threadId,
-                          runId: run.id,
-                        }),
-                      }
-                    : {}),
-                }
-              : undefined;
-            const result = await backend.run({
-              prompt,
-              userMessage: message,
-              orgId,
-              workspace,
-              backendState: bundle.thread.backendState,
-              signal: abortController.signal,
-              onEvent: emit,
-              mcpServers,
-              tag: `work ${run.id}`,
-            });
-            if (result.backendState && result.backendState !== bundle.thread.backendState) {
-              await setWorkThreadBackendState(threadId, result.backendState);
-            }
-            await finishWorkRun(run.id, result.status, result.error ?? null);
-            if (result.status === "completed" && result.finalText.trim()) {
-              void runWorkAutoMemoryPipeline({
-                orgId,
-                threadId,
-                runId: run.id,
-                userMessage: message,
-                agentAnswer: result.finalText,
-              });
-            }
-            await emit({ type: "done", result: { status: result.status } });
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : "Work run failed unexpectedly.";
-            await emit({ type: "error", message });
-            await finishWorkRun(run.id, "failed", message);
-            await emit({ type: "done", result: { status: "failed" } });
-          } finally {
-            unregister();
-            closed = true;
-            controller.close();
-          }
-        })();
-
-        request.signal.addEventListener(
-          "abort",
-          () => {
-            abortController.abort();
-          },
-          { once: true },
-        );
-      },
-    }),
-    { headers: SSE_HEADERS },
-  );
+  return NextResponse.json({
+    runId: run.id,
+    threadId,
+    backend: backend.id,
+    jobId: processingJobId,
+  });
 }

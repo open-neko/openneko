@@ -16,6 +16,7 @@ import {
   enqueue,
   QUEUE,
   type ProcessingJobPayload,
+  type WorkRunPayload,
 } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
 import {
@@ -36,6 +37,7 @@ import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
 import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
 import { runMetricRefresh } from "./jobs/metric-refresh.js";
+import { runWorkRun } from "./jobs/work-run.js";
 import { reconcileStaleProcessingJobs } from "./reconciler.js";
 
 // Hardcoded transport / scheduling constants. Surface these via /settings/agent
@@ -270,6 +272,28 @@ await b.work(
     await runBootstrapMetricsBuild(jobId, orgId);
   }),
 );
+
+// Work runs (interactive chat). Each user turn enqueues one job;
+// the handler emits AgentEvent rows into work_run_event which the
+// SSE `/runs/{id}/events` route long-polls. Same N-workers shape
+// as metric_refresh below so a slow Hermes spawn for one thread
+// doesn't head-of-line-block a freshly enqueued question on another.
+const workRunHandler = makeHandler<WorkRunPayload>(
+  async (jobId, orgId, payload) => {
+    await runWorkRun(jobId, orgId, {
+      runId: payload.runId,
+      threadId: payload.threadId,
+      message: payload.message,
+    });
+  },
+);
+for (let i = 0; i < concurrency.globalCap; i++) {
+  await b.work(
+    QUEUE.WORK_RUN,
+    { batchSize: 1, pollingIntervalSeconds: 0.5 },
+    workRunHandler,
+  );
+}
 
 // metric_refresh is the chat-path latency-critical queue. globalCap is a
 // SHARED POOL: any task can use any free slot, regardless of what the

@@ -76,7 +76,21 @@ export async function reconcileStaleProcessingJobs(opts?: {
   minAgeMs?: number;
 }): Promise<ReconcileSummary> {
   const minAgeMs = opts?.minAgeMs ?? 0;
-  const cutoff = new Date(Date.now() - minAgeMs);
+
+  // When minAgeMs <= 0 the caller wants to reconcile every
+  // non-terminal row regardless of age (boot path, tests). Skip
+  // the time predicate entirely — comparing JS `Date.now()` to a
+  // Postgres `now()`-stamped column is racy at sub-millisecond
+  // resolution and we'd miss rows that were just inserted.
+  const baseFilter = and(
+    inArray(processing_job.status, ["queued", "running"]),
+  );
+  const filter = minAgeMs > 0
+    ? and(
+        baseFilter,
+        lte(processing_job.updated_at, new Date(Date.now() - minAgeMs)),
+      )
+    : baseFilter;
 
   const candidates = await db()
     .select({
@@ -85,12 +99,7 @@ export async function reconcileStaleProcessingJobs(opts?: {
       status: processing_job.status,
     })
     .from(processing_job)
-    .where(
-      and(
-        inArray(processing_job.status, ["queued", "running"]),
-        lte(processing_job.updated_at, cutoff),
-      ),
-    );
+    .where(filter);
 
   const summary: ReconcileSummary = {
     succeeded: 0,
