@@ -579,15 +579,6 @@ export default function WorkScreen() {
           </aside>
 
           <section className="work-panel">
-            <div className="work-panel-head">
-              <div className="work-thread-head">
-                <span className="work-thread-eyebrow">Thread</span>
-                <span className="work-thread-title" title={bundle?.thread.title || "Work"}>
-                  {bundle?.thread.title || "Work"}
-                </span>
-              </div>
-            </div>
-
             <div className="work-transcript">
               {loadingThread ? (
                 <div className="work-empty">Loading thread…</div>
