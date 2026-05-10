@@ -6,6 +6,7 @@ import {
   makeClaudeMockController,
   resultError,
   resultSuccess,
+  streamEventDelta,
   systemInit,
   userToolResult,
 } from "./helpers/fake-claude-sdk";
@@ -167,12 +168,16 @@ describe("ClaudeAgentBackend run", () => {
     expect(toolEnd?.error).toBe("command failed");
   });
 
-  it("dedupes streamed assistant message events by accumulated content", async () => {
+  it("emits stream_event deltas as message events; assistant records don't re-emit", async () => {
+    // Streaming deltas concatenate to "hello world". The trailing assistant
+    // record arrives with the same final text, but should NOT re-emit it as
+    // a message event — that text was already delivered as deltas.
     claudeController.setScript({
       records: [
         systemInit("sess-msg"),
-        assistantText("hello"),
-        assistantText("hello"),
+        streamEventDelta("hello"),
+        streamEventDelta(" "),
+        streamEventDelta("world"),
         assistantText("hello world"),
         resultSuccess("sess-msg", "hello world"),
       ],
@@ -187,7 +192,7 @@ describe("ClaudeAgentBackend run", () => {
       },
     });
     const messages = events.filter((e) => e.type === "message").map((e) => e.content);
-    expect(messages).toEqual(["hello", "hello world", "hello world"]);
+    expect(messages).toEqual(["hello", " ", "world"]);
     expect(result.finalText).toBe("hello world");
   });
 

@@ -53,6 +53,9 @@ type RunRecord = {
 
 type WorkEvent =
   | { type: "hello"; runId: string; threadId: string; backend?: RunRecord["backend"] }
+  // `content` is a delta — concatenating all message events for a run
+  // reconstructs the full assistant text. Mirrors `AgentEvent.message` in
+  // packages/llm/src/agent-backend.ts.
   | { type: "message"; role: "user" | "assistant"; content: string }
   | { type: "tool_start"; id: string; name: string; input?: unknown }
   | { type: "tool_delta"; id: string; delta: unknown }
@@ -407,28 +410,18 @@ export default function WorkScreen({
 
   function applyIncomingEvent(runId: string, event: WorkEvent) {
     if (event.type === "message" && event.role === "assistant") {
+      // `content` is a delta — append to the assistant message's running text
+      // (the placeholder created in sendMessage already exists with content "").
       setBundle((prev) => {
         if (!prev) return prev;
-        const already = prev.messages.find(
-          (message) => message.runId === runId && message.role === "assistant",
-        );
-        const nextMessages: MessageRecord[] = already
-          ? prev.messages.map((message) =>
-              message.runId === runId && message.role === "assistant"
-                ? { ...message, content: event.content }
-                : message,
-            )
-          : [
-              ...prev.messages,
-              {
-                id: `assistant-${runId}`,
-                runId,
-                role: "assistant",
-                content: event.content,
-                createdAt: new Date().toISOString(),
-              },
-            ];
-        return { ...prev, messages: nextMessages };
+        return {
+          ...prev,
+          messages: prev.messages.map((message) =>
+            message.runId === runId && message.role === "assistant"
+              ? { ...message, content: message.content + event.content }
+              : message,
+          ),
+        };
       });
     }
 
@@ -754,14 +747,14 @@ type ToolItem = {
 
 type TimelineItem =
   | { kind: "text"; content: string }
-  | { kind: "tool"; tool: ToolItem }
+  | { kind: "tools"; tools: ToolItem[] }
   | { kind: "error"; message: string };
 
 // Walks a run's event stream chronologically and produces an interleaved
 // timeline: text segments split at tool boundaries, with each tool placed
-// inline where it ran. Hermes emits cumulative text monotonically; claude-agent
-// resets the cumulative buffer at every assistant block boundary, so a
-// non-prefix transition is treated as a new segment.
+// inline where it ran. Backends emit `message` events as deltas (new text
+// since the previous event), so segments build by appending — no string
+// archaeology needed.
 function buildRunTimeline(events: WorkEvent[]): {
   items: TimelineItem[];
   lastStatus: string | null;
@@ -770,27 +763,19 @@ function buildRunTimeline(events: WorkEvent[]): {
   const items: TimelineItem[] = [];
   const toolsById = new Map<string, ToolItem>();
   const surfaceMessages: A2UIMessage[] = [];
-  let cumulative = "";
-  let committedLength = 0;
+  let pendingText = "";
   let lastStatus: string | null = null;
 
   const flushTextSegment = () => {
-    const tail = cumulative.slice(committedLength);
-    if (tail.trim()) items.push({ kind: "text", content: tail });
-    committedLength = cumulative.length;
+    if (pendingText.trim()) items.push({ kind: "text", content: pendingText });
+    pendingText = "";
   };
 
   for (const event of events) {
     switch (event.type) {
       case "message": {
         if (event.role !== "assistant") break;
-        if (event.content.startsWith(cumulative)) {
-          cumulative = event.content;
-        } else {
-          flushTextSegment();
-          cumulative = event.content;
-          committedLength = 0;
-        }
+        pendingText += event.content;
         break;
       }
       case "tool_start": {
@@ -802,7 +787,16 @@ function buildRunTimeline(events: WorkEvent[]): {
           deltas: [],
         };
         toolsById.set(event.id, item);
-        items.push({ kind: "tool", tool: item });
+        // Cluster consecutive tool calls (no text/error between them) into a
+        // single collapsible group — keeps long tool runs from dominating the
+        // transcript while preserving the start of a new group when the model
+        // narrates between calls.
+        const last = items[items.length - 1];
+        if (last && last.kind === "tools") {
+          last.tools.push(item);
+        } else {
+          items.push({ kind: "tools", tools: [item] });
+        }
         break;
       }
       case "tool_delta": {
@@ -878,12 +872,8 @@ function RunTimeline({
             </div>
           );
         }
-        if (item.kind === "tool") {
-          return (
-            <div key={item.tool.id} className="work-tool-group work-tool-group-single">
-              <ToolRow tool={item.tool} />
-            </div>
-          );
+        if (item.kind === "tools") {
+          return <ToolGroup key={`tools-${index}`} tools={item.tools} />;
         }
         return (
           <div key={`error-${index}`} className="work-error">
@@ -903,6 +893,58 @@ function RunTimeline({
         </div>
       ) : null}
       {!pending && run?.error ? <div className="work-error">{run.error}</div> : null}
+    </div>
+  );
+}
+
+function ToolGroup({ tools }: { tools: ToolItem[] }) {
+  const inflight = tools.filter((t) => !t.end).length;
+  const failed = tools.filter((t) => t.end?.error).length;
+  const showHeader = tools.length > 1;
+  const [open, setOpen] = useState(tools.length <= 2 || inflight > 0);
+
+  useEffect(() => {
+    if (inflight > 0) setOpen(true);
+  }, [inflight]);
+
+  if (!showHeader) {
+    return (
+      <div className="work-tool-group work-tool-group-single">
+        <ToolRow tool={tools[0]} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="work-tool-group">
+      <button
+        type="button"
+        className="work-tool-group-head"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
+        <span className="work-tool-group-count">
+          {tools.length} tool {tools.length === 1 ? "call" : "calls"}
+        </span>
+        {inflight > 0 ? (
+          <span className="work-tool-group-badge running">
+            <Loader2 className="work-status-spin" size={11} /> running
+          </span>
+        ) : null}
+        {failed > 0 ? (
+          <span className="work-tool-group-badge failed">
+            {failed} failed
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="work-tool-group-body">
+          {tools.map((tool) => (
+            <ToolRow key={tool.id} tool={tool} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

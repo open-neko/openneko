@@ -111,8 +111,8 @@ describe("HermesBackend ACP behavior", () => {
     expect(result.backendState).toEqual({});
   });
 
-  it("dedupes assistant message events: chunks 'a','b','c' → 3 monotonic message events", async () => {
-    const sessionId = "sess-dedupe";
+  it("emits assistant message events as deltas: chunks 'a','b','c' → ['a','b','c']", async () => {
+    const sessionId = "sess-deltas";
     controller.setScript({
       responders: {
         "session/new": () => ({ sessionId }),
@@ -136,7 +136,7 @@ describe("HermesBackend ACP behavior", () => {
     const messageContents = events
       .filter((e) => e.type === "message")
       .map((e) => e.content);
-    expect(messageContents).toEqual(["a", "ab", "abc"]);
+    expect(messageContents).toEqual(["a", "b", "c"]);
     expect(result.finalText).toBe("abc");
   });
 

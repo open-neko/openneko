@@ -36,6 +36,9 @@ export type AgentArtifact = {
 };
 
 export type AgentEvent =
+  // `content` is the new text since the last assistant message event in this
+  // run — i.e., a delta, not a snapshot. Concatenating all message events for
+  // a run reconstructs the full assistant text.
   | { type: "message"; role: "user" | "assistant"; content: string }
   | { type: "tool_start"; id: string; name: string; input?: unknown }
   | { type: "tool_delta"; id: string; delta: unknown }

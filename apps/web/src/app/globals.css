@@ -531,10 +531,11 @@ body {
   white-space: pre-wrap;
 }
 .work-activity,
+.work-timeline,
 .work-surface-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   margin-top: 4px;
 }
 .work-status-row {

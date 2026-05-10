@@ -66,16 +66,20 @@ export async function runWorkRun(
   }
 
   let seq = (await getWorkRunEvents(orgId, runId)).length;
+  // Backends now emit `message` events as deltas, not snapshots — accumulate
+  // them so the persisted assistant message contains the full text.
+  let assistantText = "";
 
   const emit = async (event: AgentEvent): Promise<void> => {
     seq += 1;
     await appendWorkRunEvent({ orgId, threadId, runId, seq, event });
     if (event.type === "message" && event.role === "assistant") {
+      assistantText += event.content;
       await saveAssistantWorkMessage({
         orgId,
         threadId,
         runId,
-        content: event.content,
+        content: assistantText,
       });
     }
   };
@@ -165,6 +169,23 @@ export async function runWorkRun(
     }
 
     await finishWorkRun(runId, result.status, result.error ?? null);
+
+    // Backends may post-process the streamed text (e.g. strip a2ui fences)
+    // and return a cleaned `finalText`. If it differs from what was streamed,
+    // overwrite the persisted assistant message with the cleaned version so
+    // memory/title pipelines and reload-after-run see the canonical text.
+    if (
+      result.status === "completed" &&
+      result.finalText.trim() &&
+      result.finalText.trim() !== assistantText.trim()
+    ) {
+      await saveAssistantWorkMessage({
+        orgId,
+        threadId,
+        runId,
+        content: result.finalText,
+      });
+    }
 
     if (result.status === "completed" && result.finalText.trim()) {
       void runWorkAutoMemoryPipeline({

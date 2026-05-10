@@ -1,19 +1,4 @@
-/**
- * Hermes backend — drives `hermes acp` (ACP / JSON-RPC over stdio) to get a
- * typed event stream of message chunks, tool calls, and tool results.
- *
- *   - sync mode (no onEvent): collect all `agent_message_chunk` text into
- *     `finalText`; return raw (caller's parseJsonFromOutput / stripFences
- *     handles fences).
- *   - streaming mode (onEvent): emit incremental `message` events, tool
- *     events, and `surface` if accumulated text contains a neko_a2ui fence
- *     (fence stripped from finalText in this path).
- *
- * Each turn opens a fresh ACP session (no session/load) — the caller's
- * prompt already carries history (see packages/llm/src/work/prompt.ts:108);
- * Hermes ACP would replay that history again on session/load, double-counting
- * context. backendState round-trips unchanged.
- */
+// Always session/new per turn — Hermes session/load replays history that the prompt already carries (see packages/llm/src/work/prompt.ts), double-counting context.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -43,10 +28,7 @@ function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   } catch {
     // ESRCH if already exited
   }
-  // Also signal the child directly. process.kill(-pid) fails when the child
-  // is not a process group leader — e.g. under test mocks where pid is fake.
-  // Real Hermes is detached, so the group kill above hits the same target;
-  // sending twice is idempotent for SIGTERM/SIGKILL.
+  // Group kill fails when child isn't a group leader (e.g. test mocks); send to child too — idempotent for SIGTERM/SIGKILL.
   try {
     child.kill(signal);
   } catch {
@@ -273,11 +255,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
     });
 
-    // Always start a fresh ACP session per turn. Hermes session/load replays
-    // the entire conversation as session/update notifications, but the worker
-    // already injects "Conversation so far:..." into the prompt
-    // (packages/llm/src/work/prompt.ts:108) — using session/load on top of
-    // that double-counts context.
+    // session/new per turn — see file header for the session/load double-count rationale.
     const fresh = await client.request<{ sessionId: string }>("session/new", {
       cwd,
       mcpServers: [],
@@ -285,7 +263,6 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     const sessionId = fresh.sessionId;
 
     let accumulatedText = "";
-    let lastEmittedAssistantText = "";
 
     client.onNotification((notif) => {
       const update = notif.update;
@@ -295,11 +272,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
           if (!text) return;
           accumulatedText += text;
           if (onEvent) {
-            const trimmed = accumulatedText.trim();
-            if (trimmed && trimmed !== lastEmittedAssistantText) {
-              lastEmittedAssistantText = trimmed;
-              void onEvent({ type: "message", role: "assistant", content: trimmed });
-            }
+            void onEvent({ type: "message", role: "assistant", content: text });
           }
           return;
         }
@@ -380,9 +353,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       if (parsed.messages.length > 0) {
         await onEvent({ type: "surface", messages: parsed.messages });
       }
-      if (finalText && finalText !== lastEmittedAssistantText) {
-        await onEvent({ type: "message", role: "assistant", content: finalText });
-      }
+      // finalText (a2ui fence stripped) is for persistence only — the worker overwrites the streamed assistant message after the run.
     }
 
     return { finalText: finalText.trim() };

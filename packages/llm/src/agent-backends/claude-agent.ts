@@ -1,28 +1,4 @@
-/**
- * Claude Agent backend — wraps `@anthropic-ai/claude-agent-sdk` (which spawns
- * the Claude Code CLI as a subprocess and proxies messages over stdio).
- *
- *   - sync mode: pass `prompt` as the SDK input; collect `result.subtype === "success"`
- *     text; return as `finalText`. No workspace, no resume, no events.
- *   - streaming mode (`onEvent`): cwd = workspace.claudeProjectRoot,
- *     CLAUDE_CONFIG_DIR = workspace.claudeConfigRoot, PATH prepended with
- *     workspace.binRoot (graphjin guard), resume from
- *     backendState["claude-agent"].sessionId, emit tool_start/tool_end/message
- *     events from the SDK stream, install MCP servers passed in via
- *     opts.mcpServers, surface (neko_a2ui) extraction.
- *
- * Auth: pulls the Anthropic API key + Claude model from the primary
- * `llm_provider_config` row. UI enforces (and `agent-backend-resolver` re-
- * validates) `provider === 'anthropic'` and a `claude-` model.
- *
- * Caller-extensible SDK features (all optional, all forwarded verbatim):
- *   skills, outputSchema, forkSession, agents, hooks, canUseTool,
- *   onElicitation. When `canUseTool` is set, `bypassPermissions` is dropped —
- *   the SDK semantics short-circuit canUseTool under bypass.
- *
- * Internal hooks: a PostToolUse hook captures `duration_ms` so `tool_end`
- * events carry timing. Caller-supplied hooks are merged on top.
- */
+// canUseTool and bypassPermissions are mutually exclusive — SDK short-circuits canUseTool under bypass.
 
 import { spawnSync } from "node:child_process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -107,9 +83,7 @@ export class ClaudeAgentBackend implements AgentBackend {
         if (streaming && out.surfaceMessages.length > 0) {
           await onEvent!({ type: "surface", messages: out.surfaceMessages });
         }
-        if (streaming && out.finalText) {
-          await onEvent!({ type: "message", role: "assistant", content: out.finalText });
-        }
+        // finalText (a2ui fence stripped) is returned for persistence only — the same content was already streamed via stream_event deltas, do NOT re-emit.
         return {
           finalText: out.finalText,
           status: signal?.aborted ? "cancelled" : "completed",
@@ -182,7 +156,6 @@ export class ClaudeAgentBackend implements AgentBackend {
     const resume = readSessionId(backendState["claude-agent"]);
     let sessionId = resume;
     let accumulatedText = "";
-    let lastEmittedAssistantText = "";
     let finalText = "";
     let surfaceMessages: import("../agent-backend").AgentSurfaceMessage[] = [];
     const toolDurations = new Map<string, number>();
@@ -295,24 +268,19 @@ export class ClaudeAgentBackend implements AgentBackend {
           const deltaText = extractPartialAssistantText(record.event);
           if (deltaText) {
             accumulatedText += deltaText;
-            const streamedText = accumulatedText.trim();
-            if (streamedText && streamedText !== lastEmittedAssistantText) {
-              lastEmittedAssistantText = streamedText;
-              await onEvent({ type: "message", role: "assistant", content: streamedText });
-            }
+            await onEvent({ type: "message", role: "assistant", content: deltaText });
           }
           continue;
         }
         if (record.type === "assistant") {
           const blocks =
             (record.message as { content?: unknown[] } | undefined)?.content ?? [];
-          let sawText = false;
           for (const block of blocks as Array<Record<string, unknown>>) {
             if (block.type === "text" && typeof block.text === "string") {
               const text = block.text.trim();
               if (text) {
+                // Persistence fallback only — text was already delivered via stream_event deltas, do NOT re-emit.
                 accumulatedText = text;
-                sawText = true;
               }
             } else if (block.type === "tool_use" && onEvent) {
               await onEvent({
@@ -322,10 +290,6 @@ export class ClaudeAgentBackend implements AgentBackend {
                 input: block.input,
               });
             }
-          }
-          if (sawText && onEvent && accumulatedText !== lastEmittedAssistantText) {
-            lastEmittedAssistantText = accumulatedText;
-            await onEvent({ type: "message", role: "assistant", content: accumulatedText });
           }
           continue;
         }
