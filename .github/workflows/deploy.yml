@@ -34,6 +34,10 @@ jobs:
             export AX_SKIP_SKILL_INSTALL=1
             pnpm install --frozen-lockfile
             pnpm build
+            set -a
+            source .env
+            set +a
+            pnpm -F @neko/db migrate
             sudo /usr/bin/systemctl restart neko-web
             sudo /usr/bin/systemctl restart neko-worker
           EOF

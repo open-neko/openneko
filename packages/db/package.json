@@ -15,7 +15,8 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "migrate": "node src/migrate.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.4",
