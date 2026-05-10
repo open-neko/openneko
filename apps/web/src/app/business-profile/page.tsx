@@ -22,10 +22,6 @@ const STAGE_ORDER: StageKind[] = [
   "industry_insights_build",
   "bootstrap_metrics_build",
 ];
-// Default copy when the server hasn't reported a progress.message for the
-// current stage yet. Only the long-running profile + insights stages
-// cycle through multiple lines (those run for minutes and one static
-// line gets stale). The shorter metric stages keep a single line.
 const STAGE_FALLBACK_COPY: Record<StageKind, readonly string[]> = {
   business_profile_build: [
     "Reading your data sources…",
@@ -49,18 +45,11 @@ export default function ProcessingPage() {
   const [tab, setTab] = useState<Tab>("profile");
   const [stageKind, setStageKind] = useState<StageKind | null>(null);
   const [stageMessage, setStageMessage] = useState<string | null>(null);
-  // Cycle index for the per-stage fallback messages. Only advances
-  // while we're still in the processing phase; reset whenever the
-  // worker reports a new specific stageMessage so users always see the
-  // newest information first instead of a stale cycle position.
   const [fallbackIdx, setFallbackIdx] = useState(0);
   const [profile, setProfile] = useState("");
   const [insights, setInsights] = useState("");
   const [insightsStatus, setInsightsStatus] = useState<InsightsStatus>("processing");
 
-  // Phase 1: poll for profile readiness; surface the worker's reported
-  // stage + progress.message so the user sees real progress instead of a
-  // rotating placeholder.
   useEffect(() => {
     if (phase !== "processing") return;
 
@@ -86,10 +75,6 @@ export default function ProcessingPage() {
             const cs = status.currentStage as { kind?: StageKind; message?: string | null } | undefined;
             const nextStage = cs?.kind ?? null;
             const nextMsg = cs?.message ?? null;
-            // Reset the fallback cycle when the stage flips so the
-            // first message of the new stage shows immediately rather
-            // than picking up at whatever index the previous stage
-            // happened to land on.
             setStageKind((prev) => {
               if (prev !== nextStage) setFallbackIdx(0);
               return nextStage;
@@ -101,15 +86,10 @@ export default function ProcessingPage() {
             return;
           }
           if (status.state === "failed") {
-            // Flag only — wizard fetches the actual message from the
-            // status route. Don't pass the message through the URL;
-            // that's a toast-spoofing vector.
             router.replace("/onboarding?failed=1");
             return;
           }
-        } catch {
-          // ignore, retry
-        }
+        } catch {}
         await new Promise((r) => setTimeout(r, 3000));
       }
     };
@@ -120,20 +100,15 @@ export default function ProcessingPage() {
     };
   }, [phase, router]);
 
-  // Cycle through the per-stage fallback messages while we're in the
-  // processing phase. Only runs when the worker hasn't reported a
-  // specific stageMessage — that one is more informative and stays put.
   useEffect(() => {
     if (phase !== "processing") return;
-    if (stageMessage) return; // worker is talking; let it speak
+    if (stageMessage) return;
     const id = setInterval(() => {
       setFallbackIdx((i) => i + 1);
     }, FALLBACK_CYCLE_MS);
     return () => clearInterval(id);
   }, [phase, stageMessage, stageKind]);
 
-  // On entering review: idempotently ensure an industry_insights_build job
-  // exists (heals a broken chain from a failed/orphaned prior run).
   useEffect(() => {
     if (phase !== "review") return;
     if (insights || insightsStatus === "disabled") return;
@@ -155,14 +130,11 @@ export default function ProcessingPage() {
         } else {
           setInsightsStatus("processing");
         }
-      } catch {
-        // fall through — poll below will recover
-      }
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, [phase, insights, insightsStatus]);
 
-  // Review phase: keep polling /api/profile until insights land (or research is off).
   useEffect(() => {
     if (phase !== "review") return;
     if (insights || insightsStatus === "disabled") return;
@@ -180,9 +152,7 @@ export default function ProcessingPage() {
               return;
             }
           }
-        } catch {
-          // ignore, retry
-        }
+        } catch {}
         await new Promise((r) => setTimeout(r, 4000));
       }
     };
@@ -190,7 +160,6 @@ export default function ProcessingPage() {
     return () => { cancelled = true; };
   }, [phase, insights, insightsStatus]);
 
-  // ─── Phase 1: Processing ───
   if (phase === "processing") {
     let message: string;
     if (stageMessage) {
@@ -209,9 +178,6 @@ export default function ProcessingPage() {
         <div className="greet" style={{ marginTop: 48 }}>Setting things up.</div>
         <div className="greet-sub">Check back in a moment.</div>
         <StageStrip current={stageKind} />
-        {/* Key by message so React unmounts the old text and mounts the
-            new one — triggers the fadeUp keyframe each cycle for a
-            soft hand-off instead of a jarring text swap. */}
         <div
           key={message}
           className="date-note"
@@ -223,7 +189,6 @@ export default function ProcessingPage() {
     );
   }
 
-  // ─── Phase 2: Review (tabs) ───
   const insightsPending = !insights && insightsStatus !== "disabled";
 
   return (
@@ -311,9 +276,7 @@ export default function ProcessingPage() {
                   setInsightsStatus("processing");
                   setTab("insights");
                 }
-              } catch {
-                // non-fatal; poll will eventually reflect state
-              }
+              } catch {}
             }}
             style={{ padding: "14px 24px", fontSize: 14 }}
           >
@@ -326,9 +289,6 @@ export default function ProcessingPage() {
 }
 
 function StageStrip({ current }: { current: StageKind | null }) {
-  // We render only the three stages the user is on /business-profile for —
-  // metric_refresh runs after the page transitions to /review and the
-  // dashboard, so it's not relevant here.
   const idx = current ? STAGE_ORDER.indexOf(current) : 0;
   return (
     <div

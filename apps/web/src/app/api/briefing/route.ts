@@ -16,20 +16,6 @@ import { CATALOG_ID } from "@/a2ui/catalog";
 import { getOrgId } from "@/lib/db";
 import { isDemoMode, mockChatResponse } from "@/lib/demo-mode";
 
-/**
- * Briefing API.
- *
- * GET /api/briefing?role=CEO — returns the A2UI message stream for the
- * given role's briefing surface. Reads active metrics + their latest
- * metric_snapshot rows from the DB and converts them to BriefingCard
- * messages. Demo mode swaps the DB read for a mocked surface.
- *
- * POST /api/briefing — chat path. Classifies a question into card
- * metadata (slug/title/why/chartHint) via @neko/llm classifier and
- * enqueues a metric_refresh job; the worker's configured agent backend
- * (hermes | claude-agent) computes the answer.
- */
-
 function genTimeSeriesData() {
   return Array.from({ length: 7 }, (_, i) => ({
     d: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
@@ -47,7 +33,6 @@ function genDonutData() {
   }));
 }
 
-// KPI data: d = display value, v = current numeric, t = previous numeric
 function genKpiData(metric: string, currentRaw: number, prevRaw: number) {
   return [{ d: metric, v: currentRaw, t: prevRaw }];
 }
@@ -184,16 +169,6 @@ export async function GET(request: NextRequest) {
     const snap = m.snapshots?.[0];
     const p = snap?.payload as SnapshotPayload;
     const hasData = !!p;
-    // Card state — read by BriefingCard to render the right chrome:
-    //   ok      → snapshot present and not currently refreshing
-    //   failed  → last metric_refresh failed; render error + Retry
-    //   pending → refresh in flight (no snapshot yet OR re-run queued
-    //             over an existing snapshot); render skeleton
-    // Failure trumps a stale snapshot: a card that failed on its most
-    // recent refresh should show the error even if an older snapshot
-    // exists. A pending refresh also trumps the stale snapshot — if the
-    // user just clicked re-run, they don't want to keep staring at the
-    // old number until the new one lands.
     const state =
       m.last_refresh_status === "failed"
         ? "failed"
@@ -260,9 +235,6 @@ export async function GET(request: NextRequest) {
           : (override && override.length > 0 ? override : genChartData(ins.chartType, ins.metric));
         return [
           ins.id,
-          // state defaults to "ok" for the example/mock-data path so the
-          // BriefingCard component doesn't see undefined when reading
-          // /insights/<id>/state for hardcoded ROLE_DATA cards.
           { state: "ok", error: undefined, ...ins, chartData },
         ];
       })
@@ -317,7 +289,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(messages);
 }
 
-// POST /api/briefing — classify question → enqueue metric_refresh → return skeleton
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const { surfaceId, message } = body as { surfaceId: string; message: string };
@@ -339,8 +310,6 @@ export async function POST(request: NextRequest) {
     `[chat] org=${orgId} role=${role} surface=${surfaceId} q=${JSON.stringify(message).slice(0, 500)}`,
   );
 
-  // Pass 1: classify the question in-process (~2-5s LLM call). Was an HTTP
-  // round-trip to the worker before @neko/llm extraction.
   let card;
   try {
     card = await classifyQuestion(message, role, orgId);
@@ -354,7 +323,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: err }, { status: 500 });
   }
 
-  // Pass 2: enqueue metric_refresh job with inline metadata
   const inserted = await db()
     .insert(processing_job)
     .values({

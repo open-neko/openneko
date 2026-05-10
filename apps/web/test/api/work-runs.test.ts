@@ -1,16 +1,3 @@
-/**
- * /api/work/threads/[threadId]/runs POST contract tests.
- *
- * After the worker move this route is purely an enqueue: it
- * inserts work_run + processing_job, sends the job to pg-boss,
- * and returns the runId. No agent runs in-process. Tests assert:
- *   - happy path: rows + enqueue land
- *   - empty body → 400
- *   - missing thread → 404
- *   - enqueue throws → both work_run and processing_job rolled
- *     forward to `failed`, 500 returned
- */
-
 import {
   afterAll,
   afterEach,
@@ -139,7 +126,6 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(jobId).toBeTruthy();
     expect(backend).toBe("hermes");
 
-    // work_run inserted, status queued (worker will flip to running)
     const runs = await db()
       .select({ status: work_run.status, backend: work_run.backend })
       .from(work_run)
@@ -148,7 +134,6 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(runs[0]?.status).toBe("queued");
     expect(runs[0]?.backend).toBe("hermes");
 
-    // processing_job for the worker, kind=work_run
     const procs = await db()
       .select({ kind: processing_job.kind, status: processing_job.status })
       .from(processing_job)
@@ -157,7 +142,6 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(procs[0]?.kind).toBe("work_run");
     expect(procs[0]?.status).toBe("queued");
 
-    // pg-boss enqueue called with the right shape
     expect(mockEnqueue).toHaveBeenCalledWith(
       "work_run",
       expect.objectContaining({
@@ -196,8 +180,6 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(res.status).toBe(500);
     expect((res.body as { error: string }).error).toMatch(/pg-boss is on fire/);
 
-    // Both rows should be in their failed terminal state — no
-    // ghost queued rows for the reconciler to clean up later.
     const runs = await db()
       .select({ status: work_run.status, error: work_run.error })
       .from(work_run)

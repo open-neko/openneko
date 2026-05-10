@@ -1,8 +1,3 @@
-/**
- * /api/briefing GET contract tests. Asserts the v0.9 message sequence
- * and that DB-backed snapshots flow through to the dataModel.
- */
-
 import {
   afterAll,
   afterEach,
@@ -88,13 +83,10 @@ describeIfDb("/api/briefing GET", () => {
     const componentsMsg = messages[2] as Extract<A2UIMessage, { updateComponents: unknown }>;
     const root = componentsMsg.updateComponents.components.find((c) => c.id === "root");
     expect(root).toBeDefined();
-    // No DB rows → flagged as example (legacy ROLE_DATA mock).
     expect((root as { isExample?: boolean }).isExample).toBe(true);
   });
 
   it("uses DB snapshots when seeded metrics exist", async () => {
-    // Seed a metric + snapshot. The route should return real data and
-    // mark the surface as not-example.
     const ins = await db()
       .insert(metric)
       .values({
@@ -137,7 +129,6 @@ describeIfDb("/api/briefing GET", () => {
       metric: "$5.20M",
       mood: "good",
     });
-    // OK state for cards with a snapshot.
     expect(dataValue.insights["revenue-mtd"]).toMatchObject({ state: "ok" });
   });
 
@@ -165,10 +156,6 @@ describeIfDb("/api/briefing GET", () => {
   });
 
   it("renders state='pending' when a re-run is in flight over an existing snapshot", async () => {
-    // A re-run flips last_refresh_status to 'pending' but leaves the
-    // old snapshot in place until the new one lands. The API must not
-    // keep showing the stale value as state='ok' — the user expects a
-    // skeleton until fresh data arrives.
     const ins = await db()
       .insert(metric)
       .values({

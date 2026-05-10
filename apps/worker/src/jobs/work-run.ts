@@ -1,18 +1,3 @@
-/**
- * work_run job handler.
- *
- * Ports the inline `/api/work/threads/[threadId]/runs` POST flow
- * onto the pg-boss worker: build prompt, run the configured agent
- * backend, write each AgentEvent to work_run_event, finalize the
- * work_run row, kick off the auto-memory pipeline.
- *
- * The web route is now a thin enqueue + return — it inserts the
- * work_run + processing_job rows, sends WORK_RUN, returns the
- * runId. The browser opens an SSE long-poll against the /events
- * endpoint which tails work_run_event by seq until status goes
- * terminal.
- */
-
 import {
   discoveryUrlFromMcpUrl,
   prefetchKnowledgePack,
@@ -53,9 +38,6 @@ export async function runWorkRun(
 
   await markWorkRunRunning(runId);
 
-  // Re-read the bundle here (rather than passing it through the
-  // payload) so the worker sees the latest backendState / message
-  // history if anything else mutated them between enqueue and pickup.
   const bundle = await getWorkThreadBundle(orgId, threadId);
   if (!bundle) {
     await finishWorkRun(runId, "failed", "Thread disappeared before run start.");
@@ -65,10 +47,6 @@ export async function runWorkRun(
   const backend = await resolveAgentBackend(orgId);
   const workspace = await ensureWorkWorkspace(orgId, threadId, runId);
 
-  // Refresh the on-disk knowledge pack the prompt points at. Cheap
-  // local REST fetch; best-effort. If graphjin is transiently
-  // unreachable we proceed with whatever's already on disk from a
-  // prior run (or boot's prefetch).
   const sources = await db()
     .select({ mcp_url: data_source.mcp_url })
     .from(data_source)
@@ -87,10 +65,6 @@ export async function runWorkRun(
     }
   }
 
-  // Seed the seq counter from any events already written to this run
-  // — covers the (rare) pg-boss retry case where the job ran once,
-  // wrote some events, then failed and is being redelivered. Without
-  // this, seq=1 collides with the prior attempt's seq=1.
   let seq = (await getWorkRunEvents(orgId, runId)).length;
 
   const emit = async (event: AgentEvent): Promise<void> => {
@@ -193,10 +167,6 @@ export async function runWorkRun(
     await finishWorkRun(runId, result.status, result.error ?? null);
 
     if (result.status === "completed" && result.finalText.trim()) {
-      // Auto-memory runs after the run is finalized so the SSE tail
-      // can close on `done` without waiting for memory writes. The
-      // pipeline logs its own errors; we don't want them to fail
-      // the user-visible run.
       void runWorkAutoMemoryPipeline({
         orgId,
         threadId,

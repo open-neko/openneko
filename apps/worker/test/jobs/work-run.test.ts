@@ -1,18 +1,3 @@
-/**
- * runWorkRun handler tests.
- *
- * The agent backend (resolveAgentBackend → backend.run) is mocked
- * — we're testing the worker's wiring around it, not the LLM.
- * Asserts:
- *   - happy path: events written by seq, work_run flips to
- *     completed, assistant message saved, `done` event emitted
- *   - failure path: thrown error propagates to work_run.status='failed'
- *     with the message, `error` + `done` events written before throw
- *   - missing thread: failed terminal state without invoking the agent
- *   - retry resumption: seq counter seeds from existing events
- *     instead of colliding (rare but the contract is documented)
- */
-
 import {
   afterAll,
   afterEach,
@@ -156,7 +141,6 @@ describeIfDb("runWorkRun", () => {
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
-    // Backend stub: emit one assistant message, then resolve.
     mockBackendRun.mockImplementation(async (opts: {
       onEvent: (e: { type: string; role?: string; content?: string }) => Promise<void>;
     }) => {
@@ -189,11 +173,6 @@ describeIfDb("runWorkRun", () => {
       )
       .orderBy(asc(work_run_event.seq));
 
-    // Expected event sequence:
-    //   1. status "Starting Hermes…"
-    //   2. status "Loading shared skills and memory…"
-    //   3. message (from the backend mock)
-    //   4. done
     expect(events.map((e) => e.kind)).toEqual([
       "status",
       "status",
@@ -251,11 +230,6 @@ describeIfDb("runWorkRun", () => {
   });
 
   it("missing thread → throws and never invokes the backend", async () => {
-    // The thread is deleted between the run row's creation and the
-    // worker pickup. work_run cascades out via FK on delete, so we
-    // can't assert on its post-state — the handler's contract here
-    // is "throw before calling the agent so pg-boss can mark the
-    // job failed without the agent ever being invoked".
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
     await db().delete(work_thread).where(eq(work_thread.id, thread.id));
@@ -293,13 +267,9 @@ describeIfDb("runWorkRun", () => {
   });
 
   it("retry resumption: seq counter seeds from existing events", async () => {
-    // Simulate a job that already emitted some events on a prior
-    // attempt (worker crashed, pg-boss redelivered). The new run
-    // should pick up at seq = existing+1 instead of colliding.
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
-    // Pre-seed two events as if from a prior attempt.
     await db().insert(work_run_event).values([
       {
         org_id: orgId,
@@ -338,7 +308,6 @@ describeIfDb("runWorkRun", () => {
         .where(eq(work_run_event.run_id, run.id))
         .orderBy(asc(work_run_event.seq))
     ).map((r) => r.seq);
-    // Original 1, 2 + new starting at 3 (Starting…, Loading…, done).
     expect(seqs).toEqual([1, 2, 3, 4, 5]);
   });
 });

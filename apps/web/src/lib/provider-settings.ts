@@ -102,11 +102,6 @@ async function loadStoredConfig(
   orgId: string,
   scope: ProviderScope,
 ): Promise<StoredProviderConfigRow | null> {
-  // No try/catch — DB errors must propagate so the page renders an
-  // error instead of silently rendering an empty wizard. A bare catch
-  // here used to make a stale-pool blip indistinguishable from "no
-  // provider configured yet", which sent users back through the
-  // wizard with blank fields even though their data was on disk.
   const rows = await db()
     .select({
       id: llm_provider_config.id,
@@ -399,9 +394,6 @@ export async function saveProviderDraft(
 
   const merged = mergeDraft(existing, draft);
 
-  // Cross-section coupling: if the agent backend is claude-agent, the primary
-  // provider must remain Anthropic. Enforced server-side so a direct API
-  // call can't break the contract that the resolver later relies on.
   if (merged.scope === "primary" && merged.provider !== "anthropic") {
     const { getAgentBackendSettings } = await import("./agent-backend-settings");
     const agent = await getAgentBackendSettings(orgId);
@@ -428,10 +420,6 @@ export async function resolveResearchStatus(orgId: string): Promise<"enabled" | 
 }
 
 export async function hasPrimaryProviderSetup(orgId: string): Promise<boolean> {
-  // No try/catch — let DB errors surface. A bare catch here makes a
-  // pool blip look like "primary not configured", which fails the
-  // /settings/finish gate even when the DB has the row, looping the
-  // user back into the wizard.
   const stored = await loadStoredConfig(orgId, "primary");
   if (stored && isPrimaryProvider(stored.provider)) {
     const resolved = toEditable(stored);

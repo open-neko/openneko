@@ -1,23 +1,3 @@
-/**
- * Hermes backend — spawn `hermes -z prompt`. Used by both Dashboard
- * (sync metric_refresh) and Work (streaming chat). The presence of
- * `opts.onEvent` flips behavior:
- *
- *   - sync mode: cwd is a tmpdir scratch (cleaned up after), retries on
- *     transport failure, returns final stdout as `finalText`.
- *   - streaming mode: cwd is the per-org workspace.orgRoot, PATH is
- *     prepended with workspace.binRoot (graphjin guard), `--skills` is
- *     forwarded if set, lifecycle events (status, message, error) are
- *     emitted via onEvent. No retries — Work is one-shot per turn.
- *
- * HERMES_HOME is set per-org (via `hermesHomeForOrg(opts.orgId)`) so the
- * credential pool Hermes maintains in `<HERMES_HOME>/auth.json` is
- * isolated from the host's global ~/.hermes/. That isolation is what
- * stops a stale `hermes login` token from another terminal poisoning a
- * long-running Work agent. provisionHostConfig writes config.yaml +
- * .env to the same per-org path so the writer and reader agree.
- */
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,20 +16,12 @@ function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   try {
     process.kill(-child.pid, signal);
   } catch {
-    // ESRCH if already exited; ignore.
+    // ESRCH if already exited
   }
 }
 
 const FENCE_RE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
 
-/**
- * Tolerant JSON parser. Tries: raw → strip ```json fence → slice
- * first '{' to last '}'. Throws with a head-of-output excerpt on failure
- * so the caller can surface a useful error.
- *
- * Exported here for the metric-agent path which still parses Hermes'
- * stdout as a structured JSON blob.
- */
 export function parseJsonFromOutput(raw: string): unknown {
   const trimmed = raw.trim();
   const fenced = trimmed.match(FENCE_RE);
@@ -100,8 +72,6 @@ export class HermesBackend implements AgentBackend {
       await onEvent({ type: "status", message: "Hermes is working…" });
     }
 
-    // Streaming mode (Work): one shot, no retries, fail-soft via result.
-    // Sync mode (Dashboard): retry on transport failure, fail-soft via result.
     const maxAttempts = onEvent ? 1 : retries + 1;
     let lastErr: Error | undefined;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -122,10 +92,6 @@ export class HermesBackend implements AgentBackend {
         });
         let finalText = rawText;
         if (onEvent) {
-          // Hermes can't call MCP tools, so the prompt asks it to emit
-          // structured cards as a fenced ```neko_a2ui block. Pull those
-          // out into a surface event and strip the fence from the text
-          // we emit/return so the UI doesn't show raw JSON.
           const parsed = extractSurfaceMessages(rawText);
           finalText = parsed.text;
           if (parsed.messages.length > 0) {
@@ -182,8 +148,6 @@ async function spawnOnce({
   signal,
   onStatus,
 }: SpawnArgs): Promise<string> {
-  // cwd: per-org workspace for streaming (so file tools see org files);
-  // tmp scratch for sync (so concurrent Dashboard runs don't collide).
   let cwd: string;
   let cleanupScratch: (() => Promise<void>) | undefined;
   if (workspace) {
@@ -206,11 +170,6 @@ async function spawnOnce({
       rm(cwd, { recursive: true, force: true }).catch(() => {});
   }
 
-  // PATH prepend with the per-run binRoot lets the graphjin guard wrapper
-  // intercept agent calls. Skipped in sync mode (no per-run guard there).
-  // HERMES_HOME points at the per-org dir provisionHostConfig populated;
-  // when orgId is missing (legacy callers, tests with no org context) we
-  // leave HERMES_HOME alone so the process inherits whatever the host has.
   const env: NodeJS.ProcessEnv = workspace
     ? {
         ...process.env,
@@ -222,9 +181,6 @@ async function spawnOnce({
   }
 
   return new Promise<string>((resolve, reject) => {
-    // detached: true so killing the pgid takes the whole subprocess tree
-    // (Hermes spawns Python venvs / browser tools that re-parent to init
-    // otherwise).
     const child = spawn("hermes", args, {
       stdio: ["ignore", "pipe", "pipe"],
       cwd,
@@ -317,17 +273,11 @@ function consumeStatusLines(raw: string): { lines: string[]; rest: string } {
 }
 
 function cleanStatusLine(raw: string): string {
-  return raw.replace(/\u001b\[[0-9;]*m/g, "").trim();
+  return raw.replace(/\[[0-9;]*m/g, "").trim();
 }
 
 const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;
 
-/**
- * Pull a fenced ```neko_a2ui block out of Hermes' stdout, return the
- * remaining prose as `text` and the parsed messages array. Used in
- * streaming mode to surface cards as their own event and keep the
- * chat bubble free of raw JSON.
- */
 export function extractSurfaceMessages(raw: string): {
   text: string;
   messages: AgentSurfaceMessage[];

@@ -299,9 +299,6 @@ export default function WorkScreen() {
     setDraft("");
     setFiles([]);
 
-    // POST enqueues the run; the worker (not Next.js) will run the
-    // agent. The response just hands back the runId we then tail
-    // via SSE on a separate endpoint.
     const res = await fetch(`/api/work/threads/${threadId}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -346,10 +343,6 @@ export default function WorkScreen() {
         : prev,
     );
 
-    // Open an SSE EventSource on the events endpoint. The browser
-    // auto-reconnects on transient errors and sends Last-Event-ID
-    // so the server can resume without replaying. We close locally
-    // when we see `done` (terminal status) or `error`.
     await new Promise<void>((resolve) => {
       const es = new EventSource(
         `/api/work/threads/${threadId}/runs/${runId}/events`,
@@ -365,19 +358,11 @@ export default function WorkScreen() {
         } catch {
           return;
         }
-        // Server-side `hello` is informational — the runId/backend
-        // were already locked in from the POST response. Skip.
         if (event.type === "hello") return;
         applyIncomingEvent(runId, event);
         if (event.type === "done") finish();
       };
-      es.onerror = () => {
-        // EventSource keeps reconnecting on transient errors; we
-        // only break out when the server actively closes after a
-        // terminal `done` event. If the run is genuinely stuck the
-        // user can navigate away, which aborts the request via
-        // EventSource's default close on page hide.
-      };
+      es.onerror = () => {};
     });
 
     setSending(false);

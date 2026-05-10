@@ -1,12 +1,3 @@
-/**
- * provisionHostConfig integration test against a real Postgres + temp HOME.
- *
- * Asserts the function reads from llm_provider_config + data_source and
- * writes the right host config files (graphjin client.json + hermes
- * config.yaml + .env), including provider-name mapping (gemini, custom)
- * and secret decryption.
- */
-
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
@@ -78,7 +69,6 @@ describeIfDb("provisionHostConfig", () => {
     else delete process.env.HERMES_HOME;
     await clearProvider(orgId, "agent");
     await clearProvider(orgId, "primary");
-    // Reset data_source between tests.
     await db().delete(data_source).where(eq(data_source.org_id, orgId));
   });
 
@@ -124,7 +114,6 @@ describeIfDb("provisionHostConfig", () => {
 
     const yaml = await readFile(join(hermesHome, "config.yaml"), "utf8");
     expect(yaml).toContain('default: "gemini-pro-latest"');
-    // Neko 'google-gemini' → Hermes 'gemini' provider name
     expect(yaml).toContain('provider: "gemini"');
     expect(yaml).toContain("max_turns:");
 
@@ -132,8 +121,6 @@ describeIfDb("provisionHostConfig", () => {
     expect(env).toContain("GEMINI_API_KEY=test-gemini-key");
 
     const envStat = await stat(join(hermesHome, ".env"));
-    // Mode 0600 = owner read/write only (octal 0o600 = decimal 384).
-    // Mask off file-type bits.
     expect(envStat.mode & 0o777).toBe(0o600);
   });
 
@@ -175,11 +162,9 @@ describeIfDb("provisionHostConfig", () => {
 
     await provisionHostConfig(orgId);
 
-    // graphjin client.json IS written (both backends shell out to it).
     const gj = await readFile(graphjinPath(tempHome), "utf8");
     expect(gj).toContain("server");
 
-    // hermes config.yaml and .env are NOT written.
     await expect(readFile(join(hermesHome, "config.yaml"), "utf8")).rejects.toThrow();
     await expect(readFile(join(hermesHome, ".env"), "utf8")).rejects.toThrow();
   });
@@ -191,9 +176,7 @@ describeIfDb("provisionHostConfig", () => {
       provider: "hermes",
       config: { backend: "hermes" },
     });
-    // No primary row.
     await expect(provisionHostConfig(orgId)).resolves.toBeUndefined();
-    // graphjin still written.
     await readFile(graphjinPath(tempHome), "utf8");
   });
 
@@ -202,9 +185,6 @@ describeIfDb("provisionHostConfig", () => {
   });
 
   it("writes hermes config under ~/.config/openneko/hermes/{orgId} when HERMES_HOME is unset", async () => {
-    // Default path is per-org so the credential pool Hermes maintains
-    // in <hermesHome>/auth.json can't drift across orgs (or be poisoned
-    // by the host user's own `hermes login` sessions in ~/.hermes/).
     delete process.env.HERMES_HOME;
     await seedDataSource(orgId);
     await seedProvider(orgId, {
@@ -229,7 +209,6 @@ describeIfDb("provisionHostConfig", () => {
     const env = await readFile(join(expectedHome, ".env"), "utf8");
     expect(env).toContain("GEMINI_API_KEY=test-default-path-key");
 
-    // Per-org isolation: a different org's path must not collide.
     expect(hermesHomeForOrg("other-org")).toBe(
       join(tempHome, ".config", "openneko", "hermes", "other-org"),
     );

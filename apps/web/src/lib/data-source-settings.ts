@@ -28,10 +28,6 @@ export type DataSourceDraft = {
 const DEFAULT_KIND = "graphjin";
 
 async function loadRow(orgId: string): Promise<DataSourceRow | null> {
-  // No try/catch — DB errors must propagate so the page renders an
-  // error instead of an empty wizard. Returning null on error
-  // indistinguishably from "no row yet" caused users to refill the
-  // wizard from scratch every time the pool hit a transient blip.
   const rows = await db()
     .select({
       id: data_source.id,
@@ -145,10 +141,6 @@ export async function saveDataSourceDraft(
 }
 
 export async function hasDataSourceSetup(orgId: string): Promise<boolean> {
-  // No try/catch — let DB errors surface. Same swallow-pattern bug:
-  // a stale-pool blip used to look like "data source not configured",
-  // which fails the /settings/finish gate even when the row exists,
-  // looping the user back into the wizard.
   const row = await loadRow(orgId);
   if (!row) return false;
   return validateDraft({
@@ -164,10 +156,6 @@ export async function testDataSourceDraft(
   const errors = validateDraft(draft);
   if (errors.length > 0) throw new Error(errors.join(" "));
 
-  // Ping with a deliberately empty query — every GraphQL server (including
-  // GraphJin, which doesn't support standard introspection) will reply with a
-  // structured JSON response. Getting back a body with either `data` or
-  // `errors` is sufficient proof the endpoint speaks GraphQL.
   const gqlRes = await fetch(draft.graphqlUrl.trim(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -10,10 +10,6 @@ const ORG_NAME_STUB = "My Workspace";
 
 export default async function OnboardingPage() {
   await connection();
-  // Single gate: business onboarding only opens after admin setup is done.
-  // /setup writes setup_complete_at on its Finish handler. Mixing the
-  // 3-predicate config check here used to push the business user into
-  // settings screens that aren't theirs to fill in.
   const orgId = await getOrgId();
   const setupCompleteAt = await getSetupCompleteAt(orgId);
   if (!setupCompleteAt) {

@@ -30,11 +30,6 @@ async function loadAgentRow(orgId: string): Promise<{
   id: string;
   config: Record<string, unknown> | null;
 } | null> {
-  // No try/catch — DB errors must propagate so the page renders an
-  // error instead of an empty wizard. Same swallow-pattern bug as in
-  // org-state, data-source-settings, and provider-settings: a stale
-  // pool blip used to read as "no agent configured" and looped users
-  // through the wizard with blank fields.
   const rows = await db()
     .select({
       id: llm_provider_config.id,
@@ -112,10 +107,6 @@ export async function saveAgentBackendDraft(
     throw new Error(`Unsupported agent backend: ${draft.backend}`);
   }
 
-  // When switching to claude-agent, atomically coerce the primary provider
-  // row to Anthropic if it isn't already. The user still needs to paste a
-  // Claude API key — but we never leave the DB in an inconsistent state
-  // where the resolver would reject every job.
   if (draft.backend === "claude-agent") {
     await ensurePrimaryIsAnthropic(orgId);
   }

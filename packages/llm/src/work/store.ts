@@ -1,12 +1,3 @@
-/**
- * Work-thread DB helpers — domain layer over the work_* tables.
- *
- * Lives in @neko/llm/work (rather than apps/web/src/lib/) so the
- * worker can import the same helpers when it runs Work jobs from
- * the queue. The web app re-exports from here for backward compat
- * with existing route imports.
- */
-
 import {
   and,
   asc,
@@ -257,11 +248,6 @@ export async function getWorkRunEvents(orgId: string, runId: string): Promise<Ag
   return rows.map((row) => row.payload as AgentEvent);
 }
 
-/**
- * Read events for a run starting after `afterSeq`. Used by the SSE
- * tail endpoint to stream new events as they're appended by the
- * worker; the caller polls this with the highest seq it has seen.
- */
 export async function getWorkRunEventsAfter(
   orgId: string,
   runId: string,
@@ -285,11 +271,6 @@ export async function getWorkRunEventsAfter(
     .map((r) => ({ seq: r.seq, event: r.payload as AgentEvent }));
 }
 
-/**
- * Read just the run row — used by the SSE tail to know when to
- * close (status moved to terminal) and to surface an error message
- * the worker stamped if the run failed before emitting a `done` event.
- */
 export async function getWorkRun(orgId: string, runId: string) {
   const rows = await db()
     .select()

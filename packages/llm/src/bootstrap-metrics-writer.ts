@@ -1,22 +1,3 @@
-/**
- * Bootstrap metrics writer — backend-agnostic.
- *
- * Per-org backend (Hermes or Claude Agent) is resolved from
- * llm_provider_config (scope='agent') by `resolveAgentBackend`. Same
- * mechanism the profiler and metric agents use, so the three stay in
- * lockstep.
- *
- * Reads business_profile + industry_insights and proposes 4 starter
- * dashboard cards per CXO seat selected in onboarding, grounded strictly
- * in facts named in the business_profile. No tools needed — the agent
- * generates JSON directly from the inline context.
- *
- * Critical grounding rule: cards must be measurable from the business_profile.
- * industry_insights is interpretation context only — it does NOT introduce new
- * product lines, markets, or segments. e.g. if the profile lists only mountain
- * and road bikes, do NOT propose e-bike metrics.
- */
-
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
 
@@ -128,10 +109,8 @@ export async function runBootstrapMetricsWriter(args: {
   businessProfile: string;
   industryInsights: string;
   seats: string[];
-  /** processing_job.id — tags Hermes's scratch dir for DB correlation. */
   jobId?: string;
   onProgress?: BootstrapMetricsProgress;
-  /** Pipe backend stderr to the parent process. Test harness only. */
   debug?: boolean;
 }): Promise<{ metrics: BootstrapMetric[] }> {
   const { orgId, orgName, businessProfile, industryInsights, seats, jobId, onProgress, debug } = args;

@@ -1,17 +1,3 @@
-/**
- * HermesBackend spawn invariants — narrow tests around the env / argv
- * passed to `hermes`. We mock node:child_process.spawn to capture what
- * HermesBackend would have invoked and then immediately resolve the
- * run, so no real binary is exec'd.
- *
- * The HERMES_HOME contract: if `opts.orgId` is set, the backend MUST
- * set HERMES_HOME to `hermesHomeForOrg(orgId)` so Hermes' credential
- * pool can't drift across orgs or be poisoned by the host user's
- * global ~/.hermes/. If `orgId` is absent (debug scripts, legacy
- * tests), the backend leaves HERMES_HOME alone — we inherit whatever
- * the parent process has (or nothing).
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type SpawnCall = {
@@ -42,7 +28,6 @@ vi.mock("node:child_process", async () => {
         stderr,
         on(event: string, cb: (...a: unknown[]) => void) {
           if (event === "close") {
-            // Defer so the listeners on stdout/stderr land first.
             setImmediate(() => cb(0));
           }
           return child;
@@ -111,8 +96,6 @@ describe("HermesBackend spawn invariants", () => {
 
     expect(spawnCalls).toHaveLength(1);
     const env = spawnCalls[0].options.env ?? {};
-    // We inherit whatever the parent process has (...process.env) — no
-    // override from the backend itself.
     if (process.env.HERMES_HOME) {
       expect(env.HERMES_HOME).toBe(process.env.HERMES_HOME);
     } else {

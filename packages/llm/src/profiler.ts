@@ -1,20 +1,3 @@
-/**
- * Business profile agent — backend-agnostic.
- *
- * Per-org backend (Hermes or Claude Agent) is resolved from
- * llm_provider_config (scope='agent') by `resolveAgentBackend`. Same
- * mechanism the metric agent uses, so the two stay in lockstep.
- *
- * The agent reads inline GraphJin discovery (tables / insights / syntax),
- * issues GraphQL via `graphjin cli execute_graphql` over Bash, and emits
- * the business profile markdown directly as its final assistant message.
- *
- * Output contract: stdout MUST be the profile body — markdown starting
- * with `# {Company Name} — Business Profile`. No code fences, no preamble.
- * The caller (apps/worker/src/jobs/business-profile-build.ts) writes it
- * verbatim into customer_profile.business_profile.
- */
-
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import {
@@ -136,19 +119,12 @@ export async function runProfiler(args: {
   mcpUrl: string;
   orgName: string;
   companyNote: string;
-  /** processing_job.id — tags Hermes's scratch dir for DB correlation. */
   jobId?: string;
   onProgress?: ProfilerProgress;
-  /** Pipe backend stderr to the parent process. Test harness only. */
   debug?: boolean;
 }): Promise<ProfilerResult> {
   const { orgId, mcpUrl, orgName, companyNote, jobId, onProgress, debug } = args;
 
-  // 1. Refresh the on-disk knowledge pack (tables, namespaces,
-  // insights, syntax) under the org's workspace.knowledgeRoot. The
-  // agent reads these files from disk via its shell tool — no longer
-  // inlined into the prompt. GraphJin generates discovery lazily on
-  // first hit; prefetchKnowledgePack handles cold-start retries.
   const workspace = await ensureOrgWorkspace(orgId);
   const refresh = await prefetchKnowledgePack({
     discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
@@ -166,7 +142,6 @@ export async function runProfiler(args: {
   }
   const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
 
-  // 2. Resolve the configured agent backend (hermes | claude-agent).
   const backend = await resolveAgentBackend(orgId);
   console.log(`[profiler] org=${orgId} backend=${backend.id}`);
 
@@ -177,8 +152,6 @@ export async function runProfiler(args: {
     shellTool: shellToolName(backend.id),
   });
 
-  // 3. Run. Backends don't surface per-turn progress, so we emit one
-  // "running" beat now and one "drafted" beat at the end.
   if (onProgress) onProgress("Running profiler agent (1–2 minutes)…");
   const startedAt = Date.now();
   const result = await backend.run({
@@ -202,9 +175,6 @@ export async function runProfiler(args: {
   return { businessProfile };
 }
 
-// Both backends sometimes wrap their final reply in a ```markdown fence
-// despite prompt instructions. Belt-and-braces: strip a single outermost
-// fence if present.
 function stripFences(raw: string): string {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```\s*$/);

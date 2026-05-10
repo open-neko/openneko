@@ -9,15 +9,6 @@ import {
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { getOrgId } from "@/lib/db";
 
-/**
- * POST /api/onboarding/submit
- * body: { companyName, companyNote, fiscalYearStartMonth, activeSeats[], priorities[] }
- *
- * Writes the company name to organization.name, upserts the wizard row,
- * and enqueues a business_profile_build job. The worker runs the profiler,
- * then chains an industry_insights_build job automatically once the
- * business_profile is saved.
- */
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const {
@@ -44,13 +35,11 @@ export async function POST(request: NextRequest) {
 
   const orgId = await getOrgId();
 
-  // 1. Persist the company name on the org row.
   await db()
     .update(organization)
     .set({ name: trimmedName, updated_at: new Date() })
     .where(eq(organization.id, orgId));
 
-  // 2. Replace the wizard row (delete + insert).
   await db().delete(onboarding_wizard).where(eq(onboarding_wizard.org_id, orgId));
   await db().insert(onboarding_wizard).values({
     org_id: orgId,
@@ -62,13 +51,6 @@ export async function POST(request: NextRequest) {
     submitted_at: new Date(),
   });
 
-  // 3. Insert + enqueue. pg-boss runs on its own pool so we can't wrap
-  // these in a single Postgres transaction. If `enqueue()` throws after
-  // the row is inserted, the worker would never see this job and the
-  // user would stare at a "needs_wizard"/"processing" UI with nothing
-  // behind it. Cover the gap by finalizing the row to `failed` on
-  // enqueue error so the reconciler doesn't have to and the API caller
-  // gets a real 500 to surface in the UI.
   const inserted = await db()
     .insert(processing_job)
     .values({

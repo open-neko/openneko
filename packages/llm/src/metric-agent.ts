@@ -1,18 +1,3 @@
-/**
- * Metric agent — backend-agnostic snapshot runner.
- *
- * Per-org backend choice (Hermes vs Claude Agent) is resolved from the
- * DB by `resolveAgentBackend`. Provider/model/key for the chosen backend
- * come from `llm_provider_config` and are pushed to Hermes's host config
- * by `provisionHostConfig` (called from worker boot + every settings save).
- *
- * Output contract: stdout MUST be JSON parseable into MetricAgentResult.
- * The shape is load-bearing because apps/web/src/app/api/briefing/route.ts
- * reads metric_snapshot.payload to assemble A2UI v0.9 messages
- * (BriefingCard component in apps/web/src/a2ui/catalog.ts). Validation lives
- * in apps/worker/src/jobs/metric-refresh.ts:validateResult.
- */
-
 import { data_source, db, eq } from "@neko/db";
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
@@ -33,39 +18,26 @@ export type MetricAgentInput = {
   title: string;
   why: string;
   chartHint: "kpi" | "line" | "bar" | "donut" | "area";
-  /** processing_job.id — tags Hermes's scratch dir for DB correlation. */
   jobId?: string;
-  /** Pipe Hermes stderr to the parent process. Test harness only. */
   debug?: boolean;
 };
 
 export const TIME_WINDOW_GRAINS = [
-  "day",       // today / yesterday / a specific day
-  "week",      // this week / last 7 days / a specific week
-  "month",     // this month / last 30 days / MTD / a specific month
-  "quarter",   // this quarter / QTD / TTM3M
-  "year",      // YTD / TTM / FY-to-date / a specific year
-  "all_time",  // cumulative since data began (rare — only when card explicitly asks)
-  "snapshot",  // not-time-bound; current state (employee count, open opps)
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "all_time",
+  "snapshot",
 ] as const;
 
 export type TimeWindowGrain = (typeof TIME_WINDOW_GRAINS)[number];
 
-/**
- * The time window the agent computed the headline against. Always populated.
- *
- * `grain` is the enumerated window category (day/week/month/quarter/year/
- * all_time/snapshot). `start` and `end` give the exact range — required for
- * everything except `all_time` (where start may be null) and `snapshot`
- * (where start === end === today).
- */
 export type TimeWindow = {
   grain: TimeWindowGrain;
-  /** ISO yyyy-mm-dd. Null only allowed for grain='all_time'. */
   start: string | null;
-  /** ISO yyyy-mm-dd. Null only allowed for grain='all_time'. */
   end: string | null;
-  /** Short label the briefing UI displays — "TTM", "YTD", "Q3 2025", "Last 30 days", "All time", "Snapshot". 1–4 words. */
   label: string;
 };
 
@@ -249,12 +221,6 @@ export async function runMetricAgent(
     `[metric-agent] org=${input.orgId} role=${input.role} slug=${input.slug} mcp=${mcpUrl}`,
   );
 
-  // Knowledge is read by the agent from disk (workspace.knowledgeRoot)
-  // — no longer inlined into the prompt. Refresh on every run so a
-  // schema change is reflected without restarting the worker; the
-  // discovery endpoint is local and cheap. Best-effort: if the
-  // refresh fails (graphjin transiently unreachable) we proceed with
-  // whatever's already on disk from a prior boot/run.
   const workspace = await ensureOrgWorkspace(input.orgId);
   const refreshResult = await prefetchKnowledgePack({
     discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
@@ -272,11 +238,6 @@ export async function runMetricAgent(
   }
   const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
 
-  // Resolve the backend first so the prompt can reference its actual
-  // shell-tool name (Hermes calls it `terminal`, Claude Agent calls it
-  // `Bash`). Without this, Hermes would see "via the Bash tool" — a
-  // tool name it doesn't have — and reach for `execute_code` (Python)
-  // instead, bypassing graphjin cli entirely.
   const backend = await resolveAgentBackend(input.orgId);
   const debug = input.debug === true;
 
@@ -305,11 +266,6 @@ export async function runMetricAgent(
   const stdout = result_.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
 
-  // First, check if the agent gave up because of an upstream provider
-  // error (Gemini 503, etc.) and printed its own error to stdout. We
-  // throw a typed error so the worker can short-circuit pg-boss retries
-  // — re-running the job against a load-shed provider just multiplies
-  // the failure.
   const upstream = detectUpstreamError(stdout);
   if (upstream) {
     console.warn(

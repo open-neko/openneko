@@ -15,10 +15,7 @@ async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   const text = lines.join("\n");
   try {
     await navigator.clipboard.writeText(text);
-  } catch {
-    // Clipboard write can fail in non-secure contexts or older browsers.
-    // Silent — the user will notice nothing landed in their clipboard.
-  }
+  } catch {}
 }
 
 const MOOD_STYLES: Record<string, { bg: string; dot: string }> = {
@@ -56,13 +53,6 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
   const state: BriefingCardState = ins.state ?? "ok";
   const m = MOOD_STYLES[ins.mood] ?? MOOD_STYLES.good;
 
-  // Button is "in flight" any time a refresh is queued or running:
-  //   - retrying: covers the POST round-trip before the server has
-  //     flipped last_refresh_status to "pending"
-  //   - state === "pending": covers the worker run after the API has
-  //     accepted the retry and the briefing refetch has landed
-  // Both signals together keep the button disabled+animating from
-  // click to fresh data, so users can't spam the worker.
   const refreshing = retrying || state === "pending";
 
   const handleRetry = async (e: React.MouseEvent) => {
@@ -86,12 +76,6 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
         <div className="mdot" style={{ background: m.dot, boxShadow: `0 0 0 4px ${m.bg}` }} />
         <div className="icontent">
           <div className="itext">{ins.text}</div>
-          {/* Pending state shows skeleton bars where the headline would
-              go. The card title (itext) stays visible — that's real
-              context, not a placeholder. For failed cards we keep the
-              "Couldn't load" headline since it's the actionable state.
-              The delta arrow only computes when chartData has a baseline,
-              so it naturally hides for non-ok states. */}
           {state === "pending" ? (
             <div className="iskel" aria-label="Refreshing metric" aria-busy="true">
               <div className="skel skel-metric" />

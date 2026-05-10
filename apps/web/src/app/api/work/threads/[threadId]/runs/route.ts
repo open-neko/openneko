@@ -26,21 +26,6 @@ type RouteContext = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * POST /api/work/threads/{threadId}/runs
- *
- * Enqueues a work_run job onto pg-boss. The agent itself runs in
- * the worker process (apps/worker/src/jobs/work-run.ts) — no
- * inline Hermes spawn from Next.js. The browser receives the new
- * runId here, then opens an EventSource on
- * `/api/work/threads/{threadId}/runs/{runId}/events` to tail
- * AgentEvents the worker writes to work_run_event.
- *
- * Atomic-ish: insert work_run + processing_job, then enqueue. If
- * the enqueue throws after either insert, both rows (plus the
- * work_run) are finalized to `failed` so the user can re-submit
- * without staring at a stuck "running" state.
- */
 export async function POST(request: NextRequest, context: RouteContext) {
   const { threadId } = await context.params;
   const body = await request.json().catch(() => ({}));
@@ -55,15 +40,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
-  // Resolve backend up-front so we record what was selected at
-  // enqueue time. The worker re-resolves at pickup as the source of
-  // truth, but stamping it now also gives the SSE `hello` event
-  // something to render before the worker starts.
   const backend = await resolveAgentBackend(orgId);
   const run = await createWorkRun(orgId, threadId, backend.id);
 
-  // Title the thread from the first user message if it's still
-  // unset, then save the user message itself.
   if (!thread.title) {
     await touchWorkThread(threadId, { title: suggestWorkThreadTitle(message) });
   }
@@ -75,10 +54,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     content: message,
   });
 
-  // Emit a single "hello" event at seq=1 so the SSE tail has
-  // something to show immediately on first poll, before the worker
-  // has had a chance to pick the job up. Same shape the inline
-  // route used to emit; keeps the client renderer unchanged.
   await appendWorkRunEvent({
     orgId,
     threadId,
@@ -87,8 +62,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     event: { type: "status", message: `Queued for ${backend.id}…` } as never,
   });
 
-  // Insert the processing_job row + enqueue. Any failure in either
-  // path finalizes the work_run so the UI doesn't spin forever.
   let processingJobId: string;
   try {
     const inserted = await db()

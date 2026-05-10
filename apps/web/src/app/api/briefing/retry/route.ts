@@ -11,19 +11,6 @@ import {
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { getOrgId } from "@/lib/db";
 
-/**
- * POST /api/briefing/retry  { metricId }
- *
- * Re-enqueues a metric_refresh job for a single failed (or stuck) card.
- * Idempotent: if a queued/running job already exists for this metric we
- * return its id without inserting a duplicate. The card-side state
- * machine resets to "pending" via the metric.last_refresh_status update
- * so the briefing UI re-skeletons immediately.
- *
- * The call site is the BriefingCard's Retry button (rendered when
- * state="failed"); the dashboard's polling loop picks the new job up
- * via /api/briefing on the next refetch.
- */
 export async function POST(request: NextRequest) {
   let body: { metricId?: string };
   try {
@@ -41,8 +28,6 @@ export async function POST(request: NextRequest) {
 
   const orgId = await getOrgId();
 
-  // Verify the metric belongs to this org. Without the org check anyone
-  // could trigger refreshes on metrics they don't own once auth lands.
   const metricRows = await db()
     .select({ id: metric.id })
     .from(metric)
@@ -52,9 +37,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "metric not found" }, { status: 404 });
   }
 
-  // Idempotency — return the existing in-flight job if there is one.
-  // pg-boss does not dedupe, so without this we'd double-enqueue and
-  // get two snapshot rows for the same card.
   const inFlight = await db()
     .select({ id: processing_job.id })
     .from(processing_job)
@@ -76,15 +58,6 @@ export async function POST(request: NextRequest) {
       .limit(1);
     const payload = row[0]?.trigger_payload as { metricId?: string } | null;
     if (payload?.metricId === metricId) {
-      // The job is already queued/running — but the metric's
-      // last_refresh_status may still be the previous 'ok'/'failed'
-      // value (e.g. when the in-flight job was enqueued by the
-      // 24h cron sweep, which doesn't touch last_refresh_status).
-      // Without flipping it here, the card keeps showing the prior
-      // snapshot and the user's retry click looks like a no-op even
-      // though we did the right thing server-side. Stamp pending so
-      // the next /api/briefing fetch returns state='pending' and the
-      // card flips to its skeleton.
       await db()
         .update(metric)
         .set({
@@ -98,12 +71,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Insert a fresh processing_job + flip the metric to pending +
-  // enqueue. pg-boss runs on its own pool so these can't be one
-  // transaction; if the enqueue throws after the row is in place the
-  // metric would skeleton forever waiting for a job that never runs.
-  // Roll the row + metric back to a failed terminal state on enqueue
-  // error so the user can hit retry again immediately.
   const inserted = await db()
     .insert(processing_job)
     .values({

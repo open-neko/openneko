@@ -1,15 +1,3 @@
-/**
- * reconcileStaleProcessingJobs — integration tests against a real
- * Postgres + pg-boss schema.
- *
- * Locks in the four scenarios the reconciler exists to handle:
- *   - pg-boss completed but our row didn't get markSucceeded
- *   - pg-boss failed/expired but our row didn't get markFailed
- *     (and metric_refresh failures must propagate to metric.last_refresh_status)
- *   - pg-boss still working — running rows reset to queued, queued rows untouched
- *   - pg-boss has no row at all (orphaned by failed enqueue) → we mark failed
- */
-
 import {
   afterAll,
   afterEach,
@@ -44,10 +32,6 @@ if (!reachable) {
 }
 
 async function ensurePgbossSchema(): Promise<boolean> {
-  // The reconciler reads pgboss.job. In a fresh test DB the schema may
-  // not exist yet (pg-boss creates it on first start). If absent, skip
-  // these tests rather than failing — the integration covers prod
-  // shape, not a bootstrap concern.
   try {
     await db().execute(sql`SELECT 1 FROM pgboss.job LIMIT 1`);
     return true;
@@ -123,8 +107,6 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   });
 
   afterEach(async () => {
-    // Cleanup processing_job + pgboss.job rows for this test's org so
-    // tests are isolated. pgboss rows are matched by data.orgId.
     await db().execute(sql`
       DELETE FROM pgboss.job WHERE data->>'processingJobId' IN (
         SELECT id::text FROM processing_job WHERE org_id = ${orgId}
@@ -175,10 +157,6 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   });
 
   it("treats pg-boss timeout (failed state with timeout message) as failed", async () => {
-    // pg-boss v10 collapses expire_in timeouts into `state=failed`
-    // with the output message. The reconciler should propagate the
-    // exact message so the user sees "job failed by timeout..." on
-    // their card instead of a generic "pg-boss state=failed".
     const jobId = await insertProcessingJob({
       orgId,
       kind: "business_profile_build",
@@ -198,7 +176,6 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
   });
 
   it("propagates metric_refresh failure to metric.last_refresh_status", async () => {
-    // Seed a metric whose last_refresh_job_id will point at the dead job.
     const metricInsert = await db()
       .insert(metric)
       .values({
@@ -288,8 +265,6 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
       kind: "business_profile_build",
       status: "queued",
     });
-    // Intentionally NO pgboss row. Simulates an enqueue() that
-    // threw after the processing_job insert succeeded.
 
     const summary = await reconcileStaleProcessingJobs();
     expect(summary.lost).toBeGreaterThanOrEqual(1);
@@ -312,7 +287,6 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
       outputMessage: "permanent",
     });
 
-    // The row was just created, so minAgeMs=10s should skip it.
     const summary = await reconcileStaleProcessingJobs({ minAgeMs: 10_000 });
     expect(summary.failed).toBe(0);
 

@@ -1,26 +1,3 @@
-/**
- * GraphJin knowledge pack — fetched once and read by agents from disk.
- *
- * Replaces the prior pattern of inlining 30-40 KB of discovery JSON
- * into every agent prompt. Inlining wastes tokens (the same blob
- * appears on every turn / retry) and prevents multi-turn agents from
- * cheaply consulting the schema as needed.
- *
- * Borrowed from the Reckon project's `lib/agent/knowledge-loader.ts`:
- *   1. At server boot, fetch the four discovery JSONs over plain REST.
- *   2. Write them to disk under `<knowledgeRoot>/`.
- *   3. Drop an INDEX.md beside them so the agent knows which file to
- *      consult for what.
- *   4. The agent uses its shell tool (`Bash` for Claude Agent,
- *      `terminal` for Hermes) to `cat` / `Read` the files when needed.
- *
- * Per-org isolation: each org's knowledgeRoot lives under its own
- * workspace, so multi-tenant deployments naturally separate. The
- * worker prefetches for the admin org at boot today; settings saves
- * can call `prefetchKnowledgePack` to refresh after a graphjin
- * config change.
- */
-
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -96,9 +73,7 @@ export type PrefetchKnowledgeResult = {
 };
 
 export type KnowledgePackPaths = {
-  /** Absolute filesystem path of the knowledge directory. */
   knowledgeRoot: string;
-  /** Absolute paths the agent should reference in prompts / read with its shell tool. */
   files: {
     tables: string;
     namespaces: string;
@@ -108,11 +83,6 @@ export type KnowledgePackPaths = {
   };
 };
 
-/**
- * Compute the absolute paths the agent should reference, without
- * touching the filesystem. Useful for buildPrompt — the prompt only
- * needs the paths, not the file contents.
- */
 export function knowledgePackPaths(knowledgeRoot: string): KnowledgePackPaths {
   return {
     knowledgeRoot,
@@ -151,7 +121,6 @@ async function fetchSection(
     } catch (e) {
       lastErr = e;
       if (attempt < MAX_RETRIES) {
-        // Exponential backoff (1s, 2s, 4s) — same shape Reckon uses.
         await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
       }
     } finally {
@@ -164,15 +133,6 @@ async function fetchSection(
   );
 }
 
-/**
- * Fetch the four discovery JSONs from `discoveryUrl` (e.g.
- * `http://graphjin:8080/api/v1/discovery`) and write them — plus
- * INDEX.md — under `destDir`.
- *
- * Best-effort: returns `ok:false` with `error` set if any section
- * fails (caller logs and continues; agent runs will fall back to
- * tool-based discovery).
- */
 export async function prefetchKnowledgePack(args: {
   discoveryUrl: string;
   destDir: string;
@@ -201,15 +161,6 @@ export async function prefetchKnowledgePack(args: {
   }
 }
 
-/**
- * Derive the discovery base URL from a stored `data_source.mcp_url`.
- * Both metric-agent and the worker boot used to compute this inline;
- * shared here so the heuristic stays in one place.
- *
- * Example:
- *   mcp_url = "http://localhost:8080/api/v1/mcp"
- *   ->        "http://localhost:8080/api/v1/discovery"
- */
 export function discoveryUrlFromMcpUrl(mcpUrl: string): string {
   return mcpUrl.replace(/\/mcp\/?$/, "/discovery");
 }
