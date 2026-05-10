@@ -1,3 +1,20 @@
+/**
+ * Hermes backend — drives `hermes acp` (ACP / JSON-RPC over stdio) to get a
+ * typed event stream of message chunks, tool calls, and tool results.
+ *
+ *   - sync mode (no onEvent): collect all `agent_message_chunk` text into
+ *     `finalText`; return raw (caller's parseJsonFromOutput / stripFences
+ *     handles fences).
+ *   - streaming mode (onEvent): emit incremental `message` events, tool
+ *     events, and `surface` if accumulated text contains a neko_a2ui fence
+ *     (fence stripped from finalText in this path).
+ *
+ * Each turn opens a fresh ACP session (no session/load) — the caller's
+ * prompt already carries history (see packages/llm/src/work/prompt.ts:108);
+ * Hermes ACP would replay that history again on session/load, double-counting
+ * context. backendState round-trips unchanged.
+ */
+
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +27,12 @@ import {
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
 import { hermesHomeForOrg } from "../host-provision";
+import {
+  AcpProtocolError,
+  createAcpClient,
+  type AcpClient,
+  type AcpNotification,
+} from "./hermes-acp-client";
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
@@ -17,6 +40,15 @@ function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
     process.kill(-child.pid, signal);
   } catch {
     // ESRCH if already exited
+  }
+  // Also signal the child directly. process.kill(-pid) fails when the child
+  // is not a process group leader — e.g. under test mocks where pid is fake.
+  // Real Hermes is detached, so the group kill above hits the same target;
+  // sending twice is idempotent for SIGTERM/SIGKILL.
+  try {
+    child.kill(signal);
+  } catch {
+    // ignore
   }
 }
 
@@ -55,7 +87,7 @@ export class HermesBackend implements AgentBackend {
       tag,
       orgId,
       workspace,
-      skills,
+      skills: _skills,
       signal,
       onEvent,
       backendState = {},
@@ -65,44 +97,36 @@ export class HermesBackend implements AgentBackend {
       ? `${prompt}\n\nCurrent user message:\n${userMessage}`
       : prompt;
 
-    const args = ["-z", fullPrompt];
-    if (skills && skills.length > 0) args.push("--skills", skills.join(","));
-
     if (onEvent) {
       await onEvent({ type: "status", message: "Hermes is working…" });
     }
 
     const maxAttempts = onEvent ? 1 : retries + 1;
     let lastErr: Error | undefined;
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const rawText = await spawnOnce({
-          args,
+        const out = await runOnce({
+          prompt: fullPrompt,
           timeoutMs,
           debug,
           tag,
           orgId,
           workspace,
           signal,
-          onStatus: onEvent
-            ? (message) => {
-                void onEvent({ type: "status", message });
-              }
-            : undefined,
+          onEvent,
         });
-        let finalText = rawText;
-        if (onEvent) {
-          const parsed = extractSurfaceMessages(rawText);
-          finalText = parsed.text;
-          if (parsed.messages.length > 0) {
-            await onEvent({ type: "surface", messages: parsed.messages });
+        if (out.error) {
+          lastErr = new Error(out.error);
+          if (debug) {
+            console.warn(
+              `[hermes] attempt ${attempt + 1}/${maxAttempts} failed: ${out.error}`,
+            );
           }
-          if (finalText) {
-            await onEvent({ type: "message", role: "assistant", content: finalText });
-          }
+          continue;
         }
         return {
-          finalText,
+          finalText: out.finalText,
           status: signal?.aborted ? "cancelled" : "completed",
           backendState,
         };
@@ -127,27 +151,34 @@ export class HermesBackend implements AgentBackend {
   }
 }
 
-type SpawnArgs = {
-  args: string[];
+type RunOnceArgs = {
+  prompt: string;
   timeoutMs: number;
   debug: boolean;
   tag: string | undefined;
   orgId: string | undefined;
   workspace: AgentRunOptions["workspace"];
   signal: AbortSignal | undefined;
-  onStatus?: (message: string) => void;
+  onEvent: AgentRunOptions["onEvent"];
 };
 
-async function spawnOnce({
-  args,
-  timeoutMs,
-  debug,
-  tag,
-  orgId,
-  workspace,
-  signal,
-  onStatus,
-}: SpawnArgs): Promise<string> {
+type RunOnceOutcome = {
+  finalText: string;
+  error?: string;
+};
+
+async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
+  const {
+    prompt,
+    timeoutMs,
+    debug,
+    tag,
+    orgId,
+    workspace,
+    signal,
+    onEvent,
+  } = args;
+
   let cwd: string;
   let cleanupScratch: (() => Promise<void>) | undefined;
   if (workspace) {
@@ -180,100 +211,224 @@ async function spawnOnce({
     env.HERMES_HOME = hermesHomeForOrg(orgId);
   }
 
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn("hermes", args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      cwd,
-      env,
-      detached: true,
-    });
-    const unregister = registerAgentCanceller(() =>
-      killProcessGroup(child, "SIGKILL"),
-    );
+  const child = spawn("hermes", ["acp", "--accept-hooks"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    cwd,
+    env,
+    detached: true,
+  });
+  const tagSuffix = tag ? ` tag=${tag}` : "";
 
-    const onAbort = () => killProcessGroup(child, "SIGTERM");
-    if (signal) {
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
+  const stderrChunks: Buffer[] = [];
+  let stderrLineBuffer = "";
+  child.stderr?.on("data", (c: Buffer) => {
+    stderrChunks.push(c);
+    if (onEvent) {
+      const { lines, rest } = consumeStatusLines(stderrLineBuffer + c.toString("utf8"));
+      stderrLineBuffer = rest;
+      for (const line of lines) {
+        void onEvent({ type: "status", message: line });
+      }
     }
+    if (debug) process.stderr.write(c);
+  });
 
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    let stderrLineBuffer = "";
-    let timer: NodeJS.Timeout | null = null;
-    let settled = false;
+  const unregister = registerAgentCanceller(() => killProcessGroup(child, "SIGKILL"));
+  const onAbort = () => killProcessGroup(child, "SIGTERM");
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
 
-    const finish = () => {
-      if (timer) clearTimeout(timer);
-      if (signal) signal.removeEventListener("abort", onAbort);
-      unregister();
-      cleanupScratch?.();
-    };
-    const settleResolve = (out: string) => {
-      if (settled) return;
-      settled = true;
-      finish();
-      resolve(out);
-    };
-    const settleReject = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      finish();
-      reject(err);
-    };
+  let timer: NodeJS.Timeout | null = null;
+  let timedOut = false;
+  let spawnError: Error | undefined;
+  child.on("error", (e) => {
+    spawnError = new Error(`hermes spawn failed: ${e.message}`);
+  });
+  const closedPromise = new Promise<{ code: number | null }>((resolve) => {
+    child.on("close", (code) => resolve({ code }));
+  });
 
-    child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
-    child.stderr.on("data", (c: Buffer) => {
-      stderrChunks.push(c);
-      if (onStatus) {
-        const { lines, rest } = consumeStatusLines(stderrLineBuffer + c.toString("utf8"));
-        stderrLineBuffer = rest;
-        for (const line of lines) {
-          onStatus(line);
-        }
-      }
-      if (debug) process.stderr.write(c);
-    });
+  const cleanup = async () => {
+    if (timer) clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onAbort);
+    unregister();
+    await cleanupScratch?.();
+  };
 
-    child.on("error", (e) => {
-      settleReject(new Error(`hermes spawn failed: ${e.message}`));
-    });
-
-    child.on("close", (code) => {
-      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
-      const stderr = Buffer.concat(stderrChunks).toString("utf8");
-      if (onStatus && stderrLineBuffer.trim()) {
-        onStatus(cleanStatusLine(stderrLineBuffer));
-        stderrLineBuffer = "";
-      }
-      if (code !== 0) {
-        settleReject(
-          new Error(`hermes exited ${code}: ${stderr.slice(-500) || "(no stderr)"}`),
-        );
-        return;
-      }
-      settleResolve(stdout.trim());
-    });
+  let client: AcpClient | undefined;
+  try {
+    client = createAcpClient(child);
 
     timer = setTimeout(() => {
+      timedOut = true;
       killProcessGroup(child, "SIGTERM");
-      settleReject(new Error(`hermes timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-  });
+
+    await client.request("initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+    });
+
+    // Always start a fresh ACP session per turn. Hermes session/load replays
+    // the entire conversation as session/update notifications, but the worker
+    // already injects "Conversation so far:..." into the prompt
+    // (packages/llm/src/work/prompt.ts:108) — using session/load on top of
+    // that double-counts context.
+    const fresh = await client.request<{ sessionId: string }>("session/new", {
+      cwd,
+      mcpServers: [],
+    });
+    const sessionId = fresh.sessionId;
+
+    let accumulatedText = "";
+    let lastEmittedAssistantText = "";
+    const toolNames = new Map<string, string>();
+
+    client.onNotification((notif) => {
+      const update = notif.update;
+      switch (update.sessionUpdate) {
+        case "agent_message_chunk": {
+          const text = update.content?.text ?? "";
+          if (!text) return;
+          accumulatedText += text;
+          if (onEvent) {
+            const trimmed = accumulatedText.trim();
+            if (trimmed && trimmed !== lastEmittedAssistantText) {
+              lastEmittedAssistantText = trimmed;
+              void onEvent({ type: "message", role: "assistant", content: trimmed });
+            }
+          }
+          return;
+        }
+        case "agent_thought_chunk": {
+          if (debug && onEvent) void onEvent({ type: "status", message: "Thinking…" });
+          return;
+        }
+        case "tool_call": {
+          if (!onEvent) return;
+          const id = update.toolCallId;
+          const name = update.kind || update.title || "tool";
+          toolNames.set(id, name);
+          void onEvent({
+            type: "tool_start",
+            id,
+            name,
+            input: update.locations ?? update.rawInput,
+          });
+          if (update.title) {
+            void onEvent({ type: "status", message: update.title });
+          }
+          return;
+        }
+        case "tool_call_update": {
+          if (!onEvent) return;
+          const id = update.toolCallId;
+          const status = update.status;
+          if (status === "completed" || status === "failed") {
+            void onEvent({
+              type: "tool_end",
+              id,
+              result: status === "completed" ? update.rawOutput ?? update.content : undefined,
+              error: status === "failed" ? extractErrorText(update.content ?? update.rawOutput) : undefined,
+            });
+            const name = toolNames.get(id);
+            if (name) {
+              void onEvent({
+                type: "status",
+                message: status === "failed" ? `${name} failed.` : `${name} finished.`,
+              });
+            }
+          } else {
+            void onEvent({
+              type: "tool_delta",
+              id,
+              delta: { status: status ?? "in_progress", content: update.content, rawOutput: update.rawOutput },
+            });
+          }
+          return;
+        }
+        case "plan": {
+          if (!onEvent) return;
+          const next = update.entries.find((e) => e.status !== "completed");
+          if (next) void onEvent({ type: "status", message: next.content });
+          return;
+        }
+        default:
+          return;
+      }
+    });
+
+    let promptError: string | undefined;
+    try {
+      await client.request("session/prompt", {
+        sessionId,
+        prompt: [{ type: "text", text: prompt }],
+      });
+    } catch (e) {
+      if (e instanceof AcpProtocolError) {
+        promptError = `hermes: ${e.message}`;
+      } else {
+        throw e;
+      }
+    }
+
+    if (timedOut) {
+      throw new Error(`hermes timed out after ${timeoutMs}ms`);
+    }
+    if (promptError) {
+      return { finalText: "", error: promptError };
+    }
+
+    let finalText = accumulatedText;
+    if (onEvent) {
+      const parsed = extractSurfaceMessages(accumulatedText);
+      finalText = parsed.text;
+      if (parsed.messages.length > 0) {
+        await onEvent({ type: "surface", messages: parsed.messages });
+      }
+      if (finalText && finalText !== lastEmittedAssistantText) {
+        await onEvent({ type: "message", role: "assistant", content: finalText });
+      }
+    }
+
+    return { finalText: finalText.trim() };
+  } catch (e) {
+    if (spawnError) throw spawnError;
+    throw e;
+  } finally {
+    client?.dispose();
+    if (child.exitCode == null && !signal?.aborted) {
+      killProcessGroup(child, "SIGTERM");
+    }
+    await closedPromise.catch(() => {});
+    if (onEvent && stderrLineBuffer.trim()) {
+      void onEvent({ type: "status", message: cleanStatusLine(stderrLineBuffer) });
+    }
+    if (debug) {
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (stderr) process.stderr.write(stderr);
+    }
+    await cleanup();
+  }
+}
+
+function extractErrorText(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object") return JSON.stringify(raw);
+  return "Tool failed";
 }
 
 function consumeStatusLines(raw: string): { lines: string[]; rest: string } {
   const parts = raw.split(/\r?\n/);
   const rest = parts.pop() ?? "";
-  const lines = parts
-    .map(cleanStatusLine)
-    .filter(Boolean)
-    .slice(-5);
+  const lines = parts.map(cleanStatusLine).filter(Boolean).slice(-5);
   return { lines, rest };
 }
 
 function cleanStatusLine(raw: string): string {
-  return raw.replace(/\[[0-9;]*m/g, "").trim();
+  return raw.replace(/\[[0-9;]*m/g, "").trim();
 }
 
 const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;
