@@ -580,10 +580,11 @@ export default function WorkScreen() {
 
           <section className="work-panel">
             <div className="work-panel-head">
-              <div>
-                <div className="greet" style={{ fontSize: 28, marginBottom: 4 }}>
+              <div className="work-thread-head">
+                <span className="work-thread-eyebrow">Thread</span>
+                <span className="work-thread-title" title={bundle?.thread.title || "Work"}>
                   {bundle?.thread.title || "Work"}
-                </div>
+                </span>
               </div>
             </div>
 
@@ -593,7 +594,9 @@ export default function WorkScreen() {
               ) : bundle?.messages.length ? (
                 bundle.messages.map((message, index) => (
                   <div key={`${message.id}-${index}`} className="work-turn">
-                    <MessageBubble message={message} />
+                    {message.role === "user" ? (
+                      <MessageBubble message={message} />
+                    ) : null}
                     {message.role === "user" && message.runId ? (
                       <RunActivity
                         run={runLookup.get(message.runId) ?? null}
@@ -603,6 +606,9 @@ export default function WorkScreen() {
                     ) : null}
                     {message.role === "assistant" && message.runId ? (
                       <RunSurfaces events={bundle.eventsByRun[message.runId] ?? []} />
+                    ) : null}
+                    {message.role === "assistant" ? (
+                      <MessageBubble message={message} />
                     ) : null}
                   </div>
                 ))
