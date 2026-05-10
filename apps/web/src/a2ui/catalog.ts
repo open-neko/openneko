@@ -20,6 +20,7 @@ export const ComponentTypes = {
   BriefingCard: "BriefingCard",
   MetricCard: "MetricCard",
   ChatResponse: "ChatResponse",
+  Markdown: "Markdown",
 } as const;
 
 // Mood enum shared across components
@@ -46,6 +47,11 @@ export interface BriefingProps {
   children: string[]; // IDs of BriefingCard components
 }
 
+export interface MarkdownProps {
+  component: "Markdown";
+  text: string;
+}
+
 export interface BriefingCardProps {
   component: "BriefingCard";
   metricId: string;   // DB UUID — needed for pin/dashboard API calls
@@ -64,4 +70,5 @@ export interface BriefingCardProps {
 // Union of all component props
 export type ComponentProps =
   | BriefingProps
-  | BriefingCardProps;
+  | BriefingCardProps
+  | MarkdownProps;

@@ -68,6 +68,27 @@ export function resolveComponent(
   return resolved;
 }
 
+function flattenComponent(comp: A2UIComponent): A2UIComponent[] {
+  const out: A2UIComponent[] = [];
+  const normalized: A2UIComponent = { ...comp };
+  const rawChildren = comp.children;
+  if (Array.isArray(rawChildren)) {
+    const newChildren: string[] = [];
+    for (const child of rawChildren) {
+      if (typeof child === "string") {
+        newChildren.push(child);
+      } else if (child && typeof child === "object" && "id" in child) {
+        const childComp = child as A2UIComponent;
+        newChildren.push(childComp.id);
+        for (const nested of flattenComponent(childComp)) out.push(nested);
+      }
+    }
+    normalized.children = newChildren;
+  }
+  out.push(normalized);
+  return out;
+}
+
 /** Create a new empty surface */
 export function createSurface(surfaceId: string, catalogId: string, theme?: Record<string, unknown>): SurfaceState {
   return {
@@ -97,7 +118,9 @@ export function applyMessage(
     if (!surface) return next;
     const updated = { ...surface, components: new Map(surface.components) };
     for (const comp of components) {
-      updated.components.set(comp.id, comp);
+      for (const flat of flattenComponent(comp)) {
+        updated.components.set(flat.id, flat);
+      }
     }
     next.set(surfaceId, updated);
   }

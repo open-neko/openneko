@@ -37,14 +37,33 @@ export function buildWorkPrompt(args: {
 
   const cardInstructions = supportsCardTool
     ? [
-        "Use normal chat prose for ordinary answers.",
-        "Use `mcp__neko_ui__render_cards` only when structured Neko cards would help, such as KPIs, tables, charts, or dashboard-style summaries.",
-        "After calling `mcp__neko_ui__render_cards`, still write a 1-3 sentence prose summary.",
+        "ALL responses to the user MUST go through `mcp__neko_ui__render_cards` — wrap your prose in a `Markdown` component, and add KPI/Table/Chart cards alongside it when structured data helps. Do NOT emit chat prose outside the tool call.",
       ].join(" ")
     : [
-        "Use normal chat prose for ordinary answers.",
-        "When structured cards would help, include a fenced ```neko_a2ui block containing a JSON array of A2UI v0.9 messages, then follow it with a short prose summary.",
-      ].join(" ");
+        "ALL responses to the user MUST be emitted as a single fenced ```neko_a2ui block containing A2UI v0.9 JSON messages.",
+        "The fence body is a JSON ARRAY (not JSX, not HTML, not bare component objects).",
+        "Do NOT write any prose outside the fence; the fence is the entire response.",
+        "",
+        "Components are emitted FLAT inside `updateComponents.components` — every component is at the top level of that array. Do NOT nest components inside other components' `children`.",
+        "",
+        "Catalog (every component MUST have a `component` field with one of these names):",
+        "  - `Markdown` — narrative text. Props: { text: string (markdown) }. Use this for ANY prose.",
+        "  - `BriefingCard` — KPI card. Props: { metricId: string, source: 'chat', mood: 'good'|'watch'|'act', text: string, metric: string, label: string, detail: string, chartType: 'kpi'|'line'|'bar'|'area'|'donut', chartData: Array<{d:string,v:number,t?:number}> | [] }.",
+        "",
+        "Required envelope — each message has `version: \"v0.9\"` and ONE of `createSurface`/`updateComponents`. Most responses need just one of each:",
+        "```neko_a2ui",
+        "[",
+        '  {"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"urn:app:catalog:briefing:v1"}},',
+        '  {"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[',
+        '    {"id":"intro","component":"Markdown","text":"Brief 1-2 sentence intro to the answer."},',
+        '    {"id":"card1","component":"BriefingCard","metricId":"top-product","source":"chat","mood":"good","text":"Mountain-200 leads","metric":"$674,216","label":"Total Profit","detail":"Across all sales channels.","chartType":"kpi","chartData":[]},',
+        '    {"id":"detail","component":"Markdown","text":"Optional follow-up prose with tables, lists, etc."}',
+        "  ]}}",
+        "]",
+        "```",
+        "",
+        "If the answer is purely prose (no metrics/cards), emit just a single `Markdown` component inside `updateComponents`.",
+      ].join("\n");
 
   const skillInstructions = supportsSkillTool
     ? "When the user asks you to create or update a skill, prefer `mcp__neko_skills__create_skill`."

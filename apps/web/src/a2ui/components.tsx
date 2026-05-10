@@ -8,10 +8,11 @@
  * to populate the registry.
  */
 
+import ReactMarkdown from "react-markdown";
 import { registerComponent, renderChildren } from "./renderer";
 import type { RenderContext } from "./renderer";
 import type { A2UIComponent } from "./types";
-import type { BriefingCardProps, BriefingProps } from "./catalog";
+import type { BriefingCardProps, BriefingProps, MarkdownProps } from "./catalog";
 import BriefingCard from "@/components/BriefingCard";
 
 // ─── Briefing ───
@@ -26,6 +27,16 @@ registerComponent("Briefing", (comp: A2UIComponent, ctx: RenderContext) => {
         {props.subtitle}
       </div>
       {props.children && renderChildren(props.children, ctx)}
+    </div>
+  );
+});
+
+// ─── Markdown ───
+registerComponent("Markdown", (comp: A2UIComponent) => {
+  const props = comp as unknown as MarkdownProps & { id: string };
+  return (
+    <div key={props.id} className="work-markdown">
+      <ReactMarkdown>{props.text}</ReactMarkdown>
     </div>
   );
 });

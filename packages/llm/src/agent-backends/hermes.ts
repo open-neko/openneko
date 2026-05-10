@@ -38,6 +38,44 @@ function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
 
 const FENCE_RE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
 
+const A2UI_FENCE_OPEN = "```neko_a2ui";
+const A2UI_FENCE_CLOSE = "\n```";
+
+function extractMarkdownText(messages: Array<Record<string, unknown>>): string {
+  const out: string[] = [];
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    if (obj.component === "Markdown" && typeof obj.text === "string") {
+      out.push(obj.text);
+    }
+    for (const value of Object.values(obj)) visit(value);
+  };
+  visit(messages);
+  return out.join("\n\n").trim();
+}
+
+function outsideFenceText(raw: string): string {
+  let out = "";
+  let i = 0;
+  while (i < raw.length) {
+    const open = raw.indexOf(A2UI_FENCE_OPEN, i);
+    if (open === -1) {
+      out += raw.slice(i);
+      break;
+    }
+    out += raw.slice(i, open);
+    const close = raw.indexOf(A2UI_FENCE_CLOSE, open + A2UI_FENCE_OPEN.length);
+    if (close === -1) break;
+    i = close + A2UI_FENCE_CLOSE.length;
+  }
+  return out;
+}
+
 export function parseJsonFromOutput(raw: string): unknown {
   const trimmed = raw.trim();
   const fenced = trimmed.match(FENCE_RE);
@@ -261,6 +299,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     const sessionId = fresh.sessionId;
 
     let accumulatedText = "";
+    let emittedOutsideLen = 0;
 
     client.onNotification((notif) => {
       const update = notif.update;
@@ -270,7 +309,12 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
           if (!text) return;
           accumulatedText += text;
           if (onEvent) {
-            void onEvent({ type: "message", role: "assistant", content: text });
+            const outside = outsideFenceText(accumulatedText);
+            const delta = outside.slice(emittedOutsideLen);
+            if (delta) {
+              emittedOutsideLen = outside.length;
+              void onEvent({ type: "message", role: "assistant", content: delta });
+            }
           }
           return;
         }
@@ -347,11 +391,11 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     let finalText = accumulatedText;
     if (onEvent) {
       const parsed = extractSurfaceMessages(accumulatedText);
-      finalText = parsed.text;
+      const markdownText = extractMarkdownText(parsed.messages);
+      finalText = (markdownText || parsed.text).trim();
       if (parsed.messages.length > 0) {
         await onEvent({ type: "surface", messages: parsed.messages });
       }
-      // finalText (a2ui fence stripped) is for persistence only — the worker overwrites the streamed assistant message after the run.
     }
 
     return { finalText: finalText.trim() };

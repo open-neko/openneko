@@ -32,15 +32,32 @@ describe("extractSurfaceMessages", () => {
     expect(result.text).not.toContain("v0.9");
   });
 
-  it("falls back to text when JSON inside fence is malformed", () => {
-    const raw = "Prose. ```neko_a2ui\n{not json}\n``` more prose.";
+  it("wraps malformed fence body as a synthetic Markdown surface", () => {
+    const raw = "Prose. ```neko_a2ui\n<Markdown>hello there</Markdown>\n``` more prose.";
     const result = extractSurfaceMessages(raw);
-    expect(result.messages).toEqual([]);
     expect(result.text).toContain("Prose.");
+    expect(result.text).toContain("more prose.");
+    expect(result.messages).toHaveLength(2);
+    const components = (result.messages[1] as unknown as {
+      updateComponents: { components: Array<{ component: string; text?: string }> };
+    }).updateComponents.components;
+    expect(components[0].component).toBe("Markdown");
+    expect(components[0].text).toBe("hello there");
   });
 
-  it("returns empty messages when JSON parses but isn't an array", () => {
+  it("wraps non-array JSON as a synthetic Markdown surface (preserves the body)", () => {
     const raw = '```neko_a2ui\n{"version": "v0.9"}\n```';
+    const result = extractSurfaceMessages(raw);
+    expect(result.messages).toHaveLength(2);
+    const components = (result.messages[1] as unknown as {
+      updateComponents: { components: Array<{ component: string; text?: string }> };
+    }).updateComponents.components;
+    expect(components[0].component).toBe("Markdown");
+    expect(components[0].text).toContain("v0.9");
+  });
+
+  it("returns empty messages when fence body is empty after JSX strip", () => {
+    const raw = "```neko_a2ui\n<Markdown></Markdown>\n```";
     const result = extractSurfaceMessages(raw);
     expect(result.messages).toEqual([]);
   });
