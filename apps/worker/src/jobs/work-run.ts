@@ -40,8 +40,14 @@ export async function runWorkRun(
 
   const bundle = await getWorkThreadBundle(orgId, threadId);
   if (!bundle) {
-    await finishWorkRun(runId, "failed", "Thread disappeared before run start.");
-    throw new Error(`work_run ${runId}: thread ${threadId} not found`);
+    // Thread was deleted between enqueue and dispatch (common when users
+    // cancel + delete a thread mid-run). Mark the run failed and return
+    // cleanly — throwing makes pg-boss retry forever.
+    await finishWorkRun(runId, "failed", "Thread deleted before run start.");
+    console.warn(
+      `[work-run] thread ${threadId} not found for run ${runId}; marking failed and skipping`,
+    );
+    return;
   }
 
   const backend = await resolveAgentBackend(orgId);
