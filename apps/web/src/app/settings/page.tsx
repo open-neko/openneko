@@ -66,7 +66,7 @@ export default async function SettingsPage() {
     {
       href: "/settings/data",
       title: "Data source",
-      copy: "GraphQL endpoint OpenNeko reads business data from.",
+      copy: "Graphjin server endpoint OpenNeko should connect to.",
       status: dataReady ? "Configured" : "Not set",
       statusOk: dataReady,
     },
