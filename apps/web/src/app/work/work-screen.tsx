@@ -838,7 +838,6 @@ function RunActivity({
         if (item.kind === "status") {
           return (
             <div key={`status-${index}`} className="work-status-row">
-              <Sparkles size={12} />
               <span>{item.message}</span>
             </div>
           );
@@ -927,7 +926,16 @@ function buildActivityItems(events: WorkEvent[]): ActivityItem[] {
     }
   }
   closeGroup();
-  return items;
+
+  // Keep only the most recent status pill — earlier ones are stale state
+  // transitions and clutter the timeline once tool work has happened.
+  let lastStatusIdx = -1;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].kind === "status") lastStatusIdx = i;
+  }
+  return lastStatusIdx === -1
+    ? items
+    : items.filter((it, i) => it.kind !== "status" || i === lastStatusIdx);
 }
 
 function ToolGroup({ tools }: { tools: ToolItem[] }) {
@@ -1020,21 +1028,30 @@ function ToolRow({ tool }: { tool: ToolItem }) {
       {open ? (
         <div className="work-tool-row-detail">
           {tool.input !== undefined ? (
-            <pre className="work-tool-row-pre">{formatToolPayload(tool.input)}</pre>
+            <>
+              <div className="work-tool-row-section-label">Input</div>
+              <pre className="work-tool-row-pre">{formatToolPayload(tool.input)}</pre>
+            </>
           ) : null}
-          {tool.deltas.map((delta, i) => {
-            const text = describeToolDelta(delta);
-            return text ? (
+          {tool.deltas
+            .map((d) => describeToolDelta(d))
+            .filter(Boolean)
+            .map((text, i) => (
               <div key={i} className="work-tool-delta">
                 {text}
               </div>
-            ) : null;
-          })}
+            ))}
           {tool.end?.result ? (
-            <pre className="work-tool-row-pre">{formatToolPayload(tool.end.result)}</pre>
+            <>
+              <div className="work-tool-row-section-label">Output</div>
+              <pre className="work-tool-row-pre">{formatToolPayload(tool.end.result)}</pre>
+            </>
           ) : null}
           {tool.end?.error ? (
-            <pre className="work-tool-row-pre work-tool-row-pre-error">{tool.end.error}</pre>
+            <>
+              <div className="work-tool-row-section-label">Error</div>
+              <pre className="work-tool-row-pre work-tool-row-pre-error">{tool.end.error}</pre>
+            </>
           ) : null}
         </div>
       ) : null}
