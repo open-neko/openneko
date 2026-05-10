@@ -1,23 +1,27 @@
 /**
- * Claude Agent backend — wraps the @anthropic-ai/claude-agent-sdk (which
- * itself spawns the Claude Code CLI as a subprocess and proxies messages
- * over stdio). Handles both Dashboard (sync) and Work (streaming) calls.
+ * Claude Agent backend — wraps `@anthropic-ai/claude-agent-sdk` (which spawns
+ * the Claude Code CLI as a subprocess and proxies messages over stdio).
  *
- *   - sync mode: pass `prompt` as the SDK input; collect the final
- *     `result.subtype === "success"` text; return as `finalText`. No
- *     workspace, no resume, no events.
- *   - streaming mode: with `onEvent`, additionally:
- *       - cwd = workspace.claudeProjectRoot
- *       - CLAUDE_CONFIG_DIR = workspace.claudeConfigRoot
- *       - PATH prepended with workspace.binRoot (graphjin guard)
- *       - resume from backendState["claude-agent"].sessionId if present
- *       - emit tool_start/tool_end/message events from the SDK stream
- *       - install MCP servers passed in via opts.mcpServers
+ *   - sync mode: pass `prompt` as the SDK input; collect `result.subtype === "success"`
+ *     text; return as `finalText`. No workspace, no resume, no events.
+ *   - streaming mode (`onEvent`): cwd = workspace.claudeProjectRoot,
+ *     CLAUDE_CONFIG_DIR = workspace.claudeConfigRoot, PATH prepended with
+ *     workspace.binRoot (graphjin guard), resume from
+ *     backendState["claude-agent"].sessionId, emit tool_start/tool_end/message
+ *     events from the SDK stream, install MCP servers passed in via
+ *     opts.mcpServers, surface (neko_a2ui) extraction.
  *
  * Auth: pulls the Anthropic API key + Claude model from the primary
  * `llm_provider_config` row. UI enforces (and `agent-backend-resolver` re-
- * validates) that `provider === 'anthropic'` and the model starts with
- * `claude-` whenever the agent backend is `claude-agent`.
+ * validates) `provider === 'anthropic'` and a `claude-` model.
+ *
+ * Caller-extensible SDK features (all optional, all forwarded verbatim):
+ *   skills, outputSchema, forkSession, agents, hooks, canUseTool,
+ *   onElicitation. When `canUseTool` is set, `bypassPermissions` is dropped —
+ *   the SDK semantics short-circuit canUseTool under bypass.
+ *
+ * Internal hooks: a PostToolUse hook captures `duration_ms` so `tool_end`
+ * events carry timing. Caller-supplied hooks are merged on top.
  */
 
 import { spawnSync } from "node:child_process";
@@ -29,6 +33,7 @@ import {
   type AgentRunResult,
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
+import { extractSurfaceMessages } from "./surface";
 
 let _claudeOnPathChecked = false;
 let _claudeOnPath = false;
@@ -73,40 +78,22 @@ export class ClaudeAgentBackend implements AgentBackend {
 
   async run(opts: AgentRunOptions): Promise<AgentRunResult> {
     const {
-      prompt,
-      userMessage,
       timeoutMs = DEFAULT_TIMEOUT_MS,
       retries = DEFAULT_RETRIES,
       debug = false,
-      tag,
-      workspace,
       signal,
       onEvent,
       backendState = {},
-      mcpServers,
     } = opts;
 
     const streaming = !!onEvent;
-    // Streaming mode is one-shot per turn — Work runs commit user state
-    // before invoking us, retrying would double-write events.
     const maxAttempts = streaming ? 1 : retries + 1;
 
     let lastErr: Error | undefined;
     let lastSessionId: string | undefined;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const out = await this.runOnce({
-          prompt,
-          userMessage,
-          timeoutMs,
-          debug,
-          tag,
-          workspace,
-          signal,
-          onEvent,
-          backendState,
-          mcpServers,
-        });
+        const out = await this.runOnce(opts, timeoutMs);
         if (out.sessionId) lastSessionId = out.sessionId;
         if (out.error) {
           lastErr = new Error(out.error);
@@ -116,6 +103,9 @@ export class ClaudeAgentBackend implements AgentBackend {
             );
           }
           continue;
+        }
+        if (streaming && out.surfaceMessages.length > 0) {
+          await onEvent!({ type: "surface", messages: out.surfaceMessages });
         }
         if (streaming && out.finalText) {
           await onEvent!({ type: "message", role: "assistant", content: out.finalText });
@@ -152,30 +142,33 @@ export class ClaudeAgentBackend implements AgentBackend {
     };
   }
 
-  private async runOnce(args: {
-    prompt: string;
-    userMessage: string | undefined;
-    timeoutMs: number;
-    debug: boolean;
-    tag: string | undefined;
-    workspace: AgentRunOptions["workspace"];
-    signal: AbortSignal | undefined;
-    onEvent: AgentRunOptions["onEvent"];
-    backendState: Record<string, unknown>;
-    mcpServers: AgentRunOptions["mcpServers"];
-  }): Promise<{ finalText: string; sessionId?: string; error?: string }> {
+  private async runOnce(
+    opts: AgentRunOptions,
+    timeoutMs: number,
+  ): Promise<{
+    finalText: string;
+    surfaceMessages: import("../agent-backend").AgentSurfaceMessage[];
+    sessionId?: string;
+    error?: string;
+  }> {
     const {
       prompt,
       userMessage,
-      timeoutMs,
-      debug,
+      debug = false,
       tag,
       workspace,
       signal,
       onEvent,
-      backendState,
+      backendState = {},
       mcpServers,
-    } = args;
+      skills,
+      outputSchema,
+      forkSession,
+      agents,
+      hooks: callerHooks,
+      canUseTool,
+      onElicitation,
+    } = opts;
 
     const abortController = new AbortController();
     const timer = setTimeout(() => abortController.abort(), timeoutMs);
@@ -188,23 +181,17 @@ export class ClaudeAgentBackend implements AgentBackend {
 
     const resume = readSessionId(backendState["claude-agent"]);
     let sessionId = resume;
-    let partialAssistantText = "";
-    let lastAssistantText = "";
+    let accumulatedText = "";
     let lastEmittedAssistantText = "";
     let finalText = "";
+    let surfaceMessages: import("../agent-backend").AgentSurfaceMessage[] = [];
     const toolNames = new Map<string, string>();
+    const toolDurations = new Map<string, number>();
 
-    // SDK input vs system prompt:
-    //   - sync mode: prompt = the entire single-shot prompt → SDK prompt
-    //   - streaming mode: caller already includes history/system in prompt;
-    //     userMessage (when set) is the separate fresh user input. We pass
-    //     userMessage as the SDK prompt so Claude's sees the latest turn,
-    //     and stuff the system context via systemPrompt.append.
     const sdkPrompt = userMessage ?? prompt;
     const sdkOptions: Record<string, unknown> = {
       model: this.config.model,
       maxTurns: MAX_TURNS,
-      permissionMode: "bypassPermissions",
       tools: { type: "preset", preset: "claude_code" },
       env: {
         ...process.env,
@@ -221,34 +208,61 @@ export class ClaudeAgentBackend implements AgentBackend {
         ? (data: string) => process.stderr.write(`[claude-agent${tagSuffix}] ${data}`)
         : undefined,
     };
+
+    if (canUseTool) {
+      sdkOptions.canUseTool = canUseTool;
+    } else {
+      sdkOptions.permissionMode = "bypassPermissions";
+    }
+    if (outputSchema) {
+      sdkOptions.outputFormat = { type: "json_schema", schema: outputSchema };
+    }
+    if (onElicitation) sdkOptions.onElicitation = onElicitation;
+
     if (workspace) {
       sdkOptions.cwd = workspace.claudeProjectRoot;
-      sdkOptions.allowDangerouslySkipPermissions = true;
-      sdkOptions.skills = "all";
+      if (!canUseTool) sdkOptions.allowDangerouslySkipPermissions = true;
+      sdkOptions.skills = skills && skills.length > 0 ? skills : "all";
       sdkOptions.includeHookEvents = true;
       sdkOptions.includePartialMessages = true;
       sdkOptions.agentProgressSummaries = true;
       if (mcpServers) sdkOptions.mcpServers = mcpServers;
       if (resume) sdkOptions.resume = resume;
+      if (forkSession) sdkOptions.forkSession = forkSession;
+      if (agents) sdkOptions.agents = agents;
       if (userMessage) {
         sdkOptions.systemPrompt = { type: "preset", preset: "claude_code", append: prompt };
       }
     }
+
+    sdkOptions.hooks = mergeHooks(callerHooks, {
+      PostToolUse: [
+        {
+          hooks: [
+            async (input: Record<string, unknown>) => {
+              const id = String(input.tool_use_id ?? "");
+              const ms = typeof input.duration_ms === "number" ? input.duration_ms : undefined;
+              if (id && ms !== undefined) toolDurations.set(id, ms);
+              return { continue: true };
+            },
+          ],
+        },
+      ],
+    });
 
     try {
       const stream = query({ prompt: sdkPrompt, options: sdkOptions });
 
       for await (const message of stream) {
         const record = message as Record<string, unknown>;
+
         if (record.type === "system" && record.subtype === "init") {
           if (typeof record.session_id === "string") sessionId = record.session_id;
           continue;
         }
         if (record.type === "system" && onEvent) {
           const statusMessage = describeSystemStatus(record);
-          if (statusMessage) {
-            await onEvent({ type: "status", message: statusMessage });
-          }
+          if (statusMessage) await onEvent({ type: "status", message: statusMessage });
           continue;
         }
         if (record.type === "tool_progress" && onEvent) {
@@ -267,9 +281,7 @@ export class ClaudeAgentBackend implements AgentBackend {
         }
         if (record.type === "tool_use_summary" && onEvent) {
           const summary = typeof record.summary === "string" ? record.summary.trim() : "";
-          if (summary) {
-            await onEvent({ type: "status", message: summary });
-          }
+          if (summary) await onEvent({ type: "status", message: summary });
           continue;
         }
         if (record.type === "auth_status" && onEvent) {
@@ -281,16 +293,11 @@ export class ClaudeAgentBackend implements AgentBackend {
         if (record.type === "stream_event" && onEvent) {
           const deltaText = extractPartialAssistantText(record.event);
           if (deltaText) {
-            partialAssistantText += deltaText;
-            const streamedText = partialAssistantText.trim();
+            accumulatedText += deltaText;
+            const streamedText = accumulatedText.trim();
             if (streamedText && streamedText !== lastEmittedAssistantText) {
-              lastAssistantText = streamedText;
               lastEmittedAssistantText = streamedText;
-              await onEvent({
-                type: "message",
-                role: "assistant",
-                content: streamedText,
-              });
+              await onEvent({ type: "message", role: "assistant", content: streamedText });
             }
           }
           continue;
@@ -303,8 +310,7 @@ export class ClaudeAgentBackend implements AgentBackend {
             if (block.type === "text" && typeof block.text === "string") {
               const text = block.text.trim();
               if (text) {
-                partialAssistantText = text;
-                lastAssistantText = text;
+                accumulatedText = text;
                 sawText = true;
               }
             } else if (block.type === "tool_use" && onEvent) {
@@ -317,19 +323,12 @@ export class ClaudeAgentBackend implements AgentBackend {
                 name: toolName,
                 input: block.input,
               });
-              await onEvent({
-                type: "status",
-                message: `Using ${toolName}…`,
-              });
+              await onEvent({ type: "status", message: `Using ${toolName}…` });
             }
           }
-          if (sawText && onEvent && lastAssistantText !== lastEmittedAssistantText) {
-            lastEmittedAssistantText = lastAssistantText;
-            await onEvent({
-              type: "message",
-              role: "assistant",
-              content: lastAssistantText,
-            });
+          if (sawText && onEvent && accumulatedText !== lastEmittedAssistantText) {
+            lastEmittedAssistantText = accumulatedText;
+            await onEvent({ type: "message", role: "assistant", content: accumulatedText });
           }
           continue;
         }
@@ -340,6 +339,14 @@ export class ClaudeAgentBackend implements AgentBackend {
             if (block.type !== "tool_result") continue;
             const text = extractToolResultText(block.content);
             const toolUseId = String(block.tool_use_id ?? "");
+            const durationMs = toolDurations.get(toolUseId);
+            if (durationMs !== undefined) {
+              await onEvent({
+                type: "tool_delta",
+                id: toolUseId,
+                delta: { durationMs },
+              });
+            }
             await onEvent({
               type: "tool_end",
               id: toolUseId,
@@ -350,9 +357,7 @@ export class ClaudeAgentBackend implements AgentBackend {
             if (toolName) {
               await onEvent({
                 type: "status",
-                message: block.is_error
-                  ? `${toolName} failed.`
-                  : `${toolName} finished.`,
+                message: block.is_error ? `${toolName} failed.` : `${toolName} finished.`,
               });
             }
           }
@@ -361,10 +366,18 @@ export class ClaudeAgentBackend implements AgentBackend {
         if (record.type === "result") {
           if (typeof record.session_id === "string") sessionId = record.session_id;
           if (record.subtype === "success") {
-            finalText = String(record.result ?? lastAssistantText ?? "").trim();
+            const raw = String(record.result ?? accumulatedText ?? "").trim();
+            if (onEvent) {
+              const parsed = extractSurfaceMessages(raw);
+              finalText = parsed.text;
+              surfaceMessages = parsed.messages;
+            } else {
+              finalText = raw;
+            }
           } else {
             return {
               finalText: "",
+              surfaceMessages: [],
               sessionId,
               error: String(record.result ?? `claude-agent ${record.subtype ?? "failed"}`),
             };
@@ -372,7 +385,8 @@ export class ClaudeAgentBackend implements AgentBackend {
         }
       }
 
-      return { finalText: (finalText || lastAssistantText).trim(), sessionId };
+      const resolved = (finalText || accumulatedText).trim();
+      return { finalText: resolved, surfaceMessages, sessionId };
     } finally {
       clearTimeout(timer);
       unregister();
@@ -468,4 +482,22 @@ function describeSystemStatus(record: Record<string, unknown>): string | null {
     default:
       return null;
   }
+}
+
+type HookMatcher = { matcher?: string; hooks: unknown[]; timeout?: number };
+
+export function mergeHooks(
+  caller: Record<string, unknown> | undefined,
+  internal: Record<string, HookMatcher[]>,
+): Record<string, HookMatcher[]> {
+  const merged: Record<string, HookMatcher[]> = {};
+  for (const [event, matchers] of Object.entries(internal)) {
+    merged[event] = [...matchers];
+  }
+  if (!caller) return merged;
+  for (const [event, matchers] of Object.entries(caller)) {
+    if (!Array.isArray(matchers)) continue;
+    merged[event] = [...(merged[event] ?? []), ...(matchers as HookMatcher[])];
+  }
+  return merged;
 }
