@@ -13,11 +13,9 @@ out/
 .env.local
 .env.*.local
 
-# local GraphJin config (per-developer; copy from db/graphjin/dev.example.yml)
-db/graphjin/dev.yml
-
-# GraphJin runtime cache (server writes here; bind-mount leaks onto host)
-db/graphjin/queries/
+# GraphJin's working dir — everything except the template is runtime
+db/graphjin/*
+!db/graphjin/dev.example.yml
 
 # local onboarding scratch
 adventureworks-onboarding.md
