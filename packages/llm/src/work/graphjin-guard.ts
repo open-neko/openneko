@@ -4,14 +4,10 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
- * GraphJin write-path subcommands. The agent's read-only contract
- * (set in the prompt + the GraphJin knowledge pack) drives every query
- * through `graphjin cli execute_graphql --args '{"query":"..."}'`.
- * These subcommands mutate server state and must be blocked even if
- * the model gets creative.
+ * GraphJin write-path subcommands. Even when the agent goes through
+ * `graphjin cli`, these mutate server state and must be blocked.
  *
- * Mirrors Reckon's `inspectBashForGraphjinMutations` denylist —
- * the agent runs the same `graphjin cli` shape there too.
+ * Mirrors Reckon's `inspectBashForGraphjinMutations` denylist.
  */
 const WRITE_SUBCOMMANDS = [
   "save_workflow",
@@ -28,17 +24,24 @@ const EXECUTOR_SUBCOMMANDS = [
   "execute_workflow",
 ] as const;
 
+/**
+ * Allowlist gate: the agent's contract is `graphjin cli <subcommand>` only.
+ * Anything else (`serve`, `migrate`, `admin`, bare invocation, etc.) is
+ * denied. Within `cli`, write subcommands and mutation/subscription ops
+ * are denied; everything else passes.
+ */
 export function isGraphjinCommandSafe(args: string[]): boolean {
-  const joined = args.join(" ");
-  // Direct write subcommand: `graphjin (cli )?save_workflow …` etc.
-  for (const sub of WRITE_SUBCOMMANDS) {
-    if (new RegExp(`\\b${sub}\\b`).test(joined)) return false;
+  if (args.length === 0) return false;
+  if (args[0] !== "cli") return false;
+
+  const sub = args[1];
+  if (!sub) return false;
+  if ((WRITE_SUBCOMMANDS as readonly string[]).includes(sub)) return false;
+
+  if ((EXECUTOR_SUBCOMMANDS as readonly string[]).includes(sub)) {
+    const joined = args.slice(2).join(" ");
+    if (/\b(mutation|subscription)\b/i.test(joined)) return false;
   }
-  // Executor-style commands carrying a mutation or subscription op.
-  const isExecutor = EXECUTOR_SUBCOMMANDS.some((sub) =>
-    new RegExp(`\\b${sub}\\b`).test(joined),
-  );
-  if (isExecutor && /\b(mutation|subscription)\b/i.test(joined)) return false;
   return true;
 }
 
@@ -47,26 +50,35 @@ export async function ensureGraphjinGuard(
   graphjinBinary: string,
 ): Promise<string> {
   const wrapperPath = join(binRoot, "graphjin");
-  const writeAlt = WRITE_SUBCOMMANDS.map((s) => `*' ${s} '*|*' ${s}'`).join("|");
-  const execAlt = EXECUTOR_SUBCOMMANDS.map((s) => `*' ${s} '*|*' ${s}'`).join("|");
+  const writeAlt = WRITE_SUBCOMMANDS.join("|");
+  const execAlt = EXECUTOR_SUBCOMMANDS.join("|");
   const script = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
-    "padded=\" $* \"",
-    "case \"$padded\" in",
+    "",
+    "if [[ \"${1:-}\" != \"cli\" ]]; then",
+    "  echo \"Neko Work allows only 'graphjin cli <subcommand>'. Direct '${1:-(none)}' invocations are not permitted.\" >&2",
+    "  exit 2",
+    "fi",
+    "",
+    "sub=\"${2:-}\"",
+    "case \"$sub\" in",
     `  ${writeAlt})`,
     "    echo \"Neko Work blocks GraphJin write subcommands. Read/query only.\" >&2",
     "    exit 2",
     "    ;;",
     "esac",
-    `case "$padded" in`,
+    "",
+    "case \"$sub\" in",
     `  ${execAlt})`,
-    "    if [[ \"$padded\" =~ (^|[^[:alnum:]_])(mutation|subscription)([^[:alnum:]_]|$) ]]; then",
+    "    rest=\"${*:3}\"",
+    "    if [[ \"$rest\" =~ (^|[^[:alnum:]_])(mutation|subscription)([^[:alnum:]_]|$) ]]; then",
     "      echo \"Neko Work blocks GraphJin mutations and subscriptions. Read/query only.\" >&2",
     "      exit 2",
     "    fi",
     "    ;;",
     "esac",
+    "",
     `exec "${graphjinBinary}" "$@"`,
     "",
   ].join("\n");
