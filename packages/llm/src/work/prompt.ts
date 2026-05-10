@@ -45,7 +45,10 @@ export function buildWorkPrompt(args: {
 
   const skillInstructions = supportsSkillTool
     ? "When the user asks you to create or update a skill, prefer `mcp__neko_skills__create_skill`."
-    : "When the user asks you to create or update a skill, write agentskills.io-style files directly under the shared skills directory.";
+    : [
+        "When the user asks you to create or update a skill, write agentskills.io-style files into the shared skills directory shown below using your shell tool (e.g. `mkdir -p` + `cat > SKILL.md`).",
+        "DO NOT use Hermes' built-in `skill_manage` / `skills_list` / `skill_view` tools — those write to Hermes' private skills directory which the OpenNeko UI does not read from. Skills only show up in the sidebar when files land at the path below.",
+      ].join(" ");
 
   const memoryInstructions = supportsMemoryTool
     ? [
@@ -56,6 +59,7 @@ export function buildWorkPrompt(args: {
       ].join(" ")
     : [
         "Core memory is provided below. If the user explicitly asks you to remember or forget something, explain that durable memory writes require the Claude Agent backend.",
+        "DO NOT use Hermes' built-in `memory` tool — it writes to Hermes' private memory directory which the OpenNeko UI does not read from, so anything you save there is invisible to the user.",
       ].join(" ");
 
   return [
