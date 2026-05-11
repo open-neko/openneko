@@ -83,6 +83,14 @@ type ThreadBundle = {
   eventsByRun: Record<string, WorkEvent[]>;
 };
 
+type StreamResult = "done" | "closed";
+
+type ActiveRunStream = {
+  threadId: string;
+  runId: string;
+  close: () => void;
+};
+
 type UploadedWorkFile = {
   name: string;
   relativePath: string;
@@ -109,6 +117,64 @@ type PendingMemory = {
   conflicts: Array<{ memoryId: string; text: string; similarity: number }>;
 };
 
+function isRunInFlight(run: RunRecord): boolean {
+  return run.status === "queued" || run.status === "running";
+}
+
+function latestInFlightRun(runs: RunRecord[]): RunRecord | null {
+  for (let i = runs.length - 1; i >= 0; i -= 1) {
+    if (isRunInFlight(runs[i])) return runs[i];
+  }
+  return null;
+}
+
+function needsAssistantTimelinePlaceholder(
+  run: RunRecord,
+  events: WorkEvent[] | undefined,
+): boolean {
+  return isRunInFlight(run) || Boolean(run.error) || Boolean(events?.length);
+}
+
+function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadBundle {
+  const placeholders: MessageRecord[] = [];
+  const assistantRunIds = new Set(
+    bundle.messages
+      .filter((message) => message.role === "assistant" && message.runId)
+      .map((message) => message.runId as string),
+  );
+
+  for (const run of bundle.runs) {
+    if (assistantRunIds.has(run.id)) continue;
+    if (!needsAssistantTimelinePlaceholder(run, bundle.eventsByRun[run.id])) {
+      continue;
+    }
+    placeholders.push({
+      id: `assistant-${run.id}`,
+      runId: run.id,
+      role: "assistant",
+      content: "",
+      createdAt: run.createdAt,
+    });
+  }
+
+  if (placeholders.length === 0) return bundle;
+
+  const messages = [...bundle.messages];
+  for (const placeholder of placeholders) {
+    let insertAt = messages.length;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.runId === placeholder.runId && message.role === "user") {
+        insertAt = i + 1;
+        break;
+      }
+    }
+    messages.splice(insertAt, 0, placeholder);
+  }
+
+  return { ...bundle, messages };
+}
+
 export default function WorkScreen({
   initialThreadId,
 }: {
@@ -131,6 +197,22 @@ export default function WorkScreen({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const activeRunStreamRef = useRef<ActiveRunStream | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      activeRunStreamRef.current?.close();
+      activeRunStreamRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,12 +270,16 @@ export default function WorkScreen({
       // navigation re-mounts this screen with the right initialThreadId.
       if (!preferredThreadId && nextId) {
         router.replace(`/work/${nextId}`);
-        return;
       }
+      activeThreadIdRef.current = nextId;
       setActiveThreadId(nextId);
       if (nextId) {
         await loadThread(nextId);
       } else {
+        activeRunStreamRef.current?.close();
+        activeRunStreamRef.current = null;
+        setSending(false);
+        setActiveRunId(null);
         setBundle(null);
       }
     } finally {
@@ -206,12 +292,19 @@ export default function WorkScreen({
     try {
       const res = await fetch(`/api/work/threads/${threadId}`);
       if (!res.ok) {
+        activeRunStreamRef.current?.close();
+        activeRunStreamRef.current = null;
+        setSending(false);
+        setActiveRunId(null);
         setBundle(null);
         return;
       }
       const data = (await res.json()) as ThreadBundle;
-      setBundle(data);
+      const nextBundle = withAssistantTimelinePlaceholders(data);
+      setBundle(nextBundle);
+      activeThreadIdRef.current = threadId;
       setActiveThreadId(threadId);
+      resumeLatestInFlightRun(threadId, nextBundle);
       await loadPendingMemories(threadId);
     } finally {
       setLoadingThread(false);
@@ -235,10 +328,15 @@ export default function WorkScreen({
     if (activeThreadId === threadId) {
       const nextId = remaining[0]?.id ?? null;
       router.replace(nextId ? `/work/${nextId}` : "/work");
+      activeThreadIdRef.current = nextId;
       setActiveThreadId(nextId);
       if (nextId) {
         await loadThread(nextId);
       } else {
+        activeRunStreamRef.current?.close();
+        activeRunStreamRef.current = null;
+        setSending(false);
+        setActiveRunId(null);
         setBundle(null);
       }
     }
@@ -267,6 +365,7 @@ export default function WorkScreen({
     const data = (await res.json()) as { thread: ThreadSummary };
     const nextId = data.thread.id;
     setThreads((prev) => [data.thread, ...prev]);
+    activeThreadIdRef.current = nextId;
     setActiveThreadId(nextId);
     setBundle({
       thread: {
@@ -386,10 +485,12 @@ export default function WorkScreen({
   }
 
   async function postAndStreamRun(threadId: string, message: string) {
+    const body = JSON.stringify({ message });
     const res = await fetch(`/api/work/threads/${threadId}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      ...(body.length < 60_000 ? { keepalive: true } : {}),
+      body,
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
@@ -402,6 +503,7 @@ export default function WorkScreen({
       runId: string;
       backend: string;
     };
+    if (!mountedRef.current) return;
 
     setActiveRunId(runId);
     setBundle((prev) =>
@@ -439,14 +541,85 @@ export default function WorkScreen({
         : prev,
     );
 
-    await new Promise<void>((resolve) => {
+    await streamAndRefreshRun(threadId, runId, 0);
+  }
+
+  function resumeLatestInFlightRun(threadId: string, nextBundle: ThreadBundle) {
+    const run = latestInFlightRun(nextBundle.runs);
+    const current = activeRunStreamRef.current;
+    if (current && (!run || current.threadId !== threadId || current.runId !== run.id)) {
+      current.close();
+    }
+
+    if (!run) {
+      if (activeThreadIdRef.current === threadId) {
+        setSending(false);
+        setActiveRunId(null);
+      }
+      return;
+    }
+
+    setStreamError(null);
+    setSending(true);
+    setActiveRunId(run.id);
+    const afterSeq = nextBundle.eventsByRun[run.id]?.length ?? 0;
+    void streamAndRefreshRun(threadId, run.id, afterSeq);
+  }
+
+  async function streamAndRefreshRun(
+    threadId: string,
+    runId: string,
+    afterSeq: number,
+  ) {
+    const result = await followRunEvents(threadId, runId, afterSeq);
+    if (result !== "done" || !mountedRef.current) return;
+    if (activeThreadIdRef.current !== threadId) return;
+
+    setSending(false);
+    setActiveRunId(null);
+    await Promise.all([loadThreads(threadId), loadThread(threadId), loadMemories()]);
+    window.setTimeout(() => {
+      if (!mountedRef.current || activeThreadIdRef.current !== threadId) return;
+      void loadPendingMemories(threadId);
+      void loadMemories();
+    }, 1500);
+  }
+
+  async function followRunEvents(
+    threadId: string,
+    runId: string,
+    afterSeq: number,
+  ): Promise<StreamResult> {
+    const current = activeRunStreamRef.current;
+    if (current?.runId === runId && current.threadId === threadId) {
+      return "closed";
+    }
+
+    current?.close();
+
+    const params = afterSeq > 0 ? `?afterSeq=${afterSeq}` : "";
+    return new Promise<StreamResult>((resolve) => {
+      let settled = false;
       const es = new EventSource(
-        `/api/work/threads/${threadId}/runs/${runId}/events`,
+        `/api/work/threads/${threadId}/runs/${runId}/events${params}`,
       );
-      const finish = () => {
+      const settle = (result: StreamResult) => {
+        if (settled) return;
+        settled = true;
         es.close();
-        resolve();
+        const active = activeRunStreamRef.current;
+        if (active?.runId === runId && active.threadId === threadId) {
+          activeRunStreamRef.current = null;
+        }
+        resolve(result);
       };
+
+      activeRunStreamRef.current = {
+        threadId,
+        runId,
+        close: () => settle("closed"),
+      };
+
       es.onmessage = (msgEvent) => {
         let event: WorkEvent;
         try {
@@ -456,18 +629,13 @@ export default function WorkScreen({
         }
         if (event.type === "hello") return;
         applyIncomingEvent(runId, event);
-        if (event.type === "done") finish();
+        if (event.type === "done") settle("done");
       };
-      es.onerror = () => {};
+      es.onerror = () => {
+        // EventSource will reconnect automatically, carrying Last-Event-ID
+        // when the server closes a long poll before the worker is finished.
+      };
     });
-
-    setSending(false);
-    setActiveRunId(null);
-    await Promise.all([loadThreads(threadId), loadThread(threadId), loadMemories()]);
-    window.setTimeout(() => {
-      void loadPendingMemories(threadId);
-      void loadMemories();
-    }, 1500);
   }
 
   function applyIncomingEvent(runId: string, event: WorkEvent) {
@@ -549,8 +717,6 @@ export default function WorkScreen({
     return map;
   }, [bundle?.runs]);
 
-  const latestRunId = bundle?.runs.at(-1)?.id ?? activeRunId;
-
   if (!gateChecked) {
     return (
       <>
@@ -616,12 +782,16 @@ export default function WorkScreen({
                     // and the final surface artifact). The persisted message
                     // content is the fallback for runs missing event history.
                     const events = bundle.eventsByRun[message.runId] ?? [];
+                    const run = runLookup.get(message.runId) ?? null;
+                    const isPending =
+                      (run ? isRunInFlight(run) : false) ||
+                      (sending && activeRunId === message.runId);
                     return (
                       <div key={`${message.id}-${index}`} className="work-turn">
                         <RunTimeline
-                          run={runLookup.get(message.runId) ?? null}
+                          run={run}
                           events={events}
-                          pending={sending && latestRunId === message.runId}
+                          pending={isPending}
                           fallbackContent={message.content}
                         />
                       </div>
@@ -1108,10 +1278,7 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
   const [open, setOpen] = useState(tools.length <= 2 || inflight > 0);
-
-  useEffect(() => {
-    if (inflight > 0) setOpen(true);
-  }, [inflight]);
+  const effectiveOpen = open || inflight > 0;
 
   if (!showHeader) {
     return (
@@ -1127,9 +1294,9 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
         type="button"
         className="work-tool-group-head"
         onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+        aria-expanded={effectiveOpen}
       >
-        <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
+        <span className="work-tool-group-toggle">{effectiveOpen ? "▾" : "▸"}</span>
         <span className="work-tool-group-count">
           {tools.length} tool {tools.length === 1 ? "call" : "calls"}
         </span>
@@ -1144,7 +1311,7 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
           </span>
         ) : null}
       </button>
-      {open ? (
+      {effectiveOpen ? (
         <div className="work-tool-group-body">
           {tools.map((tool) => (
             <ToolRow key={tool.id} tool={tool} />
