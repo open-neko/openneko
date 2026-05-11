@@ -15,6 +15,7 @@ import {
   ensureWorkWorkspace,
   finishWorkRun,
   formatWorkMemoryPromptContext,
+  getWorkRun,
   getWorkRunEvents,
   getWorkThreadBundle,
   markWorkRunRunning,
@@ -35,6 +36,14 @@ export async function runWorkRun(
   payload: { runId: string; threadId: string; message: string },
 ): Promise<void> {
   const { runId, threadId, message } = payload;
+
+  const run = await getWorkRun(orgId, runId);
+  if (!run) {
+    console.warn(
+      `[work-run] run ${runId} not found for thread ${threadId}; skipping stale job`,
+    );
+    return;
+  }
 
   await markWorkRunRunning(runId);
 

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const KNOWLEDGE_SECTIONS = [
@@ -17,19 +17,15 @@ server's HTTP discovery endpoints (\`/api/v1/discovery/{section}\`),
 plus this index. The four JSONs are regenerated on every worker boot
 and on demand. Do NOT run \`graphjin cli list_tables\` /
 \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` /
-\`get_discovery_schema\` — every one of those returns a bulk dump
-that is already on disk in the JSONs below.
+\`get_discovery_schema\` — those broad discovery dumps are already on
+disk in the JSONs below.
 
-For *targeted* schema questions, two precision subcommands are
-useful and should be reached for instead of guessing:
+For targeted relationship questions, these read-only CLI tools are allowed:
 
-- \`graphjin cli find_path --args '{"from":"<table>","to":"<table>"}'\`
-  — exact relationship path (with FK columns) between two specific
-  tables. Use this when \`insights.json:relationship_paths\` doesn't
-  cover the pair you need.
+- \`graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'\`
+  — exact relationship path between two specific tables.
 - \`graphjin cli explore_relationships --args '{"table":"<name>"}'\`
-  — every table connected to one focal table, with the FK that joins
-  them. Use this when planning a star-shaped query around one hub.
+  — connected tables around one focal table.
 
 ## Files
 
@@ -43,11 +39,10 @@ useful and should be reached for instead of guessing:
   target a non-default database.
 
 - **\`insights.json\`** — hub tables, hot relationships,
-  pre-computed \`relationship_paths\` (i.e. how to join the most
-  common table pairs in N hops), query templates, data-quality flags.
-  Read this **first** when planning a multi-table query. If the
-  specific pair you need isn't here, fall back to
-  \`graphjin cli find_path\` / \`explore_relationships\`.
+  pre-computed \`relationship_paths\`, query templates,
+  data-quality flags. Read this **first** when planning a
+  multi-table query. Use \`find_path\` or \`explore_relationships\`
+  whenever a targeted relationship lookup would help.
 
 - **\`syntax.json\`** — the GraphJin DSL reference (operators,
   aggregations, pagination, ordering, expression aggregates,
@@ -96,6 +91,13 @@ export type KnowledgePackPaths = {
   };
 };
 
+export type KnowledgePackContents = {
+  tables: string;
+  namespaces: string;
+  insights: string;
+  syntax: string;
+};
+
 export function knowledgePackPaths(knowledgeRoot: string): KnowledgePackPaths {
   return {
     knowledgeRoot,
@@ -107,6 +109,18 @@ export function knowledgePackPaths(knowledgeRoot: string): KnowledgePackPaths {
       index: join(knowledgeRoot, KNOWLEDGE_INDEX_FILE),
     },
   };
+}
+
+export async function readKnowledgePack(
+  knowledge: KnowledgePackPaths,
+): Promise<KnowledgePackContents> {
+  const [tables, namespaces, insights, syntax] = await Promise.all([
+    readFile(knowledge.files.tables, "utf8"),
+    readFile(knowledge.files.namespaces, "utf8"),
+    readFile(knowledge.files.insights, "utf8"),
+    readFile(knowledge.files.syntax, "utf8"),
+  ]);
+  return { tables, namespaces, insights, syntax };
 }
 
 const FETCH_TIMEOUT_MS = 10_000;

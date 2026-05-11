@@ -10,6 +10,10 @@ import { join } from "node:path";
  * Mirrors Reckon's `inspectBashForGraphjinMutations` denylist.
  */
 const WRITE_SUBCOMMANDS = [
+  "setup",
+  "config",
+  "write_query",
+  "write_mutation",
   "save_workflow",
   "update_current_config",
   "apply_schema_changes",
@@ -52,9 +56,14 @@ export async function ensureGraphjinGuard(
   const wrapperPath = join(binRoot, "graphjin");
   const writeAlt = WRITE_SUBCOMMANDS.join("|");
   const execAlt = EXECUTOR_SUBCOMMANDS.join("|");
+  const pinnedXdgConfigHome = process.env.XDG_CONFIG_HOME?.trim() || "";
   const script = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
+    "",
+    pinnedXdgConfigHome
+      ? `export XDG_CONFIG_HOME=${shellQuote(pinnedXdgConfigHome)}`
+      : "",
     "",
     "if [[ \"${1:-}\" != \"cli\" ]]; then",
     "  echo \"Neko Work allows only 'graphjin cli <subcommand>'. Direct '${1:-(none)}' invocations are not permitted.\" >&2",
@@ -84,6 +93,10 @@ export async function ensureGraphjinGuard(
   ].join("\n");
   await writeFile(wrapperPath, script, { encoding: "utf8", mode: 0o755 });
   return wrapperPath;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export async function resolveBinaryOnPath(name: string): Promise<string | null> {

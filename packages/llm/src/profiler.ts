@@ -4,30 +4,27 @@ import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
   prefetchKnowledgePack,
-  type KnowledgePackPaths,
+  readKnowledgePack,
+  type KnowledgePackContents,
 } from "./knowledge-pack";
-import { ensureOrgWorkspace } from "./work/workspace";
+import {
+  ensureGraphjinGuard,
+  resolveBinaryOnPath,
+} from "./work/graphjin-guard";
+import { ensureWorkWorkspace } from "./work/workspace";
 
 function buildPrompt(args: {
   orgName: string;
   companyNote: string;
-  knowledge: KnowledgePackPaths;
+  knowledge: KnowledgePackContents;
   shellTool: string;
 }): string {
   const { orgName, companyNote, knowledge, shellTool } = args;
   return `You build a short markdown business profile about a customer company by querying its database via GraphJin.
 
 EXECUTION PATTERN:
-1. Read the GraphJin knowledge pack on disk before writing any query — its INDEX.md tells you which file covers what. Don't run any schema-discovery commands; that information is already on disk.
-
-   Knowledge files (read with your \`${shellTool}\` tool, e.g. \`cat\`):
-   - ${knowledge.files.index} (start here — index of the rest)
-   - ${knowledge.files.tables} (every table, schema, column count)
-   - ${knowledge.files.namespaces} (multi-DB namespace routing)
-   - ${knowledge.files.insights} (hub tables, hot relationships, query templates, data-quality flags)
-   - ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates)
-
-2. Skim tables.json + insights.json to identify what this business actually does (industry, offering, business model). Pick the handful of tables that matter.
+1. Read the prefetched GraphJin knowledge sections below before writing any query. They are the authoritative DSL + schema/relationship context for this database. Don't run schema-discovery commands; that context is already prefetched here.
+2. Skim the tables + insights sections to identify what this business actually does (industry, offering, business model). Pick the handful of tables that matter.
 3. Run a small set of GraphQL queries to gather facts: main business event (date range, recent volume + value), top categories / products / services, geography, who is served, who does the work.
 4. Run queries via the \`${shellTool}\` tool:
      graphjin cli execute_graphql --args '{"query":"<your graphql>"}'
@@ -41,10 +38,11 @@ DATA ACCESS — READ-ONLY:
 The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
 - Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
-- DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` — every one of those returns a bulk dump already on disk in the knowledge files (\`insights.json\` covers hub tables and common relationship paths; \`tables.json\` covers schemas and column counts; \`syntax.json\` covers query syntax).
-- DO reach for these targeted schema queries when the pair / table you need isn't in \`insights.json\`:
-  - \`graphjin cli find_path --args '{"from":"<table>","to":"<table>"}'\` — exact join path between two specific tables.
-  - \`graphjin cli explore_relationships --args '{"table":"<name>"}'\` — every table connected to one focal table.
+- DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` — those broad discovery dumps are already prefetched in the knowledge sections below.
+- DO NOT run \`graphjin cli setup\`, \`graphjin cli config\`, \`graphjin cli write_query\`, or any config/write command. The CLI is already configured by OpenNeko and those commands are blocked.
+- DO use these targeted read-only relationship tools whenever they help you plan or verify joins:
+  - \`graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'\` — exact relationship path between two specific tables.
+  - \`graphjin cli explore_relationships --args '{"table":"<name>"}'\` — connected tables around one focal table.
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli fix_query_error --args '{"query":"...","error":"..."}'\` (get a corrected query); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the profile must trace back to a \`graphjin cli execute_graphql\` response from this run.
 
@@ -53,14 +51,41 @@ Prefer one bulk query with server-side aggregation (count, sum, avg) over multip
 
 - Expression aggregates — sum(expr: {...}), ratio(expr: {...}) — USE THESE FIRST when a fact involves arithmetic across columns (e.g. SUM(price × qty)).
 - Joined-column access via dot-notation: { col: "product.standardcost" } works across FKs up to 3 hops.
-- order_by on an expression alias: server-side top-N by computed metric, no over-fetch.
+- For top-N by an aggregate, follow the prefetched syntax limitations. If GraphJin cannot order by an aggregate alias, fetch the grouped aggregate rows and sort the small result set in your reasoning.
 - Global single-row aggregate: a top-level select whose fields are ALL aggregates collapses to one row, no distinct needed.
 
 HARD CONSTRAINTS (violating any of these is a critical failure):
 - Never hardcode calendar years; compute periods with relative arithmetic. If you need an anchor date, use a recent date from the data.
+- For date/range filters, do not put multiple operators under the same column object. Use an explicit \`and\` array:
+  \`where: { and: [{ orderdate: { gte: "2024-06-30" } }, { orderdate: { lte: "2025-06-29" } }] }\`
+  not \`where: { orderdate: { gte: "...", lte: "..." } }\`.
 - Never use a bare limit without pagination. Use cursor-based pagination to process all rows, or use GraphQL aggregation with distinct to let the database aggregate.
 - Watch the silent 20-row default limit on every query level (top AND nested) — set explicit limit or use distinct+aggregation.
 - Never invent or interpolate. If a query returned no rows, the answer is "Not measured.", not a guess.
+
+================================================================================
+Tables — every table in the database (name, schema, column_count):
+================================================================================
+
+${knowledge.tables}
+
+================================================================================
+Namespaces — multi-database routing context:
+================================================================================
+
+${knowledge.namespaces}
+
+================================================================================
+Insights — hub tables, hot relationships, relationship paths, query templates, data-quality flags:
+================================================================================
+
+${knowledge.insights}
+
+================================================================================
+Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagination):
+================================================================================
+
+${knowledge.syntax}
 
 ================================================================================
 OUTPUT FORMAT — respond with EXACTLY this markdown body, no code fences, no prose around it:
@@ -128,7 +153,11 @@ export async function runProfiler(args: {
 }): Promise<ProfilerResult> {
   const { orgId, mcpUrl, orgName, companyNote, jobId, onProgress, debug } = args;
 
-  const workspace = await ensureOrgWorkspace(orgId);
+  const workspace = await ensureWorkWorkspace(
+    orgId,
+    "profiler",
+    jobId ?? orgId,
+  );
   const refresh = await prefetchKnowledgePack({
     discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
     destDir: workspace.knowledgeRoot,
@@ -143,9 +172,14 @@ export async function runProfiler(args: {
       `[profiler] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
     );
   }
-  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
+  const knowledge = await readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot));
 
   const backend = await resolveAgentBackend(orgId);
+  const graphjinBinary = await resolveBinaryOnPath("graphjin");
+  if (!graphjinBinary) {
+    throw new Error("graphjin CLI is not installed on PATH.");
+  }
+  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
   console.log(`[profiler] org=${orgId} backend=${backend.id}`);
 
   const prompt = buildPrompt({
@@ -161,6 +195,7 @@ export async function runProfiler(args: {
     prompt,
     orgId,
     tag: jobId ?? orgId,
+    workspace,
     debug: debug === true,
   });
   if (result.status !== "completed") {
