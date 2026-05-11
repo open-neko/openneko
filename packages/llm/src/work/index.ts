@@ -9,3 +9,5 @@ export {
 export * from "./memory";
 export * from "./auto-memory";
 export * from "./store";
+export { runChatTurn } from "./run-chat-turn";
+export type { RunChatTurnOptions, RunChatTurnResult } from "./run-chat-turn";
