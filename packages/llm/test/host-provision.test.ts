@@ -32,6 +32,10 @@ if (!reachable) {
 }
 
 function graphjinPath(home: string): string {
+  const xdg = process.env.XDG_CONFIG_HOME?.trim();
+  if (xdg) {
+    return join(xdg, "graphjin", "client.json");
+  }
   if (platform() === "darwin") {
     return join(home, "Library", "Application Support", "graphjin", "client.json");
   }
@@ -40,6 +44,7 @@ function graphjinPath(home: string): string {
 
 const ORIGINAL_HOME = process.env.HOME;
 const ORIGINAL_HERMES_HOME = process.env.HERMES_HOME;
+const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
 
 describeIfDb("provisionHostConfig", () => {
   let orgId: string;
@@ -60,6 +65,7 @@ describeIfDb("provisionHostConfig", () => {
     hermesHome = join(tempHome, ".hermes");
     process.env.HOME = tempHome;
     process.env.HERMES_HOME = hermesHome;
+    delete process.env.XDG_CONFIG_HOME;
   });
 
   afterEach(async () => {
@@ -67,6 +73,8 @@ describeIfDb("provisionHostConfig", () => {
     if (ORIGINAL_HOME) process.env.HOME = ORIGINAL_HOME;
     if (ORIGINAL_HERMES_HOME) process.env.HERMES_HOME = ORIGINAL_HERMES_HOME;
     else delete process.env.HERMES_HOME;
+    if (ORIGINAL_XDG_CONFIG_HOME) process.env.XDG_CONFIG_HOME = ORIGINAL_XDG_CONFIG_HOME;
+    else delete process.env.XDG_CONFIG_HOME;
     await clearProvider(orgId, "agent");
     await clearProvider(orgId, "primary");
     await db().delete(data_source).where(eq(data_source.org_id, orgId));
@@ -83,6 +91,20 @@ describeIfDb("provisionHostConfig", () => {
     expect(content.server).toBe("http://localhost:8080");
     expect(content.token).toBe("");
     expect(content.expires_at).toBe("0001-01-01T00:00:00Z");
+  });
+
+  it("writes graphjin client.json under XDG_CONFIG_HOME when it is set", async () => {
+    process.env.XDG_CONFIG_HOME = join(tempHome, "xdg-config");
+    await seedDataSource(orgId, {
+      graphqlUrl: "http://graphjin:8080/api/v1/graphql",
+    });
+
+    await provisionHostConfig(orgId);
+
+    const path = graphjinPath(tempHome);
+    const content = JSON.parse(await readFile(path, "utf8"));
+    expect(path).toBe(join(tempHome, "xdg-config", "graphjin", "client.json"));
+    expect(content.server).toBe("http://graphjin:8080");
   });
 
   it("falls back to URL origin when graphql path doesn't match the conventional suffix", async () => {

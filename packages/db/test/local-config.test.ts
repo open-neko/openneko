@@ -75,7 +75,9 @@ describe("local-config (~/.config/openneko/config.json)", () => {
     expect(readLocalConfig()).toEqual({});
   });
 
-  it("hasCustomPassword reflects pg.password presence", () => {
+  it("hasCustomPassword ignores the bootstrap password", () => {
+    expect(hasCustomPassword()).toBe(false);
+    writeLocalConfig({ pg: { password: "secret" } });
     expect(hasCustomPassword()).toBe(false);
     writeLocalConfig({ pg: { password: "p" } });
     expect(hasCustomPassword()).toBe(true);

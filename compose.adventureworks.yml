@@ -1,7 +1,6 @@
 services:
   adventureworks-db:
     image: postgres:16-alpine
-    container_name: adventureworks-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${CUSTOMER_PGUSER:-postgres}
@@ -21,7 +20,6 @@ services:
 
   adventureworks-init:
     image: node:20-slim
-    container_name: adventureworks-init
     depends_on:
       adventureworks-db:
         condition: service_healthy
@@ -41,12 +39,29 @@ services:
       - ./:/workspace:ro
       - adventureworks-cache:/cache
 
+  graphjin-config-init:
+    image: alpine:3.20
+    volumes:
+      - graphjin-config:/config
+      - ./db/graphjin/dev.example.yml:/seed/dev.yml:ro
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f /config/dev.yml ]; then
+          cp /seed/dev.yml /config/dev.yml
+        fi
+        chmod -R a+rwX /config
+    restart: "no"
+
   graphjin:
     image: dosco/graphjin:3.18.10
-    container_name: graphjin
     restart: unless-stopped
     depends_on:
       adventureworks-init:
+        condition: service_completed_successfully
+      graphjin-config-init:
         condition: service_completed_successfully
     ports:
       - "${GRAPHJIN_PORT:-8080}:8080"
@@ -56,10 +71,45 @@ services:
       GJ_DATABASE_USER: ${CUSTOMER_PGUSER:-postgres}
       GJ_DATABASE_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
       GJ_DATABASE_DBNAME: ${ADVENTUREWORKS_DB:-adventureworks}
+      NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,graphjin,neko-db,worker,web,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,adventureworks-db,graphjin,neko-db,worker,web,host.docker.internal,host.internal
     volumes:
-      - ./db/graphjin:/config
+      - graphjin-config:/config
     command: ["serve", "--path", "/config"]
+
+  neko-adventureworks-seed:
+    profiles: ["seed"]
+    build:
+      context: .
+      target: worker
+    depends_on:
+      neko-db-init:
+        condition: service_completed_successfully
+    environment:
+      XDG_CONFIG_HOME: /config
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+      NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+      no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+    volumes:
+      - openneko-config:/config/openneko
+    command: ["node", "packages/db/src/seed-adventureworks.mjs"]
+    restart: "no"
+
+  web:
+    depends_on:
+      graphjin:
+        condition: service_started
+
+  worker:
+    depends_on:
+      graphjin:
+        condition: service_started
 
 volumes:
   adventureworks-db-data:
   adventureworks-cache:
+  graphjin-config:

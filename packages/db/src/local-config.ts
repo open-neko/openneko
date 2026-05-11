@@ -94,5 +94,6 @@ export function writeLocalConfig(partial: LocalConfig): void {
 /** Convenience: true when the admin has changed the DB password from default. */
 export function hasCustomPassword(): boolean {
   const cfg = readLocalConfig();
-  return typeof cfg.pg?.password === "string" && cfg.pg.password.length > 0;
+  const password = cfg.pg?.password;
+  return typeof password === "string" && password.length > 0 && password !== "secret";
 }

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Container entrypoint. Reads env vars and materializes the host config
-# files Neko expects, then exec's the real CMD.
+# Container entrypoint. Seeds the config files Neko expects, then exec's
+# the real CMD. Existing files win by default so first-run setup changes
+# (DB password rotation, encryption key) survive container restarts.
 #
 # Required env to bootstrap from a fresh container:
 #   NEKO_PG_HOST          Postgres host (or socket path starting with /)
@@ -15,34 +16,79 @@
 #                         managed Postgres with self-signed CAs
 #                         (e.g. Cloud SQL public IP, RDS, etc.)
 #
-# When no env vars are set, the app falls back to its compose-stack
+# When no env vars are set, the app falls back to its local dev
 # defaults (host=localhost, password=secret, database=neko). The /setup
 # wizard handles password rotation in that mode.
 set -eu
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openneko"
-mkdir -p "$CONFIG_DIR" "$HOME/.hermes"
+mkdir -p \
+  "$CONFIG_DIR" \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/graphjin" \
+  "$HOME/.hermes" \
+  "$HOME/.claude" \
+  "${XDG_CACHE_HOME:-$HOME/.cache}" \
+  "${XDG_DATA_HOME:-$HOME/.local/share}" \
+  "${XDG_STATE_HOME:-$HOME/.local/state}" \
+  "${TMPDIR:-/tmp}"
 
-if [ -n "${NEKO_PG_HOST:-}" ]; then
-  node -e "
-    const cfg = {
-      pg: {
-        host: process.env.NEKO_PG_HOST,
-        port: Number(process.env.NEKO_PG_PORT || 5432),
-        user: process.env.NEKO_PG_USER || 'neko',
-        password: process.env.NEKO_PG_PASSWORD || '',
-        database: process.env.NEKO_PG_DATABASE || 'neko',
-      },
-    };
-    if (process.env.NEKO_PG_SSLMODE) cfg.pg.sslmode = process.env.NEKO_PG_SSLMODE;
-    require('fs').writeFileSync('$CONFIG_DIR/config.json', JSON.stringify(cfg, null, 2));
-    require('fs').chmodSync('$CONFIG_DIR/config.json', 0o600);
-  "
-fi
+OPENNEKO_CONFIG_DIR="$CONFIG_DIR" node <<'JS'
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 
-if [ -n "${NEKO_SECRET_KEY:-}" ]; then
-  printf '%s' "$NEKO_SECRET_KEY" > "$CONFIG_DIR/secret-key"
-  chmod 600 "$CONFIG_DIR/secret-key"
-fi
+const configDir = process.env.OPENNEKO_CONFIG_DIR;
+const force = process.env.OPENNEKO_FORCE_CONFIG === "1";
+const configPath = path.join(configDir, "config.json");
+const secretPath = path.join(configDir, "secret-key");
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writePrivate(file, value, flag = "w") {
+  fs.writeFileSync(file, value, { encoding: "utf8", flag });
+  fs.chmodSync(file, 0o600);
+}
+
+const envPg = {};
+if (process.env.NEKO_PG_HOST) envPg.host = process.env.NEKO_PG_HOST;
+if (process.env.NEKO_PG_PORT) envPg.port = Number(process.env.NEKO_PG_PORT);
+if (process.env.NEKO_PG_USER) envPg.user = process.env.NEKO_PG_USER;
+if (process.env.NEKO_PG_PASSWORD !== undefined) envPg.password = process.env.NEKO_PG_PASSWORD;
+if (process.env.NEKO_PG_DATABASE) envPg.database = process.env.NEKO_PG_DATABASE;
+if (process.env.NEKO_PG_SSLMODE) envPg.sslmode = process.env.NEKO_PG_SSLMODE;
+
+if (Object.keys(envPg).length > 0) {
+  const current = readJson(configPath);
+  const next = {
+    ...current,
+    pg: { ...(current.pg && typeof current.pg === "object" ? current.pg : {}) },
+  };
+
+  for (const [key, value] of Object.entries(envPg)) {
+    if (force || next.pg[key] === undefined || next.pg[key] === null || next.pg[key] === "") {
+      next.pg[key] = value;
+    }
+  }
+
+  if (JSON.stringify(current) !== JSON.stringify(next)) {
+    writePrivate(configPath, `${JSON.stringify(next, null, 2)}\n`);
+  }
+}
+
+if (force || !fs.existsSync(secretPath)) {
+  const value = process.env.NEKO_SECRET_KEY || crypto.randomBytes(32).toString("base64");
+  try {
+    writePrivate(secretPath, value, force ? "w" : "wx");
+  } catch (e) {
+    if (e.code !== "EEXIST") throw e;
+  }
+}
+JS
 
 exec "$@"

@@ -48,6 +48,10 @@ function getHome(): string {
 }
 
 function graphjinConfigPath(): string {
+  const xdg = process.env.XDG_CONFIG_HOME?.trim();
+  if (xdg) {
+    return join(xdg, "graphjin", "client.json");
+  }
   if (platform() === "darwin") {
     return join(getHome(), "Library", "Application Support", "graphjin", "client.json");
   }

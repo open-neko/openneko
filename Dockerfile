@@ -21,16 +21,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ─── 2. cli: install runtime CLIs the agent shells out to ──────────────
 # graphjin: required by both backends (metric agent uses `graphjin cli`).
-# claude:   required only by the claude-agent backend (Anthropic SDK
-#           spawns it). Skipping Hermes for the demo image — flip
-#           /settings/agent → "Claude Agent" on the deployed instance.
+# hermes:   required by the default Hermes backend.
+# claude:   required by the claude-agent backend (Anthropic SDK spawns it).
 FROM base AS cli
 ARG GRAPHJIN_VERSION=3.18.10
+ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git \
+    && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL -o /tmp/graphjin.tgz \
       "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz" \
     && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
     && rm /tmp/graphjin.tgz \
     && graphjin version
+RUN curl -LsSf https://astral.sh/uv/install.sh \
+      | env UV_INSTALL_DIR=/usr/local/bin sh -s -- --no-modify-path \
+    && UV_TOOL_DIR=/opt/uv-tools \
+       UV_TOOL_BIN_DIR=/usr/local/bin \
+       UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+       UV_CACHE_DIR=/tmp/uv-cache \
+       uv tool install --python 3.11 \
+         "hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git@${HERMES_AGENT_REF}" \
+    && rm -rf /tmp/uv-cache /root/.cache/uv \
+    && hermes --version
 RUN npm install -g @anthropic-ai/claude-code
 
 # ─── 3. deps: workspace install (cached on lockfile) ───────────────────
@@ -64,6 +77,8 @@ ENV NODE_ENV=production \
     XDG_CONFIG_HOME=/tmp/openneko-config \
     NEXT_TELEMETRY_DISABLED=1
 RUN useradd --system --create-home --uid 1001 neko
+RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
+    && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
 # Standalone output is self-contained (server.js + traced node_modules).
 # Static + public are served by server.js but not auto-copied — we copy
 # them in alongside, matching the layout server.js expects.
@@ -89,6 +104,8 @@ ENV NODE_ENV=production \
     HOME=/tmp/openneko-home \
     XDG_CONFIG_HOME=/tmp/openneko-config
 RUN useradd --system --create-home --uid 1001 neko
+RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
+    && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
 COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
 COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps --chown=neko:neko /app/packages/db/node_modules ./packages/db/node_modules
@@ -96,6 +113,7 @@ COPY --from=deps --chown=neko:neko /app/packages/llm/node_modules ./packages/llm
 COPY --chown=neko:neko package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY --chown=neko:neko apps/worker ./apps/worker
 COPY --chown=neko:neko packages ./packages
+COPY --chown=neko:neko db/migrations ./db/migrations
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN ln -s /app/apps/worker/node_modules/tsx /app/node_modules/tsx

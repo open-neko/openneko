@@ -1,19 +1,28 @@
+x-neko-app-env: &neko-app-env
+  HOME: /tmp/openneko-home
+  TMPDIR: /tmp/openneko-tmp
+  XDG_CONFIG_HOME: /config
+  XDG_CACHE_HOME: /tmp/openneko-home/.cache
+  XDG_DATA_HOME: /tmp/openneko-home/.local/share
+  XDG_STATE_HOME: /tmp/openneko-home/.local/state
+  NEKO_PG_HOST: neko-db
+  NEKO_PG_PORT: "5432"
+  NEKO_PG_USER: neko
+  NEKO_PG_PASSWORD: secret
+  NEKO_PG_DATABASE: neko
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+
 services:
   neko-db:
     image: postgres:16-alpine
-    container_name: neko-db
     restart: unless-stopped
-    # Initial credentials are hardcoded. The /setup wizard forces an
-    # admin-chosen password on first run and writes it to ~/.config/openneko/config.json
-    # via ALTER USER. After that the app reads the new password from the
-    # config file; the values below stay only as the bootstrap baseline
-    # for the postgres container itself.
     environment:
       POSTGRES_USER: neko
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: neko
     ports:
-      - "5432:5432"
+      - "${OPENNEKO_DB_PORT:-5432}:5432"
     volumes:
       - neko-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -25,17 +34,60 @@ services:
       retries: 20
 
   neko-db-init:
-    image: postgres:16-alpine
-    container_name: neko-db-init
+    build:
+      context: .
+      target: worker
     depends_on:
       neko-db:
         condition: service_healthy
-    entrypoint:
-      - /bin/sh
-      - /workspace/db/init-neko-db.sh
-    restart: "no"
+    environment:
+      <<: *neko-app-env
     volumes:
-      - ./:/workspace:ro
+      - openneko-config:/config/openneko
+    command: ["node", "packages/db/src/migrate.mjs"]
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      target: web
+    depends_on:
+      neko-db-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *neko-app-env
+      WORKER_ADMIN_URL: http://worker:4100
+      OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
+    ports:
+      - "${OPENNEKO_PORT:-3000}:8080"
+    volumes:
+      - openneko-config:/config/openneko
+      - openneko-graphjin-cli:/config/graphjin
+      - openneko-agent-home:/tmp/openneko-home
+      - openneko-agent-tmp:/tmp/openneko-tmp
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: worker
+    depends_on:
+      neko-db-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *neko-app-env
+    expose:
+      - "4100"
+    volumes:
+      - openneko-config:/config/openneko
+      - openneko-graphjin-cli:/config/graphjin
+      - openneko-agent-home:/tmp/openneko-home
+      - openneko-agent-tmp:/tmp/openneko-tmp
+    restart: unless-stopped
 
 volumes:
   neko-db-data:
+  openneko-config:
+  openneko-graphjin-cli:
+  openneko-agent-home:
+  openneko-agent-tmp:

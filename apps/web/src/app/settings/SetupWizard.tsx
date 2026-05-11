@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
@@ -68,7 +67,6 @@ const STEPS_WITHOUT_PASSWORD = ["Data", "Agent", "Research"] as const;
 const CLAUDE_MODEL_DEFAULT = "claude-opus-4-7";
 
 export default function SetupWizard({ initial }: { initial: Initial }) {
-  const router = useRouter();
   const STEPS = initial.passwordChanged
     ? STEPS_WITHOUT_PASSWORD
     : STEPS_WITH_PASSWORD;
@@ -89,8 +87,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   })();
 
   // Step 1: data source — one root URL, /api/v1/{graphql,mcp} derived on save.
-  // Pre-fill the localhost default when nothing is configured yet so the
-  // documented AdventureWorks-on-:8080 happy path is one Continue away.
+  // Pre-fill a saved data source when one exists. Without a seed row, local dev
+  // falls back to localhost and Docker installs can enter the Compose service URL.
   const [data, setData] = useState({
     rootUrl: deriveRoot(initial.dataSource.graphqlUrl) || "http://localhost:8080",
     label: initial.dataSource.label || "primary",

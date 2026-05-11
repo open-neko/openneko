@@ -10,8 +10,9 @@
  *   4. Fire-and-forget POST /admin/reconnect to the worker so its
  *      pg-boss singleton (which holds the OLD credentials in its own
  *      pool, separate from the web's @neko/db pool) restarts with fresh
- *      creds. Tolerates the worker being down — the password still
- *      rotates successfully on the web side.
+ *      creds. WORKER_ADMIN_URL is set by Docker Compose; local dev falls
+ *      back to localhost. Tolerates the worker being down — the password
+ *      still rotates successfully on the web side.
  *
  * The body must contain a non-empty password. The default `"secret"` is
  * rejected — we want a real change. Length minimum is intentionally
@@ -70,12 +71,18 @@ export async function POST(request: NextRequest) {
     // (created at boot with old creds) gets rebuilt. Best-effort —
     // the worker may not be running yet during /setup, and that's fine.
     try {
-      await fetch("http://127.0.0.1:4100/admin/reconnect", {
+      const workerAdminUrl = (process.env.WORKER_ADMIN_URL ?? "http://127.0.0.1:4100")
+        .replace(/\/+$/, "");
+      await fetch(`${workerAdminUrl}/admin/reconnect`, {
         method: "POST",
         signal: AbortSignal.timeout(2000),
       });
     } catch {
       // worker down / not yet listening / network blip — non-fatal
+    }
+
+    if (process.env.OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE === "1") {
+      setTimeout(() => process.exit(0), 250).unref();
     }
 
     return NextResponse.json({ ok: true });

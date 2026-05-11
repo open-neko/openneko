@@ -172,7 +172,7 @@ export async function runProfiler(args: {
     `[profiler] org=${orgId} done in ${elapsedSec}s (${stdout.length} chars)`,
   );
 
-  const businessProfile = stripFences(stdout);
+  const businessProfile = validateBusinessProfile(stripFences(stdout), orgName);
   if (onProgress) onProgress("Profile drafted");
 
   return { businessProfile };
@@ -182,4 +182,38 @@ function stripFences(raw: string): string {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```\s*$/);
   return (fenced?.[1] ?? trimmed).trim();
+}
+
+const REQUIRED_PROFILE_SECTIONS = [
+  "## What they are",
+  "## Who they serve",
+  "## Where they operate",
+  "## Scale",
+  "## Operational footprint",
+  "## What a downstream LLM should hold in mind",
+] as const;
+
+const FAILURE_TEXT_RE =
+  /\b(i am sorry|unable to connect|restricted network|business_profile\.md|execute the graphql query yourself|graphjin server|could not access|couldn't access|cannot access|no direct access)\b/i;
+
+export function validateBusinessProfile(profile: string, orgName: string): string {
+  const expectedHeading = `# ${orgName} — Business Profile`;
+  if (!profile.startsWith(expectedHeading)) {
+    throw new Error(
+      `profiler returned invalid business profile: expected heading "${expectedHeading}"`,
+    );
+  }
+  if (FAILURE_TEXT_RE.test(profile)) {
+    throw new Error(
+      "profiler returned failure text instead of a business profile",
+    );
+  }
+  for (const section of REQUIRED_PROFILE_SECTIONS) {
+    if (!profile.includes(section)) {
+      throw new Error(
+        `profiler returned invalid business profile: missing section "${section}"`,
+      );
+    }
+  }
+  return profile;
 }

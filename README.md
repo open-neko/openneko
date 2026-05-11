@@ -1,162 +1,126 @@
-# Neko
+# OpenNeko
 
 Calm, chat-first morning briefings for CXOs.
 
-- Site: https://getneko.app
-- Repo: https://github.com/open-neko/neko
-- License: [Apache 2.0](LICENSE)
+![OpenNeko CFO briefing](cfo-briefing.png)
 
-## Layout
+OpenNeko connects to operational data through GraphJin, builds role-aware business briefings, and lets leaders ask follow-up questions in a focused workspace.
 
+## Features
+
+- Morning briefing cards for executive roles
+- Chat-first follow-up analysis against business data
+- GraphJin data-source integration
+- Worker-backed metric refresh and onboarding jobs
+- Configurable agent backend and model provider
+- Docker image includes GraphJin CLI, Hermes, and Claude Agent CLI
+- Optional industry research provider
+- Included AdventureWorks sample data stack
+
+## Quickstart
+
+Requirements:
+
+- Docker Desktop or Docker Engine with Docker Compose
+- An LLM provider API key for setup
+
+Start OpenNeko with the included AdventureWorks sample-data services:
+
+```bash
+git clone https://github.com/open-neko/neko.git
+cd neko
+docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 ```
+
+Optionally seed OpenNeko with the AdventureWorks GraphJin data source and onboarding answers:
+
+```bash
+docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
+```
+
+Open [http://localhost:3000](http://localhost:3000) and complete the setup wizard. If you skip the seed and need to enter the GraphJin URL manually, use:
+
+```text
+http://graphjin:8080
+```
+
+For detailed install, update, reset, and troubleshooting steps, see [INSTALL.md](INSTALL.md).
+
+## Developer Setup
+
+Install dependencies:
+
+```bash
+corepack enable
+pnpm bootstrap
+```
+
+Run the metadata database and migrations:
+
+```bash
+docker compose up -d neko-db
+pnpm --filter @neko/db migrate
+```
+
+Start the web app and worker from source:
+
+```bash
+pnpm dev
+```
+
+To develop with the AdventureWorks sample data:
+
+```bash
+docker compose -f compose.yml -f compose.adventureworks.yml up -d neko-db adventureworks-db graphjin
+pnpm --filter @neko/db migrate
+pnpm dev
+```
+
+In the developer flow, use `http://localhost:8080` as the GraphJin URL when the setup wizard asks for the data source. To also seed OpenNeko metadata with the AdventureWorks data source and onboarding answers, run:
+
+```bash
+docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
+```
+
+## Repository Layout
+
+```text
 apps/
-  web/                 Next.js — UI + API routes
-  worker/              pg-boss job runner (consumes queues from neko-db)
+  web/                 Next.js UI and API routes
+  worker/              Background job runner
 packages/
-  db/                  Drizzle ORM client + schema + pg-boss enqueue for neko-db
-  llm/                 Shared LLM machinery: providers, agents, classifier
+  db/                  Drizzle ORM client, schema, migrations, job queue
+  llm/                 Providers, agents, classifier, GraphJin work support
 db/
-  migrations/          SQL migrations for neko-db
-  seeds/dev/           Vendored AdventureWorks install.sql
-  graphjin/            GraphJin config (dev.example.yml committed; dev.yml local-only)
-  init-neko-db.sh      Sidecar entrypoint for neko-db-init
-  load-adventureworks.sh  Sidecar entrypoint for adventureworks-init
+  migrations/          Metadata database migrations
+  graphjin/            Sample GraphJin config
+  seeds/dev/           AdventureWorks seed assets
 ```
 
-## Run
+## Configuration
 
-Three things need to be running:
+The setup wizard stores local runtime config in `~/.config/openneko/config.json`. In Docker, runtime state is kept in named volumes so database password changes, encrypted provider secrets, GraphJin CLI config, agent workspaces, skills, uploads, generated artifacts, and scratch files survive restarts and are shared between the web and worker containers.
 
-1. **A customer data source** — a GraphJin endpoint Neko can profile (your own, or use the vendored AdventureWorks stack — see [Optional: vendored AdventureWorks + GraphJin](#optional-vendored-adventureworks--graphjin) below)
-2. **Neko's metadata DB** — Postgres, easiest via `docker compose up -d` (see [Docker Compose](#docker-compose))
-3. **The web + worker** — from the repo root:
+Provider and agent settings are configured in the app under `/settings`. Docker installs include both supported agent CLIs, so users can choose Hermes or Claude Agent from the settings page.
+
+## Contributing
+
+Issues and pull requests are welcome. For code changes, use the developer setup above and run the relevant checks before opening a PR:
 
 ```bash
-pnpm dev          # runs web + worker concurrently
-# or in separate terminals:
-pnpm dev:web
-pnpm dev:worker
+pnpm test
+pnpm lint
+pnpm build
 ```
 
-The web app and the worker talk to Postgres directly via Drizzle ORM (`@neko/db`). There is no internal GraphJin service to run for Neko itself.
+## Issues
 
-### First-time setup
+Please file bugs and feature requests at [github.com/open-neko/neko/issues](https://github.com/open-neko/neko/issues).
 
-```bash
-pnpm bootstrap         # pnpm install (with AX_SKIP_SKILL_INSTALL=1) + copies db/graphjin/dev.example.yml → dev.yml
-docker compose up -d   # starts neko-db, applies migrations
-pnpm dev               # web + worker
-```
+## License
 
-`pnpm bootstrap` sets `AX_SKIP_SKILL_INSTALL=1` for you so `@ax-llm/ax`'s postinstall doesn't write `.claude/skills/` into the repo — we keep those at user scope instead. If you ever invoke `pnpm install` directly, set `AX_SKIP_SKILL_INSTALL=1` in your shell rc.
+OpenNeko is licensed under the [Apache License 2.0](LICENSE).
 
-### Required CLI tooling
+## Author
 
-`pnpm install` brings in every Node dep, but the worker shells out to three external CLIs that are **not** on npm's dep tree. Install them with the bundled script:
-
-```bash
-./scripts/install-clis.sh                 # all three
-./scripts/install-clis.sh --skip-hermes   # only graphjin + claude
-./scripts/install-clis.sh --skip-claude   # only graphjin + hermes
-```
-
-The script handles macOS (Homebrew) and Debian/Ubuntu (apt + direct installers). For other distros, read [scripts/install-clis.sh](scripts/install-clis.sh) and adapt — it's short.
-
-What gets installed and why:
-
-| CLI | When you need it | How the script installs it |
-|---|---|---|
-| `graphjin` | Always — the metric agent runs `graphjin cli` against your data source | macOS: `brew install dosco/tap/graphjin` · Linux: tarball from [graphjin releases](https://github.com/dosco/graphjin/releases) |
-| `claude` | Only if you pick **Claude Agent** in `/settings/agent`. `@anthropic-ai/claude-agent-sdk` (already a Node dep) spawns this binary under the hood — without it on PATH every agent call fails with `spawn claude ENOENT` | `npm i -g @anthropic-ai/claude-code` |
-| `hermes` | Only if you pick **Hermes** in `/settings/agent`. Same story — the SDK spawns it, not bundled | Nous Research installer (Python 3.11+, `uv`). See [hermes-agent](https://github.com/NousResearch/hermes-agent) for prerequisites and updates. |
-
-The wizard at `/settings/agent` lets you flip between backends after setup, so you can install only the one you plan to use. Quick sanity check:
-
-```bash
-which graphjin claude hermes
-```
-
-Then open <http://localhost:3000>. On first boot you're sent to `/settings`, which renders a linear setup wizard until first-run is finished:
-
-1. Setting an admin DB password (writes to `~/.config/openneko/config.json`)
-2. Connecting your customer data source (the GraphJin endpoint from #1 above)
-3. Picking the agent + primary LLM provider
-4. Optional industry-research provider
-
-After the wizard finishes, the `/onboarding` business wizard becomes reachable, the briefing surface lives at `/`, and `/settings` flips into a card index for ongoing edits to providers, data source, and agent.
-
-The web and worker apps don't read env vars from disk by default. The one allowed knob is `NEXT_PUBLIC_DEMO=true` on the web side — drop it into `apps/web/.env.local` (see [apps/web/.env.example](apps/web/.env.example)) to flip into the canned-mock briefing flow for screenshots / video without real data. The `NEXT_PUBLIC_` prefix lets both server and client code read the same flag; the legacy `DEMO=true` still works server-side for backward compatibility. All other configuration comes from `~/.config/openneko/config.json` plus rows in the metadata DB itself.
-
-## Docker Compose
-
-`compose.yml` brings up the metadata DB. Works with any Docker that resolves `host.docker.internal` (OrbStack, Docker Desktop, Rancher Desktop; on Linux Docker Engine add `--add-host=host.docker.internal:host-gateway`).
-
-What it does:
-
-- Starts `neko-db` (Postgres 16) on `localhost:5432` with hardcoded creds `neko/secret/neko`
-- Runs a one-shot `neko-db-init` sidecar that waits for `neko-db` and applies every file in [db/migrations/](db/migrations/) — the baseline [0001_init.sql](db/migrations/0001_init.sql) on an empty schema, then any incremental migrations on every restart (each must be idempotent)
-
-The bootstrap creds in [compose.yml](compose.yml) are the **baseline only**. The `/setup` wizard rotates the password on first run and persists the new value to `~/.config/openneko/config.json` on the host.
-
-```bash
-docker compose up -d            # start
-docker compose down             # stop
-docker compose down -v          # reset (drops the volume)
-```
-
-Compose has no parameterized variables. Port `5432:5432` is fixed; if it conflicts on your host, edit the published port in [compose.yml](compose.yml) directly.
-
-### First-run state
-
-No org or data-source rows are seeded. The app's `getOrgId()` auto-bootstraps a single organization row (random UUID, name `"My Workspace"`) the first time it runs, and the `/settings` setup wizard creates the `data_source` row when you paste your GraphJin URL.
-
-### Optional: vendored AdventureWorks + GraphJin
-
-If you don't already have a customer GraphJin running, opt into the self-contained AdventureWorks stack. This adds `adventureworks-db` (Postgres loaded with the AdventureWorks 2014 OLTP sample) and a `graphjin` server pointed at it.
-
-`pnpm bootstrap` already copied `db/graphjin/dev.example.yml` → `db/graphjin/dev.yml` for you (the active config file is gitignored). Bring everything up:
-
-```bash
-docker compose -f compose.yml -f compose.adventureworks.yml up -d
-```
-
-What it does on first run:
-
-- Starts `adventureworks-db` on `localhost:5433`
-- Runs a one-shot `adventureworks-init` sidecar ([db/load-adventureworks.sh](db/load-adventureworks.sh) → [apps/worker/scripts/load-adventureworks.ts](apps/worker/scripts/load-adventureworks.ts)) that downloads Microsoft's [AdventureWorks-oltp-install-script.zip](https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks-oltp-install-script.zip), converts the BCP-formatted CSVs to tab-delimited, then loads [db/seeds/dev/adventureworks-install.sql](db/seeds/dev/adventureworks-install.sql) (a vendored copy of [lorint/AdventureWorks-for-Postgres](https://github.com/lorint/AdventureWorks-for-Postgres)) into a fresh `adventureworks` database
-- Starts `graphjin` ([dosco/graphjin](https://hub.docker.com/r/dosco/graphjin) v3.18.10) on `localhost:8080`, configured from [db/graphjin/dev.example.yml](db/graphjin/dev.example.yml)
-
-When prompted by the `/settings` setup wizard for a data source, point it at:
-
-- GraphQL: `http://host.docker.internal:8080/api/v1/graphql`
-- MCP: `http://host.docker.internal:8080/api/v1/mcp`
-
-Variables this stack reads (all optional, defaults are baked in):
-
-- `CUSTOMER_PGUSER` (default `postgres`)
-- `CUSTOMER_PGPASSWORD` (default `postgres`)
-- `ADVENTUREWORKS_DB` (default `adventureworks`)
-
-Wipe the AdventureWorks volume and re-load from scratch:
-
-```bash
-docker compose -f compose.yml -f compose.adventureworks.yml down -v
-```
-
-## Model Providers
-
-All provider configuration lives in the app's `/settings` UI, scoped per-org. Two scopes:
-
-- **Primary** — used for profiling, chat classification, bootstrap card generation, and metric refreshes
-- **Industry research** — optional; used during the onboarding industry-briefing step
-
-Without a primary provider configured the worker still starts (so `/settings` remains reachable), but AI-backed flows fail until one is set.
-
-### Vertex note
-
-`vertex` uses Google Application Default Credentials, so local auth is one of:
-
-- `gcloud auth application-default login`
-- `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
-
-The GCP project id is set in `/settings` (per-org secret, not an env var).
+Created by [Amit Deshmukh](https://github.com/amitdeshmukh).
