@@ -1,14 +1,22 @@
 import { data_source, db, eq } from "@neko/db";
-import { enqueue, QUEUE } from "@neko/db/jobs";
+import {
+  enqueue as defaultEnqueue,
+  QUEUE,
+  type QueueName,
+} from "@neko/db/jobs";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
-import { resolveAgentBackend } from "../agent-backend-resolver";
+import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import {
   discoveryUrlFromMcpUrl,
-  prefetchKnowledgePack,
+  prefetchKnowledgePack as defaultPrefetchKnowledgePack,
 } from "../knowledge-pack";
+import { runWorkAutoMemoryPipeline } from "./auto-memory";
 import { makeAutoMemoryStopHook } from "./auto-memory-hook";
-import { ensureGraphjinGuard, resolveBinaryOnPath } from "./graphjin-guard";
-import { formatWorkMemoryPromptContext } from "./memory";
+import {
+  ensureGraphjinGuard as defaultEnsureGraphjinGuard,
+  resolveBinaryOnPath as defaultResolveBinaryOnPath,
+} from "./graphjin-guard";
+import { formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext } from "./memory";
 import { buildWorkPrompt } from "./prompt";
 import {
   finishWorkRun,
@@ -22,7 +30,10 @@ import {
   buildSkillBuilderServer,
   buildWorkMemoryServer,
 } from "./tools";
-import { ensureWorkWorkspace, listInstalledSkills } from "./workspace";
+import {
+  ensureWorkWorkspace as defaultEnsureWorkWorkspace,
+  listInstalledSkills as defaultListInstalledSkills,
+} from "./workspace";
 
 export type RunChatTurnOptions = {
   orgId: string;
@@ -31,6 +42,19 @@ export type RunChatTurnOptions = {
   message: string;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
+};
+
+// Tests can substitute any of these without touching the call site. Production
+// callers pass nothing and get the real implementations.
+export type RunChatTurnDeps = {
+  resolveAgentBackend: typeof defaultResolveAgentBackend;
+  ensureWorkWorkspace: typeof defaultEnsureWorkWorkspace;
+  resolveBinaryOnPath: typeof defaultResolveBinaryOnPath;
+  ensureGraphjinGuard: typeof defaultEnsureGraphjinGuard;
+  formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
+  prefetchKnowledgePack: typeof defaultPrefetchKnowledgePack;
+  listInstalledSkills: typeof defaultListInstalledSkills;
+  enqueue: <T extends object>(queue: QueueName, data: T) => Promise<string | null>;
 };
 
 export type RunChatTurnResult = {
@@ -45,8 +69,26 @@ function backendLabel(id: string): string {
 
 export async function runChatTurn(
   opts: RunChatTurnOptions,
+  deps: Partial<RunChatTurnDeps> = {},
 ): Promise<RunChatTurnResult> {
   const { orgId, threadId, runId, message, emit, signal } = opts;
+
+  const resolveAgentBackend = deps.resolveAgentBackend ?? defaultResolveAgentBackend;
+  const ensureWorkWorkspace = deps.ensureWorkWorkspace ?? defaultEnsureWorkWorkspace;
+  const resolveBinaryOnPath = deps.resolveBinaryOnPath ?? defaultResolveBinaryOnPath;
+  const ensureGraphjinGuard = deps.ensureGraphjinGuard ?? defaultEnsureGraphjinGuard;
+  const formatWorkMemoryPromptContext =
+    deps.formatWorkMemoryPromptContext ?? defaultFormatWorkMemoryPromptContext;
+  const prefetchKnowledgePack =
+    deps.prefetchKnowledgePack ?? defaultPrefetchKnowledgePack;
+  const listInstalledSkills =
+    deps.listInstalledSkills ?? defaultListInstalledSkills;
+  const enqueue = deps.enqueue ?? defaultEnqueue;
+  // runWorkAutoMemoryPipeline is referenced so its export stays live for
+  // backends that still import it directly. Not used here — the auto-memory
+  // classifier is enqueued as a pg-boss job (Hermes) or fired from the SDK
+  // Stop hook (claude-agent).
+  void runWorkAutoMemoryPipeline;
 
   await markWorkRunRunning(runId);
 
