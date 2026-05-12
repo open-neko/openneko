@@ -41,15 +41,28 @@ export {
 let _pool: pg.Pool | null = null;
 let _db: NodePgDatabase<typeof schema> | null = null;
 
+// Self-heal after .end() — vitest singleFork shares this singleton across
+// every test file in a workspace; once one file's afterAll calls
+// `pool().end()`, every later file gets a dead pool unless we recreate.
+function isPoolUsable(p: pg.Pool | null): p is pg.Pool {
+  if (!p) return false;
+  const flags = p as pg.Pool & { ended?: boolean; ending?: boolean };
+  return !flags.ended && !flags.ending;
+}
+
 export function pool(): pg.Pool {
-  if (_pool) return _pool;
+  if (isPoolUsable(_pool)) return _pool;
   _pool = new pg.Pool(buildPoolConfig());
+  _db = null;
   return _pool;
 }
 
 export function db(): NodePgDatabase<typeof schema> {
-  if (_db) return _db;
-  _db = drizzle(pool(), { schema });
+  // Re-resolve through pool() so a closed pool gets rebuilt + the drizzle
+  // wrapper rebound. Otherwise _db could hold a reference to a dead pool.
+  const live = pool();
+  if (_db && (_db as { client?: unknown }).client === live) return _db;
+  _db = drizzle(live, { schema });
   return _db;
 }
 
