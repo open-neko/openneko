@@ -22,6 +22,9 @@ export function buildWorkPrompt(args: {
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
+  // True when prior turns must be inlined into the system prompt because the
+  // backend can't reload them out-of-band (i.e. no session resume).
+  inlineTranscript: boolean;
 }): string {
   const {
     backend,
@@ -33,6 +36,7 @@ export function buildWorkPrompt(args: {
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
+    inlineTranscript,
   } =
     args;
   const shellTool = shellToolName(backend);
@@ -139,16 +143,15 @@ export function buildWorkPrompt(args: {
     "- Save generated reports or files under the run artifact directory.",
     "- For GraphJin date/range filters, do not put multiple operators under the same column object. Use `where: { and: [{ orderdate: { gte: \"2024-06-30\" } }, { orderdate: { lte: \"2025-06-29\" } }] }`, not `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.",
     "- Keep answers concise and useful.",
-    // Hermes opens session/new every turn; claude-agent resumes via session_id.
-    ...(backend === "claude-agent"
-      ? []
-      : [
+    ...(inlineTranscript
+      ? [
           "",
           "Conversation so far:",
           formatTranscript(messages),
           "",
           "Current user message:",
           currentUserMessage,
-        ]),
+        ]
+      : []),
   ].join("\n");
 }

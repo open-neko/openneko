@@ -105,9 +105,9 @@ export async function runChatTurn(
       message: `Starting ${backendLabel(backend.id)}…`,
     });
 
-    const supportsCardTool = backend.id === "claude-agent";
-    const supportsSkillTool = backend.id === "claude-agent";
-    const supportsMemoryTool = backend.id === "claude-agent";
+    const supportsCardTool = backend.capabilities.mcpTools;
+    const supportsSkillTool = backend.capabilities.mcpTools;
+    const supportsMemoryTool = backend.capabilities.mcpTools;
 
     const messages: AgentChatMessage[] = bundle.messages.map((row) => ({
       id: row.id,
@@ -140,38 +140,37 @@ export async function runChatTurn(
       supportsCardTool,
       supportsSkillTool,
       supportsMemoryTool,
+      inlineTranscript: !backend.capabilities.sessionResume,
     });
 
-    const mcpServers =
-      backend.id === "claude-agent"
-        ? {
-            ...(supportsCardTool
-              ? { neko_ui: buildRenderCardsServer(wrappedEmit) }
-              : {}),
-            ...(supportsSkillTool
-              ? { neko_skills: buildSkillBuilderServer(workspace.skillsRoot) }
-              : {}),
-            ...(supportsMemoryTool
-              ? {
-                  neko_memory: buildWorkMemoryServer({
-                    orgId,
-                    threadId,
-                    runId,
-                  }),
-                }
-              : {}),
-          }
-        : undefined;
+    const mcpServers = backend.capabilities.mcpTools
+      ? {
+          ...(supportsCardTool
+            ? { neko_ui: buildRenderCardsServer(wrappedEmit) }
+            : {}),
+          ...(supportsSkillTool
+            ? { neko_skills: buildSkillBuilderServer(workspace.skillsRoot) }
+            : {}),
+          ...(supportsMemoryTool
+            ? {
+                neko_memory: buildWorkMemoryServer({
+                  orgId,
+                  threadId,
+                  runId,
+                }),
+              }
+            : {}),
+        }
+      : undefined;
 
-    const autoMemoryHook =
-      backend.id === "claude-agent"
-        ? makeAutoMemoryStopHook({
-            orgId,
-            threadId,
-            runId,
-            userMessage: message,
-          })
-        : null;
+    const autoMemoryHook = backend.capabilities.sdkStopHook
+      ? makeAutoMemoryStopHook({
+          orgId,
+          threadId,
+          runId,
+          userMessage: message,
+        })
+      : null;
 
     const result = await backend.run({
       prompt,
@@ -207,8 +206,10 @@ export async function runChatTurn(
       });
     }
 
+    // Backends without an SDK Stop hook need a post-completion fallback to
+    // schedule the memory classifier.
     if (
-      backend.id !== "claude-agent" &&
+      !backend.capabilities.sdkStopHook &&
       result.status === "completed" &&
       result.finalText.trim()
     ) {

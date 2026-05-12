@@ -98,6 +98,14 @@ const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 
 export class HermesBackend implements AgentBackend {
   readonly id = "hermes" as const;
+  readonly capabilities = {
+    // ACP doesn't expose any of these to the runtime. Surfaces come via fence
+    // (see surface.ts); skills/memory only via prompt-mediated shell calls.
+    mcpTools: false,
+    sdkStopHook: false,
+    sessionResume: false,
+    canUseToolGate: false,
+  } as const;
 
   async run(opts: AgentRunOptions): Promise<AgentRunResult> {
     const {

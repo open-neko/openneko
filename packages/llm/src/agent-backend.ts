@@ -108,8 +108,24 @@ export type AgentRunResult = {
   error?: string;
 };
 
+// Per-backend feature flags so shared runtime code (runChatTurn, prompt
+// builder, auto-memory dispatch) never branches on backend.id. Adding a new
+// backend (Codex etc.) requires only declaring its capabilities; no edits to
+// shared call sites.
+export interface AgentBackendCapabilities {
+  /** Accepts in-process SDK MCP servers via run().mcpServers. */
+  readonly mcpTools: boolean;
+  /** Honors hooks.Stop with { async: true } returns for non-blocking post-turn work. */
+  readonly sdkStopHook: boolean;
+  /** Honors resume: sessionId in AgentRunOptions to reload prior turns out-of-band. */
+  readonly sessionResume: boolean;
+  /** Honors canUseTool callback for per-call permission decisions. */
+  readonly canUseToolGate: boolean;
+}
+
 export interface AgentBackend {
   readonly id: AgentBackendId;
+  readonly capabilities: AgentBackendCapabilities;
   run(opts: AgentRunOptions): Promise<AgentRunResult>;
 }
 
