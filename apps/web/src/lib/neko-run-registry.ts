@@ -13,7 +13,6 @@ export type RunEntry = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __neko_run_registry: Map<string, RunEntry> | undefined;
 }
 

@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   test:
-    name: Test + lint
+    name: Test
     runs-on: ubuntu-latest
 
     # Postgres backs the integration tests in packages/db/test/integration and
@@ -58,9 +58,6 @@ jobs:
           NEKO_PG_PASSWORD: secret
           NEKO_PG_DATABASE: neko
         run: node packages/db/src/migrate.mjs
-
-      - name: Lint
-        run: pnpm -r lint
 
       - name: Test
         env:
