@@ -28,3 +28,6 @@ adventureworks-onboarding.md
 # local agent / Claude config
 .agents/
 .claude/
+
+# design preview screenshots
+design-preview/

@@ -10,7 +10,7 @@ export default function SectionNav({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="dash-meta">
+    <div className="section-nav-row">
       <Link
         href="/"
         className={`settings-link nav-link${current === "dashboard" ? " is-active" : ""}`}
