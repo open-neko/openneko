@@ -1,0 +1,78 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test + lint
+    runs-on: ubuntu-latest
+
+    # Postgres backs the integration tests in packages/db/test/integration and
+    # the Postgres-gated tests in apps/web|worker. Defaults (user=neko,
+    # password=secret, database=neko) match packages/db/src/connection.ts so
+    # the runtime config falls back to them without needing a config.json.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: neko
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: neko
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neko"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
+
+      - name: Run migrations
+        env:
+          NEKO_PG_HOST: localhost
+          NEKO_PG_PORT: "5432"
+          NEKO_PG_USER: neko
+          NEKO_PG_PASSWORD: secret
+          NEKO_PG_DATABASE: neko
+        run: node packages/db/src/migrate.mjs
+
+      - name: Lint
+        run: pnpm -r lint
+
+      - name: Test
+        env:
+          # Defaults already match buildPoolConfig() in
+          # packages/db/src/connection.ts, but pass them through for the
+          # integration tests + migrate-aware helpers that read env vars
+          # directly.
+          NEKO_PG_HOST: localhost
+          NEKO_PG_PORT: "5432"
+          NEKO_PG_USER: neko
+          NEKO_PG_PASSWORD: secret
+          NEKO_PG_DATABASE: neko
+          # Stops the auto-memory pipeline from hitting Anthropic during tests.
+          AGENT_AUTO_MEMORY: "off"
+        run: pnpm -r test
