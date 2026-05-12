@@ -178,7 +178,7 @@ describe("HermesBackend ACP behavior", () => {
 
   it("emits surface event AND strips fence from finalText when onEvent is provided", async () => {
     const sessionId = "sess-surface";
-    const fenced = "Here is the surface:\n```neko_a2ui\n[{\"version\":\"v0.9\",\"kind\":\"text\",\"body\":\"hi\"}]\n```\nDone.";
+    const fenced = "Here is the surface:\n```neko_a2ui\n[{\"version\":\"v0.9\",\"createSurface\":{\"surfaceId\":\"s1\",\"catalogId\":\"urn:app:catalog:briefing:v1\"}}]\n```\nDone.";
     controller.setScript({
       responders: {
         "session/new": () => ({ sessionId }),

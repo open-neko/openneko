@@ -198,7 +198,7 @@ describe("ClaudeAgentBackend run", () => {
 
   it("emits surface event AND strips fence from finalText when onEvent is provided", async () => {
     const fenced =
-      "Here:\n```neko_a2ui\n[{\"version\":\"v0.9\",\"kind\":\"text\",\"body\":\"hi\"}]\n```\nDone.";
+      "Here:\n```neko_a2ui\n[{\"version\":\"v0.9\",\"createSurface\":{\"surfaceId\":\"s1\",\"catalogId\":\"urn:app:catalog:briefing:v1\"}}]\n```\nDone.";
     claudeController.setScript({
       records: [systemInit("sess-surf"), resultSuccess("sess-surf", fenced)],
     });

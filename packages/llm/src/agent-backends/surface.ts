@@ -3,6 +3,20 @@ import type { AgentSurfaceMessage } from "../agent-backend";
 const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;
 const JSX_TAG_RE = /<\/?[A-Z][A-Za-z0-9]*\b[^>]*>/g;
 
+// Mirror of isValidA2UIMessage in work/tools.ts so both backends apply the
+// same validation before emitting `surface` events.
+function isValidA2UIMessage(m: unknown): m is AgentSurfaceMessage {
+  if (!m || typeof m !== "object") return false;
+  const o = m as Record<string, unknown>;
+  if (o.version !== "v0.9") return false;
+  return (
+    "createSurface" in o ||
+    "updateComponents" in o ||
+    "updateDataModel" in o ||
+    "deleteSurface" in o
+  );
+}
+
 export function extractSurfaceMessages(raw: string): {
   text: string;
   messages: AgentSurfaceMessage[];
@@ -13,10 +27,13 @@ export function extractSurfaceMessages(raw: string): {
   const body = match[1].trim();
   try {
     const parsed = JSON.parse(body);
-    const messages = Array.isArray(parsed) ? (parsed as AgentSurfaceMessage[]) : [];
-    if (messages.length > 0) return { text: outsideText, messages };
+    if (Array.isArray(parsed)) {
+      const messages = parsed.filter(isValidA2UIMessage);
+      return { text: outsideText, messages };
+    }
+    // Non-array JSON falls through to synthetic markdown surface.
   } catch {
-    // fall through to synthetic fallback
+    // body wasn't JSON — fall through to synthetic markdown fallback
   }
   const proseFallback = body.replace(JSX_TAG_RE, "").trim();
   if (!proseFallback) return { text: outsideText, messages: [] };

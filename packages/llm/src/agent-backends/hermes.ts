@@ -301,6 +301,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
 
     let accumulatedText = "";
     let emittedOutsideLen = 0;
+    let surfaceEmittedDuringStream = false;
 
     client.onNotification((notif) => {
       const update = notif.update;
@@ -315,6 +316,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
             if (delta) {
               emittedOutsideLen = outside.length;
               void onEvent({ type: "message", role: "assistant", content: delta });
+            }
+            // Streaming surface emit: the fence regex requires a closing ```,
+            // so a partial fence returns no messages and we wait for the next chunk.
+            if (!surfaceEmittedDuringStream) {
+              const parsed = extractSurfaceMessages(accumulatedText);
+              if (parsed.messages.length > 0) {
+                surfaceEmittedDuringStream = true;
+                void onEvent({ type: "surface", messages: parsed.messages });
+              }
             }
           }
           return;
@@ -394,7 +404,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       const parsed = extractSurfaceMessages(accumulatedText);
       const markdownText = extractMarkdownText(parsed.messages);
       finalText = (markdownText || parsed.text).trim();
-      if (parsed.messages.length > 0) {
+      if (parsed.messages.length > 0 && !surfaceEmittedDuringStream) {
         await onEvent({ type: "surface", messages: parsed.messages });
       }
     }
