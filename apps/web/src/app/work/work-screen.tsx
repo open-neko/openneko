@@ -100,27 +100,11 @@ import {
 } from "@/lib/linkify-workspace-paths";
 import AppHeader from "@/components/AppHeader";
 import BriefingCard from "@/components/BriefingCard";
-import type { BriefingCardData } from "@/components/BriefingCard";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
 import WorkSidebar from "./WorkSidebar";
-
-const BRIEFING_CARD_SENTINEL = "::neko-briefing-card::";
-
-function parseBriefingCardMessage(content: string): BriefingCardData | null {
-  if (!content.startsWith(BRIEFING_CARD_SENTINEL)) return null;
-  const newlineAt = content.indexOf("\n");
-  const jsonStr = content.slice(
-    BRIEFING_CARD_SENTINEL.length,
-    newlineAt === -1 ? undefined : newlineAt,
-  );
-  try {
-    return JSON.parse(jsonStr) as BriefingCardData;
-  } catch {
-    return null;
-  }
-}
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";

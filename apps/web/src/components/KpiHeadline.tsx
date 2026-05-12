@@ -44,13 +44,13 @@ export default function KpiHeadline({ metric, label, data, size = "card", mood }
   );
 }
 
-function formatDeltaPct(pct: number): string {
+export function formatDeltaPct(pct: number): string {
   const abs = Math.abs(pct);
   if (abs >= 10) return `${Math.round(abs)}%`;
   return `${abs.toFixed(1)}%`;
 }
 
-function deltaToneClass(
+export function deltaToneClass(
   delta: { isUp: boolean; isBigDrop: boolean },
   mood: string | undefined,
 ): string {

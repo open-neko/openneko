@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, db, desc, eq, metric, metric_snapshot } from "@neko/db";
+import { BRIEFING_CARD_SENTINEL } from "@/lib/briefing-card-context";
 import { getOrgId } from "@/lib/db";
 import {
   createWorkMessage,
@@ -51,13 +52,14 @@ export async function POST(request: NextRequest) {
   });
 }
 
-// Sentinel that flips the transcript renderer from "markdown bubble" to
-// "BriefingCard component" for this one user message. The line below it
-// is the full card payload as JSON — same shape as BriefingCardData — so
-// the agent sees structured context AND the UI renders a real card.
-export const BRIEFING_CARD_SENTINEL = "::neko-briefing-card::";
-
-async function loadBriefingCardForSeed(
+/**
+ * Resolve a metric + its latest snapshot into the work_message content used
+ * to seed a deep-dive thread: BRIEFING_CARD_SENTINEL followed by the full
+ * BriefingCardData payload as JSON. Returns null when the metric is missing
+ * or belongs to a different org so the caller can silently skip the seed.
+ * Exported for the route's integration tests.
+ */
+export async function loadBriefingCardForSeed(
   orgId: string,
   metricId: string,
 ): Promise<string | null> {
