@@ -13,13 +13,24 @@ import { extractSurfaceMessages } from "./surface";
 
 let _claudeOnPathChecked = false;
 let _claudeOnPath = false;
+let _claudeBinaryPath: string | undefined;
 
+// Pin the SDK to the PATH binary. Otherwise it auto-resolves a sibling pnpm package and on Debian/glibc picks the musl variant first, which fails to spawn.
 function claudeBinaryAvailable(): boolean {
   if (_claudeOnPathChecked) return _claudeOnPath;
   _claudeOnPathChecked = true;
-  const r = spawnSync("which", ["claude"], { stdio: "ignore" });
+  const r = spawnSync("which", ["claude"], { encoding: "utf8" });
   _claudeOnPath = r.status === 0;
+  if (_claudeOnPath) {
+    const out = typeof r.stdout === "string" ? r.stdout : r.stdout?.toString() ?? "";
+    _claudeBinaryPath = out.trim() || undefined;
+  }
   return _claudeOnPath;
+}
+
+function claudeBinaryPath(): string | undefined {
+  claudeBinaryAvailable();
+  return _claudeBinaryPath;
 }
 
 export type ClaudeAgentBackendConfig = {
@@ -167,10 +178,12 @@ export class ClaudeAgentBackend implements AgentBackend {
     const toolDurations = new Map<string, number>();
 
     const sdkPrompt = userMessage ?? prompt;
+    const claudePath = claudeBinaryPath();
     const sdkOptions: Record<string, unknown> = {
       model: this.config.model,
       maxTurns: MAX_TURNS,
       tools: { type: "preset", preset: "claude_code" },
+      ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
       env: {
         ...process.env,
         ANTHROPIC_API_KEY: this.config.apiKey,

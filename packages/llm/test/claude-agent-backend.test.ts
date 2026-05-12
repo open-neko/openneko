@@ -19,7 +19,7 @@ vi.mock("node:child_process", async () => {
   );
   return {
     ...actual,
-    spawnSync: () => ({ status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") }),
+    spawnSync: () => ({ status: 0, stdout: "/usr/local/bin/claude\n", stderr: "" }),
   };
 });
 
