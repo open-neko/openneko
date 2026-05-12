@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # hermes:   required by the default Hermes backend.
 # claude:   required by the claude-agent backend (Anthropic SDK spawns it).
 FROM base AS cli
-ARG GRAPHJIN_VERSION=3.18.10
+ARG GRAPHJIN_VERSION=3.18.17
 ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
@@ -45,6 +45,15 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
     && rm -rf /tmp/uv-cache /root/.cache/uv \
     && hermes --version
 RUN npm install -g @anthropic-ai/claude-code
+
+# Bundled skills (xlsx / pptx / docx / pdf / skill-creator) shell out to
+# Python + LibreOffice + Poppler / qpdf. Mirror packages/llm/src/work/skill-deps.ts
+# so a fresh image has what they need at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip libreoffice poppler-utils qpdf \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir --break-system-packages \
+       openpyxl python-pptx Pillow python-docx pypdf pdfplumber reportlab PyYAML
 
 # ─── 3. deps: workspace install (cached on lockfile) ───────────────────
 FROM base AS deps
@@ -85,6 +94,8 @@ RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-
 COPY --from=build --chown=neko:neko /app/apps/web/.next/standalone ./
 COPY --from=build --chown=neko:neko /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=neko:neko /app/apps/web/public ./apps/web/public
+# Next.js standalone tracing misses static asset dirs — copy explicitly.
+COPY --from=build --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 USER neko

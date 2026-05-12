@@ -20,7 +20,9 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "test:e2e": "pnpm --filter @neko/worker test:e2e"
+    "test:e2e": "pnpm --filter @neko/worker test:e2e",
+    "skills:check": "node --experimental-strip-types scripts/skill-doctor.ts",
+    "skills:install": "node --experimental-strip-types scripts/skill-doctor.ts --install"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

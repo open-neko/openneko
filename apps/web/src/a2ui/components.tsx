@@ -10,6 +10,10 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  WORKSPACE_MARKDOWN_COMPONENTS,
+  linkifyWorkspacePaths,
+} from "@/lib/linkify-workspace-paths";
 import { registerComponent, renderChildren } from "./renderer";
 import type { RenderContext } from "./renderer";
 import type { A2UIComponent } from "./types";
@@ -37,7 +41,12 @@ registerComponent("Markdown", (comp: A2UIComponent) => {
   const props = comp as unknown as MarkdownProps & { id: string };
   return (
     <div key={props.id} className="work-markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{props.text}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={WORKSPACE_MARKDOWN_COMPONENTS}
+      >
+        {linkifyWorkspacePaths(props.text)}
+      </ReactMarkdown>
     </div>
   );
 });

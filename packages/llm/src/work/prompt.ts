@@ -1,5 +1,6 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
 import { knowledgePackPaths } from "../knowledge-pack";
+import type { InstalledSkill } from "./workspace";
 
 function formatTranscript(messages: AgentChatMessage[]): string {
   if (messages.length === 0) return "No prior messages.";
@@ -17,9 +18,13 @@ export function buildWorkPrompt(args: {
   messages: AgentChatMessage[];
   currentUserMessage: string;
   memoryContext?: string;
+  installedSkills?: InstalledSkill[];
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
+  // True when prior turns must be inlined into the system prompt because the
+  // backend can't reload them out-of-band (i.e. no session resume).
+  inlineTranscript: boolean;
 }): string {
   const {
     backend,
@@ -27,9 +32,11 @@ export function buildWorkPrompt(args: {
     messages,
     currentUserMessage,
     memoryContext,
+    installedSkills,
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
+    inlineTranscript,
   } =
     args;
   const shellTool = shellToolName(backend);
@@ -95,6 +102,14 @@ export function buildWorkPrompt(args: {
     "Loaded memory:",
     memoryContext?.trim() || "No core memories are currently saved for this workspace or thread.",
     "",
+    "Installed skills — capability recipes you can use. Before responding that you cannot do something, check whether one of these skills covers it and read its SKILL.md for usage details. The host image ships Python 3, LibreOffice (`soffice`), Poppler (`pdftotext`), qpdf, plus pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx, python-docx, PyYAML.",
+    ...(installedSkills && installedSkills.length > 0
+      ? installedSkills.map(
+          (s) =>
+            `  - ${s.name} — ${s.description || `details in ${workspace.skillsRoot}/${s.name}/SKILL.md`}`,
+        )
+      : [`  (none installed; check ${workspace.skillsRoot})`]),
+    "",
     "DATA ACCESS — the configured GraphJin database is the authoritative source for any operational question (revenue, customers, orders, inventory, employees, sales, products, etc.). Uploaded files are auxiliary — only use them if the user explicitly references them (e.g. \"in the file I just uploaded\") or the database genuinely doesn't have what they're asking for.",
     "",
     "GraphJin knowledge pack — read these prefetched files with your `" + shellTool + "` tool BEFORE writing any query. Broad schema and syntax dumps are already on disk; do NOT run `graphjin cli list_tables` / `describe_table` / `get_query_syntax` / `get_schema_insights` / `get_discovery_schema`:",
@@ -128,11 +143,15 @@ export function buildWorkPrompt(args: {
     "- Save generated reports or files under the run artifact directory.",
     "- For GraphJin date/range filters, do not put multiple operators under the same column object. Use `where: { and: [{ orderdate: { gte: \"2024-06-30\" } }, { orderdate: { lte: \"2025-06-29\" } }] }`, not `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.",
     "- Keep answers concise and useful.",
-    "",
-    "Conversation so far:",
-    formatTranscript(messages),
-    "",
-    "Current user message:",
-    currentUserMessage,
+    ...(inlineTranscript
+      ? [
+          "",
+          "Conversation so far:",
+          formatTranscript(messages),
+          "",
+          "Current user message:",
+          currentUserMessage,
+        ]
+      : []),
   ].join("\n");
 }

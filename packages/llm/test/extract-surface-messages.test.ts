@@ -18,7 +18,10 @@ describe("extractSurfaceMessages", () => {
       "Here are the KPIs:",
       "```neko_a2ui",
       JSON.stringify([
-        { version: "v0.9", surfaceId: "kpis", components: [] },
+        {
+          version: "v0.9",
+          createSurface: { surfaceId: "kpis", catalogId: "urn:app:catalog:briefing:v1" },
+        },
       ]),
       "```",
       "Anything else?",
@@ -63,7 +66,8 @@ describe("extractSurfaceMessages", () => {
   });
 
   it("matches the fence regardless of casing", () => {
-    const raw = '```NEKO_A2UI\n[{"version": "v0.9"}]\n```';
+    const raw =
+      '```NEKO_A2UI\n[{"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"urn:app:catalog:briefing:v1"}}]\n```';
     const result = extractSurfaceMessages(raw);
     expect(result.messages).toHaveLength(1);
   });

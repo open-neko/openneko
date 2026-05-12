@@ -10,6 +10,8 @@ import * as schema from "./schema";
 
 export { schema };
 export * from "./schema";
+export { buildPoolConfig } from "./connection";
+export { createNotifyClient, type NotifyClient } from "./notify";
 export { getOrgId, _resetOrgIdCacheForTesting } from "./org";
 export {
   readLocalConfig,

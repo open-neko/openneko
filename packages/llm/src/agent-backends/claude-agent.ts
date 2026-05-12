@@ -33,6 +33,12 @@ const MAX_TURNS = 25;
 
 export class ClaudeAgentBackend implements AgentBackend {
   readonly id = "claude-agent" as const;
+  readonly capabilities = {
+    mcpTools: true,
+    sdkStopHook: true,
+    sessionResume: true,
+    canUseToolGate: true,
+  } as const;
 
   constructor(private readonly config: ClaudeAgentBackendConfig) {
     if (!config.apiKey) {

@@ -110,20 +110,21 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     await pool().end();
   });
 
-  it("creates work_run + processing_job and enqueues WORK_RUN", async () => {
+  // After the in-process refactor (phase 3) the POST route no longer
+  // creates a processing_job or enqueues a WORK_RUN job — it fires
+  // runChatTurn() in the Next.js process via the registry. The work_run
+  // row + JSON response are still the synchronous contract this test
+  // verifies; the fire-and-forget runChatTurn runs in the background
+  // with a mocked backend and doesn't affect the assertions.
+  it("creates a work_run row and returns the runId + backend synchronously", async () => {
     const res = await callRunsPost(POST, {
       threadId,
       body: { message: "What's the revenue?" },
     });
 
     expect(res.status).toBe(200);
-    const { runId, backend, jobId } = res.body as {
-      runId: string;
-      backend: string;
-      jobId: string;
-    };
+    const { runId, backend } = res.body as { runId: string; backend: string };
     expect(runId).toBeTruthy();
-    expect(jobId).toBeTruthy();
     expect(backend).toBe("hermes");
 
     const runs = await db()
@@ -131,27 +132,16 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
       .from(work_run)
       .where(eq(work_run.id, runId))
       .limit(1);
-    expect(runs[0]?.status).toBe("queued");
+    expect(runs[0]).toBeDefined();
     expect(runs[0]?.backend).toBe("hermes");
 
+    // Old behavior gone: no processing_job, no enqueue.
     const procs = await db()
-      .select({ kind: processing_job.kind, status: processing_job.status })
+      .select({ id: processing_job.id })
       .from(processing_job)
-      .where(eq(processing_job.id, jobId))
-      .limit(1);
-    expect(procs[0]?.kind).toBe("work_run");
-    expect(procs[0]?.status).toBe("queued");
-
-    expect(mockEnqueue).toHaveBeenCalledWith(
-      "work_run",
-      expect.objectContaining({
-        processingJobId: jobId,
-        orgId,
-        runId,
-        threadId,
-        message: "What's the revenue?",
-      }),
-    );
+      .where(eq(processing_job.org_id, orgId));
+    expect(procs).toHaveLength(0);
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("rejects empty message with 400", async () => {
@@ -170,32 +160,8 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
-  it("rolls work_run + processing_job to failed when enqueue throws (atomic-ish)", async () => {
-    mockEnqueue.mockRejectedValue(new Error("pg-boss is on fire"));
-
-    const res = await callRunsPost(POST, {
-      threadId,
-      body: { message: "anything" },
-    });
-    expect(res.status).toBe(500);
-    expect((res.body as { error: string }).error).toMatch(/pg-boss is on fire/);
-
-    const runs = await db()
-      .select({ status: work_run.status, error: work_run.error })
-      .from(work_run)
-      .where(
-        and(eq(work_run.org_id, orgId), eq(work_run.thread_id, threadId)),
-      );
-    expect(runs).toHaveLength(1);
-    expect(runs[0]?.status).toBe("failed");
-    expect(runs[0]?.error).toMatch(/pg-boss is on fire/);
-
-    const procs = await db()
-      .select({ status: processing_job.status, error: processing_job.error })
-      .from(processing_job)
-      .where(eq(processing_job.org_id, orgId));
-    expect(procs).toHaveLength(1);
-    expect(procs[0]?.status).toBe("failed");
-    expect(procs[0]?.error).toMatch(/pg-boss is on fire/);
-  });
+  // Old test "rolls work_run + processing_job to failed when enqueue
+  // throws" removed: there's no enqueue path on this route anymore.
+  // Backend failures inside the fire-and-forget runChatTurn are exercised
+  // by the worker-side run-chat-turn integration tests instead.
 });

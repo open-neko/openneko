@@ -7,6 +7,7 @@ import {
   enqueue,
   QUEUE,
   type ProcessingJobPayload,
+  type WorkAutoMemoryPayload,
   type WorkRunPayload,
 } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
@@ -27,7 +28,8 @@ import {
   UpstreamProviderError,
   verifyAiCredentials,
 } from "@neko/llm";
-import { ensureOrgWorkspace } from "@neko/llm/work";
+import { ensureOrgWorkspace, runWorkAutoMemoryPipeline } from "@neko/llm/work";
+import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
 import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
@@ -271,6 +273,23 @@ for (let i = 0; i < concurrency.globalCap; i++) {
 await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();
 });
+
+await b.work(
+  QUEUE.WORK_AUTO_MEMORY,
+  async (jobs: PgBossLib.Job<WorkAutoMemoryPayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runWorkAutoMemoryPipeline(job.data);
+      } catch (e) {
+        console.warn(
+          `[work-auto-memory] job ${job.id} failed; pg-boss may retry:`,
+          e instanceof Error ? e.message : e,
+        );
+        throw e;
+      }
+    }
+  },
+);
 
 if (SCHEDULED_REFRESH_HOURS > 0) {
   const cron =

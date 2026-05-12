@@ -1,3 +1,12 @@
+// Integration tests for runChatTurn — the shared agent runtime that the
+// worker's runWorkRun adapter and the web's API route both delegate to.
+//
+// We exercise runChatTurn directly with mocked dependencies (DI) so the
+// tests don't have to deal with vitest module-mock indirection through
+// pnpm self-references. The worker adapter itself is a 25-line wrapper
+// around runChatTurn and is implicitly covered by virtue of using the
+// same emit/seq closure shape these tests build.
+
 import {
   afterAll,
   afterEach,
@@ -24,38 +33,13 @@ import {
   work_run_event,
   work_thread,
 } from "@neko/db";
-
-const { mockBackendRun, mockResolveBackend, mockResolveBinary, mockEnsureGuard, mockEnsureWorkspace, mockFormatMemoryContext, mockRunAutoMemory } = vi.hoisted(() => ({
-  mockBackendRun: vi.fn(),
-  mockResolveBackend: vi.fn(),
-  mockResolveBinary: vi.fn(),
-  mockEnsureGuard: vi.fn(),
-  mockEnsureWorkspace: vi.fn(),
-  mockFormatMemoryContext: vi.fn(),
-  mockRunAutoMemory: vi.fn(),
-}));
-
-vi.mock("@neko/llm", async () => {
-  const actual = await vi.importActual<typeof import("@neko/llm")>("@neko/llm");
-  return {
-    ...actual,
-    resolveAgentBackend: mockResolveBackend,
-  };
-});
-
-vi.mock("@neko/llm/work", async () => {
-  const actual = await vi.importActual<typeof import("@neko/llm/work")>(
-    "@neko/llm/work",
-  );
-  return {
-    ...actual,
-    resolveBinaryOnPath: mockResolveBinary,
-    ensureGraphjinGuard: mockEnsureGuard,
-    ensureWorkWorkspace: mockEnsureWorkspace,
-    formatWorkMemoryPromptContext: mockFormatMemoryContext,
-    runWorkAutoMemoryPipeline: mockRunAutoMemory,
-  };
-});
+import {
+  appendWorkRunEvent,
+  getWorkRunEvents,
+  runChatTurn,
+  type RunChatTurnDeps,
+} from "@neko/llm/work";
+import type { AgentEvent } from "@neko/llm";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -78,6 +62,30 @@ const FAKE_WORKSPACE = {
   claudeProjectRoot: "/tmp/work-test/org",
   claudeConfigRoot: "/tmp/work-test/org/claude/config",
 };
+
+const HERMES_CAPABILITIES = {
+  mcpTools: false,
+  sdkStopHook: false,
+  sessionResume: false,
+  canUseToolGate: false,
+} as const;
+
+type EmitFn = (event: AgentEvent) => Promise<void>;
+
+// Builds the seq-counter + DB-persist emit shape that both the worker's
+// runWorkRun and the web's API route use. Mirrors the production code
+// without coupling the test to either.
+async function buildEmit(args: {
+  orgId: string;
+  threadId: string;
+  runId: string;
+}): Promise<EmitFn> {
+  let seq = (await getWorkRunEvents(args.orgId, args.runId)).length;
+  return async (event) => {
+    seq += 1;
+    await appendWorkRunEvent({ ...args, seq, event });
+  };
+}
 
 async function insertWorkRun(args: {
   orgId: string;
@@ -104,28 +112,37 @@ async function insertWorkThread(orgId: string) {
   return ins[0]!;
 }
 
-describeIfDb("runWorkRun", () => {
+describeIfDb("runChatTurn", () => {
   let orgId: string;
-  let runWorkRun: typeof import("../../src/jobs/work-run").runWorkRun;
 
-  beforeAll(async () => {
-    const mod = await import("../../src/jobs/work-run.js");
-    runWorkRun = mod.runWorkRun;
-  });
+  const mockBackendRun = vi.fn();
+  const mockEnqueue = vi.fn();
+  const mockResolveBinary = vi.fn();
+
+  function makeDeps(over: Partial<RunChatTurnDeps> = {}): Partial<RunChatTurnDeps> {
+    return {
+      resolveAgentBackend: vi.fn(async () => ({
+        id: "hermes" as const,
+        capabilities: HERMES_CAPABILITIES,
+        run: mockBackendRun,
+      })),
+      ensureWorkWorkspace: vi.fn(async () => FAKE_WORKSPACE),
+      resolveBinaryOnPath: mockResolveBinary,
+      ensureGraphjinGuard: vi.fn(async () => undefined),
+      formatWorkMemoryPromptContext: vi.fn(async () => ""),
+      listInstalledSkills: vi.fn(async () => []),
+      prefetchKnowledgePack: vi.fn(async () => ({ ok: true as const })),
+      enqueue: mockEnqueue,
+      ...over,
+    };
+  }
 
   beforeEach(async () => {
     orgId = uniqueOrgId("job-work-run");
     await createTestOrg(orgId);
-    mockResolveBackend.mockResolvedValue({
-      id: "hermes",
-      run: mockBackendRun,
-    });
-    mockResolveBinary.mockResolvedValue("/usr/local/bin/graphjin");
-    mockEnsureGuard.mockResolvedValue(undefined);
-    mockEnsureWorkspace.mockResolvedValue(FAKE_WORKSPACE);
-    mockFormatMemoryContext.mockResolvedValue("");
-    mockRunAutoMemory.mockResolvedValue(undefined);
     mockBackendRun.mockReset();
+    mockEnqueue.mockReset().mockResolvedValue("queued-job-id");
+    mockResolveBinary.mockReset().mockResolvedValue("/usr/local/bin/graphjin");
   });
 
   afterEach(async () => {
@@ -142,7 +159,7 @@ describeIfDb("runWorkRun", () => {
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
     mockBackendRun.mockImplementation(async (opts: {
-      onEvent: (e: { type: string; role?: string; content?: string }) => Promise<void>;
+      onEvent: (e: AgentEvent) => Promise<void>;
     }) => {
       await opts.onEvent({
         type: "message",
@@ -156,11 +173,17 @@ describeIfDb("runWorkRun", () => {
       };
     });
 
-    await runWorkRun("processing-job-id", orgId, {
-      runId: run.id,
-      threadId: thread.id,
-      message: "What's the revenue?",
-    });
+    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    await runChatTurn(
+      {
+        orgId,
+        threadId: thread.id,
+        runId: run.id,
+        message: "What's the revenue?",
+        emit,
+      },
+      makeDeps(),
+    );
 
     const events = await db()
       .select({ seq: work_run_event.seq, kind: work_run_event.kind })
@@ -182,17 +205,21 @@ describeIfDb("runWorkRun", () => {
     expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
 
     const final = await db()
-      .select({
-        status: work_run.status,
-        error: work_run.error,
-      })
+      .select({ status: work_run.status, error: work_run.error })
       .from(work_run)
       .where(eq(work_run.id, run.id))
       .limit(1);
     expect(final[0]?.status).toBe("completed");
     expect(final[0]?.error).toBeNull();
 
-    expect(mockRunAutoMemory).toHaveBeenCalledTimes(1);
+    // Hermes (no SDK Stop hook) → auto-memory enqueued as a pg-boss job.
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      "work_auto_memory",
+      expect.objectContaining({
+        runId: run.id,
+        agentAnswer: "Hello from the agent.",
+      }),
+    );
   });
 
   it("backend throws → work_run.status='failed' with the error message; error+done events written", async () => {
@@ -201,16 +228,22 @@ describeIfDb("runWorkRun", () => {
 
     mockBackendRun.mockRejectedValue(new Error("Hermes spawn failed"));
 
+    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await expect(
-      runWorkRun("processing-job-id", orgId, {
-        runId: run.id,
-        threadId: thread.id,
-        message: "x",
-      }),
+      runChatTurn(
+        {
+          orgId,
+          threadId: thread.id,
+          runId: run.id,
+          message: "x",
+          emit,
+        },
+        makeDeps(),
+      ),
     ).rejects.toThrow(/Hermes spawn failed/);
 
     const events = await db()
-      .select({ kind: work_run_event.kind, payload: work_run_event.payload })
+      .select({ kind: work_run_event.kind })
       .from(work_run_event)
       .where(eq(work_run_event.run_id, run.id))
       .orderBy(asc(work_run_event.seq));
@@ -226,22 +259,45 @@ describeIfDb("runWorkRun", () => {
     expect(final[0]?.status).toBe("failed");
     expect(final[0]?.error).toBe("Hermes spawn failed");
 
-    expect(mockRunAutoMemory).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
-  it("missing thread → throws and never invokes the backend", async () => {
+  it("deleted thread (cascade) → returns failed status without invoking the backend", async () => {
+    // Pre-existing scenario: the thread was deleted between enqueue and
+    // dispatch. The FK on work_run cascades, so by the time runChatTurn
+    // tries getWorkThreadBundle the row is gone. It marks the run failed
+    // (best-effort; finishWorkRun no-ops on a missing row) and returns
+    // cleanly so pg-boss doesn't retry forever.
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
+
+    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+
+    // Drop the thread → cascades to work_run via the on-delete-cascade FK.
     await db().delete(work_thread).where(eq(work_thread.id, thread.id));
 
-    await expect(
-      runWorkRun("processing-job-id", orgId, {
-        runId: run.id,
+    const result = await runChatTurn(
+      {
+        orgId,
         threadId: thread.id,
+        runId: run.id,
         message: "x",
-      }),
-    ).rejects.toThrow(/thread .* not found/);
+        emit,
+      },
+      makeDeps(),
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/Thread deleted before run start/i);
     expect(mockBackendRun).not.toHaveBeenCalled();
+
+    // Row is gone (cascade), confirming runChatTurn handled the no-op
+    // path without erroring.
+    const final = await db()
+      .select({ id: work_run.id })
+      .from(work_run)
+      .where(eq(work_run.id, run.id));
+    expect(final).toHaveLength(0);
   });
 
   it("graphjin binary missing → fails fast with a clear error", async () => {
@@ -249,12 +305,18 @@ describeIfDb("runWorkRun", () => {
     const run = await insertWorkRun({ orgId, threadId: thread.id });
     mockResolveBinary.mockResolvedValue(null);
 
+    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await expect(
-      runWorkRun("processing-job-id", orgId, {
-        runId: run.id,
-        threadId: thread.id,
-        message: "x",
-      }),
+      runChatTurn(
+        {
+          orgId,
+          threadId: thread.id,
+          runId: run.id,
+          message: "x",
+          emit,
+        },
+        makeDeps(),
+      ),
     ).rejects.toThrow(/graphjin CLI is not installed/);
 
     expect(mockBackendRun).not.toHaveBeenCalled();
@@ -295,11 +357,17 @@ describeIfDb("runWorkRun", () => {
       backendState: {},
     }));
 
-    await runWorkRun("processing-job-id", orgId, {
-      runId: run.id,
-      threadId: thread.id,
-      message: "x",
-    });
+    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    await runChatTurn(
+      {
+        orgId,
+        threadId: thread.id,
+        runId: run.id,
+        message: "x",
+        emit,
+      },
+      makeDeps(),
+    );
 
     const seqs = (
       await db()
@@ -308,6 +376,7 @@ describeIfDb("runWorkRun", () => {
         .where(eq(work_run_event.run_id, run.id))
         .orderBy(asc(work_run_event.seq))
     ).map((r) => r.seq);
+    // 2 leftover + 2 status (Starting/Loading) + 1 done = 5
     expect(seqs).toEqual([1, 2, 3, 4, 5]);
   });
 });

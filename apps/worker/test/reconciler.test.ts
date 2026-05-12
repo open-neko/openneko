@@ -22,6 +22,7 @@ import {
   processing_job,
   sql,
 } from "@neko/db";
+import { boss, QUEUE } from "@neko/db/jobs";
 import { reconcileStaleProcessingJobs } from "../src/reconciler";
 
 const reachable = await dbReachable();
@@ -33,8 +34,15 @@ if (!reachable) {
 
 async function ensurePgbossSchema(): Promise<boolean> {
   try {
-    await db().execute(sql`SELECT 1 FROM pgboss.job LIMIT 1`);
-    return true;
+    // pg-boss v10 partitions pgboss.job by queue. Inserts fail with
+    // "no partition of relation 'job' found for row" when no queue
+    // has been created. Skip these tests cleanly when there isn't at
+    // least one partition (i.e. a fresh CI Postgres without queues).
+    const result = await db().execute(
+      sql`SELECT count(*)::int AS n FROM pg_inherits WHERE inhparent = 'pgboss.job'::regclass`,
+    );
+    const rows = (result as { rows?: Array<{ n: number }> }).rows ?? [];
+    return rows.length > 0 && rows[0].n > 0;
   } catch {
     return false;
   }
@@ -100,6 +108,20 @@ if (reachable && !pgbossOk) {
 
 describeIfReady("reconcileStaleProcessingJobs", () => {
   let orgId: string;
+
+  beforeAll(async () => {
+    // pg-boss v10 partitions pgboss.job by queue name. Inserts into a queue
+    // whose partition isn't created yet fail with "no partition of relation
+    // 'job' found for row". Pre-create every queue this suite touches (and
+    // a couple of others for safety) so the SQL INSERT in insertPgbossJob
+    // lands cleanly.
+    const b = await boss();
+    for (const name of Object.values(QUEUE)) {
+      await b.createQueue(name).catch(() => {
+        // idempotent — ignore "queue already exists"
+      });
+    }
+  });
 
   beforeEach(async () => {
     orgId = uniqueOrgId("reconciler");

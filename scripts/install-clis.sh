@@ -13,7 +13,7 @@
 #   ./scripts/install-clis.sh --skip-hermes  # graphjin + claude only
 set -euo pipefail
 
-GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.18.10}"
+GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.18.17}"
 
 SKIP_GRAPHJIN=false
 SKIP_CLAUDE=false

@@ -1,6 +1,7 @@
 "use client";
 
 import "@/a2ui/components";
+import type { AnchorHTMLAttributes, ReactNode } from "react";
 import {
   ArrowUp,
   Brain,
@@ -21,6 +22,82 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+// Matches absolute container paths to agent-generated/uploaded files inside the
+// per-org workspace, e.g.
+//   /tmp/openneko-home/.config/openneko/agents/orgs/<orgId>/runs/<runId>/artifacts/file.pdf
+//   ~/.config/openneko/agents/orgs/<orgId>/uploads/<threadId>/file.csv
+// The capture group is the workspace-relative path the /api/work/files route
+// already serves.
+const WORKSPACE_FILE_RE =
+  /\/agents\/orgs\/[A-Za-z0-9-]+\/((?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)/g;
+
+type MdNode = { type: string; value?: string; url?: string; children?: MdNode[] };
+
+function autolinkWorkspaceFiles() {
+  return (tree: unknown) => walkMdNode(tree, null);
+}
+
+function walkMdNode(node: unknown, parent: MdNode | null): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as MdNode;
+  if (n.type === "code" || n.type === "link") return;
+  // inlineCode is the `path` case — assistant often wraps file paths in
+  // backticks. Convert the whole inline-code node to a link if its value
+  // matches a workspace file path.
+  if (n.type === "inlineCode" && typeof n.value === "string" && parent?.children) {
+    WORKSPACE_FILE_RE.lastIndex = 0;
+    const match = WORKSPACE_FILE_RE.exec(n.value);
+    if (match) {
+      const idx = parent.children.indexOf(n);
+      if (idx !== -1) {
+        parent.children.splice(idx, 1, {
+          type: "link",
+          url: `/api/work/files/${match[1]}`,
+          children: [{ type: "inlineCode", value: n.value.split("/").slice(-1)[0] }],
+        });
+      }
+    }
+    return;
+  }
+  if (n.type === "text" && typeof n.value === "string" && parent?.children) {
+    const value = n.value;
+    WORKSPACE_FILE_RE.lastIndex = 0;
+    const matches = [...value.matchAll(WORKSPACE_FILE_RE)];
+    if (matches.length === 0) return;
+    const replacement: MdNode[] = [];
+    let cursor = 0;
+    for (const m of matches) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      if (start > cursor) {
+        replacement.push({ type: "text", value: value.slice(cursor, start) });
+      }
+      replacement.push({
+        type: "link",
+        url: `/api/work/files/${m[1]}`,
+        children: [{ type: "text", value: m[0].split("/").slice(-1)[0] }],
+      });
+      cursor = end;
+    }
+    if (cursor < value.length) {
+      replacement.push({ type: "text", value: value.slice(cursor) });
+    }
+    const idx = parent.children.indexOf(n);
+    if (idx !== -1) parent.children.splice(idx, 1, ...replacement);
+    return;
+  }
+  if (Array.isArray(n.children)) {
+    for (const child of n.children.slice()) walkMdNode(child, n);
+  }
+}
+
+const REMARK_PLUGINS = [remarkGfm, autolinkWorkspaceFiles];
+
+import {
+  WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
+  linkifyWorkspacePaths,
+} from "@/lib/linkify-workspace-paths";
 import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
@@ -83,6 +160,14 @@ type ThreadBundle = {
   eventsByRun: Record<string, WorkEvent[]>;
 };
 
+type StreamResult = "done" | "closed";
+
+type ActiveRunStream = {
+  threadId: string;
+  runId: string;
+  close: () => void;
+};
+
 type UploadedWorkFile = {
   name: string;
   relativePath: string;
@@ -109,6 +194,64 @@ type PendingMemory = {
   conflicts: Array<{ memoryId: string; text: string; similarity: number }>;
 };
 
+function isRunInFlight(run: RunRecord): boolean {
+  return run.status === "queued" || run.status === "running";
+}
+
+function latestInFlightRun(runs: RunRecord[]): RunRecord | null {
+  for (let i = runs.length - 1; i >= 0; i -= 1) {
+    if (isRunInFlight(runs[i])) return runs[i];
+  }
+  return null;
+}
+
+function needsAssistantTimelinePlaceholder(
+  run: RunRecord,
+  events: WorkEvent[] | undefined,
+): boolean {
+  return isRunInFlight(run) || Boolean(run.error) || Boolean(events?.length);
+}
+
+function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadBundle {
+  const placeholders: MessageRecord[] = [];
+  const assistantRunIds = new Set(
+    bundle.messages
+      .filter((message) => message.role === "assistant" && message.runId)
+      .map((message) => message.runId as string),
+  );
+
+  for (const run of bundle.runs) {
+    if (assistantRunIds.has(run.id)) continue;
+    if (!needsAssistantTimelinePlaceholder(run, bundle.eventsByRun[run.id])) {
+      continue;
+    }
+    placeholders.push({
+      id: `assistant-${run.id}`,
+      runId: run.id,
+      role: "assistant",
+      content: "",
+      createdAt: run.createdAt,
+    });
+  }
+
+  if (placeholders.length === 0) return bundle;
+
+  const messages = [...bundle.messages];
+  for (const placeholder of placeholders) {
+    let insertAt = messages.length;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.runId === placeholder.runId && message.role === "user") {
+        insertAt = i + 1;
+        break;
+      }
+    }
+    messages.splice(insertAt, 0, placeholder);
+  }
+
+  return { ...bundle, messages };
+}
+
 export default function WorkScreen({
   initialThreadId,
 }: {
@@ -131,6 +274,22 @@ export default function WorkScreen({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const activeRunStreamRef = useRef<ActiveRunStream | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      activeRunStreamRef.current?.close();
+      activeRunStreamRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,12 +347,16 @@ export default function WorkScreen({
       // navigation re-mounts this screen with the right initialThreadId.
       if (!preferredThreadId && nextId) {
         router.replace(`/work/${nextId}`);
-        return;
       }
+      activeThreadIdRef.current = nextId;
       setActiveThreadId(nextId);
       if (nextId) {
         await loadThread(nextId);
       } else {
+        activeRunStreamRef.current?.close();
+        activeRunStreamRef.current = null;
+        setSending(false);
+        setActiveRunId(null);
         setBundle(null);
       }
     } finally {
@@ -206,12 +369,19 @@ export default function WorkScreen({
     try {
       const res = await fetch(`/api/work/threads/${threadId}`);
       if (!res.ok) {
+        activeRunStreamRef.current?.close();
+        activeRunStreamRef.current = null;
+        setSending(false);
+        setActiveRunId(null);
         setBundle(null);
         return;
       }
       const data = (await res.json()) as ThreadBundle;
-      setBundle(data);
+      const nextBundle = withAssistantTimelinePlaceholders(data);
+      setBundle(nextBundle);
+      activeThreadIdRef.current = threadId;
       setActiveThreadId(threadId);
+      resumeLatestInFlightRun(threadId, nextBundle);
       await loadPendingMemories(threadId);
     } finally {
       setLoadingThread(false);
@@ -235,10 +405,15 @@ export default function WorkScreen({
     if (activeThreadId === threadId) {
       const nextId = remaining[0]?.id ?? null;
       router.replace(nextId ? `/work/${nextId}` : "/work");
+      activeThreadIdRef.current = nextId;
       setActiveThreadId(nextId);
       if (nextId) {
         await loadThread(nextId);
       } else {
+        activeRunStreamRef.current?.close();
+        activeRunStreamRef.current = null;
+        setSending(false);
+        setActiveRunId(null);
         setBundle(null);
       }
     }
@@ -267,6 +442,7 @@ export default function WorkScreen({
     const data = (await res.json()) as { thread: ThreadSummary };
     const nextId = data.thread.id;
     setThreads((prev) => [data.thread, ...prev]);
+    activeThreadIdRef.current = nextId;
     setActiveThreadId(nextId);
     setBundle({
       thread: {
@@ -386,10 +562,12 @@ export default function WorkScreen({
   }
 
   async function postAndStreamRun(threadId: string, message: string) {
+    const body = JSON.stringify({ message });
     const res = await fetch(`/api/work/threads/${threadId}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      ...(body.length < 60_000 ? { keepalive: true } : {}),
+      body,
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
@@ -402,6 +580,7 @@ export default function WorkScreen({
       runId: string;
       backend: string;
     };
+    if (!mountedRef.current) return;
 
     setActiveRunId(runId);
     setBundle((prev) =>
@@ -439,14 +618,85 @@ export default function WorkScreen({
         : prev,
     );
 
-    await new Promise<void>((resolve) => {
+    await streamAndRefreshRun(threadId, runId, 0);
+  }
+
+  function resumeLatestInFlightRun(threadId: string, nextBundle: ThreadBundle) {
+    const run = latestInFlightRun(nextBundle.runs);
+    const current = activeRunStreamRef.current;
+    if (current && (!run || current.threadId !== threadId || current.runId !== run.id)) {
+      current.close();
+    }
+
+    if (!run) {
+      if (activeThreadIdRef.current === threadId) {
+        setSending(false);
+        setActiveRunId(null);
+      }
+      return;
+    }
+
+    setStreamError(null);
+    setSending(true);
+    setActiveRunId(run.id);
+    const afterSeq = nextBundle.eventsByRun[run.id]?.length ?? 0;
+    void streamAndRefreshRun(threadId, run.id, afterSeq);
+  }
+
+  async function streamAndRefreshRun(
+    threadId: string,
+    runId: string,
+    afterSeq: number,
+  ) {
+    const result = await followRunEvents(threadId, runId, afterSeq);
+    if (result !== "done" || !mountedRef.current) return;
+    if (activeThreadIdRef.current !== threadId) return;
+
+    setSending(false);
+    setActiveRunId(null);
+    await Promise.all([loadThreads(threadId), loadThread(threadId), loadMemories()]);
+    window.setTimeout(() => {
+      if (!mountedRef.current || activeThreadIdRef.current !== threadId) return;
+      void loadPendingMemories(threadId);
+      void loadMemories();
+    }, 1500);
+  }
+
+  async function followRunEvents(
+    threadId: string,
+    runId: string,
+    afterSeq: number,
+  ): Promise<StreamResult> {
+    const current = activeRunStreamRef.current;
+    if (current?.runId === runId && current.threadId === threadId) {
+      return "closed";
+    }
+
+    current?.close();
+
+    const params = afterSeq > 0 ? `?afterSeq=${afterSeq}` : "";
+    return new Promise<StreamResult>((resolve) => {
+      let settled = false;
       const es = new EventSource(
-        `/api/work/threads/${threadId}/runs/${runId}/events`,
+        `/api/work/threads/${threadId}/runs/${runId}/events${params}`,
       );
-      const finish = () => {
+      const settle = (result: StreamResult) => {
+        if (settled) return;
+        settled = true;
         es.close();
-        resolve();
+        const active = activeRunStreamRef.current;
+        if (active?.runId === runId && active.threadId === threadId) {
+          activeRunStreamRef.current = null;
+        }
+        resolve(result);
       };
+
+      activeRunStreamRef.current = {
+        threadId,
+        runId,
+        close: () => settle("closed"),
+      };
+
       es.onmessage = (msgEvent) => {
         let event: WorkEvent;
         try {
@@ -456,18 +706,13 @@ export default function WorkScreen({
         }
         if (event.type === "hello") return;
         applyIncomingEvent(runId, event);
-        if (event.type === "done") finish();
+        if (event.type === "done") settle("done");
       };
-      es.onerror = () => {};
+      es.onerror = () => {
+        // EventSource will reconnect automatically, carrying Last-Event-ID
+        // when the server closes a long poll before the worker is finished.
+      };
     });
-
-    setSending(false);
-    setActiveRunId(null);
-    await Promise.all([loadThreads(threadId), loadThread(threadId), loadMemories()]);
-    window.setTimeout(() => {
-      void loadPendingMemories(threadId);
-      void loadMemories();
-    }, 1500);
   }
 
   function applyIncomingEvent(runId: string, event: WorkEvent) {
@@ -549,8 +794,6 @@ export default function WorkScreen({
     return map;
   }, [bundle?.runs]);
 
-  const latestRunId = bundle?.runs.at(-1)?.id ?? activeRunId;
-
   if (!gateChecked) {
     return (
       <>
@@ -609,19 +852,23 @@ export default function WorkScreen({
               {loadingThread ? (
                 <div className="work-empty">Loading thread…</div>
               ) : bundle?.messages.length ? (
-                bundle.messages.map((message, index) => {
+                bundle.messages.flatMap((message, index, arr) => {
                   if (message.role === "assistant" && message.runId) {
                     // Assistant turns are reconstructed chronologically from the
                     // run event stream (text segments interleaved with tool calls
                     // and the final surface artifact). The persisted message
                     // content is the fallback for runs missing event history.
                     const events = bundle.eventsByRun[message.runId] ?? [];
+                    const run = runLookup.get(message.runId) ?? null;
+                    const isPending =
+                      (run ? isRunInFlight(run) : false) ||
+                      (sending && activeRunId === message.runId);
                     return (
                       <div key={`${message.id}-${index}`} className="work-turn">
                         <RunTimeline
-                          run={runLookup.get(message.runId) ?? null}
+                          run={run}
                           events={events}
-                          pending={sending && latestRunId === message.runId}
+                          pending={isPending}
                           fallbackContent={message.content}
                         />
                       </div>
@@ -631,7 +878,22 @@ export default function WorkScreen({
                     message.role === "user" &&
                     !!message.runId &&
                     !message.id.startsWith("temp-");
-                  return (
+                  // If this user message's run terminated (cancelled/failed)
+                  // and the next message is NOT the assistant reply for it,
+                  // render a status badge so the cancelled run is visible.
+                  const orphanRun =
+                    message.role === "user" && message.runId
+                      ? runLookup.get(message.runId)
+                      : null;
+                  const nextIsAssistantForRun =
+                    arr[index + 1]?.role === "assistant" &&
+                    arr[index + 1]?.runId === message.runId;
+                  const showRunBadge =
+                    orphanRun &&
+                    !nextIsAssistantForRun &&
+                    (orphanRun.status === "cancelled" ||
+                      orphanRun.status === "failed");
+                  return [
                     <div key={`${message.id}-${index}`} className="work-turn">
                       <MessageBubble
                         message={message}
@@ -656,8 +918,20 @@ export default function WorkScreen({
                             : undefined
                         }
                       />
-                    </div>
-                  );
+                    </div>,
+                    ...(showRunBadge && orphanRun
+                      ? [
+                          <div
+                            key={`run-status-${orphanRun.id}`}
+                            className={`work-run-status work-run-status-${orphanRun.status}`}
+                          >
+                            {orphanRun.status === "cancelled"
+                              ? "Cancelled by user"
+                              : `Run failed${orphanRun.error ? `: ${orphanRun.error}` : ""}`}
+                          </div>,
+                        ]
+                      : []),
+                  ];
                 })
               ) : null}
 
@@ -824,7 +1098,7 @@ function MessageBubble({
       <div className="work-bubble-row">
         <div className="work-bubble">
           <div className="work-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(message.content)}</ReactMarkdown>
           </div>
         </div>
       </div>
@@ -965,12 +1239,14 @@ function buildRunTimeline(events: WorkEvent[]): {
   items: TimelineItem[];
   lastStatus: string | null;
   surfaceMessages: A2UIMessage[];
+  isDone: boolean;
 } {
   const items: TimelineItem[] = [];
   const toolsById = new Map<string, ToolItem>();
   const surfaceMessages: A2UIMessage[] = [];
   let pendingText = "";
   let lastStatus: string | null = null;
+  let isDone = false;
 
   const flushTextSegment = () => {
     if (pendingText.trim()) items.push({ kind: "text", content: pendingText });
@@ -1028,12 +1304,31 @@ function buildRunTimeline(events: WorkEvent[]): {
         for (const msg of event.messages) surfaceMessages.push(msg);
         break;
       }
+      case "done": {
+        isDone = true;
+        break;
+      }
       default:
         break;
     }
   }
   flushTextSegment();
-  return { items, lastStatus, surfaceMessages };
+  // Synthesize an end for any tool that never got a tool_end before the run
+  // terminated. Without this, ACP runs that miss the final tool_call_update
+  // notification (Hermes occasionally drops it for read tools) leave the
+  // cluster stuck on "running" forever.
+  if (isDone) {
+    for (const tool of toolsById.values()) {
+      if (!tool.end) {
+        tool.end = {
+          type: "tool_end",
+          id: tool.id,
+          result: undefined,
+        };
+      }
+    }
+  }
+  return { items, lastStatus, surfaceMessages, isDone };
 }
 
 function RunTimeline({
@@ -1047,12 +1342,13 @@ function RunTimeline({
   pending: boolean;
   fallbackContent: string;
 }) {
-  const { items, lastStatus, surfaceMessages } = useMemo(
+  const { items, lastStatus, surfaceMessages, isDone } = useMemo(
     () => buildRunTimeline(events),
     [events],
   );
 
   const hasContent = items.length > 0 || surfaceMessages.length > 0;
+  const runDone = isDone || (run ? !isRunInFlight(run) : false);
 
   return (
     <div className="work-timeline">
@@ -1060,7 +1356,7 @@ function RunTimeline({
         <div className="work-bubble-row">
           <div className="work-bubble">
             <div className="work-markdown">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{fallbackContent}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(fallbackContent)}</ReactMarkdown>
             </div>
           </div>
         </div>
@@ -1072,14 +1368,20 @@ function RunTimeline({
             <div key={`text-${index}`} className="work-bubble-row">
               <div className="work-bubble">
                 <div className="work-markdown">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(item.content)}</ReactMarkdown>
                 </div>
               </div>
             </div>
           );
         }
         if (item.kind === "tools") {
-          return <ToolGroup key={`tools-${index}`} tools={item.tools} />;
+          return (
+            <ToolGroup
+              key={`tools-${index}`}
+              tools={item.tools}
+              defaultOpen={!runDone}
+            />
+          );
         }
         return (
           <div key={`error-${index}`} className="work-error">
@@ -1103,15 +1405,22 @@ function RunTimeline({
   );
 }
 
-function ToolGroup({ tools }: { tools: ToolItem[] }) {
+function ToolGroup({
+  tools,
+  defaultOpen,
+}: {
+  tools: ToolItem[];
+  defaultOpen?: boolean;
+}) {
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
-  const [open, setOpen] = useState(tools.length <= 2 || inflight > 0);
-
-  useEffect(() => {
-    if (inflight > 0) setOpen(true);
-  }, [inflight]);
+  const initialOpen =
+    defaultOpen !== undefined
+      ? defaultOpen
+      : tools.length <= 2 || inflight > 0;
+  const [open, setOpen] = useState(initialOpen);
+  const effectiveOpen = open || inflight > 0;
 
   if (!showHeader) {
     return (
@@ -1127,9 +1436,9 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
         type="button"
         className="work-tool-group-head"
         onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+        aria-expanded={effectiveOpen}
       >
-        <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
+        <span className="work-tool-group-toggle">{effectiveOpen ? "▾" : "▸"}</span>
         <span className="work-tool-group-count">
           {tools.length} tool {tools.length === 1 ? "call" : "calls"}
         </span>
@@ -1144,7 +1453,7 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
           </span>
         ) : null}
       </button>
-      {open ? (
+      {effectiveOpen ? (
         <div className="work-tool-group-body">
           {tools.map((tool) => (
             <ToolRow key={tool.id} tool={tool} />

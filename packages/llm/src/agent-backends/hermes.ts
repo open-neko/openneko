@@ -65,7 +65,20 @@ function outsideFenceText(raw: string): string {
   while (i < raw.length) {
     const open = raw.indexOf(A2UI_FENCE_OPEN, i);
     if (open === -1) {
-      out += raw.slice(i);
+      // No full opener visible. Hold back any tail of `raw` that matches a
+      // prefix of the opener — it might complete in a later streamed chunk.
+      // Without this, a partial opener like "```neko_a2" leaks into the
+      // message event stream and ends up as an empty code block in the UI.
+      const tail = raw.slice(i);
+      let holdBack = 0;
+      const maxK = Math.min(tail.length, A2UI_FENCE_OPEN.length - 1);
+      for (let k = maxK; k > 0; k--) {
+        if (tail.slice(-k) === A2UI_FENCE_OPEN.slice(0, k)) {
+          holdBack = k;
+          break;
+        }
+      }
+      out += tail.slice(0, tail.length - holdBack);
       break;
     }
     out += raw.slice(i, open);
@@ -98,6 +111,14 @@ const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 
 export class HermesBackend implements AgentBackend {
   readonly id = "hermes" as const;
+  readonly capabilities = {
+    // ACP doesn't expose any of these to the runtime. Surfaces come via fence
+    // (see surface.ts); skills/memory only via prompt-mediated shell calls.
+    mcpTools: false,
+    sdkStopHook: false,
+    sessionResume: false,
+    canUseToolGate: false,
+  } as const;
 
   async run(opts: AgentRunOptions): Promise<AgentRunResult> {
     const {
@@ -292,6 +313,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     });
 
     // session/new per turn — see file header for the session/load double-count rationale.
+    // TODO: verify whether Hermes ACP honors user-supplied mcpServers.
     const fresh = await client.request<{ sessionId: string }>("session/new", {
       cwd,
       mcpServers: [],
@@ -300,6 +322,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
 
     let accumulatedText = "";
     let emittedOutsideLen = 0;
+    let surfaceEmittedDuringStream = false;
 
     client.onNotification((notif) => {
       const update = notif.update;
@@ -314,6 +337,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
             if (delta) {
               emittedOutsideLen = outside.length;
               void onEvent({ type: "message", role: "assistant", content: delta });
+            }
+            // Streaming surface emit: the fence regex requires a closing ```,
+            // so a partial fence returns no messages and we wait for the next chunk.
+            if (!surfaceEmittedDuringStream) {
+              const parsed = extractSurfaceMessages(accumulatedText);
+              if (parsed.messages.length > 0) {
+                surfaceEmittedDuringStream = true;
+                void onEvent({ type: "surface", messages: parsed.messages });
+              }
             }
           }
           return;
@@ -393,7 +425,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       const parsed = extractSurfaceMessages(accumulatedText);
       const markdownText = extractMarkdownText(parsed.messages);
       finalText = (markdownText || parsed.text).trim();
-      if (parsed.messages.length > 0) {
+      if (parsed.messages.length > 0 && !surfaceEmittedDuringStream) {
         await onEvent({ type: "surface", messages: parsed.messages });
       }
     }
