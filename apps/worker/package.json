@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts 2>&1 | tee /tmp/neko-worker.log",
     "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
+    "typescript": "^5",
     "vitest": "^2.1.8"
   }
 }

@@ -22,8 +22,7 @@ function claudeBinaryAvailable(): boolean {
   const r = spawnSync("which", ["claude"], { encoding: "utf8" });
   _claudeOnPath = r.status === 0;
   if (_claudeOnPath) {
-    const out = typeof r.stdout === "string" ? r.stdout : r.stdout?.toString() ?? "";
-    _claudeBinaryPath = out.trim() || undefined;
+    _claudeBinaryPath = r.stdout.trim() || undefined;
   }
   return _claudeOnPath;
 }
