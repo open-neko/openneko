@@ -292,6 +292,12 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     });
 
     // session/new per turn — see file header for the session/load double-count rationale.
+    // mcpServers is intentionally empty: Hermes ACP support for user-supplied
+    // MCP is unverified. To experiment, pass an MCP server spec array here and
+    // exercise it via a chat that calls the tool; if Hermes invokes it, port
+    // neko_ui / neko_skills / neko_memory to live behind ACP MCP instead of
+    // the fence path. If it ignores or errors, the fence remains the only
+    // route — see extractSurfaceMessages in ./surface.ts.
     const fresh = await client.request<{ sessionId: string }>("session/new", {
       cwd,
       mcpServers: [],
