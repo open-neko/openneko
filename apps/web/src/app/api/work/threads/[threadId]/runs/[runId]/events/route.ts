@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
+import type { AgentEvent } from "@neko/llm";
 import { getOrgId } from "@/lib/db";
+import { subscribeToRun } from "@/lib/neko-run-registry";
 import { getWorkRun, getWorkRunEventsAfter } from "@/lib/work-store";
 
 type RouteContext = {
@@ -47,7 +49,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     async start(controller) {
       const t0 = Date.now();
       let closed = false;
-      let lastSeq = afterSeq;
+      let lastSentSeq = afterSeq;
+      const sentSeqs = new Set<number>();
 
       const safeEnqueue = (chunk: Uint8Array): void => {
         if (closed) return;
@@ -58,6 +61,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
         }
       };
 
+      const sendIfNew = (event: AgentEvent, seq: number): void => {
+        if (seq <= afterSeq) return;
+        if (sentSeqs.has(seq)) return;
+        sentSeqs.add(seq);
+        safeEnqueue(frame(event, seq));
+        if (seq > lastSentSeq) lastSentSeq = seq;
+      };
+
       request.signal.addEventListener(
         "abort",
         () => {
@@ -66,8 +77,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { once: true },
       );
 
-      safeEnqueue(comment("hello"));
+      // Subscribe to live events if the run is in-process. Returns null
+      // if the run isn't registered (worker run or already-completed).
+      const unsubscribe = subscribeToRun(runId, sendIfNew);
 
+      safeEnqueue(comment("hello"));
       safeEnqueue(
         frame({
           type: "hello",
@@ -77,37 +91,50 @@ export async function GET(request: NextRequest, context: RouteContext) {
         }),
       );
 
-      while (!closed) {
-        const newEvents = await getWorkRunEventsAfter(orgId, runId, lastSeq);
-        for (const { seq, event } of newEvents) {
-          safeEnqueue(frame(event, seq));
-          lastSeq = seq;
-        }
-
-        const current = await getWorkRun(orgId, runId);
-        if (current && (current.status === "completed" || current.status === "failed" || current.status === "cancelled")) {
-          const tail = await getWorkRunEventsAfter(orgId, runId, lastSeq);
-          for (const { seq, event } of tail) {
-            safeEnqueue(frame(event, seq));
-            lastSeq = seq;
-          }
-          break;
-        }
-
-        if (Date.now() - t0 > MAX_LIFETIME_MS) {
-          break;
-        }
-
-        if ((Date.now() - t0) % 30_000 < POLL_INTERVAL_MS) {
-          safeEnqueue(comment("keepalive"));
-        }
-
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      }
-
       try {
-        controller.close();
-      } catch {}
+        while (!closed) {
+          // Backstop: always poll the DB. Live subscribers fill in low-latency
+          // deltas; the poll catches any subscribe-race events and reads from
+          // disk for worker-owned runs that have no live subscriber path.
+          const newEvents = await getWorkRunEventsAfter(
+            orgId,
+            runId,
+            lastSentSeq,
+          );
+          for (const { seq, event } of newEvents) {
+            sendIfNew(event, seq);
+          }
+
+          const current = await getWorkRun(orgId, runId);
+          if (
+            current &&
+            (current.status === "completed" ||
+              current.status === "failed" ||
+              current.status === "cancelled")
+          ) {
+            const tail = await getWorkRunEventsAfter(orgId, runId, lastSentSeq);
+            for (const { seq, event } of tail) {
+              sendIfNew(event, seq);
+            }
+            break;
+          }
+
+          if (Date.now() - t0 > MAX_LIFETIME_MS) {
+            break;
+          }
+
+          if ((Date.now() - t0) % 30_000 < POLL_INTERVAL_MS) {
+            safeEnqueue(comment("keepalive"));
+          }
+
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        }
+      } finally {
+        unsubscribe?.();
+        try {
+          controller.close();
+        } catch {}
+      }
     },
   });
 
