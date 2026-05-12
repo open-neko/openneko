@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import type { AgentEvent } from "@neko/llm";
+import { createNotifyClient, type NotifyClient } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 import { subscribeToRun } from "@/lib/neko-run-registry";
 import { getWorkRun, getWorkRunEventsAfter } from "@/lib/work-store";
@@ -17,7 +18,8 @@ const SSE_HEADERS = {
   connection: "keep-alive",
 };
 
-const POLL_INTERVAL_MS = 250;
+// LISTEN drives wake-ups; the loop interval is a keepalive backstop.
+const LOOP_INTERVAL_MS = 5_000;
 const MAX_LIFETIME_MS = 10 * 60_000;
 
 function frame(data: unknown, id?: number): Uint8Array {
@@ -79,6 +81,29 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       const unsubscribe = subscribeToRun(runId, sendIfNew);
 
+      let notifyResolver: (() => void) | null = null;
+      const waitForNotify = () =>
+        new Promise<void>((resolve) => {
+          notifyResolver = resolve;
+        });
+      const wakeFromNotify = () => {
+        const r = notifyResolver;
+        notifyResolver = null;
+        r?.();
+      };
+
+      let listenClient: NotifyClient | null = null;
+      try {
+        listenClient = await createNotifyClient("work_run_event");
+        listenClient.on((channel, payload) => {
+          if (channel === "work_run_event" && payload === runId) {
+            wakeFromNotify();
+          }
+        });
+      } catch (err) {
+        console.warn("[work-events] LISTEN setup failed; falling back to interval", err);
+      }
+
       safeEnqueue(comment("hello"));
       safeEnqueue(
         frame({
@@ -88,6 +113,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
           backend: run.backend,
         }),
       );
+
+      let keepaliveTimer = Date.now();
 
       try {
         while (!closed) {
@@ -118,14 +145,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
             break;
           }
 
-          if ((Date.now() - t0) % 30_000 < POLL_INTERVAL_MS) {
+          if (Date.now() - keepaliveTimer > 30_000) {
             safeEnqueue(comment("keepalive"));
+            keepaliveTimer = Date.now();
           }
 
-          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+          await Promise.race([
+            waitForNotify(),
+            new Promise((r) => setTimeout(r, LOOP_INTERVAL_MS)),
+          ]);
         }
       } finally {
         unsubscribe?.();
+        if (listenClient) await listenClient.close();
         try {
           controller.close();
         } catch {}
