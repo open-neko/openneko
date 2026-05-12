@@ -11,3 +11,4 @@ export * from "./auto-memory";
 export * from "./store";
 export { runChatTurn } from "./run-chat-turn";
 export type { RunChatTurnOptions, RunChatTurnResult } from "./run-chat-turn";
+export { makeAutoMemoryStopHook } from "./auto-memory-hook";

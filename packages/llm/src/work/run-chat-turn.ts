@@ -6,6 +6,7 @@ import {
   prefetchKnowledgePack,
 } from "../knowledge-pack";
 import { runWorkAutoMemoryPipeline } from "./auto-memory";
+import { makeAutoMemoryStopHook } from "./auto-memory-hook";
 import { ensureGraphjinGuard, resolveBinaryOnPath } from "./graphjin-guard";
 import { formatWorkMemoryPromptContext } from "./memory";
 import { buildWorkPrompt } from "./prompt";
@@ -159,6 +160,16 @@ export async function runChatTurn(
           }
         : undefined;
 
+    const autoMemoryHook =
+      backend.id === "claude-agent"
+        ? makeAutoMemoryStopHook({
+            orgId,
+            threadId,
+            runId,
+            userMessage: message,
+          })
+        : null;
+
     const result = await backend.run({
       prompt,
       userMessage: message,
@@ -169,6 +180,9 @@ export async function runChatTurn(
       mcpServers,
       tag: `work ${runId}`,
       signal,
+      ...(autoMemoryHook
+        ? { hooks: { Stop: [{ hooks: [autoMemoryHook] }] } }
+        : {}),
     });
 
     if (
@@ -190,14 +204,27 @@ export async function runChatTurn(
       });
     }
 
-    if (result.status === "completed" && result.finalText.trim()) {
-      void runWorkAutoMemoryPipeline({
+    // For claude-agent the Stop hook has already fired the pipeline.
+    // Hermes has no equivalent — run it here with a timeout so a hung
+    // classifier doesn't keep the Promise alive past process exit.
+    if (
+      backend.id !== "claude-agent" &&
+      result.status === "completed" &&
+      result.finalText.trim()
+    ) {
+      const memoryWork = runWorkAutoMemoryPipeline({
         orgId,
         threadId,
         runId,
         userMessage: message,
         agentAnswer: result.finalText,
+      }).catch((err) => {
+        console.error("[work-auto-memory] hermes pipeline failed:", err);
       });
+      void Promise.race([
+        memoryWork,
+        new Promise<void>((resolve) => setTimeout(resolve, 15_000)),
+      ]);
     }
 
     await wrappedEmit({ type: "done", result: { status: result.status } });
