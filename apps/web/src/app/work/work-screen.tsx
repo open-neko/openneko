@@ -136,6 +136,41 @@ const MARKDOWN_COMPONENTS = {
     }
     return <a href={href} onClick={onClick} {...props}>{children}</a>;
   },
+  // Inline-code with a workspace file path → render as a download link
+  // wrapping a shorter <code> label. Mutating the mdast tree in the remark
+  // plugin didn't survive react-markdown 10's pipeline, so we intercept at
+  // render time instead.
+  code({ className, children, ...props }: { className?: string; children?: ReactNode } & Record<string, unknown>) {
+    const text =
+      typeof children === "string"
+        ? children
+        : Array.isArray(children) && children.every((c) => typeof c === "string")
+          ? (children as string[]).join("")
+          : "";
+    if (text && !text.includes("\n")) {
+      WORKSPACE_FILE_RE.lastIndex = 0;
+      const m = WORKSPACE_FILE_RE.exec(text);
+      if (m) {
+        const href = `/api/work/files/${m[1]}`;
+        const label = text.split("/").slice(-1)[0];
+        return (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              openFileLink(href);
+            }}
+          >
+            <code className={className}>{label}</code>
+          </a>
+        );
+      }
+    }
+    return <code className={className} {...props}>{children}</code>;
+  },
 };
 import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
