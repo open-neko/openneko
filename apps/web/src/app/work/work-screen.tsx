@@ -94,51 +94,10 @@ function walkMdNode(node: unknown, parent: MdNode | null): void {
 
 const REMARK_PLUGINS = [remarkGfm, autolinkWorkspaceFiles];
 
-import { linkifyWorkspacePaths } from "@/lib/linkify-workspace-paths";
-
-function openFileLink(href: string) {
-  const w = window.open(href, "_blank", "noopener,noreferrer");
-  if (w) return;
-  const a = document.createElement("a");
-  a.href = href;
-  a.download = "";
-  a.rel = "noopener noreferrer";
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-const MARKDOWN_COMPONENTS = {
-  a({
-    href,
-    children,
-    onClick,
-    ...props
-  }: AnchorHTMLAttributes<HTMLAnchorElement> & { children?: ReactNode }) {
-    const isFile = typeof href === "string" && href.startsWith("/api/work/files/");
-    if (isFile) {
-      return (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => {
-            onClick?.(e);
-            if (e.defaultPrevented) return;
-            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-            e.preventDefault();
-            if (typeof href === "string") openFileLink(href);
-          }}
-          {...props}
-        >
-          {children}
-        </a>
-      );
-    }
-    return <a href={href} onClick={onClick} {...props}>{children}</a>;
-  },
-};
+import {
+  WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
+  linkifyWorkspacePaths,
+} from "@/lib/linkify-workspace-paths";
 import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
