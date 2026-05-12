@@ -94,6 +94,35 @@ function walkMdNode(node: unknown, parent: MdNode | null): void {
 
 const REMARK_PLUGINS = [remarkGfm, autolinkWorkspaceFiles];
 
+// Pre-process markdown source: replace inline-code-wrapped workspace paths
+// (`/tmp/...openneko/agents/orgs/<id>/(runs|uploads|...)/file.ext`) with a
+// proper markdown link `[file.ext](/api/work/files/<rel>)`. The remark plugin
+// alone can't do this for inline-code content under react-markdown 10
+// (mutating mdast inlineCode → link didn't propagate through to hast), so we
+// rewrite at the string level before ReactMarkdown parses.
+const INLINE_FILE_RE =
+  /`([^`\n]*\/agents\/orgs\/[A-Za-z0-9-]+\/(?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)`/g;
+const BARE_FILE_RE =
+  /(?<!\]\()(\/[A-Za-z0-9._\-/]*\/agents\/orgs\/[A-Za-z0-9-]+\/(?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)(?!\))/g;
+
+function linkifyWorkspacePaths(md: string): string {
+  return md
+    .replace(INLINE_FILE_RE, (_full, path: string) => {
+      const m = WORKSPACE_FILE_RE.exec(path);
+      WORKSPACE_FILE_RE.lastIndex = 0;
+      if (!m) return `\`${path}\``;
+      const filename = path.split("/").slice(-1)[0];
+      return `[\`${filename}\`](/api/work/files/${m[1]})`;
+    })
+    .replace(BARE_FILE_RE, (full: string, path: string) => {
+      const m = WORKSPACE_FILE_RE.exec(path);
+      WORKSPACE_FILE_RE.lastIndex = 0;
+      if (!m) return full;
+      const filename = path.split("/").slice(-1)[0];
+      return `[${filename}](/api/work/files/${m[1]})`;
+    });
+}
+
 function openFileLink(href: string) {
   const w = window.open(href, "_blank", "noopener,noreferrer");
   if (w) return;
@@ -135,41 +164,6 @@ const MARKDOWN_COMPONENTS = {
       );
     }
     return <a href={href} onClick={onClick} {...props}>{children}</a>;
-  },
-  // Inline-code with a workspace file path → render as a download link
-  // wrapping a shorter <code> label. Mutating the mdast tree in the remark
-  // plugin didn't survive react-markdown 10's pipeline, so we intercept at
-  // render time instead.
-  code({ className, children, ...props }: { className?: string; children?: ReactNode } & Record<string, unknown>) {
-    const text =
-      typeof children === "string"
-        ? children
-        : Array.isArray(children) && children.every((c) => typeof c === "string")
-          ? (children as string[]).join("")
-          : "";
-    if (text && !text.includes("\n")) {
-      WORKSPACE_FILE_RE.lastIndex = 0;
-      const m = WORKSPACE_FILE_RE.exec(text);
-      if (m) {
-        const href = `/api/work/files/${m[1]}`;
-        const label = text.split("/").slice(-1)[0];
-        return (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => {
-              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              openFileLink(href);
-            }}
-          >
-            <code className={className}>{label}</code>
-          </a>
-        );
-      }
-    }
-    return <code className={className} {...props}>{children}</code>;
   },
 };
 import AppHeader from "@/components/AppHeader";
@@ -1172,7 +1166,7 @@ function MessageBubble({
       <div className="work-bubble-row">
         <div className="work-bubble">
           <div className="work-markdown">
-            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(message.content)}</ReactMarkdown>
           </div>
         </div>
       </div>
@@ -1430,7 +1424,7 @@ function RunTimeline({
         <div className="work-bubble-row">
           <div className="work-bubble">
             <div className="work-markdown">
-              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{fallbackContent}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(fallbackContent)}</ReactMarkdown>
             </div>
           </div>
         </div>
@@ -1442,7 +1436,7 @@ function RunTimeline({
             <div key={`text-${index}`} className="work-bubble-row">
               <div className="work-bubble">
                 <div className="work-markdown">
-                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{item.content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(item.content)}</ReactMarkdown>
                 </div>
               </div>
             </div>
