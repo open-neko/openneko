@@ -899,7 +899,7 @@ body {
    surface) — when it sits inside a chat timeline, render it as the prominent
    answer card. KPI cards / Briefing roots aren't styled here because they
    bring their own card chrome. */
-.work-timeline .work-surface-frame:has(> div > .work-markdown) {
+.work-timeline .work-surface-frame:has(> .work-markdown) {
   position: relative;
   background: linear-gradient(
     180deg,
@@ -911,7 +911,7 @@ body {
   padding: 14px 18px 14px 22px;
   box-shadow: var(--shadow);
 }
-.work-timeline .work-surface-frame:has(> div > .work-markdown)::before {
+.work-timeline .work-surface-frame:has(> .work-markdown)::before {
   content: "";
   position: absolute;
   left: 0;
