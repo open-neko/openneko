@@ -6,8 +6,12 @@ const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
+    // One fork per test file: each file gets a fresh module graph, a fresh
+    // @neko/db pool, and a fresh vi.mock registry. Without this, files
+    // sharing a fork inherited a singleton pool that earlier files'
+    // afterAll hooks had already .end()-ed.
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    poolOptions: { forks: { singleFork: false } },
     testTimeout: 10_000,
     alias: {
       // Match the Next.js TS path alias from tsconfig.json.

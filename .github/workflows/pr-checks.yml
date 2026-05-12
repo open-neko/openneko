@@ -78,15 +78,16 @@ jobs:
 
       - name: Test
         env:
-          # Defaults already match buildPoolConfig() in
-          # packages/db/src/connection.ts, but pass them through for the
-          # integration tests + migrate-aware helpers that read env vars
-          # directly.
           NEKO_PG_HOST: localhost
           NEKO_PG_PORT: "5432"
           NEKO_PG_USER: neko
           NEKO_PG_PASSWORD: secret
           NEKO_PG_DATABASE: neko
-          # Stops the auto-memory pipeline from hitting Anthropic during tests.
           AGENT_AUTO_MEMORY: "off"
-        run: pnpm -r test
+        # --workspace-concurrency=1 runs each package's test script
+        # sequentially. apps/web and apps/worker both touch the same
+        # Postgres; the worker's reconciler scans `processing_job` rows
+        # globally (no org filter), so when it ran in parallel with
+        # apps/web's onboarding tests it marked their newly-inserted
+        # business_profile_build rows as "lost from queue (failed)".
+        run: pnpm -r --workspace-concurrency=1 test
