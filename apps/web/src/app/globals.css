@@ -1026,6 +1026,22 @@ body {
 .work-empty.is-compact {
   padding: 0;
 }
+.work-run-status {
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  margin: 0 auto 4px;
+  width: fit-content;
+  letter-spacing: 0.01em;
+}
+.work-run-status-cancelled {
+  background: #f3f0ea;
+  color: #6b6457;
+}
+.work-run-status-failed {
+  background: #fff2ef;
+  color: #8b3a2a;
+}
 .work-error {
   border: 1px solid #efc9c1;
   background: #fff2ef;

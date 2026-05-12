@@ -775,7 +775,7 @@ export default function WorkScreen({
               {loadingThread ? (
                 <div className="work-empty">Loading thread…</div>
               ) : bundle?.messages.length ? (
-                bundle.messages.map((message, index) => {
+                bundle.messages.flatMap((message, index, arr) => {
                   if (message.role === "assistant" && message.runId) {
                     // Assistant turns are reconstructed chronologically from the
                     // run event stream (text segments interleaved with tool calls
@@ -801,7 +801,22 @@ export default function WorkScreen({
                     message.role === "user" &&
                     !!message.runId &&
                     !message.id.startsWith("temp-");
-                  return (
+                  // If this user message's run terminated (cancelled/failed)
+                  // and the next message is NOT the assistant reply for it,
+                  // render a status badge so the cancelled run is visible.
+                  const orphanRun =
+                    message.role === "user" && message.runId
+                      ? runLookup.get(message.runId)
+                      : null;
+                  const nextIsAssistantForRun =
+                    arr[index + 1]?.role === "assistant" &&
+                    arr[index + 1]?.runId === message.runId;
+                  const showRunBadge =
+                    orphanRun &&
+                    !nextIsAssistantForRun &&
+                    (orphanRun.status === "cancelled" ||
+                      orphanRun.status === "failed");
+                  return [
                     <div key={`${message.id}-${index}`} className="work-turn">
                       <MessageBubble
                         message={message}
@@ -826,8 +841,20 @@ export default function WorkScreen({
                             : undefined
                         }
                       />
-                    </div>
-                  );
+                    </div>,
+                    ...(showRunBadge && orphanRun
+                      ? [
+                          <div
+                            key={`run-status-${orphanRun.id}`}
+                            className={`work-run-status work-run-status-${orphanRun.status}`}
+                          >
+                            {orphanRun.status === "cancelled"
+                              ? "Cancelled by user"
+                              : `Run failed${orphanRun.error ? `: ${orphanRun.error}` : ""}`}
+                          </div>,
+                        ]
+                      : []),
+                  ];
                 })
               ) : null}
 
