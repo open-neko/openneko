@@ -22,7 +22,7 @@ import {
   buildSkillBuilderServer,
   buildWorkMemoryServer,
 } from "./tools";
-import { ensureWorkWorkspace } from "./workspace";
+import { ensureWorkWorkspace, listInstalledSkills } from "./workspace";
 
 export type RunChatTurnOptions = {
   orgId: string;
@@ -128,12 +128,15 @@ export async function runChatTurn(
       runId,
     });
 
+    const installedSkills = await listInstalledSkills(workspace.skillsRoot);
+
     const prompt = buildWorkPrompt({
       backend: backend.id,
       workspace,
       messages,
       currentUserMessage: message,
       memoryContext,
+      installedSkills,
       supportsCardTool,
       supportsSkillTool,
       supportsMemoryTool,

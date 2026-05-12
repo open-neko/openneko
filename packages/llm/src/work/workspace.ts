@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, readdir, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -105,6 +105,38 @@ export async function listSkillNames(skillsRoot: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export type InstalledSkill = { name: string; description: string };
+
+// Parse SKILL.md frontmatter from each skill dir. Used to build a catalog for
+// the Hermes prompt; claude-agent gets the same info via the SDK's
+// skills: "all" auto-discovery.
+export async function listInstalledSkills(
+  skillsRoot: string,
+): Promise<InstalledSkill[]> {
+  let names: string[];
+  try {
+    const entries = await readdir(skillsRoot, { withFileTypes: true });
+    names = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  } catch {
+    return [];
+  }
+  const out: InstalledSkill[] = [];
+  for (const name of names) {
+    try {
+      const md = await readFile(join(skillsRoot, name, "SKILL.md"), "utf8");
+      const match = md.match(/^---\s*\n([\s\S]*?)\n---/);
+      if (!match) continue;
+      const fm = match[1];
+      const descMatch = fm.match(/^description:\s*(.+)$/m);
+      const description = descMatch ? descMatch[1].trim() : "";
+      out.push({ name, description });
+    } catch {
+      // skill dir without readable SKILL.md — skip
+    }
+  }
+  return out;
 }
 
 async function seedBuiltinSkills(skillsRoot: string): Promise<void> {

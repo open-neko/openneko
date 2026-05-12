@@ -1,5 +1,6 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
 import { knowledgePackPaths } from "../knowledge-pack";
+import type { InstalledSkill } from "./workspace";
 
 function formatTranscript(messages: AgentChatMessage[]): string {
   if (messages.length === 0) return "No prior messages.";
@@ -17,6 +18,7 @@ export function buildWorkPrompt(args: {
   messages: AgentChatMessage[];
   currentUserMessage: string;
   memoryContext?: string;
+  installedSkills?: InstalledSkill[];
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
@@ -27,6 +29,7 @@ export function buildWorkPrompt(args: {
     messages,
     currentUserMessage,
     memoryContext,
+    installedSkills,
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
@@ -94,6 +97,14 @@ export function buildWorkPrompt(args: {
     "",
     "Loaded memory:",
     memoryContext?.trim() || "No core memories are currently saved for this workspace or thread.",
+    "",
+    "Installed skills — capability recipes you can use. Before responding that you cannot do something, check whether one of these skills covers it and read its SKILL.md for usage details. The host image ships Python 3, LibreOffice (`soffice`), Poppler (`pdftotext`), qpdf, plus pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx, python-docx, PyYAML.",
+    ...(installedSkills && installedSkills.length > 0
+      ? installedSkills.map(
+          (s) =>
+            `  - ${s.name} — ${s.description || `details in ${workspace.skillsRoot}/${s.name}/SKILL.md`}`,
+        )
+      : [`  (none installed; check ${workspace.skillsRoot})`]),
     "",
     "DATA ACCESS — the configured GraphJin database is the authoritative source for any operational question (revenue, customers, orders, inventory, employees, sales, products, etc.). Uploaded files are auxiliary — only use them if the user explicitly references them (e.g. \"in the file I just uploaded\") or the database genuinely doesn't have what they're asking for.",
     "",
