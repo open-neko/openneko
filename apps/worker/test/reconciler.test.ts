@@ -22,6 +22,7 @@ import {
   processing_job,
   sql,
 } from "@neko/db";
+import { boss, QUEUE } from "@neko/db/jobs";
 import { reconcileStaleProcessingJobs } from "../src/reconciler";
 
 const reachable = await dbReachable();
@@ -107,6 +108,20 @@ if (reachable && !pgbossOk) {
 
 describeIfReady("reconcileStaleProcessingJobs", () => {
   let orgId: string;
+
+  beforeAll(async () => {
+    // pg-boss v10 partitions pgboss.job by queue name. Inserts into a queue
+    // whose partition isn't created yet fail with "no partition of relation
+    // 'job' found for row". Pre-create every queue this suite touches (and
+    // a couple of others for safety) so the SQL INSERT in insertPgbossJob
+    // lands cleanly.
+    const b = await boss();
+    for (const name of Object.values(QUEUE)) {
+      await b.createQueue(name).catch(() => {
+        // idempotent — ignore "queue already exists"
+      });
+    }
+  });
 
   beforeEach(async () => {
     orgId = uniqueOrgId("reconciler");
