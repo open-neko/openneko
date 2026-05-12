@@ -33,8 +33,15 @@ if (!reachable) {
 
 async function ensurePgbossSchema(): Promise<boolean> {
   try {
-    await db().execute(sql`SELECT 1 FROM pgboss.job LIMIT 1`);
-    return true;
+    // pg-boss v10 partitions pgboss.job by queue. Inserts fail with
+    // "no partition of relation 'job' found for row" when no queue
+    // has been created. Skip these tests cleanly when there isn't at
+    // least one partition (i.e. a fresh CI Postgres without queues).
+    const result = await db().execute(
+      sql`SELECT count(*)::int AS n FROM pg_inherits WHERE inhparent = 'pgboss.job'::regclass`,
+    );
+    const rows = (result as { rows?: Array<{ n: number }> }).rows ?? [];
+    return rows.length > 0 && rows[0].n > 0;
   } catch {
     return false;
   }

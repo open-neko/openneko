@@ -50,11 +50,22 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      # ClaudeAgentBackend's constructor refuses to instantiate without the
-      # `claude` CLI on PATH. Tests that build a real backend instance fail
-      # otherwise. Mirrors the Dockerfile cli layer.
+      # The agent runtime shells out to these binaries. Both backends check
+      # for `graphjin` on PATH; ClaudeAgentBackend's constructor checks for
+      # `claude`. Tests that build a real backend or call runChatTurn fail
+      # without them. Mirrors the Dockerfile cli layer.
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install graphjin CLI
+        env:
+          GRAPHJIN_VERSION: "3.18.10"
+        run: |
+          curl -fsSL -o /tmp/graphjin.tgz \
+            "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"
+          sudo tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin
+          graphjin version
+
 
       - name: Run migrations
         env:
