@@ -1,11 +1,11 @@
 import { data_source, db, eq } from "@neko/db";
+import { enqueue, QUEUE } from "@neko/db/jobs";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend } from "../agent-backend-resolver";
 import {
   discoveryUrlFromMcpUrl,
   prefetchKnowledgePack,
 } from "../knowledge-pack";
-import { runWorkAutoMemoryPipeline } from "./auto-memory";
 import { makeAutoMemoryStopHook } from "./auto-memory-hook";
 import { ensureGraphjinGuard, resolveBinaryOnPath } from "./graphjin-guard";
 import { formatWorkMemoryPromptContext } from "./memory";
@@ -209,19 +209,15 @@ export async function runChatTurn(
       result.status === "completed" &&
       result.finalText.trim()
     ) {
-      const memoryWork = runWorkAutoMemoryPipeline({
+      await enqueue(QUEUE.WORK_AUTO_MEMORY, {
         orgId,
         threadId,
         runId,
         userMessage: message,
         agentAnswer: result.finalText,
       }).catch((err) => {
-        console.error("[work-auto-memory] hermes pipeline failed:", err);
+        console.error("[work-auto-memory] hermes enqueue failed:", err);
       });
-      void Promise.race([
-        memoryWork,
-        new Promise<void>((resolve) => setTimeout(resolve, 15_000)),
-      ]);
     }
 
     await wrappedEmit({ type: "done", result: { status: result.status } });
