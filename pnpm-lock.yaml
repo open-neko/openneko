@@ -100,6 +100,9 @@ importers:
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
+      typescript:
+        specifier: ^5
+        version: 5.9.3
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)

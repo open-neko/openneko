@@ -76,6 +76,13 @@ jobs:
           NEKO_PG_DATABASE: neko
         run: node packages/db/src/migrate.mjs
 
+      # Typecheck apps/web + apps/worker. Deploy runs `pnpm build`, which
+      # invokes next build → tsc; PR checks otherwise only run vitest, so a
+      # type error in workspace code (e.g. packages/llm) can slip through and
+      # break VM deploy on main. tsc --noEmit reproduces that gate cheaply.
+      - name: Typecheck
+        run: pnpm -r --if-present typecheck
+
       - name: Test
         env:
           NEKO_PG_HOST: localhost
