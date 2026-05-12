@@ -46,6 +46,15 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
     && hermes --version
 RUN npm install -g @anthropic-ai/claude-code
 
+# Bundled skills (xlsx / pptx / docx / pdf / skill-creator) shell out to
+# Python + LibreOffice + Poppler / qpdf. Mirror packages/llm/src/work/skill-deps.ts
+# so a fresh image has what they need at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip libreoffice poppler-utils qpdf \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir --break-system-packages \
+       openpyxl python-pptx Pillow python-docx pypdf pdfplumber reportlab PyYAML
+
 # ─── 3. deps: workspace install (cached on lockfile) ───────────────────
 FROM base AS deps
 WORKDIR /app
