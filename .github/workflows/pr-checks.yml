@@ -50,6 +50,12 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
+      # ClaudeAgentBackend's constructor refuses to instantiate without the
+      # `claude` CLI on PATH. Tests that build a real backend instance fail
+      # otherwise. Mirrors the Dockerfile cli layer.
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Run migrations
         env:
           NEKO_PG_HOST: localhost
