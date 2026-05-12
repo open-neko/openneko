@@ -204,9 +204,6 @@ export async function runChatTurn(
       });
     }
 
-    // For claude-agent the Stop hook has already fired the pipeline.
-    // Hermes has no equivalent — run it here with a timeout so a hung
-    // classifier doesn't keep the Promise alive past process exit.
     if (
       backend.id !== "claude-agent" &&
       result.status === "completed" &&

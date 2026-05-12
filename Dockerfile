@@ -85,11 +85,7 @@ RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-
 COPY --from=build --chown=neko:neko /app/apps/web/.next/standalone ./
 COPY --from=build --chown=neko:neko /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=neko:neko /app/apps/web/public ./apps/web/public
-# Phase 3 moved runChatTurn into the web process, which calls
-# ensureWorkWorkspace → seedBuiltinSkills. Next.js standalone tracing
-# only catches JS imports, not static asset directories, so we copy the
-# builtin-skills tree alongside. Path matches BUILTIN_SKILLS_ROOT in
-# packages/llm/src/work/workspace.ts.
+# Next.js standalone tracing misses static asset dirs — copy explicitly.
 COPY --from=build --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

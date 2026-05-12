@@ -91,10 +91,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
   })
     .catch(async (err) => {
       console.error(`[work-run/inproc] run ${run.id} threw:`, err);
-      // If runChatTurn's own catch handled this (emitted error + done +
-      // called finishWorkRun before rethrowing), the run row will already
-      // be in a terminal state. Skip the cleanup emit so we don't double-
-      // send to the client.
       try {
         const current = await getWorkRun(orgId, run.id);
         const terminal =

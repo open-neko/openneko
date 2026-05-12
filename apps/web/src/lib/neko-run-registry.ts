@@ -1,6 +1,7 @@
 import "server-only";
 import type { AgentEvent } from "@neko/llm";
 
+// globalThis-stashed so HMR doesn't drop in-flight runs in dev.
 export type RunSubscriber = (event: AgentEvent, seq: number) => void;
 
 export type RunEntry = {

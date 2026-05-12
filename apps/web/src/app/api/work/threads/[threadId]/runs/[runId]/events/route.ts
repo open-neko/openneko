@@ -77,8 +77,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { once: true },
       );
 
-      // Subscribe to live events if the run is in-process. Returns null
-      // if the run isn't registered (worker run or already-completed).
       const unsubscribe = subscribeToRun(runId, sendIfNew);
 
       safeEnqueue(comment("hello"));
@@ -93,9 +91,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       try {
         while (!closed) {
-          // Backstop: always poll the DB. Live subscribers fill in low-latency
-          // deltas; the poll catches any subscribe-race events and reads from
-          // disk for worker-owned runs that have no live subscriber path.
           const newEvents = await getWorkRunEventsAfter(
             orgId,
             runId,
