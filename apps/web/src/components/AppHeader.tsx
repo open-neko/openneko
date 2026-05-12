@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 const MARKETING_URL = "https://getneko.app";
 
 export type AppHeaderProps = {
-  /** Optional back link destination (e.g. "/" or "/settings") */
   back?: { href: string; label: string };
-  /** Left-side slot — used by the dashboard for role pills + date */
   children?: React.ReactNode;
 };
 
@@ -17,7 +16,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
       <div className="app-header-left">
         {back && (
           <Link className="settings-backlink" href={back.href}>
-            <span aria-hidden="true" className="settings-backlink-arrow">←</span>
+            <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
             <span>{back.label}</span>
           </Link>
         )}
@@ -34,6 +33,8 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
       >
         <img className="brand-icon" src="/cat.png" alt="" width={24} height={24} />
         <span className="brand-name">OpenNeko</span>
+        <span aria-hidden="true" className="brand-tick">·</span>
+        <span aria-hidden="true" className="brand-version">v1</span>
       </a>
     </header>
   );

@@ -108,7 +108,7 @@ export default async function SettingsPage() {
                 <p className="settings-card-copy">{card.copy}</p>
               </div>
               <div className="settings-source">
-                <strong style={{ color: card.statusOk ? "var(--accent)" : "#c33" }}>{card.status}</strong>
+                <strong className={card.statusOk ? "is-ok" : "is-warn"}>{card.status}</strong>
               </div>
             </div>
           </Link>

@@ -99,10 +99,28 @@ import {
   linkifyWorkspacePaths,
 } from "@/lib/linkify-workspace-paths";
 import AppHeader from "@/components/AppHeader";
+import BriefingCard from "@/components/BriefingCard";
+import type { BriefingCardData } from "@/components/BriefingCard";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
 import WorkSidebar from "./WorkSidebar";
+
+const BRIEFING_CARD_SENTINEL = "::neko-briefing-card::";
+
+function parseBriefingCardMessage(content: string): BriefingCardData | null {
+  if (!content.startsWith(BRIEFING_CARD_SENTINEL)) return null;
+  const newlineAt = content.indexOf("\n");
+  const jsonStr = content.slice(
+    BRIEFING_CARD_SENTINEL.length,
+    newlineAt === -1 ? undefined : newlineAt,
+  );
+  try {
+    return JSON.parse(jsonStr) as BriefingCardData;
+  } catch {
+    return null;
+  }
+}
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
@@ -878,6 +896,16 @@ export default function WorkScreen({
                     message.role === "user" &&
                     !!message.runId &&
                     !message.id.startsWith("temp-");
+                  // Briefing-card context messages: when the user opens a
+                  // deep-dive from the dashboard, the seed message stored at
+                  // thread-creation time encodes the full card payload after
+                  // the BRIEFING_CARD_SENTINEL marker. Render it as a real
+                  // BriefingCard so the user sees the same chrome they
+                  // clicked, not the raw JSON.
+                  const briefingCardCtx =
+                    message.role === "user"
+                      ? parseBriefingCardMessage(message.content)
+                      : null;
                   // If this user message's run terminated (cancelled/failed)
                   // and the next message is NOT the assistant reply for it,
                   // render a status badge so the cancelled run is visible.
@@ -895,29 +923,39 @@ export default function WorkScreen({
                       orphanRun.status === "failed");
                   return [
                     <div key={`${message.id}-${index}`} className="work-turn">
-                      <MessageBubble
-                        message={message}
-                        onCopy={
-                          isPersistedUser
-                            ? () => void copyUserMessage(message.content)
-                            : undefined
-                        }
-                        onRetry={
-                          isPersistedUser && !sending
-                            ? () =>
-                                void retryOrEditUserMessage(
-                                  message.id,
-                                  message.content,
-                                )
-                            : undefined
-                        }
-                        onEdit={
-                          isPersistedUser && !sending
-                            ? (text) =>
-                                void retryOrEditUserMessage(message.id, text)
-                            : undefined
-                        }
-                      />
+                      {briefingCardCtx ? (
+                        <div className="work-seed-context">
+                          <div className="work-seed-eyebrow">
+                            <span aria-hidden="true" className="work-seed-eyebrow-rule" />
+                            From your briefing
+                          </div>
+                          <BriefingCard ins={briefingCardCtx} index={0} />
+                        </div>
+                      ) : (
+                        <MessageBubble
+                          message={message}
+                          onCopy={
+                            isPersistedUser
+                              ? () => void copyUserMessage(message.content)
+                              : undefined
+                          }
+                          onRetry={
+                            isPersistedUser && !sending
+                              ? () =>
+                                  void retryOrEditUserMessage(
+                                    message.id,
+                                    message.content,
+                                  )
+                              : undefined
+                          }
+                          onEdit={
+                            isPersistedUser && !sending
+                              ? (text) =>
+                                  void retryOrEditUserMessage(message.id, text)
+                              : undefined
+                          }
+                        />
+                      )}
                     </div>,
                     ...(showRunBadge && orphanRun
                       ? [

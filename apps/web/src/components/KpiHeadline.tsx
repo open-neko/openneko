@@ -23,27 +23,41 @@ export interface KpiHeadlineProps {
   data?: ChartDataPoint[];
   /** Visual size — chat bubbles want it bigger; card meta-rows want it small. */
   size?: "card" | "chat";
+  /** Card mood — drives the delta pill color so a rising "bad" metric reads red. */
+  mood?: string;
 }
 
-export default function KpiHeadline({ metric, label, data, size = "card" }: KpiHeadlineProps) {
+export default function KpiHeadline({ metric, label, data, size = "card", mood }: KpiHeadlineProps) {
   const delta = computeDelta(data);
+  const deltaClass = delta ? deltaToneClass(delta, mood) : "";
   return (
     <div className={`kpi kpi-${size}`}>
       <span className="kpi-metric">{metric}</span>
       {label && <span className="kpi-label">{label}</span>}
       {delta && (
-        <span
-          className="kpi-delta"
-          style={{
-            background: delta.isBigDrop ? "#FEECEC" : delta.isUp ? "#E8F5EC" : "#FFF4E5",
-            color: delta.isBigDrop ? "#E05656" : delta.isUp ? "#4CAF82" : "#E9A23B",
-          }}
-        >
-          {delta.isUp ? "↑" : "↓"} {Math.abs(delta.pct).toFixed(1)}%
+        <span className={`kpi-delta ${deltaClass}`}>
+          <span aria-hidden="true">{delta.isUp ? "↑" : "↓"}</span>
+          {formatDeltaPct(delta.pct)}
         </span>
       )}
     </div>
   );
+}
+
+function formatDeltaPct(pct: number): string {
+  const abs = Math.abs(pct);
+  if (abs >= 10) return `${Math.round(abs)}%`;
+  return `${abs.toFixed(1)}%`;
+}
+
+function deltaToneClass(
+  delta: { isUp: boolean; isBigDrop: boolean },
+  mood: string | undefined,
+): string {
+  if (mood === "act" || mood === "bad") return "kpi-delta-crash";
+  if (mood === "watch") return "kpi-delta-down";
+  if (delta.isBigDrop) return "kpi-delta-crash";
+  return delta.isUp ? "kpi-delta-up" : "kpi-delta-down";
 }
 
 function computeDelta(data?: ChartDataPoint[]) {

@@ -11,6 +11,7 @@ import { formatCompact } from "@/lib/format-number";
 
 const axisProps = { tick: { fontSize: 11, fill: "#b0aa9f" }, axisLine: false, tickLine: false } as const;
 const tooltipStyle = { contentStyle: { borderRadius: 10, border: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.08)", fontSize: 13 }, itemStyle: { color: "#7A756A" } };
+const BASELINE_COLOR = "#5C5751";
 
 export default function Chart({ type, accent = "#6B5CE7", h = 130, data, centerLabel, valueLabel, baselineLabel }: {
   type: string;
@@ -133,7 +134,7 @@ export default function Chart({ type, accent = "#6B5CE7", h = 130, data, centerL
         <YAxis {...axisProps} width={32} tickFormatter={yTickFormatter} />
         <Tooltip {...tooltipStyle} formatter={seriesFormatter as never} />
         <Line type="monotone" dataKey="v" name={valueLabel ?? "Value"} stroke={accent} strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: accent, strokeWidth: 2 }} />
-        <Line type="monotone" dataKey="t" name={baselineLabel ?? "Prior"} stroke="#ddd" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
+        <Line type="monotone" dataKey="t" name={baselineLabel ?? "Prior"} stroke={BASELINE_COLOR} strokeOpacity={0.55} strokeWidth={1.75} strokeDasharray="5 4" dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Copy, RotateCw, Search, X } from "lucide-react";
 import Chart from "./Chart";
 import type { ChartDataPoint } from "./Chart";
 import KpiHeadline from "./KpiHeadline";
@@ -18,11 +19,18 @@ async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   } catch {}
 }
 
-const MOOD_STYLES: Record<string, { bg: string; dot: string }> = {
-  good: { bg: "#E8F5EC", dot: "#4CAF82" },
-  watch: { bg: "#FFF4E5", dot: "#E9A23B" },
-  act: { bg: "#FEECEC", dot: "#E05656" },
-  bad: { bg: "#FEECEC", dot: "#E05656" },
+const MOOD_LABELS: Record<string, string> = {
+  good: "On track",
+  watch: "Watch",
+  act: "Act now",
+  bad: "Act now",
+};
+
+const MOOD_CHART_ACCENT: Record<string, string> = {
+  good: "#4CAF82",
+  watch: "#E9A23B",
+  act: "#E05656",
+  bad: "#E05656",
 };
 
 export type BriefingCardState = "ok" | "pending" | "failed";
@@ -42,16 +50,19 @@ export interface BriefingCardData {
   chartData: ChartDataPoint[];
 }
 
-export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
+export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDive }: {
   ins: BriefingCardData;
   index: number;
   onDismiss?: () => void;
   onRetry?: (metricId: string) => void;
+  onDeepDive?: (metricId: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [retrying, setRetrying] = useState(false);
   const state: BriefingCardState = ins.state ?? "ok";
-  const m = MOOD_STYLES[ins.mood] ?? MOOD_STYLES.good;
+  const moodKey = MOOD_LABELS[ins.mood] ? ins.mood : "good";
+  const moodLabel = MOOD_LABELS[moodKey];
+  const numeral = String(index + 1).padStart(2, "0");
 
   const refreshing = retrying || state === "pending";
 
@@ -69,12 +80,17 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
   return (
     <div
       className={`icard${open ? " exp" : ""}${state === "failed" ? " icard-failed" : ""}${state === "pending" ? " icard-pending" : ""}`}
+      data-mood={moodKey}
       style={{ animation: `fadeUp 0.5s ease ${index * 0.07}s both` }}
       onClick={() => setOpen(!open)}
     >
       <div className="itop">
-        <div className="mdot" style={{ background: m.dot, boxShadow: `0 0 0 4px ${m.bg}` }} />
+        <div className="inum">{numeral}</div>
         <div className="icontent">
+          <div className="ieyebrow">
+            <span className="ieyebrow-dot" aria-hidden="true" />
+            <span>{moodLabel}</span>
+          </div>
           <div className="itext">{ins.text}</div>
           {state === "pending" ? (
             <div className="iskel" aria-label="Refreshing metric" aria-busy="true">
@@ -87,11 +103,25 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
               label={ins.label}
               data={state === "ok" ? ins.chartData : undefined}
               size="card"
+              mood={moodKey}
             />
           ) : null}
         </div>
       </div>
       <div className="iactions">
+        {onDeepDive && ins.metricId && state === "ok" && (
+          <button
+            className="ipin ipin-deep"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeepDive(ins.metricId);
+            }}
+            title="Deep dive in Work"
+            aria-label="Deep dive in Work"
+          >
+            <Search size={13} strokeWidth={2.25} />
+          </button>
+        )}
         {onRetry && ins.metricId && (
           <button
             className="ipin"
@@ -100,9 +130,12 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
             title={refreshing ? "Re-running…" : "Re-run this metric"}
             aria-label="Re-run this metric"
             aria-busy={refreshing}
-            style={{ marginRight: 6 }}
           >
-            <span style={{ display: "inline-block", animation: refreshing ? "spin 0.9s linear infinite" : "none" }}>↻</span>
+            <RotateCw
+              size={13}
+              strokeWidth={2}
+              style={{ animation: refreshing ? "spin 0.9s linear infinite" : "none" }}
+            />
           </button>
         )}
         <button
@@ -113,9 +146,8 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
           }}
           title="Copy card text"
           aria-label="Copy card text"
-          style={{ marginRight: 6 }}
         >
-          ⧉
+          <Copy size={13} strokeWidth={2} />
         </button>
         {onDismiss ? (
           <button
@@ -124,7 +156,7 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
             title="Dismiss"
             aria-label="Dismiss"
           >
-            ✕
+            <X size={14} strokeWidth={2} />
           </button>
         ) : null}
       </div>
@@ -139,7 +171,14 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry }: {
         )}
         {state === "ok" && ins.chartData?.length > 1 && (
           <div className="dchart">
-            <Chart type={ins.chart} data={ins.chartData} centerLabel={ins.metric} valueLabel={ins.label} baselineLabel="Prior Period" />
+            <Chart
+              type={ins.chart}
+              data={ins.chartData}
+              accent={MOOD_CHART_ACCENT[moodKey] ?? undefined}
+              centerLabel={ins.metric}
+              valueLabel={ins.label}
+              baselineLabel="Prior Period"
+            />
           </div>
         )}
       </div>
