@@ -908,19 +908,8 @@ body {
   );
   border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent) 4%);
   border-radius: 18px;
-  padding: 14px 18px 14px 22px;
+  padding: 14px 18px;
   box-shadow: var(--shadow);
-}
-.work-timeline .work-surface-frame:has(> .work-markdown)::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 14px;
-  bottom: 14px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--accent);
-  opacity: 0.6;
 }
 .work-composer {
   display: flex;
@@ -1535,17 +1524,6 @@ body {
     border-color 240ms ease;
 }
 
-.app-toast::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 12px;
-  bottom: 12px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: var(--toast-accent);
-  transition: background 200ms ease;
-}
 
 .app-toast:hover {
   border-color: color-mix(in srgb, var(--border) 40%, var(--text3) 60%);
