@@ -208,11 +208,20 @@ export async function runChatTurn(
       error: result.error,
     };
   } catch (error) {
-    const errMsg =
-      error instanceof Error ? error.message : "Work run failed unexpectedly.";
+    const aborted =
+      signal?.aborted ||
+      (error instanceof Error &&
+        (error.name === "AbortError" || error.message.includes("aborted")));
+    const status: "failed" | "cancelled" = aborted ? "cancelled" : "failed";
+    const errMsg = aborted
+      ? "Cancelled by user."
+      : error instanceof Error
+        ? error.message
+        : "Work run failed unexpectedly.";
     await wrappedEmit({ type: "error", message: errMsg });
-    await finishWorkRun(runId, "failed", errMsg);
-    await wrappedEmit({ type: "done", result: { status: "failed" } });
-    throw error;
+    await finishWorkRun(runId, status, aborted ? null : errMsg);
+    await wrappedEmit({ type: "done", result: { status } });
+    if (!aborted) throw error;
+    return { status, finalText: assistantText };
   }
 }
