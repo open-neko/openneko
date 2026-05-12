@@ -94,34 +94,7 @@ function walkMdNode(node: unknown, parent: MdNode | null): void {
 
 const REMARK_PLUGINS = [remarkGfm, autolinkWorkspaceFiles];
 
-// Pre-process markdown source: replace inline-code-wrapped workspace paths
-// (`/tmp/...openneko/agents/orgs/<id>/(runs|uploads|...)/file.ext`) with a
-// proper markdown link `[file.ext](/api/work/files/<rel>)`. The remark plugin
-// alone can't do this for inline-code content under react-markdown 10
-// (mutating mdast inlineCode → link didn't propagate through to hast), so we
-// rewrite at the string level before ReactMarkdown parses.
-const INLINE_FILE_RE =
-  /`([^`\n]*\/agents\/orgs\/[A-Za-z0-9-]+\/(?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)`/g;
-const BARE_FILE_RE =
-  /(?<!\]\()(\/[A-Za-z0-9._\-/]*\/agents\/orgs\/[A-Za-z0-9-]+\/(?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)(?!\))/g;
-
-function linkifyWorkspacePaths(md: string): string {
-  return md
-    .replace(INLINE_FILE_RE, (_full, path: string) => {
-      const m = WORKSPACE_FILE_RE.exec(path);
-      WORKSPACE_FILE_RE.lastIndex = 0;
-      if (!m) return `\`${path}\``;
-      const filename = path.split("/").slice(-1)[0];
-      return `[\`${filename}\`](/api/work/files/${m[1]})`;
-    })
-    .replace(BARE_FILE_RE, (full: string, path: string) => {
-      const m = WORKSPACE_FILE_RE.exec(path);
-      WORKSPACE_FILE_RE.lastIndex = 0;
-      if (!m) return full;
-      const filename = path.split("/").slice(-1)[0];
-      return `[${filename}](/api/work/files/${m[1]})`;
-    });
-}
+import { linkifyWorkspacePaths } from "@/lib/linkify-workspace-paths";
 
 function openFileLink(href: string) {
   const w = window.open(href, "_blank", "noopener,noreferrer");
