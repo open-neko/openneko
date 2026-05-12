@@ -41,7 +41,25 @@ function autolinkWorkspaceFiles() {
 function walkMdNode(node: unknown, parent: MdNode | null): void {
   if (!node || typeof node !== "object") return;
   const n = node as MdNode;
-  if (n.type === "code" || n.type === "inlineCode" || n.type === "link") return;
+  if (n.type === "code" || n.type === "link") return;
+  // inlineCode is the `path` case — assistant often wraps file paths in
+  // backticks. Convert the whole inline-code node to a link if its value
+  // matches a workspace file path.
+  if (n.type === "inlineCode" && typeof n.value === "string" && parent?.children) {
+    WORKSPACE_FILE_RE.lastIndex = 0;
+    const match = WORKSPACE_FILE_RE.exec(n.value);
+    if (match) {
+      const idx = parent.children.indexOf(n);
+      if (idx !== -1) {
+        parent.children.splice(idx, 1, {
+          type: "link",
+          url: `/api/work/files/${match[1]}`,
+          children: [{ type: "inlineCode", value: n.value.split("/").slice(-1)[0] }],
+        });
+      }
+    }
+    return;
+  }
   if (n.type === "text" && typeof n.value === "string" && parent?.children) {
     const value = n.value;
     WORKSPACE_FILE_RE.lastIndex = 0;
