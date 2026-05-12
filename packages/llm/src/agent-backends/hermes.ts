@@ -65,7 +65,20 @@ function outsideFenceText(raw: string): string {
   while (i < raw.length) {
     const open = raw.indexOf(A2UI_FENCE_OPEN, i);
     if (open === -1) {
-      out += raw.slice(i);
+      // No full opener visible. Hold back any tail of `raw` that matches a
+      // prefix of the opener — it might complete in a later streamed chunk.
+      // Without this, a partial opener like "```neko_a2" leaks into the
+      // message event stream and ends up as an empty code block in the UI.
+      const tail = raw.slice(i);
+      let holdBack = 0;
+      const maxK = Math.min(tail.length, A2UI_FENCE_OPEN.length - 1);
+      for (let k = maxK; k > 0; k--) {
+        if (tail.slice(-k) === A2UI_FENCE_OPEN.slice(0, k)) {
+          holdBack = k;
+          break;
+        }
+      }
+      out += tail.slice(0, tail.length - holdBack);
       break;
     }
     out += raw.slice(i, open);

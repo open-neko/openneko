@@ -1,6 +1,7 @@
 "use client";
 
 import "@/a2ui/components";
+import type { AnchorHTMLAttributes, ReactNode } from "react";
 import {
   ArrowUp,
   Brain,
@@ -21,6 +22,103 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+// Matches absolute container paths to agent-generated/uploaded files inside the
+// per-org workspace, e.g.
+//   /tmp/openneko-home/.config/openneko/agents/orgs/<orgId>/runs/<runId>/artifacts/file.pdf
+//   ~/.config/openneko/agents/orgs/<orgId>/uploads/<threadId>/file.csv
+// The capture group is the workspace-relative path the /api/work/files route
+// already serves.
+const WORKSPACE_FILE_RE =
+  /\/agents\/orgs\/[A-Za-z0-9-]+\/((?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)/g;
+
+type MdNode = { type: string; value?: string; url?: string; children?: MdNode[] };
+
+function autolinkWorkspaceFiles() {
+  return (tree: unknown) => walkMdNode(tree, null);
+}
+
+function walkMdNode(node: unknown, parent: MdNode | null): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as MdNode;
+  if (n.type === "code" || n.type === "inlineCode" || n.type === "link") return;
+  if (n.type === "text" && typeof n.value === "string" && parent?.children) {
+    const value = n.value;
+    WORKSPACE_FILE_RE.lastIndex = 0;
+    const matches = [...value.matchAll(WORKSPACE_FILE_RE)];
+    if (matches.length === 0) return;
+    const replacement: MdNode[] = [];
+    let cursor = 0;
+    for (const m of matches) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      if (start > cursor) {
+        replacement.push({ type: "text", value: value.slice(cursor, start) });
+      }
+      replacement.push({
+        type: "link",
+        url: `/api/work/files/${m[1]}`,
+        children: [{ type: "text", value: m[0].split("/").slice(-1)[0] }],
+      });
+      cursor = end;
+    }
+    if (cursor < value.length) {
+      replacement.push({ type: "text", value: value.slice(cursor) });
+    }
+    const idx = parent.children.indexOf(n);
+    if (idx !== -1) parent.children.splice(idx, 1, ...replacement);
+    return;
+  }
+  if (Array.isArray(n.children)) {
+    for (const child of n.children.slice()) walkMdNode(child, n);
+  }
+}
+
+const REMARK_PLUGINS = [remarkGfm, autolinkWorkspaceFiles];
+
+function openFileLink(href: string) {
+  const w = window.open(href, "_blank", "noopener,noreferrer");
+  if (w) return;
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = "";
+  a.rel = "noopener noreferrer";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+const MARKDOWN_COMPONENTS = {
+  a({
+    href,
+    children,
+    onClick,
+    ...props
+  }: AnchorHTMLAttributes<HTMLAnchorElement> & { children?: ReactNode }) {
+    const isFile = typeof href === "string" && href.startsWith("/api/work/files/");
+    if (isFile) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => {
+            onClick?.(e);
+            if (e.defaultPrevented) return;
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            if (typeof href === "string") openFileLink(href);
+          }}
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    }
+    return <a href={href} onClick={onClick} {...props}>{children}</a>;
+  },
+};
 import AppHeader from "@/components/AppHeader";
 import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
@@ -1021,7 +1119,7 @@ function MessageBubble({
       <div className="work-bubble-row">
         <div className="work-bubble">
           <div className="work-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{message.content}</ReactMarkdown>
           </div>
         </div>
       </div>
@@ -1162,12 +1260,14 @@ function buildRunTimeline(events: WorkEvent[]): {
   items: TimelineItem[];
   lastStatus: string | null;
   surfaceMessages: A2UIMessage[];
+  isDone: boolean;
 } {
   const items: TimelineItem[] = [];
   const toolsById = new Map<string, ToolItem>();
   const surfaceMessages: A2UIMessage[] = [];
   let pendingText = "";
   let lastStatus: string | null = null;
+  let isDone = false;
 
   const flushTextSegment = () => {
     if (pendingText.trim()) items.push({ kind: "text", content: pendingText });
@@ -1225,12 +1325,31 @@ function buildRunTimeline(events: WorkEvent[]): {
         for (const msg of event.messages) surfaceMessages.push(msg);
         break;
       }
+      case "done": {
+        isDone = true;
+        break;
+      }
       default:
         break;
     }
   }
   flushTextSegment();
-  return { items, lastStatus, surfaceMessages };
+  // Synthesize an end for any tool that never got a tool_end before the run
+  // terminated. Without this, ACP runs that miss the final tool_call_update
+  // notification (Hermes occasionally drops it for read tools) leave the
+  // cluster stuck on "running" forever.
+  if (isDone) {
+    for (const tool of toolsById.values()) {
+      if (!tool.end) {
+        tool.end = {
+          type: "tool_end",
+          id: tool.id,
+          result: undefined,
+        };
+      }
+    }
+  }
+  return { items, lastStatus, surfaceMessages, isDone };
 }
 
 function RunTimeline({
@@ -1244,12 +1363,13 @@ function RunTimeline({
   pending: boolean;
   fallbackContent: string;
 }) {
-  const { items, lastStatus, surfaceMessages } = useMemo(
+  const { items, lastStatus, surfaceMessages, isDone } = useMemo(
     () => buildRunTimeline(events),
     [events],
   );
 
   const hasContent = items.length > 0 || surfaceMessages.length > 0;
+  const runDone = isDone || (run ? !isRunInFlight(run) : false);
 
   return (
     <div className="work-timeline">
@@ -1257,7 +1377,7 @@ function RunTimeline({
         <div className="work-bubble-row">
           <div className="work-bubble">
             <div className="work-markdown">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{fallbackContent}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{fallbackContent}</ReactMarkdown>
             </div>
           </div>
         </div>
@@ -1269,14 +1389,20 @@ function RunTimeline({
             <div key={`text-${index}`} className="work-bubble-row">
               <div className="work-bubble">
                 <div className="work-markdown">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{item.content}</ReactMarkdown>
                 </div>
               </div>
             </div>
           );
         }
         if (item.kind === "tools") {
-          return <ToolGroup key={`tools-${index}`} tools={item.tools} />;
+          return (
+            <ToolGroup
+              key={`tools-${index}`}
+              tools={item.tools}
+              defaultOpen={!runDone}
+            />
+          );
         }
         return (
           <div key={`error-${index}`} className="work-error">
@@ -1300,11 +1426,21 @@ function RunTimeline({
   );
 }
 
-function ToolGroup({ tools }: { tools: ToolItem[] }) {
+function ToolGroup({
+  tools,
+  defaultOpen,
+}: {
+  tools: ToolItem[];
+  defaultOpen?: boolean;
+}) {
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
-  const [open, setOpen] = useState(tools.length <= 2 || inflight > 0);
+  const initialOpen =
+    defaultOpen !== undefined
+      ? defaultOpen
+      : tools.length <= 2 || inflight > 0;
+  const [open, setOpen] = useState(initialOpen);
   const effectiveOpen = open || inflight > 0;
 
   if (!showHeader) {
