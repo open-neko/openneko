@@ -128,11 +128,21 @@ export function buildWorkPrompt(args: {
     "- Save generated reports or files under the run artifact directory.",
     "- For GraphJin date/range filters, do not put multiple operators under the same column object. Use `where: { and: [{ orderdate: { gte: \"2024-06-30\" } }, { orderdate: { lte: \"2025-06-29\" } }] }`, not `where: { orderdate: { gte: \"...\", lte: \"...\" } }`.",
     "- Keep answers concise and useful.",
-    "",
-    "Conversation so far:",
-    formatTranscript(messages),
-    "",
-    "Current user message:",
-    currentUserMessage,
+    // Claude-agent: history is carried by the SDK via `resume: sessionId`,
+    // and the current turn is delivered as `userMessage` (separate from this
+    // system-prompt overlay). Inlining either would double-count and waste
+    // tokens / produce contradictions. Hermes always opens a fresh
+    // `session/new` every turn, so the transcript + current message must be
+    // in the prompt body.
+    ...(backend === "claude-agent"
+      ? []
+      : [
+          "",
+          "Conversation so far:",
+          formatTranscript(messages),
+          "",
+          "Current user message:",
+          currentUserMessage,
+        ]),
   ].join("\n");
 }
