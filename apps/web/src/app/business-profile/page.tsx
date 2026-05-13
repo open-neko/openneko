@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import SectionNav from "@/components/SectionNav";
-import Markdown from "react-markdown";
+import EditableMarkdown from "@/components/EditableMarkdown";
+import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { StageKind } from "@/lib/db";
 
 type Phase = "processing" | "review";
@@ -49,6 +50,51 @@ export default function ProcessingPage() {
   const [profile, setProfile] = useState("");
   const [insights, setInsights] = useState("");
   const [insightsStatus, setInsightsStatus] = useState<InsightsStatus>("processing");
+  const profileEditedRef = useRef(false);
+  const insightsEditedRef = useRef(false);
+
+  const saveProfile = useCallback(async (v: string) => {
+    const res = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessProfile: v }),
+    });
+    if (!res.ok) throw new Error(`save failed: ${res.status}`);
+  }, []);
+  const saveInsights = useCallback(async (v: string) => {
+    const res = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ industryInsights: v }),
+    });
+    if (!res.ok) throw new Error(`save failed: ${res.status}`);
+  }, []);
+  const profileSaver = useDebouncedSave<string>({ delayMs: 800, save: saveProfile });
+  const insightsSaver = useDebouncedSave<string>({ delayMs: 800, save: saveInsights });
+  const flushAll = useCallback(
+    async () => {
+      await Promise.all([profileSaver.flush(), insightsSaver.flush()]);
+    },
+    [profileSaver, insightsSaver],
+  );
+  const saveError = profileSaver.lastError ?? insightsSaver.lastError;
+
+  const handleProfileChange = useCallback(
+    (next: string) => {
+      profileEditedRef.current = true;
+      setProfile(next);
+      profileSaver.schedule(next);
+    },
+    [profileSaver],
+  );
+  const handleInsightsChange = useCallback(
+    (next: string) => {
+      insightsEditedRef.current = true;
+      setInsights(next);
+      insightsSaver.schedule(next);
+    },
+    [insightsSaver],
+  );
 
   useEffect(() => {
     if (phase !== "processing") return;
@@ -64,8 +110,10 @@ export default function ProcessingPage() {
             const pRes = await fetch("/api/profile");
             if (pRes.ok) {
               const data = await pRes.json();
-              setProfile(data.businessProfile ?? "");
-              if (data.industryInsights) setInsights(data.industryInsights);
+              if (!profileEditedRef.current) setProfile(data.businessProfile ?? "");
+              if (data.industryInsights && !insightsEditedRef.current) {
+                setInsights(data.industryInsights);
+              }
               setInsightsStatus(data.industryInsightsStatus ?? "processing");
             }
             if (!cancelled) setPhase("review");
@@ -124,7 +172,9 @@ export default function ProcessingPage() {
           const pRes = await fetch("/api/profile");
           if (pRes.ok && !cancelled) {
             const pData = await pRes.json();
-            if (pData.industryInsights) setInsights(pData.industryInsights);
+            if (pData.industryInsights && !insightsEditedRef.current) {
+              setInsights(pData.industryInsights);
+            }
             setInsightsStatus(pData.industryInsightsStatus ?? "ready");
           }
         } else {
@@ -148,7 +198,7 @@ export default function ProcessingPage() {
             const data = await res.json();
             setInsightsStatus(data.industryInsightsStatus ?? "processing");
             if (data.industryInsights) {
-              setInsights(data.industryInsights);
+              if (!insightsEditedRef.current) setInsights(data.industryInsights);
               return;
             }
           }
@@ -209,13 +259,19 @@ export default function ProcessingPage() {
       >
         <button
           className={`pill${tab === "profile" ? " on" : ""}`}
-          onClick={() => setTab("profile")}
+          onClick={async () => {
+            await flushAll();
+            setTab("profile");
+          }}
         >
           Business Profile
         </button>
         <button
           className={`pill${tab === "insights" ? " on" : ""}`}
-          onClick={() => setTab("insights")}
+          onClick={async () => {
+            await flushAll();
+            setTab("insights");
+          }}
         >
           Industry Insights
           {insightsPending && (
@@ -234,15 +290,41 @@ export default function ProcessingPage() {
 
       <div className="profile-card" style={{ animation: "fadeUp 0.6s ease 0.3s both" }}>
         {tab === "profile" ? (
-          profile ? <ProfileMarkdown content={profile} /> : <ProfileEmpty />
+          <EditableMarkdown
+            value={profile}
+            onChange={handleProfileChange}
+            onCommit={() => profileSaver.flush()}
+            placeholder={<ProfileEmpty />}
+            components={mdComponents}
+            ariaLabel="Business profile"
+          />
         ) : insightsStatus === "disabled" ? (
           <InsightsDisabled />
         ) : insights ? (
-          <ProfileMarkdown content={insights} />
+          <EditableMarkdown
+            value={insights}
+            onChange={handleInsightsChange}
+            onCommit={() => insightsSaver.flush()}
+            components={mdComponents}
+            ariaLabel="Industry insights"
+          />
         ) : (
           <InsightsLoading />
         )}
       </div>
+      {saveError && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "var(--text3)",
+            textAlign: "right",
+          }}
+          role="status"
+        >
+          Couldn&apos;t save — will retry on your next edit.
+        </div>
+      )}
 
       <div
         style={{
@@ -256,7 +338,10 @@ export default function ProcessingPage() {
       >
         <button
           className="pill on"
-          onClick={() => router.replace("/")}
+          onClick={async () => {
+            await flushAll();
+            router.replace("/");
+          }}
           style={{ padding: "14px 32px", fontSize: 15 }}
         >
           Continue to your briefing
@@ -265,6 +350,7 @@ export default function ProcessingPage() {
           <button
             className="pill"
             onClick={async () => {
+              await flushAll();
               try {
                 const res = await fetch("/api/insights/ensure", {
                   method: "POST",
@@ -272,6 +358,7 @@ export default function ProcessingPage() {
                   body: JSON.stringify({ force: true }),
                 });
                 if (res.ok) {
+                  insightsEditedRef.current = false;
                   setInsights("");
                   setInsightsStatus("processing");
                   setTab("insights");
@@ -377,8 +464,3 @@ const mdComponents = {
   ul: (p: React.ComponentProps<"ul">) => <ul className="pm-ul" {...p} />,
   a: (p: React.ComponentProps<"a">) => <a className="pm-cite" target="_blank" rel="noopener noreferrer" {...p} />,
 };
-
-function ProfileMarkdown({ content }: { content: string }) {
-  if (!content) return null;
-  return <Markdown components={mdComponents}>{content}</Markdown>;
-}
