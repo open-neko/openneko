@@ -14,10 +14,12 @@ const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
 
 if (!reachable) {
-  console.warn("[m3-chain] skipping: metadata Postgres unreachable.");
+  console.warn(
+    "[subscription-chain] skipping: metadata Postgres unreachable.",
+  );
 }
 
-describeIfDb("M3 end-to-end chain", () => {
+describeIfDb("subscription-driven workflow chain", () => {
   afterAll(async () => {
     await pool().end();
   });
