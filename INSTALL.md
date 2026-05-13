@@ -145,13 +145,15 @@ Default ports:
 
 - OpenNeko app: `3000`
 - Metadata Postgres: `5432`
+- OpenNeko metadata GraphJin (`neko-graphjin`): `8089`
 - AdventureWorks Postgres: `5433`
-- Sample GraphJin: `8080`
+- Sample GraphJin (`graphjin`): `8080`
 
 Override common host ports:
 
 ```bash
-OPENNEKO_PORT=3001 OPENNEKO_DB_PORT=55432 GRAPHJIN_PORT=8081 \
+OPENNEKO_PORT=3001 OPENNEKO_DB_PORT=55432 \
+  OPENNEKO_GRAPHJIN_PORT=8090 GRAPHJIN_PORT=8081 \
   docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 ```
 
@@ -166,10 +168,11 @@ corepack enable
 pnpm bootstrap
 ```
 
-Run only the metadata database:
+Run the metadata database plus OpenNeko's own GraphJin (powers
+output-match subscriptions):
 
 ```bash
-docker compose up -d neko-db
+docker compose up -d neko-db neko-graphjin
 pnpm --filter @neko/db migrate
 ```
 
@@ -178,6 +181,10 @@ Start the app from source:
 ```bash
 pnpm dev
 ```
+
+If you skip `neko-graphjin`, OpenNeko still runs but workflows that
+chain via subscriptions stay silent — the worker logs `subscription
+manager ready (0 active)` and matches never fire.
 
 Install external CLIs used by the worker:
 
@@ -190,12 +197,21 @@ This host-only developer command installs GraphJin CLI, Hermes, and Claude Agent
 To develop with sample data:
 
 ```bash
-docker compose -f compose.yml -f compose.adventureworks.yml up -d neko-db adventureworks-db graphjin
+docker compose -f compose.yml -f compose.adventureworks.yml up -d \
+  neko-db neko-graphjin adventureworks-db graphjin
 pnpm --filter @neko/db migrate
 pnpm dev
 ```
 
-In the developer flow, use this GraphJin URL:
+Two GraphJin services run side by side here:
+
+- `graphjin` on port `8080` — connects to the AdventureWorks sample
+  data; this is the URL you enter in the setup wizard.
+- `neko-graphjin` on port `8089` — connects to OpenNeko's metadata DB
+  and powers output-match subscriptions. The worker connects to it
+  automatically.
+
+In the developer flow, use this GraphJin URL in the setup wizard:
 
 ```text
 http://localhost:8080
@@ -215,7 +231,7 @@ Start Docker Desktop or the Docker daemon, then run the compose command again.
 
 **Port already in use**
 
-Change the host port with `OPENNEKO_PORT`, `OPENNEKO_DB_PORT`, `CUSTOMER_PGPORT`, or `GRAPHJIN_PORT`.
+Change the host port with `OPENNEKO_PORT`, `OPENNEKO_DB_PORT`, `OPENNEKO_GRAPHJIN_PORT`, `CUSTOMER_PGPORT`, or `GRAPHJIN_PORT`.
 
 **GraphJin connection fails in Docker**
 
@@ -225,7 +241,11 @@ If you customize the GraphJin service, mount a writable directory at `/config`. 
 
 **GraphJin connection fails in developer mode**
 
-When the web app and worker run on your host with `pnpm dev`, use `http://localhost:8080`.
+When the web app and worker run on your host with `pnpm dev`, use `http://localhost:8080` for the customer-data GraphJin in the setup wizard. The OpenNeko metadata GraphJin (`neko-graphjin`) is reached automatically at `http://127.0.0.1:8089`; if you skip starting it, workflows still run but subscription matches don't fire.
+
+**Workflow subscriptions don't fire**
+
+OpenNeko's subscription manager needs `neko-graphjin` running. Start it with `docker compose up -d neko-graphjin`. The worker logs `subscription manager ready (N active)` on boot — if `N` is `0` despite subscriptions existing in the database, `neko-graphjin` is either unreachable or its password has drifted (rotate it via `/setup` then `docker compose restart neko-graphjin`).
 
 **Provider key fails**
 

@@ -48,24 +48,26 @@ services:
     restart: "no"
 
   neko-graphjin:
-    image: dosco/graphjin:3.18.18
+    build:
+      context: .
+      target: neko-graphjin
     restart: unless-stopped
     depends_on:
       neko-db-init:
         condition: service_completed_successfully
+    # The custom entrypoint reads the password from /openneko-config/config.json
+    # (written by the worker entrypoint + the /setup wizard) on every container
+    # start, so password rotation works after a simple `docker compose restart
+    # neko-graphjin`. NEKO_PG_PASSWORD here is the bootstrap fallback used the
+    # very first time, before config.json exists.
     environment:
-      GJ_DATABASE_HOST: neko-db
-      GJ_DATABASE_PORT: 5432
-      GJ_DATABASE_USER: neko
-      GJ_DATABASE_PASSWORD: secret
-      GJ_DATABASE_DBNAME: neko
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
     volumes:
-      - ./db/graphjin/neko.yml:/config/dev.yml:ro
-    command: ["serve", "--path", "/config"]
-    expose:
-      - "8089"
+      - openneko-config:/openneko-config:ro
+    ports:
+      - "${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8089/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/health"]
       interval: 10s
       timeout: 3s
       retries: 5

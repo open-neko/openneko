@@ -56,7 +56,7 @@ services:
     restart: "no"
 
   graphjin:
-    image: dosco/graphjin:3.18.10
+    image: dosco/graphjin:3.18.18
     restart: unless-stopped
     depends_on:
       adventureworks-init:

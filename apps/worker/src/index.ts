@@ -218,13 +218,15 @@ console.log(
   `[worker] concurrency: globalCap=${concurrency.globalCap} (configure in /settings/agent; restart required)`,
 );
 
-// GraphJin URL — the worker is a client of neko-graphjin (compose service
-// `neko-graphjin:8089`, exposing the operating-loop metadata DB). The
-// customer-data graphjin used by the agent CLI path is a separate
-// service on a separate port; this URL is only for app-side queries
-// and output-match subscriptions.
+// GraphJin URL — the worker is a client of neko-graphjin, the OpenNeko
+// metadata GraphJin service. Default targets localhost so `pnpm dev`
+// works against a compose-up'd neko-graphjin (port 8089 exposed). The
+// containerized deploy sets OPENNEKO_GRAPHJIN_URL=http://neko-graphjin:8089
+// in compose.yml so service-DNS lookup wins there. Customer-data
+// graphjin (used by the agent CLI path) is a separate service on
+// port 8080.
 const GRAPHJIN_URL =
-  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://neko-graphjin:8089";
+  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089";
 console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
 const b = await boss();
