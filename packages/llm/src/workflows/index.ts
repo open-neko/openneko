@@ -30,17 +30,36 @@ export {
   type WorkflowTriggerKind,
 } from "./run-workflow-turn";
 export {
+  countSubscriptionsMatchingOutput,
+  countWorkflowRunsForSubscription,
+  createObservation,
+  createSubscription,
   createWorkflowRun,
+  deleteSubscription,
   emitWorkflowOutput,
   finishWorkflowRun,
+  getObservation,
   getWorkflow,
   getWorkflowByOrgName,
+  getWorkflowRunChainDepth,
+  linkOutputSourceObservations,
   listCronWorkflows,
+  listEnabledSubscriptions,
+  listObservationsByConsumerWorkflow,
+  listObservationsForOutput,
+  listSubscriptionsByWorkflow,
   listWorkflows,
   saveWorkflow,
+  setSubscriptionEnabled,
+  type CreateObservationInput,
+  type CreateSubscriptionInput,
   type CreateWorkflowRunInput,
+  type ObservationConsumerKind,
+  type ObservationRecord,
   type SaveWorkflowInput,
   type SaveWorkflowResult,
+  type SubscriptionRecord,
+  type SubscriptionSourceKind,
   type WorkflowOutputInput,
   type WorkflowOutputRecord,
   type WorkflowRecord,
@@ -48,3 +67,21 @@ export {
   type WorkflowStep,
   type WorkflowTriggers,
 } from "./store";
+export {
+  buildSubscriptionQuery,
+  parseWorkflowOutputMatch,
+  type SubscriptionQueryPayload,
+  type WorkflowOutputFilter,
+  type WorkflowOutputMatch,
+} from "./subscription-query";
+export {
+  startSubscriptionManager,
+  type SubscriptionManagerHandle,
+  type SubscriptionManagerOptions,
+  type SubscriptionMatchEvent,
+} from "./subscription-manager";
+export {
+  handleSubscriptionMatch,
+  type HandleSubscriptionMatchOptions,
+  type MatchHandlerDecision,
+} from "./match-handler";

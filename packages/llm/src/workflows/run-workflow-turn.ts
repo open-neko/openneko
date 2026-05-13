@@ -40,6 +40,9 @@ export type PrepareWorkflowRunOptions = {
   triggerPayload?: Record<string, unknown>;
   threadId?: string;
   parentChainDepth?: number;
+  triggeredBySubscriptionId?: string | null;
+  triggeredByOutputId?: string | null;
+  triggeredByObservationId?: string | null;
 };
 
 export type PreparedWorkflowRun = {
@@ -77,6 +80,9 @@ export async function prepareWorkflowRun(
     chainDepth:
       (opts.parentChainDepth ?? 0) +
       (opts.triggerKind === "subscription" ? 1 : 0),
+    triggeredBySubscriptionId: opts.triggeredBySubscriptionId,
+    triggeredByOutputId: opts.triggeredByOutputId,
+    triggeredByObservationId: opts.triggeredByObservationId,
   });
   return {
     workflow,

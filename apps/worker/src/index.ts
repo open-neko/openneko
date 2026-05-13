@@ -29,6 +29,11 @@ import {
   UpstreamProviderError,
   verifyAiCredentials,
 } from "@neko/llm";
+import {
+  getWorkflowRunChainDepth,
+  handleSubscriptionMatch,
+  startSubscriptionManager,
+} from "@neko/llm/workflows";
 import { ensureOrgWorkspace, runWorkAutoMemoryPipeline } from "@neko/llm/work";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
@@ -204,12 +209,14 @@ console.log(
   `[worker] concurrency: globalCap=${concurrency.globalCap} (configure in /settings/agent; restart required)`,
 );
 
-// GraphJin URL — the worker is a client of the shared GraphJin service
-// (compose: `graphjin`, default port 8080). Operating-loop subscriptions
-// and dogfooded queries target this URL.
+// GraphJin URL — the worker is a client of neko-graphjin (compose service
+// `neko-graphjin:8089`, exposing the operating-loop metadata DB). The
+// customer-data graphjin used by the agent CLI path is a separate
+// service on a separate port; this URL is only for app-side queries
+// and output-match subscriptions.
 const GRAPHJIN_URL =
-  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://graphjin:8080";
-console.log(`[worker] graphjin client targeting ${GRAPHJIN_URL}`);
+  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://neko-graphjin:8089";
+console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
 const b = await boss();
 
@@ -312,6 +319,45 @@ await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
 });
 console.log("[worker] scheduled workflow cron sweep every minute");
 
+const subscriptionManager = startSubscriptionManager({
+  baseUrl: GRAPHJIN_URL,
+  refreshIntervalMs: 60_000,
+  onMatch: async (event) => {
+    if (event.kind !== "workflow_output") return;
+    const decision = await handleSubscriptionMatch({
+      subscription: event.subscription,
+      output: event.output,
+      resolveProducingRunChainDepth: getWorkflowRunChainDepth,
+    });
+    if (decision.action === "dropped") {
+      console.log(
+        `[subscription-manager] dropped match sub=${event.subscription.id} output=${event.output.id}: ${decision.reason}`,
+      );
+    } else {
+      console.log(
+        `[subscription-manager] enqueued sub=${event.subscription.id} output=${event.output.id} obs=${decision.observationId}`,
+      );
+    }
+  },
+  onError: (err, sub) => {
+    console.warn(
+      `[subscription-manager] error${sub ? ` sub=${sub.id}` : ""}: ${err.message}`,
+    );
+  },
+});
+
+subscriptionManager.ready
+  .then(() => {
+    console.log(
+      `[worker] subscription manager ready (${subscriptionManager.activeSubscriptionIds().length} active)`,
+    );
+  })
+  .catch((err) => {
+    console.warn(
+      `[subscription-manager] initial connect failed: ${err instanceof Error ? err.message : err}`,
+    );
+  });
+
 await b.work(
   QUEUE.WORK_AUTO_MEMORY,
   async (jobs: PgBossLib.Job<WorkAutoMemoryPayload>[]) => {
@@ -375,6 +421,11 @@ const shutdown = async (signal: string) => {
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {
     console.log(`[worker] cancelled ${cancelled} in-flight agent call(s)`);
+  }
+  try {
+    await subscriptionManager.stop();
+  } catch (e) {
+    console.error("[worker] subscription manager stop error:", e);
   }
   try {
     await b.stop({ graceful: true });

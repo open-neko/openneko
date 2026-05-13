@@ -3,9 +3,13 @@ import {
   db,
   desc,
   eq,
+  inArray,
+  observation,
   sql,
+  subscription,
   workflow_definition,
   workflow_output,
+  workflow_output_source_observation,
   workflow_run,
 } from "@neko/db";
 
@@ -217,6 +221,9 @@ export type CreateWorkflowRunInput = {
   triggerKind: "manual" | "cron" | "subscription";
   triggerPayload?: Record<string, unknown>;
   chainDepth?: number;
+  triggeredBySubscriptionId?: string | null;
+  triggeredByOutputId?: string | null;
+  triggeredByObservationId?: string | null;
 };
 
 function toRunRecord(
@@ -253,6 +260,9 @@ export async function createWorkflowRun(
       work_run_id: input.workRunId,
       trigger_kind: input.triggerKind,
       trigger_payload: input.triggerPayload ?? {},
+      triggered_by_subscription_id: input.triggeredBySubscriptionId ?? null,
+      triggered_by_output_id: input.triggeredByOutputId ?? null,
+      triggered_by_observation_id: input.triggeredByObservationId ?? null,
       chain_depth: input.chainDepth ?? 0,
       status: "running",
       started_at: new Date(),
@@ -361,4 +371,314 @@ export async function emitWorkflowOutput(
     })
     .returning();
   return toOutputRecord(row);
+}
+
+export type SubscriptionSourceKind =
+  | "workflow_output"
+  | "source_change"
+  | "external_event";
+
+export type SubscriptionRecord = {
+  id: string;
+  orgId: string;
+  workflowId: string;
+  sourceKind: SubscriptionSourceKind;
+  filter: Record<string, unknown>;
+  enabled: boolean;
+  debounceMs: number;
+  maxConcurrentRuns: number;
+  maxChainDepthOverride: number | null;
+  idempotencyKeyTemplate: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateSubscriptionInput = {
+  orgId: string;
+  workflowId: string;
+  sourceKind: SubscriptionSourceKind;
+  filter?: Record<string, unknown>;
+  enabled?: boolean;
+  debounceMs?: number;
+  maxConcurrentRuns?: number;
+  maxChainDepthOverride?: number | null;
+  idempotencyKeyTemplate?: string | null;
+};
+
+function toSubscriptionRecord(
+  row: typeof subscription.$inferSelect,
+): SubscriptionRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    workflowId: row.workflow_id,
+    sourceKind: row.source_kind as SubscriptionSourceKind,
+    filter: (row.filter as Record<string, unknown>) ?? {},
+    enabled: row.enabled,
+    debounceMs: row.debounce_ms,
+    maxConcurrentRuns: row.max_concurrent_runs,
+    maxChainDepthOverride: row.max_chain_depth_override,
+    idempotencyKeyTemplate: row.idempotency_key_template,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createSubscription(
+  input: CreateSubscriptionInput,
+): Promise<SubscriptionRecord> {
+  const [row] = await db()
+    .insert(subscription)
+    .values({
+      org_id: input.orgId,
+      workflow_id: input.workflowId,
+      source_kind: input.sourceKind,
+      filter: input.filter ?? {},
+      enabled: input.enabled ?? true,
+      debounce_ms: input.debounceMs ?? 0,
+      max_concurrent_runs: input.maxConcurrentRuns ?? 5,
+      max_chain_depth_override: input.maxChainDepthOverride ?? null,
+      idempotency_key_template: input.idempotencyKeyTemplate ?? null,
+    })
+    .returning();
+  return toSubscriptionRecord(row);
+}
+
+export async function listEnabledSubscriptions(args: {
+  sourceKind?: SubscriptionSourceKind;
+} = {}): Promise<SubscriptionRecord[]> {
+  const rows = await db()
+    .select()
+    .from(subscription)
+    .where(
+      args.sourceKind
+        ? and(
+            eq(subscription.enabled, true),
+            eq(subscription.source_kind, args.sourceKind),
+          )
+        : eq(subscription.enabled, true),
+    );
+  return rows.map(toSubscriptionRecord);
+}
+
+export async function listSubscriptionsByWorkflow(
+  orgId: string,
+  workflowId: string,
+): Promise<SubscriptionRecord[]> {
+  const rows = await db()
+    .select()
+    .from(subscription)
+    .where(
+      and(
+        eq(subscription.org_id, orgId),
+        eq(subscription.workflow_id, workflowId),
+      ),
+    )
+    .orderBy(desc(subscription.created_at));
+  return rows.map(toSubscriptionRecord);
+}
+
+export async function setSubscriptionEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<void> {
+  await db()
+    .update(subscription)
+    .set({ enabled, updated_at: new Date() })
+    .where(eq(subscription.id, id));
+}
+
+export async function deleteSubscription(id: string): Promise<void> {
+  await db().delete(subscription).where(eq(subscription.id, id));
+}
+
+export type ObservationConsumerKind = "workflow" | "human";
+
+export type ObservationRecord = {
+  id: string;
+  orgId: string;
+  sourceOutputId: string | null;
+  consumerKind: ObservationConsumerKind;
+  consumerWorkflowId: string | null;
+  consumerRunId: string | null;
+  consumerUserId: string | null;
+  subscriptionId: string | null;
+  title: string | null;
+  body: string | null;
+  mood: string | null;
+  status: string;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateObservationInput = {
+  orgId: string;
+  sourceOutputId?: string | null;
+  consumerKind: ObservationConsumerKind;
+  consumerWorkflowId?: string | null;
+  consumerRunId?: string | null;
+  consumerUserId?: string | null;
+  subscriptionId?: string | null;
+  title?: string | null;
+  body?: string | null;
+  mood?: "good" | "watch" | "act" | null;
+};
+
+function toObservationRecord(
+  row: typeof observation.$inferSelect,
+): ObservationRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    sourceOutputId: row.source_output_id,
+    consumerKind: row.consumer_kind as ObservationConsumerKind,
+    consumerWorkflowId: row.consumer_workflow_id,
+    consumerRunId: row.consumer_run_id,
+    consumerUserId: row.consumer_user_id,
+    subscriptionId: row.subscription_id,
+    title: row.title,
+    body: row.body,
+    mood: row.mood,
+    status: row.status,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createObservation(
+  input: CreateObservationInput,
+): Promise<ObservationRecord> {
+  const [row] = await db()
+    .insert(observation)
+    .values({
+      org_id: input.orgId,
+      source_output_id: input.sourceOutputId ?? null,
+      consumer_kind: input.consumerKind,
+      consumer_workflow_id: input.consumerWorkflowId ?? null,
+      consumer_run_id: input.consumerRunId ?? null,
+      consumer_user_id: input.consumerUserId ?? null,
+      subscription_id: input.subscriptionId ?? null,
+      title: input.title ?? null,
+      body: input.body ?? null,
+      mood: input.mood ?? null,
+    })
+    .returning();
+  return toObservationRecord(row);
+}
+
+export async function getObservation(
+  orgId: string,
+  id: string,
+): Promise<ObservationRecord | null> {
+  const rows = await db()
+    .select()
+    .from(observation)
+    .where(and(eq(observation.org_id, orgId), eq(observation.id, id)))
+    .limit(1);
+  return rows[0] ? toObservationRecord(rows[0]) : null;
+}
+
+export async function listObservationsForOutput(
+  orgId: string,
+  sourceOutputId: string,
+): Promise<ObservationRecord[]> {
+  const rows = await db()
+    .select()
+    .from(observation)
+    .where(
+      and(
+        eq(observation.org_id, orgId),
+        eq(observation.source_output_id, sourceOutputId),
+      ),
+    )
+    .orderBy(desc(observation.created_at));
+  return rows.map(toObservationRecord);
+}
+
+export async function listObservationsByConsumerWorkflow(
+  orgId: string,
+  consumerWorkflowId: string,
+  limit = 100,
+): Promise<ObservationRecord[]> {
+  const rows = await db()
+    .select()
+    .from(observation)
+    .where(
+      and(
+        eq(observation.org_id, orgId),
+        eq(observation.consumer_workflow_id, consumerWorkflowId),
+      ),
+    )
+    .orderBy(desc(observation.created_at))
+    .limit(limit);
+  return rows.map(toObservationRecord);
+}
+
+/**
+ * Link a produced workflow_output to the observations its producing run
+ * consumed. Called by the runner once an output is emitted and the run's
+ * consumed-observation set is known.
+ */
+export async function linkOutputSourceObservations(
+  workflowOutputId: string,
+  observationIds: string[],
+): Promise<void> {
+  if (observationIds.length === 0) return;
+  await db()
+    .insert(workflow_output_source_observation)
+    .values(
+      observationIds.map((observationId) => ({
+        workflow_output_id: workflowOutputId,
+        observation_id: observationId,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+export async function countWorkflowRunsForSubscription(
+  subscriptionId: string,
+  status: "queued" | "running",
+): Promise<number> {
+  const rows = await db()
+    .select({ id: workflow_run.id })
+    .from(workflow_run)
+    .where(
+      and(
+        eq(workflow_run.triggered_by_subscription_id, subscriptionId),
+        eq(workflow_run.status, status),
+      ),
+    );
+  return rows.length;
+}
+
+export async function countSubscriptionsMatchingOutput(
+  outputId: string,
+  sinceMs: number,
+): Promise<number> {
+  const since = new Date(Date.now() - sinceMs);
+  const rows = await db()
+    .select({ id: observation.id })
+    .from(observation)
+    .where(
+      and(
+        eq(observation.source_output_id, outputId),
+        sql`${observation.created_at} >= ${since}`,
+      ),
+    );
+  return rows.length;
+}
+
+export async function getWorkflowRunChainDepth(
+  workflowRunId: string,
+): Promise<number | null> {
+  const rows = await db()
+    .select({ chain_depth: workflow_run.chain_depth })
+    .from(workflow_run)
+    .where(eq(workflow_run.id, workflowRunId))
+    .limit(1);
+  return rows[0]?.chain_depth ?? null;
 }

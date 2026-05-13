@@ -13,6 +13,9 @@ export async function runWorkflowRunFire(
     triggerPayload: payload.triggerPayload,
     threadId: payload.threadId,
     parentChainDepth: payload.parentChainDepth,
+    triggeredBySubscriptionId: payload.triggeredBySubscriptionId,
+    triggeredByOutputId: payload.triggeredByOutputId,
+    triggeredByObservationId: payload.triggeredByObservationId,
   });
 
   let seq = 0;

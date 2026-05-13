@@ -714,3 +714,104 @@ export const workflow_output = pgTable(
       .where(sql`${t.mood} is not null`),
   }),
 );
+
+export const subscription = pgTable(
+  "subscription",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflow_id: uuid("workflow_id")
+      .notNull()
+      .references(() => workflow_definition.id, { onDelete: "cascade" }),
+    source_kind: text("source_kind").notNull(),
+    filter: jsonb("filter").notNull().default(sql`'{}'::jsonb`),
+    enabled: boolean("enabled").notNull().default(true),
+    debounce_ms: integer("debounce_ms").notNull().default(0),
+    max_concurrent_runs: integer("max_concurrent_runs").notNull().default(5),
+    max_chain_depth_override: integer("max_chain_depth_override"),
+    idempotency_key_template: text("idempotency_key_template"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    workflow_idx: index("subscription_workflow_idx").on(t.workflow_id),
+    org_enabled_idx: index("subscription_org_enabled_idx")
+      .on(t.org_id, t.enabled)
+      .where(sql`${t.enabled} = true`),
+    source_kind_idx: index("subscription_source_kind_idx")
+      .on(t.source_kind)
+      .where(sql`${t.enabled} = true`),
+  }),
+);
+
+export const observation = pgTable(
+  "observation",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    source_output_id: uuid("source_output_id").references(
+      () => workflow_output.id,
+      { onDelete: "set null" },
+    ),
+    consumer_kind: text("consumer_kind").notNull(),
+    consumer_workflow_id: uuid("consumer_workflow_id").references(
+      () => workflow_definition.id,
+      { onDelete: "set null" },
+    ),
+    consumer_run_id: uuid("consumer_run_id").references(() => workflow_run.id, {
+      onDelete: "set null",
+    }),
+    consumer_user_id: text("consumer_user_id"),
+    subscription_id: uuid("subscription_id").references(() => subscription.id, {
+      onDelete: "set null",
+    }),
+    title: text("title"),
+    body: text("body"),
+    mood: text("mood"),
+    status: text("status").notNull().default("active"),
+    first_seen_at: ts("first_seen_at").notNull().defaultNow(),
+    last_seen_at: ts("last_seen_at").notNull().defaultNow(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    source_output_idx: index("observation_source_output_idx")
+      .on(t.source_output_id)
+      .where(sql`${t.source_output_id} is not null`),
+    consumer_workflow_idx: index("observation_consumer_workflow_idx")
+      .on(t.consumer_workflow_id, t.created_at.desc())
+      .where(sql`${t.consumer_workflow_id} is not null`),
+    subscription_idx: index("observation_subscription_idx")
+      .on(t.subscription_id, t.created_at.desc())
+      .where(sql`${t.subscription_id} is not null`),
+    org_status_idx: index("observation_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+export const workflow_output_source_observation = pgTable(
+  "workflow_output_source_observation",
+  {
+    workflow_output_id: uuid("workflow_output_id")
+      .notNull()
+      .references(() => workflow_output.id, { onDelete: "cascade" }),
+    observation_id: uuid("observation_id")
+      .notNull()
+      .references(() => observation.id, { onDelete: "cascade" }),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: uniqueIndex("workflow_output_source_obs_pk").on(
+      t.workflow_output_id,
+      t.observation_id,
+    ),
+    obs_idx: index("workflow_output_source_obs_obs_idx").on(t.observation_id),
+  }),
+);

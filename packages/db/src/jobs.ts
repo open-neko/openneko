@@ -62,6 +62,9 @@ export type WorkflowRunFirePayload = {
   userMessage?: string;
   threadId?: string;
   parentChainDepth?: number;
+  triggeredBySubscriptionId?: string;
+  triggeredByOutputId?: string;
+  triggeredByObservationId?: string;
 };
 
 let _boss: PgBoss | null = null;
