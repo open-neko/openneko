@@ -21,6 +21,7 @@ export const QUEUE = {
   WORK_AUTO_MEMORY: "work_auto_memory",
   WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
+  WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
   ACTION_EXECUTE: "action_execute",
 } as const;
 

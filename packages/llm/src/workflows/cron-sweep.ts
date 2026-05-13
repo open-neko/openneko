@@ -1,5 +1,10 @@
 import cronParser from "cron-parser";
-import { listCronWorkflows, type WorkflowRecord } from "./store";
+import {
+  countWorkflowRunsSince as defaultCountSince,
+  listCronWorkflows,
+  startOfTodayUtc,
+  type WorkflowRecord,
+} from "./store";
 
 export type DueWorkflow = {
   workflow: WorkflowRecord;
@@ -10,15 +15,31 @@ export type ComputeDueWorkflowsInput = {
   windowStart: Date;
   windowEnd: Date;
   workflows?: WorkflowRecord[];
+  /** DI for tests. */
+  countWorkflowRunsSince?: typeof defaultCountSince;
 };
 
 export async function computeDueWorkflows(
   input: ComputeDueWorkflowsInput,
 ): Promise<DueWorkflow[]> {
   const all = input.workflows ?? (await listCronWorkflows());
+  const countSince = input.countWorkflowRunsSince ?? defaultCountSince;
+  const dayStart = startOfTodayUtc(input.windowEnd);
   const due: DueWorkflow[] = [];
+
   for (const workflow of all) {
     if (!workflow.cron || !workflow.cronEnabled || !workflow.enabled) continue;
+
+    if (workflow.dailyRunBudget !== null) {
+      const ran = await countSince(workflow.orgId, workflow.id, dayStart);
+      if (ran >= workflow.dailyRunBudget) {
+        console.log(
+          `[workflow-cron-sweep] skipping ${workflow.id} (${workflow.name}): daily_run_budget=${workflow.dailyRunBudget} reached (${ran} today)`,
+        );
+        continue;
+      }
+    }
+
     try {
       const interval = cronParser.parseExpression(workflow.cron, {
         tz: workflow.cronTimezone,

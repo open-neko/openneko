@@ -21,6 +21,7 @@ function fakeWorkflow(
     cron: overrides.cron ?? null,
     cronTimezone: overrides.cronTimezone ?? "UTC",
     cronEnabled: overrides.cronEnabled ?? true,
+    dailyRunBudget: overrides.dailyRunBudget ?? null,
     outputContract: null,
     createdByThreadId: null,
     createdByRunId: null,

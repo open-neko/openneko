@@ -46,6 +46,7 @@ import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { runWorkRun } from "./jobs/work-run.js";
 import { runWorkflowCronSweep } from "./jobs/workflow-cron-sweep.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
+import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
 import { reconcileStaleProcessingJobs } from "./reconciler.js";
 
@@ -343,6 +344,17 @@ await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
   retryDelay: 15,
 });
 console.log("[worker] scheduled workflow cron sweep every minute");
+
+await b.work(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, async () => {
+  await runWorkflowOutputTtlSweep();
+});
+
+await b.schedule(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, "0 * * * *", {}, {
+  tz: "UTC",
+  retryLimit: 1,
+  retryDelay: 60,
+});
+console.log("[worker] scheduled workflow_output ttl sweep hourly");
 
 const subscriptionManager = startSubscriptionManager({
   baseUrl: GRAPHJIN_URL,

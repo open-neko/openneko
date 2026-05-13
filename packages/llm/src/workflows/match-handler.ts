@@ -3,7 +3,10 @@ import { isWorkflowInAncestorChain as defaultIsCycle } from "./cycle-detection";
 import {
   countSubscriptionsMatchingOutput as defaultCountSubsMatching,
   countWorkflowRunsForSubscription as defaultCountInFlight,
+  countWorkflowRunsSince as defaultCountRunsSince,
   createObservation as defaultCreateObservation,
+  getWorkflow as defaultGetWorkflow,
+  startOfTodayUtc,
   type SubscriptionRecord,
 } from "./store";
 import type { WorkflowOutputMatch } from "./subscription-query";
@@ -23,6 +26,8 @@ export type HandleSubscriptionMatchOptions = {
   createObservation?: typeof defaultCreateObservation;
   countSubscriptionsMatchingOutput?: typeof defaultCountSubsMatching;
   countWorkflowRunsForSubscription?: typeof defaultCountInFlight;
+  countWorkflowRunsSince?: typeof defaultCountRunsSince;
+  getWorkflow?: typeof defaultGetWorkflow;
   isWorkflowInAncestorChain?: typeof defaultIsCycle;
   /** Read the chain depth of the producing run. Defaults to a real DB query. */
   resolveProducingRunChainDepth?: (
@@ -49,6 +54,9 @@ export async function handleSubscriptionMatch(
     opts.countSubscriptionsMatchingOutput ?? defaultCountSubsMatching;
   const countInFlight =
     opts.countWorkflowRunsForSubscription ?? defaultCountInFlight;
+  const countRunsSince =
+    opts.countWorkflowRunsSince ?? defaultCountRunsSince;
+  const getWorkflow = opts.getWorkflow ?? defaultGetWorkflow;
   const isCycle = opts.isWorkflowInAncestorChain ?? defaultIsCycle;
   const globalMaxChainDepth =
     opts.globalMaxChainDepth ?? DEFAULT_MAX_CHAIN_DEPTH;
@@ -106,6 +114,24 @@ export async function handleSubscriptionMatch(
       action: "dropped",
       reason: `subscription ${opts.subscription.id} at max_concurrent_runs (${inFlight}/${opts.subscription.maxConcurrentRuns})`,
     };
+  }
+
+  const consumer = await getWorkflow(
+    opts.subscription.orgId,
+    opts.subscription.workflowId,
+  );
+  if (consumer?.dailyRunBudget !== null && consumer?.dailyRunBudget !== undefined) {
+    const ranToday = await countRunsSince(
+      opts.subscription.orgId,
+      opts.subscription.workflowId,
+      startOfTodayUtc(),
+    );
+    if (ranToday >= consumer.dailyRunBudget) {
+      return {
+        action: "dropped",
+        reason: `consumer workflow ${opts.subscription.workflowId} reached daily_run_budget (${ranToday}/${consumer.dailyRunBudget})`,
+      };
+    }
   }
 
   const observationRow = await createObservation({

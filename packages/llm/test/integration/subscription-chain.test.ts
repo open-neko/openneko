@@ -91,6 +91,7 @@ describeIfDb("subscription-driven workflow chain", () => {
           created_at: output.createdAt.toISOString(),
         },
         enqueue: enqueue as never,
+        countWorkflowRunsSince: async () => 0,
         isWorkflowInAncestorChain: async () => false,
         resolveProducingRunChainDepth: async () => 0,
       });
@@ -193,6 +194,7 @@ describeIfDb("subscription-driven workflow chain", () => {
         },
         enqueue: enqueue as never,
         globalMaxChainDepth: 8,
+        countWorkflowRunsSince: async () => 0,
         isWorkflowInAncestorChain: async () => false,
         resolveProducingRunChainDepth: async () => 8,
       });

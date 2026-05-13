@@ -20,6 +20,10 @@ export {
   type DueWorkflow,
 } from "./cron-sweep";
 export {
+  sweepStaleWorkflowOutputs,
+  type SweepStaleOutputsResult,
+} from "./ttl-sweep";
+export {
   prepareWorkflowRun,
   runWorkflowTurn,
   WorkflowNeedsInputError,
@@ -32,6 +36,7 @@ export {
 export {
   countSubscriptionsMatchingOutput,
   countWorkflowRunsForSubscription,
+  countWorkflowRunsSince,
   createObservation,
   createSubscription,
   createWorkflowRun,
@@ -52,6 +57,7 @@ export {
   listWorkflows,
   saveWorkflow,
   setSubscriptionEnabled,
+  startOfTodayUtc,
   type CreateObservationInput,
   type CreateSubscriptionInput,
   type CreateWorkflowRunInput,

@@ -37,6 +37,7 @@ export type WorkflowRecord = {
   cron: string | null;
   cronTimezone: string;
   cronEnabled: boolean;
+  dailyRunBudget: number | null;
   outputContract: Record<string, unknown> | null;
   createdByThreadId: string | null;
   createdByRunId: string | null;
@@ -52,6 +53,7 @@ export type SaveWorkflowInput = {
   steps: WorkflowStep[];
   goal?: string;
   triggers?: WorkflowTriggers;
+  dailyRunBudget?: number | null;
   outputContract?: Record<string, unknown> | null;
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
@@ -78,6 +80,7 @@ function toRecord(
     cron: row.cron,
     cronTimezone: row.cron_timezone,
     cronEnabled: row.cron_enabled,
+    dailyRunBudget: row.daily_run_budget,
     outputContract:
       (row.output_contract as Record<string, unknown> | null) ?? null,
     createdByThreadId: row.created_by_thread_id,
@@ -164,6 +167,10 @@ export async function saveWorkflow(
         cron,
         cron_timezone: cronTimezone,
         cron_enabled: cronEnabled,
+        daily_run_budget:
+          input.dailyRunBudget === undefined
+            ? existing.dailyRunBudget
+            : input.dailyRunBudget,
         output_contract:
           input.outputContract === undefined
             ? existing.outputContract
@@ -187,6 +194,7 @@ export async function saveWorkflow(
       cron,
       cron_timezone: cronTimezone,
       cron_enabled: cronEnabled,
+      daily_run_budget: input.dailyRunBudget ?? null,
       output_contract: input.outputContract ?? null,
       created_by_thread_id: input.createdByThreadId ?? null,
       created_by_run_id: input.createdByRunId ?? null,
@@ -687,6 +695,35 @@ export async function getWorkflowRunChainDepth(
     .where(eq(workflow_run.id, workflowRunId))
     .limit(1);
   return rows[0]?.chain_depth ?? null;
+}
+
+/**
+ * Start of the current UTC day. Workflow daily budgets reset at this
+ * boundary; we deliberately don't track per-org timezones for v1 — UTC
+ * is the simplest stable boundary and operators can map mentally.
+ */
+export function startOfTodayUtc(now: Date = new Date()): Date {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}
+
+export async function countWorkflowRunsSince(
+  orgId: string,
+  workflowId: string,
+  since: Date,
+): Promise<number> {
+  const rows = await db()
+    .select({ id: workflow_run.id })
+    .from(workflow_run)
+    .where(
+      and(
+        eq(workflow_run.org_id, orgId),
+        eq(workflow_run.workflow_id, workflowId),
+        sql`${workflow_run.created_at} >= ${since}`,
+      ),
+    );
+  return rows.length;
 }
 
 export type RecentOutputSummary = {

@@ -600,6 +600,7 @@ export const workflow_definition = pgTable(
     cron: text("cron"),
     cron_timezone: text("cron_timezone").notNull().default("UTC"),
     cron_enabled: boolean("cron_enabled").notNull().default(true),
+    daily_run_budget: integer("daily_run_budget"),
     output_contract: jsonb("output_contract"),
     created_by_thread_id: uuid("created_by_thread_id").references(
       () => work_thread.id,

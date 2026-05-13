@@ -84,6 +84,8 @@ describe("handleSubscriptionMatch", () => {
       createObservation: createObservation as never,
       countSubscriptionsMatchingOutput: async () => 0,
       countWorkflowRunsForSubscription: async () => 0,
+      countWorkflowRunsSince: async () => 0,
+      getWorkflow: async () => null,
       isWorkflowInAncestorChain: async () => false,
       resolveProducingRunChainDepth: async () => 0,
       globalMaxChainDepth: 8,
@@ -120,6 +122,8 @@ describe("handleSubscriptionMatch", () => {
       createObservation: createObservation as never,
       countSubscriptionsMatchingOutput: async () => 0,
       countWorkflowRunsForSubscription: async () => 0,
+      countWorkflowRunsSince: async () => 0,
+      getWorkflow: async () => null,
       isWorkflowInAncestorChain: async () => false,
       resolveProducingRunChainDepth: async () => 0,
     });
