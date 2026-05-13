@@ -452,6 +452,70 @@ describe("ClaudeAgentBackend run", () => {
     expect(result.finalText).toBe("hi");
     expect(result.status).toBe("completed");
   });
+
+  it("when allowedTools is set, isolates parent into orchestrator + worker subagent", async () => {
+    claudeController.setScript({
+      records: [systemInit("sess-iso"), resultSuccess("sess-iso", "ok")],
+    });
+    const mcp = { neko_workflow_builder: { command: "node", args: [] } };
+    const backend = new ClaudeAgentBackend(CONFIG);
+    await backend.run({
+      prompt: "<role>workflow builder system prompt</role>",
+      userMessage: "save a workflow",
+      workspace: FAKE_WORKSPACE,
+      onEvent: () => {},
+      mcpServers: mcp,
+      allowedTools: [
+        "Read",
+        "AskUserQuestion",
+        "mcp__neko_workflow_builder__create_workflow",
+      ],
+    });
+    const opts = claudeController.lastOptions() as Record<string, unknown>;
+
+    expect(opts.tools).toEqual(["Agent"]);
+    // settingSources:[] is the SDK's isolation mode — blocks user/project
+    // .claude/settings.json from leaking into the parent.
+    expect(opts.settingSources).toEqual([]);
+    // Parent must not load preset skills (would pull user catalog).
+    expect(opts.skills).toBeUndefined();
+    // systemPrompt is the orchestrator stub, not the claude_code preset.
+    expect(typeof opts.systemPrompt).toBe("string");
+    expect(opts.systemPrompt).toContain("worker");
+
+    const agents = opts.agents as Record<
+      string,
+      { prompt: string; tools: string[]; mcpServers: string[] }
+    >;
+    expect(agents.worker).toBeDefined();
+    expect(agents.worker.prompt).toBe("<role>workflow builder system prompt</role>");
+    expect(agents.worker.tools).toEqual([
+      "Read",
+      "AskUserQuestion",
+      "mcp__neko_workflow_builder__create_workflow",
+    ]);
+    // Subagent references parent-registered MCP servers by name, not by
+    // inline config — so the SDK instance handle stays at the top level.
+    expect(agents.worker.mcpServers).toEqual(["neko_workflow_builder"]);
+  });
+
+  it("when allowedTools is NOT set, keeps the claude_code preset path", async () => {
+    claudeController.setScript({
+      records: [systemInit("sess-legacy"), resultSuccess("sess-legacy", "ok")],
+    });
+    const backend = new ClaudeAgentBackend(CONFIG);
+    await backend.run({
+      prompt: "<role>briefing</role>",
+      userMessage: "hi",
+      workspace: FAKE_WORKSPACE,
+      onEvent: () => {},
+    });
+    const opts = claudeController.lastOptions() as Record<string, unknown>;
+    expect(opts.tools).toEqual({ type: "preset", preset: "claude_code" });
+    expect(opts.settingSources).toBeUndefined();
+    expect(opts.skills).toBe("all");
+    expect(opts.agents).toBeUndefined();
+  });
 });
 
 describe("mergeHooks", () => {
