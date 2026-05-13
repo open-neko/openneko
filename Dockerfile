@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # hermes:   required by the default Hermes backend.
 # claude:   required by the claude-agent backend (Anthropic SDK spawns it).
 FROM base AS cli
-ARG GRAPHJIN_VERSION=3.18.17
+ARG GRAPHJIN_VERSION=3.18.18
 ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \

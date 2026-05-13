@@ -9,7 +9,9 @@
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./secrets": "./src/secrets.ts",
-    "./work": "./src/work/index.ts"
+    "./work": "./src/work/index.ts",
+    "./workflows": "./src/workflows/index.ts",
+    "./graphjin": "./src/graphjin/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -19,6 +21,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.128",
     "@ax-llm/ax": "^20.0.0",
     "@neko/db": "workspace:*",
+    "cron-parser": "^4.9.0",
     "google-auth-library": "^10.6.2",
     "pg": "^8.20.0",
     "zod": "^4.3.6"

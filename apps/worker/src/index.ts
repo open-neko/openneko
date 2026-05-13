@@ -8,6 +8,7 @@ import {
   QUEUE,
   type ProcessingJobPayload,
   type WorkAutoMemoryPayload,
+  type WorkflowRunFirePayload,
   type WorkRunPayload,
 } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
@@ -35,6 +36,8 @@ import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
 import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
 import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { runWorkRun } from "./jobs/work-run.js";
+import { runWorkflowCronSweep } from "./jobs/workflow-cron-sweep.js";
+import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { reconcileStaleProcessingJobs } from "./reconciler.js";
 
 const PORT: number = 4100;
@@ -201,6 +204,13 @@ console.log(
   `[worker] concurrency: globalCap=${concurrency.globalCap} (configure in /settings/agent; restart required)`,
 );
 
+// GraphJin URL — the worker is a client of the shared GraphJin service
+// (compose: `graphjin`, default port 8080). Operating-loop subscriptions
+// and dogfooded queries target this URL.
+const GRAPHJIN_URL =
+  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://graphjin:8080";
+console.log(`[worker] graphjin client targeting ${GRAPHJIN_URL}`);
+
 const b = await boss();
 
 {
@@ -273,6 +283,34 @@ for (let i = 0; i < concurrency.globalCap; i++) {
 await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();
 });
+
+await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
+  await runWorkflowCronSweep();
+});
+
+await b.work(
+  QUEUE.WORKFLOW_RUN_FIRE,
+  { batchSize: 1, pollingIntervalSeconds: 0.5 },
+  async (jobs: PgBossLib.Job<WorkflowRunFirePayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runWorkflowRunFire(job.data);
+      } catch (e) {
+        console.warn(
+          `[workflow-run-fire] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
+  tz: "UTC",
+  retryLimit: 1,
+  retryDelay: 15,
+});
+console.log("[worker] scheduled workflow cron sweep every minute");
 
 await b.work(
   QUEUE.WORK_AUTO_MEMORY,

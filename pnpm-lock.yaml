@@ -137,6 +137,9 @@ importers:
       '@neko/db':
         specifier: workspace:*
         version: link:../db
+      cron-parser:
+        specifier: ^4.9.0
+        version: 4.9.0
       google-auth-library:
         specifier: ^10.6.2
         version: 10.6.2
