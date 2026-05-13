@@ -141,3 +141,8 @@ export {
   type ActionExecutionInput,
   type ActionExecutionOutcome,
 } from "./action-executor";
+export {
+  registerBuiltinAdapters,
+  webhookAdapter,
+  WebhookAdapterError,
+} from "./adapters";

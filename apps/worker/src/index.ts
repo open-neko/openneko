@@ -33,6 +33,8 @@ import {
 import {
   getWorkflowRunChainDepth,
   handleSubscriptionMatch,
+  registerBuiltinAdapters,
+  seedDefaultActionPolicies,
   startSubscriptionManager,
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace, runWorkAutoMemoryPipeline } from "@neko/llm/work";
@@ -175,6 +177,10 @@ await provisionHostConfig(ADMIN_ORG_ID);
 console.log(
   `[worker] host config provisioned from DB (data_source + llm_provider_config)`,
 );
+
+await seedDefaultActionPolicies(ADMIN_ORG_ID);
+registerBuiltinAdapters();
+console.log("[worker] action policies seeded and built-in adapters registered");
 
 {
   const sources = await db()
