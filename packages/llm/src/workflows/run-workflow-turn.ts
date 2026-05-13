@@ -266,6 +266,9 @@ export async function runWorkflowTurn(
       onEvent: wrappedEmit,
       mcpServers,
       canUseTool,
+      allowedTools: backend.capabilities.canUseToolGate
+        ? WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS
+        : undefined,
       onElicitation: mode === "headless" ? headlessElicitation : undefined,
       tag: `workflow ${workflow.name} ${workflowRun.id}`,
       signal,

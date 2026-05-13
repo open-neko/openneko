@@ -1,3 +1,7 @@
+// Tool names must be explicit (no wildcards) — the Claude Agent SDK's
+// AgentDefinition.tools whitelist is a literal string match. The
+// canUseTool gate (buildAllowDenyGate) tolerates both forms via toolMatches,
+// but the subagent catalog filter doesn't expand `*`.
 export const WORKFLOW_BUILDER_ALLOWED_TOOLS = [
   "Read",
   "Glob",
@@ -5,7 +9,7 @@ export const WORKFLOW_BUILDER_ALLOWED_TOOLS = [
   "WebFetch",
   "WebSearch",
   "AskUserQuestion",
-  "mcp__neko_workflow_builder__*",
+  "mcp__neko_workflow_builder__create_workflow",
 ] as const;
 
 export const WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS = [
@@ -19,10 +23,12 @@ export const WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS = [
   "WebSearch",
   "AskUserQuestion",
   "Skill",
-  "mcp__neko_ui__*",
-  "mcp__neko_memory__*",
-  "mcp__neko_workflow_output__*",
-  "mcp__neko_action__*",
+  "mcp__neko_ui__render_cards",
+  "mcp__neko_memory__search",
+  "mcp__neko_memory__remember",
+  "mcp__neko_memory__forget",
+  "mcp__neko_workflow_output__emit",
+  "mcp__neko_action__request",
 ] as const;
 
 export const WORKFLOW_FIXED_DENY = [

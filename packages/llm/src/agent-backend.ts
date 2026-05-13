@@ -137,6 +137,16 @@ export type AgentRunOptions = {
   forkSession?: boolean;
   agents?: Record<string, unknown>;
   hooks?: Record<string, unknown>;
+  /**
+   * Explicit allowed-tool whitelist. Wildcards (e.g. `mcp__neko_foo__*`) are
+   * supported. When provided, the Claude Agent backend uses the SDK subagent
+   * pattern to isolate the run: parent query is a thin orchestrator with no
+   * user-config / preset tools, real work happens in a subagent whose
+   * catalog is exactly this list. Required to keep operator-local MCP
+   * servers (~/.claude.json) out of the agent's tool catalog. Omit to keep
+   * legacy behavior (full claude_code preset on the parent query).
+   */
+  allowedTools?: readonly string[];
   canUseTool?: (
     toolName: string,
     input: Record<string, unknown>,

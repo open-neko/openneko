@@ -111,6 +111,9 @@ export async function runWorkflowBuilderTurn(
       onEvent: wrappedEmit,
       mcpServers,
       canUseTool,
+      allowedTools: backend.capabilities.canUseToolGate
+        ? WORKFLOW_BUILDER_ALLOWED_TOOLS
+        : undefined,
       tag: `workflow-builder ${runId}`,
       signal,
     });
