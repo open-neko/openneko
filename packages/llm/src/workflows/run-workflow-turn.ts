@@ -9,8 +9,18 @@ import {
   saveAssistantWorkMessage,
 } from "../work/store";
 import { buildWorkMemoryServer } from "../work/tools";
-import { buildWorkflowActionServer } from "./action-server";
-import { buildWorkflowOutputServer } from "./output-server";
+import {
+  buildWorkflowActionServer,
+  handleActionRequest,
+} from "./action-server";
+import {
+  extractActionRequestFences,
+  extractWorkflowOutputFences,
+} from "./fence-parsers";
+import {
+  buildWorkflowOutputServer,
+  handleWorkflowOutput,
+} from "./output-server";
 import { buildWorkflowRunnerPrompt } from "./runner-prompt";
 import {
   createWorkflowRun,
@@ -185,6 +195,7 @@ export async function runWorkflowTurn(
       workflow,
       mode,
       memoryContext,
+      mcpTools: backend.capabilities.mcpTools,
     });
 
     const seedMessage = synthesizeSeedMessage(
@@ -236,15 +247,37 @@ export async function runWorkflowTurn(
       signal,
     });
 
+    let persistedText = result.finalText.trim() || assistantText.trim();
+
+    if (!backend.capabilities.mcpTools && persistedText) {
+      persistedText = await processWorkflowFences({
+        text: persistedText,
+        outputCtx: {
+          orgId,
+          workflowRunId: workflowRun.id,
+          workRunId,
+          emit: wrappedEmit,
+        },
+        actionCtx: {
+          orgId,
+          workflowRunId: workflowRun.id,
+          workRunId,
+          triggeredByObservationId:
+            workflowRun.triggeredByObservationId ?? null,
+          emit: wrappedEmit,
+        },
+        onParseError: (msg) => wrappedEmit({ type: "error", message: msg }),
+      });
+    }
+
     await finishWorkRun(workRunId, result.status, result.error ?? null);
     await finishWorkflowRun({
       workflowRunId: workflowRun.id,
       status: result.status,
-      summary: (result.finalText || assistantText).slice(0, 4000) || null,
+      summary: persistedText.slice(0, 4000) || null,
       error: result.error ?? null,
     });
 
-    const persistedText = result.finalText.trim() || assistantText.trim();
     if (persistedText) {
       await saveAssistantWorkMessage({
         orgId,
@@ -312,4 +345,46 @@ export async function runWorkflowTurn(
       finalText: assistantText,
     };
   }
+}
+
+type ProcessWorkflowFencesInput = {
+  text: string;
+  outputCtx: Parameters<typeof handleWorkflowOutput>[0];
+  actionCtx: Parameters<typeof handleActionRequest>[0];
+  onParseError: (message: string) => Promise<void> | void;
+};
+
+async function processWorkflowFences(
+  input: ProcessWorkflowFencesInput,
+): Promise<string> {
+  const { outputCtx, actionCtx, onParseError } = input;
+  let text = input.text;
+
+  const outputs = extractWorkflowOutputFences(text);
+  text = outputs.text;
+  for (const payload of outputs.payloads) {
+    await handleWorkflowOutput(outputCtx, payload);
+  }
+  if (outputs.errors.length > 0) {
+    await onParseError(
+      `workflow output fence(s) invalid: ${outputs.errors
+        .map((e) => e.reason)
+        .join("; ")}`,
+    );
+  }
+
+  const actions = extractActionRequestFences(text);
+  text = actions.text;
+  for (const payload of actions.payloads) {
+    await handleActionRequest(actionCtx, payload);
+  }
+  if (actions.errors.length > 0) {
+    await onParseError(
+      `action request fence(s) invalid: ${actions.errors
+        .map((e) => e.reason)
+        .join("; ")}`,
+    );
+  }
+
+  return text;
 }

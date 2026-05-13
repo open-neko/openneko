@@ -7,7 +7,11 @@ import {
   saveAssistantWorkMessage,
 } from "../work/store";
 import { buildWorkflowBuilderServer } from "./builder-server";
-import { WORKFLOW_BUILDER_SYSTEM_PROMPT } from "./builder-prompt";
+import { buildWorkflowBuilderPrompt } from "./builder-prompt";
+import { extractWorkflowSaveFence } from "./fence-parsers";
+import {
+  saveWorkflow as defaultSaveWorkflow,
+} from "./store";
 import {
   WORKFLOW_BUILDER_ALLOWED_TOOLS,
   WORKFLOW_FIXED_DENY,
@@ -25,6 +29,7 @@ export type RunWorkflowBuilderTurnOptions = {
 
 export type RunWorkflowBuilderTurnDeps = {
   resolveAgentBackend: typeof defaultResolveAgentBackend;
+  saveWorkflow: typeof defaultSaveWorkflow;
 };
 
 export type RunWorkflowBuilderTurnResult = {
@@ -40,6 +45,7 @@ export async function runWorkflowBuilderTurn(
   const { orgId, threadId, runId, message, emit, signal } = opts;
   const resolveAgentBackend =
     deps.resolveAgentBackend ?? defaultResolveAgentBackend;
+  const saveWorkflow = deps.saveWorkflow ?? defaultSaveWorkflow;
 
   await markWorkRunRunning(runId);
 
@@ -71,12 +77,15 @@ export async function runWorkflowBuilderTurn(
       createdAt: row.createdAt,
     }));
 
+    const systemPrompt = buildWorkflowBuilderPrompt({
+      mcpTools: backend.capabilities.mcpTools,
+    });
     const transcript = messages
       .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
       .join("\n\n");
     const prompt = transcript
-      ? `${WORKFLOW_BUILDER_SYSTEM_PROMPT}\n\n--- EARLIER IN THIS CONVERSATION ---\n${transcript}\n--- END HISTORY ---`
-      : WORKFLOW_BUILDER_SYSTEM_PROMPT;
+      ? `${systemPrompt}\n\n--- EARLIER IN THIS CONVERSATION ---\n${transcript}\n--- END HISTORY ---`
+      : systemPrompt;
 
     const mcpServers = backend.capabilities.mcpTools
       ? {
@@ -106,9 +115,34 @@ export async function runWorkflowBuilderTurn(
       signal,
     });
 
+    let persistedText = result.finalText.trim() || assistantText.trim();
+
+    if (!backend.capabilities.mcpTools && persistedText) {
+      const fence = extractWorkflowSaveFence(persistedText);
+      if (fence.payload) {
+        await saveWorkflow({
+          orgId,
+          name: fence.payload.name,
+          description: fence.payload.description,
+          goal: fence.payload.goal,
+          systemPromptOverlay: fence.payload.systemPromptOverlay,
+          steps: fence.payload.steps,
+          triggers: fence.payload.triggers,
+          createdByThreadId: threadId,
+          createdByRunId: runId,
+        });
+        persistedText = fence.text;
+      } else if (fence.errors.length > 0) {
+        const reasons = fence.errors.map((e) => e.reason).join("; ");
+        await wrappedEmit({
+          type: "error",
+          message: `workflow save fence invalid: ${reasons}`,
+        });
+      }
+    }
+
     await finishWorkRun(runId, result.status, result.error ?? null);
 
-    const persistedText = result.finalText.trim() || assistantText.trim();
     if (persistedText) {
       await saveAssistantWorkMessage({
         orgId,

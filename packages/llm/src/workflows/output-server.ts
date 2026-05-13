@@ -1,7 +1,10 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import type { AgentEvent, OutputMood } from "../agent-backend";
-import { emitWorkflowOutput } from "./store";
+import {
+  WORKFLOW_OUTPUT_SCHEMA,
+  type WorkflowOutputPayload,
+} from "./fence-schemas";
+import { emitWorkflowOutput, type WorkflowOutputRecord } from "./store";
 
 export type WorkflowOutputContext = {
   orgId: string;
@@ -10,20 +13,41 @@ export type WorkflowOutputContext = {
   emit: (event: AgentEvent) => Promise<void> | void;
 };
 
-const OUTPUT_KINDS = [
-  "report",
-  "summary",
-  "briefing_card_proposal",
-  "chart",
-  "table",
-  "file",
-  "message_draft",
-  "finding",
-  "observation",
-  "recommendation",
-] as const;
-
-const MOODS = ["good", "watch", "act"] as const;
+/**
+ * Shared handler. The MCP tool and the fence-fallback path both route
+ * here so persistence + the emit event happen in one place.
+ */
+export async function handleWorkflowOutput(
+  ctx: WorkflowOutputContext,
+  args: WorkflowOutputPayload,
+): Promise<WorkflowOutputRecord> {
+  const output = await emitWorkflowOutput({
+    orgId: ctx.orgId,
+    workflowRunId: ctx.workflowRunId,
+    workRunId: ctx.workRunId,
+    kind: args.kind,
+    title: args.title,
+    body: args.body,
+    payload: args.payload,
+    artifactPath: args.artifactPath ?? null,
+    scope: args.scope ?? null,
+    topic: args.topic ?? null,
+    mood: (args.mood ?? null) as OutputMood | null,
+    timeWindowStart: args.timeWindowStart
+      ? new Date(args.timeWindowStart)
+      : null,
+    timeWindowEnd: args.timeWindowEnd
+      ? new Date(args.timeWindowEnd)
+      : null,
+    freshnessTtlSeconds: args.freshnessTtlSeconds ?? null,
+  });
+  await ctx.emit({
+    type: "output_emit",
+    output_id: output.id,
+    kind: output.kind,
+  });
+  return output;
+}
 
 export function buildWorkflowOutputServer(ctx: WorkflowOutputContext) {
   const emitOutput = tool(
@@ -44,45 +68,9 @@ export function buildWorkflowOutputServer(ctx: WorkflowOutputContext) {
       "  kind: 'observation', scope: 'apac_churn', mood: 'watch',",
       "  title: 'APAC churn rose 18% WoW', body: '...'",
     ].join(" "),
-    {
-      kind: z.enum(OUTPUT_KINDS),
-      title: z.string().max(240).optional(),
-      body: z.string().max(64_000).optional(),
-      payload: z.record(z.string(), z.unknown()).optional(),
-      artifactPath: z.string().max(1024).optional(),
-      scope: z.string().max(120).optional(),
-      topic: z.string().max(120).optional(),
-      mood: z.enum(MOODS).optional(),
-      timeWindowStart: z.string().datetime().optional(),
-      timeWindowEnd: z.string().datetime().optional(),
-      freshnessTtlSeconds: z.number().int().positive().max(31_536_000).optional(),
-    },
+    WORKFLOW_OUTPUT_SCHEMA.shape,
     async (args) => {
-      const output = await emitWorkflowOutput({
-        orgId: ctx.orgId,
-        workflowRunId: ctx.workflowRunId,
-        workRunId: ctx.workRunId,
-        kind: args.kind,
-        title: args.title,
-        body: args.body,
-        payload: args.payload,
-        artifactPath: args.artifactPath ?? null,
-        scope: args.scope ?? null,
-        topic: args.topic ?? null,
-        mood: (args.mood ?? null) as OutputMood | null,
-        timeWindowStart: args.timeWindowStart
-          ? new Date(args.timeWindowStart)
-          : null,
-        timeWindowEnd: args.timeWindowEnd
-          ? new Date(args.timeWindowEnd)
-          : null,
-        freshnessTtlSeconds: args.freshnessTtlSeconds ?? null,
-      });
-      await ctx.emit({
-        type: "output_emit",
-        output_id: output.id,
-        kind: output.kind,
-      });
+      const output = await handleWorkflowOutput(ctx, args);
       return {
         content: [
           {

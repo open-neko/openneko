@@ -5,7 +5,27 @@ export {
   buildAllowDenyGate,
   toolMatches,
 } from "./tool-defaults";
-export { WORKFLOW_BUILDER_SYSTEM_PROMPT } from "./builder-prompt";
+export { buildWorkflowBuilderPrompt } from "./builder-prompt";
+export {
+  extractActionRequestFences,
+  extractWorkflowOutputFences,
+  extractWorkflowSaveFence,
+  type ActionRequestFenceResult,
+  type WorkflowOutputFenceResult,
+  type WorkflowSaveFenceResult,
+} from "./fence-parsers";
+export {
+  ACTION_REQUEST_SCHEMA,
+  ACTION_SCOPES,
+  MOODS,
+  OUTPUT_KINDS,
+  RISK_LEVELS,
+  WORKFLOW_OUTPUT_SCHEMA,
+  WORKFLOW_SAVE_SCHEMA,
+  type ActionRequestPayload,
+  type WorkflowOutputPayload,
+  type WorkflowSavePayload,
+} from "./fence-schemas";
 export { buildWorkflowBuilderServer } from "./builder-server";
 export {
   runWorkflowBuilderTurn,

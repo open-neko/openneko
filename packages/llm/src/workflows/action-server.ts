@@ -1,5 +1,4 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import {
   enqueue as defaultEnqueue,
   QUEUE,
@@ -12,6 +11,10 @@ import {
   type ActionScope,
   type RiskLevel,
 } from "./action-store";
+import {
+  ACTION_REQUEST_SCHEMA,
+  type ActionRequestPayload,
+} from "./fence-schemas";
 import {
   evaluateActionPolicy,
   type PolicyDecision,
@@ -28,14 +31,11 @@ export type WorkflowActionContext = {
   enqueue?: typeof defaultEnqueue;
 };
 
-const RISK_LEVELS = ["low", "medium", "high", "critical"] as const;
-const SCOPES = ["internal", "external"] as const;
-
 const REQUEST_DESCRIPTION = [
   "Propose a state-changing operation. Workflows decide; actions mutate.",
   "Route every real-world or internal state change through this tool so",
   "policy can gate it — that's how the workflow stays auditable and how",
-  "the operator can override risky moves before they happen.",
+  "the operator can step in before something significant happens.",
   "",
   "Inputs:",
   "  scope: 'external' for outbound mutations (send_message,",
@@ -48,7 +48,9 @@ const REQUEST_DESCRIPTION = [
   "  target: resource identifier (account id, slack channel, repo name,",
   "    memory id, etc.). Policies use this for allow/deny matching.",
   "  payload: full operation payload — exactly what the executor needs.",
-  "  risk_level: your honest assessment of blast radius.",
+  "  risk_level: internal tag policy uses to route. low | medium | high |",
+  "    critical. Do NOT repeat this value in messages back to the",
+  "    operator — it's noise from their point of view.",
   "  summary: one-sentence human-readable description for the approval",
   "    queue. Name WHAT will change and WHY — the operator may read it",
   "    before approving.",
@@ -62,93 +64,112 @@ const REQUEST_DESCRIPTION = [
   "is from policy and re-attempting won't change the answer.",
 ].join("\n");
 
+export type HandleActionRequestResult =
+  | {
+      ok: true;
+      decision: "auto_approved" | "needs_approval";
+      status: "queued_for_execution" | "pending_approval";
+      actionRequestId: string;
+      policy: string;
+      reason?: string;
+    }
+  | {
+      ok: false;
+      decision: "denied";
+      reason: string;
+      policy?: string;
+    };
+
+/**
+ * Shared handler. The MCP tool and the fence-fallback path both route
+ * here so policy evaluation, the action_request row, the emit event,
+ * and the queue enqueue all happen in exactly one place.
+ */
+export async function handleActionRequest(
+  ctx: WorkflowActionContext,
+  args: ActionRequestPayload,
+): Promise<HandleActionRequestResult> {
+  const listPolicies = ctx.listPolicies ?? defaultListEnabledPolicies;
+  const enqueue = ctx.enqueue ?? defaultEnqueue;
+
+  const policies = await listPolicies(ctx.orgId);
+  const decision = evaluateActionPolicy(
+    {
+      scope: args.scope as ActionScope,
+      kind: args.kind,
+      target: args.target ?? null,
+      riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+    },
+    policies,
+  );
+
+  if (decision.decision === "deny") {
+    return {
+      ok: false,
+      decision: "denied",
+      reason: decision.reason,
+      policy: decision.policy.name,
+    };
+  }
+  if (decision.decision === "no_policy") {
+    return {
+      ok: false,
+      decision: "denied",
+      reason:
+        "no policy matches this scope/kind — refuse for safety. Ask the operator to define a policy first.",
+    };
+  }
+
+  const status =
+    decision.decision === "allow" ? "approved" : "pending_approval";
+
+  const request = await createActionRequest({
+    orgId: ctx.orgId,
+    workflowRunId: ctx.workflowRunId,
+    requestedByRunId: ctx.workflowRunId,
+    triggeredByObservationId: ctx.triggeredByObservationId ?? null,
+    policyId: decision.policy.id,
+    scope: args.scope as ActionScope,
+    kind: args.kind,
+    target: args.target ?? null,
+    payload: args.payload ?? {},
+    riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+    summary: args.summary,
+    status,
+  });
+
+  await emitActionRequestEvent(ctx, request, decision);
+
+  if (status === "approved") {
+    await enqueue(QUEUE.ACTION_EXECUTE, {
+      orgId: ctx.orgId,
+      actionRequestId: request.id,
+    });
+    return {
+      ok: true,
+      decision: "auto_approved",
+      status: "queued_for_execution",
+      actionRequestId: request.id,
+      policy: decision.policy.name,
+    };
+  }
+
+  return {
+    ok: true,
+    decision: "needs_approval",
+    status: "pending_approval",
+    actionRequestId: request.id,
+    policy: decision.policy.name,
+    reason: decision.reason,
+  };
+}
+
 export function buildWorkflowActionServer(ctx: WorkflowActionContext) {
   const requestAction = tool(
     "request",
     REQUEST_DESCRIPTION,
-    {
-      scope: z.enum(SCOPES),
-      kind: z.string().trim().min(1).max(120),
-      target: z.string().trim().min(1).max(1024).optional(),
-      payload: z.record(z.string(), z.unknown()).optional(),
-      risk_level: z.enum(RISK_LEVELS).optional(),
-      summary: z.string().trim().min(1).max(2000),
-    },
-    async (args) => {
-      const listPolicies = ctx.listPolicies ?? defaultListEnabledPolicies;
-      const enqueue = ctx.enqueue ?? defaultEnqueue;
-
-      const policies = await listPolicies(ctx.orgId);
-      const decision = evaluateActionPolicy(
-        {
-          scope: args.scope as ActionScope,
-          kind: args.kind,
-          target: args.target ?? null,
-          riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
-        },
-        policies,
-      );
-
-      if (decision.decision === "deny") {
-        return jsonOk({
-          ok: false,
-          decision: "denied",
-          reason: decision.reason,
-          policy: decision.policy.name,
-        });
-      }
-      if (decision.decision === "no_policy") {
-        return jsonOk({
-          ok: false,
-          decision: "denied",
-          reason:
-            "no policy matches this scope/kind — refuse for safety. Ask the operator to define a policy first.",
-        });
-      }
-
-      const status =
-        decision.decision === "allow" ? "approved" : "pending_approval";
-
-      const request = await createActionRequest({
-        orgId: ctx.orgId,
-        workflowRunId: ctx.workflowRunId,
-        requestedByRunId: ctx.workflowRunId,
-        triggeredByObservationId: ctx.triggeredByObservationId ?? null,
-        policyId: decision.policy.id,
-        scope: args.scope as ActionScope,
-        kind: args.kind,
-        target: args.target ?? null,
-        payload: args.payload ?? {},
-        riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
-        summary: args.summary,
-        status,
-      });
-
-      await emitActionRequestEvent(ctx, request, decision);
-
-      if (status === "approved") {
-        await enqueue(QUEUE.ACTION_EXECUTE, {
-          orgId: ctx.orgId,
-          actionRequestId: request.id,
-        });
-        return jsonOk({
-          ok: true,
-          decision: "auto_approved",
-          status: "queued_for_execution",
-          actionRequestId: request.id,
-          policy: decision.policy.name,
-        });
-      }
-
-      return jsonOk({
-        ok: true,
-        decision: "needs_approval",
-        status: "pending_approval",
-        actionRequestId: request.id,
-        policy: decision.policy.name,
-        reason: decision.reason,
-      });
-    },
+    ACTION_REQUEST_SCHEMA.shape,
+    async (args) => jsonOk(await handleActionRequest(ctx, args)),
   );
 
   return createSdkMcpServer({
