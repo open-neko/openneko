@@ -32,10 +32,10 @@ const RISK_LEVELS = ["low", "medium", "high", "critical"] as const;
 const SCOPES = ["internal", "external"] as const;
 
 const REQUEST_DESCRIPTION = [
-  "Propose a state-changing operation (a real action that mutates the",
-  "world or a policy-governed internal write). Workflows decide;",
-  "actions mutate. NEVER perform state-changing operations directly —",
-  "always go through this tool so policy can gate them.",
+  "Propose a state-changing operation. Workflows decide; actions mutate.",
+  "Route every real-world or internal state change through this tool so",
+  "policy can gate it — that's how the workflow stays auditable and how",
+  "the operator can override risky moves before they happen.",
   "",
   "Inputs:",
   "  scope: 'external' for outbound mutations (send_message,",
@@ -46,18 +46,20 @@ const REQUEST_DESCRIPTION = [
   "  kind: short identifier of the operation. Free-form; the executor",
   "    registry routes by this string.",
   "  target: resource identifier (account id, slack channel, repo name,",
-  "    memory id, etc.). Used by policies for allow/deny matching.",
+  "    memory id, etc.). Policies use this for allow/deny matching.",
   "  payload: full operation payload — exactly what the executor needs.",
   "  risk_level: your honest assessment of blast radius.",
   "  summary: one-sentence human-readable description for the approval",
-  "    queue. Include WHAT will change and WHY.",
+  "    queue. Name WHAT will change and WHY — the operator may read it",
+  "    before approving.",
   "",
   "The tool returns one of:",
   "  ok: true, status: 'queued_for_execution'   — auto-approved",
   "  ok: true, status: 'pending_approval'       — operator must approve",
   "  ok: false, reason: ...                      — denied by policy",
-  "Do not retry after a denial. Surface the reason to the operator and",
-  "ask how to proceed.",
+  "",
+  "On a denial, surface the reason to the operator and stop. The denial",
+  "is from policy and re-attempting won't change the answer.",
 ].join("\n");
 
 export function buildWorkflowActionServer(ctx: WorkflowActionContext) {
