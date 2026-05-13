@@ -166,7 +166,7 @@ export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
   const search = tool(
     "search",
     [
-      "Search Neko Work's long-term memory. Returns saved memories plus",
+      "Search OpenNeko's long-term memory. Returns saved memories plus",
       "matching historical Work thread messages. Use this before answering",
       "when a question may depend on durable preferences, business rules,",
       "metric definitions, company context, named entities, or older context.",
@@ -199,7 +199,7 @@ export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
   const remember = tool(
     "remember",
     [
-      "Save a durable memory for future Neko Work sessions. Use only when the",
+      "Save a durable memory for future OpenNeko sessions. Use only when the",
       "operator explicitly asks you to remember something, corrects a recurring",
       "assumption, defines a metric/business rule, or gives a stable preference",
       "that should affect future answers.",
