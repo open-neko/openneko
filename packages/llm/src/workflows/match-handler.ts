@@ -28,7 +28,7 @@ export type HandleSubscriptionMatchOptions = {
   ) => Promise<number | null>;
 };
 
-const DEFAULT_MAX_CHAIN_DEPTH = 8;
+const DEFAULT_MAX_CHAIN_DEPTH = 20;
 const DEFAULT_MAX_FANOUT_PER_OUTPUT = 32;
 const DEFAULT_FANOUT_WINDOW_MS = 60_000;
 

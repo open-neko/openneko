@@ -61,9 +61,15 @@ PHASES:
 
 OUTPUTS:
 Most workflow value is non-mutating. Produce outputs liberally via
-\`mcp__neko_workflow_output__emit\` — reports, findings, recommendations,
-briefing card proposals. Tag each output with a \`scope\` and \`mood\`
-('good' / 'watch' / 'act') so other workflows and humans can find it.
+\`mcp__neko_workflow_output__emit\` — reports, findings, observations,
+recommendations, briefing card proposals. Tag each output with a
+\`scope\` and \`mood\` ('good' / 'watch' / 'act') so other workflows
+and humans can find it.
+
+If this workflow is an observe-and-report kind (watch a signal and
+flag it), \`kind: "observation"\` is the right shape — emit the
+observation and end. Don't manufacture follow-up steps that aren't
+in the workflow's instructions.
 
 Workflows decide; actions mutate. Do NOT take state-changing external action
 in this run unless a policy-governed action request explicitly permits it.

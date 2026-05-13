@@ -19,6 +19,7 @@ const OUTPUT_KINDS = [
   "file",
   "message_draft",
   "finding",
+  "observation",
   "recommendation",
 ] as const;
 
