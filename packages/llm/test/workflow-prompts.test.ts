@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
+import type { AgentWorkspace } from "../src/agent-backend";
 import { buildWorkflowBuilderPrompt } from "../src/workflows/builder-prompt";
 import { buildWorkflowRunnerPrompt } from "../src/workflows/runner-prompt";
 import type { WorkflowRecord } from "../src/workflows/store";
+
+const sampleWorkspace: AgentWorkspace = {
+  orgRoot: "/tmp/org",
+  skillsRoot: "/tmp/org/skills",
+  memoryRoot: "/tmp/org/memory",
+  knowledgeRoot: "/tmp/org/knowledge",
+  uploadsRoot: "/tmp/org/uploads",
+  runsRoot: "/tmp/org/runs",
+  threadUploadsRoot: "/tmp/org/uploads/t1",
+  runRoot: "/tmp/org/runs/r1",
+  artifactRoot: "/tmp/org/runs/r1/artifacts",
+  binRoot: "/tmp/org/runs/r1/bin",
+  claudeProjectRoot: "/tmp/org",
+  claudeConfigRoot: "/tmp/org/claude/config",
+};
 
 const sampleWorkflow: WorkflowRecord = {
   id: "wf1",
@@ -52,6 +68,8 @@ describe("buildWorkflowRunnerPrompt", () => {
     workflow: sampleWorkflow,
     mode: "headless" as const,
     memoryContext: "",
+    backend: "hermes" as const,
+    workspace: sampleWorkspace,
   };
 
   it("uses MCP tool names when mcpTools=true", () => {
@@ -76,5 +94,12 @@ describe("buildWorkflowRunnerPrompt", () => {
       expect(prompt).toContain("Show INR in lakhs.");
       expect(prompt).toContain("Pull last 7 days of revenue");
     }
+  });
+
+  it("includes data_access guidance pointing at the knowledge pack", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: false });
+    expect(prompt).toContain("<data_access>");
+    expect(prompt).toContain("graphjin cli execute_graphql");
+    expect(prompt).toContain(sampleWorkspace.knowledgeRoot);
   });
 });

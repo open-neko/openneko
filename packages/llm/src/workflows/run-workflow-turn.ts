@@ -1,5 +1,9 @@
 import type { AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
+import {
+  ensureGraphjinGuard,
+  resolveBinaryOnPath,
+} from "../work/graphjin-guard";
 import { formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext } from "../work/memory";
 import {
   createWorkRun,
@@ -9,6 +13,7 @@ import {
   saveAssistantWorkMessage,
 } from "../work/store";
 import { buildWorkMemoryServer } from "../work/tools";
+import { ensureWorkWorkspace } from "../work/workspace";
 import {
   buildWorkflowActionServer,
   handleActionRequest,
@@ -179,6 +184,22 @@ export async function runWorkflowTurn(
     throw new WorkflowNeedsInputError();
   };
 
+  const workspace = await ensureWorkWorkspace(orgId, threadId, workRunId);
+  const graphjinBinary = await resolveBinaryOnPath("graphjin");
+  if (!graphjinBinary) {
+    const errMsg = "graphjin CLI is not installed on PATH.";
+    await emit({ type: "error", message: errMsg });
+    await finishWorkRun(workRunId, "failed", errMsg);
+    await finishWorkflowRun({
+      workflowRunId: workflowRun.id,
+      status: "failed",
+      error: errMsg,
+    });
+    await emit({ type: "done", result: { status: "failed" } });
+    throw new Error(errMsg);
+  }
+  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+
   try {
     await wrappedEmit({
       type: "status",
@@ -196,6 +217,8 @@ export async function runWorkflowTurn(
       mode,
       memoryContext,
       mcpTools: backend.capabilities.mcpTools,
+      backend: backend.id,
+      workspace,
     });
 
     const seedMessage = synthesizeSeedMessage(
@@ -239,6 +262,7 @@ export async function runWorkflowTurn(
       prompt,
       userMessage: seedMessage,
       orgId,
+      workspace,
       onEvent: wrappedEmit,
       mcpServers,
       canUseTool,

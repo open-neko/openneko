@@ -1,3 +1,12 @@
+import {
+  shellToolName,
+  type AgentBackendId,
+  type AgentWorkspace,
+} from "../agent-backend";
+import {
+  GRAPHJIN_DATE_RULE,
+  buildDataAccessSection,
+} from "../work/prompt";
 import type { WorkflowRecord } from "./store";
 
 export type BuildWorkflowRunnerPromptInput = {
@@ -6,6 +15,8 @@ export type BuildWorkflowRunnerPromptInput = {
   memoryContext?: string;
   /** True when the backend supports in-process SDK MCP servers (Claude Agent). */
   mcpTools: boolean;
+  backend: AgentBackendId;
+  workspace: AgentWorkspace;
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -122,7 +133,9 @@ be valid JSON.
 export function buildWorkflowRunnerPrompt(
   input: BuildWorkflowRunnerPromptInput,
 ): string {
-  const { workflow, mode, memoryContext, mcpTools } = input;
+  const { workflow, mode, memoryContext, mcpTools, backend, workspace } = input;
+  const shellTool = shellToolName(backend);
+  const dataAccessSection = buildDataAccessSection(shellTool, workspace);
 
   const stepsBlock = workflow.steps
     .map((step, index) => `  ${index + 1}. ${step.description}`)
@@ -179,6 +192,12 @@ The workflow's value usually comes from one or more of these:
 - Decide — commit to a next step.
 - Act — produce outputs, observations, or action requests as appropriate.
 </phases>
+
+${dataAccessSection}
+
+<rules>
+${GRAPHJIN_DATE_RULE}
+</rules>
 
 ${outputsBlock}
 

@@ -142,7 +142,7 @@ ${usage}
 </long_term_memory>`;
 }
 
-function buildDataAccessSection(
+export function buildDataAccessSection(
   shellTool: string,
   workspace: AgentWorkspace,
 ): string {
@@ -207,13 +207,15 @@ reports or files under the run artifact directory.
 </workspace>`;
 }
 
-const RULES_SECTION = `<rules>
-- Keep answers concise and useful.
-- For GraphJin date/range filters, do not put multiple operators under
+export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put multiple operators under
   the same column object. Use
   \`where: { and: [{ orderdate: { gte: "2024-06-30" } },
                    { orderdate: { lte: "2025-06-29" } }] }\`
-  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.
+  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.`;
+
+const RULES_SECTION = `<rules>
+- Keep answers concise and useful.
+${GRAPHJIN_DATE_RULE}
 </rules>`;
 
 export function buildWorkPrompt(args: {
