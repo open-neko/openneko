@@ -84,6 +84,7 @@ describe("handleSubscriptionMatch", () => {
       createObservation: createObservation as never,
       countSubscriptionsMatchingOutput: async () => 0,
       countWorkflowRunsForSubscription: async () => 0,
+      isWorkflowInAncestorChain: async () => false,
       resolveProducingRunChainDepth: async () => 0,
       globalMaxChainDepth: 8,
       globalMaxFanoutPerOutput: 32,
@@ -119,6 +120,7 @@ describe("handleSubscriptionMatch", () => {
       createObservation: createObservation as never,
       countSubscriptionsMatchingOutput: async () => 0,
       countWorkflowRunsForSubscription: async () => 0,
+      isWorkflowInAncestorChain: async () => false,
       resolveProducingRunChainDepth: async () => 0,
     });
     const jobOpts = enqueue.mock.calls[0][2];

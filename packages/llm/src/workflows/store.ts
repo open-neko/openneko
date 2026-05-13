@@ -682,3 +682,50 @@ export async function getWorkflowRunChainDepth(
     .limit(1);
   return rows[0]?.chain_depth ?? null;
 }
+
+export type RecentOutputSummary = {
+  id: string;
+  kind: string;
+  scope: string | null;
+  topic: string | null;
+  mood: string | null;
+  createdAt: Date;
+};
+
+export async function listRecentOutputsByWorkflow(
+  orgId: string,
+  workflowId: string,
+  limit = 100,
+): Promise<RecentOutputSummary[]> {
+  const rows = await db()
+    .select({
+      id: workflow_output.id,
+      kind: workflow_output.kind,
+      scope: workflow_output.scope,
+      topic: workflow_output.topic,
+      mood: workflow_output.mood,
+      created_at: workflow_output.created_at,
+      workflow_id: workflow_run.workflow_id,
+    })
+    .from(workflow_output)
+    .innerJoin(
+      workflow_run,
+      eq(workflow_run.id, workflow_output.workflow_run_id),
+    )
+    .where(
+      and(
+        eq(workflow_output.org_id, orgId),
+        eq(workflow_run.workflow_id, workflowId),
+      ),
+    )
+    .orderBy(desc(workflow_output.created_at))
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    scope: r.scope,
+    topic: r.topic,
+    mood: r.mood,
+    createdAt: r.created_at,
+  }));
+}

@@ -43,6 +43,7 @@ export {
   getWorkflowByOrgName,
   getWorkflowRunChainDepth,
   linkOutputSourceObservations,
+  listRecentOutputsByWorkflow,
   listCronWorkflows,
   listEnabledSubscriptions,
   listObservationsByConsumerWorkflow,
@@ -85,3 +86,11 @@ export {
   type HandleSubscriptionMatchOptions,
   type MatchHandlerDecision,
 } from "./match-handler";
+export {
+  checkSubscriptionWouldLoop,
+  isWorkflowInAncestorChain,
+  outputMatchesFilter,
+  SubscriptionSelfLoopError,
+  type CheckSubscriptionWouldLoopOptions,
+  type FilterableOutput,
+} from "./cycle-detection";

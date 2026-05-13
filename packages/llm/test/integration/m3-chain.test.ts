@@ -89,6 +89,7 @@ describeIfDb("M3 end-to-end chain", () => {
           created_at: output.createdAt.toISOString(),
         },
         enqueue: enqueue as never,
+        isWorkflowInAncestorChain: async () => false,
         resolveProducingRunChainDepth: async () => 0,
       });
 
@@ -190,6 +191,7 @@ describeIfDb("M3 end-to-end chain", () => {
         },
         enqueue: enqueue as never,
         globalMaxChainDepth: 8,
+        isWorkflowInAncestorChain: async () => false,
         resolveProducingRunChainDepth: async () => 8,
       });
 

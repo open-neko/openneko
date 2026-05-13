@@ -1,4 +1,5 @@
 import { enqueue as defaultEnqueue, QUEUE } from "@neko/db/jobs";
+import { isWorkflowInAncestorChain as defaultIsCycle } from "./cycle-detection";
 import {
   countSubscriptionsMatchingOutput as defaultCountSubsMatching,
   countWorkflowRunsForSubscription as defaultCountInFlight,
@@ -22,6 +23,7 @@ export type HandleSubscriptionMatchOptions = {
   createObservation?: typeof defaultCreateObservation;
   countSubscriptionsMatchingOutput?: typeof defaultCountSubsMatching;
   countWorkflowRunsForSubscription?: typeof defaultCountInFlight;
+  isWorkflowInAncestorChain?: typeof defaultIsCycle;
   /** Read the chain depth of the producing run. Defaults to a real DB query. */
   resolveProducingRunChainDepth?: (
     workflowRunId: string,
@@ -47,6 +49,7 @@ export async function handleSubscriptionMatch(
     opts.countSubscriptionsMatchingOutput ?? defaultCountSubsMatching;
   const countInFlight =
     opts.countWorkflowRunsForSubscription ?? defaultCountInFlight;
+  const isCycle = opts.isWorkflowInAncestorChain ?? defaultIsCycle;
   const globalMaxChainDepth =
     opts.globalMaxChainDepth ?? DEFAULT_MAX_CHAIN_DEPTH;
   const globalMaxFanout =
@@ -72,6 +75,21 @@ export async function handleSubscriptionMatch(
         reason: `chain depth ${parentDepth + 1} exceeds max ${maxChain}`,
       };
     }
+  }
+
+  // Precise cycle check: walk the lineage backwards from the producing
+  // run. If the consumer workflow already appears in the chain, firing
+  // would close a cycle. Catches multi-workflow loops (A→B→A) and any
+  // misauthored self-subscription the save-time check missed.
+  const cycle = await isCycle(
+    opts.output.workflow_run_id,
+    opts.subscription.workflowId,
+  );
+  if (cycle) {
+    return {
+      action: "dropped",
+      reason: `cycle detected — consumer workflow ${opts.subscription.workflowId} is already in the producing run's chain`,
+    };
   }
 
   const fanout = await countSubsMatching(opts.output.id, fanoutWindowMs);
