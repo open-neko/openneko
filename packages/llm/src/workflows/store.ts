@@ -203,6 +203,9 @@ export type WorkflowRunRecord = {
   workRunId: string;
   triggerKind: "manual" | "cron" | "subscription";
   triggerPayload: Record<string, unknown>;
+  triggeredBySubscriptionId: string | null;
+  triggeredByOutputId: string | null;
+  triggeredByObservationId: string | null;
   chainDepth: number;
   status: string;
   startedAt: Date | null;
@@ -237,6 +240,9 @@ function toRunRecord(
     workRunId: row.work_run_id,
     triggerKind: row.trigger_kind as WorkflowRunRecord["triggerKind"],
     triggerPayload: (row.trigger_payload as Record<string, unknown>) ?? {},
+    triggeredBySubscriptionId: row.triggered_by_subscription_id,
+    triggeredByOutputId: row.triggered_by_output_id,
+    triggeredByObservationId: row.triggered_by_observation_id,
     chainDepth: row.chain_depth,
     status: row.status,
     startedAt: row.started_at,

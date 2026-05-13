@@ -6,6 +6,7 @@ import {
   boss,
   enqueue,
   QUEUE,
+  type ActionExecutePayload,
   type ProcessingJobPayload,
   type WorkAutoMemoryPayload,
   type WorkflowRunFirePayload,
@@ -43,6 +44,7 @@ import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { runWorkRun } from "./jobs/work-run.js";
 import { runWorkflowCronSweep } from "./jobs/workflow-cron-sweep.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
+import { runActionExecute } from "./jobs/action-execute.js";
 import { reconcileStaleProcessingJobs } from "./reconciler.js";
 
 const PORT: number = 4100;
@@ -305,6 +307,23 @@ await b.work(
       } catch (e) {
         console.warn(
           `[workflow-run-fire] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.work(
+  QUEUE.ACTION_EXECUTE,
+  { batchSize: 1, pollingIntervalSeconds: 0.5 },
+  async (jobs: PgBossLib.Job<ActionExecutePayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runActionExecute(job.data);
+      } catch (e) {
+        console.warn(
+          `[action-execute] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
         );
         throw e;
       }

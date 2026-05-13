@@ -22,6 +22,7 @@ export const WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS = [
   "mcp__neko_ui__*",
   "mcp__neko_memory__*",
   "mcp__neko_workflow_output__*",
+  "mcp__neko_action__*",
 ] as const;
 
 export const WORKFLOW_FIXED_DENY = [

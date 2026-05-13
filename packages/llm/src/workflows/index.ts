@@ -94,3 +94,50 @@ export {
   type CheckSubscriptionWouldLoopOptions,
   type FilterableOutput,
 } from "./cycle-detection";
+export {
+  approveActionRequest,
+  createActionPolicy,
+  createActionRequest,
+  finishActionExecution,
+  getActionRequest,
+  InvalidActionStatusTransitionError,
+  listActionExecutions,
+  listActionRequests,
+  listEnabledPolicies,
+  markActionRequestExecuted,
+  markActionRequestFailed,
+  recordActionExecution,
+  rejectActionRequest,
+  type ActionExecutionRecord,
+  type ActionExecutionStatus,
+  type ActionPolicyMode,
+  type ActionPolicyRecord,
+  type ActionRequestRecord,
+  type ActionRequestStatus,
+  type ActionScope,
+  type CreateActionPolicyInput,
+  type CreateActionRequestInput,
+  type ListActionRequestsOptions,
+  type RiskLevel,
+} from "./action-store";
+export {
+  evaluateActionPolicy,
+  seedDefaultActionPolicies,
+  type PolicyDecision,
+  type PolicyRequestSubject,
+} from "./policy-engine";
+export {
+  buildWorkflowActionServer,
+  type WorkflowActionContext,
+} from "./action-server";
+export {
+  ActionRequestNotApprovedError,
+  executeApprovedActionRequest,
+  getRegisteredActionKinds,
+  mockActionAdapter,
+  registerActionAdapter,
+  setDefaultActionAdapter,
+  type ActionAdapter,
+  type ActionExecutionInput,
+  type ActionExecutionOutcome,
+} from "./action-executor";

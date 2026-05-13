@@ -21,6 +21,7 @@ export const QUEUE = {
   WORK_AUTO_MEMORY: "work_auto_memory",
   WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
+  ACTION_EXECUTE: "action_execute",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -65,6 +66,11 @@ export type WorkflowRunFirePayload = {
   triggeredBySubscriptionId?: string;
   triggeredByOutputId?: string;
   triggeredByObservationId?: string;
+};
+
+export type ActionExecutePayload = {
+  orgId: string;
+  actionRequestId: string;
 };
 
 let _boss: PgBoss | null = null;

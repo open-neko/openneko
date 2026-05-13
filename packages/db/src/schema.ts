@@ -815,3 +815,129 @@ export const workflow_output_source_observation = pgTable(
     obs_idx: index("workflow_output_source_obs_obs_idx").on(t.observation_id),
   }),
 );
+
+export const action_policy = pgTable(
+  "action_policy",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    applies_to_kinds: text("applies_to_kinds")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    applies_to_scopes: text("applies_to_scopes")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    mode: text("mode").notNull(),
+    risk_threshold_auto_approve: text("risk_threshold_auto_approve"),
+    allowed_targets: jsonb("allowed_targets"),
+    denied_targets: jsonb("denied_targets"),
+    limits: jsonb("limits").notNull().default(sql`'{}'::jsonb`),
+    approver_role: text("approver_role"),
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_enabled_priority_idx: index("action_policy_org_enabled_priority_idx").on(
+      t.org_id,
+      t.enabled,
+      t.priority,
+    ),
+  }),
+);
+
+export const action_request = pgTable(
+  "action_request",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflow_run_id: uuid("workflow_run_id").references(
+      () => workflow_run.id,
+      { onDelete: "cascade" },
+    ),
+    triggered_by_observation_id: uuid("triggered_by_observation_id").references(
+      () => observation.id,
+      { onDelete: "set null" },
+    ),
+    policy_id: uuid("policy_id").references(() => action_policy.id, {
+      onDelete: "set null",
+    }),
+    scope: text("scope").notNull(),
+    kind: text("kind").notNull(),
+    target: text("target"),
+    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+    risk_level: text("risk_level"),
+    status: text("status").notNull().default("pending_approval"),
+    summary: text("summary"),
+    requested_by_run_id: uuid("requested_by_run_id").references(
+      () => workflow_run.id,
+      { onDelete: "set null" },
+    ),
+    approved_by_user_id: text("approved_by_user_id").references(
+      () => app_user.id,
+      { onDelete: "set null" },
+    ),
+    approved_at: ts("approved_at"),
+    rejection_reason: text("rejection_reason"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_status_idx: index("action_request_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+    workflow_run_idx: index("action_request_workflow_run_idx").on(
+      t.workflow_run_id,
+      t.created_at.desc(),
+    ),
+    pending_idx: index("action_request_pending_idx").on(
+      t.org_id,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+export const action_execution = pgTable(
+  "action_execution",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    action_request_id: uuid("action_request_id")
+      .notNull()
+      .references(() => action_request.id, { onDelete: "cascade" }),
+    executor: text("executor").notNull(),
+    command_or_operation: text("command_or_operation"),
+    payload: jsonb("payload"),
+    result: jsonb("result"),
+    external_ref: text("external_ref"),
+    status: text("status").notNull().default("pending"),
+    error: text("error"),
+    started_at: ts("started_at"),
+    finished_at: ts("finished_at"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    request_idx: index("action_execution_request_idx").on(
+      t.action_request_id,
+      t.created_at.desc(),
+    ),
+    org_status_idx: index("action_execution_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+  }),
+);

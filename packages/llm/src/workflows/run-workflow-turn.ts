@@ -9,6 +9,7 @@ import {
   saveAssistantWorkMessage,
 } from "../work/store";
 import { buildWorkMemoryServer } from "../work/tools";
+import { buildWorkflowActionServer } from "./action-server";
 import { buildWorkflowOutputServer } from "./output-server";
 import { buildWorkflowRunnerPrompt } from "./runner-prompt";
 import {
@@ -198,6 +199,14 @@ export async function runWorkflowTurn(
             orgId,
             workflowRunId: workflowRun.id,
             workRunId: workRunId,
+            emit: wrappedEmit,
+          }),
+          neko_action: buildWorkflowActionServer({
+            orgId,
+            workflowRunId: workflowRun.id,
+            workRunId: workRunId,
+            triggeredByObservationId:
+              workflowRun.triggeredByObservationId ?? null,
             emit: wrappedEmit,
           }),
           neko_memory: buildWorkMemoryServer({
