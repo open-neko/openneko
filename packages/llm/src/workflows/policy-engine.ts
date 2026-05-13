@@ -184,36 +184,18 @@ function decisionFromMode(
 }
 
 /**
- * Idempotent default-policy seeder. Two baseline policies per org:
- *   - internal_default — auto_approve for internal-scope writes (memory,
- *     briefing creation, workflow scheduling). Risk threshold = "medium".
- *   - external_default — approval_required for external-scope mutations
- *     (CRM updates, outbound messages, code commits, etc.).
+ * Idempotent default-policy seeder. Seeds the baseline external_default
+ * policy at priority 950 so org-specific policies (priority 100..900)
+ * override it naturally.
  *
- * Both at priority 950 so org-specific policies (priority 100..900)
- * override them naturally.
+ * Internal product operations (memory writes, briefing creation,
+ * workflow scheduling) are not policy-gated by design — they're product
+ * features. The action stack and its policies only govern external
+ * state changes (outbound webhooks, CRM updates, code commits, etc.).
  */
 export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
   const existing = await defaultListEnabledPolicies(orgId);
   const names = new Set(existing.map((p) => p.name));
-  if (!names.has("internal_default")) {
-    await createActionPolicy({
-      orgId,
-      name: "internal_default",
-      description:
-        "Auto-approve routine internal writes (memory, briefing, scheduling) up to medium risk.",
-      appliesToKinds: [],
-      appliesToScopes: ["internal"],
-      mode: "auto_approve" as ActionPolicyMode,
-      riskThresholdAutoApprove: "medium",
-      allowedTargets: null,
-      deniedTargets: null,
-      limits: {},
-      approverRole: null,
-      priority: 950,
-      enabled: true,
-    });
-  }
   if (!names.has("external_default")) {
     await createActionPolicy({
       orgId,
