@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Archivo, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -17,6 +17,13 @@ const body = Manrope({
 export const metadata: Metadata = {
   title: "OpenNeko",
   description: "Executive intelligence for CXOs",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#FAFAF7",
 };
 
 export default function RootLayout({
@@ -39,7 +46,7 @@ export default function RootLayout({
             duration: 4500,
             unstyled: true,
             style: {
-              width: 360,
+              width: "min(360px, calc(100vw - 32px))",
               display: "flex",
               alignItems: "flex-start",
               gap: 12,
