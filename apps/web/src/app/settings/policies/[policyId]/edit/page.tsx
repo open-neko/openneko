@@ -14,6 +14,7 @@ import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
 import { extractPolicySaveFence } from "@neko/llm/workflows/fences";
 import type { PolicySavePayload } from "@neko/llm/workflows/fence-schemas";
+import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
 
 type ChatMessage = {
   id: string;
@@ -230,6 +231,16 @@ export default function EditPolicyPage() {
         es.close();
         setStreaming(false);
         setActiveRunId(null);
+        // Recover the live card payload from the seq-ordered DB log in case
+        // the streaming chunks arrived out of order.
+        void fetchAssistantTextFromRun(data.runId).then((text) => {
+          if (!text) return;
+          const res = extractPolicySaveFence(text);
+          if (res.payload) {
+            setLivePayload(res.payload);
+            setSavedAtLeastOnce(true);
+          }
+        });
       };
 
       es.onmessage = (evt) => {

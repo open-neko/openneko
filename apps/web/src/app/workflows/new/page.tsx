@@ -14,6 +14,7 @@ import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
 import { extractWorkflowSaveFence } from "@neko/llm/workflows/fences";
 import type { WorkflowSavePayload } from "@neko/llm/workflows/fence-schemas";
+import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
 
 type ChatMessage = {
   id: string;
@@ -172,6 +173,13 @@ export default function NewWorkflowPage() {
         setStreaming(false);
         setActiveRunId(null);
         void checkForSavedWorkflow();
+        // Recover the live card payload from the seq-ordered DB log in case
+        // the streaming chunks arrived out of order and broke the live parse.
+        void fetchAssistantTextFromRun(data.runId).then((text) => {
+          if (!text) return;
+          const res = extractWorkflowSaveFence(text);
+          if (res.payload) setLivePayload(res.payload);
+        });
       };
 
       es.onmessage = (evt) => {

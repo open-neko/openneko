@@ -339,12 +339,11 @@ export default function RunPage() {
           </div>
         </div>
 
-        {phaseBuckets.length > 0 ? (
+        {/* Only render the phase strip when the agent emitted real phase
+            markers (phase_start/phase_end). Showing a lone "SETUP" segment
+            for runs that never tagged phases is noise; hide it entirely. */}
+        {phaseBuckets.some((b) => b.phase !== "setup") && (
           <PhaseStrip buckets={phaseBuckets} />
-        ) : (
-          <div className="run-phase-strip-empty">
-            No phase markers yet — agent didn't tag Observe/Understand/Decide/Act.
-          </div>
         )}
 
         <Section title="Produced">

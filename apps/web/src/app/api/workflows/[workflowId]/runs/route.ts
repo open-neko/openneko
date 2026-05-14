@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { AgentEvent } from "@neko/llm";
 import { AgentBackendConfigError } from "@neko/llm";
-import { appendWorkRunEvent, getWorkRun } from "@neko/llm/work";
+import { getWorkRun } from "@neko/llm/work";
 import {
   prepareWorkflowRun,
   runWorkflowTurn,
 } from "@neko/llm/workflows";
+import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import {
-  notifyRunSubscribers,
   registerRun,
   unregisterRun,
 } from "@/lib/neko-run-registry";
@@ -53,18 +52,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     subscribers: new Set(),
   });
 
-  let seq = 0;
-  const emit = async (event: AgentEvent): Promise<void> => {
-    seq += 1;
-    await appendWorkRunEvent({
-      orgId,
-      threadId: prepared.threadId,
-      runId: prepared.workRunId,
-      seq,
-      event,
-    });
-    notifyRunSubscribers(prepared.workRunId, event, seq);
-  };
+  const { emit, finalize } = createCoalescingEmit({
+    orgId,
+    threadId: prepared.threadId,
+    runId: prepared.workRunId,
+  });
 
   void runWorkflowTurn({
     prepared,
@@ -95,7 +87,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
       }
     })
-    .finally(() => {
+    .finally(async () => {
+      try {
+        await finalize();
+      } catch (err) {
+        console.error(
+          `[workflow-run] finalize failed for ${prepared.workflowRun.id}:`,
+          err,
+        );
+      }
       unregisterRun(prepared.workRunId);
     });
 
