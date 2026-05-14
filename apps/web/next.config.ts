@@ -1,7 +1,11 @@
 import path from "node:path";
 import type { NextConfig } from "next";
+import pkg from "./package.json";
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: pkg.version,
+  },
   transpilePackages: ["@neko/db", "@neko/llm"],
   // Emit a self-contained build at .next/standalone for container deploys
   // (Cloud Run). Tracing root is the monorepo root so workspace deps

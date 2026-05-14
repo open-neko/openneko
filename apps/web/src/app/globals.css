@@ -101,6 +101,61 @@ body > * { position: relative; z-index: 1; }
   height: 41px;
 }
 
+/* Brand + version cluster (and the "update available" chip that appears
+   next to the brand when a newer build is on the server). */
+.brand-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+}
+.brand-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--success-mid) 30%, var(--border));
+  background: var(--success-soft);
+  color: var(--success-ink);
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 6px 10px 6px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1;
+  height: 28px;
+  transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+  animation: brand-update-in 0.4s ease both;
+}
+.brand-update:hover {
+  background: color-mix(in srgb, var(--success) 24%, var(--success-soft));
+  border-color: var(--success-mid);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(17, 55, 25, 0.10);
+}
+.brand-update:focus-visible {
+  outline: 2px solid var(--success-mid);
+  outline-offset: 2px;
+}
+.brand-update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--success-mid);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-mid) 55%, transparent);
+  animation: brand-update-pulse 1.8s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+@keyframes brand-update-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes brand-update-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-mid) 55%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--success-mid) 0%, transparent); }
+}
+
 /* ─── BRAND ─── */
 /* Match the marketing site's brand lockup (apps/web/.. ↔ Website/..) so
    the app feels like a continuation of getneko.app: same Archivo display
@@ -4464,8 +4519,10 @@ body { overflow-x: hidden; }
   .app-header .brand { align-self: flex-end; height: auto; }
   .app-header-left { width: 100%; flex: none; min-width: 0; }
   .brand-name { font-size: 16px; }
-  .brand-version { display: none; }
-  .brand-tick { display: none; }
+  .brand-version { font-size: 10px; padding: 2px 5px; }
+  .brand-cluster { gap: 8px; }
+  .brand-update-label { display: none; }
+  .brand-update { padding: 6px 8px; height: 24px; }
 
   /* Section nav as a horizontal scrollable tab strip — familiar
      iOS sub-nav pattern, no awkward wraps, no clipped links. The
