@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   // (@neko/db, @neko/llm) get included.
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
+  experimental: {
+    // Turbopack's FS cache (default-on since Next 16.1) was serving stale
+    // globals.css after edits in dev. Disabling for dev only.
+    turbopackFileSystemCacheForDev: false,
+  },
 };
 
 export default nextConfig;
