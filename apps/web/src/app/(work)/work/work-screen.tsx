@@ -1,27 +1,21 @@
 "use client";
 
 import "@/a2ui/components";
-import type { AnchorHTMLAttributes, ReactNode } from "react";
 import {
   ArrowUp,
-  Brain,
   Check,
   Copy,
   Loader2,
   Paperclip,
   Pencil,
-  Plus,
   RefreshCw,
-  Sparkles,
   Square,
-  Trash2,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 // Matches absolute container paths to agent-generated/uploaded files inside the
 // per-org workspace, e.g.
@@ -98,24 +92,12 @@ import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
   linkifyWorkspacePaths,
 } from "@/lib/linkify-workspace-paths";
-import AppHeader from "@/components/AppHeader";
 import BriefingCard from "@/components/BriefingCard";
-import { confirmDialog } from "@/components/ConfirmModal";
-import CreatorCredit from "@/components/CreatorCredit";
-import SectionNav from "@/components/SectionNav";
 import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
-import WorkSidebar from "./WorkSidebar";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
-
-type ThreadSummary = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  lastMessageAt: string;
-};
+import { useWorkShell } from "../work-shell-context";
 
 type MessageRecord = {
   id: string;
@@ -254,31 +236,34 @@ function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadBundle {
   return { ...bundle, messages };
 }
 
-export default function WorkScreen({
-  initialThreadId,
-}: {
-  initialThreadId?: string;
-} = {}) {
+export default function WorkScreen() {
   const router = useRouter();
+  const params = useParams();
+  const routeThreadId =
+    typeof params?.threadId === "string" ? params.threadId : null;
+  const { setActiveRunId } = useWorkShell();
   const [gateChecked, setGateChecked] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<ThreadBundle | null>(null);
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [pendingMemories, setPendingMemories] = useState<PendingMemory[]>([]);
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [loadingThreads, setLoadingThreads] = useState(true);
   const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunId, setActiveRunIdState] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeRunStreamRef = useRef<ActiveRunStream | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+
+  const updateActiveRunId = (next: string | null) => {
+    setActiveRunIdState(next);
+    setActiveRunId(next);
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -286,7 +271,10 @@ export default function WorkScreen({
       mountedRef.current = false;
       activeRunStreamRef.current?.close();
       activeRunStreamRef.current = null;
+      setActiveRunId(null);
     };
+    // setActiveRunId comes from a stable provider; intentional empty deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -329,41 +317,46 @@ export default function WorkScreen({
 
   useEffect(() => {
     if (!gateChecked || gateError) return;
-    void loadThreads(initialThreadId);
     void loadMemories();
-  }, [gateChecked, gateError, initialThreadId]);
+  }, [gateChecked, gateError]);
+
+  // React to URL thread changes. The /work page (no threadId) picks the most
+  // recent thread and redirects to its URL — that navigation re-fires this
+  // effect with the resolved threadId, which then loads the bundle without
+  // remounting the screen.
+  useEffect(() => {
+    if (!gateChecked || gateError) return;
+    if (routeThreadId) {
+      if (routeThreadId !== activeThreadIdRef.current) {
+        void loadThread(routeThreadId);
+      }
+      return;
+    }
+    void resolveLandingThread();
+    // loadThread/resolveLandingThread are stable closures over component state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateChecked, gateError, routeThreadId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
 
-  async function loadThreads(preferredThreadId?: string) {
-    setLoadingThreads(true);
-    try {
-      const res = await fetch("/api/work/threads");
-      const data = (await res.json()) as { threads: ThreadSummary[] };
-      setThreads(data.threads ?? []);
-      const nextId = preferredThreadId ?? data.threads?.[0]?.id ?? null;
-      // No preferredThreadId means we landed on /work bare. Mirror the
-      // selection into the URL so the thread is shareable; the resulting
-      // navigation re-mounts this screen with the right initialThreadId.
-      if (!preferredThreadId && nextId) {
-        router.replace(`/work/${nextId}`);
-      }
-      activeThreadIdRef.current = nextId;
-      setActiveThreadId(nextId);
-      if (nextId) {
-        await loadThread(nextId);
-      } else {
-        activeRunStreamRef.current?.close();
-        activeRunStreamRef.current = null;
-        setSending(false);
-        setActiveRunId(null);
-        setBundle(null);
-      }
-    } finally {
-      setLoadingThreads(false);
+  async function resolveLandingThread() {
+    const res = await fetch("/api/work/threads");
+    if (!res.ok) return;
+    const data = (await res.json()) as { threads: { id: string }[] };
+    const nextId = data.threads?.[0]?.id ?? null;
+    if (nextId) {
+      router.replace(`/work/${nextId}`);
+      return;
     }
+    activeThreadIdRef.current = null;
+    setActiveThreadId(null);
+    activeRunStreamRef.current?.close();
+    activeRunStreamRef.current = null;
+    setSending(false);
+    updateActiveRunId(null);
+    setBundle(null);
   }
 
   async function loadThread(threadId: string) {
@@ -374,7 +367,7 @@ export default function WorkScreen({
         activeRunStreamRef.current?.close();
         activeRunStreamRef.current = null;
         setSending(false);
-        setActiveRunId(null);
+        updateActiveRunId(null);
         setBundle(null);
         return;
       }
@@ -387,37 +380,6 @@ export default function WorkScreen({
       await loadPendingMemories(threadId);
     } finally {
       setLoadingThread(false);
-    }
-  }
-
-  async function deleteThread(threadId: string) {
-    const target = threads.find((t) => t.id === threadId);
-    const label = target?.title || "Untitled thread";
-    const ok = await confirmDialog({
-      title: `Delete "${label}"?`,
-      description: "This also removes its run history.",
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
-    const res = await fetch(`/api/work/threads/${threadId}`, { method: "DELETE" });
-    if (!res.ok) return;
-    const remaining = threads.filter((t) => t.id !== threadId);
-    setThreads(remaining);
-    if (activeThreadId === threadId) {
-      const nextId = remaining[0]?.id ?? null;
-      router.replace(nextId ? `/work/${nextId}` : "/work");
-      activeThreadIdRef.current = nextId;
-      setActiveThreadId(nextId);
-      if (nextId) {
-        await loadThread(nextId);
-      } else {
-        activeRunStreamRef.current?.close();
-        activeRunStreamRef.current = null;
-        setSending(false);
-        setActiveRunId(null);
-        setBundle(null);
-      }
     }
   }
 
@@ -441,19 +403,20 @@ export default function WorkScreen({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    const data = (await res.json()) as { thread: ThreadSummary };
+    const data = (await res.json()) as {
+      thread: {
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        lastMessageAt: string;
+      };
+    };
     const nextId = data.thread.id;
-    setThreads((prev) => [data.thread, ...prev]);
     activeThreadIdRef.current = nextId;
     setActiveThreadId(nextId);
     setBundle({
-      thread: {
-        id: data.thread.id,
-        title: data.thread.title,
-        createdAt: data.thread.createdAt,
-        updatedAt: data.thread.updatedAt,
-        lastMessageAt: data.thread.lastMessageAt,
-      },
+      thread: data.thread,
       runs: [],
       messages: [],
       eventsByRun: {},
@@ -584,7 +547,7 @@ export default function WorkScreen({
     };
     if (!mountedRef.current) return;
 
-    setActiveRunId(runId);
+    updateActiveRunId(runId);
     setBundle((prev) =>
       prev
         ? {
@@ -633,14 +596,14 @@ export default function WorkScreen({
     if (!run) {
       if (activeThreadIdRef.current === threadId) {
         setSending(false);
-        setActiveRunId(null);
+        updateActiveRunId(null);
       }
       return;
     }
 
     setStreamError(null);
     setSending(true);
-    setActiveRunId(run.id);
+    updateActiveRunId(run.id);
     const afterSeq = nextBundle.eventsByRun[run.id]?.length ?? 0;
     void streamAndRefreshRun(threadId, run.id, afterSeq);
   }
@@ -655,8 +618,8 @@ export default function WorkScreen({
     if (activeThreadIdRef.current !== threadId) return;
 
     setSending(false);
-    setActiveRunId(null);
-    await Promise.all([loadThreads(threadId), loadThread(threadId), loadMemories()]);
+    updateActiveRunId(null);
+    await Promise.all([loadThread(threadId), loadMemories()]);
     window.setTimeout(() => {
       if (!mountedRef.current || activeThreadIdRef.current !== threadId) return;
       void loadPendingMemories(threadId);
@@ -798,251 +761,221 @@ export default function WorkScreen({
 
   if (!gateChecked) {
     return (
-      <>
-        <div className="root">
-          <AppHeader>
-            <SectionNav current="work" />
-          </AppHeader>
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)" }}>
-            Loading…
-          </div>
-        </div>
-        <CreatorCredit />
-      </>
+      <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)" }}>
+        Loading…
+      </div>
     );
   }
 
   if (gateError) {
     return (
-      <>
-        <div className="root">
-          <AppHeader>
-            <SectionNav current="work" />
-          </AppHeader>
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)" }}>
-            <div style={{ marginBottom: 8, color: "var(--text2)" }}>
-              Can&apos;t reach the database right now.
-            </div>
-            <div style={{ fontSize: 13 }}>
-              Work will load once the connection is back.
-            </div>
-            <button
-              onClick={() => { setGateError(null); setGateChecked(false); window.location.reload(); }}
-              style={{ marginTop: 16, padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
-            >
-              Retry
-            </button>
-          </div>
+      <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)" }}>
+        <div style={{ marginBottom: 8, color: "var(--text2)" }}>
+          Can&apos;t reach the database right now.
         </div>
-        <CreatorCredit />
-      </>
+        <div style={{ fontSize: 13 }}>
+          Work will load once the connection is back.
+        </div>
+        <button
+          onClick={() => { setGateError(null); setGateChecked(false); window.location.reload(); }}
+          style={{ marginTop: 16, padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
   return (
     <>
-      <div className="root">
-        <AppHeader>
-          <SectionNav current="work" />
-        </AppHeader>
-
-        <div className="work-layout">
-          <WorkSidebar activeRunId={activeRunId} />
-
-          <section className="work-panel">
-            <div className="work-transcript">
-              {loadingThread ? (
-                <div className="work-empty">Loading thread…</div>
-              ) : bundle?.messages.length ? (
-                bundle.messages.flatMap((message, index, arr) => {
-                  if (message.role === "assistant" && message.runId) {
-                    // Assistant turns are reconstructed chronologically from the
-                    // run event stream (text segments interleaved with tool calls
-                    // and the final surface artifact). The persisted message
-                    // content is the fallback for runs missing event history.
-                    const events = bundle.eventsByRun[message.runId] ?? [];
-                    const run = runLookup.get(message.runId) ?? null;
-                    const isPending =
-                      (run ? isRunInFlight(run) : false) ||
-                      (sending && activeRunId === message.runId);
-                    return (
-                      <div key={`${message.id}-${index}`} className="work-turn">
-                        <RunTimeline
-                          run={run}
-                          events={events}
-                          pending={isPending}
-                          fallbackContent={message.content}
-                        />
-                      </div>
-                    );
-                  }
-                  const isPersistedUser =
-                    message.role === "user" &&
-                    !!message.runId &&
-                    !message.id.startsWith("temp-");
-                  // Briefing-card context messages: when the user opens a
-                  // deep-dive from the dashboard, the seed message stored at
-                  // thread-creation time encodes the full card payload after
-                  // the BRIEFING_CARD_SENTINEL marker. Render it as a real
-                  // BriefingCard so the user sees the same chrome they
-                  // clicked, not the raw JSON.
-                  const briefingCardCtx =
-                    message.role === "user"
-                      ? parseBriefingCardMessage(message.content)
-                      : null;
-                  // If this user message's run terminated (cancelled/failed)
-                  // and the next message is NOT the assistant reply for it,
-                  // render a status badge so the cancelled run is visible.
-                  const orphanRun =
-                    message.role === "user" && message.runId
-                      ? runLookup.get(message.runId)
-                      : null;
-                  const nextIsAssistantForRun =
-                    arr[index + 1]?.role === "assistant" &&
-                    arr[index + 1]?.runId === message.runId;
-                  const showRunBadge =
-                    orphanRun &&
-                    !nextIsAssistantForRun &&
-                    (orphanRun.status === "cancelled" ||
-                      orphanRun.status === "failed");
-                  return [
-                    <div key={`${message.id}-${index}`} className="work-turn">
-                      {briefingCardCtx ? (
-                        <div className="work-seed-context">
-                          <div className="work-seed-eyebrow">
-                            <span aria-hidden="true" className="work-seed-eyebrow-rule" />
-                            From your briefing
-                          </div>
-                          <BriefingCard ins={briefingCardCtx} index={0} />
-                        </div>
-                      ) : (
-                        <MessageBubble
-                          message={message}
-                          onCopy={
-                            isPersistedUser
-                              ? () => void copyUserMessage(message.content)
-                              : undefined
-                          }
-                          onRetry={
-                            isPersistedUser && !sending
-                              ? () =>
-                                  void retryOrEditUserMessage(
-                                    message.id,
-                                    message.content,
-                                  )
-                              : undefined
-                          }
-                          onEdit={
-                            isPersistedUser && !sending
-                              ? (text) =>
-                                  void retryOrEditUserMessage(message.id, text)
-                              : undefined
-                          }
-                        />
-                      )}
-                    </div>,
-                    ...(showRunBadge && orphanRun
-                      ? [
-                          <div
-                            key={`run-status-${orphanRun.id}`}
-                            className={`work-run-status work-run-status-${orphanRun.status}`}
-                          >
-                            {orphanRun.status === "cancelled"
-                              ? "Cancelled by user"
-                              : `Run failed${orphanRun.error ? `: ${orphanRun.error}` : ""}`}
-                          </div>,
-                        ]
-                      : []),
-                  ];
-                })
-              ) : null}
-
-              {streamError ? (
-                <div className="work-error">{streamError}</div>
-              ) : null}
-              <div ref={endRef} />
-            </div>
-
-            <div className="work-composer">
-              {pendingMemories.length > 0 ? (
-                <PendingMemoryPanel
-                  pending={pendingMemories}
-                  threadId={activeThreadId}
-                  onDecide={(id, action, overrides) =>
-                    void decidePendingMemory(id, action, overrides)
-                  }
-                />
-              ) : null}
-
-              {files.length > 0 ? (
-                <div className="work-files">
-                  {files.map((file, index) => (
-                    <div key={`${file.name}-${index}`} className="work-file-chip">
-                      <span>{file.name}</span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))
-                        }
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+      <div className="work-transcript">
+        {loadingThread ? (
+          <div className="work-empty">Loading thread…</div>
+        ) : bundle?.messages.length ? (
+          bundle.messages.flatMap((message, index, arr) => {
+            if (message.role === "assistant" && message.runId) {
+              // Assistant turns are reconstructed chronologically from the
+              // run event stream (text segments interleaved with tool calls
+              // and the final surface artifact). The persisted message
+              // content is the fallback for runs missing event history.
+              const events = bundle.eventsByRun[message.runId] ?? [];
+              const run = runLookup.get(message.runId) ?? null;
+              const isPending =
+                (run ? isRunInFlight(run) : false) ||
+                (sending && activeRunId === message.runId);
+              return (
+                <div key={`${message.id}-${index}`} className="work-turn">
+                  <RunTimeline
+                    run={run}
+                    events={events}
+                    pending={isPending}
+                    fallbackContent={message.content}
+                  />
                 </div>
-              ) : null}
-
-              <div className="work-composer-shell">
-                <button
-                  className="work-icon-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Attach files"
-                  type="button"
-                >
-                  <Paperclip size={16} strokeWidth={2} />
-                </button>
-                <textarea
-                  className="work-input"
-                  placeholder={sending ? "Working…" : "Ask a question or attach a file…"}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey && !sending) {
-                      event.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  disabled={sending}
-                  rows={1}
-                />
-                {sending ? (
-                  <button className="work-send-btn is-stop" type="button" onClick={() => void cancelRun()}>
-                    <Square size={15} fill="currentColor" strokeWidth={2} />
-                  </button>
+              );
+            }
+            const isPersistedUser =
+              message.role === "user" &&
+              !!message.runId &&
+              !message.id.startsWith("temp-");
+            // Briefing-card context messages: when the user opens a
+            // deep-dive from the dashboard, the seed message stored at
+            // thread-creation time encodes the full card payload after
+            // the BRIEFING_CARD_SENTINEL marker. Render it as a real
+            // BriefingCard so the user sees the same chrome they
+            // clicked, not the raw JSON.
+            const briefingCardCtx =
+              message.role === "user"
+                ? parseBriefingCardMessage(message.content)
+                : null;
+            // If this user message's run terminated (cancelled/failed)
+            // and the next message is NOT the assistant reply for it,
+            // render a status badge so the cancelled run is visible.
+            const orphanRun =
+              message.role === "user" && message.runId
+                ? runLookup.get(message.runId)
+                : null;
+            const nextIsAssistantForRun =
+              arr[index + 1]?.role === "assistant" &&
+              arr[index + 1]?.runId === message.runId;
+            const showRunBadge =
+              orphanRun &&
+              !nextIsAssistantForRun &&
+              (orphanRun.status === "cancelled" ||
+                orphanRun.status === "failed");
+            return [
+              <div key={`${message.id}-${index}`} className="work-turn">
+                {briefingCardCtx ? (
+                  <div className="work-seed-context">
+                    <div className="work-seed-eyebrow">
+                      <span aria-hidden="true" className="work-seed-eyebrow-rule" />
+                      From your briefing
+                    </div>
+                    <BriefingCard ins={briefingCardCtx} index={0} />
+                  </div>
                 ) : (
-                  <button className="work-send-btn" type="button" onClick={() => void sendMessage()}>
-                    <ArrowUp size={16} strokeWidth={2.25} />
-                  </button>
+                  <MessageBubble
+                    message={message}
+                    onCopy={
+                      isPersistedUser
+                        ? () => void copyUserMessage(message.content)
+                        : undefined
+                    }
+                    onRetry={
+                      isPersistedUser && !sending
+                        ? () =>
+                            void retryOrEditUserMessage(
+                              message.id,
+                              message.content,
+                            )
+                        : undefined
+                    }
+                    onEdit={
+                      isPersistedUser && !sending
+                        ? (text) =>
+                            void retryOrEditUserMessage(message.id, text)
+                        : undefined
+                    }
+                  />
                 )}
-              </div>
+              </div>,
+              ...(showRunBadge && orphanRun
+                ? [
+                    <div
+                      key={`run-status-${orphanRun.id}`}
+                      className={`work-run-status work-run-status-${orphanRun.status}`}
+                    >
+                      {orphanRun.status === "cancelled"
+                        ? "Cancelled by user"
+                        : `Run failed${orphanRun.error ? `: ${orphanRun.error}` : ""}`}
+                    </div>,
+                  ]
+                : []),
+            ];
+          })
+        ) : null}
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={(event) => {
-                  const picked = Array.from(event.target.files ?? []);
-                  setFiles((prev) => [...prev, ...picked].slice(0, 5));
-                  event.target.value = "";
-                }}
-              />
-            </div>
-          </section>
-        </div>
+        {streamError ? (
+          <div className="work-error">{streamError}</div>
+        ) : null}
+        <div ref={endRef} />
       </div>
 
-      <CreatorCredit />
+      <div className="work-composer">
+        {pendingMemories.length > 0 ? (
+          <PendingMemoryPanel
+            pending={pendingMemories}
+            threadId={activeThreadId}
+            onDecide={(id, action, overrides) =>
+              void decidePendingMemory(id, action, overrides)
+            }
+          />
+        ) : null}
+
+        {files.length > 0 ? (
+          <div className="work-files">
+            {files.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="work-file-chip">
+                <span>{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="work-composer-shell">
+          <button
+            className="work-icon-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach files"
+            type="button"
+          >
+            <Paperclip size={16} strokeWidth={2} />
+          </button>
+          <textarea
+            className="work-input"
+            placeholder={sending ? "Working…" : "Ask a question or attach a file…"}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !sending) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            disabled={sending}
+            rows={1}
+          />
+          {sending ? (
+            <button className="work-send-btn is-stop" type="button" onClick={() => void cancelRun()}>
+              <Square size={15} fill="currentColor" strokeWidth={2} />
+            </button>
+          ) : (
+            <button className="work-send-btn" type="button" onClick={() => void sendMessage()}>
+              <ArrowUp size={16} strokeWidth={2.25} />
+            </button>
+          )}
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => {
+            const picked = Array.from(event.target.files ?? []);
+            setFiles((prev) => [...prev, ...picked].slice(0, 5));
+            event.target.value = "";
+          }}
+        />
+      </div>
     </>
   );
 }

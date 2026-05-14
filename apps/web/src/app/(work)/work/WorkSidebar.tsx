@@ -2,9 +2,10 @@
 
 import { Brain, Plus, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { confirmDialog } from "@/components/ConfirmModal";
+import { useWorkShell } from "../work-shell-context";
 
 type ThreadSummary = {
   id: string;
@@ -14,14 +15,10 @@ type ThreadSummary = {
   lastMessageAt: string;
 };
 
-export default function WorkSidebar({
-  activeRunId,
-}: {
-  activeRunId?: string | null;
-} = {}) {
+export default function WorkSidebar() {
   const router = useRouter();
   const params = useParams();
-  const pathname = usePathname();
+  const { activeRunId } = useWorkShell();
   const activeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
 
@@ -39,7 +36,7 @@ export default function WorkSidebar({
 
   useEffect(() => {
     void refresh();
-  }, [refresh, pathname]);
+  }, [refresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,7 +49,15 @@ export default function WorkSidebar({
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, []);
+
+  // Refresh the thread list when an active run finishes — title may have
+  // been generated, lastMessageAt has shifted. We don't refresh on every nav
+  // anymore (the sidebar persists across route changes).
+  useEffect(() => {
+    if (activeRunId) return;
+    void refresh();
+  }, [activeRunId, refresh]);
 
   async function createThread() {
     const res = await fetch("/api/work/threads", {
@@ -62,6 +67,7 @@ export default function WorkSidebar({
     });
     if (!res.ok) return;
     const data = (await res.json()) as { thread: ThreadSummary };
+    setThreads((prev) => [data.thread, ...prev]);
     router.push(`/work/${data.thread.id}`);
   }
 
@@ -76,11 +82,10 @@ export default function WorkSidebar({
     if (!ok) return;
     const res = await fetch(`/api/work/threads/${threadId}`, { method: "DELETE" });
     if (!res.ok) return;
+    const remaining = threads.filter((t) => t.id !== threadId);
+    setThreads(remaining);
     if (activeThreadId === threadId) {
-      const remaining = threads.filter((t) => t.id !== threadId);
       router.replace(remaining[0]?.id ? `/work/${remaining[0].id}` : "/work");
-    } else {
-      void refresh();
     }
   }
 
