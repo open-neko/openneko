@@ -70,12 +70,13 @@ body > * { position: relative; z-index: 1; }
   margin-bottom: 24px;
 }
 .app-header-inner {
-  /* Header band is pinned to 740px on every page so the nav x-position
-     stays stable across pages and nav stays visually close to the brand
-     (no large whitespace gap on wider body pages). Body width is set
-     independently per .root subclass and is allowed to be wider. */
+  /* Header band sized to comfortably hold the full nav + brand on a
+     single line (six section links incl. Approvals + the version chip).
+     740px would crowd the row and force a wrap; 1000px matches the
+     wider operating-loop pages (workflows, runs) and keeps the brand
+     visually close to the right edge on briefing too. */
   width: 100%;
-  max-width: 740px;
+  max-width: 1000px;
   padding: 0 20px;
   display: flex;
   align-items: flex-start;

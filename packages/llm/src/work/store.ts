@@ -5,10 +5,12 @@ import {
   desc,
   eq,
   gte,
+  sql,
   work_message,
   work_run,
   work_run_event,
   work_thread,
+  workflow_run,
 } from "@neko/db";
 import type { AgentBackendId } from "../agent-backend";
 import type { AgentEvent } from "../agent-backend";
@@ -53,10 +55,20 @@ export type WorkThreadBundle = {
 };
 
 export async function listWorkThreads(orgId: string): Promise<WorkThreadSummary[]> {
+  // Workflow runs reuse the work_thread / work_run plumbing for their
+  // transcripts (so they get the same surface, events, memory hooks).
+  // But /work (Ask) is strictly human ↔ agent — its sidebar must not
+  // surface threads created by a workflow trigger. Exclude any thread
+  // that has a workflow_run pointing at it.
   const rows = await db()
     .select()
     .from(work_thread)
-    .where(eq(work_thread.org_id, orgId))
+    .where(
+      and(
+        eq(work_thread.org_id, orgId),
+        sql`NOT EXISTS (SELECT 1 FROM ${workflow_run} wr WHERE wr.thread_id = ${work_thread.id})`,
+      ),
+    )
     .orderBy(desc(work_thread.last_message_at), desc(work_thread.created_at));
   return rows.map((row) => ({
     id: row.id,
