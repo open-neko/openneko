@@ -200,6 +200,40 @@ that pull rows back to the agent:
 - Never invent or interpolate. If a query returned no rows, the answer
   is "no data", not a guess.
 
+WORKED AGGREGATION EXAMPLES — copy these shapes; substitute your real
+table and column names. These are the patterns GraphJin actually
+accepts (deviating from them produces "expecting an aliased field
+name" or "<table>_sum table not found" errors):
+
+  // Global single-row total — no distinct needed, fields are all aggregates:
+  { sales_orders { total_revenue: sum(expr: { mul: [unitprice, quantity] }) } }
+
+  // Group by category, server-side SUM(price × qty), ranked top-N:
+  { sales_orders(distinct: [category_id], order_by: { revenue: desc }, limit: 10) {
+      category_id
+      revenue: sum(expr: { mul: [unitprice, quantity] })
+    } }
+
+  // Joined column via FK dot-notation (up to 3 hops) — gross margin from a related table:
+  { sales_orders(distinct: [product_id]) {
+      product_id
+      gross: sum(expr: { mul: [quantity, { sub: [unitprice, "product.standardcost"] }] })
+    } }
+
+  // Ratio of aggregates — bare expression, nested sum/avg nodes:
+  { sales_orders { margin_pct: ratio(expr: { div: [{ sum: { mul: [unitprice, quantity] } }, { sum: linetotal }] }) } }
+
+  // Plain single-column aggregates — no expression needed for one column:
+  { products(distinct: [category_id]) { category_id count_id sum_price avg_price } }
+
+For grouping ACROSS a relationship (e.g. revenue by category when the
+order rows live in a child table and the category lives upstream):
+use a foreign-key dot-path inside \`distinct:\` and select the grouping
+key as a separate aggregated row. If that fails with "aliased field
+name" errors, GraphJin can't group across that path in one query —
+run the aggregate per parent in a small fan-out loop instead, NOT
+fall back to raw row pulls.
+
 Run queries via the \`${shellTool}\` tool:
 
   graphjin cli execute_graphql --args '{"query":"<your read-only graphql>"}'
