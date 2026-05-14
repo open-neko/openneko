@@ -625,8 +625,8 @@ body > * { position: relative; z-index: 1; }
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
-  width: 100%;
-  max-width: min(1180px, calc(100vw - 40px));
+  /* Viewport-anchored (not 100%) — parent .root caps at 740px; translateX escapes it. */
+  width: min(1180px, calc(100vw - 40px));
   margin-left: 50%;
   transform: translateX(-50%);
 }
