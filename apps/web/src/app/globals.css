@@ -38,7 +38,7 @@ body {
 }
 
 /* ─── LAYOUT ─── */
-.root { max-width: 740px; margin: 0 auto; padding: 36px 20px 130px; min-height: 100vh; }
+.root { --page-width: 740px; max-width: var(--page-width); margin: 0 auto; padding: 36px 20px 130px; min-height: 100vh; }
 
 /* Faint editorial paper texture — adds atmosphere without competing with content. */
 body::before {
@@ -70,11 +70,11 @@ body > * { position: relative; z-index: 1; }
   margin-bottom: 24px;
 }
 .app-header-inner {
-  /* The stable centering band for all nav content. Matches the wider
-     operating-loop surfaces; narrower surfaces (Briefing at 740) keep
-     their body width but share this nav band. */
+  /* Tracks the page body width via --page-width set on .root. Narrow pages
+     (740) and wide operating-loop surfaces (1000) both stay centered to
+     their own body — the header never juts past the content. */
   width: 100%;
-  max-width: 1000px;
+  max-width: var(--page-width, 1000px);
   padding: 0 20px;
   display: flex;
   align-items: flex-start;
@@ -2575,7 +2575,7 @@ body > * { position: relative; z-index: 1; }
 /* All operating-loop surfaces share max-width: 1000px so the AppHeader nav
    row sits at the same x-position across pages. Briefing (740) and Ask
    (existing) intentionally stay narrower per their editorial intent. */
-.workflows-root { max-width: 1000px; }
+.workflows-root { --page-width: 1000px; }
 
 .workflows-head {
   display: flex;
@@ -3042,7 +3042,7 @@ body > * { position: relative; z-index: 1; }
 }
 
 /* ─── WORKFLOW BUILDER (authoring chat) ─── */
-.builder-root { max-width: 1000px; }
+.builder-root { --page-width: 1000px; }
 
 .builder-crumb {
   display: flex;
@@ -3280,7 +3280,7 @@ body > * { position: relative; z-index: 1; }
 }
 
 /* ─── RUN REPLAY PAGE ─── */
-.run-root { max-width: 1000px; }
+.run-root { --page-width: 1000px; }
 
 .run-loading,
 .run-error {
@@ -3738,7 +3738,7 @@ body > * { position: relative; z-index: 1; }
 .run-lineage-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 /* ─── APPROVALS PAGE ─── */
-.approvals-root { max-width: 1000px; }
+.approvals-root { --page-width: 1000px; }
 
 .approvals-loading,
 .approvals-error {
@@ -4019,7 +4019,7 @@ body > * { position: relative; z-index: 1; }
 
 /* ─── SETTINGS / POLICIES ─── */
 /* rebuild trigger */
-.policies-root { max-width: 1000px; }
+.policies-root { --page-width: 1000px; }
 
 .policies-loading,
 .policies-error {
