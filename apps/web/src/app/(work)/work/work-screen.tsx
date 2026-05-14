@@ -280,6 +280,7 @@ export default function WorkScreen() {
   const [activeRunId, setActiveRunIdState] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const activeRunStreamRef = useRef<ActiveRunStream | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -364,6 +365,16 @@ export default function WorkScreen() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
+
+  // Auto-grow the textarea up to its max-height; past that, the textarea
+  // scrolls internally. CSS alone can't do this — `rows={1}` is the floor
+  // and there's no `content-size` for textareas.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+  }, [draft]);
 
   async function resolveLandingThread() {
     const res = await fetch("/api/work/threads");
@@ -961,36 +972,35 @@ export default function WorkScreen() {
           />
         ) : null}
 
-        {files.length > 0 ? (
-          <div className="work-files">
-            {files.map((file, index) => (
-              <div key={`${file.name}-${index}`} className="work-file-chip">
-                <span>{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))
-                  }
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="work-composer-shell">
-          <button
-            className="work-icon-btn"
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach files"
-            type="button"
-          >
-            <Paperclip size={16} strokeWidth={2} />
-          </button>
+        <div
+          className={`work-composer-shell${sending ? " is-working" : ""}`}
+        >
+          {files.length > 0 ? (
+            <div className="work-files">
+              {files.map((file, index) => (
+                <div key={`${file.name}-${index}`} className="work-file-chip">
+                  <Paperclip size={11} strokeWidth={2} aria-hidden />
+                  <span className="work-file-chip-name">{file.name}</span>
+                  <span className="work-file-chip-size">
+                    {Math.max(1, Math.round(file.size / 1024))} KB
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() =>
+                      setFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))
+                    }
+                  >
+                    <X size={11} strokeWidth={2.25} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <textarea
+            ref={textareaRef}
             className="work-input"
-            placeholder={sending ? "Working…" : "Ask a question or attach a file…"}
+            placeholder={sending ? "Working…" : "Send a message…"}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -1001,16 +1011,64 @@ export default function WorkScreen() {
             }}
             disabled={sending}
             rows={1}
+            autoComplete="off"
+            autoCorrect="on"
+            spellCheck
+            enterKeyHint="send"
           />
-          {sending ? (
-            <button className="work-send-btn is-stop" type="button" onClick={() => void cancelRun()}>
-              <Square size={15} fill="currentColor" strokeWidth={2} />
-            </button>
-          ) : (
-            <button className="work-send-btn" type="button" onClick={() => void sendMessage()}>
-              <ArrowUp size={16} strokeWidth={2.25} />
-            </button>
-          )}
+          <div className="work-composer-row">
+            <div className="work-composer-row-left">
+              <button
+                className="work-icon-btn"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach a file"
+                aria-label="Attach a file"
+                type="button"
+                disabled={sending || files.length >= MAX_ATTACHMENTS}
+              >
+                <Paperclip size={15} strokeWidth={2} />
+              </button>
+              <span className="work-composer-hint" aria-live="polite">
+                {sending ? (
+                  <span className="work-composer-pulse">Working</span>
+                ) : files.length > 0 ? (
+                  <>
+                    {files.length} of {MAX_ATTACHMENTS} attached
+                    <span className="work-composer-hint-sep">·</span>
+                    Enter <kbd>↵</kbd> to send
+                  </>
+                ) : (
+                  <>
+                    Enter <kbd>↵</kbd> to send
+                    <span className="work-composer-hint-sep">·</span>
+                    Shift <kbd>↵</kbd> for newline
+                  </>
+                )}
+              </span>
+            </div>
+            {sending ? (
+              <button
+                className="work-send-btn is-stop"
+                type="button"
+                onClick={() => void cancelRun()}
+                aria-label="Stop"
+              >
+                <Square size={13} fill="currentColor" strokeWidth={0} aria-hidden />
+                <span>Stop</span>
+              </button>
+            ) : (
+              <button
+                className="work-send-btn"
+                type="button"
+                onClick={() => void sendMessage()}
+                disabled={!draft.trim() && files.length === 0}
+                aria-label="Send"
+              >
+                <span>Send</span>
+                <ArrowUp size={14} strokeWidth={2.5} aria-hidden />
+              </button>
+            )}
+          </div>
         </div>
 
         <input
