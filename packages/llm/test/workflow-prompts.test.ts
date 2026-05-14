@@ -64,12 +64,19 @@ describe("buildWorkflowBuilderPrompt", () => {
 });
 
 describe("buildWorkflowRunnerPrompt", () => {
+  const sampleKnowledge = {
+    tables: '{"tables":[{"name":"salesorderdetail"}]}',
+    namespaces: '{"namespaces":["public"]}',
+    insights: '{"hub_tables":["salesorderdetail"]}',
+    syntax: '{"query":{"aggregations":{"functions":["sum_<column>"]},"examples":{"aggregations":[{"description":"sum(expr)","query":"{ orders { revenue: sum(expr: { mul: [price, qty] }) } }"}]}}}',
+  };
   const base = {
     workflow: sampleWorkflow,
     mode: "headless" as const,
     memoryContext: "",
     backend: "hermes" as const,
     workspace: sampleWorkspace,
+    knowledge: sampleKnowledge,
   };
 
   it("uses MCP tool names when mcpTools=true", () => {
@@ -103,10 +110,8 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).toContain(sampleWorkspace.knowledgeRoot);
   });
 
-  it("inlines the aggregation rules so the agent doesn't have to discover them", () => {
+  it("inlines syntax.json so cat-truncation can't hide the aggregation patterns", () => {
     const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: false });
-    expect(prompt).toContain("<fn>_<column>");
-    expect(prompt).toContain("distinct:");
-    expect(prompt).toContain("sum(expr:");
+    expect(prompt).toContain(sampleKnowledge.syntax);
   });
 });

@@ -1,5 +1,5 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
-import { knowledgePackPaths } from "../knowledge-pack";
+import { knowledgePackPaths, type KnowledgePackContents } from "../knowledge-pack";
 import type { InstalledSkill } from "./workspace";
 
 function formatTranscript(messages: AgentChatMessage[]): string {
@@ -145,8 +145,9 @@ ${usage}
 export function buildDataAccessSection(
   shellTool: string,
   workspace: AgentWorkspace,
+  knowledge: KnowledgePackContents,
 ): string {
-  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
+  const paths = knowledgePackPaths(workspace.knowledgeRoot);
   return `<data_access>
 The configured GraphJin database is the authoritative source for any
 operational question (revenue, customers, orders, inventory, employees,
@@ -154,85 +155,25 @@ sales, products, etc.). Uploaded files are auxiliary — use them only
 when the user explicitly references them ("in the file I just uploaded")
 or the database genuinely doesn't have what they're asking for.
 
-Read these prefetched knowledge files with your \`${shellTool}\` tool
-before writing any query. Broad schema and syntax dumps are already on
-disk; calling \`graphjin cli list_tables\` / \`describe_table\` /
-\`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\`
-duplicates work that's already done:
+The GraphJin DSL reference is inlined below in full — operators,
+aggregations, pagination, expression aggregates, and the common
+mistakes that produce "OpQuery: expecting an aliased field name" or
+"table not found: <name>_sum" errors. Do NOT \`cat\` it from disk;
+shell-tool output is capped and you'll lose the aggregation examples
+that sit past the cap. Just read it from this prompt.
 
-- ${knowledge.files.index} (start here — index of the rest)
-- ${knowledge.files.tables} (every table, schema, column count)
-- ${knowledge.files.namespaces} (multi-DB namespace routing, if any)
-- ${knowledge.files.insights} (hub tables, hot relationships, relationship paths, query templates)
-- ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates, common mistakes)
+Supplementary knowledge lives on disk (read with your \`${shellTool}\`
+tool when targeted lookup helps — but the DSL below is authoritative,
+don't re-derive it from these files):
 
-When the question involves any aggregation (totals, top-N, averages,
-revenue, margin, share), READ \`syntax.json\` before writing the query.
-The aggregation rules below are a precis; the full reference lives in
-that file.
+- ${paths.files.index} (start here — index of the rest)
+- ${paths.files.tables} (every table, schema, column count)
+- ${paths.files.namespaces} (multi-DB namespace routing, if any)
+- ${paths.files.insights} (hub tables, hot relationships, relationship paths, query templates)
 
-QUERY CONSTRUCTION — let the database aggregate. Prefer one bulk query
-with server-side aggregation (count, sum, avg) over multiple round-trips
-that pull rows back to the agent:
-
-- Aggregation fields use the pattern \`<fn>_<column>\`: count_id, sum_price,
-  avg_quantity, min_x, max_x. There are NO \`<table>_sum\` tables — that
-  pattern does not exist.
-- GROUP BY does not exist. Use \`distinct: [columns]\` for grouping.
-- Expression aggregates — \`sum(expr: {...})\`, \`ratio(expr: {...})\` —
-  USE THESE when the metric involves arithmetic across columns
-  (e.g. revenue = SUM(price × qty), margin %). Multiplying single-column
-  aggregates is mathematically wrong: \`avg_price × sum_quantity\` ≠
-  \`sum(price × quantity)\`.
-- Joined-column access via dot-notation works across FKs up to 3 hops:
-  \`{ col: "product.standardcost" }\` inside an expression unlocks
-  revenue × cost calculations in one server-side aggregate.
-- For top-N by an aggregate, fetch the grouped aggregate rows and sort
-  the small result in reasoning if GraphJin can't order by the alias.
-- Global single-row aggregate: a top-level select whose fields are ALL
-  aggregates collapses to one row, no \`distinct\` needed.
-- Watch the silent 20-row default limit on every query level (top AND
-  nested) — set an explicit limit or use \`distinct + aggregation\`.
-  If you pull raw rows and aggregate in your head, you almost certainly
-  only saw the first page; the totals will be wrong by orders of
-  magnitude. Aggregate in the database.
-- ${GRAPHJIN_DATE_RULE.replace(/^- /, "")}
-- Never invent or interpolate. If a query returned no rows, the answer
-  is "no data", not a guess.
-
-WORKED AGGREGATION EXAMPLES — copy these shapes; substitute your real
-table and column names. These are the patterns GraphJin actually
-accepts (deviating from them produces "expecting an aliased field
-name" or "<table>_sum table not found" errors):
-
-  // Global single-row total — no distinct needed, fields are all aggregates:
-  { sales_orders { total_revenue: sum(expr: { mul: [unitprice, quantity] }) } }
-
-  // Group by category, server-side SUM(price × qty), ranked top-N:
-  { sales_orders(distinct: [category_id], order_by: { revenue: desc }, limit: 10) {
-      category_id
-      revenue: sum(expr: { mul: [unitprice, quantity] })
-    } }
-
-  // Joined column via FK dot-notation (up to 3 hops) — gross margin from a related table:
-  { sales_orders(distinct: [product_id]) {
-      product_id
-      gross: sum(expr: { mul: [quantity, { sub: [unitprice, "product.standardcost"] }] })
-    } }
-
-  // Ratio of aggregates — bare expression, nested sum/avg nodes:
-  { sales_orders { margin_pct: ratio(expr: { div: [{ sum: { mul: [unitprice, quantity] } }, { sum: linetotal }] }) } }
-
-  // Plain single-column aggregates — no expression needed for one column:
-  { products(distinct: [category_id]) { category_id count_id sum_price avg_price } }
-
-For grouping ACROSS a relationship (e.g. revenue by category when the
-order rows live in a child table and the category lives upstream):
-use a foreign-key dot-path inside \`distinct:\` and select the grouping
-key as a separate aggregated row. If that fails with "aliased field
-name" errors, GraphJin can't group across that path in one query —
-run the aggregate per parent in a small fan-out loop instead, NOT
-fall back to raw row pulls.
+Do NOT call \`graphjin cli list_tables\` / \`describe_table\` /
+\`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` —
+those broad discovery dumps duplicate work that's already prefetched.
 
 Run queries via the \`${shellTool}\` tool:
 
@@ -255,6 +196,18 @@ Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
 gate that blocks mutations and subscriptions, and produces results the
 rest of the system can't trace. Mutations and subscriptions are blocked
 at the tool gate regardless.
+
+For date/range filters: ${GRAPHJIN_DATE_RULE.replace(/^- /, "")}
+
+Never invent or interpolate. If a query returned no rows, the answer
+is "no data", not a guess.
+
+================================================================================
+GraphJin DSL reference (syntax.json) — operators, aggregations,
+pagination, expression aggregates, common mistakes. Authoritative.
+================================================================================
+
+${knowledge.syntax}
 </data_access>`;
 }
 
@@ -287,6 +240,7 @@ ${GRAPHJIN_DATE_RULE}
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
+  knowledge: KnowledgePackContents;
   messages: AgentChatMessage[];
   currentUserMessage: string;
   memoryContext?: string;
@@ -301,6 +255,7 @@ export function buildWorkPrompt(args: {
   const {
     backend,
     workspace,
+    knowledge,
     messages,
     currentUserMessage,
     memoryContext,
@@ -321,7 +276,7 @@ skills or artifacts when useful.
     buildRenderingSection(supportsCardTool),
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection(supportsMemoryTool, memoryContext),
-    buildDataAccessSection(shellTool, workspace),
+    buildDataAccessSection(shellTool, workspace, knowledge),
     buildWorkspaceSection(workspace),
     RULES_SECTION,
   ];
