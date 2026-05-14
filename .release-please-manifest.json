@@ -1,7 +1,7 @@
 {
-  ".": "1.0.0",
-  "apps/web": "1.0.0",
+  ".": "1.1.0",
+  "apps/web": "1.0.1",
   "apps/worker": "1.0.0",
   "packages/db": "1.0.0",
-  "packages/llm": "1.0.0"
+  "packages/llm": "1.0.1"
 }
