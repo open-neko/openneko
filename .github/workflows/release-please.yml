@@ -4,15 +4,29 @@ on:
   push:
     branches: [main]
 
+# No write permissions here — the GitHub App token below carries the
+# only write scopes this workflow needs (contents + PRs), so a
+# compromise of any other job in this workflow can't escalate.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # Mint a short-lived (~1h) installation token from a GitHub App
+      # installed only on this repo with permissions limited to
+      # contents:write + pull-requests:write. Safer than a PAT (account-
+      # scoped, doesn't expire) and safer than the org default-write
+      # permission (any workflow could create PRs).
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
