@@ -56,7 +56,7 @@ services:
     restart: "no"
 
   graphjin:
-    image: dosco/graphjin:3.18.10
+    image: dosco/graphjin:3.18.18
     restart: unless-stopped
     depends_on:
       adventureworks-init:
@@ -76,6 +76,46 @@ services:
     volumes:
       - graphjin-config:/config
     command: ["serve", "--path", "/config"]
+
+  adventureworks-simulator:
+    # Trial-experience simulator: trickles realistic sales orders into the
+    # AdventureWorks DB on a schedule so the workspace reacts during a trial
+    # (briefing numbers drift, cron workflows fire, runs accumulate).
+    # Default: a small batch every 10 minutes. Override via AW_SIM_* env vars.
+    # Set AW_SIM_ENABLED=0 to disable.
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      PGDATABASE: ${ADVENTUREWORKS_DB:-adventureworks}
+      AW_SIM_INTERVAL_SEC: ${AW_SIM_INTERVAL_SEC:-600}
+      AW_SIM_ORDERS_MIN: ${AW_SIM_ORDERS_MIN:-3}
+      AW_SIM_ORDERS_MAX: ${AW_SIM_ORDERS_MAX:-10}
+      AW_SIM_ENABLED: ${AW_SIM_ENABLED:-1}
+    volumes:
+      - ./db/seeds/dev/aw-sim-tick.sql:/scripts/aw-sim-tick.sql:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ "${AW_SIM_ENABLED}" != "1" ]; then
+          echo "[aw-sim] AW_SIM_ENABLED=${AW_SIM_ENABLED}; sleeping forever"
+          exec tail -f /dev/null
+        fi
+        echo "[aw-sim] starting: interval=${AW_SIM_INTERVAL_SEC}s, orders=${AW_SIM_ORDERS_MIN}-${AW_SIM_ORDERS_MAX} per tick"
+        while true; do
+          ORDERS=$$(awk -v mn=${AW_SIM_ORDERS_MIN} -v mx=${AW_SIM_ORDERS_MAX} 'BEGIN{srand(); print int(mn + rand()*(mx-mn+1))}')
+          psql -v ON_ERROR_STOP=1 -v AW_SIM_ORDERS=$$ORDERS -f /scripts/aw-sim-tick.sql \
+            || echo "[aw-sim] tick failed; will retry next interval"
+          sleep "${AW_SIM_INTERVAL_SEC}"
+        done
 
   neko-adventureworks-seed:
     profiles: ["seed"]
@@ -103,11 +143,19 @@ services:
     depends_on:
       graphjin:
         condition: service_started
+    environment:
+      # Trial default: route every external action (e.g. send_webhook) to
+      # the mock adapter so bundled workflows can propose Slack alerts
+      # without hitting real endpoints. Flip to "false" once you're past
+      # trial and have wired real webhooks.
+      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
 
   worker:
     depends_on:
       graphjin:
         condition: service_started
+    environment:
+      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
 
 volumes:
   adventureworks-db-data:

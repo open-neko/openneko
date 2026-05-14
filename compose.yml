@@ -10,8 +10,8 @@ x-neko-app-env: &neko-app-env
   NEKO_PG_USER: neko
   NEKO_PG_PASSWORD: secret
   NEKO_PG_DATABASE: neko
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,graphjin,adventureworks-db,host.docker.internal,host.internal
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
 
 services:
   neko-db:
@@ -47,6 +47,31 @@ services:
     command: ["node", "packages/db/src/migrate.mjs"]
     restart: "no"
 
+  neko-graphjin:
+    build:
+      context: .
+      target: neko-graphjin
+    restart: unless-stopped
+    depends_on:
+      neko-db-init:
+        condition: service_completed_successfully
+    # The custom entrypoint reads the password from /openneko-config/config.json
+    # (written by the worker entrypoint + the /setup wizard) on every container
+    # start, so password rotation works after a simple `docker compose restart
+    # neko-graphjin`. NEKO_PG_PASSWORD here is the bootstrap fallback used the
+    # very first time, before config.json exists.
+    environment:
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+    volumes:
+      - openneko-config:/openneko-config:ro
+    ports:
+      - "${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   web:
     build:
       context: .
@@ -54,10 +79,13 @@ services:
     depends_on:
       neko-db-init:
         condition: service_completed_successfully
+      neko-graphjin:
+        condition: service_started
     environment:
       <<: *neko-app-env
       WORKER_ADMIN_URL: http://worker:4100
       OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
+      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
     ports:
       - "${OPENNEKO_PORT:-3000}:8080"
     volumes:
@@ -74,8 +102,11 @@ services:
     depends_on:
       neko-db-init:
         condition: service_completed_successfully
+      neko-graphjin:
+        condition: service_started
     environment:
       <<: *neko-app-env
+      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
     expose:
       - "4100"
     volumes:

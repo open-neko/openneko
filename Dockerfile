@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # hermes:   required by the default Hermes backend.
 # claude:   required by the claude-agent backend (Anthropic SDK spawns it).
 FROM base AS cli
-ARG GRAPHJIN_VERSION=3.18.17
+ARG GRAPHJIN_VERSION=3.18.18
 ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
@@ -132,3 +132,33 @@ USER neko
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
+
+# ─── 6. neko-graphjin runtime ──────────────────────────────────────────
+# OpenNeko's own GraphJin instance — exposes the metadata Postgres
+# (workflow_definition, workflow_run, workflow_output, observation,
+# subscription, action_*) so the worker can subscribe to output-match
+# firings and dogfood query features. Distinct from the customer-data
+# graphjin in compose.adventureworks.yml.
+#
+# The entrypoint re-templates db/graphjin/neko.yml from the openneko
+# config.json on every start, so password rotation via /setup just
+# requires `docker compose restart neko-graphjin`. Built on the slim
+# node base so we have node + curl available for the templating script
+# and a real healthcheck.
+FROM node:22-bookworm-slim AS neko-graphjin
+ARG GRAPHJIN_VERSION=3.18.18
+ENV NODE_ENV=production
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl tini \
+    && curl -fsSL -o /tmp/graphjin.tgz \
+      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz" \
+    && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
+    && rm /tmp/graphjin.tgz \
+    && rm -rf /var/lib/apt/lists/* \
+    && graphjin version
+COPY scripts/neko-graphjin-entrypoint.sh /usr/local/bin/neko-graphjin-entrypoint.sh
+RUN chmod +x /usr/local/bin/neko-graphjin-entrypoint.sh
+COPY db/graphjin/neko.yml /seed/neko.yml
+EXPOSE 8089
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/neko-graphjin-entrypoint.sh"]
+CMD ["serve", "--path", "/config"]

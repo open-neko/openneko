@@ -1,18 +1,21 @@
 # OpenNeko
 
-Calm, chat-first morning briefings for CXOs.
+An always-on operating loop for CXO data — observe, understand, decide, act.
 
 ![OpenNeko CFO briefing](cfo-briefing.png)
 
-OpenNeko connects to operational data through GraphJin, builds role-aware business briefings, and lets leaders ask follow-up questions in a focused workspace.
+OpenNeko connects to operational data through GraphJin, runs role-aware workflows that watch the business, and proposes actions for the operator to approve. Findings, approvals, and follow-up analysis all live in a single focused workspace.
 
 ## Features
 
-- Morning briefing cards for executive roles
-- Chat-first follow-up analysis against business data
-- GraphJin data-source integration
-- Worker-backed metric refresh and onboarding jobs
-- Configurable agent backend and model provider
+- **Briefing** — curated landing surface with tributaries for what's awaiting you, what you've pinned, what's worth a look, and what was quiet
+- **Workflows** — author cron- or signal-triggered workflows in chat; runs land on a dedicated Run page with phase timing, outputs, and proposed actions
+- **Subscriptions + observations** — workflows can subscribe to each other's outputs (lineage-tracked, with cycle detection) so the operating loop chains automatically
+- **Action stack** — policy-gated mutations with two-tier approval; nothing external fires without an operator decision
+- **Approvals** — single queue for pending actions; inline approve/reject with reason
+- **Policies** — authored and edited through Ask; destructive operations get explicit UI controls
+- **Ask** — chat-first follow-up analysis against business data, with tool-call clusters that fold into the transcript
+- GraphJin data-source integration; configurable agent backend (Hermes or Claude Agent) and model provider
 - Docker image includes GraphJin CLI, Hermes, and Claude Agent CLI
 - Optional industry research provider
 - Included AdventureWorks sample data stack

@@ -19,6 +19,10 @@ export const QUEUE = {
   METRIC_REFRESH_SCHEDULED_SWEEP: "metric_refresh_scheduled_sweep",
   WORK_RUN: "work_run",
   WORK_AUTO_MEMORY: "work_auto_memory",
+  WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
+  WORKFLOW_RUN_FIRE: "workflow_run_fire",
+  WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
+  ACTION_EXECUTE: "action_execute",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -50,6 +54,24 @@ export type WorkAutoMemoryPayload = {
   runId: string;
   userMessage: string;
   agentAnswer: string;
+};
+
+export type WorkflowRunFirePayload = {
+  orgId: string;
+  workflowId: string;
+  triggerKind: "manual" | "cron" | "subscription";
+  triggerPayload?: Record<string, unknown>;
+  userMessage?: string;
+  threadId?: string;
+  parentChainDepth?: number;
+  triggeredBySubscriptionId?: string;
+  triggeredByOutputId?: string;
+  triggeredByObservationId?: string;
+};
+
+export type ActionExecutePayload = {
+  orgId: string;
+  actionRequestId: string;
 };
 
 let _boss: PgBoss | null = null;

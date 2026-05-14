@@ -6,8 +6,10 @@ import {
   boss,
   enqueue,
   QUEUE,
+  type ActionExecutePayload,
   type ProcessingJobPayload,
   type WorkAutoMemoryPayload,
+  type WorkflowRunFirePayload,
   type WorkRunPayload,
 } from "@neko/db/jobs";
 import { createAdminHandler } from "./admin-server.js";
@@ -28,6 +30,13 @@ import {
   UpstreamProviderError,
   verifyAiCredentials,
 } from "@neko/llm";
+import {
+  getWorkflowRunChainDepth,
+  handleSubscriptionMatch,
+  registerBuiltinAdapters,
+  seedDefaultActionPolicies,
+  startSubscriptionManager,
+} from "@neko/llm/workflows";
 import { ensureOrgWorkspace, runWorkAutoMemoryPipeline } from "@neko/llm/work";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
@@ -35,6 +44,10 @@ import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
 import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
 import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { runWorkRun } from "./jobs/work-run.js";
+import { runWorkflowCronSweep } from "./jobs/workflow-cron-sweep.js";
+import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
+import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
+import { runActionExecute } from "./jobs/action-execute.js";
 import { reconcileStaleProcessingJobs } from "./reconciler.js";
 
 const PORT: number = 4100;
@@ -166,6 +179,10 @@ console.log(
   `[worker] host config provisioned from DB (data_source + llm_provider_config)`,
 );
 
+await seedDefaultActionPolicies(ADMIN_ORG_ID);
+registerBuiltinAdapters();
+console.log("[worker] action policies seeded and built-in adapters registered");
+
 {
   const sources = await db()
     .select({ mcp_url: data_source.mcp_url })
@@ -200,6 +217,17 @@ const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 console.log(
   `[worker] concurrency: globalCap=${concurrency.globalCap} (configure in /settings/agent; restart required)`,
 );
+
+// GraphJin URL — the worker is a client of neko-graphjin, the OpenNeko
+// metadata GraphJin service. Default targets localhost so `pnpm dev`
+// works against a compose-up'd neko-graphjin (port 8089 exposed). The
+// containerized deploy sets OPENNEKO_GRAPHJIN_URL=http://neko-graphjin:8089
+// in compose.yml so service-DNS lookup wins there. Customer-data
+// graphjin (used by the agent CLI path) is a separate service on
+// port 8080.
+const GRAPHJIN_URL =
+  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089";
+console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
 const b = await boss();
 
@@ -274,6 +302,101 @@ await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();
 });
 
+await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
+  await runWorkflowCronSweep();
+});
+
+await b.work(
+  QUEUE.WORKFLOW_RUN_FIRE,
+  { batchSize: 1, pollingIntervalSeconds: 0.5 },
+  async (jobs: PgBossLib.Job<WorkflowRunFirePayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runWorkflowRunFire(job.data);
+      } catch (e) {
+        console.warn(
+          `[workflow-run-fire] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.work(
+  QUEUE.ACTION_EXECUTE,
+  { batchSize: 1, pollingIntervalSeconds: 0.5 },
+  async (jobs: PgBossLib.Job<ActionExecutePayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runActionExecute(job.data);
+      } catch (e) {
+        console.warn(
+          `[action-execute] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
+  tz: "UTC",
+  retryLimit: 1,
+  retryDelay: 15,
+});
+console.log("[worker] scheduled workflow cron sweep every minute");
+
+await b.work(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, async () => {
+  await runWorkflowOutputTtlSweep();
+});
+
+await b.schedule(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, "0 * * * *", {}, {
+  tz: "UTC",
+  retryLimit: 1,
+  retryDelay: 60,
+});
+console.log("[worker] scheduled workflow_output ttl sweep hourly");
+
+const subscriptionManager = startSubscriptionManager({
+  baseUrl: GRAPHJIN_URL,
+  refreshIntervalMs: 60_000,
+  onMatch: async (event) => {
+    if (event.kind !== "workflow_output") return;
+    const decision = await handleSubscriptionMatch({
+      subscription: event.subscription,
+      output: event.output,
+      resolveProducingRunChainDepth: getWorkflowRunChainDepth,
+    });
+    if (decision.action === "dropped") {
+      console.log(
+        `[subscription-manager] dropped match sub=${event.subscription.id} output=${event.output.id}: ${decision.reason}`,
+      );
+    } else {
+      console.log(
+        `[subscription-manager] enqueued sub=${event.subscription.id} output=${event.output.id} obs=${decision.observationId}`,
+      );
+    }
+  },
+  onError: (err, sub) => {
+    console.warn(
+      `[subscription-manager] error${sub ? ` sub=${sub.id}` : ""}: ${err.message}`,
+    );
+  },
+});
+
+subscriptionManager.ready
+  .then(() => {
+    console.log(
+      `[worker] subscription manager ready (${subscriptionManager.activeSubscriptionIds().length} active)`,
+    );
+  })
+  .catch((err) => {
+    console.warn(
+      `[subscription-manager] initial connect failed: ${err instanceof Error ? err.message : err}`,
+    );
+  });
+
 await b.work(
   QUEUE.WORK_AUTO_MEMORY,
   async (jobs: PgBossLib.Job<WorkAutoMemoryPayload>[]) => {
@@ -337,6 +460,11 @@ const shutdown = async (signal: string) => {
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {
     console.log(`[worker] cancelled ${cancelled} in-flight agent call(s)`);
+  }
+  try {
+    await subscriptionManager.stop();
+  } catch (e) {
+    console.error("[worker] subscription manager stop error:", e);
   }
   try {
     await b.stop({ graceful: true });

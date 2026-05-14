@@ -1,0 +1,206 @@
+import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import {
+  enqueue as defaultEnqueue,
+  QUEUE,
+} from "@neko/db/jobs";
+import type { AgentEvent } from "../agent-backend";
+import {
+  createActionRequest,
+  listEnabledPolicies as defaultListEnabledPolicies,
+  type ActionRequestRecord,
+  type ActionScope,
+  type RiskLevel,
+} from "./action-store";
+import {
+  ACTION_REQUEST_SCHEMA,
+  type ActionRequestPayload,
+} from "./fence-schemas";
+import {
+  evaluateActionPolicy,
+  type PolicyDecision,
+} from "./policy-engine";
+
+export type WorkflowActionContext = {
+  orgId: string;
+  workflowRunId: string;
+  workRunId: string;
+  triggeredByObservationId?: string | null;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  /** DI for tests. */
+  listPolicies?: typeof defaultListEnabledPolicies;
+  enqueue?: typeof defaultEnqueue;
+};
+
+const REQUEST_DESCRIPTION = [
+  "Propose a state-changing operation. Workflows decide; actions mutate.",
+  "Route every real-world or internal state change through this tool so",
+  "policy can gate it — that's how the workflow stays auditable and how",
+  "the operator can step in before something significant happens.",
+  "",
+  "Inputs:",
+  "  scope: 'external' for outbound mutations (send_message,",
+  "    mutate_record, open_pr, run_command, ...). 'internal' for",
+  "    policy-governed writes inside OpenNeko itself (memory_write,",
+  "    briefing_create, schedule_workflow). At scale these need policy",
+  "    gating too, even though they look routine.",
+  "  kind: short identifier of the operation. Free-form; the executor",
+  "    registry routes by this string.",
+  "  target: resource identifier (account id, slack channel, repo name,",
+  "    memory id, etc.). Policies use this for allow/deny matching.",
+  "  payload: full operation payload — exactly what the executor needs.",
+  "  risk_level: internal tag policy uses to route. low | medium | high |",
+  "    critical. Do NOT repeat this value in messages back to the",
+  "    operator — it's noise from their point of view.",
+  "  summary: one-sentence human-readable description for the approval",
+  "    queue. Name WHAT will change and WHY — the operator may read it",
+  "    before approving.",
+  "",
+  "The tool returns one of:",
+  "  ok: true, status: 'queued_for_execution'   — auto-approved",
+  "  ok: true, status: 'pending_approval'       — operator must approve",
+  "  ok: false, reason: ...                      — denied by policy",
+  "",
+  "On a denial, surface the reason to the operator and stop. The denial",
+  "is from policy and re-attempting won't change the answer.",
+].join("\n");
+
+export type HandleActionRequestResult =
+  | {
+      ok: true;
+      decision: "auto_approved" | "needs_approval";
+      status: "queued_for_execution" | "pending_approval";
+      actionRequestId: string;
+      policy: string;
+      reason?: string;
+    }
+  | {
+      ok: false;
+      decision: "denied";
+      reason: string;
+      policy?: string;
+    };
+
+/**
+ * Shared handler. The MCP tool and the fence-fallback path both route
+ * here so policy evaluation, the action_request row, the emit event,
+ * and the queue enqueue all happen in exactly one place.
+ */
+export async function handleActionRequest(
+  ctx: WorkflowActionContext,
+  args: ActionRequestPayload,
+): Promise<HandleActionRequestResult> {
+  const listPolicies = ctx.listPolicies ?? defaultListEnabledPolicies;
+  const enqueue = ctx.enqueue ?? defaultEnqueue;
+
+  const policies = await listPolicies(ctx.orgId);
+  const decision = evaluateActionPolicy(
+    {
+      scope: args.scope as ActionScope,
+      kind: args.kind,
+      target: args.target ?? null,
+      riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+    },
+    policies,
+  );
+
+  if (decision.decision === "deny") {
+    return {
+      ok: false,
+      decision: "denied",
+      reason: decision.reason,
+      policy: decision.policy.name,
+    };
+  }
+  if (decision.decision === "no_policy") {
+    return {
+      ok: false,
+      decision: "denied",
+      reason:
+        "no policy matches this scope/kind — refuse for safety. Ask the operator to define a policy first.",
+    };
+  }
+
+  const status =
+    decision.decision === "allow" ? "approved" : "pending_approval";
+
+  const request = await createActionRequest({
+    orgId: ctx.orgId,
+    workflowRunId: ctx.workflowRunId,
+    requestedByRunId: ctx.workflowRunId,
+    triggeredByObservationId: ctx.triggeredByObservationId ?? null,
+    policyId: decision.policy.id,
+    scope: args.scope as ActionScope,
+    kind: args.kind,
+    target: args.target ?? null,
+    payload: args.payload ?? {},
+    riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+    summary: args.summary,
+    status,
+  });
+
+  await emitActionRequestEvent(ctx, request, decision);
+
+  if (status === "approved") {
+    await enqueue(QUEUE.ACTION_EXECUTE, {
+      orgId: ctx.orgId,
+      actionRequestId: request.id,
+    });
+    return {
+      ok: true,
+      decision: "auto_approved",
+      status: "queued_for_execution",
+      actionRequestId: request.id,
+      policy: decision.policy.name,
+    };
+  }
+
+  return {
+    ok: true,
+    decision: "needs_approval",
+    status: "pending_approval",
+    actionRequestId: request.id,
+    policy: decision.policy.name,
+    reason: decision.reason,
+  };
+}
+
+export function buildWorkflowActionServer(ctx: WorkflowActionContext) {
+  const requestAction = tool(
+    "request",
+    REQUEST_DESCRIPTION,
+    ACTION_REQUEST_SCHEMA.shape,
+    async (args) => jsonOk(await handleActionRequest(ctx, args)),
+  );
+
+  return createSdkMcpServer({
+    name: "neko_action",
+    version: "1.0.0",
+    tools: [requestAction],
+  });
+}
+
+async function emitActionRequestEvent(
+  ctx: WorkflowActionContext,
+  request: ActionRequestRecord,
+  decision: PolicyDecision,
+): Promise<void> {
+  if (decision.decision === "deny" || decision.decision === "no_policy") return;
+  await ctx.emit({
+    type: "action_request_emit",
+    action_request_id: request.id,
+    kind: request.kind,
+    scope: request.scope,
+    risk_level: request.riskLevel ?? undefined,
+  });
+}
+
+function jsonOk(payload: Record<string, unknown>) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(payload),
+      },
+    ],
+  };
+}

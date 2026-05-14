@@ -13,9 +13,11 @@ out/
 .env.local
 .env.*.local
 
-# GraphJin's working dir — everything except the template is runtime
+# GraphJin's working dir — everything except templates + committed
+# operating-loop config is runtime
 db/graphjin/*
 !db/graphjin/dev.example.yml
+!db/graphjin/neko.yml
 
 # local onboarding scratch
 adventureworks-onboarding.md

@@ -122,4 +122,82 @@ if (wizardRows.rowCount === 0) {
   console.log("[seed-adventureworks] onboarding defaults already exist; leaving them unchanged");
 }
 
+// ─── Bundled workflows + policy (L2 trial seed) ────────────────────────
+// Pre-author a small set of cron workflows so the trial workspace
+// produces real outputs against the AdventureWorks data within minutes
+// of first run. Idempotent: only inserts when no workflows exist yet
+// for the org, so a re-seed never clobbers operator-authored workflows.
+const wfRows = await client.query(
+  "select id from workflow_definition where org_id = $1 limit 1",
+  [orgId],
+);
+if (wfRows.rowCount === 0) {
+  const trialWorkflows = [
+    {
+      name: "Daily Revenue Health Check",
+      description: "Snapshot of yesterday's revenue vs trailing 7-day average. Lands on the Briefing each morning.",
+      goal: "Once per day, query AdventureWorks sales data via the connected GraphJin source. Compute (a) yesterday's total revenue across all territories from sales.salesorderheader.subtotal, and (b) the average daily revenue over the prior 7 days. Emit one workflow_output with kind=finding, mood=good if yesterday is within 10% of the avg, mood=watch if yesterday is 10–25% below, mood=act if >25% below. The output title should name yesterday's revenue and the delta; the body should be 1–2 sentences explaining the comparison.",
+      cron: "0 9 * * *",
+      cron_timezone: "UTC",
+    },
+    {
+      name: "Revenue Drop Alert",
+      description: "Hourly territory-level revenue drop check. Surfaces sharp declines.",
+      goal: "Once per hour, query AdventureWorks via GraphJin: for each territoryid in sales.salesorderheader, compute the current trailing-hour revenue and compare it to the same hour-of-week averaged over the prior 4 weeks. Emit a workflow_output with kind=finding, mood=act when any territory's current-hour revenue is below 50% of its baseline, scope=territory:<id>. Skip silently if no territory crosses the threshold. When mood=act, also emit a neko_action_request proposing a send_webhook notification to slack:#revenue-alerts with a one-line summary.",
+      cron: "0 * * * *",
+      cron_timezone: "UTC",
+    },
+    {
+      name: "Slow-Ship Operations",
+      description: "Daily check for orders stuck in pending status past SLA.",
+      goal: "Once per day, query AdventureWorks via GraphJin to find rows in sales.salesorderheader where status=1 (pending) and orderdate is more than 5 days ago. Emit one workflow_output with kind=finding, mood=watch when the count is between 1 and 10, mood=act when >10. Title: the count of slow-shipping orders. Body: a short list of the oldest 3 orderids with their orderdate.",
+      cron: "30 8 * * *",
+      cron_timezone: "UTC",
+    },
+  ];
+  for (const wf of trialWorkflows) {
+    await client.query(
+      `insert into workflow_definition (
+         org_id, name, description, goal, cron, cron_timezone,
+         cron_enabled, enabled, status
+       ) values ($1, $2, $3, $4, $5, $6, true, true, 'active')
+       on conflict (org_id, name) do nothing`,
+      [orgId, wf.name, wf.description, wf.goal, wf.cron, wf.cron_timezone],
+    );
+  }
+  console.log(`[seed-adventureworks] inserted ${trialWorkflows.length} trial workflows`);
+} else {
+  console.log("[seed-adventureworks] workflows already exist; leaving them unchanged");
+}
+
+const policyRows = await client.query(
+  "select id from action_policy where org_id = $1 and name = 'revenue_alerts_auto' limit 1",
+  [orgId],
+);
+if (policyRows.rowCount === 0) {
+  await client.query(
+    `insert into action_policy (
+       org_id, name, description,
+       applies_to_kinds, applies_to_scopes,
+       mode, risk_threshold_auto_approve,
+       allowed_targets, limits, priority, enabled
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, true)`,
+    [
+      orgId,
+      "revenue_alerts_auto",
+      "Auto-approve revenue alert notifications to slack:#revenue-alerts at risk medium or below.",
+      ["send_webhook"],
+      ["external"],
+      "auto_approve",
+      "medium",
+      JSON.stringify(["slack:#revenue-alerts"]),
+      JSON.stringify({}),
+      800,
+    ],
+  );
+  console.log("[seed-adventureworks] inserted revenue_alerts_auto policy");
+} else {
+  console.log("[seed-adventureworks] revenue_alerts_auto policy already exists; leaving it unchanged");
+}
+
 await client.end();

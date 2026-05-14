@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { AgentEvent } from "@neko/llm";
 import { resolveAgentBackend, AgentBackendConfigError } from "@neko/llm";
 import {
-  appendWorkRunEvent,
   createWorkRun,
   finishWorkRun,
   getWorkRun,
   runChatTurn,
 } from "@neko/llm/work";
+import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import {
-  notifyRunSubscribers,
   registerRun,
   unregisterRun,
 } from "@/lib/neko-run-registry";
@@ -74,12 +72,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     subscribers: new Set(),
   });
 
-  let seq = 0;
-  const emit = async (event: AgentEvent): Promise<void> => {
-    seq += 1;
-    await appendWorkRunEvent({ orgId, threadId, runId: run.id, seq, event });
-    notifyRunSubscribers(run.id, event, seq);
-  };
+  const { emit, finalize } = createCoalescingEmit({
+    orgId,
+    threadId,
+    runId: run.id,
+  });
 
   void runChatTurn({
     orgId,
@@ -110,7 +107,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
       }
     })
-    .finally(() => {
+    .finally(async () => {
+      try {
+        await finalize();
+      } catch (err) {
+        console.error(
+          `[work-run/inproc] finalize failed for ${run.id}:`,
+          err,
+        );
+      }
       unregisterRun(run.id);
     });
 

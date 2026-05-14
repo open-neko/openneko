@@ -38,8 +38,18 @@ function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
 
 const FENCE_RE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
 
-const A2UI_FENCE_OPEN = "```neko_a2ui";
-const A2UI_FENCE_CLOSE = "\n```";
+const FENCE_CLOSE = "\n```";
+
+// Fences the runtime parses out-of-band: a2ui drives surface cards,
+// and the three workflow fences are the Hermes-shaped tool surfaces.
+// All four are noise in the chat stream — hide them while we wait for
+// the closing ``` to land.
+const HIDDEN_FENCE_OPENERS = [
+  "```neko_a2ui",
+  "```neko_workflow_save",
+  "```neko_workflow_output",
+  "```neko_action_request",
+] as const;
 
 function extractMarkdownText(messages: Array<Record<string, unknown>>): string {
   const out: string[] = [];
@@ -59,32 +69,47 @@ function extractMarkdownText(messages: Array<Record<string, unknown>>): string {
   return out.join("\n\n").trim();
 }
 
-function outsideFenceText(raw: string): string {
+function findNextOpener(
+  raw: string,
+  from: number,
+): { index: number; opener: string } | null {
+  let best: { index: number; opener: string } | null = null;
+  for (const opener of HIDDEN_FENCE_OPENERS) {
+    const idx = raw.indexOf(opener, from);
+    if (idx === -1) continue;
+    if (!best || idx < best.index) best = { index: idx, opener };
+  }
+  return best;
+}
+
+export function outsideFenceText(raw: string): string {
   let out = "";
   let i = 0;
   while (i < raw.length) {
-    const open = raw.indexOf(A2UI_FENCE_OPEN, i);
-    if (open === -1) {
+    const next = findNextOpener(raw, i);
+    if (!next) {
       // No full opener visible. Hold back any tail of `raw` that matches a
-      // prefix of the opener — it might complete in a later streamed chunk.
-      // Without this, a partial opener like "```neko_a2" leaks into the
-      // message event stream and ends up as an empty code block in the UI.
+      // prefix of any opener — it might complete in a later streamed chunk.
+      // Without this, a partial opener like "```neko_a2" or "```neko_wo"
+      // leaks into the message event stream as an empty code block.
       const tail = raw.slice(i);
       let holdBack = 0;
-      const maxK = Math.min(tail.length, A2UI_FENCE_OPEN.length - 1);
-      for (let k = maxK; k > 0; k--) {
-        if (tail.slice(-k) === A2UI_FENCE_OPEN.slice(0, k)) {
-          holdBack = k;
-          break;
+      for (const opener of HIDDEN_FENCE_OPENERS) {
+        const maxK = Math.min(tail.length, opener.length - 1);
+        for (let k = maxK; k > holdBack; k--) {
+          if (tail.slice(-k) === opener.slice(0, k)) {
+            holdBack = k;
+            break;
+          }
         }
       }
       out += tail.slice(0, tail.length - holdBack);
       break;
     }
-    out += raw.slice(i, open);
-    const close = raw.indexOf(A2UI_FENCE_CLOSE, open + A2UI_FENCE_OPEN.length);
+    out += raw.slice(i, next.index);
+    const close = raw.indexOf(FENCE_CLOSE, next.index + next.opener.length);
     if (close === -1) break;
-    i = close + A2UI_FENCE_CLOSE.length;
+    i = close + FENCE_CLOSE.length;
   }
   return out;
 }

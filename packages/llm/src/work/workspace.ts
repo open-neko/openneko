@@ -161,7 +161,7 @@ async function ensureKnowledgeFiles(root: string): Promise<void> {
     [
       join(root, "INDEX.md"),
       [
-        "# Neko Work Knowledge",
+        "# OpenNeko Knowledge",
         "",
         "This directory is reserved for org-specific durable knowledge files.",
         "Use these paths when you need reusable facts beyond the active chat.",

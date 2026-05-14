@@ -43,7 +43,7 @@ const REVIEW_CONFIDENCE_THRESHOLD = 0.86;
 const MIN_DRAFT_CONFIDENCE = 0.65;
 const FALLBACK_CLASSIFIER_MODEL = "claude-haiku-4-5-20251001";
 
-const CLASSIFIER_SYSTEM_PROMPT = `You are an auto-memory classifier for Neko Work.
+const CLASSIFIER_SYSTEM_PROMPT = `You are an auto-memory classifier for OpenNeko.
 
 Given the user's latest message and the agent's reply, decide whether the turn
 contains a durable fact that should affect future business-analysis sessions.

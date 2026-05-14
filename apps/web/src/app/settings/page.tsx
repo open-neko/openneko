@@ -87,6 +87,13 @@ export default async function SettingsPage() {
       status: researchStatus === "enabled" ? "Enabled" : "Disabled",
       statusOk: true,
     },
+    {
+      href: "/settings/policies",
+      title: "Policies",
+      copy: "Rules that gate what OpenNeko can act on. Create and edit via Ask.",
+      status: "Editable via Ask",
+      statusOk: true,
+    },
   ];
 
   return (

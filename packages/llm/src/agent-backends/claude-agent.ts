@@ -158,6 +158,7 @@ export class ClaudeAgentBackend implements AgentBackend {
       hooks: callerHooks,
       canUseTool,
       onElicitation,
+      allowedTools,
     } = opts;
 
     const abortController = new AbortController();
@@ -176,12 +177,19 @@ export class ClaudeAgentBackend implements AgentBackend {
     let surfaceMessages: import("../agent-backend").AgentSurfaceMessage[] = [];
     const toolDurations = new Map<string, number>();
 
+    // Two execution shapes. The isolated subagent shape (when allowedTools is
+    // provided) gives the parent only the Agent tool with no user-config /
+    // preset / skills, and runs the real work inside a `worker` subagent with
+    // an explicit tool whitelist. This keeps operator-local MCP servers
+    // (~/.claude.json) out of the agent's tool catalog. The classic shape —
+    // used by the briefing chat path — keeps the claude_code preset + auto
+    // skills + canUseTool gate for the rich operator-facing experience.
+    const useIsolatedSubagent = !!allowedTools && allowedTools.length > 0;
     const sdkPrompt = userMessage ?? prompt;
     const claudePath = claudeBinaryPath();
     const sdkOptions: Record<string, unknown> = {
       model: this.config.model,
       maxTurns: MAX_TURNS,
-      tools: { type: "preset", preset: "claude_code" },
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
       env: {
         ...process.env,
@@ -209,7 +217,35 @@ export class ClaudeAgentBackend implements AgentBackend {
     }
     if (onElicitation) sdkOptions.onElicitation = onElicitation;
 
-    if (workspace) {
+    if (useIsolatedSubagent) {
+      const mcpServerNames = mcpServers ? Object.keys(mcpServers) : [];
+      sdkOptions.tools = ["Agent"];
+      // Empty array disables filesystem settings loading (SDK isolation mode).
+      // Prevents ~/.claude/settings.json + project .claude/ from feeding into
+      // the parent. ~/.claude.json (the user's CLI config with MCP servers)
+      // still loads — we filter at the subagent's `tools` whitelist below.
+      sdkOptions.settingSources = [];
+      sdkOptions.systemPrompt = buildOrchestratorPrompt();
+      sdkOptions.includeHookEvents = true;
+      sdkOptions.includePartialMessages = true;
+      sdkOptions.agentProgressSummaries = true;
+      if (mcpServers) sdkOptions.mcpServers = mcpServers;
+      if (workspace) sdkOptions.cwd = workspace.claudeProjectRoot;
+      if (resume) sdkOptions.resume = resume;
+      if (forkSession) sdkOptions.forkSession = forkSession;
+      sdkOptions.agents = {
+        ...(agents ?? {}),
+        worker: {
+          description:
+            "OpenNeko worker subagent. The orchestrator invokes this for every user request.",
+          prompt,
+          tools: [...allowedTools],
+          mcpServers: mcpServerNames,
+          permissionMode: "default",
+        },
+      };
+    } else if (workspace) {
+      sdkOptions.tools = { type: "preset", preset: "claude_code" };
       sdkOptions.cwd = workspace.claudeProjectRoot;
       if (!canUseTool) sdkOptions.allowDangerouslySkipPermissions = true;
       sdkOptions.skills = skills && skills.length > 0 ? skills : "all";
@@ -223,6 +259,8 @@ export class ClaudeAgentBackend implements AgentBackend {
       if (userMessage) {
         sdkOptions.systemPrompt = { type: "preset", preset: "claude_code", append: prompt };
       }
+    } else {
+      sdkOptions.tools = { type: "preset", preset: "claude_code" };
     }
 
     sdkOptions.hooks = mergeHooks(callerHooks, {
@@ -364,6 +402,23 @@ export class ClaudeAgentBackend implements AgentBackend {
       unregister();
     }
   }
+}
+
+function buildOrchestratorPrompt(): string {
+  return `<role>
+You are a thin orchestrator. The only thing you can do is delegate the user's
+request to the \`worker\` subagent via the Agent tool, then return its final
+message verbatim.
+</role>
+
+<rules>
+1. On the very first turn, call the Agent tool with subagent_type="worker" and
+   pass the user's full message as the prompt argument, verbatim.
+2. After the worker returns, output its final message verbatim. Do not
+   rephrase, summarise, or add commentary. Do not add a preface like
+   "The worker says…". Just emit the worker's text and stop.
+3. Never call any tool other than Agent. Never answer the user directly.
+</rules>`;
 }
 
 function readSessionId(state: unknown): string | undefined {
