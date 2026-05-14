@@ -1773,62 +1773,52 @@ body > * { position: relative; z-index: 1; }
     transition: none;
   }
 }
-/* New-thread empty state. Editorial headline + a small set of seed
-   prompts that prefill the composer. Sits flat on the page (no card)
-   so it matches the rest of the flattened transcript. */
+/* New-thread empty state. Sits in the same conversation column as
+   message turns do, with body-font typography rather than a display
+   headline — the goal is to feel like the assistant's invitation to
+   talk, not a marketing landing hero. The text and prompts share the
+   transcript's column width so the empty state and a populated thread
+   read as the same container, just differently filled. */
 .work-empty-hero {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 32px 4px 8px;
-  max-width: 640px;
+  gap: 18px;
+  padding: 8px 0 4px;
 }
-.work-empty-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-display), 'Archivo', sans-serif;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text3);
-}
-.work-empty-eyebrow-rule {
-  width: 24px;
-  height: 1px;
-  background: var(--border);
+.work-empty-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 620px;
 }
 .work-empty-headline {
-  font-family: var(--font-display), 'Archivo', sans-serif;
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   color: var(--text);
   margin: 0;
-  line-height: 1.15;
+  line-height: 1.25;
 }
 .work-empty-sub {
-  font-size: 14.5px;
+  font-size: 13.5px;
   line-height: 1.55;
   color: var(--text2);
-  margin: 0 0 6px;
-  max-width: 560px;
+  margin: 0;
 }
 .work-empty-prompts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 8px;
-  margin-top: 4px;
 }
 .work-empty-prompt {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 12px 14px;
+  padding: 11px 13px;
   background: rgba(255,255,255,0.55);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
   font: inherit;
@@ -1841,14 +1831,14 @@ body > * { position: relative; z-index: 1; }
   transform: translateY(-1px);
 }
 .work-empty-prompt-label {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
 }
 .work-empty-prompt-text {
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.4;
   color: var(--text2);
 }

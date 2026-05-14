@@ -1132,15 +1132,13 @@ const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
 function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="work-empty-hero">
-      <div className="work-empty-eyebrow">
-        <span aria-hidden className="work-empty-eyebrow-rule" />
-        ASK · A FRESH THREAD
+      <div className="work-empty-copy">
+        <h1 className="work-empty-headline">What do you want to know?</h1>
+        <p className="work-empty-sub">
+          Ask anything about your business data. I&apos;ll query the database,
+          read anything you attach, and answer with charts or tables.
+        </p>
       </div>
-      <h1 className="work-empty-headline">What do you want to know?</h1>
-      <p className="work-empty-sub">
-        Ask anything about your business data. I&apos;ll query the database, read
-        anything you attach, and answer with charts or tables.
-      </p>
       <div className="work-empty-prompts">
         {EMPTY_PROMPTS.map((prompt) => (
           <button
