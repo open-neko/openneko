@@ -247,6 +247,24 @@ body > * { position: relative; z-index: 1; }
     right: 24px;
   }
 }
+/* On /work + /skills + /memory the layout has a 280-px sidebar in the
+   left gutter; the floating composer fills the right column. Center the
+   credit on the sidebar's horizontal axis so it stops competing with
+   the conversation. Math: the work-layout is min(1180px, vw - 40px)
+   wide and viewport-centered, so the sidebar's center sits at
+   `50% - layoutHalfWidth + 140`. CSS `min()` clamps to the narrower of
+   the two regimes (capped layout vs. viewport-filling layout). */
+@media (min-width: 960px) {
+  body.work-shell .creator-credit {
+    left: calc(50% - min(450px, 50vw - 160px));
+    right: auto;
+    bottom: 24px;
+    transform: translateX(-50%);
+  }
+  body.work-shell .creator-credit:hover {
+    transform: translateX(-50%) translateY(-1px);
+  }
+}
 
 /* ─── TOP BAR ─── */
 .topbar {
@@ -715,8 +733,18 @@ body > * { position: relative; z-index: 1; }
 .work-thread-row:hover {
   background: rgba(0,0,0,0.035);
 }
+/* Active thread: thin left accent rule + faint tint instead of a full
+   lavender wash. Reads as "current" without dominating the column. */
 .work-thread-row.is-active {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+}
+.work-thread-row.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
 }
 .work-thread-row-main {
   flex: 1;
@@ -724,7 +752,7 @@ body > * { position: relative; z-index: 1; }
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -849,7 +877,8 @@ body > * { position: relative; z-index: 1; }
   min-height: 460px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 28px;
+  padding-top: 8px;
   /* Floor matches the composer + dock padding so the last message never
      hides under the sticky composer. The body's own bottom padding (130px
      on .root) keeps a comfortable scroll-end too. */
@@ -965,18 +994,25 @@ body > * { position: relative; z-index: 1; }
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* Assistant prose is editorial — sits directly on the page background
+   with no card chrome, so the cards it contains (briefings, tables) do
+   the structural lifting. User messages keep a subtle neutral tint to
+   distinguish role at a glance, but lose the border + shadow that made
+   them look like another card stacked on the page. */
 .work-bubble {
   max-width: min(780px, 86%);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 14px 16px;
-  box-shadow: var(--shadow);
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+  padding: 2px 0;
+  box-shadow: none;
 }
 .work-bubble.is-user {
   background: var(--neutral);
-  border-color: var(--border);
+  border: 0;
   color: var(--text);
+  padding: 10px 14px;
+  border-radius: 16px;
 }
 .work-markdown {
   font-size: 14.5px;
@@ -1058,12 +1094,16 @@ body > * { position: relative; z-index: 1; }
   white-space: nowrap;
 }
 .work-markdown tbody td {
-  padding: 6px 12px 6px 0;
+  padding: 8px 12px 8px 0;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  transition: background 0.12s ease;
 }
 .work-markdown tbody tr:last-child td {
   border-bottom: none;
+}
+.work-markdown tbody tr:hover td {
+  background: color-mix(in srgb, var(--neutral-soft) 55%, transparent);
 }
 .work-markdown hr {
   border: none;
@@ -1101,30 +1141,53 @@ body > * { position: relative; z-index: 1; }
   animation: spin 1s linear infinite;
   color: var(--accent);
 }
-/* Tool cluster: visually demoted relative to the answer. No shadow, hairline
-   border, slightly inset background. Scannable but recedes. */
+/* Tool cluster: the closed header is a compact inline pill that recedes
+   into the transcript flow. When expanded the body becomes a bordered
+   card containing the individual tool rows. */
 .work-tool-group {
-  background: color-mix(in srgb, var(--text) 3%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: transparent;
+  border: 0;
   border-radius: 12px;
   box-shadow: none;
   overflow: hidden;
 }
+.work-tool-group:has(.work-tool-group-body) {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
 .work-tool-group-head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  background: transparent;
-  border: 0;
+  gap: 8px;
+  width: auto;
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--neutral-soft) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 999px;
   cursor: pointer;
-  padding: 9px 14px;
-  font-size: 12.5px;
+  padding: 4px 12px 4px 9px;
+  font-size: 11.5px;
+  line-height: 1.4;
   color: var(--text3);
   text-align: left;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.work-tool-group:has(.work-tool-group-body) .work-tool-group-head {
+  background: transparent;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  width: 100%;
+  padding: 9px 14px;
+  align-self: stretch;
+  font-size: 12.5px;
 }
 .work-tool-group-head:hover {
+  border-color: color-mix(in srgb, var(--text3) 35%, var(--border));
+  color: var(--text2);
+}
+.work-tool-group:has(.work-tool-group-body) .work-tool-group-head:hover {
   background: var(--accent-soft);
+  border-color: transparent;
 }
 .work-tool-group-toggle {
   color: var(--text3);
@@ -1710,6 +1773,89 @@ body > * { position: relative; z-index: 1; }
     transition: none;
   }
 }
+/* New-thread empty state. Editorial headline + a small set of seed
+   prompts that prefill the composer. Sits flat on the page (no card)
+   so it matches the rest of the flattened transcript. */
+.work-empty-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 32px 4px 8px;
+  max-width: 640px;
+}
+.work-empty-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text3);
+}
+.work-empty-eyebrow-rule {
+  width: 24px;
+  height: 1px;
+  background: var(--border);
+}
+.work-empty-headline {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.15;
+}
+.work-empty-sub {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text2);
+  margin: 0 0 6px;
+  max-width: 560px;
+}
+.work-empty-prompts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+.work-empty-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s;
+}
+.work-empty-prompt:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--card);
+  transform: translateY(-1px);
+}
+.work-empty-prompt-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.work-empty-prompt-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text2);
+}
+@media (hover: none) {
+  .work-empty-prompt:hover { transform: none; }
+}
+
 .work-empty {
   color: var(--text3);
   font-size: 13px;

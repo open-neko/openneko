@@ -852,7 +852,15 @@ export default function WorkScreen() {
       <div className="work-transcript">
         {loadingThread ? (
           <div className="work-empty">Loading thread…</div>
-        ) : bundle?.messages.length ? (
+        ) : !bundle?.messages.length ? (
+          <EmptyAsk
+            onPick={(text) => {
+              setDraft(text);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+          />
+        ) : null}
+        {bundle?.messages.length ? (
           bundle.messages.flatMap((message, index, arr) => {
             if (message.role === "assistant" && message.runId) {
               // Assistant turns are reconstructed chronologically from the
@@ -1112,6 +1120,41 @@ export default function WorkScreen() {
         />
       </div>
     </>
+  );
+}
+
+const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
+  { label: "Top customers", text: "Who are our top 10 customers by revenue this year?" },
+  { label: "Revenue trend", text: "How has revenue changed over the last 4 quarters?" },
+  { label: "Inventory risk", text: "Which products are below their reorder threshold?" },
+];
+
+function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
+  return (
+    <div className="work-empty-hero">
+      <div className="work-empty-eyebrow">
+        <span aria-hidden className="work-empty-eyebrow-rule" />
+        ASK · A FRESH THREAD
+      </div>
+      <h1 className="work-empty-headline">What do you want to know?</h1>
+      <p className="work-empty-sub">
+        Ask anything about your business data. I&apos;ll query the database, read
+        anything you attach, and answer with charts or tables.
+      </p>
+      <div className="work-empty-prompts">
+        {EMPTY_PROMPTS.map((prompt) => (
+          <button
+            key={prompt.label}
+            type="button"
+            className="work-empty-prompt"
+            onClick={() => onPick(prompt.text)}
+          >
+            <span className="work-empty-prompt-label">{prompt.label}</span>
+            <span className="work-empty-prompt-text">{prompt.text}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
