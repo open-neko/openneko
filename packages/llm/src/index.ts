@@ -11,6 +11,7 @@
 export * from "./config";
 export * from "./llm";
 export * from "./classifier";
+export * from "./summarize-briefing";
 export * from "./metric-agent";
 export * from "./profiler";
 export * from "./bootstrap-metrics-writer";

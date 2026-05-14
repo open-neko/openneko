@@ -13,6 +13,7 @@ import {
   workflow_output,
   workflow_run,
 } from "@neko/db";
+import { summarizeBriefing } from "@neko/llm";
 import { getOrgId } from "@/lib/db";
 
 // 5-minute freshness window for the auto-generated live summary. If a row
@@ -263,13 +264,32 @@ export async function GET() {
     Date.now() - latestSummary.createdAt.getTime() > SUMMARY_FRESHNESS_MS;
 
   if (isStale) {
-    const summary = composeSummary({
-      pendingApprovals: approvals.length,
-      actFindings: actRaw.length,
-      watchFindings: watchRaw.length,
-      goodRuns: goodCountRow?.count ?? 0,
-      windowHours: RECENT_FINDING_WINDOW_HOURS,
-    });
+    let summary: string;
+    try {
+      summary = await summarizeBriefing(
+        {
+          pendingApprovals: approvals.length,
+          actFindings: actRaw.length,
+          watchFindings: watchRaw.length,
+          goodRuns: goodCountRow?.count ?? 0,
+          pinnedCount: pinnedRows.length,
+          windowHours: RECENT_FINDING_WINDOW_HOURS,
+          topApprovalTitle: approvals[0]?.summary ?? approvals[0]?.kind ?? null,
+          topActTitle: actRaw[0]?.title ?? null,
+        },
+        orgId,
+      );
+      if (!summary) throw new Error("empty summary");
+    } catch (err) {
+      console.warn("[briefing/findings] LLM summary failed, falling back:", err);
+      summary = composeSummary({
+        pendingApprovals: approvals.length,
+        actFindings: actRaw.length,
+        watchFindings: watchRaw.length,
+        goodRuns: goodCountRow?.count ?? 0,
+        windowHours: RECENT_FINDING_WINDOW_HOURS,
+      });
+    }
 
     const today = new Date().toISOString().slice(0, 10);
 
