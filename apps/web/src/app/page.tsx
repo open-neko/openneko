@@ -8,9 +8,24 @@ import type { A2UIMessage, SurfaceState, A2UIComponent } from "@/a2ui/types";
 import type { BriefingCardProps } from "@/a2ui/catalog";
 import BriefingCard from "@/components/BriefingCard";
 import type { BriefingCardData } from "@/components/BriefingCard";
+import FindingCard, { type FindingCardData } from "@/components/FindingCard";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+
+type FindingsPayload = {
+  summary: {
+    id: string;
+    summaryMd: string;
+    createdAt: string;
+  } | null;
+  awaitingYou: {
+    approvals: FindingCardData[];
+    actFindings: FindingCardData[];
+  };
+  worthKnowing: FindingCardData[];
+  quiet: { goodOutputs: number; windowHours: number };
+};
 
 export default function Dashboard() {
   const router = useRouter();
@@ -59,6 +74,28 @@ export default function Dashboard() {
 
   const [surfaces, setSurfaces] = useState<Map<string, SurfaceState>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [findings, setFindings] = useState<FindingsPayload | null>(null);
+
+  // Tributaries: workflow_output findings + pending approvals + live summary.
+  // Polled alongside the KPI briefing so newly-produced findings appear
+  // without a reload.
+  const fetchFindings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/briefing/findings", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as FindingsPayload;
+      setFindings(data);
+    } catch {
+      // best-effort; the page still renders without findings
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!gateChecked) return;
+    void fetchFindings();
+    const id = setInterval(fetchFindings, 30_000);
+    return () => clearInterval(id);
+  }, [gateChecked, fetchFindings]);
 
   const surfaceId = `briefing-${role.toLowerCase()}`;
   const surface = surfaces.get(surfaceId);
@@ -301,8 +338,80 @@ export default function Dashboard() {
               {ds && <span aria-hidden="true">·</span>}
               {ds && <span>{ds}</span>}
             </div>
-            <div className="greet" style={{ animation: "fadeUp 0.5s ease 0.05s both" }}>{greeting}</div>
-            <div className="greet-sub-quote" style={{ animation: "fadeUp 0.5s ease 0.1s both" }}>{subtitle}</div>
+            {/* Legacy greeting + subtitle from the KPI-only briefing API.
+                When the live summary is present, it's the canonical
+                read-on-the-business; the legacy greeting goes silent so the
+                page doesn't contradict itself. */}
+            {!findings?.summary && (
+              <>
+                <div className="greet" style={{ animation: "fadeUp 0.5s ease 0.05s both" }}>{greeting}</div>
+                <div className="greet-sub-quote" style={{ animation: "fadeUp 0.5s ease 0.1s both" }}>{subtitle}</div>
+              </>
+            )}
+
+            {findings?.summary && (
+              <div
+                className="briefing-summary"
+                style={{ animation: "fadeUp 0.5s ease 0.15s both" }}
+              >
+                <p>{findings.summary.summaryMd}</p>
+                <div className="briefing-summary-when">
+                  as of {new Date(findings.summary.createdAt).toLocaleTimeString("en-IN", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  })}
+                </div>
+              </div>
+            )}
+
+            {findings &&
+              (findings.awaitingYou.approvals.length > 0 ||
+                findings.awaitingYou.actFindings.length > 0) && (
+                <section
+                  className="briefing-tributary"
+                  style={{ animation: "fadeUp 0.5s ease 0.2s both" }}
+                >
+                  <div className="briefing-tributary-title">Awaiting you</div>
+                  <div className="briefing-tributary-list">
+                    {findings.awaitingYou.approvals.map((a, i) => (
+                      <FindingCard key={a.id} data={a} index={i} />
+                    ))}
+                    {findings.awaitingYou.actFindings.map((f, i) => (
+                      <FindingCard
+                        key={f.id}
+                        data={f}
+                        index={findings.awaitingYou.approvals.length + i}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+            {findings && findings.worthKnowing.length > 0 && (
+              <section
+                className="briefing-tributary"
+                style={{ animation: "fadeUp 0.5s ease 0.25s both" }}
+              >
+                <div className="briefing-tributary-title">Worth knowing</div>
+                <div className="briefing-tributary-list">
+                  {findings.worthKnowing.map((f, i) => (
+                    <FindingCard key={f.id} data={f} index={i} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {findings && findings.quiet.goodOutputs > 0 && (
+              <div
+                className="briefing-quiet"
+                style={{ animation: "fadeUp 0.5s ease 0.3s both" }}
+              >
+                {findings.quiet.goodOutputs} healthy run
+                {findings.quiet.goodOutputs === 1 ? "" : "s"} in the last
+                {" "}{findings.quiet.windowHours}h.
+              </div>
+            )}
 
             {metricsProgress &&
               metricsProgress.completed + metricsProgress.failed < metricsProgress.total && (

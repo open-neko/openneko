@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractActionRequestFences,
+  extractPolicySaveFence,
   extractWorkflowOutputFences,
   extractWorkflowSaveFence,
 } from "../src/workflows/fence-parsers";
@@ -207,5 +208,102 @@ describe("extractActionRequestFences", () => {
     const r = extractActionRequestFences(raw);
     expect(r.payloads).toEqual([]);
     expect(r.errors).toHaveLength(1);
+  });
+});
+
+describe("extractPolicySaveFence", () => {
+  it("returns null payload when no fence is present", () => {
+    const r = extractPolicySaveFence("just discussing policies with the operator");
+    expect(r.payload).toBeNull();
+    expect(r.errors).toEqual([]);
+    expect(r.text).toBe("just discussing policies with the operator");
+  });
+
+  it("parses a valid policy fence and strips it from text", () => {
+    const raw = [
+      "Saved policy 'slack_low_risk_auto_approve'.",
+      "",
+      "```neko_policy_save",
+      JSON.stringify({
+        name: "slack_low_risk_auto_approve",
+        description: "Auto-approve low-risk Slack alerts, capped at 20/day.",
+        applies_to_kinds: ["send_message"],
+        applies_to_scopes: ["external"],
+        mode: "auto_approve",
+        risk_threshold_auto_approve: "low",
+        limits: { daily_cap: 20 },
+      }),
+      "```",
+    ].join("\n");
+    const r = extractPolicySaveFence(raw);
+    expect(r.payload).not.toBeNull();
+    expect(r.payload?.name).toBe("slack_low_risk_auto_approve");
+    expect(r.payload?.mode).toBe("auto_approve");
+    expect(r.payload?.applies_to_kinds).toEqual(["send_message"]);
+    expect(r.payload?.limits).toEqual({ daily_cap: 20 });
+    // Defaults from the schema are applied.
+    expect(r.payload?.priority).toBe(100);
+    expect(r.payload?.enabled).toBe(true);
+    expect(r.text).toContain("Saved policy");
+    expect(r.text).not.toContain("neko_policy_save");
+  });
+
+  it("defaults applies_to_scopes to ['external'] when omitted", () => {
+    const raw = [
+      "```neko_policy_save",
+      JSON.stringify({
+        name: "external_default",
+        applies_to_kinds: [],
+        mode: "approval_required",
+      }),
+      "```",
+    ].join("\n");
+    const r = extractPolicySaveFence(raw);
+    expect(r.payload?.applies_to_scopes).toEqual(["external"]);
+  });
+
+  it("rejects payloads with an unknown mode", () => {
+    const raw = [
+      "```neko_policy_save",
+      JSON.stringify({
+        name: "weird",
+        applies_to_kinds: ["send_message"],
+        mode: "yolo",
+      }),
+      "```",
+    ].join("\n");
+    const r = extractPolicySaveFence(raw);
+    expect(r.payload).toBeNull();
+    expect(r.errors).toHaveLength(1);
+  });
+
+  it("rejects payloads missing required fields", () => {
+    const raw = [
+      "```neko_policy_save",
+      JSON.stringify({ description: "no name or mode" }),
+      "```",
+    ].join("\n");
+    const r = extractPolicySaveFence(raw);
+    expect(r.payload).toBeNull();
+    expect(r.errors).toHaveLength(1);
+  });
+
+  it("only consumes the first save fence when an agent emits two", () => {
+    const valid = JSON.stringify({
+      name: "first",
+      applies_to_kinds: ["send_message"],
+      mode: "auto_approve",
+    });
+    const raw = [
+      "```neko_policy_save",
+      valid,
+      "```",
+      "```neko_policy_save",
+      valid.replace("first", "second"),
+      "```",
+    ].join("\n");
+    const r = extractPolicySaveFence(raw);
+    expect(r.payload?.name).toBe("first");
+    expect(r.text).not.toContain("neko_policy_save");
   });
 });

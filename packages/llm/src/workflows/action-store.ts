@@ -123,6 +123,59 @@ export async function createActionPolicy(
   return toPolicyRecord(row);
 }
 
+export async function getActionPolicy(
+  orgId: string,
+  policyId: string,
+): Promise<ActionPolicyRecord | null> {
+  const rows = await db()
+    .select()
+    .from(action_policy)
+    .where(and(eq(action_policy.org_id, orgId), eq(action_policy.id, policyId)))
+    .limit(1);
+  return rows[0] ? toPolicyRecord(rows[0]) : null;
+}
+
+export type UpdateActionPolicyInput = Partial<
+  Omit<CreateActionPolicyInput, "orgId">
+>;
+
+export async function updateActionPolicy(
+  orgId: string,
+  policyId: string,
+  patch: UpdateActionPolicyInput,
+): Promise<ActionPolicyRecord | null> {
+  const set: Record<string, unknown> = { updated_at: new Date() };
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.description !== undefined) set.description = patch.description;
+  if (patch.appliesToKinds !== undefined)
+    set.applies_to_kinds = patch.appliesToKinds;
+  if (patch.appliesToScopes !== undefined)
+    set.applies_to_scopes = patch.appliesToScopes;
+  if (patch.mode !== undefined) set.mode = patch.mode;
+  if (patch.riskThresholdAutoApprove !== undefined)
+    set.risk_threshold_auto_approve = patch.riskThresholdAutoApprove;
+  if (patch.allowedTargets !== undefined)
+    set.allowed_targets = patch.allowedTargets;
+  if (patch.deniedTargets !== undefined)
+    set.denied_targets = patch.deniedTargets;
+  if (patch.limits !== undefined) set.limits = patch.limits;
+  if (patch.approverRole !== undefined) set.approver_role = patch.approverRole;
+  if (patch.priority !== undefined) set.priority = patch.priority;
+  if (patch.enabled !== undefined) set.enabled = patch.enabled;
+
+  if (Object.keys(set).length === 1) {
+    // only updated_at — nothing meaningful to write
+    return getActionPolicy(orgId, policyId);
+  }
+
+  const [row] = await db()
+    .update(action_policy)
+    .set(set)
+    .where(and(eq(action_policy.org_id, orgId), eq(action_policy.id, policyId)))
+    .returning();
+  return row ? toPolicyRecord(row) : null;
+}
+
 export type ActionRequestRecord = {
   id: string;
   orgId: string;

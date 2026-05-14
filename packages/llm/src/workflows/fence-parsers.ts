@@ -1,8 +1,10 @@
 import {
   ACTION_REQUEST_SCHEMA,
+  POLICY_SAVE_SCHEMA,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
+  type PolicySavePayload,
   type WorkflowOutputPayload,
   type WorkflowSavePayload,
 } from "./fence-schemas";
@@ -10,6 +12,7 @@ import {
 const SAVE_FENCE_RE = /```neko_workflow_save\s*([\s\S]*?)```/gi;
 const OUTPUT_FENCE_RE = /```neko_workflow_output\s*([\s\S]*?)```/gi;
 const ACTION_FENCE_RE = /```neko_action_request\s*([\s\S]*?)```/gi;
+const POLICY_FENCE_RE = /```neko_policy_save\s*([\s\S]*?)```/gi;
 
 export type FenceParseError = {
   raw: string;
@@ -31,6 +34,12 @@ export type WorkflowOutputFenceResult = {
 export type ActionRequestFenceResult = {
   text: string;
   payloads: ActionRequestPayload[];
+  errors: FenceParseError[];
+};
+
+export type PolicySaveFenceResult = {
+  text: string;
+  payload: PolicySavePayload | null;
   errors: FenceParseError[];
 };
 
@@ -129,6 +138,33 @@ export function extractActionRequestFences(
   return {
     text: stripAllFences(raw, ACTION_FENCE_RE),
     payloads,
+    errors,
+  };
+}
+
+export function extractPolicySaveFence(raw: string): PolicySaveFenceResult {
+  const matches = [...raw.matchAll(POLICY_FENCE_RE)];
+  const errors: FenceParseError[] = [];
+  let payload: PolicySavePayload | null = null;
+
+  for (const m of matches) {
+    if (payload) break;
+    const parsed = tryParse(m[1]);
+    if (!parsed.ok) {
+      errors.push({ raw: m[0], reason: parsed.reason });
+      continue;
+    }
+    const validated = POLICY_SAVE_SCHEMA.safeParse(parsed.value);
+    if (!validated.success) {
+      errors.push({ raw: m[0], reason: validated.error.message });
+      continue;
+    }
+    payload = validated.data;
+  }
+
+  return {
+    text: stripAllFences(raw, POLICY_FENCE_RE),
+    payload,
     errors,
   };
 }

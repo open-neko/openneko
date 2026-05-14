@@ -8,9 +8,11 @@ export {
 export { buildWorkflowBuilderPrompt } from "./builder-prompt";
 export {
   extractActionRequestFences,
+  extractPolicySaveFence,
   extractWorkflowOutputFences,
   extractWorkflowSaveFence,
   type ActionRequestFenceResult,
+  type PolicySaveFenceResult,
   type WorkflowOutputFenceResult,
   type WorkflowSaveFenceResult,
 } from "./fence-parsers";
@@ -19,13 +21,22 @@ export {
   ACTION_SCOPES,
   MOODS,
   OUTPUT_KINDS,
+  POLICY_MODES,
+  POLICY_SAVE_SCHEMA,
   RISK_LEVELS,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
+  type PolicySavePayload,
   type WorkflowOutputPayload,
   type WorkflowSavePayload,
 } from "./fence-schemas";
+export { buildPolicyBuilderPrompt } from "./policy-builder-prompt";
+export {
+  runPolicyBuilderTurn,
+  type RunPolicyBuilderTurnOptions,
+  type RunPolicyBuilderTurnResult,
+} from "./run-policy-builder-turn";
 export { buildWorkflowBuilderServer } from "./builder-server";
 export {
   runWorkflowBuilderTurn,
@@ -125,6 +136,7 @@ export {
   createActionPolicy,
   createActionRequest,
   finishActionExecution,
+  getActionPolicy,
   getActionRequest,
   InvalidActionStatusTransitionError,
   listActionExecutions,
@@ -134,6 +146,7 @@ export {
   markActionRequestFailed,
   recordActionExecution,
   rejectActionRequest,
+  updateActionPolicy,
   type ActionExecutionRecord,
   type ActionExecutionStatus,
   type ActionPolicyMode,

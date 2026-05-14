@@ -1,17 +1,34 @@
-import { NextResponse } from "next/server";
-import { and, db, desc, eq, workflow_output, workflow_run } from "@neko/db";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  action_request,
+  and,
+  db,
+  desc,
+  eq,
+  workflow_definition,
+  workflow_output,
+  workflow_run,
+} from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { getWorkRunEventsAfter } from "@/lib/work-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Operator-meaningful event kinds. tool_* events are hidden by default and
+// only included when ?detail=tools is set, since they're noise in the
+// triage view.
+const TOOL_KINDS = new Set(["tool_start", "tool_delta", "tool_end"]);
 
 type RouteContext = {
   params: Promise<{ workflowRunId: string }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   const { workflowRunId } = await context.params;
   const orgId = await getOrgId();
+  const includeTools =
+    new URL(request.url).searchParams.get("detail") === "tools";
 
   const runs = await db()
     .select()
@@ -32,13 +49,119 @@ export async function GET(_request: Request, context: RouteContext) {
     );
   }
 
+  const wfRows = await db()
+    .select()
+    .from(workflow_definition)
+    .where(
+      and(
+        eq(workflow_definition.org_id, orgId),
+        eq(workflow_definition.id, run.workflow_id),
+      ),
+    )
+    .limit(1);
+  const workflow = wfRows[0] ?? null;
+
   const outputs = await db()
     .select()
     .from(workflow_output)
     .where(eq(workflow_output.workflow_run_id, workflowRunId))
     .orderBy(desc(workflow_output.created_at));
 
+  const actions = await db()
+    .select()
+    .from(action_request)
+    .where(
+      and(
+        eq(action_request.org_id, orgId),
+        eq(action_request.workflow_run_id, workflowRunId),
+      ),
+    )
+    .orderBy(desc(action_request.created_at));
+
+  const allEvents = run.work_run_id
+    ? await getWorkRunEventsAfter(orgId, run.work_run_id, 0)
+    : [];
+  const events = includeTools
+    ? allEvents
+    : allEvents.filter((e) => !TOOL_KINDS.has(e.event?.type ?? ""));
+
+  // Lineage: if subscription-triggered, surface the upstream output's title
+  // and originating workflow so the operator can walk backwards.
+  let lineage: {
+    triggeredBySubscriptionId: string | null;
+    triggeredByOutputId: string | null;
+    triggeredByObservationId: string | null;
+    upstream: null | {
+      output: {
+        id: string;
+        title: string;
+        scope: string | null;
+        mood: string | null;
+        createdAt: string;
+      };
+      workflow: {
+        id: string;
+        name: string;
+      } | null;
+      workflowRunId: string | null;
+    };
+  } = {
+    triggeredBySubscriptionId: run.triggered_by_subscription_id,
+    triggeredByOutputId: run.triggered_by_output_id,
+    triggeredByObservationId: run.triggered_by_observation_id,
+    upstream: null,
+  };
+
+  if (run.triggered_by_output_id) {
+    const upstreamOutputRows = await db()
+      .select()
+      .from(workflow_output)
+      .where(eq(workflow_output.id, run.triggered_by_output_id))
+      .limit(1);
+    const upstreamOutput = upstreamOutputRows[0];
+    if (upstreamOutput) {
+      const upstreamWfRows = upstreamOutput.workflow_run_id
+        ? await db()
+            .select()
+            .from(workflow_run)
+            .where(eq(workflow_run.id, upstreamOutput.workflow_run_id))
+            .limit(1)
+        : [];
+      const upstreamRun = upstreamWfRows[0];
+      const upstreamWfDef = upstreamRun
+        ? await db()
+            .select({
+              id: workflow_definition.id,
+              name: workflow_definition.name,
+            })
+            .from(workflow_definition)
+            .where(eq(workflow_definition.id, upstreamRun.workflow_id))
+            .limit(1)
+        : [];
+
+      lineage.upstream = {
+        output: {
+          id: upstreamOutput.id,
+          title: upstreamOutput.title,
+          scope: upstreamOutput.scope,
+          mood: upstreamOutput.mood,
+          createdAt: upstreamOutput.created_at.toISOString(),
+        },
+        workflow: upstreamWfDef[0] ?? null,
+        workflowRunId: upstreamRun?.id ?? null,
+      };
+    }
+  }
+
   return NextResponse.json({
+    workflow: workflow
+      ? {
+          id: workflow.id,
+          name: workflow.name,
+          description: workflow.description,
+          goal: workflow.goal,
+        }
+      : null,
     run: {
       id: run.id,
       workflowId: run.workflow_id,
@@ -70,5 +193,24 @@ export async function GET(_request: Request, context: RouteContext) {
       freshnessTtlSeconds: o.freshness_ttl_seconds,
       createdAt: o.created_at.toISOString(),
     })),
+    actions: actions.map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      target: a.target,
+      payload: a.payload,
+      scope: a.scope,
+      riskLevel: a.risk_level,
+      status: a.status,
+      summary: a.summary,
+      approvedAt: a.approved_at?.toISOString() ?? null,
+      rejectionReason: a.rejection_reason,
+      createdAt: a.created_at.toISOString(),
+    })),
+    events: events.map((e) => ({
+      seq: e.seq,
+      type: e.event?.type ?? "unknown",
+      event: e.event,
+    })),
+    lineage,
   });
 }

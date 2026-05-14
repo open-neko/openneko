@@ -11,6 +11,8 @@
     "./secrets": "./src/secrets.ts",
     "./work": "./src/work/index.ts",
     "./workflows": "./src/workflows/index.ts",
+    "./workflows/fences": "./src/workflows/fence-parsers.ts",
+    "./workflows/fence-schemas": "./src/workflows/fence-schemas.ts",
     "./graphjin": "./src/graphjin/index.ts"
   },
   "scripts": {

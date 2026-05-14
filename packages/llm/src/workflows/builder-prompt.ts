@@ -115,7 +115,7 @@ Saved 'APAC revenue dip check'. You can run it from the workflows list.
 {
   "name": "APAC revenue dip check",
   "description": "Daily check on APAC revenue, summarises week-over-week drops over 10%.",
-  "goal": "Surface meaningful APAC revenue dips to the operator each morning.",
+  "goal": "Surface meaningful APAC revenue dips to the operator on each scheduled run.",
   "systemPromptOverlay": "Show INR in lakhs.",
   "steps": [
     { "id": "pull", "description": "Pull last 7 days of APAC revenue" },
