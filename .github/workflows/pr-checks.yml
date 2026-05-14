@@ -83,6 +83,13 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
+      # Mirror the deploy gate. tsc above catches type errors, but next build's
+      # prerender pass surfaces runtime errors that tsc can't see (e.g.
+      # useSearchParams without a Suspense boundary). Without this step, those
+      # only fail on the VM after push to main.
+      - name: Build
+        run: pnpm -r build
+
       - name: Test
         env:
           NEKO_PG_HOST: localhost
