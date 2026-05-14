@@ -70,11 +70,12 @@ body > * { position: relative; z-index: 1; }
   margin-bottom: 24px;
 }
 .app-header-inner {
-  /* Tracks the page body width via --page-width set on .root. Narrow pages
-     (740) and wide operating-loop surfaces (1000) both stay centered to
-     their own body — the header never juts past the content. */
+  /* Header band is pinned to 740px on every page so the nav x-position
+     stays stable across pages and nav stays visually close to the brand
+     (no large whitespace gap on wider body pages). Body width is set
+     independently per .root subclass and is allowed to be wider. */
   width: 100%;
-  max-width: var(--page-width, 1000px);
+  max-width: 740px;
   padding: 0 20px;
   display: flex;
   align-items: flex-start;
