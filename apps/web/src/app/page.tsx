@@ -23,6 +23,7 @@ type FindingsPayload = {
     approvals: FindingCardData[];
     actFindings: FindingCardData[];
   };
+  pinned: FindingCardData[];
   worthKnowing: FindingCardData[];
   quiet: { goodOutputs: number; windowHours: number };
 };
@@ -387,6 +388,30 @@ export default function Dashboard() {
                   </div>
                 </section>
               )}
+
+            {findings && findings.pinned.length > 0 && (
+              <section
+                className="briefing-tributary"
+                style={{ animation: "fadeUp 0.5s ease 0.22s both" }}
+              >
+                <div className="briefing-tributary-title">Pinned</div>
+                <div className="briefing-tributary-list">
+                  {findings.pinned.map((f, i) => (
+                    <FindingCard
+                      key={f.pinId ?? f.id}
+                      data={f}
+                      index={i}
+                      onUnpin={async (pinId) => {
+                        await fetch(`/api/briefing/pins/${pinId}`, {
+                          method: "DELETE",
+                        });
+                        void fetchFindings();
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
             {findings && findings.worthKnowing.length > 0 && (
               <section

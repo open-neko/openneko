@@ -252,6 +252,34 @@ export const dashboard_pin = pgTable(
   }),
 );
 
+// Operator-curated pin: links a workflow_output to the Briefing's pinned
+// section. See migration 0013_briefing_finding_pin.sql for the column
+// rationale. Forward-declared above workflow_output (which it references)
+// using sql"workflow_output" deferred resolution — the actual FK constraint
+// is enforced by the migration's REFERENCES clause.
+export const briefing_finding_pin = pgTable(
+  "briefing_finding_pin",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id").notNull(),
+    output_id: uuid("output_id").notNull(),
+    sort_order: integer("sort_order").notNull().default(0),
+    pinned_by_user_id: text("pinned_by_user_id"),
+    pinned_at: ts("pinned_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_output_unique: uniqueIndex("briefing_finding_pin_org_output_unique").on(
+      t.org_id,
+      t.output_id,
+    ),
+    org_idx: index("briefing_finding_pin_org_idx").on(
+      t.org_id,
+      t.sort_order,
+      t.pinned_at.desc(),
+    ),
+  }),
+);
+
 export const briefing = pgTable(
   "briefing",
   {

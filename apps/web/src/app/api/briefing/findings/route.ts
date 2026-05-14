@@ -3,6 +3,7 @@ import {
   action_request,
   and,
   briefing,
+  briefing_finding_pin,
   db,
   desc,
   eq,
@@ -188,7 +189,46 @@ export async function GET() {
     .orderBy(desc(workflow_output.created_at))
     .limit(ACT_LIMIT);
 
-  // 4. Roll-up count for quiet section (mood=good in window).
+  // 4. Operator-pinned findings — the curation layer. Joins through the pin
+  // table so each card carries pinId + the output content + the workflow
+  // for byline rendering. Pinned items show before everything else on
+  // the Briefing.
+  const pinnedRows = await db()
+    .select({
+      pinId: briefing_finding_pin.id,
+      pinnedAt: briefing_finding_pin.pinned_at,
+      sortOrder: briefing_finding_pin.sort_order,
+      outputId: workflow_output.id,
+      workflowRunId: workflow_output.workflow_run_id,
+      kind: workflow_output.kind,
+      title: workflow_output.title,
+      body: workflow_output.body,
+      scope: workflow_output.scope,
+      mood: workflow_output.mood,
+      outputCreatedAt: workflow_output.created_at,
+      workflowId: workflow_definition.id,
+      workflowName: workflow_definition.name,
+    })
+    .from(briefing_finding_pin)
+    .innerJoin(
+      workflow_output,
+      eq(briefing_finding_pin.output_id, workflow_output.id),
+    )
+    .innerJoin(
+      workflow_run,
+      eq(workflow_output.workflow_run_id, workflow_run.id),
+    )
+    .innerJoin(
+      workflow_definition,
+      eq(workflow_run.workflow_id, workflow_definition.id),
+    )
+    .where(eq(briefing_finding_pin.org_id, orgId))
+    .orderBy(
+      briefing_finding_pin.sort_order,
+      desc(briefing_finding_pin.pinned_at),
+    );
+
+  // 5. Roll-up count for quiet section (mood=good in window).
   const [goodCountRow] = await db()
     .select({ count: sql<number>`count(*)::int` })
     .from(workflow_output)
@@ -294,6 +334,20 @@ export async function GET() {
         createdAt: o.createdAt.toISOString(),
       })),
     },
+    pinned: pinnedRows.map((p) => ({
+      id: p.outputId,
+      pinId: p.pinId,
+      kind: "finding" as const,
+      workflowRunId: p.workflowRunId,
+      workflow: { id: p.workflowId, name: p.workflowName },
+      title: p.title,
+      body: p.body,
+      scope: p.scope,
+      mood: p.mood,
+      outputKind: p.kind,
+      createdAt: p.outputCreatedAt.toISOString(),
+      pinnedAt: p.pinnedAt.toISOString(),
+    })),
     worthKnowing: watchRaw.map((o) => ({
       id: o.id,
       kind: "finding" as const,

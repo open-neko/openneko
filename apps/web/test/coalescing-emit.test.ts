@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "@neko/llm";
-import { createCoalescingEmit } from "@/lib/coalescing-emit";
+import {
+  createCoalescingEmit,
+  type CoalescingEmitDeps,
+} from "@/lib/coalescing-emit";
 
 type PersistedRow = {
   seq: number;
@@ -14,7 +17,7 @@ function makeHarness(flushIdleMs = 100) {
     async (args: { seq: number; event: AgentEvent }) => {
       persisted.push({ seq: args.seq, event: args.event });
     },
-  ) as unknown as Parameters<typeof createCoalescingEmit>[1]["persistEvent"];
+  ) as unknown as CoalescingEmitDeps["persistEvent"];
   const notify = vi.fn((_runId: string, event: AgentEvent, seq: number) => {
     notified.push({ seq, event });
   });

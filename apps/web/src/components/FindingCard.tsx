@@ -18,6 +18,8 @@ export type FindingCardData = {
   outputKind?: string | null;
   riskLevel?: string | null;
   createdAt: string;
+  pinId?: string;
+  pinnedAt?: string;
 };
 
 function formatRelative(iso: string): string {
@@ -35,9 +37,11 @@ function formatRelative(iso: string): string {
 export default function FindingCard({
   data,
   index,
+  onUnpin,
 }: {
   data: FindingCardData;
   index: number;
+  onUnpin?: (pinId: string) => void;
 }) {
   const router = useRouter();
   const isApproval = data.kind === "approval";
@@ -90,6 +94,19 @@ export default function FindingCard({
         </span>
         <span className="finding-card-sep">·</span>
         <span className="finding-card-mono">{formatRelative(data.createdAt)}</span>
+        {data.pinId && onUnpin && (
+          <button
+            type="button"
+            className="finding-card-unpin"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnpin(data.pinId as string);
+            }}
+            title="Unpin from briefing"
+          >
+            unpin
+          </button>
+        )}
         <span className="finding-card-drill">
           {isApproval ? "open approvals →" : "drill in →"}
         </span>

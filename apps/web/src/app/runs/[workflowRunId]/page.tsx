@@ -253,6 +253,17 @@ export default function RunPage() {
     [data],
   );
 
+  const pinOutput = useCallback(async (outputId: string) => {
+    await fetch("/api/briefing/pins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outputId }),
+    }).catch(() => {});
+    // No need to refetch — the page doesn't show "is pinned" state for
+    // this output today. The pinned state lands on the Briefing via the
+    // /api/briefing/findings poll.
+  }, []);
+
   const askFollowUp = useCallback(async () => {
     if (!workflowRunId) return;
     try {
@@ -372,6 +383,14 @@ export default function RunPage() {
                         <span className="run-output-scope">scope: {o.scope}</span>
                       </>
                     )}
+                    <button
+                      type="button"
+                      className="run-output-pin"
+                      onClick={() => pinOutput(o.id)}
+                      title="Pin this finding to the Briefing"
+                    >
+                      pin to briefing
+                    </button>
                   </div>
                 </li>
               ))}
