@@ -63,6 +63,27 @@ If you skipped the seed, you can enter those values manually later on `/onboardi
 
 After setup, OpenNeko builds the first business profile and briefing cards from the sample data.
 
+### Live trial data
+
+The AdventureWorks compose ships with a small order simulator that trickles realistic new sales orders into the sample database every 10 minutes by default. This is what makes the trial workspace *react* — briefing numbers drift, cron workflows fire, runs accumulate on `/runs`.
+
+If you ran the seed, three cron workflows are pre-installed against this live data:
+
+- **Daily Revenue Health Check** — runs each morning, posts to the Briefing
+- **Revenue Drop Alert** — hourly per-territory check; proposes a Slack notification when revenue tanks
+- **Slow-Ship Operations** — daily check for orders stuck pending past SLA
+
+External-action targets (e.g. the Slack webhook) are auto-routed to a mock adapter during trial (`NEKO_ACTIONS_DRY_RUN=true`), so nothing real fires. Approvals still queue on `/approvals` so you can see the loop work end to end.
+
+Tune the simulator via env vars:
+
+```bash
+AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
+  docker compose -f compose.yml -f compose.adventureworks.yml up -d
+```
+
+Disable it entirely with `AW_SIM_ENABLED=0`. To wire real webhooks past trial, set `NEKO_ACTIONS_DRY_RUN=false`.
+
 ## Run In The Background
 
 Use `-d` to run the containers in the background:
