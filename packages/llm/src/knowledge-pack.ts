@@ -111,14 +111,22 @@ export function knowledgePackPaths(knowledgeRoot: string): KnowledgePackPaths {
   };
 }
 
+async function readOrEmpty(path: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return "{}\n";
+  }
+}
+
 export async function readKnowledgePack(
   knowledge: KnowledgePackPaths,
 ): Promise<KnowledgePackContents> {
   const [tables, namespaces, insights, syntax] = await Promise.all([
-    readFile(knowledge.files.tables, "utf8"),
-    readFile(knowledge.files.namespaces, "utf8"),
-    readFile(knowledge.files.insights, "utf8"),
-    readFile(knowledge.files.syntax, "utf8"),
+    readOrEmpty(knowledge.files.tables),
+    readOrEmpty(knowledge.files.namespaces),
+    readOrEmpty(knowledge.files.insights),
+    readOrEmpty(knowledge.files.syntax),
   ]);
   return { tables, namespaces, insights, syntax };
 }

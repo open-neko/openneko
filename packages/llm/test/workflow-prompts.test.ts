@@ -64,12 +64,19 @@ describe("buildWorkflowBuilderPrompt", () => {
 });
 
 describe("buildWorkflowRunnerPrompt", () => {
+  const sampleKnowledge = {
+    tables: '{"tables":[{"name":"salesorderdetail","schema":"sales","column_count":11}]}',
+    namespaces: '{"namespaces":["public"]}',
+    insights: '{"hub_tables":["salesorderdetail"],"relationship_paths":[]}',
+    syntax: '{"query":{"aggregations":{"functions":["sum_<column>"]}}}',
+  };
   const base = {
     workflow: sampleWorkflow,
     mode: "headless" as const,
     memoryContext: "",
     backend: "hermes" as const,
     workspace: sampleWorkspace,
+    knowledge: sampleKnowledge,
   };
 
   it("uses MCP tool names when mcpTools=true", () => {
@@ -96,10 +103,14 @@ describe("buildWorkflowRunnerPrompt", () => {
     }
   });
 
-  it("includes data_access guidance pointing at the knowledge pack", () => {
+  it("inlines the knowledge pack contents into data_access", () => {
     const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: false });
     expect(prompt).toContain("<data_access>");
     expect(prompt).toContain("graphjin cli execute_graphql");
-    expect(prompt).toContain(sampleWorkspace.knowledgeRoot);
+    // Tables, syntax, insights are baked into the prompt verbatim, not
+    // referenced by path.
+    expect(prompt).toContain(sampleKnowledge.tables);
+    expect(prompt).toContain(sampleKnowledge.syntax);
+    expect(prompt).toContain(sampleKnowledge.insights);
   });
 });

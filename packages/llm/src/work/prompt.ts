@@ -1,5 +1,5 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
-import { knowledgePackPaths } from "../knowledge-pack";
+import type { KnowledgePackContents } from "../knowledge-pack";
 import type { InstalledSkill } from "./workspace";
 
 function formatTranscript(messages: AgentChatMessage[]): string {
@@ -144,9 +144,9 @@ ${usage}
 
 export function buildDataAccessSection(
   shellTool: string,
-  workspace: AgentWorkspace,
+  _workspace: AgentWorkspace,
+  knowledge: KnowledgePackContents,
 ): string {
-  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
   return `<data_access>
 The configured GraphJin database is the authoritative source for any
 operational question (revenue, customers, orders, inventory, employees,
@@ -154,41 +154,85 @@ sales, products, etc.). Uploaded files are auxiliary — use them only
 when the user explicitly references them ("in the file I just uploaded")
 or the database genuinely doesn't have what they're asking for.
 
-Read these prefetched knowledge files with your \`${shellTool}\` tool
-before writing any query. Broad schema and syntax dumps are already on
-disk; calling \`graphjin cli list_tables\` / \`describe_table\` /
-\`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\`
-duplicates work that's already done:
+Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`:
 
-- ${knowledge.files.index} (start here — index of the rest)
-- ${knowledge.files.tables} (every table, schema, column count)
-- ${knowledge.files.namespaces} (multi-DB namespace routing, if any)
-- ${knowledge.files.insights} (hub tables, hot relationships, relationship paths, query templates)
-- ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates)
+  graphjin cli execute_graphql --args '{"query":"<read-only graphql>"}'
 
-Run queries via the \`${shellTool}\` tool:
-
-  graphjin cli execute_graphql --args '{"query":"<your read-only graphql>"}'
+The CLI takes its arguments as a single JSON object via \`--args\`. Use
+\`--args-file <path>\` (or \`--args-file -\` for stdin) when the GraphQL
+body is long enough that quoting it inline gets unwieldy.
 
 If a response contains an \`errors\` array, run:
 
   graphjin cli fix_query_error --args '{"query":"<failing>","error":"<msg>"}'
 
-to get a corrected query, then run execute_graphql again.
-
-These targeted read-only relationship tools are also available when
-they help you plan or verify joins:
+These targeted read-only relationship tools are also available:
 
   graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
-    (exact relationship path between two specific tables)
   graphjin cli explore_relationships --args '{"table":"<name>"}'
-    (connected tables around one focal table)
 
-Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
-\`execute_code\`, Python, raw HTTP, or any other path bypasses the tool
-gate that blocks mutations and subscriptions, and produces results the
-rest of the system can't trace. Mutations and subscriptions are blocked
-at the tool gate regardless.
+Do NOT call \`list_tables\` / \`describe_table\` / \`get_query_syntax\` /
+\`get_schema_insights\` / \`get_discovery_schema\` — those broad
+discovery dumps are already inlined below. Don't waste a turn rediscovering
+what you've already been told. \`execute_code\`, Python, raw HTTP, or any
+other path bypasses the tool gate that blocks mutations and subscriptions,
+and produces results the rest of the system can't trace.
+
+QUERY CONSTRUCTION — let the database aggregate. Prefer one bulk query
+with server-side aggregation (count, sum, avg) over multiple round-trips
+that pull rows back to the agent:
+
+- Aggregation fields use the pattern \`<fn>_<column>\`: count_id, sum_price,
+  avg_quantity, min_x, max_x. There are NO \`<table>_sum\` tables — that
+  pattern does not exist.
+- GROUP BY does not exist. Use \`distinct: [columns]\` for grouping.
+- Expression aggregates — \`sum(expr: {...})\`, \`ratio(expr: {...})\` —
+  USE THESE when the metric involves arithmetic across columns
+  (e.g. revenue = SUM(price × qty), margin %). Multiplying single-column
+  aggregates is mathematically wrong: \`avg_price × sum_quantity\` ≠
+  \`sum(price × quantity)\`.
+- Joined-column access via dot-notation works across FKs up to 3 hops:
+  \`{ col: "product.standardcost" }\` inside an expression unlocks
+  revenue × cost calculations in one server-side aggregate.
+- For top-N by an aggregate, fetch the grouped aggregate rows and sort
+  the small result in reasoning if GraphJin can't order by the alias.
+- Global single-row aggregate: a top-level select whose fields are ALL
+  aggregates collapses to one row, no \`distinct\` needed.
+- Watch the silent 20-row default limit on every query level (top AND
+  nested) — set an explicit limit or use \`distinct + aggregation\`.
+  If you pull raw rows and aggregate in your head, you almost certainly
+  only saw the first page; the totals will be wrong by orders of
+  magnitude. Aggregate in the database.
+- For date/range filters, do not put multiple operators under the same
+  column object. Use an explicit \`and\` array:
+  \`where: { and: [{ orderdate: { gte: "2024-06-30" } }, { orderdate: { lte: "2025-06-29" } }] }\`
+  not \`where: { orderdate: { gte: "...", lte: "..." } }\`.
+- Never invent or interpolate. If a query returned no rows, the answer
+  is "no data", not a guess.
+
+================================================================================
+Tables — every table in the database (name, schema, column_count):
+================================================================================
+
+${knowledge.tables}
+
+================================================================================
+Namespaces — multi-database routing context:
+================================================================================
+
+${knowledge.namespaces}
+
+================================================================================
+Insights — hub tables, hot relationships, relationship paths, query templates, data-quality flags:
+================================================================================
+
+${knowledge.insights}
+
+================================================================================
+Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagination, expression aggregates, common mistakes):
+================================================================================
+
+${knowledge.syntax}
 </data_access>`;
 }
 
@@ -221,6 +265,7 @@ ${GRAPHJIN_DATE_RULE}
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
+  knowledge: KnowledgePackContents;
   messages: AgentChatMessage[];
   currentUserMessage: string;
   memoryContext?: string;
@@ -235,6 +280,7 @@ export function buildWorkPrompt(args: {
   const {
     backend,
     workspace,
+    knowledge,
     messages,
     currentUserMessage,
     memoryContext,
@@ -255,7 +301,7 @@ skills or artifacts when useful.
     buildRenderingSection(supportsCardTool),
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection(supportsMemoryTool, memoryContext),
-    buildDataAccessSection(shellTool, workspace),
+    buildDataAccessSection(shellTool, workspace, knowledge),
     buildWorkspaceSection(workspace),
     RULES_SECTION,
   ];
