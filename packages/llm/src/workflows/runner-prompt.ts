@@ -3,7 +3,6 @@ import {
   type AgentBackendId,
   type AgentWorkspace,
 } from "../agent-backend";
-import type { KnowledgePackContents } from "../knowledge-pack";
 import {
   GRAPHJIN_DATE_RULE,
   buildDataAccessSection,
@@ -18,7 +17,6 @@ export type BuildWorkflowRunnerPromptInput = {
   mcpTools: boolean;
   backend: AgentBackendId;
   workspace: AgentWorkspace;
-  knowledge: KnowledgePackContents;
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -135,9 +133,9 @@ be valid JSON.
 export function buildWorkflowRunnerPrompt(
   input: BuildWorkflowRunnerPromptInput,
 ): string {
-  const { workflow, mode, memoryContext, mcpTools, backend, workspace, knowledge } = input;
+  const { workflow, mode, memoryContext, mcpTools, backend, workspace } = input;
   const shellTool = shellToolName(backend);
-  const dataAccessSection = buildDataAccessSection(shellTool, workspace, knowledge);
+  const dataAccessSection = buildDataAccessSection(shellTool, workspace);
 
   const stepsBlock = workflow.steps
     .map((step, index) => `  ${index + 1}. ${step.description}`)

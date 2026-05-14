@@ -8,9 +8,7 @@ import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import {
   discoveryUrlFromMcpUrl,
-  knowledgePackPaths,
   prefetchKnowledgePack as defaultPrefetchKnowledgePack,
-  readKnowledgePack,
 } from "../knowledge-pack";
 import { runWorkAutoMemoryPipeline } from "./auto-memory";
 import { makeAutoMemoryStopHook } from "./auto-memory-hook";
@@ -124,9 +122,6 @@ export async function runChatTurn(
       );
     }
   }
-  const knowledge = await readKnowledgePack(
-    knowledgePackPaths(workspace.knowledgeRoot),
-  );
 
   let assistantText = "";
   const wrappedEmit = async (event: AgentEvent): Promise<void> => {
@@ -180,7 +175,6 @@ export async function runChatTurn(
     const prompt = buildWorkPrompt({
       backend: backend.id,
       workspace,
-      knowledge,
       messages,
       currentUserMessage: message,
       memoryContext,

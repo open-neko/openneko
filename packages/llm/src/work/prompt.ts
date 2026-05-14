@@ -1,5 +1,5 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
-import type { KnowledgePackContents } from "../knowledge-pack";
+import { knowledgePackPaths } from "../knowledge-pack";
 import type { InstalledSkill } from "./workspace";
 
 function formatTranscript(messages: AgentChatMessage[]): string {
@@ -144,9 +144,9 @@ ${usage}
 
 export function buildDataAccessSection(
   shellTool: string,
-  _workspace: AgentWorkspace,
-  knowledge: KnowledgePackContents,
+  workspace: AgentWorkspace,
 ): string {
+  const knowledge = knowledgePackPaths(workspace.knowledgeRoot);
   return `<data_access>
 The configured GraphJin database is the authoritative source for any
 operational question (revenue, customers, orders, inventory, employees,
@@ -154,29 +154,22 @@ sales, products, etc.). Uploaded files are auxiliary — use them only
 when the user explicitly references them ("in the file I just uploaded")
 or the database genuinely doesn't have what they're asking for.
 
-Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`:
+Read these prefetched knowledge files with your \`${shellTool}\` tool
+before writing any query. Broad schema and syntax dumps are already on
+disk; calling \`graphjin cli list_tables\` / \`describe_table\` /
+\`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\`
+duplicates work that's already done:
 
-  graphjin cli execute_graphql --args '{"query":"<read-only graphql>"}'
+- ${knowledge.files.index} (start here — index of the rest)
+- ${knowledge.files.tables} (every table, schema, column count)
+- ${knowledge.files.namespaces} (multi-DB namespace routing, if any)
+- ${knowledge.files.insights} (hub tables, hot relationships, relationship paths, query templates)
+- ${knowledge.files.syntax} (DSL operators, aggregations, pagination, expression aggregates, common mistakes)
 
-The CLI takes its arguments as a single JSON object via \`--args\`. Use
-\`--args-file <path>\` (or \`--args-file -\` for stdin) when the GraphQL
-body is long enough that quoting it inline gets unwieldy.
-
-If a response contains an \`errors\` array, run:
-
-  graphjin cli fix_query_error --args '{"query":"<failing>","error":"<msg>"}'
-
-These targeted read-only relationship tools are also available:
-
-  graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
-  graphjin cli explore_relationships --args '{"table":"<name>"}'
-
-Do NOT call \`list_tables\` / \`describe_table\` / \`get_query_syntax\` /
-\`get_schema_insights\` / \`get_discovery_schema\` — those broad
-discovery dumps are already inlined below. Don't waste a turn rediscovering
-what you've already been told. \`execute_code\`, Python, raw HTTP, or any
-other path bypasses the tool gate that blocks mutations and subscriptions,
-and produces results the rest of the system can't trace.
+When the question involves any aggregation (totals, top-N, averages,
+revenue, margin, share), READ \`syntax.json\` before writing the query.
+The aggregation rules below are a precis; the full reference lives in
+that file.
 
 QUERY CONSTRUCTION — let the database aggregate. Prefer one bulk query
 with server-side aggregation (count, sum, avg) over multiple round-trips
@@ -203,36 +196,31 @@ that pull rows back to the agent:
   If you pull raw rows and aggregate in your head, you almost certainly
   only saw the first page; the totals will be wrong by orders of
   magnitude. Aggregate in the database.
-- For date/range filters, do not put multiple operators under the same
-  column object. Use an explicit \`and\` array:
-  \`where: { and: [{ orderdate: { gte: "2024-06-30" } }, { orderdate: { lte: "2025-06-29" } }] }\`
-  not \`where: { orderdate: { gte: "...", lte: "..." } }\`.
+- ${GRAPHJIN_DATE_RULE.replace(/^- /, "")}
 - Never invent or interpolate. If a query returned no rows, the answer
   is "no data", not a guess.
 
-================================================================================
-Tables — every table in the database (name, schema, column_count):
-================================================================================
+Run queries via the \`${shellTool}\` tool:
 
-${knowledge.tables}
+  graphjin cli execute_graphql --args '{"query":"<your read-only graphql>"}'
 
-================================================================================
-Namespaces — multi-database routing context:
-================================================================================
+If a response contains an \`errors\` array, run:
 
-${knowledge.namespaces}
+  graphjin cli fix_query_error --args '{"query":"<failing>","error":"<msg>"}'
 
-================================================================================
-Insights — hub tables, hot relationships, relationship paths, query templates, data-quality flags:
-================================================================================
+to get a corrected query, then run execute_graphql again.
 
-${knowledge.insights}
+These targeted read-only relationship tools are also available when
+they help you plan or verify joins:
 
-================================================================================
-Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagination, expression aggregates, common mistakes):
-================================================================================
+  graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
+  graphjin cli explore_relationships --args '{"table":"<name>"}'
 
-${knowledge.syntax}
+Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
+\`execute_code\`, Python, raw HTTP, or any other path bypasses the tool
+gate that blocks mutations and subscriptions, and produces results the
+rest of the system can't trace. Mutations and subscriptions are blocked
+at the tool gate regardless.
 </data_access>`;
 }
 
@@ -265,7 +253,6 @@ ${GRAPHJIN_DATE_RULE}
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
-  knowledge: KnowledgePackContents;
   messages: AgentChatMessage[];
   currentUserMessage: string;
   memoryContext?: string;
@@ -280,7 +267,6 @@ export function buildWorkPrompt(args: {
   const {
     backend,
     workspace,
-    knowledge,
     messages,
     currentUserMessage,
     memoryContext,
@@ -301,7 +287,7 @@ skills or artifacts when useful.
     buildRenderingSection(supportsCardTool),
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection(supportsMemoryTool, memoryContext),
-    buildDataAccessSection(shellTool, workspace, knowledge),
+    buildDataAccessSection(shellTool, workspace),
     buildWorkspaceSection(workspace),
     RULES_SECTION,
   ];

@@ -1,10 +1,6 @@
 import type { AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import {
-  knowledgePackPaths,
-  readKnowledgePack,
-} from "../knowledge-pack";
-import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "../work/graphjin-guard";
@@ -216,10 +212,6 @@ export async function runWorkflowTurn(
       runId: workRunId,
     });
 
-    const knowledge = await readKnowledgePack(
-      knowledgePackPaths(workspace.knowledgeRoot),
-    );
-
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
       mode,
@@ -227,7 +219,6 @@ export async function runWorkflowTurn(
       mcpTools: backend.capabilities.mcpTools,
       backend: backend.id,
       workspace,
-      knowledge,
     });
 
     const seedMessage = synthesizeSeedMessage(
