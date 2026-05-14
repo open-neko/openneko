@@ -366,14 +366,15 @@ export default function WorkScreen() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
 
-  // Auto-grow the textarea up to its max-height; past that, the textarea
-  // scrolls internally. CSS alone can't do this — `rows={1}` is the floor
-  // and there's no `content-size` for textareas.
+  // Auto-grow the textarea up to its max-height (~9 lines); past that the
+  // textarea scrolls internally. CSS alone can't do this — `rows={1}` is
+  // the floor and there's no `content-size` for textareas. Keep the cap in
+  // sync with .work-input { max-height } in globals.css.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 222)}px`;
   }, [draft]);
 
   async function resolveLandingThread() {
