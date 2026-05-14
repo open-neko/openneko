@@ -16,9 +16,12 @@
 
 \set ON_ERROR_STOP on
 
+-- The caller sets trial_sim.orders_per_tick before \i'ing this file.
+-- psql's :'X' substitution doesn't reach inside $$-quoted blocks, so a
+-- session GUC is the cleanest handoff that works across psql versions.
 DO $$
 DECLARE
-  v_orders_per_tick int := :'AW_SIM_ORDERS' :: int;
+  v_orders_per_tick int := current_setting('trial_sim.orders_per_tick')::int;
   v_orderid int;
   v_customerid int;
   v_territoryid int;
@@ -39,13 +42,19 @@ DECLARE
   v_num_items int;
   i int;
   j int;
+  k int;
 
   salesperson_ids int[] := ARRAY[274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,289,290];
 
   -- Territory historical weights (NW US, NE US, Central US, SW US, SE US,
   -- Canada, France, Germany, Australia, UK)
   terr_weights int[] := ARRAY[4594, 352, 385, 6224, 486, 4067, 2672, 2623, 6843, 3219];
-  terr_total int := 31465;
+  -- Per-tick effective weights, after applying any active trial_sim filters
+  -- (exclude_territory zeroes a slot, boost_territory multiplies it).
+  eff_weights int[];
+  eff_total int := 0;
+  has_trial_sim boolean;
+  filter_rec record;
 
   -- Top-20 historical products
   pop_products int[] := ARRAY[
@@ -58,15 +67,47 @@ DECLARE
   ];
   pop_max int := 88661;
 BEGIN
+  -- Apply trial_sim.active_filter (L3) if the schema is present. Excludes
+  -- zero out a territory's weight; boosts multiply. The schema may be
+  -- absent when L1 runs without the L3 injector — fall back to the
+  -- historical weights unchanged.
+  eff_weights := terr_weights;
+  SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'trial_sim')
+    INTO has_trial_sim;
+
+  IF has_trial_sim THEN
+    FOR filter_rec IN
+      SELECT kind, payload FROM trial_sim.active_filter
+      WHERE expires_at > now()
+    LOOP
+      k := (filter_rec.payload->>'territory_id')::int;
+      IF k IS NULL OR k < 1 OR k > 10 THEN CONTINUE; END IF;
+      IF filter_rec.kind = 'exclude_territory' THEN
+        eff_weights[k] := 0;
+      ELSIF filter_rec.kind = 'boost_territory' THEN
+        eff_weights[k] := eff_weights[k]
+          * COALESCE((filter_rec.payload->>'multiplier')::int, 1);
+      END IF;
+    END LOOP;
+  END IF;
+
+  FOR k IN 1..10 LOOP eff_total := eff_total + eff_weights[k]; END LOOP;
+  IF eff_total <= 0 THEN
+    -- Every territory excluded — degenerate. Restore historical weights so
+    -- the tick still makes progress.
+    eff_weights := terr_weights;
+    eff_total   := 31465;
+  END IF;
+
   FOR i IN 1..v_orders_per_tick LOOP
-    -- Pick territory weighted by historical volume
+    -- Pick territory weighted by effective (post-filter) weights.
     DECLARE
-      v_rand int := floor(random() * terr_total)::int;
+      v_rand int := floor(random() * eff_total)::int;
       v_cumul int := 0;
     BEGIN
       v_territoryid := 10;
       FOR k IN 1..10 LOOP
-        v_cumul := v_cumul + terr_weights[k];
+        v_cumul := v_cumul + eff_weights[k];
         IF v_rand < v_cumul THEN
           v_territoryid := k;
           EXIT;

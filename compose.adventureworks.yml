@@ -112,10 +112,44 @@ services:
         echo "[aw-sim] starting: interval=${AW_SIM_INTERVAL_SEC}s, orders=${AW_SIM_ORDERS_MIN}-${AW_SIM_ORDERS_MAX} per tick"
         while true; do
           ORDERS=$$(awk -v mn=${AW_SIM_ORDERS_MIN} -v mx=${AW_SIM_ORDERS_MAX} 'BEGIN{srand(); print int(mn + rand()*(mx-mn+1))}')
-          psql -v ON_ERROR_STOP=1 -v AW_SIM_ORDERS=$$ORDERS -f /scripts/aw-sim-tick.sql \
+          psql -v ON_ERROR_STOP=1 -c "SET trial_sim.orders_per_tick TO '$$ORDERS'" -f /scripts/aw-sim-tick.sql \
             || echo "[aw-sim] tick failed; will retry next interval"
           sleep "${AW_SIM_INTERVAL_SEC}"
         done
+
+  adventureworks-scenario-injector:
+    # L3 scripted-scenario injector. Lives entirely in this container: the
+    # scheduler loop, the scenario SQL, and the CLI subcommands are all
+    # in db/seeds/dev/. No edits to apps/web or apps/worker — operator
+    # demo controls are invoked via `docker compose exec` (see
+    # docs/TRIAL_SIM_L3.md).
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      PGDATABASE: ${ADVENTUREWORKS_DB:-adventureworks}
+      TRIAL_SIM_TICK_SEC: ${TRIAL_SIM_TICK_SEC:-300}
+      TRIAL_SIM_ENABLED: ${TRIAL_SIM_ENABLED:-1}
+    volumes:
+      - ./db/seeds/dev/trial-sim-schema.sql:/scripts/trial-sim-schema.sql:ro
+      - ./db/seeds/dev/scenario-injector.sh:/scripts/scenario-injector.sh:ro
+      - ./db/seeds/dev/scenarios:/scripts/scenarios:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ "$${TRIAL_SIM_ENABLED}" != "1" ]; then
+          echo "[trial-sim] TRIAL_SIM_ENABLED=$${TRIAL_SIM_ENABLED}; sleeping forever"
+          exec tail -f /dev/null
+        fi
+        exec /bin/sh /scripts/scenario-injector.sh loop
 
   neko-adventureworks-seed:
     profiles: ["seed"]
