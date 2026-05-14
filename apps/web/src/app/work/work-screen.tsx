@@ -1249,7 +1249,7 @@ type ToolItem = {
 
 type TimelineItem =
   | { kind: "text"; content: string }
-  | { kind: "tools"; tools: ToolItem[] }
+  | { kind: "tools"; tools: ToolItem[]; followedByText: boolean }
   | { kind: "error"; message: string };
 
 // Walks a run's event stream chronologically and produces an interleaved
@@ -1271,7 +1271,12 @@ function buildRunTimeline(events: WorkEvent[]): {
   let isDone = false;
 
   const flushTextSegment = () => {
-    if (pendingText.trim()) items.push({ kind: "text", content: pendingText });
+    if (pendingText.trim()) {
+      items.push({ kind: "text", content: pendingText });
+      for (const it of items) {
+        if (it.kind === "tools") it.followedByText = true;
+      }
+    }
     pendingText = "";
   };
 
@@ -1299,7 +1304,7 @@ function buildRunTimeline(events: WorkEvent[]): {
         if (last && last.kind === "tools") {
           last.tools.push(item);
         } else {
-          items.push({ kind: "tools", tools: [item] });
+          items.push({ kind: "tools", tools: [item], followedByText: false });
         }
         break;
       }
@@ -1364,13 +1369,12 @@ function RunTimeline({
   pending: boolean;
   fallbackContent: string;
 }) {
-  const { items, lastStatus, surfaceMessages, isDone } = useMemo(
+  const { items, lastStatus, surfaceMessages } = useMemo(
     () => buildRunTimeline(events),
     [events],
   );
 
   const hasContent = items.length > 0 || surfaceMessages.length > 0;
-  const runDone = isDone || (run ? !isRunInFlight(run) : false);
 
   return (
     <div className="work-timeline">
@@ -1401,7 +1405,7 @@ function RunTimeline({
             <ToolGroup
               key={`tools-${index}`}
               tools={item.tools}
-              defaultOpen={!runDone}
+              followedByText={item.followedByText}
             />
           );
         }
@@ -1429,20 +1433,20 @@ function RunTimeline({
 
 function ToolGroup({
   tools,
-  defaultOpen,
+  followedByText,
 }: {
   tools: ToolItem[];
-  defaultOpen?: boolean;
+  followedByText: boolean;
 }) {
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
-  const initialOpen =
-    defaultOpen !== undefined
-      ? defaultOpen
-      : tools.length <= 2 || inflight > 0;
-  const [open, setOpen] = useState(initialOpen);
-  const effectiveOpen = open || inflight > 0;
+  // Closed by default. Auto-open only while we're still doing work and the
+  // agent hasn't started talking yet — once prose lands, fold back. User can
+  // always click the header to open.
+  const autoOpen = inflight > 0 && !followedByText;
+  const [userOpen, setUserOpen] = useState(false);
+  const effectiveOpen = userOpen || autoOpen;
 
   if (!showHeader) {
     return (
@@ -1457,7 +1461,7 @@ function ToolGroup({
       <button
         type="button"
         className="work-tool-group-head"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setUserOpen((v) => !v)}
         aria-expanded={effectiveOpen}
       >
         <span className="work-tool-group-toggle">{effectiveOpen ? "▾" : "▸"}</span>
