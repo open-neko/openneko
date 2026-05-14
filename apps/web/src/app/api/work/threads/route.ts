@@ -40,15 +40,21 @@ export async function POST(request: NextRequest) {
   const orgId = await getOrgId();
 
   // Resolve title from seed when possible — feels less arbitrary than
-  // "Untitled thread" when the operator just clicked "Ask a follow-up."
+  // "Untitled thread" when the operator just clicked "Deep dive" or
+  // "Ask a follow-up."
   let resolvedTitle = title;
   let runContext: string | null = null;
+  let seedCard: { message: string; title: string } | null = null;
   if (seedWorkflowRunId) {
     const seed = await loadWorkflowRunContext(orgId, seedWorkflowRunId);
     if (seed) {
       runContext = seed.message;
       if (!resolvedTitle) resolvedTitle = `Follow-up · ${seed.workflowName}`;
     }
+  }
+  if (seedMetricId) {
+    seedCard = await loadBriefingCardForSeed(orgId, seedMetricId);
+    if (seedCard && !resolvedTitle) resolvedTitle = seedCard.title;
   }
 
   const thread = await createWorkThread(orgId, resolvedTitle);
@@ -57,17 +63,14 @@ export async function POST(request: NextRequest) {
   // card travels into the thread as the opening user message — that way the
   // agent picks it up from the normal conversation history (getWorkThreadBundle)
   // with no extra plumbing, and reloads/new sessions still see it.
-  if (seedMetricId) {
-    const card = await loadBriefingCardForSeed(orgId, seedMetricId);
-    if (card) {
-      await createWorkMessage({
-        orgId,
-        threadId: thread.id,
-        runId: null,
-        role: "user",
-        content: card,
-      });
-    }
+  if (seedCard) {
+    await createWorkMessage({
+      orgId,
+      threadId: thread.id,
+      runId: null,
+      role: "user",
+      content: seedCard.message,
+    });
   }
 
   if (runContext) {
@@ -221,7 +224,7 @@ async function loadWorkflowRunContext(
 export async function loadBriefingCardForSeed(
   orgId: string,
   metricId: string,
-): Promise<string | null> {
+): Promise<{ message: string; title: string } | null> {
   const metricRows = await db()
     .select({
       id: metric.id,
@@ -266,5 +269,8 @@ export async function loadBriefingCardForSeed(
     chartData: p?.chartData ?? [],
   };
 
-  return `${BRIEFING_CARD_SENTINEL}${JSON.stringify(card)}`;
+  return {
+    message: `${BRIEFING_CARD_SENTINEL}${JSON.stringify(card)}`,
+    title: m.title,
+  };
 }

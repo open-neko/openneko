@@ -131,7 +131,10 @@ describeIfDb("/api/work/threads", () => {
       body: { seedMetricId: metricId },
     });
     expect(res.status).toBe(200);
-    const body = res.body as { thread: { id: string } };
+    const body = res.body as { thread: { id: string; title: string } };
+    // Deep-dive threads are titled from the metric so they never show
+    // "Untitled thread" in the sidebar before the first user message.
+    expect(body.thread.title).toBe("Revenue YoY");
 
     const messages = await db()
       .select()
@@ -210,7 +213,8 @@ describeIfDb("/api/work/threads", () => {
     });
     const seed = await loadBriefingCardForSeed(orgId, metricId);
     expect(seed).not.toBeNull();
-    const parsed = parseBriefingCardMessage(seed!);
+    expect(seed?.title).toBe("No Snapshot Yet");
+    const parsed = parseBriefingCardMessage(seed!.message);
     expect(parsed).not.toBeNull();
     expect(parsed?.metricId).toBe(metricId);
     expect(parsed?.text).toBe("No Snapshot Yet");
