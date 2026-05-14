@@ -17,14 +17,16 @@ import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-// Matches absolute container paths to agent-generated/uploaded files inside the
-// per-org workspace, e.g.
-//   /tmp/openneko-home/.config/openneko/agents/orgs/<orgId>/runs/<runId>/artifacts/file.pdf
-//   ~/.config/openneko/agents/orgs/<orgId>/uploads/<threadId>/file.csv
-// The capture group is the workspace-relative path the /api/work/files route
-// already serves.
+// Matches paths to agent-generated/uploaded files inside the per-org workspace.
+// Two shapes:
+//   - absolute container paths, e.g.
+//       ~/.config/openneko/agents/orgs/<orgId>/uploads/<threadId>/file.csv
+//   - bare workspace-relative paths, e.g. `uploads/<threadId>/file.csv` — the
+//     same form `joinMessageWithAttachments` emits into the user's outgoing
+//     message and that the agent passes back when it cites files.
+// Capture group 1 is the workspace-relative path the /api/work/files route serves.
 const WORKSPACE_FILE_RE =
-  /\/agents\/orgs\/[A-Za-z0-9-]+\/((?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)/g;
+  /(?:\/agents\/orgs\/[A-Za-z0-9-]+\/|(?<![A-Za-z0-9._\-/]))((?:runs|uploads|skills|memory)\/[A-Za-z0-9._\-/]+\.[A-Za-z0-9]+)/g;
 
 type MdNode = { type: string; value?: string; url?: string; children?: MdNode[] };
 
@@ -154,9 +156,31 @@ type ActiveRunStream = {
 
 type UploadedWorkFile = {
   name: string;
+  size: number;
   relativePath: string;
   absolutePath: string;
 };
+
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const ACCEPTED_ATTACHMENT_EXTENSIONS = [
+  ".csv",
+  ".docx",
+  ".html",
+  ".json",
+  ".md",
+  ".pdf",
+  ".pptx",
+  ".tsv",
+  ".txt",
+  ".xlsx",
+];
+const ACCEPTED_ATTACHMENT_SUFFIXES = new Set(ACCEPTED_ATTACHMENT_EXTENSIONS);
+
+function fileExtension(name: string): string {
+  const idx = name.lastIndexOf(".");
+  return idx > 0 ? name.slice(idx).toLowerCase() : "";
+}
 
 type MemoryRecord = {
   id: string;
@@ -426,18 +450,32 @@ export default function WorkScreen() {
     return nextId;
   }
 
-  async function uploadFiles(threadId: string, picked: File[]): Promise<UploadedWorkFile[]> {
+  async function uploadFiles(
+    threadId: string,
+    picked: File[],
+  ): Promise<{ uploaded: UploadedWorkFile[]; errors: string[] }> {
     const uploaded: UploadedWorkFile[] = [];
+    const errors: string[] = [];
     for (const file of picked) {
       const body = new FormData();
       body.append("threadId", threadId);
       body.append("file", file);
-      const res = await fetch("/api/work/upload", { method: "POST", body });
-      if (!res.ok) continue;
+      let res: Response;
+      try {
+        res = await fetch("/api/work/upload", { method: "POST", body });
+      } catch (err) {
+        errors.push(`"${file.name}": ${err instanceof Error ? err.message : "network error"}`);
+        continue;
+      }
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        errors.push(`"${file.name}": ${payload?.error ?? `upload failed (HTTP ${res.status})`}`);
+        continue;
+      }
       const data = (await res.json()) as { file: UploadedWorkFile };
       uploaded.push(data.file);
     }
-    return uploaded;
+    return { uploaded, errors };
   }
 
   async function sendMessage() {
@@ -452,7 +490,18 @@ export default function WorkScreen() {
       threadId = await createThread();
     }
 
-    const uploads = threadId ? await uploadFiles(threadId, files) : [];
+    let uploads: UploadedWorkFile[] = [];
+    if (threadId && files.length > 0) {
+      const result = await uploadFiles(threadId, files);
+      uploads = result.uploaded;
+      if (result.errors.length > 0) {
+        setStreamError(result.errors.join(" · "));
+      }
+      if (uploads.length === 0 && result.errors.length > 0) {
+        setSending(false);
+        return;
+      }
+    }
     const message = joinMessageWithAttachments(trimmed, uploads);
     const tempMessage: MessageRecord = {
       id: `temp-${Date.now()}`,
@@ -969,10 +1018,37 @@ export default function WorkScreen() {
           type="file"
           multiple
           hidden
+          accept={ACCEPTED_ATTACHMENT_EXTENSIONS.join(",")}
           onChange={(event) => {
             const picked = Array.from(event.target.files ?? []);
-            setFiles((prev) => [...prev, ...picked].slice(0, 5));
             event.target.value = "";
+            if (picked.length === 0) return;
+            const accepted: File[] = [];
+            const rejections: string[] = [];
+            const startingCount = files.length;
+            for (const file of picked) {
+              if (startingCount + accepted.length >= MAX_ATTACHMENTS) {
+                rejections.push(`Max ${MAX_ATTACHMENTS} files per message.`);
+                break;
+              }
+              if (file.type.startsWith("image/")) {
+                rejections.push(`"${file.name}": image uploads aren't supported yet.`);
+                continue;
+              }
+              if (file.size > MAX_ATTACHMENT_SIZE) {
+                rejections.push(`"${file.name}": over ${Math.round(MAX_ATTACHMENT_SIZE / (1024 * 1024))} MB.`);
+                continue;
+              }
+              if (!ACCEPTED_ATTACHMENT_SUFFIXES.has(fileExtension(file.name))) {
+                rejections.push(`"${file.name}": unsupported file type.`);
+                continue;
+              }
+              accepted.push(file);
+            }
+            if (accepted.length > 0) {
+              setFiles((prev) => [...prev, ...accepted].slice(0, MAX_ATTACHMENTS));
+            }
+            setStreamError(rejections.length > 0 ? rejections.join(" · ") : null);
           }}
         />
       </div>
@@ -1587,10 +1663,12 @@ function joinMessageWithAttachments(
   text: string,
   files: UploadedWorkFile[],
 ): string {
-  if (files.length === 0) return text;
-  const lines = files.map(
-    (file) => `- ${file.relativePath} (${file.name})`,
-  );
-  const prefix = text.trim() ? `${text.trim()}\n\n` : "";
-  return `${prefix}I've attached ${files.length === 1 ? "a file" : "files"}:\n${lines.join("\n")}`;
+  const prefix = text.trim();
+  if (files.length === 0) return prefix;
+  const lines = files.map((file) => {
+    const kb = Math.max(1, Math.round(file.size / 1024));
+    return `- ${file.relativePath}  (${file.name}, ${kb} KB)`;
+  });
+  const header = `I've attached ${files.length === 1 ? "a file" : "files"}:`;
+  return prefix ? `${prefix}\n\n${header}\n${lines.join("\n")}` : `${header}\n${lines.join("\n")}`;
 }

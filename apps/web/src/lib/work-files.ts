@@ -4,28 +4,54 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { basename, extname, join, resolve } from "node:path";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 
+export const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+export const ALLOWED_UPLOAD_EXTENSIONS = new Set<string>([
+  ".csv",
+  ".docx",
+  ".html",
+  ".json",
+  ".md",
+  ".pdf",
+  ".pptx",
+  ".tsv",
+  ".txt",
+  ".xlsx",
+]);
+
 const MIME_BY_EXT: Record<string, string> = {
   ".csv": "text/csv; charset=utf-8",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".html": "text/html; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".pdf": "application/pdf",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".txt": "text/plain; charset=utf-8",
   ".tsv": "text/tab-separated-values; charset=utf-8",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
+// Office docs browsers can't preview — the file-serving route uses this set
+// to force download instead of trying (and failing) to render inline.
+export const FORCE_DOWNLOAD_EXTENSIONS = new Set([".docx", ".pptx", ".xlsx"]);
+
 export function safeFileName(name: string): string {
-  return basename(name).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const base = basename(name).split("\\").pop() ?? name;
+  return base
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/^\.+/, "_")
+    .slice(0, 200) || "upload.bin";
 }
 
 export async function saveWorkUpload(
   orgId: string,
   threadId: string,
   file: File,
-): Promise<{ relativePath: string; absolutePath: string; name: string }> {
+): Promise<{ relativePath: string; absolutePath: string; name: string; size: number }> {
   const roots = await ensureOrgWorkspace(orgId);
   const dir = join(roots.uploadsRoot, threadId);
   await mkdir(dir, { recursive: true });
@@ -37,24 +63,22 @@ export async function saveWorkUpload(
     relativePath: join("uploads", threadId, safeName),
     absolutePath,
     name: safeName,
+    size: buffer.byteLength,
   };
 }
 
 export function joinMessageWithAttachments(
   text: string,
-  attachments: Array<{ relativePath: string; absolutePath: string }>,
+  attachments: Array<{ relativePath: string; name: string; size?: number }>,
 ): string {
-  if (attachments.length === 0) return text.trim();
   const prefix = text.trim();
-  const lines = attachments.map((file) => `- ${file.relativePath} (${file.absolutePath})`);
-  return [
-    prefix,
-    prefix ? "" : "",
-    `I've attached ${attachments.length === 1 ? "a file" : "files"}:`,
-    ...lines,
-  ]
-    .filter((line, index, arr) => !(line === "" && arr[index - 1] === ""))
-    .join("\n");
+  if (attachments.length === 0) return prefix;
+  const lines = attachments.map((file) => {
+    const kb = typeof file.size === "number" ? `, ${Math.max(1, Math.round(file.size / 1024))} KB` : "";
+    return `- ${file.relativePath}  (${file.name}${kb})`;
+  });
+  const header = `I've attached ${attachments.length === 1 ? "a file" : "files"}:`;
+  return prefix ? `${prefix}\n\n${header}\n${lines.join("\n")}` : `${header}\n${lines.join("\n")}`;
 }
 
 export async function readWorkFile(orgId: string, relativePath: string): Promise<{

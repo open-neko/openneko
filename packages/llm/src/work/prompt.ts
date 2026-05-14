@@ -151,9 +151,9 @@ export function buildDataAccessSection(
   return `<data_access>
 The configured GraphJin database is the authoritative source for any
 operational question (revenue, customers, orders, inventory, employees,
-sales, products, etc.). Uploaded files are auxiliary — use them only
-when the user explicitly references them ("in the file I just uploaded")
-or the database genuinely doesn't have what they're asking for.
+sales, products, etc.). When the user attaches a file or explicitly
+references uploaded data, read the file and use it — it's the source of
+truth for that turn. Otherwise default to the database.
 
 The GraphJin DSL reference is inlined below in full — operators,
 aggregations, pagination, expression aggregates, and the common
@@ -225,9 +225,12 @@ ${knowledge.syntax}
 </data_access>`;
 }
 
-function buildWorkspaceSection(workspace: AgentWorkspace): string {
+function buildWorkspaceSection(
+  workspace: AgentWorkspace,
+  shellTool: string,
+): string {
   return `<workspace>
-Shared directories:
+Your cwd is ${workspace.orgRoot}. Shared directories:
 
 - Skills: ${workspace.skillsRoot}
 - Memory: ${workspace.memoryRoot}
@@ -237,6 +240,18 @@ Shared directories:
 
 Read and write within those directories when needed. Save generated
 reports or files under the run artifact directory.
+
+<attachments>
+When the user attaches files, their message will end with lines like:
+
+  I've attached a file:
+  - uploads/<threadId>/<filename>  (<filename>, <size> KB)
+
+Those paths are relative to your cwd. Open them with the \`Read\` tool
+(or \`${shellTool}\` for non-text formats) before answering — the user
+expects you to actually read what they attached. Cite the relative path
+when you reference content from the file.
+</attachments>
 </workspace>`;
 }
 
@@ -291,7 +306,7 @@ skills or artifacts when useful.
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection(supportsMemoryTool, memoryContext),
     buildDataAccessSection(shellTool, workspace, knowledge),
-    buildWorkspaceSection(workspace),
+    buildWorkspaceSection(workspace, shellTool),
     RULES_SECTION,
   ];
 
