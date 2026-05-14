@@ -8,7 +8,7 @@ import EditableMarkdown from "@/components/EditableMarkdown";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { StageKind } from "@/lib/db";
 
-type Phase = "processing" | "review";
+type Phase = "loading" | "processing" | "review";
 type Tab = "profile" | "insights";
 type InsightsStatus = "ready" | "processing" | "disabled" | "pending";
 
@@ -42,7 +42,7 @@ const FALLBACK_CYCLE_MS = 3500;
 
 export default function ProcessingPage() {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>("processing");
+  const [phase, setPhase] = useState<Phase>("loading");
   const [tab, setTab] = useState<Tab>("profile");
   const [stageKind, setStageKind] = useState<StageKind | null>(null);
   const [stageMessage, setStageMessage] = useState<string | null>(null);
@@ -97,7 +97,7 @@ export default function ProcessingPage() {
   );
 
   useEffect(() => {
-    if (phase !== "processing") return;
+    if (phase === "review") return;
 
     let cancelled = false;
 
@@ -128,6 +128,7 @@ export default function ProcessingPage() {
               return nextStage;
             });
             setStageMessage(nextMsg);
+            setPhase("processing");
           }
           if (status.state === "needs_wizard") {
             router.replace("/onboarding");
@@ -209,6 +210,16 @@ export default function ProcessingPage() {
     poll();
     return () => { cancelled = true; };
   }, [phase, insights, insightsStatus]);
+
+  if (phase === "loading") {
+    return (
+      <div className="root">
+        <AppHeader>
+          <SectionNav current="business-profile" />
+        </AppHeader>
+      </div>
+    );
+  }
 
   if (phase === "processing") {
     let message: string;
