@@ -59,6 +59,7 @@ type RunDetailPayload = {
     seq: number;
     type: string;
     event: Record<string, unknown> | null;
+    createdAt: string;
   }>;
   lineage: {
     triggeredBySubscriptionId: string | null;
@@ -129,13 +130,13 @@ function bucketEventsByPhase(
   };
 
   let currentPhase: Phase | "setup" = "setup";
-  let phaseStartSeq: Record<Phase, number | null> = {
+  const phaseStartTs: Record<Phase, number | null> = {
     observe: null,
     understand: null,
     decide: null,
     act: null,
   };
-  let phaseEndSeq: Record<Phase, number | null> = {
+  const phaseEndTs: Record<Phase, number | null> = {
     observe: null,
     understand: null,
     decide: null,
@@ -148,7 +149,7 @@ function bucketEventsByPhase(
         .toLowerCase() as Phase;
       if (PHASES.includes(phase)) {
         currentPhase = phase;
-        phaseStartSeq[phase] = ev.seq;
+        phaseStartTs[phase] = new Date(ev.createdAt).getTime();
         continue;
       }
     }
@@ -156,7 +157,7 @@ function bucketEventsByPhase(
       const phase = ((ev.event as { phase?: string } | null)?.phase ?? "")
         .toLowerCase() as Phase;
       if (PHASES.includes(phase)) {
-        phaseEndSeq[phase] = ev.seq;
+        phaseEndTs[phase] = new Date(ev.createdAt).getTime();
         currentPhase = "setup";
         continue;
       }
@@ -164,17 +165,17 @@ function bucketEventsByPhase(
     buckets[currentPhase].events.push(ev);
   }
 
-  // Phase duration proxy: number of events between start and end seq. Real
-  // timestamps would need each event to carry one — the Run replay endpoint
-  // currently doesn't return per-event timestamps. Event-count works as a
-  // visual proxy for "how much happened in this phase."
   for (const p of PHASES) {
-    const s = phaseStartSeq[p];
-    const e = phaseEndSeq[p];
+    const s = phaseStartTs[p];
+    const e = phaseEndTs[p];
     if (s != null && e != null) {
       buckets[p].durationMs = Math.max(1, e - s);
-    } else if (buckets[p].events.length > 0) {
-      buckets[p].durationMs = buckets[p].events.length;
+    } else if (s != null && buckets[p].events.length > 0) {
+      const last = buckets[p].events[buckets[p].events.length - 1];
+      buckets[p].durationMs = Math.max(
+        1,
+        new Date(last.createdAt).getTime() - s,
+      );
     }
   }
 
@@ -196,6 +197,8 @@ export default function RunPage() {
   const [showEvents, setShowEvents] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const load = useCallback(async () => {
     if (!workflowRunId) return;
@@ -232,13 +235,13 @@ export default function RunPage() {
   }, [data?.run?.status, load]);
 
   const actOnRequest = useCallback(
-    async (id: string, decision: "approve" | "reject") => {
+    async (id: string, decision: "approve" | "reject", reason?: string) => {
       setActionBusyId(id);
       try {
         await fetch(`/api/action-requests/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision }),
+          body: JSON.stringify({ decision, reason }),
         });
         await load();
       } finally {
@@ -247,6 +250,20 @@ export default function RunPage() {
     },
     [load],
   );
+
+  const submitReject = useCallback(async () => {
+    if (!rejectingId) return;
+    const id = rejectingId;
+    const reason = rejectReason.trim() || undefined;
+    setRejectingId(null);
+    setRejectReason("");
+    await actOnRequest(id, "reject", reason);
+  }, [rejectingId, rejectReason, actOnRequest]);
+
+  const cancelReject = useCallback(() => {
+    setRejectingId(null);
+    setRejectReason("");
+  }, []);
 
   const phaseBuckets = useMemo(
     () => (data ? bucketEventsByPhase(data.events) : []),
@@ -432,7 +449,39 @@ export default function RunPage() {
                       </>
                     )}
                   </div>
-                  {a.status === "pending_approval" && (
+                  {a.status === "pending_approval" && rejectingId === a.id ? (
+                    <div className="run-action-reject-box">
+                      <label className="run-action-reject-label">
+                        Why are you rejecting this? (optional)
+                      </label>
+                      <textarea
+                        className="run-action-reject-textarea"
+                        value={rejectReason}
+                        placeholder="e.g. wrong channel, retry tomorrow…"
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        autoFocus
+                        rows={2}
+                      />
+                      <div className="run-action-buttons">
+                        <button
+                          type="button"
+                          className="run-action-btn is-destructive"
+                          disabled={actionBusyId === a.id}
+                          onClick={() => void submitReject()}
+                        >
+                          Confirm reject
+                        </button>
+                        <button
+                          type="button"
+                          className="run-action-btn"
+                          disabled={actionBusyId === a.id}
+                          onClick={cancelReject}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : a.status === "pending_approval" ? (
                     <div className="run-action-buttons">
                       <button
                         type="button"
@@ -446,12 +495,12 @@ export default function RunPage() {
                         type="button"
                         className="run-action-btn"
                         disabled={actionBusyId === a.id}
-                        onClick={() => void actOnRequest(a.id, "reject")}
+                        onClick={() => setRejectingId(a.id)}
                       >
                         Reject
                       </button>
                     </div>
-                  )}
+                  ) : null}
                   {a.status === "rejected" && a.rejectionReason && (
                     <p className="run-action-reason">
                       Rejected: {a.rejectionReason}
@@ -544,15 +593,17 @@ function PhaseStrip({ buckets }: { buckets: PhaseBucket[] }) {
     <div className="run-phase-strip">
       {buckets.map((b) => {
         const w = ((b.durationMs ?? 1) / total) * 100;
+        const dur = b.durationMs != null ? formatDuration(b.durationMs) : null;
         return (
           <div
             key={b.phase}
             className={`run-phase-seg run-phase-seg-${b.phase}`}
             style={{ flexBasis: `${w}%` }}
-            title={b.phase}
+            title={dur ? `${b.phase} · ${dur}` : b.phase}
           >
             <span className="run-phase-seg-label">
               {b.phase === "setup" ? "setup" : b.phase}
+              {dur && <span className="run-phase-seg-dur"> {dur}</span>}
             </span>
           </div>
         );

@@ -210,6 +210,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       seq: e.seq,
       type: e.event?.type ?? "unknown",
       event: e.event,
+      createdAt: e.createdAt.toISOString(),
     })),
     lineage,
   });

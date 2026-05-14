@@ -311,11 +311,12 @@ export async function getWorkRunEventsAfter(
   orgId: string,
   runId: string,
   afterSeq: number,
-): Promise<{ seq: number; event: AgentEvent }[]> {
+): Promise<{ seq: number; event: AgentEvent; createdAt: Date }[]> {
   const rows = await db()
     .select({
       seq: work_run_event.seq,
       payload: work_run_event.payload,
+      created_at: work_run_event.created_at,
     })
     .from(work_run_event)
     .where(
@@ -327,7 +328,11 @@ export async function getWorkRunEventsAfter(
     .orderBy(asc(work_run_event.seq));
   return rows
     .filter((r) => r.seq > afterSeq)
-    .map((r) => ({ seq: r.seq, event: r.payload as AgentEvent }));
+    .map((r) => ({
+      seq: r.seq,
+      event: r.payload as AgentEvent,
+      createdAt: r.created_at,
+    }));
 }
 
 export async function getWorkRun(orgId: string, runId: string) {
