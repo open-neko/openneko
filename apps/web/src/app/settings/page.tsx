@@ -90,8 +90,8 @@ export default async function SettingsPage() {
     {
       href: "/settings/policies",
       title: "Policies",
-      copy: "Rules that gate what OpenNeko can act on. Read-only for now; edits live in Ask.",
-      status: "Read-only",
+      copy: "Rules that gate what OpenNeko can act on. Create and edit via Ask.",
+      status: "Editable via Ask",
       statusOk: true,
     },
   ];
