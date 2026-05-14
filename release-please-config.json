@@ -7,19 +7,15 @@
   "bump-patch-for-minor-pre-major": false,
   "draft": false,
   "prerelease": false,
-  "separate-pull-requests": false,
   "packages": {
-    ".": { "package-name": "neko" },
-    "apps/web": { "package-name": "@neko/web" },
-    "apps/worker": { "package-name": "@neko/worker" },
-    "packages/db": { "package-name": "@neko/db" },
-    "packages/llm": { "package-name": "@neko/llm" }
-  },
-  "plugins": [
-    {
-      "type": "linked-versions",
-      "groupName": "neko",
-      "components": ["neko", "@neko/web", "@neko/worker", "@neko/db", "@neko/llm"]
+    ".": {
+      "package-name": "neko",
+      "extra-files": [
+        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/worker/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/db/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/llm/package.json", "jsonpath": "$.version" }
+      ]
     }
-  ]
+  }
 }
