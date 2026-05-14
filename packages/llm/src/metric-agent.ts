@@ -82,14 +82,15 @@ The database is queried exclusively via \`graphjin cli\` run through the \`${she
 - Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
 - DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` — those broad discovery dumps are already prefetched in the knowledge sections below.
 - DO NOT run \`graphjin cli setup\`, \`graphjin cli config\`, \`graphjin cli write_query\`, or any config/write command. The CLI is already configured by OpenNeko and those commands are blocked.
-- DO use these targeted read-only relationship tools whenever they help you plan or verify joins:
+- DO use these targeted read-only tools whenever they help you plan a query or verify joins:
+  - \`graphjin cli get_table_sample --args '{"table":"<name>"}'\` — call BEFORE writing a filter on a string or enum column. The response includes real distinct values with row counts (e.g. category_name: "Computers", "Cell phones", ...), available aggregations, foreign keys, and analytics-mode rules. Without it you're guessing literals — a wrong guess returns zero rows silently and the metric ends up empty.
   - \`graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'\` — exact relationship path between two specific tables.
   - \`graphjin cli explore_relationships --args '{"table":"<name>"}'\` — connected tables around one focal table.
 - Other useful subcommands: \`graphjin cli explain --args '{"query":"..."}'\` (compile-only, no execution); \`graphjin cli fix_query_error --args '{"query":"...","error":"..."}'\` (get a corrected query); \`graphjin cli health\` (sanity check).
 - Never invent data — every number in the output must trace back to a \`graphjin cli execute_graphql\` response from this run.
 
 QUERY CONSTRUCTION — let the database aggregate:
-Prefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. Specific GraphJin capabilities to reach for (consult \`syntax.json\` for full DSL reference):
+Prefer one bulk query with server-side aggregation (count, sum, avg) over multiple round-trips that pull rows back to the agent. For metric, time-series, and top-N shapes, lift the template from the \`patterns\` block in the inlined syntax (\`metric_by_dimension\`, \`time_series\`, \`top_n\`) and substitute real names into the placeholders in \`right_example\` — each pattern's \`rule\` field tells you where to root the query, which is the most common cause of compile errors on aggregating queries. Specific GraphJin capabilities to reach for (consult \`syntax.json\` for full DSL reference):
 
 - Expression aggregates — sum(expr: {...}), ratio(expr: {...}) — USE THESE FIRST when the metric involves arithmetic across columns (e.g. SUM(price × qty), margin %). They express what single-column sum_/count_/avg_ cannot.
 - Joined-column access via dot-notation: { col: "product.standardcost" } works across FKs up to 3 hops — unlocks revenue × cost calculations in a single server-side aggregate.

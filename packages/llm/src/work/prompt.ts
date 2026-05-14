@@ -185,11 +185,25 @@ If a response contains an \`errors\` array, run:
 
 to get a corrected query, then run execute_graphql again.
 
-These targeted read-only relationship tools are also available when
-they help you plan or verify joins:
+These targeted read-only tools are also available when they help:
 
+  graphjin cli get_table_sample --args '{"table":"<name>"}'
+    Call before writing a filter on a string or enum column. The
+    response includes real distinct values with row counts (e.g.
+    city: "Toronto" 1037, "New York" 664), available aggregations,
+    foreign keys, and analytics-mode rules. Without it you're
+    guessing literals — "Toronto" vs "TORONTO", "Cell phones" vs
+    "Cellphones" — and a wrong guess returns zero rows silently.
   graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
   graphjin cli explore_relationships --args '{"table":"<name>"}'
+
+For metric / time-series / top-N shapes, lift the template from the
+\`patterns\` block in the inlined syntax below (\`metric_by_dimension\`,
+\`time_series\`, \`top_n\`) and substitute real names into the
+placeholders in \`right_example\`. Each pattern's \`rule\` field tells
+you where to root the query — getting that wrong (e.g. rooting at the
+fact table and trying to bucket with \`distinct\`) is the most common
+cause of compile errors on aggregating queries.
 
 Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
 \`execute_code\`, Python, raw HTTP, or any other path bypasses the tool
