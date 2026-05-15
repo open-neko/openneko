@@ -11,43 +11,9 @@ File an issue at [github.com/open-neko/neko/issues](https://github.com/open-neko
 - What actually happened
 - OpenNeko version and how you installed it (Docker / dev source)
 
-## Developer setup
+## Setting up your dev environment
 
-Install dependencies:
-
-```bash
-corepack enable
-pnpm bootstrap
-```
-
-Run the metadata database and migrations:
-
-```bash
-docker compose up -d neko-db
-pnpm --filter @neko/db migrate
-```
-
-Start the web app and worker from source:
-
-```bash
-pnpm dev
-```
-
-To develop against the AdventureWorks sample data:
-
-```bash
-docker compose -f compose.yml -f compose.adventureworks.yml up -d neko-db adventureworks-db graphjin
-pnpm --filter @neko/db migrate
-pnpm dev
-```
-
-In the developer flow, use `http://localhost:8080` as the GraphJin URL when the setup wizard asks for the data source. To pre-fill the GraphJin data source and AdventureWorks onboarding answers, run:
-
-```bash
-docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
-```
-
-The full Docker install path and reset / update steps live in [INSTALL.md](INSTALL.md).
+Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services (sample-data and metadata), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
 
 ## Repository layout
 

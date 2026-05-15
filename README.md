@@ -1,25 +1,28 @@
 # OpenNeko
 
-An always-on operating loop for CXO data — observe, understand, decide, act.
+An always-on operating loop for CXOs and operators.
 
-![OpenNeko CFO briefing](cfo-briefing.png)
+*Your business watches itself, surfaces findings on the Briefing, and proposes the next move — you approve or reject.*
 
-OpenNeko connects to your operational data, runs role-aware workflows that watch the business, and proposes actions for you to approve. Findings, approvals, and follow-up analysis all live in a single focused workspace.
+![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
+
+OpenNeko plugs into the systems where your business actually runs — your CRM, billing, ops databases — and sets watchers loose to sweat the small stuff for you. Findings land on the Briefing. When something needs to happen, OpenNeko drafts the action and waits for your **approve** or **reject**. Nothing fires on its own.
+
+Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its own thing — *dashboards make you look; the operating loop brings the findings to you.*
 
 ## Features
 
-- **Briefing** — your morning landing surface: what's awaiting you, what you've pinned, what's worth a look, what was quiet.
-- **Workflows** — author cron- or signal-triggered workflows in chat; each run lands on a dedicated page with phase timing, outputs, and proposed actions.
-- **Subscriptions + observations** — workflows can subscribe to each other's outputs (lineage-tracked, with cycle detection) so the operating loop chains automatically.
-- **Action stack** — policy-gated mutations with two-tier approval; nothing external fires without your decision.
-- **Approvals** — single queue for pending actions; inline approve / reject with reason.
-- **Policies** — authored and edited through Ask; destructive operations get explicit UI controls.
-- **Ask** — chat-first follow-up analysis against your business data, with tool-call clusters that fold into the transcript.
-- Configurable agent backend (Hermes or Claude Agent) and model provider.
-- Optional industry research provider.
-- Bundled AdventureWorks sample-data stack for first-run trials.
+- **Briefing** — what's awaiting you, what's worth a look, what was quiet, what you've pinned. One surface, always current.
+- **Workflows in chat** — describe a watcher in plain English. OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other's findings, so one workflow's output becomes the next's trigger.
+- **Approval queue** — every proposed action lands here. Approve, reject with a reason, or let your rules handle it. Nothing leaves the box until you click.
+- **Rules** — decide what auto-fires, what queues for review, what's never allowed. Authored in chat, edited in the UI.
+- **Ask** — chat against your business data when a finding raises a question. Pull the thread without leaving the workspace.
+
+*Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
 
 ## Try it in 10 minutes
+
+What you're about to do: clone the repo, start it, finish a setup wizard, and watch a *"Germany revenue dropped"* alert land on the Briefing within ~15 minutes.
 
 You'll need Docker and one LLM provider API key. Spin up OpenNeko with the included AdventureWorks sample-data services:
 
@@ -68,4 +71,4 @@ OpenNeko is licensed under the [Apache License 2.0](LICENSE).
 
 ## Author
 
-Created by [Amit Deshmukh](https://github.com/amitdeshmukh).
+Created by [Amit Deshmukh](https://getneko.app/#about).
