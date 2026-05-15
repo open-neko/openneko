@@ -346,26 +346,50 @@ export async function searchWorkMemoryByContext(args: {
     );
     return [];
   }
-  // Drizzle's db().execute() against node-postgres returns the driver's
-  // QueryResult ({ rows, rowCount, ... }) — not the rows directly.
-  const result = await db().execute(sql`
-    SELECT id, org_id, kind, scope, scope_id, text, pinned, confidence,
-           metadata, source_run_id, source_thread_id, use_count, last_used_at,
-           archived_at, created_at, updated_at,
-           1 - (embedding <=> ${queryVec}::vector) AS score
-      FROM work_memory
-     WHERE org_id = ${args.orgId}
-       AND archived_at IS NULL
-       AND embedding IS NOT NULL
-     ORDER BY embedding <=> ${queryVec}::vector
-     LIMIT ${limit}
-  `);
-  const rows = (result as unknown as { rows?: Array<Record<string, unknown> & { score: number }> }).rows ?? [];
+  // Use Drizzle's typed select so timestamp columns come back as Dates
+  // (not strings) and the row shape matches rowToMemory's expectations.
+  // Vector ordering goes in via raw sql; the score is computed as a
+  // separate column so we don't have to re-embed for the result.
+  const orderExpr = sql`work_memory.embedding <=> ${queryVec}::vector`;
+  const rows = await db()
+    .select({
+      id: work_memory.id,
+      org_id: work_memory.org_id,
+      kind: work_memory.kind,
+      scope: work_memory.scope,
+      scope_id: work_memory.scope_id,
+      text: work_memory.text,
+      pinned: work_memory.pinned,
+      confidence: work_memory.confidence,
+      metadata: work_memory.metadata,
+      source_run_id: work_memory.source_run_id,
+      source_thread_id: work_memory.source_thread_id,
+      use_count: work_memory.use_count,
+      last_used_at: work_memory.last_used_at,
+      archived_at: work_memory.archived_at,
+      embedding: work_memory.embedding,
+      created_at: work_memory.created_at,
+      updated_at: work_memory.updated_at,
+      score: sql<number>`1 - (work_memory.embedding <=> ${queryVec}::vector)`,
+    })
+    .from(work_memory)
+    .where(
+      and(
+        eq(work_memory.org_id, args.orgId),
+        isNull(work_memory.archived_at),
+        sql`work_memory.embedding IS NOT NULL`,
+      ),
+    )
+    .orderBy(orderExpr)
+    .limit(limit);
   if (rows.length === 0) return [];
-  await touchWorkMemories({ orgId: args.orgId }, rows.map((r) => String(r.id)));
+  await touchWorkMemories(
+    { orgId: args.orgId },
+    rows.map((r) => r.id),
+  );
   return rows.map((r) => ({
     source: "saved_memory" as const,
-    memory: rowToMemory(r as unknown as Parameters<typeof rowToMemory>[0]),
+    memory: rowToMemory(r),
     score: Number(r.score) || 0,
   }));
 }
