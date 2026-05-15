@@ -346,7 +346,9 @@ export async function searchWorkMemoryByContext(args: {
     );
     return [];
   }
-  const rows = (await db().execute(sql`
+  // Drizzle's db().execute() against node-postgres returns the driver's
+  // QueryResult ({ rows, rowCount, ... }) — not the rows directly.
+  const result = await db().execute(sql`
     SELECT id, org_id, kind, scope, scope_id, text, pinned, confidence,
            metadata, source_run_id, source_thread_id, use_count, last_used_at,
            archived_at, created_at, updated_at,
@@ -357,7 +359,8 @@ export async function searchWorkMemoryByContext(args: {
        AND embedding IS NOT NULL
      ORDER BY embedding <=> ${queryVec}::vector
      LIMIT ${limit}
-  `)) as unknown as Array<Record<string, unknown> & { score: number }>;
+  `);
+  const rows = (result as unknown as { rows?: Array<Record<string, unknown> & { score: number }> }).rows ?? [];
   if (rows.length === 0) return [];
   await touchWorkMemories({ orgId: args.orgId }, rows.map((r) => String(r.id)));
   return rows.map((r) => ({
