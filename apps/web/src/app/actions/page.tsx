@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
@@ -98,6 +98,14 @@ function isFilter(value: string | null): value is Filter {
 }
 
 export default function ActionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ActionsPageInner />
+    </Suspense>
+  );
+}
+
+function ActionsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initial = searchParams?.get("filter");
