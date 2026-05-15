@@ -20,7 +20,7 @@ export async function summarizeBriefing(
 ): Promise<string> {
   const llm = await buildLlm(orgId);
   const writer = ax(
-    `pendingApprovals:number "queued approvals awaiting decision", actFindings:number "findings marked act (need attention)", watchFindings:number "findings marked watch (worth a look)", goodRuns:number "workflows that ran cleanly in the window", pinnedCount:number "items the operator pinned to the briefing", windowHours:number "lookback window in hours", topApprovalTitle:string "title of the most pressing approval, may be empty", topActTitle:string "title of the most pressing act finding, may be empty" -> briefing:string "1-3 sentence operator briefing, plain calm tone, max 60 words"`,
+    `pendingApprovals:number "queued approvals awaiting decision", actFindings:number "findings marked act (need attention)", watchFindings:number "findings marked watch (worth a look)", goodRuns:number "workflows that ran cleanly in the window", pinnedCount:number "items the operator pinned to the briefing", windowHours:number "lookback window in hours", topApprovalTitle?:string "title of the most pressing approval, may be empty", topActTitle?:string "title of the most pressing act finding, may be empty" -> briefing:string "1-3 sentence operator briefing, plain calm tone, max 60 words"`,
     { description: DESCRIPTION },
   );
   const result = await writer.forward(llm, {
