@@ -1,6 +1,11 @@
 node_modules/
 .next/
 
+# transformers.js model cache — populated lazily on first embedText() call
+# or via `pnpm --filter @neko/llm models:warm`. Files are large (>20MB
+# quantized, >80MB FP32) and reproducible, so we don't track them.
+packages/llm/.cache/
+
 docs/
 .turbo/
 dist/

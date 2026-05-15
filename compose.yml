@@ -15,7 +15,10 @@ x-neko-app-env: &neko-app-env
 
 services:
   neko-db:
-    image: postgres:16-alpine
+    # pgvector image — base postgres:16 + the vector extension preinstalled.
+    # work_memory.embedding stores 384-dim vectors from transformers.js
+    # (Xenova/all-MiniLM-L6-v2) for context-based memory retrieval.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: neko

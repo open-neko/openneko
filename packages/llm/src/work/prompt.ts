@@ -1,6 +1,15 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
-import { knowledgePackPaths, type KnowledgePackContents } from "../knowledge-pack";
+import { type KnowledgePackContents } from "../knowledge-pack";
+import {
+  GRAPHJIN_DATE_RULE,
+  buildDataAccessSection,
+  buildMemorySection,
+} from "../prompts/sections";
 import type { InstalledSkill } from "./workspace";
+
+// Re-export so external callers (and tests) that import GRAPHJIN_DATE_RULE
+// from "@neko/llm/work" don't break.
+export { GRAPHJIN_DATE_RULE };
 
 function formatTranscript(messages: AgentChatMessage[]): string {
   if (messages.length === 0) return "No prior messages.";
@@ -108,123 +117,6 @@ ${creationGuidance}
 </skills>`;
 }
 
-function buildMemorySection(
-  supportsMemoryTool: boolean,
-  memoryContext: string | undefined,
-): string {
-  const loaded = memoryContext?.trim()
-    ? memoryContext.trim()
-    : "No core memories are currently saved for this workspace or thread.";
-
-  const usage = supportsMemoryTool
-    ? `Long-term memory is available through \`mcp__neko_memory__search\`,
-\`mcp__neko_memory__remember\`, and \`mcp__neko_memory__forget\`.
-
-Search memory when the user asks about prior decisions, preferences,
-recurring metric definitions, business rules, company context, or older
-thread context.
-
-Save memory only for explicit durable instructions, corrections, or
-preferences. Skip ordinary one-off filters or analysis results.
-
-When saving memory, use \`global\` scope unless the user says it's only
-for this Work thread; in that case use \`thread\`.`
-    : `Core memory is shown above. If the user explicitly asks you to
-remember or forget something, explain that durable memory writes require
-the Claude Agent backend. Hermes' built-in \`memory\` tool writes to a
-private directory the OpenNeko UI doesn't read from, so anything saved
-there is invisible to the user.`;
-
-  return `<long_term_memory>
-${loaded}
-
-${usage}
-</long_term_memory>`;
-}
-
-export function buildDataAccessSection(
-  shellTool: string,
-  workspace: AgentWorkspace,
-  knowledge: KnowledgePackContents,
-): string {
-  const paths = knowledgePackPaths(workspace.knowledgeRoot);
-  return `<data_access>
-The configured GraphJin database is the authoritative source for any
-operational question (revenue, customers, orders, inventory, employees,
-sales, products, etc.). When the user attaches a file or explicitly
-references uploaded data, read the file and use it — it's the source of
-truth for that turn. Otherwise default to the database.
-
-The GraphJin DSL reference is inlined below in full — operators,
-aggregations, pagination, expression aggregates, and the common
-mistakes that produce "OpQuery: expecting an aliased field name" or
-"table not found: <name>_sum" errors. Do NOT \`cat\` it from disk;
-shell-tool output is capped and you'll lose the aggregation examples
-that sit past the cap. Just read it from this prompt.
-
-Supplementary knowledge lives on disk (read with your \`${shellTool}\`
-tool when targeted lookup helps — but the DSL below is authoritative,
-don't re-derive it from these files):
-
-- ${paths.files.index} (start here — index of the rest)
-- ${paths.files.tables} (every table, schema, column count)
-- ${paths.files.namespaces} (multi-DB namespace routing, if any)
-- ${paths.files.insights} (hub tables, hot relationships, relationship paths, query templates)
-
-Do NOT call \`graphjin cli list_tables\` / \`describe_table\` /
-\`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` —
-those broad discovery dumps duplicate work that's already prefetched.
-
-Run queries via the \`${shellTool}\` tool:
-
-  graphjin cli execute_graphql --args '{"query":"<your read-only graphql>"}'
-
-If a response contains an \`errors\` array, run:
-
-  graphjin cli fix_query_error --args '{"query":"<failing>","error":"<msg>"}'
-
-to get a corrected query, then run execute_graphql again.
-
-These targeted read-only tools are also available when they help:
-
-  graphjin cli get_table_sample --args '{"table":"<name>"}'
-    Call before writing a filter on a string or enum column. The
-    response includes real distinct values with row counts (e.g.
-    city: "Toronto" 1037, "New York" 664), available aggregations,
-    foreign keys, and analytics-mode rules. Without it you're
-    guessing literals — "Toronto" vs "TORONTO", "Cell phones" vs
-    "Cellphones" — and a wrong guess returns zero rows silently.
-  graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
-  graphjin cli explore_relationships --args '{"table":"<name>"}'
-
-For metric / time-series / top-N shapes, lift the template from the
-\`patterns\` block in the inlined syntax below (\`metric_by_dimension\`,
-\`time_series\`, \`top_n\`) and substitute real names into the
-placeholders in \`right_example\`. Each pattern's \`rule\` field tells
-you where to root the query — getting that wrong (e.g. rooting at the
-fact table and trying to bucket with \`distinct\`) is the most common
-cause of compile errors on aggregating queries.
-
-Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
-\`execute_code\`, Python, raw HTTP, or any other path bypasses the tool
-gate that blocks mutations and subscriptions, and produces results the
-rest of the system can't trace. Mutations and subscriptions are blocked
-at the tool gate regardless.
-
-For date/range filters: ${GRAPHJIN_DATE_RULE.replace(/^- /, "")}
-
-Never invent or interpolate. If a query returned no rows, the answer
-is "no data", not a guess.
-
-================================================================================
-GraphJin DSL reference (syntax.json) — operators, aggregations,
-pagination, expression aggregates, common mistakes. Authoritative.
-================================================================================
-
-${knowledge.syntax}
-</data_access>`;
-}
-
 function buildWorkspaceSection(
   workspace: AgentWorkspace,
   shellTool: string,
@@ -254,12 +146,6 @@ when you reference content from the file.
 </attachments>
 </workspace>`;
 }
-
-export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put multiple operators under
-  the same column object. Use
-  \`where: { and: [{ orderdate: { gte: "2024-06-30" } },
-                   { orderdate: { lte: "2025-06-29" } }] }\`
-  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.`;
 
 const RULES_SECTION = `<rules>
 - Keep answers concise and useful.
@@ -305,7 +191,12 @@ skills or artifacts when useful.
     buildRenderingSection(supportsCardTool),
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection(supportsMemoryTool, memoryContext),
-    buildDataAccessSection(shellTool, workspace, knowledge),
+    buildDataAccessSection({
+      shellTool,
+      workspace,
+      knowledge,
+      inlineKnowledge: "syntax",
+    }),
     buildWorkspaceSection(workspace, shellTool),
     RULES_SECTION,
   ];

@@ -17,11 +17,13 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "models:warm": "node scripts/prewarm-embedding.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.128",
     "@ax-llm/ax": "^20.0.0",
+    "@huggingface/transformers": "^4.2.0",
     "@neko/db": "workspace:*",
     "cron-parser": "^4.9.0",
     "google-auth-library": "^10.6.2",

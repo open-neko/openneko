@@ -73,6 +73,18 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @neko/web build
 
+# ─── 4b. embedding-model prewarm ───────────────────────────────────────
+# Download Xenova/all-MiniLM-L6-v2 (q8 quantized, ~22MB) into a stable
+# cache that both web and worker stages copy into their final images.
+# Without this, the first save: command in the running container blocks
+# on a HuggingFace download (and would fail in air-gapped deployments).
+FROM deps AS embedding-prewarm
+WORKDIR /app
+COPY packages/llm/scripts/prewarm-embedding.mjs /tmp/prewarm-embedding.mjs
+ENV NODE_ENV=production
+RUN mkdir -p /app/.transformers-cache && \
+    node /tmp/prewarm-embedding.mjs
+
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 FROM cli AS web
 WORKDIR /app
@@ -98,6 +110,10 @@ COPY --from=build --chown=neko:neko /app/apps/web/public ./apps/web/public
 COPY --from=build --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+# Vendored embedding model (see embedding-prewarm stage above). Ships the
+# ~22MB model files inside the image so save:/auto-context never blocks
+# on a network download at runtime.
+COPY --from=embedding-prewarm --chown=neko:neko /app/.transformers-cache /app/.transformers-cache
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
@@ -128,6 +144,10 @@ COPY --chown=neko:neko db/migrations ./db/migrations
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN ln -s /app/apps/worker/node_modules/tsx /app/node_modules/tsx
+# Vendored embedding model (see embedding-prewarm stage above). Ships the
+# ~22MB model files inside the image so worker auto-memory and metric-agent
+# context retrieval never block on a network fetch.
+COPY --from=embedding-prewarm --chown=neko:neko /app/.transformers-cache /app/.transformers-cache
 USER neko
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

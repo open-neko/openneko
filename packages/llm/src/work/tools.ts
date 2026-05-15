@@ -4,9 +4,8 @@ import { writeWorkSkill } from "./skills";
 import type { AgentEvent, AgentSurfaceMessage } from "../agent-backend";
 import {
   WORK_MEMORY_KINDS,
-  archiveWorkMemory,
   rememberWorkMemory,
-  searchWorkMemory,
+  searchWorkMemoryByContext,
   type WorkMemoryContext,
 } from "./memory";
 
@@ -162,56 +161,55 @@ export function buildSkillBuilderServer(skillsRoot: string) {
   });
 }
 
+// Two-tool memory surface: `save` and `search`. Reads use pgvector
+// context-search (matches the auto-context retrieval path), writes go
+// through the same rememberWorkMemory used by the `save:` chat command,
+// so embeddings get computed in lockstep. We deliberately don't expose
+// `forget` from the agent — archival is operator-driven, not agent-driven.
 export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
   const search = tool(
     "search",
     [
-      "Search OpenNeko's long-term memory. Returns saved memories plus",
-      "matching historical Work thread messages. Use this before answering",
-      "when a question may depend on durable preferences, business rules,",
-      "metric definitions, company context, named entities, or older context.",
+      "Semantic search over OpenNeko's saved memories. Returns top-N",
+      "memories ranked by cosine similarity to the query. Use when the",
+      "loaded memories above don't seem to cover what the operator is",
+      "asking about.",
     ].join(" "),
     {
-      query: z.string().max(800),
+      query: z.string().min(2).max(800),
       limit: z.number().int().min(1).max(20).optional(),
-      includeArchives: z.boolean().optional(),
     },
     async (args) => {
-      const results = await searchWorkMemory({
+      const results = await searchWorkMemoryByContext({
         orgId: ctx.orgId,
-        threadId: ctx.threadId ?? null,
-        runId: ctx.runId ?? null,
         query: args.query,
-        limit: args.limit,
-        includeArchives: args.includeArchives,
+        limit: args.limit ?? 5,
       });
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ ok: true, ...results }),
+            text: JSON.stringify({ ok: true, results }),
           },
         ],
       };
     },
   );
 
-  const remember = tool(
-    "remember",
+  const save = tool(
+    "save",
     [
-      "Save a durable memory for future OpenNeko sessions. Use only when the",
-      "operator explicitly asks you to remember something, corrects a recurring",
-      "assumption, defines a metric/business rule, or gives a stable preference",
-      "that should affect future answers.",
+      "Save a durable memory the operator stated explicitly. Use only when",
+      "the operator says to remember/save something, corrects a recurring",
+      "assumption, defines a metric/business rule, or states a stable",
+      "preference. Never speculatively. Default scope=global, kind=business_rule,",
+      "pinned=true.",
     ].join(" "),
     {
       text: z.string().min(5).max(2000),
-      kind: z.enum(WORK_MEMORY_KINDS),
+      kind: z.enum(WORK_MEMORY_KINDS).optional(),
       scope: z.enum(["global", "thread"]).optional(),
-      scopeId: z.string().min(1).max(200).optional(),
       pinned: z.boolean().optional(),
-      confidence: z.number().min(0).max(1).optional(),
-      metadata: z.record(z.string(), z.unknown()).optional(),
     },
     async (args) => {
       const memory = await rememberWorkMemory({
@@ -219,42 +217,15 @@ export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
         threadId: ctx.threadId ?? null,
         runId: ctx.runId ?? null,
         text: args.text,
-        kind: args.kind,
-        scope: args.scope,
-        scopeId: args.scopeId,
-        pinned: args.pinned,
-        confidence: args.confidence,
-        metadata: args.metadata,
+        kind: args.kind ?? "business_rule",
+        scope: args.scope ?? "global",
+        pinned: args.pinned ?? true,
       });
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ ok: true, memory }),
-          },
-        ],
-      };
-    },
-  );
-
-  const forget = tool(
-    "forget",
-    "Archive a saved memory by id. Use only when the operator asks you to forget, remove, replace, or correct that memory.",
-    {
-      id: z.string().min(1),
-      reason: z.string().max(500).optional(),
-    },
-    async (args) => {
-      const forgotten = await archiveWorkMemory(ctx.orgId, args.id, {
-        threadId: ctx.threadId ?? null,
-        runId: ctx.runId ?? null,
-        reason: args.reason,
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ ok: forgotten, id: args.id }),
+            text: JSON.stringify({ ok: true, memoryId: memory.id }),
           },
         ],
       };
@@ -264,6 +235,6 @@ export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
   return createSdkMcpServer({
     name: "neko_memory",
     version: "1.0.0",
-    tools: [search, remember, forget],
+    tools: [search, save],
   });
 }
