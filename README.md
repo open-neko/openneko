@@ -14,7 +14,7 @@ Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its o
 
 - **Briefing** — what's awaiting you, what's worth a look, what was quiet, what you've pinned. One surface, always current.
 - **Workflows in chat** — describe a watcher in plain English. OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other's findings, so one workflow's output becomes the next's trigger.
-- **Approval queue** — every proposed action lands here. Approve, reject with a reason, or let your rules handle it. Nothing leaves the box until you click.
+- **Approval queue** — every action that needs your call lands here. Approve, reject, or let your rules decide. The receipts of what fired (with you or without you) land on the Briefing.
 - **Rules** — decide what auto-fires, what queues for review, what's never allowed. Authored in chat, edited in the UI.
 - **Ask** — chat against your business data when a finding raises a question. Pull the thread without leaving the workspace.
 
@@ -53,9 +53,9 @@ docker compose -f compose.yml -f compose.adventureworks.yml \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
 
-Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the Action stack for your approve / reject. Click approve; nothing leaves the box (the trial defaults `NEKO_ACTIONS_DRY_RUN=true`, so even approved external actions go to a mock adapter until you wire real webhooks).
+Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the approvals queue for your approve / reject. Click approve; the receipt drops onto the Briefing under **Fired on your behalf** — the loop closing in front of you. (The trial defaults `NEKO_ACTIONS_DRY_RUN=true`, so external actions go to a mock adapter until you wire real webhooks.)
 
-That's the loop: workflow watches → finding lands → action proposed → you approve. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [INSTALL.md](INSTALL.md) for connecting GraphJin to your CRM, billing, or warehouse.
+That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [INSTALL.md](INSTALL.md) for connecting GraphJin to your CRM, billing, or warehouse.
 
 ## Issues
 

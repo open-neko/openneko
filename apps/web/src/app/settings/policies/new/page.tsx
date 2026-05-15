@@ -226,10 +226,10 @@ export default function NewPolicyPage() {
             className="builder-crumb-link"
             onClick={() => router.push("/settings/policies")}
           >
-            ← Policies
+            ← Rules
           </button>
           <span className="builder-crumb-sep">/</span>
-          <span>New policy</span>
+          <span>New rule</span>
         </div>
 
         <div className="builder-layout">

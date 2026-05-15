@@ -35,16 +35,6 @@ export type AgentArtifact = {
   mimeType?: string;
 };
 
-export type WorkflowPhase = "observe" | "understand" | "decide" | "act";
-
-export type DecisionNextStepKind =
-  | "none"
-  | "output"
-  | "ask_user"
-  | "schedule_followup"
-  | "request_action"
-  | "execute_action";
-
 export type OutputMood = "good" | "watch" | "act";
 
 export type AgentEvent =
@@ -60,39 +50,13 @@ export type AgentEvent =
   | { type: "status"; message: string }
   | { type: "error"; message: string }
   | { type: "done"; result?: unknown }
-  | { type: "phase_start"; phase: WorkflowPhase }
-  | { type: "phase_end"; phase: WorkflowPhase; summary?: string }
-  | { type: "understanding_note"; note: string; refs?: string[] }
-  | {
-      type: "decision_emit";
-      summary: string;
-      recommendation?: string;
-      next_step_kind: DecisionNextStepKind;
-      confidence?: number;
-    }
   | { type: "output_emit"; output_id: string; kind: string }
-  | {
-      type: "observation_emit";
-      observation_id: string;
-      source_output_id: string;
-    }
   | {
       type: "action_request_emit";
       action_request_id: string;
       kind: string;
       scope: "internal" | "external";
       risk_level?: string;
-    }
-  | {
-      type: "action_execution_progress";
-      action_execution_id: string;
-      stage: string;
-    }
-  | {
-      type: "policy_check";
-      policy_id: string;
-      result: "allow" | "deny" | "needs_approval";
-      reason?: string;
     }
   | { type: "needs_input"; question: string; options?: string[] };
 
