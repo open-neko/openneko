@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyMigration } from "./migrate-helpers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(HERE, "..", "..", "..", "db", "migrations");
@@ -81,31 +82,12 @@ for (const file of files) {
   if (applied.has(file)) continue;
   const sql = await readFile(resolve(MIGRATIONS_DIR, file), "utf8");
   console.log(`[migrate] applying ${file}`);
-  // Files ending with `_no_tx.sql` opt out of the wrapping transaction —
-  // needed for statements like REINDEX DATABASE / REINDEX SCHEMA / VACUUM
-  // that Postgres rejects inside a transaction block.
-  const noTx = file.endsWith("_no_tx.sql");
-  if (noTx) {
-    try {
-      await client.query(sql);
-      await client.query("INSERT INTO schema_migrations(name) VALUES($1)", [file]);
-      ranCount += 1;
-    } catch (err) {
-      console.error(`[migrate] FAILED on ${file}`);
-      throw err;
-    }
-  } else {
-    await client.query("BEGIN");
-    try {
-      await client.query(sql);
-      await client.query("INSERT INTO schema_migrations(name) VALUES($1)", [file]);
-      await client.query("COMMIT");
-      ranCount += 1;
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.error(`[migrate] FAILED on ${file}`);
-      throw err;
-    }
+  try {
+    await applyMigration(client, file, sql);
+    ranCount += 1;
+  } catch (err) {
+    console.error(`[migrate] FAILED on ${file}`);
+    throw err;
   }
 }
 

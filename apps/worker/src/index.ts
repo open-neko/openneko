@@ -37,6 +37,7 @@ import {
   startSubscriptionManager,
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace } from "@neko/llm/work";
+import { ensureQueueExists } from "./pg-boss-helpers.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -243,17 +244,7 @@ const b = await boss();
 }
 
 for (const name of Object.values(QUEUE)) {
-  try {
-    await b.createQueue(name, { name, expireInSeconds: 600 });
-  } catch (e) {
-    // pg-boss 10.x createQueue isn't idempotent: when the partition
-    // table already exists (queue created in a prior boot, or surviving
-    // a container recreate), the underlying CREATE TABLE raises
-    // 42P07 "relation already exists". Treat as a no-op so the worker
-    // can boot against a populated DB.
-    const code = (e as { code?: string }).code;
-    if (code !== "42P07") throw e;
-  }
+  await ensureQueueExists((qName, opts) => b.createQueue(qName, opts), name);
 }
 
 await b.work(
