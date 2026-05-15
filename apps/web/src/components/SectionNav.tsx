@@ -59,12 +59,6 @@ export default function SectionNav({
         Ask
       </Link>
       <Link
-        href="/workflows"
-        className={`settings-link nav-link${current === "workflows" ? " is-active" : ""}`}
-      >
-        Workflows
-      </Link>
-      <Link
         href="/actions"
         className={`settings-link nav-link${current === "actions" ? " is-active" : ""}`}
       >

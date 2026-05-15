@@ -43,8 +43,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const TABS: Array<{ key: Filter; label: string }> = [
-  { key: "awaiting", label: "Awaiting you" },
   { key: "fired", label: "Fired" },
+  { key: "awaiting", label: "Awaiting you" },
   { key: "rejected", label: "Rejected" },
   { key: "all", label: "All" },
 ];
