@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
-import CreatorCredit from "@/components/CreatorCredit";
-import SectionNav from "@/components/SectionNav";
+import { Workflow } from "lucide-react";
 import { describeSchedule } from "@/lib/cron-english";
 
 type WorkflowListItem = {
@@ -218,25 +216,35 @@ export default function WorkflowsPage() {
     );
   }, []);
 
+  const totalCount =
+    grouped.active.length + grouped.paused.length + grouped.broken.length;
+
   return (
     <>
-      <div className="root workflows-root">
-        <AppHeader>
-          <SectionNav current="workflows" />
-        </AppHeader>
-
-        <div className="workflows-head">
-          <h1 className="workflows-title">Workflows</h1>
-          <button
-            type="button"
-            className="workflows-new-btn"
-            onClick={() => router.push("/workflows/new")}
-          >
-            + New workflow
-          </button>
+      <div className="library-head">
+        <div className="library-head-icon">
+          <Workflow size={16} strokeWidth={2} />
         </div>
+        <div>
+          <div className="library-title">Workflows</div>
+          <div className="library-sub">
+            {workflows === null
+              ? "Loading…"
+              : totalCount === 0
+                ? "None yet"
+                : `${totalCount} ${totalCount === 1 ? "watcher" : "watchers"}`}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="workflows-new-btn library-head-action"
+          onClick={() => router.push("/workflows/new")}
+        >
+          + New workflow
+        </button>
+      </div>
 
-        {error ? (
+      {error ? (
           <div className="workflows-error">{error}</div>
         ) : workflows === null ? (
           <div className="workflows-empty">Loading…</div>
@@ -286,21 +294,18 @@ export default function WorkflowsPage() {
               )}
             </div>
 
-            {selectedId && (
-              <WorkflowDrawer
-                key={selectedId}
-                workflowId={selectedId}
-                onClose={() => select(null)}
-                onMutated={() => {
-                  void fetchList();
-                }}
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      <CreatorCredit />
+          {selectedId && (
+            <WorkflowDrawer
+              key={selectedId}
+              workflowId={selectedId}
+              onClose={() => select(null)}
+              onMutated={() => {
+                void fetchList();
+              }}
+            />
+          )}
+        </div>
+      )}
     </>
   );
 }
