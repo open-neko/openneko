@@ -14,6 +14,13 @@ DO $$
 DECLARE
   q RECORD;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'pgboss' AND table_name = 'queue'
+  ) THEN
+    RETURN;
+  END IF;
+
   FOR q IN
     SELECT name, partition_name FROM pgboss.queue
      WHERE name LIKE 'vitest_%' OR name = 'work_auto_memory'
