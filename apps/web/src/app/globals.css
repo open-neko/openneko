@@ -4325,6 +4325,32 @@ body > * { position: relative; z-index: 1; }
   color: var(--text3);
 }
 
+.actions-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 18px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.actions-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.actions-tab:hover { color: var(--text2); }
+.actions-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
 .approvals-hint {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;

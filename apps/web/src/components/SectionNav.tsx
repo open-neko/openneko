@@ -11,15 +11,16 @@ export default function SectionNav({
     | "dashboard"
     | "workflows"
     | "work"
-    | "approvals"
+    | "actions"
     | "settings"
     | "business-profile";
   children?: React.ReactNode;
 }) {
   const [pendingApprovals, setPendingApprovals] = useState<number>(0);
 
-  // Poll the approvals count so the nav reveals/hides automatically.
-  // Always check on mount; refresh every 30s while the tab is open.
+  // Poll the pending count so the badge stays current. The Actions link
+  // itself is always visible — operators should always know they can find
+  // the queue here, even when nothing is pending.
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -43,11 +44,6 @@ export default function SectionNav({
     };
   }, []);
 
-  // Approvals link is always rendered when current === "approvals" (so the
-  // user can navigate back away from it), even if the queue has emptied
-  // since they landed.
-  const showApprovals = pendingApprovals > 0 || current === "approvals";
-
   return (
     <div className="section-nav-row">
       <Link
@@ -68,17 +64,15 @@ export default function SectionNav({
       >
         Workflows
       </Link>
-      {showApprovals && (
-        <Link
-          href="/approvals"
-          className={`settings-link nav-link${current === "approvals" ? " is-active" : ""}`}
-        >
-          Approvals
-          {pendingApprovals > 0 && (
-            <span className="nav-link-badge">{pendingApprovals}</span>
-          )}
-        </Link>
-      )}
+      <Link
+        href="/actions"
+        className={`settings-link nav-link${current === "actions" ? " is-active" : ""}`}
+      >
+        Actions
+        {pendingApprovals > 0 && (
+          <span className="nav-link-badge">{pendingApprovals}</span>
+        )}
+      </Link>
       <Link
         href="/business-profile"
         className={`settings-link nav-link${current === "business-profile" ? " is-active" : ""}`}

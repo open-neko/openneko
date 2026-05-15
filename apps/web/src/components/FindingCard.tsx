@@ -54,7 +54,7 @@ export default function FindingCard({
 
   const onDrillIn = () => {
     if (isApproval) {
-      router.push("/approvals");
+      router.push("/actions");
     } else if (data.workflowRunId) {
       router.push(`/runs/${data.workflowRunId}`);
     }

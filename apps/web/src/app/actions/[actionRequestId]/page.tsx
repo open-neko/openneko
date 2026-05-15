@@ -171,7 +171,7 @@ export default function ActionPage() {
     return (
       <div className="root">
         <AppHeader>
-          <SectionNav current="approvals" />
+          <SectionNav current="actions" />
         </AppHeader>
         <div className="run-error">{error}</div>
       </div>
@@ -182,7 +182,7 @@ export default function ActionPage() {
     return (
       <div className="root">
         <AppHeader>
-          <SectionNav current="approvals" />
+          <SectionNav current="actions" />
         </AppHeader>
         <div className="run-loading">Loading…</div>
       </div>
@@ -197,16 +197,16 @@ export default function ActionPage() {
     <>
       <div className="root run-root">
         <AppHeader>
-          <SectionNav current="approvals" />
+          <SectionNav current="actions" />
         </AppHeader>
 
         <div className="run-crumb">
           <button
             type="button"
             className="run-crumb-link"
-            onClick={() => router.push("/approvals")}
+            onClick={() => router.push("/actions")}
           >
-            ← Approvals
+            ← Actions
           </button>
         </div>
 
