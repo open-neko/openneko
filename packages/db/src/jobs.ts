@@ -18,7 +18,6 @@ export const QUEUE = {
   METRIC_REFRESH: "metric_refresh",
   METRIC_REFRESH_SCHEDULED_SWEEP: "metric_refresh_scheduled_sweep",
   WORK_RUN: "work_run",
-  WORK_AUTO_MEMORY: "work_auto_memory",
   WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
@@ -43,17 +42,6 @@ export type WorkRunPayload = ProcessingJobPayload & {
   threadId: string;
   /** The user message that kicked off this run. */
   message: string;
-};
-
-// Side-effect job; no processing_job row backs it. Enqueued at the end of a
-// successful chat turn so a worker crash mid-classifier doesn't drop the
-// memory write.
-export type WorkAutoMemoryPayload = {
-  orgId: string;
-  threadId: string;
-  runId: string;
-  userMessage: string;
-  agentAnswer: string;
 };
 
 export type WorkflowRunFirePayload = {

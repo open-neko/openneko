@@ -81,16 +81,31 @@ for (const file of files) {
   if (applied.has(file)) continue;
   const sql = await readFile(resolve(MIGRATIONS_DIR, file), "utf8");
   console.log(`[migrate] applying ${file}`);
-  await client.query("BEGIN");
-  try {
-    await client.query(sql);
-    await client.query("INSERT INTO schema_migrations(name) VALUES($1)", [file]);
-    await client.query("COMMIT");
-    ranCount += 1;
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(`[migrate] FAILED on ${file}`);
-    throw err;
+  // Files ending with `_no_tx.sql` opt out of the wrapping transaction —
+  // needed for statements like REINDEX DATABASE / REINDEX SCHEMA / VACUUM
+  // that Postgres rejects inside a transaction block.
+  const noTx = file.endsWith("_no_tx.sql");
+  if (noTx) {
+    try {
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations(name) VALUES($1)", [file]);
+      ranCount += 1;
+    } catch (err) {
+      console.error(`[migrate] FAILED on ${file}`);
+      throw err;
+    }
+  } else {
+    await client.query("BEGIN");
+    try {
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations(name) VALUES($1)", [file]);
+      await client.query("COMMIT");
+      ranCount += 1;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(`[migrate] FAILED on ${file}`);
+      throw err;
+    }
   }
 }
 

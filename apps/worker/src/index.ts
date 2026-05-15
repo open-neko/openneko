@@ -8,7 +8,6 @@ import {
   QUEUE,
   type ActionExecutePayload,
   type ProcessingJobPayload,
-  type WorkAutoMemoryPayload,
   type WorkflowRunFirePayload,
   type WorkRunPayload,
 } from "@neko/db/jobs";
@@ -37,7 +36,7 @@ import {
   seedDefaultActionPolicies,
   startSubscriptionManager,
 } from "@neko/llm/workflows";
-import { ensureOrgWorkspace, runWorkAutoMemoryPipeline } from "@neko/llm/work";
+import { ensureOrgWorkspace } from "@neko/llm/work";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -244,7 +243,17 @@ const b = await boss();
 }
 
 for (const name of Object.values(QUEUE)) {
-  await b.createQueue(name, { name, expireInSeconds: 600 });
+  try {
+    await b.createQueue(name, { name, expireInSeconds: 600 });
+  } catch (e) {
+    // pg-boss 10.x createQueue isn't idempotent: when the partition
+    // table already exists (queue created in a prior boot, or surviving
+    // a container recreate), the underlying CREATE TABLE raises
+    // 42P07 "relation already exists". Treat as a no-op so the worker
+    // can boot against a populated DB.
+    const code = (e as { code?: string }).code;
+    if (code !== "42P07") throw e;
+  }
 }
 
 await b.work(
@@ -397,22 +406,6 @@ subscriptionManager.ready
     );
   });
 
-await b.work(
-  QUEUE.WORK_AUTO_MEMORY,
-  async (jobs: PgBossLib.Job<WorkAutoMemoryPayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runWorkAutoMemoryPipeline(job.data);
-      } catch (e) {
-        console.warn(
-          `[work-auto-memory] job ${job.id} failed; pg-boss may retry:`,
-          e instanceof Error ? e.message : e,
-        );
-        throw e;
-      }
-    }
-  },
-);
 
 if (SCHEDULED_REFRESH_HOURS > 0) {
   const cron =
