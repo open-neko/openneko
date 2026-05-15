@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS trial_sim.state (
   paused       boolean     NOT NULL DEFAULT false
 );
 
+-- Added later — keeps existing installs forward-compatible without a
+-- separate migration step. Read by advance-dates.sql to throttle shifts.
+ALTER TABLE trial_sim.state
+  ADD COLUMN IF NOT EXISTS advance_dates_at timestamptz;
+
 -- Idempotency ledger. (scenario_id, window_key) PK makes every firing
 -- exactly-once across restarts.
 CREATE TABLE IF NOT EXISTS trial_sim.scenario_run (
