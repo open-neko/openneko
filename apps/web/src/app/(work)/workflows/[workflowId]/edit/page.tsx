@@ -9,9 +9,6 @@ import {
   type FormEvent,
 } from "react";
 import { useParams, useRouter } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
-import CreatorCredit from "@/components/CreatorCredit";
-import SectionNav from "@/components/SectionNav";
 import { extractWorkflowSaveFence } from "@neko/llm/workflows/fences";
 import type { WorkflowSavePayload } from "@neko/llm/workflows/fence-schemas";
 import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
@@ -298,10 +295,7 @@ export default function EditWorkflowPage() {
 
   if (loadError) {
     return (
-      <div className="root builder-root">
-        <AppHeader>
-          <SectionNav current="workflows" />
-        </AppHeader>
+      <div className="builder-root">
         <div className="builder-error">Couldn&apos;t load workflow: {loadError}</div>
       </div>
     );
@@ -309,23 +303,15 @@ export default function EditWorkflowPage() {
 
   if (!workflow) {
     return (
-      <div className="root builder-root">
-        <AppHeader>
-          <SectionNav current="workflows" />
-        </AppHeader>
+      <div className="builder-root">
         <div className="builder-seed">Loading workflow…</div>
       </div>
     );
   }
 
   return (
-    <>
-      <div className="root builder-root">
-        <AppHeader>
-          <SectionNav current="workflows" />
-        </AppHeader>
-
-        <div className="builder-crumb">
+    <div className="builder-root">
+      <div className="builder-crumb">
           <button
             type="button"
             className="builder-crumb-link"
@@ -444,10 +430,7 @@ export default function EditWorkflowPage() {
             </div>
           </aside>
         </div>
-      </div>
-
-      <CreatorCredit />
-    </>
+    </div>
   );
 }
 

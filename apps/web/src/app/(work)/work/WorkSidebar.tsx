@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Brain, Plus, Sparkles, Trash2, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -125,6 +125,10 @@ export default function WorkSidebar() {
       </div>
 
       <div className="work-sidebar-footer">
+        <Link href="/workflows" className="work-sidebar-link">
+          <Workflow size={14} strokeWidth={2} />
+          <span>Workflows</span>
+        </Link>
         <Link href="/skills" className="work-sidebar-link">
           <Sparkles size={14} strokeWidth={2} />
           <span>Skills</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -79,9 +79,6 @@ type RunDetailPayload = {
   };
 };
 
-const PHASES = ["observe", "understand", "decide", "act"] as const;
-type Phase = (typeof PHASES)[number];
-
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString("en-IN", {
@@ -99,6 +96,18 @@ function formatDuration(ms: number | null): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+const ACTION_STATUS_LABEL: Record<string, string> = {
+  pending_approval: "Awaiting you",
+  approved: "Approved",
+  rejected: "Rejected",
+  executed: "Fired",
+  failed: "Failed",
+};
+
+function actionStatusLabel(s: string): string {
+  return ACTION_STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+}
+
 function formatTrigger(kind: string): string {
   switch (kind) {
     case "manual":
@@ -110,82 +119,6 @@ function formatTrigger(kind: string): string {
     default:
       return kind;
   }
-}
-
-type PhaseBucket = {
-  phase: Phase | "setup";
-  events: RunDetailPayload["events"];
-  durationMs: number | null;
-};
-
-function bucketEventsByPhase(
-  events: RunDetailPayload["events"],
-): PhaseBucket[] {
-  const buckets: Record<Phase | "setup", PhaseBucket> = {
-    setup: { phase: "setup", events: [], durationMs: null },
-    observe: { phase: "observe", events: [], durationMs: null },
-    understand: { phase: "understand", events: [], durationMs: null },
-    decide: { phase: "decide", events: [], durationMs: null },
-    act: { phase: "act", events: [], durationMs: null },
-  };
-
-  let currentPhase: Phase | "setup" = "setup";
-  const phaseStartTs: Record<Phase, number | null> = {
-    observe: null,
-    understand: null,
-    decide: null,
-    act: null,
-  };
-  const phaseEndTs: Record<Phase, number | null> = {
-    observe: null,
-    understand: null,
-    decide: null,
-    act: null,
-  };
-
-  for (const ev of events) {
-    if (ev.type === "phase_start") {
-      const phase = ((ev.event as { phase?: string } | null)?.phase ?? "")
-        .toLowerCase() as Phase;
-      if (PHASES.includes(phase)) {
-        currentPhase = phase;
-        phaseStartTs[phase] = new Date(ev.createdAt).getTime();
-        continue;
-      }
-    }
-    if (ev.type === "phase_end") {
-      const phase = ((ev.event as { phase?: string } | null)?.phase ?? "")
-        .toLowerCase() as Phase;
-      if (PHASES.includes(phase)) {
-        phaseEndTs[phase] = new Date(ev.createdAt).getTime();
-        currentPhase = "setup";
-        continue;
-      }
-    }
-    buckets[currentPhase].events.push(ev);
-  }
-
-  for (const p of PHASES) {
-    const s = phaseStartTs[p];
-    const e = phaseEndTs[p];
-    if (s != null && e != null) {
-      buckets[p].durationMs = Math.max(1, e - s);
-    } else if (s != null && buckets[p].events.length > 0) {
-      const last = buckets[p].events[buckets[p].events.length - 1];
-      buckets[p].durationMs = Math.max(
-        1,
-        new Date(last.createdAt).getTime() - s,
-      );
-    }
-  }
-
-  return [
-    buckets.setup,
-    buckets.observe,
-    buckets.understand,
-    buckets.decide,
-    buckets.act,
-  ].filter((b) => b.events.length > 0 || b.durationMs != null);
 }
 
 export default function RunPage() {
@@ -264,11 +197,6 @@ export default function RunPage() {
     setRejectingId(null);
     setRejectReason("");
   }, []);
-
-  const phaseBuckets = useMemo(
-    () => (data ? bucketEventsByPhase(data.events) : []),
-    [data],
-  );
 
   const pinOutput = useCallback(async (outputId: string) => {
     await fetch("/api/briefing/pins", {
@@ -367,14 +295,15 @@ export default function RunPage() {
           </div>
         </div>
 
-        {/* Only render the phase strip when the agent emitted real phase
-            markers (phase_start/phase_end). Showing a lone "SETUP" segment
-            for runs that never tagged phases is noise; hide it entirely. */}
-        {phaseBuckets.some((b) => b.phase !== "setup") && (
-          <PhaseStrip buckets={phaseBuckets} />
-        )}
+        {run.status === "completed" &&
+          outputs.length === 0 &&
+          actions.length === 0 && (
+            <div className="run-silent-note">
+              {run.summary?.trim() || "Looked at the data; nothing to flag."}
+            </div>
+          )}
 
-        <Section title="Produced">
+        <Section title="Findings">
           {outputs.length === 0 ? (
             <p className="run-empty">
               This run hasn't produced any outputs yet.
@@ -415,7 +344,7 @@ export default function RunPage() {
           )}
         </Section>
 
-        <Section title="Proposed">
+        <Section title="Actions">
           {actions.length === 0 ? (
             <p className="run-empty">No actions proposed by this run.</p>
           ) : (
@@ -423,11 +352,18 @@ export default function RunPage() {
               {actions.map((a) => (
                 <li key={a.id} className="run-action-card">
                   <div className="run-action-head">
-                    <div className="run-action-title">{a.summary || a.kind}</div>
+                    <button
+                      type="button"
+                      className="run-action-title run-action-title-link"
+                      onClick={() => router.push(`/actions/${a.id}`)}
+                      title="Open action receipt"
+                    >
+                      {a.summary || a.kind}
+                    </button>
                     <span
                       className={`run-action-pill run-action-pill-${a.status}`}
                     >
-                      {a.status.replace(/_/g, " ")}
+                      {actionStatusLabel(a.status)}
                     </span>
                   </div>
                   <div className="run-action-meta">
@@ -521,12 +457,10 @@ export default function RunPage() {
             How it got there ({data.events.length} events)
           </summary>
           <div className="run-expander-body">
-            {phaseBuckets.length === 0 ? (
+            {data.events.length === 0 ? (
               <p className="run-empty">No events recorded.</p>
             ) : (
-              phaseBuckets.map((bucket) => (
-                <PhaseBlock key={bucket.phase} bucket={bucket} />
-              ))
+              <EventStream events={data.events} />
             )}
           </div>
         </details>
@@ -587,36 +521,13 @@ export default function RunPage() {
   );
 }
 
-function PhaseStrip({ buckets }: { buckets: PhaseBucket[] }) {
-  const total = buckets.reduce((s, b) => s + (b.durationMs ?? 1), 0);
-  return (
-    <div className="run-phase-strip">
-      {buckets.map((b) => {
-        const w = ((b.durationMs ?? 1) / total) * 100;
-        const dur = b.durationMs != null ? formatDuration(b.durationMs) : null;
-        return (
-          <div
-            key={b.phase}
-            className={`run-phase-seg run-phase-seg-${b.phase}`}
-            style={{ flexBasis: `${w}%` }}
-            title={dur ? `${b.phase} · ${dur}` : b.phase}
-          >
-            <span className="run-phase-seg-label">
-              {b.phase === "setup" ? "setup" : b.phase}
-              {dur && <span className="run-phase-seg-dur"> {dur}</span>}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+type EventRow = RunDetailPayload["events"][number];
 
 type RenderedItem =
   | { type: "message-block"; seq: number; content: string }
-  | { type: "single"; seq: number; ev: PhaseBucket["events"][number] };
+  | { type: "single"; seq: number; ev: EventRow };
 
-function coalesceEvents(events: PhaseBucket["events"]): RenderedItem[] {
+function coalesceEvents(events: EventRow[]): RenderedItem[] {
   // Streaming chunks each become their own `message` event row. Rendering each
   // independently through ReactMarkdown breaks any inline syntax that spans a
   // chunk boundary (e.g. `**Daily Revenue Health Check**` split between two
@@ -646,109 +557,74 @@ function coalesceEvents(events: PhaseBucket["events"]): RenderedItem[] {
   return items;
 }
 
-function PhaseBlock({ bucket }: { bucket: PhaseBucket }) {
-  const label =
-    bucket.phase === "setup"
-      ? "BEFORE PHASES"
-      : bucket.phase.toUpperCase();
-  const items = coalesceEvents(bucket.events);
+function EventStream({ events }: { events: EventRow[] }) {
+  const items = coalesceEvents(events);
   return (
-    <div className="run-phase-block">
-      <div className="run-phase-block-title">{label}</div>
-      <ul className="run-phase-block-events">
-        {items.map((item) => {
-          if (item.type === "message-block") {
-            return (
-              <li key={item.seq} className="run-evt run-evt-message">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {item.content}
-                </ReactMarkdown>
-              </li>
-            );
-          }
-          const ev = item.ev;
-          if (ev.type === "status") {
-            const message = (ev.event as { message?: string } | null)?.message;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-status">
-                · {message}
-              </li>
-            );
-          }
-          if (ev.type === "output_emit") {
-            const e = ev.event as { kind?: string } | null;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-info">
-                emitted output ({e?.kind ?? "unknown kind"})
-              </li>
-            );
-          }
-          if (ev.type === "action_request_emit") {
-            const e = ev.event as
-              | { kind?: string; risk_level?: string }
-              | null;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-info">
-                proposed action: {e?.kind ?? "unknown"}
-                {e?.risk_level ? ` (risk ${e.risk_level})` : ""}
-              </li>
-            );
-          }
-          if (ev.type === "observation_emit") {
-            return (
-              <li key={ev.seq} className="run-evt run-evt-info">
-                wrote observation
-              </li>
-            );
-          }
-          if (ev.type === "decision_emit") {
-            const e = ev.event as
-              | { summary?: string; confidence?: number }
-              | null;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-info">
-                decided: {e?.summary ?? ""}
-                {e?.confidence ? ` (conf ${e.confidence})` : ""}
-              </li>
-            );
-          }
-          if (ev.type === "understanding_note") {
-            const e = ev.event as { note?: string } | null;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-message">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {e?.note ?? ""}
-                </ReactMarkdown>
-              </li>
-            );
-          }
-          if (ev.type === "needs_input") {
-            const e = ev.event as { question?: string } | null;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-warn">
-                paused for input: {e?.question}
-              </li>
-            );
-          }
-          if (ev.type === "error") {
-            const e = ev.event as { message?: string } | null;
-            return (
-              <li key={ev.seq} className="run-evt run-evt-error">
-                error: {e?.message}
-              </li>
-            );
-          }
-          if (ev.type === "done") {
-            return (
-              <li key={ev.seq} className="run-evt run-evt-done">
-                — done
-              </li>
-            );
-          }
-          return null;
-        })}
-      </ul>
-    </div>
+    <ul className="run-phase-block-events">
+      {items.map((item) => {
+        if (item.type === "message-block") {
+          return (
+            <li key={item.seq} className="run-evt run-evt-message">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {item.content}
+              </ReactMarkdown>
+            </li>
+          );
+        }
+        const ev = item.ev;
+        if (ev.type === "status") {
+          const message = (ev.event as { message?: string } | null)?.message;
+          return (
+            <li key={ev.seq} className="run-evt run-evt-status">
+              · {message}
+            </li>
+          );
+        }
+        if (ev.type === "output_emit") {
+          const e = ev.event as { kind?: string } | null;
+          return (
+            <li key={ev.seq} className="run-evt run-evt-info">
+              emitted output ({e?.kind ?? "unknown kind"})
+            </li>
+          );
+        }
+        if (ev.type === "action_request_emit") {
+          const e = ev.event as
+            | { kind?: string; risk_level?: string }
+            | null;
+          return (
+            <li key={ev.seq} className="run-evt run-evt-info">
+              proposed action: {e?.kind ?? "unknown"}
+              {e?.risk_level ? ` (risk ${e.risk_level})` : ""}
+            </li>
+          );
+        }
+        if (ev.type === "needs_input") {
+          const e = ev.event as { question?: string } | null;
+          return (
+            <li key={ev.seq} className="run-evt run-evt-warn">
+              paused for input: {e?.question}
+            </li>
+          );
+        }
+        if (ev.type === "error") {
+          const e = ev.event as { message?: string } | null;
+          return (
+            <li key={ev.seq} className="run-evt run-evt-error">
+              error: {e?.message}
+            </li>
+          );
+        }
+        if (ev.type === "done") {
+          return (
+            <li key={ev.seq} className="run-evt run-evt-done">
+              — done
+            </li>
+          );
+        }
+        return null;
+      })}
+    </ul>
   );
 }
 

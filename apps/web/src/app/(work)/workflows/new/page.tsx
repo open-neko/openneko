@@ -9,9 +9,6 @@ import {
   type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
-import CreatorCredit from "@/components/CreatorCredit";
-import SectionNav from "@/components/SectionNav";
 import { extractWorkflowSaveFence } from "@neko/llm/workflows/fences";
 import type { WorkflowSavePayload } from "@neko/llm/workflows/fence-schemas";
 import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
@@ -225,13 +222,8 @@ export default function NewWorkflowPage() {
   }, [messages]);
 
   return (
-    <>
-      <div className="root builder-root">
-        <AppHeader>
-          <SectionNav current="workflows" />
-        </AppHeader>
-
-        <div className="builder-crumb">
+    <div className="builder-root">
+      <div className="builder-crumb">
           <button
             type="button"
             className="builder-crumb-link"
@@ -326,10 +318,7 @@ export default function NewWorkflowPage() {
             />
           </aside>
         </div>
-      </div>
-
-      <CreatorCredit />
-    </>
+    </div>
   );
 }
 

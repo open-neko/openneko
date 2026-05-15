@@ -113,23 +113,23 @@ export default function PoliciesPage() {
             ← Settings
           </button>
           <span className="policies-crumb-sep">/</span>
-          <span>Policies</span>
+          <span>Rules</span>
         </div>
 
         <div className="policies-head">
-          <h1 className="policies-title">Policies</h1>
+          <h1 className="policies-title">Rules</h1>
           <button
             type="button"
             className="policies-new-btn"
             onClick={() => router.push("/settings/policies/new")}
           >
-            + New policy
+            + New rule
           </button>
         </div>
 
         <p className="policies-intro">
-          Policies decide what OpenNeko can do in the world on its own and
-          what it must ask you about. To add or change a policy, use the
+          Rules decide what OpenNeko can do on its own, what queues for your
+          review, and what's never allowed. To add or change a rule, use the
           buttons here — the agent walks you through it in plain language.
         </p>
 
@@ -139,8 +139,8 @@ export default function PoliciesPage() {
           <div className="policies-loading">Loading…</div>
         ) : policies.length === 0 ? (
           <div className="policies-empty">
-            No policies yet. Defaults are seeded automatically the first time
-            a workflow proposes an action that needs gating.
+            No rules yet. Defaults are seeded automatically the first time a
+            workflow proposes an action that needs gating.
           </div>
         ) : (
           <ul className="policies-list">

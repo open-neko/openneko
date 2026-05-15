@@ -9,6 +9,9 @@ import type { BriefingCardProps } from "@/a2ui/catalog";
 import BriefingCard from "@/components/BriefingCard";
 import type { BriefingCardData } from "@/components/BriefingCard";
 import FindingCard, { type FindingCardData } from "@/components/FindingCard";
+import ActionReceiptCard, {
+  type ActionReceiptCardData,
+} from "@/components/ActionReceiptCard";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
@@ -26,6 +29,11 @@ type FindingsPayload = {
   pinned: FindingCardData[];
   worthKnowing: FindingCardData[];
   quiet: { goodOutputs: number; windowHours: number };
+};
+
+type RecentActionsPayload = {
+  receipts: ActionReceiptCardData[];
+  windowHours: number;
 };
 
 export default function Dashboard() {
@@ -76,6 +84,8 @@ export default function Dashboard() {
   const [surfaces, setSurfaces] = useState<Map<string, SurfaceState>>(new Map());
   const [loading, setLoading] = useState(true);
   const [findings, setFindings] = useState<FindingsPayload | null>(null);
+  const [recentActions, setRecentActions] =
+    useState<RecentActionsPayload | null>(null);
 
   // Tributaries: workflow_output findings + pending approvals + live summary.
   // Polled alongside the KPI briefing so newly-produced findings appear
@@ -91,12 +101,29 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchRecentActions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/briefing/recent-actions", {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as RecentActionsPayload;
+      setRecentActions(data);
+    } catch {
+      // best-effort
+    }
+  }, []);
+
   useEffect(() => {
     if (!gateChecked) return;
     void fetchFindings();
-    const id = setInterval(fetchFindings, 30_000);
+    void fetchRecentActions();
+    const id = setInterval(() => {
+      void fetchFindings();
+      void fetchRecentActions();
+    }, 30_000);
     return () => clearInterval(id);
-  }, [gateChecked, fetchFindings]);
+  }, [gateChecked, fetchFindings, fetchRecentActions]);
 
   const surfaceId = `briefing-${role.toLowerCase()}`;
   const surface = surfaces.get(surfaceId);
@@ -388,6 +415,22 @@ export default function Dashboard() {
                   </div>
                 </section>
               )}
+
+            {recentActions && recentActions.receipts.length > 0 && (
+              <section
+                className="briefing-tributary"
+                style={{ animation: "fadeUp 0.5s ease 0.21s both" }}
+              >
+                <div className="briefing-tributary-title">
+                  Fired on your behalf
+                </div>
+                <div className="briefing-tributary-list">
+                  {recentActions.receipts.map((r, i) => (
+                    <ActionReceiptCard key={r.id} data={r} index={i} />
+                  ))}
+                </div>
+              </section>
+            )}
 
             {findings && findings.pinned.length > 0 && (
               <section
