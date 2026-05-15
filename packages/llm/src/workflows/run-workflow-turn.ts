@@ -307,10 +307,15 @@ export async function runWorkflowTurn(
     }
 
     await finishWorkRun(workRunId, result.status, result.error ?? null);
+    const summary =
+      persistedText.slice(0, 4000) ||
+      (result.status === "completed"
+        ? "Looked at the data; nothing to flag."
+        : null);
     await finishWorkflowRun({
       workflowRunId: workflowRun.id,
       status: result.status,
-      summary: persistedText.slice(0, 4000) || null,
+      summary,
       error: result.error ?? null,
     });
 

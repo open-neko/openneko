@@ -99,6 +99,18 @@ function formatDuration(ms: number | null): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+const ACTION_STATUS_LABEL: Record<string, string> = {
+  pending_approval: "Awaiting you",
+  approved: "Approved",
+  rejected: "Rejected",
+  executed: "Fired",
+  failed: "Failed",
+};
+
+function actionStatusLabel(s: string): string {
+  return ACTION_STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+}
+
 function formatTrigger(kind: string): string {
   switch (kind) {
     case "manual":
@@ -374,6 +386,14 @@ export default function RunPage() {
           <PhaseStrip buckets={phaseBuckets} />
         )}
 
+        {run.status === "completed" &&
+          outputs.length === 0 &&
+          actions.length === 0 && (
+            <div className="run-silent-note">
+              {run.summary?.trim() || "Looked at the data; nothing to flag."}
+            </div>
+          )}
+
         <Section title="Produced">
           {outputs.length === 0 ? (
             <p className="run-empty">
@@ -415,7 +435,7 @@ export default function RunPage() {
           )}
         </Section>
 
-        <Section title="Proposed">
+        <Section title="Actions">
           {actions.length === 0 ? (
             <p className="run-empty">No actions proposed by this run.</p>
           ) : (
@@ -423,11 +443,18 @@ export default function RunPage() {
               {actions.map((a) => (
                 <li key={a.id} className="run-action-card">
                   <div className="run-action-head">
-                    <div className="run-action-title">{a.summary || a.kind}</div>
+                    <button
+                      type="button"
+                      className="run-action-title run-action-title-link"
+                      onClick={() => router.push(`/actions/${a.id}`)}
+                      title="Open action receipt"
+                    >
+                      {a.summary || a.kind}
+                    </button>
                     <span
                       className={`run-action-pill run-action-pill-${a.status}`}
                     >
-                      {a.status.replace(/_/g, " ")}
+                      {actionStatusLabel(a.status)}
                     </span>
                   </div>
                   <div className="run-action-meta">

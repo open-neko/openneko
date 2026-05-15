@@ -207,6 +207,7 @@ export default function ApprovalsPage() {
                   onOpenRun={() =>
                     router.push(`/runs/${row.workflowRunId}`)
                   }
+                  onOpenAction={() => router.push(`/actions/${row.id}`)}
                   rowRef={(el) => {
                     rowRefs.current[row.id] = el;
                   }}
@@ -230,6 +231,7 @@ function ApprovalCard({
   onApprove,
   onReject,
   onOpenRun,
+  onOpenAction,
   rejecting,
   rejectReason,
   onRejectReasonChange,
@@ -244,6 +246,7 @@ function ApprovalCard({
   onApprove: () => void;
   onReject: () => void;
   onOpenRun: () => void;
+  onOpenAction: () => void;
   rejecting: boolean;
   rejectReason: string;
   onRejectReasonChange: (value: string) => void;
@@ -258,9 +261,17 @@ function ApprovalCard({
       onClick={onFocus}
     >
       <div className="approval-card-head">
-        <div className="approval-card-title">
+        <button
+          type="button"
+          className="approval-card-title approval-card-title-link"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenAction();
+          }}
+          title="Open action receipt"
+        >
           {row.summary || `${row.kind}`}
-        </div>
+        </button>
         {row.riskLevel && (
           <span
             className={`approval-card-risk approval-card-risk-${row.riskLevel}`}

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  action_execution,
+  action_policy,
   action_request,
   and,
   db,
@@ -36,6 +38,11 @@ export async function POST(request: NextRequest) {
     body.seedWorkflowRunId.length > 0
       ? body.seedWorkflowRunId
       : null;
+  const seedActionRequestId =
+    typeof body.seedActionRequestId === "string" &&
+    body.seedActionRequestId.length > 0
+      ? body.seedActionRequestId
+      : null;
 
   const orgId = await getOrgId();
 
@@ -44,12 +51,20 @@ export async function POST(request: NextRequest) {
   // "Ask a follow-up."
   let resolvedTitle = title;
   let runContext: string | null = null;
+  let actionContext: string | null = null;
   let seedCard: { message: string; title: string } | null = null;
   if (seedWorkflowRunId) {
     const seed = await loadWorkflowRunContext(orgId, seedWorkflowRunId);
     if (seed) {
       runContext = seed.message;
       if (!resolvedTitle) resolvedTitle = `Follow-up · ${seed.workflowName}`;
+    }
+  }
+  if (seedActionRequestId) {
+    const seed = await loadActionRequestContext(orgId, seedActionRequestId);
+    if (seed) {
+      actionContext = seed.message;
+      if (!resolvedTitle) resolvedTitle = `Follow-up · ${seed.label}`;
     }
   }
   if (seedMetricId) {
@@ -80,6 +95,16 @@ export async function POST(request: NextRequest) {
       runId: null,
       role: "user",
       content: runContext,
+    });
+  }
+
+  if (actionContext) {
+    await createWorkMessage({
+      orgId,
+      threadId: thread.id,
+      runId: null,
+      role: "user",
+      content: actionContext,
     });
   }
 
@@ -273,4 +298,135 @@ export async function loadBriefingCardForSeed(
     message: `${BRIEFING_CARD_SENTINEL}${JSON.stringify(card)}`,
     title: m.title,
   };
+}
+
+/**
+ * Compose the context message that seeds a follow-up Ask thread for an
+ * action receipt. Same shape as loadWorkflowRunContext but anchored to the
+ * action: what was proposed, who/what approved it, what the executor
+ * returned, the upstream finding if any.
+ */
+async function loadActionRequestContext(
+  orgId: string,
+  actionRequestId: string,
+): Promise<{ label: string; message: string } | null> {
+  const arRows = await db()
+    .select({
+      id: action_request.id,
+      workflowRunId: action_request.workflow_run_id,
+      triggeredByObservationId: action_request.triggered_by_observation_id,
+      policyId: action_request.policy_id,
+      scope: action_request.scope,
+      kind: action_request.kind,
+      target: action_request.target,
+      payload: action_request.payload,
+      riskLevel: action_request.risk_level,
+      status: action_request.status,
+      summary: action_request.summary,
+      approvedByUserId: action_request.approved_by_user_id,
+      approvedAt: action_request.approved_at,
+      rejectionReason: action_request.rejection_reason,
+      createdAt: action_request.created_at,
+    })
+    .from(action_request)
+    .where(
+      and(
+        eq(action_request.org_id, orgId),
+        eq(action_request.id, actionRequestId),
+      ),
+    )
+    .limit(1);
+  const ar = arRows[0];
+  if (!ar) return null;
+
+  let workflowName: string | null = null;
+  if (ar.workflowRunId) {
+    const rows = await db()
+      .select({ name: workflow_definition.name })
+      .from(workflow_run)
+      .innerJoin(
+        workflow_definition,
+        eq(workflow_run.workflow_id, workflow_definition.id),
+      )
+      .where(
+        and(
+          eq(workflow_run.org_id, orgId),
+          eq(workflow_run.id, ar.workflowRunId),
+        ),
+      )
+      .limit(1);
+    workflowName = rows[0]?.name ?? null;
+  }
+
+  let policyName: string | null = null;
+  if (ar.policyId) {
+    const rows = await db()
+      .select({ name: action_policy.name })
+      .from(action_policy)
+      .where(
+        and(eq(action_policy.org_id, orgId), eq(action_policy.id, ar.policyId)),
+      )
+      .limit(1);
+    policyName = rows[0]?.name ?? null;
+  }
+
+  const executions = await db()
+    .select({
+      executor: action_execution.executor,
+      status: action_execution.status,
+      result: action_execution.result,
+      error: action_execution.error,
+      finishedAt: action_execution.finished_at,
+    })
+    .from(action_execution)
+    .where(eq(action_execution.action_request_id, actionRequestId))
+    .orderBy(desc(action_execution.created_at));
+
+  const when =
+    ar.createdAt?.toLocaleString("en-IN", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }) ?? "";
+
+  const lines: string[] = [
+    `I want to follow up on an action receipt.`,
+    ``,
+    `Action: ${ar.kind}${ar.target ? ` → ${ar.target}` : ""}`,
+    `Status: ${ar.status} · ${ar.scope}${ar.riskLevel ? ` · risk ${ar.riskLevel}` : ""}`,
+    `Proposed: ${when}`,
+  ];
+  if (workflowName) lines.push(`From workflow: ${workflowName}`);
+  if (ar.summary) lines.push(`Summary: ${ar.summary}`);
+  if (ar.approvedByUserId) {
+    lines.push(`Approved by: operator ${ar.approvedByUserId}`);
+  } else if (policyName) {
+    lines.push(`Approved by: rule "${policyName}"`);
+  } else if (ar.approvedAt) {
+    lines.push(`Approved automatically.`);
+  }
+  if (ar.rejectionReason) lines.push(`Rejection reason: ${ar.rejectionReason}`);
+
+  if (executions.length > 0) {
+    lines.push(``, `Executions:`);
+    for (const e of executions) {
+      lines.push(
+        `- executor=${e.executor} status=${e.status}${e.error ? ` error="${e.error}"` : ""}`,
+      );
+    }
+  }
+
+  if (ar.payload && Object.keys(ar.payload as Record<string, unknown>).length > 0) {
+    lines.push(``, `Payload:`);
+    lines.push("```json");
+    lines.push(JSON.stringify(ar.payload, null, 2));
+    lines.push("```");
+  }
+
+  lines.push(``, `(I'll ask my question below.)`);
+
+  const label = `${ar.kind}${ar.target ? ` → ${ar.target}` : ""}`;
+  return { label, message: lines.join("\n") };
 }

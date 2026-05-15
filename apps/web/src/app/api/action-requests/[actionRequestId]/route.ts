@@ -1,4 +1,13 @@
 import { NextResponse } from "next/server";
+import {
+  action_policy,
+  and,
+  db,
+  eq,
+  workflow_definition,
+  workflow_output,
+  workflow_run,
+} from "@neko/db";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import {
   approveActionRequest,
@@ -24,6 +33,78 @@ export async function GET(_req: Request, context: RouteContext) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const executions = await listActionExecutions(actionRequestId);
+
+  let workflow: { id: string; name: string } | null = null;
+  if (request.workflowRunId) {
+    const rows = await db()
+      .select({
+        id: workflow_definition.id,
+        name: workflow_definition.name,
+      })
+      .from(workflow_run)
+      .innerJoin(
+        workflow_definition,
+        eq(workflow_run.workflow_id, workflow_definition.id),
+      )
+      .where(
+        and(
+          eq(workflow_run.org_id, orgId),
+          eq(workflow_run.id, request.workflowRunId),
+        ),
+      )
+      .limit(1);
+    workflow = rows[0] ?? null;
+  }
+
+  let policy: { id: string; name: string; mode: string } | null = null;
+  if (request.policyId) {
+    const rows = await db()
+      .select({
+        id: action_policy.id,
+        name: action_policy.name,
+        mode: action_policy.mode,
+      })
+      .from(action_policy)
+      .where(
+        and(
+          eq(action_policy.org_id, orgId),
+          eq(action_policy.id, request.policyId),
+        ),
+      )
+      .limit(1);
+    policy = rows[0] ?? null;
+  }
+
+  let upstreamOutput:
+    | { id: string; title: string; workflowRunId: string | null }
+    | null = null;
+  if (request.triggeredByObservationId) {
+    const rows = await db()
+      .select({
+        id: workflow_output.id,
+        title: workflow_output.title,
+        workflowRunId: workflow_output.workflow_run_id,
+      })
+      .from(workflow_output)
+      .where(
+        and(
+          eq(workflow_output.org_id, orgId),
+          eq(workflow_output.id, request.triggeredByObservationId),
+        ),
+      )
+      .limit(1);
+    upstreamOutput = rows[0] ?? null;
+  }
+
+  const approverKind: "operator" | "policy" | "auto" | null =
+    request.approvedByUserId
+      ? "operator"
+      : request.policyId
+        ? "policy"
+        : request.approvedAt
+          ? "auto"
+          : null;
+
   return NextResponse.json({
     actionRequest: {
       id: request.id,
@@ -56,6 +137,10 @@ export async function GET(_req: Request, context: RouteContext) {
       finishedAt: e.finishedAt?.toISOString() ?? null,
       createdAt: e.createdAt.toISOString(),
     })),
+    workflow,
+    policy,
+    upstreamOutput,
+    approverKind,
   });
 }
 
