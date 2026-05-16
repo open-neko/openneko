@@ -1,0 +1,532 @@
+/* ─── COMPOSER ───
+   The composer shell is the single object the user types into. Stack
+   (chips → textarea → action row) lives inside one bordered card so the
+   chips and hint feel like part of the same surface, not three boxes
+   stacked. focus-within drives the hover/active state on the whole shell.
+
+   The outer .work-composer is sticky-bottom so the shell floats above
+   the transcript as it scrolls — matching what Claude / ChatGPT do
+   without leaving the document flow. A soft gradient fade behind it
+   stops messages from clipping abruptly under the shell. */
+.work-composer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Lift above the iPhone home-bar when present. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.work-composer::before {
+  content: "";
+  position: absolute;
+  inset: -32px -12px calc(env(safe-area-inset-bottom, 0px) * -1 - 4px) -12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 0%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 70%, transparent) 38%,
+    var(--bg) 80%
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+.work-composer-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card) 100%, var(--bg)) 0%,
+    var(--card) 100%
+  );
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 4px 6px 6px;
+  box-shadow:
+    0 1px 2px rgba(20,18,12,0.04),
+    0 12px 32px -16px rgba(20,18,12,0.12);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+.work-composer-shell:hover {
+  border-color: color-mix(in srgb, var(--border) 60%, var(--text3) 40%);
+}
+.work-composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--success-mid) 55%, var(--border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent),
+    0 2px 4px rgba(20,18,12,0.04),
+    0 18px 40px -18px rgba(20,18,12,0.16);
+}
+.work-composer-shell.is-working {
+  border-color: color-mix(in srgb, var(--text) 30%, var(--border));
+}
+.work-composer-shell.is-working::before {
+  /* Hair-thin animated underline conveys "agent is running" without
+     stealing focus from the user's typing space. */
+  content: "";
+  position: absolute;
+  left: 16px; right: 16px; bottom: -1px; height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 40%,
+    var(--success-mid) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 1px;
+  animation: work-composer-shimmer 1.8s linear infinite;
+  pointer-events: none;
+}
+@keyframes work-composer-shimmer {
+  0%   { background-position: 100% 0; opacity: 0.55; }
+  50%  { opacity: 0.95; }
+  100% { background-position: -100% 0; opacity: 0.55; }
+}
+
+.work-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 4px;
+}
+.work-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text2);
+  background: color-mix(in srgb, var(--neutral-soft) 70%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+  padding: 4px 4px 4px 8px;
+  max-width: 240px;
+  animation: work-file-chip-in 0.22s ease-out;
+}
+@keyframes work-file-chip-in {
+  from { opacity: 0; transform: translateY(2px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.work-file-chip > svg { color: var(--text3); flex-shrink: 0; }
+.work-file-chip-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.work-file-chip-size {
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+}
+.work-file-chip button {
+  width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text3);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.work-file-chip button:hover {
+  background: color-mix(in srgb, var(--danger-soft) 90%, transparent);
+  color: var(--danger);
+}
+
+.work-input {
+  width: 100%;
+  min-height: 56px;
+  /* Ceiling = 9 lines × (14.5px × 1.55) + top/bottom padding. Past that
+     the textarea scrolls internally instead of growing the composer. */
+  max-height: 222px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text);
+  padding: 14px 12px 6px;
+}
+.work-input::placeholder { color: var(--text3); }
+.work-input:disabled { color: var(--text2); cursor: progress; }
+
+.work-composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 6px 4px 6px;
+}
+.work-composer-row-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.work-composer-hint {
+  font-size: 11.5px;
+  color: var(--text3);
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-composer-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 1.5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--neutral-soft) 50%, var(--card));
+  color: var(--text2);
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1;
+}
+.work-composer-hint-sep {
+  color: var(--text3);
+  opacity: 0.5;
+  padding: 0 2px;
+}
+.work-composer-pulse {
+  color: var(--text2);
+  position: relative;
+  padding-right: 14px;
+}
+.work-composer-pulse::after {
+  content: "";
+  position: absolute;
+  right: 0; top: 50%;
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  background: var(--success-mid);
+  transform: translateY(-50%);
+  animation: work-composer-pulse 1.2s ease-in-out infinite;
+}
+@keyframes work-composer-pulse {
+  0%, 100% { opacity: 0.35; transform: translateY(-50%) scale(0.85); }
+  50%      { opacity: 1;    transform: translateY(-50%) scale(1); }
+}
+
+.work-icon-btn {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text3);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, transform 0.18s;
+}
+.work-icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--neutral-soft) 70%, transparent);
+  color: var(--text);
+}
+.work-icon-btn:active:not(:disabled) { transform: scale(0.94); }
+.work-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.work-send-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--success-mid) 35%, var(--success));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--success) 92%, white) 0%,
+    var(--success) 100%
+  );
+  color: var(--success-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 1px 2px rgba(17,55,25,0.12),
+    0 6px 18px -6px rgba(108,255,127,0.55);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.22s ease,
+    filter 0.18s ease,
+    background 0.18s ease;
+}
+.work-send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.7) inset,
+    0 2px 4px rgba(17,55,25,0.14),
+    0 12px 26px -8px rgba(108,255,127,0.7);
+}
+.work-send-btn:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.97);
+}
+.work-send-btn:disabled {
+  background: var(--neutral-soft);
+  border-color: var(--border);
+  color: var(--text3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.work-send-btn > svg { transition: transform 0.2s ease; }
+.work-send-btn:hover:not(:disabled) > svg { transform: translateY(-1px); }
+
+.work-send-btn.is-stop {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 1px 2px rgba(20,18,12,0.18),
+    0 8px 22px -10px rgba(20,18,12,0.45);
+}
+.work-send-btn.is-stop:hover { transform: translateY(-1px); filter: brightness(1.08); }
+
+/* ─── COMPOSER · MOBILE & TOUCH ─── */
+@media (max-width: 720px) {
+  /* The composer sits at the bottom of the viewport on phones — lift it
+     above the home-bar / safe-area inset so it never hides behind it. */
+  .work-composer {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .work-composer-shell { border-radius: 18px; }
+  .work-input {
+    /* 16px minimum prevents iOS Safari from zooming the viewport on focus. */
+    font-size: 16px;
+    min-height: 52px;
+    padding: 12px 10px 4px;
+  }
+  .work-composer-row { padding: 4px 4px 4px 4px; }
+  /* 36px is the practical touch-target floor with surrounding padding. */
+  .work-icon-btn { width: 38px; height: 38px; border-radius: 12px; }
+  .work-send-btn { height: 38px; padding: 0 14px 0 16px; font-size: 13.5px; }
+  .work-file-chip { padding: 5px 5px 5px 9px; font-size: 12px; }
+  .work-file-chip button { width: 22px; height: 22px; }
+}
+/* Hide the keyboard hint text entirely on small phones so the file
+   counter / working state has room. Done as a separate breakpoint so
+   the medium-narrow tablet layout still shows it. */
+@media (max-width: 480px) {
+  .work-composer-hint kbd,
+  .work-composer-hint-sep { display: none; }
+  .work-composer-hint { font-size: 11px; }
+}
+/* Touch devices: hover styles are misleading (sticky tap = sticky hover).
+   Strip the lift/glow on hover for anything that can't truly hover. */
+@media (hover: none) {
+  .work-composer-shell:hover { border-color: var(--border); }
+  .work-send-btn:hover:not(:disabled),
+  .work-send-btn.is-stop:hover {
+    transform: none;
+    filter: none;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.6) inset,
+      0 1px 2px rgba(17,55,25,0.12),
+      0 6px 18px -6px rgba(108,255,127,0.55);
+  }
+  .work-send-btn:hover:not(:disabled) > svg { transform: none; }
+  .work-icon-btn:hover:not(:disabled) { background: transparent; color: var(--text3); }
+}
+/* Respect the user's motion preference — kill shimmer + pulse so the
+   composer stops "breathing" for anyone who opts out. */
+@media (prefers-reduced-motion: reduce) {
+  .work-composer-shell.is-working::before,
+  .work-composer-pulse::after,
+  .work-file-chip {
+    animation: none;
+  }
+  .work-composer-shell,
+  .work-send-btn,
+  .work-icon-btn,
+  .work-send-btn > svg {
+    transition: none;
+  }
+}
+/* New-thread empty state. Sits in the same conversation column as
+   message turns do, with body-font typography rather than a display
+   headline — the goal is to feel like the assistant's invitation to
+   talk, not a marketing landing hero. The text and prompts share the
+   transcript's column width so the empty state and a populated thread
+   read as the same container, just differently filled. */
+.work-empty-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 8px 0 4px;
+}
+.work-empty-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 620px;
+}
+.work-empty-headline {
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.25;
+}
+.work-empty-sub {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text2);
+  margin: 0;
+}
+.work-empty-prompts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.work-empty-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 13px;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s;
+}
+.work-empty-prompt:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--card);
+  transform: translateY(-1px);
+}
+.work-empty-prompt-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.work-empty-prompt-text {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text2);
+}
+@media (hover: none) {
+  .work-empty-prompt:hover { transform: none; }
+}
+
+.work-empty {
+  color: var(--text3);
+  font-size: 13px;
+  padding: 12px 4px;
+}
+.work-empty.is-compact {
+  padding: 0;
+}
+.work-run-status {
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  margin: 0 auto 4px;
+  width: fit-content;
+  letter-spacing: 0.01em;
+}
+.work-run-status-cancelled {
+  background: #f3f0ea;
+  color: #6b6457;
+}
+.work-run-status-failed {
+  background: #fff2ef;
+  color: #8b3a2a;
+}
+.work-error {
+  border: 1px solid #efc9c1;
+  background: #fff2ef;
+  color: #8b3a2a;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .work-layout {
+    grid-template-columns: 1fr;
+  }
+  .work-sidebar {
+    position: static;
+  }
+  .work-bubble {
+    max-width: 100%;
+  }
+}
+.iactions {
+  position: absolute; top: 14px; right: 14px;
+  display: flex; gap: 4px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+.icard:hover .iactions,
+.icard:focus-within .iactions { opacity: 1; }
+@media (hover: none) {
+  .iactions { opacity: 1; }
+}
+.ipin {
+  width: 30px; height: 30px;
+  border-radius: 9px; border: 1px solid transparent; background: transparent; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--text3);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ipin.on { color: var(--accent); background: var(--accent-soft); }
+.ipin:hover:not(:disabled) { background: rgba(20,18,12,0.05); color: var(--text); border-color: var(--border); }
+.ipin:disabled { cursor: default; opacity: 0.5; }
+/* "Deep dive" action — the headline gesture on a card. Slightly tinted so
+   it reads as the primary action when actions are revealed. */
+.ipin-deep { color: var(--accent); }
+.ipin-deep:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--accent);
+}
+
+.idetail {
+  max-height: 0; overflow: hidden; opacity: 0; margin-top: 0;
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease, margin 0.3s ease;
+}
+.idetail { position: relative; z-index: 1; }
+.idetail.open { max-height: 480px; opacity: 1; margin-top: 16px; }
+.dtext {
+  font-size: 14.5px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 14px;
+  padding-left: 54px;
+}
+.dchart {
+  background: color-mix(in srgb, var(--mood-tint, var(--bg)) 50%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--mood-color, var(--border)) 18%, var(--border));
+  border-radius: 14px;
+  padding: 14px 12px 8px 12px;
+  margin-left: 54px;
+}
+

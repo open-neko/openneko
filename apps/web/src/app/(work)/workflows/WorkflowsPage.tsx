@@ -686,12 +686,12 @@ function WorkflowDrawer({
         </div>
       </Section>
 
-      <Section title="Policy">
+      <Section title="Rules">
         {policies === null ? (
           <p className="workflow-drawer-muted">Loading…</p>
         ) : policies.length === 0 ? (
           <p className="workflow-drawer-muted">
-            No policies set. Actions will require approval by default.
+            No rules set. Actions will require approval by default.
           </p>
         ) : (
           <ul className="workflow-drawer-policies">
@@ -708,7 +708,7 @@ function WorkflowDrawer({
           </ul>
         )}
         <a className="workflow-drawer-link" href="/settings/policies">
-          see all policies →
+          see all rules →
         </a>
       </Section>
 

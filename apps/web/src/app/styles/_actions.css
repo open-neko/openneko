@@ -1,0 +1,319 @@
+/* ─── APPROVALS PAGE ─── */
+.approvals-root { --page-width: 1000px; }
+
+.approvals-loading,
+.approvals-error {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--text3);
+  font-size: 14px;
+}
+.approvals-error { color: var(--danger); }
+
+.approvals-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 8px 0 8px;
+}
+.approvals-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.approvals-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--text3);
+}
+
+.actions-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 18px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.actions-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.actions-tab:hover { color: var(--text2); }
+.actions-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.approvals-hint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text3);
+  margin-bottom: 24px;
+}
+.approvals-hint kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--neutral);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.approvals-empty {
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--text3);
+}
+.approvals-empty-line {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+.approvals-empty-sub {
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 400px;
+  margin: 0 auto 24px;
+}
+.approvals-empty-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.approvals-empty-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ─── SETTINGS / POLICIES ─── */
+/* rebuild trigger */
+.policies-root { --page-width: 1000px; }
+
+.policies-loading,
+.policies-error {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--text3);
+  font-size: 14px;
+}
+.policies-error { color: var(--danger); }
+
+.policies-crumb {
+  margin: 4px 0 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--text3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.policies-crumb-link {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.policies-crumb-link:hover { color: var(--accent); }
+.policies-crumb-sep { opacity: 0.5; }
+
+.policies-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.policies-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.policies-new-btn {
+  padding: 9px 16px;
+  border-radius: 100px;
+  border: 1.5px solid var(--border);
+  background: rgba(255,255,255,0.6);
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s, transform 0.18s;
+}
+.policies-new-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+/* rebuild trigger */
+/* ─── BRIEFING TRIBUTARIES (Awaiting you / Worth knowing / Quiet) ─── */
+.briefing-summary {
+  margin: 20px 0 28px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 620px;
+}
+.briefing-summary p {
+  margin: 0;
+}
+.briefing-summary-when {
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--text3);
+  font-style: italic;
+}
+
+.briefing-tributary {
+  margin-bottom: 28px;
+}
+.briefing-tributary-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+.briefing-tributary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.briefing-quiet {
+  margin: -6px 0 28px;
+  font-size: 13px;
+  color: var(--text3);
+  font-style: italic;
+}
+
+/* finding card */
+.finding-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: border-color 0.18s, transform 0.18s;
+}
+.finding-card:hover {
+  border-color: var(--text3);
+  transform: translateY(-1px);
+}
+.finding-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.finding-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.finding-card-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.35;
+  margin: 0;
+}
+.finding-card-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 100px;
+  flex-shrink: 0;
+  background: var(--neutral);
+  color: var(--text2);
+}
+.finding-card-pill-mood-good { background: var(--success-soft); color: var(--success-mid); }
+.finding-card-pill-mood-watch { background: var(--watch-soft); color: var(--warn-ink); }
+.finding-card-pill-mood-act { background: var(--danger-soft); color: var(--danger); }
+.finding-card-pill-risk-low { background: var(--neutral); color: var(--text2); }
+.finding-card-pill-risk-medium { background: var(--watch-soft); color: var(--warn-ink); }
+.finding-card-pill-risk-high { background: var(--danger-soft); color: var(--danger); }
+.finding-card-pill-risk-critical { background: var(--danger); color: #fff; }
+
+.finding-card-body {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.finding-card-target {
+  margin-bottom: 8px;
+}
+.finding-card-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.finding-card-byline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text3);
+  flex-wrap: wrap;
+}
+.finding-card-workflow {
+  color: var(--text2);
+  font-weight: 500;
+}
+.finding-card-sep { opacity: 0.5; }
+.finding-card-drill {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 12px;
+}
+.finding-card:hover .finding-card-drill {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.finding-card-unpin {
+  background: none;
+  border: none;
+  color: var(--text3);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 0;
+  cursor: pointer;
+}
+.finding-card-unpin:hover {
+  color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+

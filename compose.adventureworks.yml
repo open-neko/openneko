@@ -153,7 +153,6 @@ services:
         exec /bin/sh /scripts/scenario-injector.sh loop
 
   neko-adventureworks-seed:
-    profiles: ["seed"]
     build:
       context: .
       target: worker

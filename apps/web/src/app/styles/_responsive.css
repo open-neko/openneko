@@ -1,0 +1,225 @@
+/* ─────────────────────────────────────────────────────────────
+   RESPONSIVE LAYER
+   Tablet and phone overrides. Approach: keep desktop polish,
+   adapt layout — don't just shrink. Drawers stack, sidebars
+   collapse, section-nav scrolls horizontally as an iOS-style
+   tab strip, fluid type only where display sizes crushed.
+   Typography choices and brand palette unchanged.
+   ───────────────────────────────────────────────────────────── */
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* Prevent horizontal scroll caused by stray overflows. Long words
+   (URLs, table-like content) wrap inside cards instead of pushing
+   the layout. */
+body { overflow-x: hidden; }
+.icard, .briefing-card, .act-card, .workflows-row,
+.work-bubble, .work-markdown, .builder-msg, .run-output-card,
+.settings-card { overflow-wrap: anywhere; }
+
+/* ── TABLET LANDSCAPE & BELOW ── */
+@media (max-width: 1024px) {
+  /* Work page gets a 240px sidebar to claw back content room
+     before fully stacking at 900px. */
+  .work-layout { grid-template-columns: 240px minmax(0, 1fr); gap: 14px; }
+}
+
+/* ── TABLET PORTRAIT & BELOW ── */
+@media (max-width: 768px) {
+  /* Bring page width to the viewport edge with safer side padding. */
+  .root {
+    padding: 28px 18px 120px;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Wider .root variants must defer to the viewport at this size. */
+  .workflows-root, .builder-root, .run-root,
+  .approvals-root, .policies-root { --page-width: 100%; max-width: 100%; }
+
+  .app-header { margin-bottom: 18px; }
+  .app-header-inner { padding: 0 18px; gap: 12px; }
+
+  /* Work + workflow drawer stacks. Sidebar gives up sticky; thread
+     list caps height so the main panel stays on screen. */
+  .work-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .work-sidebar { position: static; max-height: none; }
+  .work-thread-list { max-height: 38vh; }
+  .work-bubble { max-width: 100%; }
+
+  .workflows-root:has(.workflow-drawer) .workflows-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workflow-drawer { position: static; max-height: none; }
+
+  .builder-layout { grid-template-columns: minmax(0, 1fr); }
+  .builder-card { position: static; }
+
+  /* Roomier touch targets across nav, pills, and primary buttons. */
+  .settings-link, .settings-backlink { padding: 9px 14px; font-size: 14px; }
+  .pill { padding: 10px 16px; font-size: 14px; }
+  .workflows-new-btn, .run-followup-btn { padding: 10px 16px; font-size: 14px; }
+  .act-row-btn, .workflow-drawer-btn { padding: 10px 16px; font-size: 14px; }
+
+  /* Hover-reveal actions are always visible — there is no hover. */
+  .iactions, .cbactions, .work-bubble-actions { opacity: 1; }
+  .work-thread-delete { opacity: 1; }
+  .library-row-action { opacity: 1; pointer-events: auto; }
+}
+
+/* ── PHONE ── */
+@media (max-width: 600px) {
+  .root {
+    padding: 22px 16px 116px;
+    padding-bottom: calc(116px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Header — brand on top, section nav on its own row below.
+     This avoids cramping the brand mark against a long nav and
+     gives the section strip the full viewport width to scroll in. */
+  .app-header { margin-bottom: 14px; }
+  .app-header-inner {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 0 16px;
+    gap: 14px;
+    min-height: 0;
+  }
+  .app-header .brand { align-self: flex-end; height: auto; }
+  .app-header-left { width: 100%; flex: none; min-width: 0; }
+  .brand-name { font-size: 16px; }
+  .brand-version { font-size: 10px; padding: 2px 5px; }
+  .brand-cluster { gap: 8px; }
+  .brand-update-label { display: none; }
+  .brand-update { padding: 6px 8px; height: 24px; }
+
+  /* Section nav as a horizontal scrollable tab strip — familiar
+     iOS sub-nav pattern, no awkward wraps, no clipped links. The
+     edge fade hints at scroll without a visible scrollbar. */
+  .section-nav-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 0 16px 14px;
+    margin-bottom: 18px;
+    margin-top: 0;
+    gap: 6px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  }
+  .section-nav-row::-webkit-scrollbar { display: none; }
+  .section-nav-row .settings-link,
+  .section-nav-row .nav-link {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+  .section-nav-row .topbar-date {
+    margin-left: 0;
+    align-self: center;
+    flex: 0 0 auto;
+    padding-left: 4px;
+  }
+
+  /* Dashboard role pills — comfortable wrap, no overflow. */
+  .dash-meta { gap: 8px; margin-bottom: 24px; }
+  .pills { gap: 6px; }
+  .pill { padding: 9px 14px; font-size: 14px; }
+
+  /* Greeting / eyebrow scale down so the headline doesn't crush. */
+  .greet { font-size: 34px; margin-bottom: 6px; }
+  .greet-sub { font-size: 15px; margin-bottom: 26px; }
+  .greet-sub-quote { font-size: 17px; margin-bottom: 26px; padding-left: 12px; }
+  .greet-eyebrow { font-size: 11px; gap: 10px; }
+  .greet-eyebrow-rule { width: 28px; }
+
+  .briefing-summary { font-size: 15px; }
+  .briefing-tributary-title { font-size: 11px; }
+
+  /* Insight card — keep the left mood-bar but reclaim horizontal room. */
+  .icard { padding: 18px 18px 18px 22px; border-radius: 16px; }
+  .inum { font-size: 22px; min-width: 32px; }
+  .itext { font-size: 15px; }
+  .dtext, .dchart { padding-left: 0; margin-left: 0; }
+  .iactions { top: 10px; right: 10px; }
+  .ipin { width: 34px; height: 34px; }
+
+  /* Profile + settings cards — tighter padding, still feels designed. */
+  .profile-card { padding: 22px 20px; border-radius: 18px; }
+  .settings-card { padding: 20px 18px; border-radius: 18px; }
+  .settings-card-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .settings-card-title { font-size: 19px; }
+  .settings-card-copy { font-size: 14.5px; }
+  .settings-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 12px; }
+  .settings-input { font-size: 16px; /* iOS no-zoom threshold */ padding: 11px 13px; }
+
+  /* Workflows + runs page header rows — title above action button. */
+  .workflows-head { flex-direction: column; align-items: stretch; gap: 12px; margin: 4px 0 20px; }
+  .workflows-title { font-size: 26px; }
+  .workflows-new-btn { align-self: flex-start; }
+  .workflows-row { padding: 14px 16px; border-radius: 12px; }
+  .workflows-row-meta { flex-wrap: wrap; row-gap: 4px; }
+
+  .run-header-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .run-title { font-size: 22px; }
+  .run-followup-btn { align-self: flex-start; }
+  .run-header-meta { font-size: 12.5px; }
+  .run-phase-strip { flex-wrap: wrap; gap: 6px; }
+  .run-output-card, .run-action-card { padding: 16px 16px; border-radius: 14px; }
+
+  /* Actions — row buttons wrap so primary/destructive stay full-tappable
+     instead of stretching past the card. */
+  .act-card { padding: 14px 14px; border-radius: 14px; }
+  .act-row { padding: 12px 12px; border-radius: 12px; }
+  .act-row-actions { flex-wrap: wrap; row-gap: 8px; }
+  .act-row-btn { flex: 1 1 auto; min-width: 0; text-align: center; }
+
+  .workflow-drawer { padding: 18px; border-radius: 14px; }
+  .workflow-drawer-actions { flex-wrap: wrap; }
+  .workflow-drawer-btn { flex: 1 1 auto; }
+
+  /* Work transcript / composer bubbles. */
+  .work-bubble { padding: 14px 16px; font-size: 15px; }
+  .work-bubble.is-user { padding: 10px 14px; }
+  .cbuser .bub, .cbai .bub { max-width: 92%; font-size: 15px; }
+
+  /* Input bar — gradient + send button stay comfortable. */
+  .inputbar { padding: 16px 16px 18px; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .input { font-size: 16px; padding: 13px 16px; border-radius: 14px; }
+  .sendbtn { width: 46px; height: 46px; border-radius: 13px; }
+
+  /* Builder chat min-height was 520px — too tall to be useful on a phone. */
+  .builder-chat { min-height: 360px; padding: 14px 14px 12px; }
+  .builder-msgs { max-height: 460px; }
+  .builder-input { font-size: 16px; }
+
+  /* Modal — full-width with comfortable side gutters. */
+  .modal-card { width: calc(100vw - 24px); max-width: 100%; padding: 22px; border-radius: 18px; }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-btn { flex: 1 1 auto; }
+
+  /* Creator credit — hidden on phones. There is no corner that
+     doesn't either obscure content or sit on the input bar; the
+     attribution lives in the marketing site footer instead. */
+  .creator-credit { display: none; }
+}
+
+/* ── SMALL PHONE POLISH ── */
+@media (max-width: 380px) {
+  .root { padding-left: 14px; padding-right: 14px; }
+  .greet { font-size: 30px; }
+  .workflows-title { font-size: 23px; }
+  .pill { padding: 8px 12px; font-size: 13.5px; }
+  .icard { padding: 16px 14px 16px 18px; }
+  .act-row-btn { font-size: 13px; padding: 10px 12px; }
+}
+
+/* ── TOUCH-ONLY: always reveal hover-only chrome ── */
+@media (hover: none) {
+  .iactions, .cbactions, .work-bubble-actions { opacity: 1; }
+  .work-thread-delete { opacity: 1; }
+  .library-row-action { opacity: 1; pointer-events: auto; }
+  .ipin:hover:not(:disabled) { background: transparent; border-color: transparent; }
+}

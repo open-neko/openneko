@@ -56,6 +56,20 @@ function statusLabel(s: string): string {
   return STATUS_LABEL[s] ?? s.replace(/_/g, " ");
 }
 
+function backToActionsHref(status: string): string {
+  if (status === "pending_approval") return "/actions?filter=awaiting";
+  if (status === "rejected" || status === "failed") return "/actions?filter=rejected";
+  if (status === "executed" || status === "approved") return "/actions?filter=fired";
+  return "/actions";
+}
+
+function backToActionsLabel(status: string): string {
+  if (status === "pending_approval") return "Awaiting";
+  if (status === "rejected" || status === "failed") return "Rejected";
+  if (status === "executed" || status === "approved") return "Fired";
+  return "Actions";
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-IN", {
@@ -204,9 +218,9 @@ export default function ActionPage() {
           <button
             type="button"
             className="run-crumb-link"
-            onClick={() => router.push("/actions")}
+            onClick={() => router.push(backToActionsHref(ar.status))}
           >
-            ← Actions
+            ← {backToActionsLabel(ar.status)}
           </button>
         </div>
 

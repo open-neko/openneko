@@ -1,0 +1,362 @@
+/* ─── LAYOUT ─── */
+.root { --page-width: 740px; max-width: var(--page-width); margin: 0 auto; padding: 36px 20px 130px; min-height: 100vh; padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
+
+/* Faint editorial paper texture — adds atmosphere without competing with content. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(107,92,231,0.045), transparent 42%),
+    radial-gradient(circle at 88% 6%, rgba(108,255,127,0.05), transparent 38%);
+}
+body > * { position: relative; z-index: 1; }
+
+/* ─── APP HEADER ─── */
+/* AppHeader escapes its parent's max-width (each page's .root variant) by
+   spanning the viewport. Its inner content centers to a fixed band so the
+   nav row sits at the same x-position regardless of which page you're on.
+   Without this, the nav appears to "bounce" between pages with different
+   .root widths (Briefing 740, Workflows 1000, Builder etc). */
+.app-header {
+  /* Pull the header out of any parent's content-box width by extending
+     symmetrically to the viewport edges. */
+  margin-left: calc(-50vw + 50%);
+  margin-right: calc(-50vw + 50%);
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.app-header-inner {
+  /* Header band sized to comfortably hold the full nav + brand on a
+     single line (six section links incl. Approvals + the version chip).
+     740px would crowd the row and force a wrap; 1000px matches the
+     wider operating-loop pages (workflows, runs) and keeps the brand
+     visually close to the right edge on briefing too. */
+  width: 100%;
+  max-width: 1000px;
+  padding: 0 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  /* Match a .pill's rendered height (border 1.5×2 + padding 8×2 + 14.5px
+     text × ~1.5 line-height ≈ 40.75px). The brand sits in this strip and
+     vertically centers its icon+text within the same band. */
+  min-height: 41px;
+}
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.app-header .brand {
+  /* Anchored to the top of the header so it sits on the first wrapped row
+     of left content, with its visual center matching the pill row. */
+  align-self: flex-start;
+  height: 41px;
+}
+
+/* Brand + version cluster (and the "update available" chip that appears
+   next to the brand when a newer build is on the server). */
+.brand-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+}
+.brand-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--success-mid) 30%, var(--border));
+  background: var(--success-soft);
+  color: var(--success-ink);
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 6px 10px 6px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1;
+  height: 28px;
+  transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+  animation: brand-update-in 0.4s ease both;
+}
+.brand-update:hover {
+  background: color-mix(in srgb, var(--success) 24%, var(--success-soft));
+  border-color: var(--success-mid);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(17, 55, 25, 0.10);
+}
+.brand-update:focus-visible {
+  outline: 2px solid var(--success-mid);
+  outline-offset: 2px;
+}
+.brand-update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--success-mid);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-mid) 55%, transparent);
+  animation: brand-update-pulse 1.8s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+@keyframes brand-update-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes brand-update-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-mid) 55%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--success-mid) 0%, transparent); }
+}
+
+/* ─── BRAND ─── */
+/* Match the marketing site's brand lockup (apps/web/.. ↔ Website/..) so
+   the app feels like a continuation of getneko.app: same Archivo display
+   face, same heavy 800 weight, same tight -0.04em tracking. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  color: var(--text);
+  transition: opacity 0.18s;
+}
+.brand:hover {
+  opacity: 0.78;
+}
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+  flex: 0 0 auto;
+}
+.brand-name {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.brand-tick {
+  color: var(--text3);
+  font-size: 14px;
+  line-height: 1;
+  margin: 0 1px 0 2px;
+}
+.brand-version {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text3);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  background: var(--neutral);
+  padding: 2px 6px;
+  border-radius: 999px;
+  line-height: 1;
+}
+/* ─── CREATOR CREDIT ─── */
+/* Tiny attribution badge fixed to the bottom-right of the viewport.
+   Default placement (mobile/tablet): floats just above the dashboard
+   input bar (~100px tall) so it never overlaps the send button. On
+   pages without an input bar this just gives the badge a comfortable
+   margin from the viewport edge. */
+.creator-credit {
+  position: fixed;
+  bottom: 100px;
+  right: 16px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 11px;
+  /* Acid-green pill — same palette the marketing site (getneko.app)
+     uses for its primary CTAs, so the badge reads as a piece of
+     OpenNeko branding rather than generic app chrome. */
+  font-weight: 600;
+  color: #113719;
+  background: #6cff7f;
+  border: 1px solid #58f26c;
+  text-decoration: none;
+  letter-spacing: 0.1px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(17, 55, 25, 0.08);
+  /* Above the input bar (z-index 100). */
+  z-index: 110;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+.creator-credit:hover {
+  background: #58f26c;
+  box-shadow: 0 4px 14px rgba(17, 55, 25, 0.16);
+  transform: translateY(-1px);
+}
+/* Desktop placement: slot the badge into the right margin beside the
+   input bar's centered 740px column. Math: viewport must be > 1160 for
+   credit (right:24, ~170 wide) not to overlap the inputwrap edge. */
+@media (min-width: 1200px) {
+  .creator-credit {
+    bottom: 32px;
+    right: 24px;
+  }
+}
+/* On /work + /skills + /memory the layout has a 280-px sidebar in the
+   left gutter; the floating composer fills the right column. Center the
+   credit on the sidebar's horizontal axis so it stops competing with
+   the conversation. Math: the work-layout is min(1180px, vw - 40px)
+   wide and viewport-centered, so the sidebar's center sits at
+   `50% - layoutHalfWidth + 140`. CSS `min()` clamps to the narrower of
+   the two regimes (capped layout vs. viewport-filling layout). */
+@media (min-width: 960px) {
+  body.work-shell .creator-credit {
+    left: calc(50% - min(450px, 50vw - 160px));
+    right: auto;
+    bottom: 24px;
+    transform: translateX(-50%);
+  }
+  body.work-shell .creator-credit:hover {
+    transform: translateX(-50%) translateY(-1px);
+  }
+}
+
+/* ─── TOP BAR ─── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 36px;
+}
+.topbar-date {
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 13px; color: var(--text3); letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* Dashboard secondary nav (Business Profile, Settings, date) — its own
+   full-width row beneath the AppHeader so it isn't squeezed by the brand
+   mark on the right. With this layout these three items always fit on a
+   single line, regardless of how many persona pills the user has set up. */
+.dash-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 0;
+  margin-bottom: 32px;
+}
+.app-header-left .dash-meta {
+  margin: 0;
+}
+.settings-link,
+.settings-backlink {
+  text-decoration: none;
+  color: var(--text2);
+  font-size: 13.5px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 7px 12px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s;
+  background: transparent;
+  white-space: nowrap;
+  letter-spacing: -0.005em;
+}
+.settings-link:hover,
+.settings-backlink:hover {
+  color: var(--text);
+  background: rgba(20,18,12,0.04);
+}
+.settings-link.is-active,
+.nav-link.is-active {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: none;
+}
+.settings-link.is-active::before,
+.nav-link.is-active::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 7px;
+  vertical-align: 2px;
+}
+.settings-link.is-disabled {
+  color: var(--text3);
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* Quiet horizontal divider between section nav and the rest of the page. */
+.section-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: -4px;
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.section-nav-row .topbar-date {
+  margin-left: auto;
+}
+.settings-backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 11px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.7);
+  white-space: nowrap;
+}
+.settings-backlink:hover {
+  border-color: var(--text3);
+  background: var(--neutral-soft);
+}
+.settings-backlink-arrow {
+  display: inline-block;
+  line-height: 0;
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.settings-backlink:hover .settings-backlink-arrow {
+  transform: translateX(-3px);
+}
+
+/* ─── PILLS ─── */
+.pills { display: flex; gap: 7px; flex-wrap: wrap; }
+.pill {
+  padding: 9px 18px; border-radius: 100px; border: 1.5px solid var(--border);
+  background: rgba(255,255,255,0.6); font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 14.5px; font-weight: 500; color: var(--text2); cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.pill:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); transform: translateY(-1px); }
+.pill.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: #FAFAF7;
+  box-shadow: 0 2px 10px rgba(20,18,12,0.18);
+}
+.pill.on::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-right: 8px;
+  vertical-align: 1px;
+  box-shadow: 0 0 0 3px rgba(108,255,127,0.18);
+}
+

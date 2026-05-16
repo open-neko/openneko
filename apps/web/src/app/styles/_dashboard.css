@@ -1,0 +1,366 @@
+/* ─── EXAMPLE DATA BANNER ─── */
+.example-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--warn-ink); text-decoration: none;
+  background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 999px;
+  padding: 6px 14px 6px 12px; margin-bottom: 16px;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.example-banner::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 30%, transparent);
+}
+.example-banner:hover {
+  background: #ffe89a; border-color: #e3c656;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(138,109,0,0.12);
+}
+
+/* ─── GREETING ─── */
+.greet-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+.greet-eyebrow-rule {
+  width: 28px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+.greet-eyebrow-accent {
+  color: var(--accent);
+}
+.greet {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 52px; font-weight: 800; line-height: 1.02; letter-spacing: -0.035em;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+.greet em {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--accent);
+}
+.greet-sub {
+  font-size: 17px;
+  color: var(--text2);
+  margin-bottom: 36px;
+  line-height: 1.45;
+  max-width: 62ch;
+}
+.greet-sub-quote {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  color: var(--text2);
+  margin-bottom: 36px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent);
+  max-width: 56ch;
+}
+.date-note { font-size: 15px; color: var(--text3); }
+
+@media (max-width: 600px) {
+  .greet { font-size: 38px; }
+  .greet-sub { font-size: 16px; }
+}
+
+/* ─── SECTION LABEL ─── */
+.label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--text3); margin-bottom: 16px; padding-left: 2px;
+}
+.label::after {
+  content: "";
+  display: inline-block;
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+  margin-left: 4px;
+  margin-bottom: 3px;
+}
+.label-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0;
+  color: var(--text3);
+  background: var(--neutral);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+/* ─── INSIGHT CARD ─── */
+.icard {
+  background: var(--card); border-radius: var(--radius); padding: 22px 24px 22px 28px;
+  margin-bottom: 12px; box-shadow: var(--shadow); cursor: pointer;
+  transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), border-color 0.3s;
+  border: 1px solid var(--border);
+  position: relative; overflow: hidden;
+}
+.icard::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--mood-color, var(--accent));
+  opacity: 0.85;
+}
+.icard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, var(--mood-tint, transparent) 0%, transparent 45%);
+  opacity: 0.55;
+}
+.icard:hover { box-shadow: var(--shadow-h); transform: translateY(-1px); border-color: var(--mood-color, var(--accent)); }
+.icard.exp { border-color: var(--border); }
+.itop { display: flex; align-items: flex-start; gap: 14px; position: relative; z-index: 1; }
+.mdot { display: none; }
+.inum {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--mood-color, var(--accent));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  margin-top: -3px;
+  flex-shrink: 0;
+  min-width: 40px;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.icard:hover .inum {
+  opacity: 1;
+}
+.icontent { flex: 1; min-width: 0; }
+.itext {
+  font-size: 16.5px;
+  font-weight: 500;
+  line-height: 1.42;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.ieyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mood-color, var(--text3));
+  margin-bottom: 8px;
+}
+.ieyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px var(--mood-tint, transparent);
+}
+
+.icard[data-mood="good"] { --mood-color: var(--success-mid); --mood-tint: var(--success-soft); }
+.icard[data-mood="watch"] { --mood-color: var(--watch); --mood-tint: var(--watch-soft); }
+.icard[data-mood="act"],
+.icard[data-mood="bad"] { --mood-color: var(--danger); --mood-tint: var(--danger-soft); }
+/* KpiHeadline component — single shared style family for the metric +
+   label + delta row. Used by BriefingCard (size="card") and ChatBubble
+   (size="chat"). The two sizes only differ in the headline metric font. */
+.kpi { display: flex; align-items: baseline; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+.kpi-metric {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-card .kpi-metric { font-size: 22px; }
+.kpi-chat { margin-top: 0; margin-bottom: 10px; }
+.kpi-chat .kpi-metric { font-size: 38px; }
+.kpi-label {
+  font-size: 11.5px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+.kpi-delta {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.kpi-delta-up {
+  background: var(--success-soft);
+  color: var(--success-ink);
+  border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+}
+.kpi-delta-down {
+  background: var(--watch-soft);
+  color: var(--warn-ink);
+}
+.kpi-delta-crash {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+
+/* ─── DASH: THE CALL (Act 1 — Awaiting alert) ─── */
+.dash-call {
+  margin: 0 0 36px;
+  padding: 18px 18px 16px;
+  border: 1px solid rgba(233, 162, 59, 0.32);
+  border-left: 3px solid var(--watch);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(233, 162, 59, 0.07), rgba(233, 162, 59, 0.02));
+  box-shadow: 0 1px 0 rgba(233, 162, 59, 0.06), 0 12px 28px -16px rgba(233, 162, 59, 0.18);
+}
+.dash-call-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warn-ink);
+}
+.dash-call-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--watch);
+  box-shadow: 0 0 0 4px rgba(233, 162, 59, 0.18);
+  animation: dash-call-pulse 2.4s ease-in-out infinite;
+}
+@keyframes dash-call-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(233, 162, 59, 0.18); }
+  50%      { box-shadow: 0 0 0 7px rgba(233, 162, 59, 0.08); }
+}
+.dash-call-label { color: var(--warn-ink); }
+.dash-call-count {
+  margin-left: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--watch);
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+.dash-call-skim {
+  margin-left: auto;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--warn-ink);
+  text-decoration: none;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+.dash-call-skim:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Inside the call, give the inner act-cards an opaque background so the
+   amber wash doesn't seep through and muddy the contents. */
+.dash-call .act-card {
+  background: var(--card);
+  border-color: rgba(233, 162, 59, 0.22);
+}
+
+/* ─── DASH: THE PROOF (Act 3 — Fired disclosure) ─── */
+.dash-proof {
+  margin: 8px 0 28px;
+  border-top: 1px dashed var(--border);
+  padding-top: 18px;
+}
+.dash-proof[open] {
+  border-top-style: solid;
+}
+.dash-proof-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 2px;
+  font-family: var(--font-body), 'Manrope', sans-serif;
+  font-size: 16px;
+  color: var(--text2);
+  transition: color 0.15s;
+}
+.dash-proof-summary::-webkit-details-marker { display: none; }
+.dash-proof-summary:hover { color: var(--text); }
+.dash-proof-tick {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  color: var(--success-mid);
+  line-height: 1;
+  align-self: center;
+}
+.dash-proof-count {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+.dash-proof-label {
+  color: var(--text2);
+  font-size: 16px;
+}
+.dash-proof-caret {
+  margin-left: auto;
+  color: var(--text3);
+  font-size: 13px;
+  transition: transform 0.18s ease;
+  align-self: center;
+}
+.dash-proof[open] .dash-proof-caret { transform: rotate(90deg); }
+.dash-proof-body { margin-top: 14px; }
+
+@media (max-width: 600px) {
+  .dash-call { padding: 14px 14px 12px; }
+  .dash-call-eyebrow { flex-wrap: wrap; row-gap: 6px; }
+  .dash-call-skim { margin-left: 0; flex-basis: 100%; }
+}

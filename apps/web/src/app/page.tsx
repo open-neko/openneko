@@ -9,9 +9,10 @@ import type { BriefingCardProps } from "@/a2ui/catalog";
 import BriefingCard from "@/components/BriefingCard";
 import type { BriefingCardData } from "@/components/BriefingCard";
 import FindingCard, { type FindingCardData } from "@/components/FindingCard";
-import ActionReceiptCard, {
-  type ActionReceiptCardData,
-} from "@/components/ActionReceiptCard";
+import ActCard, {
+  type ActCardData,
+  type ActRowData,
+} from "@/components/ActCard";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
@@ -31,10 +32,155 @@ type FindingsPayload = {
   quiet: { goodOutputs: number; windowHours: number };
 };
 
+type ReceiptRow = {
+  id: string;
+  kind: string;
+  target: string | null;
+  summary: string | null;
+  scope: string;
+  riskLevel: string | null;
+  status: string;
+  executedAt: string | null;
+  executionStatus: string;
+  approverKind: "operator" | "policy" | "auto";
+  approverLabel: string | null;
+  workflowRunId: string | null;
+  workflow: { id: string; name: string } | null;
+  trigger: string | null;
+};
+
 type RecentActionsPayload = {
-  receipts: ActionReceiptCardData[];
+  receipts: ReceiptRow[];
   windowHours: number;
 };
+
+type AwaitingRow = {
+  id: string;
+  workflowRunId: string;
+  workflow: { id: string; name: string };
+  triggeredByObservation: { title: string } | null;
+  kind: string;
+  target: string | null;
+  riskLevel: string | null;
+  summary: string;
+  status: string;
+  runAt: string;
+};
+
+type AwaitingPayload = {
+  actions: AwaitingRow[];
+  count: number;
+};
+
+function approverPhrase(
+  kind: ReceiptRow["approverKind"],
+  label: string | null,
+): string {
+  if (kind === "operator") return label ? `you · ${label}` : "you";
+  if (kind === "policy") return label ? `rule "${label}"` : "a rule";
+  return "auto";
+}
+
+function groupAwaiting(
+  rows: AwaitingRow[],
+): Array<{ key: string; card: ActCardData }> {
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      runId: string;
+      runAt: string;
+      trigger: string | null;
+      workflowName: string;
+      rows: ActRowData[];
+    }
+  >();
+  for (const r of rows) {
+    const tone: ActRowData["tone"] =
+      r.riskLevel === "high" || r.riskLevel === "critical" ? "action" : "watch";
+    const row: ActRowData = {
+      id: r.id,
+      tone,
+      headline: r.summary || r.kind,
+      detail: null,
+      target: r.target,
+      status: r.status,
+    };
+    const existing = groups.get(r.workflowRunId);
+    if (existing) {
+      existing.rows.push(row);
+    } else {
+      groups.set(r.workflowRunId, {
+        key: r.workflowRunId,
+        runId: r.workflowRunId,
+        runAt: r.runAt,
+        trigger: r.triggeredByObservation?.title ?? null,
+        workflowName: r.workflow.name,
+        rows: [row],
+      });
+    }
+  }
+  return Array.from(groups.values()).map((g) => ({
+    key: g.key,
+    card: {
+      runId: g.runId,
+      runAt: g.runAt,
+      trigger: g.trigger,
+      state: "awaiting",
+      workflowName: g.workflowName,
+      rows: g.rows,
+    },
+  }));
+}
+
+function groupReceipts(
+  receipts: ReceiptRow[],
+): Array<{ key: string; card: ActCardData }> {
+  const groups = new Map<
+    string,
+    { key: string; runId: string | null; runAt: string; trigger: string | null; workflowName: string | null; rows: ActRowData[] }
+  >();
+  for (const r of receipts) {
+    const failed =
+      r.executionStatus !== "succeeded" && r.executionStatus !== "executed";
+    const key = r.workflowRunId ?? `__${r.id}`;
+    const headline =
+      r.summary ?? `${r.kind}${r.target ? ` → ${r.target}` : ""}`;
+    const row: ActRowData = {
+      id: r.id,
+      tone: failed ? "action" : "good",
+      headline,
+      detail: null,
+      target: r.summary ? r.target : null, // headline already includes target when summary is absent
+      approverPhrase: approverPhrase(r.approverKind, r.approverLabel),
+      status: r.status,
+    };
+    const existing = groups.get(key);
+    if (existing) {
+      existing.rows.push(row);
+    } else {
+      groups.set(key, {
+        key,
+        runId: r.workflowRunId,
+        runAt: r.executedAt ?? new Date().toISOString(),
+        trigger: r.trigger,
+        workflowName: r.workflow?.name ?? null,
+        rows: [row],
+      });
+    }
+  }
+  return Array.from(groups.values()).map((g) => ({
+    key: g.key,
+    card: {
+      runId: g.runId,
+      runAt: g.runAt,
+      trigger: g.trigger,
+      state: "live",
+      workflowName: g.workflowName,
+      rows: g.rows,
+    },
+  }));
+}
 
 export default function Dashboard() {
   const router = useRouter();
@@ -86,6 +232,7 @@ export default function Dashboard() {
   const [findings, setFindings] = useState<FindingsPayload | null>(null);
   const [recentActions, setRecentActions] =
     useState<RecentActionsPayload | null>(null);
+  const [awaiting, setAwaiting] = useState<AwaitingPayload | null>(null);
 
   // Tributaries: workflow_output findings + pending approvals + live summary.
   // Polled alongside the KPI briefing so newly-produced findings appear
@@ -114,16 +261,31 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchAwaiting = useCallback(async () => {
+    try {
+      const res = await fetch("/api/approvals?filter=awaiting", {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as AwaitingPayload;
+      setAwaiting(data);
+    } catch {
+      // best-effort
+    }
+  }, []);
+
   useEffect(() => {
     if (!gateChecked) return;
     void fetchFindings();
     void fetchRecentActions();
+    void fetchAwaiting();
     const id = setInterval(() => {
       void fetchFindings();
       void fetchRecentActions();
+      void fetchAwaiting();
     }, 30_000);
     return () => clearInterval(id);
-  }, [gateChecked, fetchFindings, fetchRecentActions]);
+  }, [gateChecked, fetchFindings, fetchRecentActions, fetchAwaiting]);
 
   const surfaceId = `briefing-${role.toLowerCase()}`;
   const surface = surfaces.get(surfaceId);
@@ -393,40 +555,39 @@ export default function Dashboard() {
               </div>
             )}
 
-            {findings &&
-              (findings.awaitingYou.approvals.length > 0 ||
-                findings.awaitingYou.actFindings.length > 0) && (
-                <section
-                  className="briefing-tributary"
-                  style={{ animation: "fadeUp 0.5s ease 0.2s both" }}
-                >
-                  <div className="briefing-tributary-title">Awaiting you</div>
-                  <div className="briefing-tributary-list">
-                    {findings.awaitingYou.approvals.map((a, i) => (
-                      <FindingCard key={a.id} data={a} index={i} />
-                    ))}
-                    {findings.awaitingYou.actFindings.map((f, i) => (
-                      <FindingCard
-                        key={f.id}
-                        data={f}
-                        index={findings.awaitingYou.approvals.length + i}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
+            {awaiting && awaiting.actions.length > 0 && (
+              <section
+                className="dash-call"
+                style={{ animation: "fadeUp 0.5s ease 0.2s both" }}
+                aria-label="Decisions needed"
+              >
+                <div className="dash-call-eyebrow">
+                  <span className="dash-call-dot" aria-hidden="true" />
+                  <span className="dash-call-label">Needs your call</span>
+                  <span className="dash-call-count">
+                    {awaiting.count}
+                  </span>
+                  <a className="dash-call-skim" href="/actions?filter=awaiting">
+                    open all →
+                  </a>
+                </div>
+                <div className="act-list">
+                  {groupAwaiting(awaiting.actions).map((group, i) => (
+                    <ActCard key={group.key} data={group.card} index={i} />
+                  ))}
+                </div>
+              </section>
+            )}
 
-            {recentActions && recentActions.receipts.length > 0 && (
+            {findings && findings.awaitingYou.actFindings.length > 0 && (
               <section
                 className="briefing-tributary"
                 style={{ animation: "fadeUp 0.5s ease 0.21s both" }}
               >
-                <div className="briefing-tributary-title">
-                  Fired on your behalf
-                </div>
+                <div className="briefing-tributary-title">Worth your read</div>
                 <div className="briefing-tributary-list">
-                  {recentActions.receipts.map((r, i) => (
-                    <ActionReceiptCard key={r.id} data={r} index={i} />
+                  {findings.awaitingYou.actFindings.map((f, i) => (
+                    <FindingCard key={f.id} data={f} index={i} />
                   ))}
                 </div>
               </section>
@@ -513,6 +674,29 @@ export default function Dashboard() {
                 />
               ))}
             </div>
+
+            {recentActions && recentActions.receipts.length > 0 && (
+              <details
+                className="dash-proof"
+                style={{ animation: "fadeUp 0.5s ease 0.35s both" }}
+              >
+                <summary className="dash-proof-summary">
+                  <span className="dash-proof-tick" aria-hidden="true">↳</span>
+                  <span className="dash-proof-count">
+                    {recentActions.receipts.length}
+                  </span>
+                  <span className="dash-proof-label">
+                    fired on your behalf in the last {recentActions.windowHours}h
+                  </span>
+                  <span className="dash-proof-caret" aria-hidden="true">▸</span>
+                </summary>
+                <div className="dash-proof-body act-list">
+                  {groupReceipts(recentActions.receipts).map((group, i) => (
+                    <ActCard key={group.key} data={group.card} index={i} />
+                  ))}
+                </div>
+              </details>
+            )}
           </>
         )}
       </div>

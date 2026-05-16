@@ -8,6 +8,7 @@ import {
   desc,
   eq,
   gte,
+  observation,
   workflow_definition,
   workflow_run,
 } from "@neko/db";
@@ -40,9 +41,11 @@ export async function GET() {
       policyId: action_request.policy_id,
       executedAt: action_execution.finished_at,
       executionStatus: action_execution.status,
+      workflowRunId: action_request.workflow_run_id,
       workflowId: workflow_definition.id,
       workflowName: workflow_definition.name,
       policyName: action_policy.name,
+      trigger: observation.title,
     })
     .from(action_request)
     .innerJoin(
@@ -60,6 +63,10 @@ export async function GET() {
     .leftJoin(
       action_policy,
       eq(action_request.policy_id, action_policy.id),
+    )
+    .leftJoin(
+      observation,
+      eq(action_request.triggered_by_observation_id, observation.id),
     )
     .where(
       and(
@@ -89,9 +96,11 @@ export async function GET() {
           ? ("policy" as const)
           : ("auto" as const),
       approverLabel: r.approvedByUserId ?? r.policyName ?? null,
+      workflowRunId: r.workflowRunId,
       workflow: r.workflowId
         ? { id: r.workflowId, name: r.workflowName ?? "" }
         : null,
+      trigger: r.trigger,
     })),
     windowHours: RECENT_WINDOW_HOURS,
   });

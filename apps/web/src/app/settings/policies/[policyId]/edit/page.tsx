@@ -15,6 +15,11 @@ import SectionNav from "@/components/SectionNav";
 import { extractPolicySaveFence } from "@neko/llm/workflows/fences";
 import type { PolicySavePayload } from "@neko/llm/workflows/fence-schemas";
 import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
+import {
+  RuleSavedCard,
+  extractRuleSaveEvent,
+  stripNekoFences,
+} from "@/components/RuleChatBubble";
 
 type ChatMessage = {
   id: string;
@@ -276,13 +281,7 @@ export default function EditPolicyPage() {
     void sendMessage(input);
   };
 
-  const cleanedMessages = useMemo(() => {
-    return messages.map((m) => {
-      if (m.role !== "assistant") return m;
-      const parsed = extractPolicySaveFence(m.content);
-      return { ...m, content: parsed.text.trim() || m.content };
-    });
-  }, [messages]);
+  const cleanedMessages = messages;
 
   if (loadError) {
     return (
@@ -290,7 +289,7 @@ export default function EditPolicyPage() {
         <AppHeader>
           <SectionNav current="settings" />
         </AppHeader>
-        <div className="builder-error">Couldn&apos;t load policy: {loadError}</div>
+        <div className="builder-error">Couldn&apos;t load rule: {loadError}</div>
       </div>
     );
   }
@@ -302,7 +301,7 @@ export default function EditPolicyPage() {
           <SectionNav current="settings" />
         </AppHeader>
         <div className="builder-seed">
-          <p>Loading policy…</p>
+          <p>Loading rule…</p>
         </div>
       </div>
     );
@@ -340,14 +339,35 @@ export default function EditPolicyPage() {
               </div>
             ) : (
               <ul className="builder-msgs">
-                {cleanedMessages.map((m) => (
-                  <li key={m.id} className={`builder-msg builder-msg-${m.role}`}>
-                    {m.content ||
-                      (m.role === "assistant" && activeRunId === m.runId ? (
-                        <span className="builder-msg-typing">…</span>
-                      ) : null)}
-                  </li>
-                ))}
+                {cleanedMessages.flatMap((m) => {
+                  const isTyping =
+                    m.role === "assistant" && activeRunId === m.runId;
+                  const text =
+                    m.role === "assistant" ? stripNekoFences(m.content) : m.content;
+                  const event =
+                    m.role === "assistant" ? extractRuleSaveEvent(m.content) : null;
+                  const items: React.ReactNode[] = [];
+                  if (text || (isTyping && !event)) {
+                    items.push(
+                      <li
+                        key={`${m.id}-msg`}
+                        className={`builder-msg builder-msg-${m.role}`}
+                      >
+                        {text || (
+                          <span className="builder-msg-typing">…</span>
+                        )}
+                      </li>,
+                    );
+                  }
+                  if (event) {
+                    items.push(
+                      <li key={`${m.id}-event`} className="rule-event-row">
+                        <RuleSavedCard payload={event} />
+                      </li>,
+                    );
+                  }
+                  return items;
+                })}
                 <div ref={scrollAnchorRef} />
               </ul>
             )}

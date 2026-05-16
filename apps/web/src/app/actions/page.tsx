@@ -1,10 +1,15 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import ActCard, {
+  type ActCardData,
+  type ActRowData,
+  type ActRowTone,
+} from "@/components/ActCard";
 
 type Filter = "awaiting" | "fired" | "rejected" | "all";
 
@@ -34,14 +39,6 @@ type ActionsPayload = {
   filter: Filter;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  pending_approval: "Awaiting you",
-  approved: "Approved",
-  rejected: "Rejected",
-  executed: "Fired",
-  failed: "Failed",
-};
-
 const TABS: Array<{ key: Filter; label: string }> = [
   { key: "fired", label: "Fired" },
   { key: "awaiting", label: "Awaiting you" },
@@ -49,52 +46,73 @@ const TABS: Array<{ key: Filter; label: string }> = [
   { key: "all", label: "All" },
 ];
 
-function statusLabel(s: string): string {
-  return STATUS_LABEL[s] ?? s.replace(/_/g, " ");
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-IN", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  const diff = Date.now() - t;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return new Date(iso).toLocaleDateString("en-IN", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function pretty(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 function approverPhrase(
   kind: ActionRow["approverKind"],
   label: string | null,
-): string {
+): string | null {
   if (kind === "operator") return label ? `you · ${label}` : "you";
   if (kind === "policy") return label ? `rule "${label}"` : "a rule";
   if (kind === "auto") return "auto";
-  return "—";
+  return null;
+}
+
+function rowToneFor(row: ActionRow): ActRowTone {
+  if (row.status === "rejected" || row.status === "failed") return "action";
+  if (row.status === "pending_approval") {
+    if (row.riskLevel === "high" || row.riskLevel === "critical") return "action";
+    return "watch";
+  }
+  return "good";
+}
+
+function stateFor(row: ActionRow): ActCardData["state"] {
+  if (row.status === "pending_approval") return "awaiting";
+  if (row.status === "rejected" || row.status === "failed") return "rejected";
+  return "live";
 }
 
 function isFilter(value: string | null): value is Filter {
-  return value === "awaiting" || value === "fired" || value === "rejected" || value === "all";
+  return (
+    value === "awaiting" ||
+    value === "fired" ||
+    value === "rejected" ||
+    value === "all"
+  );
+}
+
+type Group = {
+  key: string;
+  runId: string;
+  runAt: string;
+  trigger: string | null;
+  workflowName: string;
+  state: ActCardData["state"];
+  rows: ActionRow[];
+};
+
+function groupActions(actions: ActionRow[]): Group[] {
+  // Key groups by (runId, state) so a mixed-status run produces separate cards
+  // with consistent badges. Within a group, rows stay time-ordered (API order).
+  const map = new Map<string, Group>();
+  for (const row of actions) {
+    const state = stateFor(row);
+    const key = `${row.workflowRunId}:${state}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.rows.push(row);
+    } else {
+      map.set(key, {
+        key,
+        runId: row.workflowRunId,
+        runAt: row.runAt,
+        trigger: row.triggeredByObservation?.title ?? null,
+        workflowName: row.workflow.name,
+        state,
+        rows: [row],
+      });
+    }
+  }
+  return Array.from(map.values());
 }
 
 export default function ActionsPage() {
@@ -141,18 +159,15 @@ function ActionsPageInner() {
     void load();
   }, [load]);
 
-  const switchFilter = useCallback(
-    (next: Filter) => {
-      setFilter(next);
-      setFocusedId(null);
-      setRejectingId(null);
-      const url = new URL(window.location.href);
-      if (next === "awaiting") url.searchParams.delete("filter");
-      else url.searchParams.set("filter", next);
-      window.history.replaceState({}, "", url.toString());
-    },
-    [],
-  );
+  const switchFilter = useCallback((next: Filter) => {
+    setFilter(next);
+    setFocusedId(null);
+    setRejectingId(null);
+    const url = new URL(window.location.href);
+    if (next === "awaiting") url.searchParams.delete("filter");
+    else url.searchParams.set("filter", next);
+    window.history.replaceState({}, "", url.toString());
+  }, []);
 
   const act = useCallback(
     async (id: string, decision: "approve" | "reject", reason?: string) => {
@@ -190,7 +205,6 @@ function ActionsPageInner() {
     await act(id, "reject", reason);
   }, [rejectingId, rejectReason, act]);
 
-  // Keyboard shortcuts only meaningful on the awaiting tab.
   useEffect(() => {
     if (filter !== "awaiting") return;
     const handler = (e: KeyboardEvent) => {
@@ -225,6 +239,11 @@ function ActionsPageInner() {
       block: "nearest",
     });
   }, [focusedId]);
+
+  const groups = useMemo(
+    () => (data ? groupActions(data.actions) : []),
+    [data],
+  );
 
   return (
     <>
@@ -266,226 +285,54 @@ function ActionsPageInner() {
         ) : data.actions.length === 0 ? (
           <EmptyState filter={filter} onBack={() => router.push("/")} />
         ) : (
-          <ul className="approvals-list">
-            {data.actions.map((row) => (
-              <ActionCard
-                key={row.id}
-                row={row}
-                focused={focusedId === row.id}
-                busy={busyId === row.id}
-                onFocus={() => setFocusedId(row.id)}
-                onApprove={() => act(row.id, "approve")}
-                onReject={() => beginReject(row.id)}
-                rejecting={rejectingId === row.id}
-                rejectReason={rejectReason}
-                onRejectReasonChange={setRejectReason}
-                onCancelReject={cancelReject}
-                onSubmitReject={submitReject}
-                onOpenRun={() => router.push(`/runs/${row.workflowRunId}`)}
-                onOpenAction={() => router.push(`/actions/${row.id}`)}
-                rowRef={(el) => {
-                  rowRefs.current[row.id] = el;
-                }}
-              />
-            ))}
-          </ul>
+          <div className="act-list">
+            {groups.map((group, i) => {
+              const cardData: ActCardData = {
+                runId: group.runId,
+                runAt: group.runAt,
+                trigger: group.trigger,
+                state: group.state,
+                workflowName: group.workflowName,
+                rows: group.rows.map<ActRowData>((r) => ({
+                  id: r.id,
+                  tone: rowToneFor(r),
+                  headline: r.summary || r.kind,
+                  detail: null,
+                  target: r.target,
+                  rejectionReason:
+                    r.status === "rejected" ? r.rejectionReason : null,
+                  approverPhrase: approverPhrase(r.approverKind, r.approverLabel),
+                  status: r.status,
+                })),
+              };
+
+              return (
+                <ActCard
+                  key={group.key}
+                  data={cardData}
+                  index={i}
+                  focusedRowId={focusedId}
+                  busyRowId={busyId}
+                  rejectingRowId={rejectingId}
+                  rejectReason={rejectReason}
+                  onRejectReasonChange={setRejectReason}
+                  onCancelReject={cancelReject}
+                  onSubmitReject={submitReject}
+                  onFocusRow={setFocusedId}
+                  onApproveRow={(id) => act(id, "approve")}
+                  onBeginRejectRow={beginReject}
+                  rowRef={(id, el) => {
+                    rowRefs.current[id] = el;
+                  }}
+                />
+              );
+            })}
+          </div>
         )}
       </div>
 
       <CreatorCredit />
     </>
-  );
-}
-
-function ActionCard({
-  row,
-  focused,
-  busy,
-  onFocus,
-  onApprove,
-  onReject,
-  onOpenRun,
-  onOpenAction,
-  rejecting,
-  rejectReason,
-  onRejectReasonChange,
-  onCancelReject,
-  onSubmitReject,
-  rowRef,
-}: {
-  row: ActionRow;
-  focused: boolean;
-  busy: boolean;
-  onFocus: () => void;
-  onApprove: () => void;
-  onReject: () => void;
-  onOpenRun: () => void;
-  onOpenAction: () => void;
-  rejecting: boolean;
-  rejectReason: string;
-  onRejectReasonChange: (value: string) => void;
-  onCancelReject: () => void;
-  onSubmitReject: () => void;
-  rowRef: (el: HTMLLIElement | null) => void;
-}) {
-  const isPending = row.status === "pending_approval";
-  return (
-    <li
-      ref={rowRef}
-      className={`approval-card${focused ? " is-focused" : ""}`}
-      onClick={onFocus}
-    >
-      <div className="approval-card-head">
-        <button
-          type="button"
-          className="approval-card-title approval-card-title-link"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenAction();
-          }}
-          title="Open action receipt"
-        >
-          {row.summary || `${row.kind}`}
-        </button>
-        <span className={`action-status action-status-${row.status}`}>
-          {statusLabel(row.status)}
-        </span>
-        {row.riskLevel && (
-          <span
-            className={`approval-card-risk approval-card-risk-${row.riskLevel}`}
-          >
-            {row.riskLevel}
-          </span>
-        )}
-      </div>
-
-      <dl className="approval-card-meta">
-        <Field label="Action">
-          <span className="approval-mono">{row.kind}</span>
-        </Field>
-        {row.target && (
-          <Field label="Target">
-            <span className="approval-mono approval-card-target">
-              {row.target}
-            </span>
-          </Field>
-        )}
-        <Field label="From">
-          <button
-            type="button"
-            className="approval-card-link"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenRun();
-            }}
-          >
-            {row.workflow.name} · {formatTime(row.runAt)} →
-          </button>
-        </Field>
-        {!isPending && row.approvedAt && (
-          <Field label="Approved">
-            {formatTime(row.approvedAt)} · by{" "}
-            {approverPhrase(row.approverKind, row.approverLabel)}
-          </Field>
-        )}
-        {row.status === "rejected" && row.rejectionReason && (
-          <Field label="Reason">
-            <span className="approval-card-reason">{row.rejectionReason}</span>
-          </Field>
-        )}
-        {row.triggeredByObservation && (
-          <Field label="Triggered">
-            by observation &ldquo;{row.triggeredByObservation.title}&rdquo;
-          </Field>
-        )}
-      </dl>
-
-      {isPending && row.payload != null && Object.keys(row.payload as object).length > 0 && (
-        <div className="approval-card-payload">
-          <div className="approval-card-payload-label">Payload</div>
-          <pre className="approval-card-payload-body">{pretty(row.payload)}</pre>
-        </div>
-      )}
-
-      {isPending && rejecting ? (
-        <div className="approval-reject-box" onClick={(e) => e.stopPropagation()}>
-          <label className="approval-reject-label">
-            Why are you rejecting this? (optional)
-          </label>
-          <textarea
-            className="approval-reject-textarea"
-            value={rejectReason}
-            placeholder="e.g. wrong channel, retry tomorrow…"
-            onChange={(e) => onRejectReasonChange(e.target.value)}
-            autoFocus
-            rows={2}
-          />
-          <div className="approval-reject-actions">
-            <button
-              type="button"
-              className="approval-card-btn is-destructive"
-              disabled={busy}
-              onClick={onSubmitReject}
-            >
-              Confirm reject
-            </button>
-            <button
-              type="button"
-              className="approval-card-btn"
-              disabled={busy}
-              onClick={onCancelReject}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : isPending ? (
-        <div className="approval-card-actions">
-          <button
-            type="button"
-            className="approval-card-btn is-primary"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              onApprove();
-            }}
-          >
-            [a] Approve
-          </button>
-          <button
-            type="button"
-            className="approval-card-btn"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              onReject();
-            }}
-          >
-            [r] Reject
-          </button>
-          <span className="approval-card-when">{formatRelative(row.createdAt)}</span>
-        </div>
-      ) : (
-        <div className="approval-card-actions">
-          <span className="approval-card-when">{formatRelative(row.createdAt)}</span>
-        </div>
-      )}
-    </li>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="approval-field">
-      <dt className="approval-field-label">{label}</dt>
-      <dd className="approval-field-value">{children}</dd>
-    </div>
   );
 }
 
@@ -514,11 +361,7 @@ function EmptyState({ filter, onBack }: { filter: Filter; onBack: () => void }) 
     <div className="approvals-empty">
       <p className="approvals-empty-line">{copy.line}</p>
       <p className="approvals-empty-sub">{copy.sub}</p>
-      <button
-        type="button"
-        className="approvals-empty-btn"
-        onClick={onBack}
-      >
+      <button type="button" className="approvals-empty-btn" onClick={onBack}>
         ← Back to dashboard
       </button>
     </div>

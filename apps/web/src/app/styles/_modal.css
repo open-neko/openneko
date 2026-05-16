@@ -1,0 +1,90 @@
+/* ─── MODAL ─── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(20, 18, 12, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modal-fade 0.15s ease-out;
+}
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 8px 32px rgba(20, 18, 12, 0.18), 0 24px 60px rgba(20, 18, 12, 0.10);
+  animation: modal-rise 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+  margin: 0;
+}
+.modal-desc {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text2);
+  white-space: pre-line;
+}
+.modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.modal-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--text3);
+}
+.modal-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.modal-btn.is-primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+.modal-btn.is-primary:hover {
+  background: #1a1814;
+  border-color: #1a1814;
+}
+.modal-btn.is-destructive {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+.modal-btn.is-destructive:hover {
+  background: #a83224;
+  border-color: #a83224;
+}
+
