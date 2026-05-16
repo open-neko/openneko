@@ -211,15 +211,6 @@ describeIfDb("runChatTurn", () => {
       .limit(1);
     expect(final[0]?.status).toBe("completed");
     expect(final[0]?.error).toBeNull();
-
-    // Hermes (no SDK Stop hook) → auto-memory enqueued as a pg-boss job.
-    expect(mockEnqueue).toHaveBeenCalledWith(
-      "work_auto_memory",
-      expect.objectContaining({
-        runId: run.id,
-        agentAnswer: "Hello from the agent.",
-      }),
-    );
   });
 
   it("backend throws → work_run.status='failed' with the error message; error+done events written", async () => {

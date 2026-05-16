@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyMigration } from "./migrate-helpers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(HERE, "..", "..", "..", "db", "migrations");
@@ -81,14 +82,10 @@ for (const file of files) {
   if (applied.has(file)) continue;
   const sql = await readFile(resolve(MIGRATIONS_DIR, file), "utf8");
   console.log(`[migrate] applying ${file}`);
-  await client.query("BEGIN");
   try {
-    await client.query(sql);
-    await client.query("INSERT INTO schema_migrations(name) VALUES($1)", [file]);
-    await client.query("COMMIT");
+    await applyMigration(client, file, sql);
     ranCount += 1;
   } catch (err) {
-    await client.query("ROLLBACK");
     console.error(`[migrate] FAILED on ${file}`);
     throw err;
   }

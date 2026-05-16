@@ -19,6 +19,7 @@ set -eu
 
 SCRIPT_DIR=$(dirname "$0")
 SCHEMA_SQL="${SCRIPT_DIR}/trial-sim-schema.sql"
+ADVANCE_DATES_SQL="${SCRIPT_DIR}/advance-dates.sql"
 SCENARIOS_DIR="${SCRIPT_DIR}/scenarios"
 TICK_INTERVAL_SEC="${TRIAL_SIM_TICK_SEC:-300}"
 LOG_PREFIX="[trial-sim]"
@@ -31,6 +32,11 @@ log() { printf '%s %s\n' "$LOG_PREFIX" "$*"; }
 bootstrap_schema() {
   log "applying $SCHEMA_SQL"
   $PSQL -f "$SCHEMA_SQL" >/dev/null
+}
+
+advance_dates() {
+  log "applying $ADVANCE_DATES_SQL"
+  $PSQL -f "$ADVANCE_DATES_SQL"
 }
 
 # fire_scenario <id> <window_key> <triggered_by>
@@ -129,6 +135,7 @@ tick() {
 
 cmd_loop() {
   bootstrap_schema
+  advance_dates
   log "scheduler loop starting; tick=${TICK_INTERVAL_SEC}s"
   while true; do
     tick || log "WARN tick failed; continuing"

@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
+  customType,
   date,
   index,
   integer,
@@ -18,6 +19,16 @@ import {
 
 const ts = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "date" });
+
+// pgvector column. Stored as `vector(N)`; we don't read it back into JS
+// (similarity search uses raw SQL with the `<=>` operator). Drizzle just
+// needs to know the type exists so inserts typecheck.
+const vector = (name: string, dim: number) =>
+  customType<{ data: string; driverData: string }>({
+    dataType() {
+      return `vector(${dim})`;
+    },
+  })(name);
 
 export const organization = pgTable(
   "organization",
@@ -512,6 +523,7 @@ export const work_memory = pgTable(
     use_count: integer("use_count").notNull().default(0),
     last_used_at: ts("last_used_at"),
     archived_at: ts("archived_at"),
+    embedding: vector("embedding", 384),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

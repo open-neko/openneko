@@ -138,6 +138,7 @@ services:
       TRIAL_SIM_ENABLED: ${TRIAL_SIM_ENABLED:-1}
     volumes:
       - ./db/seeds/dev/trial-sim-schema.sql:/scripts/trial-sim-schema.sql:ro
+      - ./db/seeds/dev/advance-dates.sql:/scripts/advance-dates.sql:ro
       - ./db/seeds/dev/scenario-injector.sh:/scripts/scenario-injector.sh:ro
       - ./db/seeds/dev/scenarios:/scripts/scenarios:ro
     entrypoint:

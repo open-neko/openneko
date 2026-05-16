@@ -1,0 +1,195 @@
+// Shared prompt sections used by every Neko agent prompt builder
+// (work chat, metric agent, and — soon — workflow agents). Anything that
+// describes how to talk to GraphJin, what memories to apply, or the
+// canonical data-access rules belongs here so the wording can't drift
+// between agents.
+
+import { knowledgePackPaths, type KnowledgePackContents } from "../knowledge-pack";
+import type { AgentWorkspace } from "../agent-backend";
+
+export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put multiple operators under
+  the same column object. Use
+  \`where: { and: [{ orderdate: { gte: "2024-06-30" } },
+                   { orderdate: { lte: "2025-06-29" } }] }\`
+  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.`;
+
+// Anti-fanout rule we keep separately so it can be cited in the
+// metric-agent's HARD CONSTRAINTS *and* in the chat agent's data-access
+// rules without copy-paste drift. Born from the CEO #1 fact-check.
+export const GRAPHJIN_FANOUT_RULE = `- A nested GraphJin response is flattened — one row per child. Summing
+  the parent column from that flattened payload double-counts by N
+  children per parent. To get a correct parent-side total either (a)
+  sum at the parent root only with no nested children, (b) use
+  \`distinct: [parent_id]\` to deduplicate first, or (c) split into two
+  queries — one parent-side aggregate and one child-side aggregate.`;
+
+export function buildMemorySection(
+  supportsMemoryTool: boolean,
+  memoryContext: string | undefined,
+): string {
+  const loaded = memoryContext?.trim()
+    ? memoryContext.trim()
+    : "No memories are currently saved for this workspace.";
+
+  const application = `Apply these memories when relevant. They are
+operator-validated rules and facts and **take precedence over default
+behavior described elsewhere in this prompt** — if a memory contradicts
+a default, the memory wins. When you act on a memory, briefly cite it
+in your reasoning so the operator can verify (e.g.
+"applied memory: don't sum from a flattened nested response"). Don't
+silently ignore a relevant memory.`;
+
+  const writeUsage = supportsMemoryTool
+    ? `To save a new memory: call \`mcp__neko_memory__save\` with the
+exact rule the operator stated. Use \`global\` scope unless they say
+it's only for this thread.
+
+To find related memories beyond the ones loaded above: call
+\`mcp__neko_memory__search\` with a short natural-language query.`
+    : `To save a new memory mid-conversation, emit a fenced block:
+
+\`\`\`neko_memory
+[{ "save": { "text": "the exact rule the operator stated",
+             "scope": "global", "kind": "business_rule",
+             "pinned": true } }]
+\`\`\`
+
+The runtime parses the fence and persists each entry. Multiple
+\`{ "save": ... }\` items in the array are allowed. The block is
+removed from the user-visible output. Only emit this when the operator
+explicitly says to remember/save something — never speculatively.`;
+
+  return `<long_term_memory>
+${loaded}
+
+${application}
+
+${writeUsage}
+</long_term_memory>`;
+}
+
+export type DataAccessOptions = {
+  shellTool: string;
+  workspace: AgentWorkspace;
+  knowledge: KnowledgePackContents;
+  // 'syntax': inline only the DSL reference, point at the other knowledge
+  // files for the agent to read on demand. Best for interactive paths.
+  // 'all': inline tables + namespaces + insights + syntax. Best for
+  // one-shot agents (metric, single-card) that can't iterate.
+  inlineKnowledge: "syntax" | "all";
+};
+
+export function buildDataAccessSection(opts: DataAccessOptions): string {
+  const { shellTool, workspace, knowledge, inlineKnowledge } = opts;
+  const paths = knowledgePackPaths(workspace.knowledgeRoot);
+
+  const knowledgeBlock =
+    inlineKnowledge === "all"
+      ? `================================================================================
+Tables — every table in the database (name, schema, column_count):
+================================================================================
+
+${knowledge.tables}
+
+================================================================================
+Namespaces — multi-database routing context:
+================================================================================
+
+${knowledge.namespaces}
+
+================================================================================
+Insights — hub tables, hot relationships, relationship paths, query templates, data-quality flags:
+================================================================================
+
+${knowledge.insights}
+
+================================================================================
+GraphJin DSL reference (syntax.json) — operators, aggregations, pagination, expression aggregates, common mistakes. Authoritative.
+================================================================================
+
+${knowledge.syntax}`
+      : `================================================================================
+GraphJin DSL reference (syntax.json) — operators, aggregations,
+pagination, expression aggregates, common mistakes. Authoritative.
+================================================================================
+
+${knowledge.syntax}`;
+
+  const fileGuidance =
+    inlineKnowledge === "syntax"
+      ? `Supplementary knowledge lives on disk (read with your \`${shellTool}\`
+tool when targeted lookup helps — but the DSL below is authoritative,
+don't re-derive it from these files):
+
+- ${paths.files.index} (start here — index of the rest)
+- ${paths.files.tables} (every table, schema, column count)
+- ${paths.files.namespaces} (multi-DB namespace routing, if any)
+- ${paths.files.insights} (hub tables, hot relationships, relationship paths, query templates)
+
+`
+      : "";
+
+  return `<data_access>
+The configured GraphJin database is the authoritative source for any
+operational question (revenue, customers, orders, inventory, employees,
+sales, products, etc.). When the user attaches a file or explicitly
+references uploaded data, read the file and use it — it's the source of
+truth for that turn. Otherwise default to the database.
+
+The GraphJin DSL reference is inlined below in full — operators,
+aggregations, pagination, expression aggregates, and the common
+mistakes that produce "OpQuery: expecting an aliased field name" or
+"table not found: <name>_sum" errors. Do NOT \`cat\` it from disk;
+shell-tool output is capped and you'll lose the aggregation examples
+that sit past the cap. Just read it from this prompt.
+
+${fileGuidance}Do NOT call \`graphjin cli list_tables\` / \`describe_table\` /
+\`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` —
+those broad discovery dumps duplicate work that's already prefetched.
+
+Run queries via the \`${shellTool}\` tool:
+
+  graphjin cli execute_graphql --args '{"query":"<your read-only graphql>"}'
+
+If a response contains an \`errors\` array, run:
+
+  graphjin cli fix_query_error --args '{"query":"<failing>","error":"<msg>"}'
+
+to get a corrected query, then run execute_graphql again.
+
+These targeted read-only tools are also available when they help:
+
+  graphjin cli get_table_sample --args '{"table":"<name>"}'
+    Call before writing a filter on a string or enum column. The
+    response includes real distinct values with row counts (e.g.
+    city: "Toronto" 1037, "New York" 664), available aggregations,
+    foreign keys, and analytics-mode rules. Without it you're
+    guessing literals — "Toronto" vs "TORONTO", "Cell phones" vs
+    "Cellphones" — and a wrong guess returns zero rows silently.
+  graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
+  graphjin cli explore_relationships --args '{"table":"<name>"}'
+
+For metric / time-series / top-N shapes, lift the template from the
+\`patterns\` block in the inlined syntax below (\`metric_by_dimension\`,
+\`time_series\`, \`top_n\`) and substitute real names into the
+placeholders in \`right_example\`. Each pattern's \`rule\` field tells
+you where to root the query — getting that wrong (e.g. rooting at the
+fact table and trying to bucket with \`distinct\`) is the most common
+cause of compile errors on aggregating queries.
+
+Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
+\`execute_code\`, Python, raw HTTP, or any other path bypasses the tool
+gate that blocks mutations and subscriptions, and produces results the
+rest of the system can't trace. Mutations and subscriptions are blocked
+at the tool gate regardless.
+
+For date/range filters: ${GRAPHJIN_DATE_RULE.replace(/^- /, "")}
+
+${GRAPHJIN_FANOUT_RULE.replace(/^- /, "")}
+
+Never invent or interpolate. If a query returned no rows, the answer
+is "no data", not a guess.
+
+${knowledgeBlock}
+</data_access>`;
+}

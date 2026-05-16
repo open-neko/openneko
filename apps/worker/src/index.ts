@@ -8,7 +8,6 @@ import {
   QUEUE,
   type ActionExecutePayload,
   type ProcessingJobPayload,
-  type WorkAutoMemoryPayload,
   type WorkflowRunFirePayload,
   type WorkRunPayload,
 } from "@neko/db/jobs";
@@ -37,7 +36,8 @@ import {
   seedDefaultActionPolicies,
   startSubscriptionManager,
 } from "@neko/llm/workflows";
-import { ensureOrgWorkspace, runWorkAutoMemoryPipeline } from "@neko/llm/work";
+import { ensureOrgWorkspace } from "@neko/llm/work";
+import { ensureQueueExists } from "./pg-boss-helpers.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -244,7 +244,7 @@ const b = await boss();
 }
 
 for (const name of Object.values(QUEUE)) {
-  await b.createQueue(name, { name, expireInSeconds: 600 });
+  await ensureQueueExists((qName, opts) => b.createQueue(qName, opts), name);
 }
 
 await b.work(
@@ -397,22 +397,6 @@ subscriptionManager.ready
     );
   });
 
-await b.work(
-  QUEUE.WORK_AUTO_MEMORY,
-  async (jobs: PgBossLib.Job<WorkAutoMemoryPayload>[]) => {
-    for (const job of jobs) {
-      try {
-        await runWorkAutoMemoryPipeline(job.data);
-      } catch (e) {
-        console.warn(
-          `[work-auto-memory] job ${job.id} failed; pg-boss may retry:`,
-          e instanceof Error ? e.message : e,
-        );
-        throw e;
-      }
-    }
-  },
-);
 
 if (SCHEDULED_REFRESH_HOURS > 0) {
   const cron =

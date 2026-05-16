@@ -40,6 +40,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
+  // Memory writes are agent-driven: claude-agent uses the
+  // mcp__neko_memory__save tool, Hermes emits a ```neko_memory fence
+  // that run-chat-turn extracts and persists. No special user-side
+  // command needed.
+
   let backend;
   try {
     backend = await resolveAgentBackend(orgId);

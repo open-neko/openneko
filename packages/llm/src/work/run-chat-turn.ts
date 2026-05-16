@@ -1,24 +1,21 @@
 import { data_source, db, eq } from "@neko/db";
-import {
-  enqueue as defaultEnqueue,
-  QUEUE,
-  type QueueName,
-} from "@neko/db/jobs";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
+import { extractMemoryFences } from "../agent-backends/memory-fence";
 import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
   prefetchKnowledgePack as defaultPrefetchKnowledgePack,
   readKnowledgePack,
 } from "../knowledge-pack";
-import { runWorkAutoMemoryPipeline } from "./auto-memory";
-import { makeAutoMemoryStopHook } from "./auto-memory-hook";
 import {
   ensureGraphjinGuard as defaultEnsureGraphjinGuard,
   resolveBinaryOnPath as defaultResolveBinaryOnPath,
 } from "./graphjin-guard";
-import { formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext } from "./memory";
+import {
+  formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext,
+  rememberWorkMemory,
+} from "./memory";
 import { buildWorkPrompt } from "./prompt";
 import {
   finishWorkRun,
@@ -56,7 +53,6 @@ export type RunChatTurnDeps = {
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
   prefetchKnowledgePack: typeof defaultPrefetchKnowledgePack;
   listInstalledSkills: typeof defaultListInstalledSkills;
-  enqueue: <T extends object>(queue: QueueName, data: T) => Promise<string | null>;
 };
 
 export type RunChatTurnResult = {
@@ -85,12 +81,6 @@ export async function runChatTurn(
     deps.prefetchKnowledgePack ?? defaultPrefetchKnowledgePack;
   const listInstalledSkills =
     deps.listInstalledSkills ?? defaultListInstalledSkills;
-  const enqueue = deps.enqueue ?? defaultEnqueue;
-  // runWorkAutoMemoryPipeline is referenced so its export stays live for
-  // backends that still import it directly. Not used here — the auto-memory
-  // classifier is enqueued as a pg-boss job (Hermes) or fired from the SDK
-  // Stop hook (claude-agent).
-  void runWorkAutoMemoryPipeline;
 
   await markWorkRunRunning(runId);
 
@@ -169,11 +159,12 @@ export async function runChatTurn(
       message: "Loading shared skills and memory…",
     });
 
-    const memoryContext = await formatWorkMemoryPromptContext({
-      orgId,
-      threadId,
-      runId,
-    });
+    const memoryContext = await formatWorkMemoryPromptContext(
+      { orgId, threadId, runId },
+      // Use the latest user message as the retrieval query so we pull
+      // memories semantically close to what the operator just asked.
+      { contextQuery: message, contextLimit: 5 },
+    );
 
     const installedSkills = await listInstalledSkills(workspace.skillsRoot);
 
@@ -211,15 +202,6 @@ export async function runChatTurn(
         }
       : undefined;
 
-    const autoMemoryHook = backend.capabilities.sdkStopHook
-      ? makeAutoMemoryStopHook({
-          orgId,
-          threadId,
-          runId,
-          userMessage: message,
-        })
-      : null;
-
     const result = await backend.run({
       prompt,
       userMessage: message,
@@ -230,9 +212,6 @@ export async function runChatTurn(
       mcpServers,
       tag: `work ${runId}`,
       signal,
-      ...(autoMemoryHook
-        ? { hooks: { Stop: [{ hooks: [autoMemoryHook] }] } }
-        : {}),
     });
 
     if (
@@ -244,31 +223,37 @@ export async function runChatTurn(
 
     await finishWorkRun(runId, result.status, result.error ?? null);
 
-    const persistedText = result.finalText.trim() || assistantText.trim();
+    // Pull any neko_memory fences out of the agent response, persist
+    // them, and strip from the user-facing text. Backend-agnostic: works
+    // for Hermes (which has no MCP tool registry) and is harmless for
+    // claude-agent (which would have used the MCP save tool, but we
+    // accept either path).
+    const rawText = result.finalText.trim() || assistantText.trim();
+    const { text: persistedText, ops: memoryOps } = extractMemoryFences(rawText);
+    for (const op of memoryOps) {
+      try {
+        await rememberWorkMemory({
+          orgId,
+          threadId,
+          runId,
+          text: op.text,
+          kind: "business_rule",
+          scope: op.scope ?? "global",
+          pinned: op.pinned ?? true,
+        });
+      } catch (err) {
+        console.error(
+          "[work-memory] fence-driven save failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
     if (persistedText) {
       await saveAssistantWorkMessage({
         orgId,
         threadId,
         runId,
         content: persistedText,
-      });
-    }
-
-    // Backends without an SDK Stop hook need a post-completion fallback to
-    // schedule the memory classifier.
-    if (
-      !backend.capabilities.sdkStopHook &&
-      result.status === "completed" &&
-      result.finalText.trim()
-    ) {
-      await enqueue(QUEUE.WORK_AUTO_MEMORY, {
-        orgId,
-        threadId,
-        runId,
-        userMessage: message,
-        agentAnswer: result.finalText,
-      }).catch((err) => {
-        console.error("[work-auto-memory] hermes enqueue failed:", err);
       });
     }
 

@@ -7,7 +7,7 @@ import type { KnowledgePackContents } from "../knowledge-pack";
 import {
   GRAPHJIN_DATE_RULE,
   buildDataAccessSection,
-} from "../work/prompt";
+} from "../prompts/sections";
 import type { WorkflowRecord } from "./store";
 
 export type BuildWorkflowRunnerPromptInput = {
@@ -137,7 +137,12 @@ export function buildWorkflowRunnerPrompt(
 ): string {
   const { workflow, mode, memoryContext, mcpTools, backend, workspace, knowledge } = input;
   const shellTool = shellToolName(backend);
-  const dataAccessSection = buildDataAccessSection(shellTool, workspace, knowledge);
+  const dataAccessSection = buildDataAccessSection({
+    shellTool,
+    workspace,
+    knowledge,
+    inlineKnowledge: "syntax",
+  });
 
   const stepsBlock = workflow.steps
     .map((step, index) => `  ${index + 1}. ${step.description}`)

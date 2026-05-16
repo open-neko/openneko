@@ -12,6 +12,7 @@ import {
   work_message,
   work_pending_memory,
 } from "@neko/db";
+import { embedText, vectorLiteral } from "../embedding";
 
 export const WORK_MEMORY_KINDS = [
   "preference",
@@ -150,6 +151,19 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
   const now = new Date();
   const scopeId = resolveScopeId(scope, input);
   const pinned = input.pinned ?? shouldPinByDefault(input.kind, scope);
+  const text = input.text.trim();
+  // Embed up front so search-by-context can find it on the very next query.
+  // Failure here is not fatal — we'd rather store the memory than lose it.
+  let embedding: string | null = null;
+  try {
+    const vec = await embedText(text);
+    embedding = vectorLiteral(vec);
+  } catch (err) {
+    console.error(
+      "[work-memory] embedding failed; storing memory without vector:",
+      err instanceof Error ? err.message : err,
+    );
+  }
   const rows = await db()
     .insert(work_memory)
     .values({
@@ -157,12 +171,13 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
       kind: input.kind,
       scope,
       scope_id: scopeId,
-      text: input.text.trim(),
+      text,
       pinned,
       confidence: clamp(input.confidence ?? 0.8, 0, 1),
       metadata: input.metadata ?? {},
       source_run_id: input.runId ?? null,
       source_thread_id: input.threadId ?? null,
+      ...(embedding ? { embedding: sql`${embedding}::vector` } : {}),
       created_at: now,
       updated_at: now,
     })
@@ -253,15 +268,39 @@ export async function getCoreWorkMemories(
     .slice(0, limit);
 }
 
-export async function formatWorkMemoryPromptContext(ctx: WorkMemoryContext): Promise<string> {
+export async function formatWorkMemoryPromptContext(
+  ctx: WorkMemoryContext,
+  options: { contextQuery?: string; contextLimit?: number } = {},
+): Promise<string> {
   const core = await getCoreWorkMemories(ctx);
-  if (core.length === 0) {
-    return "No core memories are currently saved for this workspace or thread.";
+  // When the caller hands us a contextQuery (the user's latest message,
+  // a card title, a workflow intent, etc.) pull the top-N semantically
+  // closest memories via pgvector. Merge with core (pinned + kind-based)
+  // by id so we never repeat a memory.
+  const seen = new Set(core.map((m) => m.id));
+  const contextual = options.contextQuery?.trim()
+    ? (
+        await searchWorkMemoryByContext({
+          orgId: ctx.orgId,
+          query: options.contextQuery,
+          limit: options.contextLimit ?? 5,
+        })
+      )
+        .map((r) => r.memory)
+        .filter((m) => !seen.has(m.id))
+    : [];
+
+  const merged = [...core, ...contextual];
+  if (merged.length === 0) {
+    return "No memories are currently saved for this workspace or thread.";
   }
-  return [
-    "Core memories that should be treated as durable context:",
-    ...core.map((memory) => `- [${memory.id}] ${formatMemoryLabel(memory)}: ${memory.text}`),
-  ].join("\n");
+  const lines = [
+    "Memories the operator has saved — treat as durable context:",
+    ...merged.map(
+      (memory) => `- [${memory.id}] ${formatMemoryLabel(memory)}: ${memory.text}`,
+    ),
+  ];
+  return lines.join("\n");
 }
 
 export async function searchWorkMemory(
@@ -283,6 +322,76 @@ export async function searchWorkMemory(
   }
 
   return { saved, archives };
+}
+
+// Semantic search via pgvector. Embeds the query with the same
+// transformers.js model used at write time and pulls the N nearest
+// non-archived memories by cosine distance. Returned `score` is the
+// cosine similarity (1 - distance), so higher is better.
+export async function searchWorkMemoryByContext(args: {
+  orgId: string;
+  query: string;
+  limit?: number;
+}): Promise<WorkMemorySearchResult[]> {
+  const limit = clamp(Math.floor(args.limit ?? 5), 1, 20);
+  const trimmed = args.query.trim();
+  if (!trimmed) return [];
+  let queryVec: string;
+  try {
+    queryVec = vectorLiteral(await embedText(trimmed));
+  } catch (err) {
+    console.error(
+      "[work-memory] context search embed failed:",
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
+  // Use Drizzle's typed select so timestamp columns come back as Dates
+  // (not strings) and the row shape matches rowToMemory's expectations.
+  // Vector ordering goes in via raw sql; the score is computed as a
+  // separate column so we don't have to re-embed for the result.
+  const orderExpr = sql`work_memory.embedding <=> ${queryVec}::vector`;
+  const rows = await db()
+    .select({
+      id: work_memory.id,
+      org_id: work_memory.org_id,
+      kind: work_memory.kind,
+      scope: work_memory.scope,
+      scope_id: work_memory.scope_id,
+      text: work_memory.text,
+      pinned: work_memory.pinned,
+      confidence: work_memory.confidence,
+      metadata: work_memory.metadata,
+      source_run_id: work_memory.source_run_id,
+      source_thread_id: work_memory.source_thread_id,
+      use_count: work_memory.use_count,
+      last_used_at: work_memory.last_used_at,
+      archived_at: work_memory.archived_at,
+      embedding: work_memory.embedding,
+      created_at: work_memory.created_at,
+      updated_at: work_memory.updated_at,
+      score: sql<number>`1 - (work_memory.embedding <=> ${queryVec}::vector)`,
+    })
+    .from(work_memory)
+    .where(
+      and(
+        eq(work_memory.org_id, args.orgId),
+        isNull(work_memory.archived_at),
+        sql`work_memory.embedding IS NOT NULL`,
+      ),
+    )
+    .orderBy(orderExpr)
+    .limit(limit);
+  if (rows.length === 0) return [];
+  await touchWorkMemories(
+    { orgId: args.orgId },
+    rows.map((r) => r.id),
+  );
+  return rows.map((r) => ({
+    source: "saved_memory" as const,
+    memory: rowToMemory(r),
+    score: Number(r.score) || 0,
+  }));
 }
 
 export async function findConflictingWorkMemories(

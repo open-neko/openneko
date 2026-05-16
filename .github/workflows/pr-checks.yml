@@ -20,7 +20,7 @@ jobs:
     # the runtime config falls back to them without needing a config.json.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: neko
           POSTGRES_PASSWORD: secret

@@ -1550,12 +1550,18 @@ function ToolGroup({
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
-  // Closed by default. Auto-open only while we're still doing work and the
-  // agent hasn't started talking yet — once prose lands, fold back. User can
-  // always click the header to open.
-  const autoOpen = inflight > 0 && !followedByText;
-  const [userOpen, setUserOpen] = useState(false);
-  const effectiveOpen = userOpen || autoOpen;
+  // Auto-open once while work is in flight and the agent hasn't started
+  // talking yet — then leave the state alone. Re-deriving open from live
+  // inflight/text state caused the section to snap closed mid-stream as
+  // each tool finished or prose landed, which is visually jarring.
+  const [open, setOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!autoOpenedRef.current && inflight > 0 && !followedByText) {
+      autoOpenedRef.current = true;
+      setOpen(true);
+    }
+  }, [inflight, followedByText]);
 
   if (!showHeader) {
     return (
@@ -1570,10 +1576,10 @@ function ToolGroup({
       <button
         type="button"
         className="work-tool-group-head"
-        onClick={() => setUserOpen((v) => !v)}
-        aria-expanded={effectiveOpen}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
       >
-        <span className="work-tool-group-toggle">{effectiveOpen ? "▾" : "▸"}</span>
+        <span className="work-tool-group-toggle">{open ? "▾" : "▸"}</span>
         <span className="work-tool-group-count">
           {tools.length} tool {tools.length === 1 ? "call" : "calls"}
         </span>
@@ -1588,7 +1594,7 @@ function ToolGroup({
           </span>
         ) : null}
       </button>
-      {effectiveOpen ? (
+      {open ? (
         <div className="work-tool-group-body">
           {tools.map((tool) => (
             <ToolRow key={tool.id} tool={tool} />
