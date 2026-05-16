@@ -57,6 +57,16 @@ Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click *
 
 That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [INSTALL.md](INSTALL.md) for connecting GraphJin to your CRM, billing, or warehouse.
 
+## Docs
+
+- **Getting started**
+  - [INSTALL.md](INSTALL.md) — install, update, requirements, troubleshooting, connecting your data
+- **How it works**
+  - [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
+- **Project**
+  - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
+  - [CHANGELOG.md](CHANGELOG.md) — releases
+
 ## Issues
 
 Please file bugs and feature requests at [github.com/open-neko/neko/issues](https://github.com/open-neko/neko/issues).
