@@ -146,38 +146,51 @@ On hosts where microsandbox cannot run, the plugin subsystem is disabled with a 
 flowchart LR
   Worker[worker process]
 
-  subgraph PluginLoader["plugin loader (apps/worker/src/plugins/)"]
-    Reader["read openneko.plugins.json"]
-    Boot["per plugin:<br/>copy bundled runner →<br/>start VM →<br/>call register()"]
+  subgraph Registry["PluginRegistry (apps/worker/src/plugins/)"]
+    Watcher["fs.watch:<br/>openneko.plugins.json<br/>secrets.json"]
+    KindMap["kind → plugin map<br/>(from manifest entries' kinds[])"]
+    Scrubber["env-value scrubber<br/>(rebuilt on secrets change)"]
   end
 
-  subgraph PluginVm1["plugin VM (×N)<br/>microsandbox microVM"]
+  subgraph PluginVm1["plugin VM (lazy, ×N)<br/>microsandbox microVM"]
     Runner["/workspace/run.js<br/>(bundled by author)"]
-    Handler["action handler<br/>e.g. web_search"]
+    Handler["action handler"]
   end
 
-  Registry["openneko.plugins.json<br/>(pinned version + integrity hash +<br/>requires_network: [...])"]
+  ManifestFile["openneko.plugins.json<br/>(pinned version + integrity hash +<br/>kinds + requires_network)"]
+  SecretsFile["~/.config/openneko/secrets.json<br/>(0600, per-user)"]
+  CLI["openneko install / secrets set<br/>writes both files"]
   ExecutorRegistry["registerActionAdapter()<br/>packages/llm/src/workflows/action-executor.ts"]
   PolicyEngine["policy-engine.ts<br/>(operator approval flow)"]
+  Jobs["worker jobs<br/>(work-run, workflow-run-fire)"]
 
-  Worker --> PluginLoader
-  PluginLoader -->|reads| Registry
-  PluginLoader -->|stdio JSON-RPC<br/>method=register| PluginVm1
-  PluginLoader -->|on each declared kind:<br/>registerActionAdapter| ExecutorRegistry
-  ExecutorRegistry -->|action requests still go through| PolicyEngine
-  PolicyEngine -->|approved → execute_action RPC| PluginVm1
+  CLI --> ManifestFile
+  CLI --> SecretsFile
+  Worker --> Registry
+  Registry -->|watches| ManifestFile
+  Registry -->|watches| SecretsFile
+  Registry -->|registers each kind →| ExecutorRegistry
+  Jobs -->|getCurrentScrubber| Scrubber
+  ExecutorRegistry -->|action requests| PolicyEngine
+  PolicyEngine -->|approved → ensureVm + execute_action| PluginVm1
   PluginVm1 -->|HTTPS to allowlisted hosts| Internet[Declared plugin remotes]
 ```
 
-**Lifecycle.** One microVM per installed plugin, spawned at worker boot, stopped at SIGTERM. Park/resume is supported by `MicrosandboxRuntime` for cold-start mitigation but not used yet.
+**Lifecycle (hot-reload, not boot-once).** The worker constructs a `PluginRegistry` at startup that watches `openneko.plugins.json` and the per-user secrets file via `fs.watch`. When the operator runs `openneko install <name>`, the CLI writes the manifest entry; the registry's watcher fires (debounced ~200 ms), it re-reads the files, registers adapters for the new plugin's declared kinds. **No worker restart.** When the operator runs `openneko secrets set …`, the watcher rebuilds the env-value scrubber too. When `openneko remove` deletes an entry, the registry stops the corresponding microVM. Park/resume is supported by `MicrosandboxRuntime` for cold-start mitigation but not used yet.
 
-**RPC contract.** Worker invokes `node /workspace/run.js <method> <json-params>` inside the VM via `microsandbox.exec()`. One process per call — the runner reads the request, dispatches, prints a single `RpcResponse` JSON object on stdout, exits. Methods: `register` (called once at boot — plugin reports its declared action kinds), `execute_action` (per approved action request). RPC schema lives in `@open-neko/plugin-types`.
+**Lazy VM spawn.** Plugin microVMs are NOT started at boot. The registry maps `kind → plugin` from the manifest's `kinds: string[]` field (written at install time from the marketplace entry — no VM spawn needed to know what each plugin handles). The first `execute_action` for a kind triggers `ensureVm()` which copies the bundled runner into a per-plugin host workspace, starts the microVM, calls `register()` once for a sanity check that the runtime's declared kinds match the manifest. Subsequent calls reuse the warm VM.
 
-**Network policy from manifest.** Each plugin manifest entry declares `capabilities.network: [...]`. The loader translates this into a microsandbox network mode (empty list → `NetworkPolicy.none()`; non-empty → `NetworkPolicy.publicOnly()`) and applies it at VM creation. Per-host allowlist enforcement at the VM boundary is a v2 follow-up that depends on richer microsandbox `NetworkPolicy` modes; today the manifest declaration is the operator-visible contract surfaced on the marketplace Pages site.
+**RPC contract.** Worker invokes `node /workspace/run.js <method> <json-params>` inside the VM via `microsandbox.exec()`. One process per call — the runner reads the request, dispatches, prints a single `RpcResponse` JSON object on stdout, exits. Methods: `register` (called once on first VM spawn — plugin reports its declared action kinds for sanity), `execute_action` (per approved action request). RPC schema lives in `@open-neko/plugin-types`.
 
-**Env injection (secrets).** Marketplace entries declare `requires_env: [{ key, required, secret, description }]` for any env values the plugin needs at runtime (Slack bot tokens, API keys, etc.). The `openneko install` CLI prompts the operator for required keys during install and stores them in a per-user file at `$XDG_CONFIG_HOME/openneko/secrets.json` (default `~/.config/openneko/secrets.json`), 0600 perms. The loader reads that file at boot, merges per-plugin map onto the manifest's `env` (with the secrets store winning), and passes it on every `execute_action` call. The runtime injects values into the VM via a `sh -c 'export K=v ...; exec node /workspace/run.js ...'` wrapper (microsandbox 0.4.x has no builder-level env method); keys are validated to UPPER_SNAKE_CASE before reaching the shell so a malformed manifest can't smuggle a command-injection substring, and values are POSIX single-quoted. Secrets are never written to `openneko.plugins.json` (which is tracked) or `action_request.payload` (DB + logged).
+**Network policy from manifest.** Each plugin manifest entry declares `capabilities.network: [...]`. The registry translates this into a microsandbox network mode (empty list → `NetworkPolicy.none()`; non-empty → `NetworkPolicy.publicOnly()`) and applies it at VM creation. Per-host allowlist enforcement at the VM boundary is a v2 follow-up that depends on richer microsandbox `NetworkPolicy` modes; today the manifest declaration is the operator-visible contract surfaced on the marketplace Pages site.
 
-**Adapter integration.** When the plugin's `register()` reports an action kind, the loader builds an `ActionAdapter` that proxies `execute_action` calls through the VM RPC, and hands it to the existing `registerActionAdapter()` from `packages/llm/src/workflows/action-executor.ts`. Approved action requests continue to flow through `packages/llm/src/workflows/policy-engine.ts` exactly as built-in adapters do — the policy engine never knows or cares whether the adapter lives in-process or behind a VM.
+**Env injection (secrets).** Marketplace entries declare `requires_env: [{ key, required, secret, description }]` for any env values the plugin needs at runtime (Slack bot tokens, API keys, etc.). The `openneko install` CLI prompts the operator for required keys during install and stores them in a per-user file at `$XDG_CONFIG_HOME/openneko/secrets.json` (default `~/.config/openneko/secrets.json`), 0600 perms. The registry reads that file at boot AND re-reads on every secrets-file change (operator can rotate a token via `openneko secrets set` without restarting). On each `execute_action` call the registry merges manifest `env` with the per-plugin secrets map (secrets winning) and passes the result to the runtime. The runtime injects values into the VM via a `sh -c 'export K=v ...; exec node /workspace/run.js ...'` wrapper (microsandbox 0.4.x has no builder-level env method); keys are validated to UPPER_SNAKE_CASE before reaching the shell so a malformed manifest can't smuggle a command-injection substring, and values are POSIX single-quoted. Secrets are never written to `openneko.plugins.json` (which is tracked) or `action_request.payload` (DB + logged).
+
+**Env scrubber for agent output.** The registry also owns a value-scrubber rebuilt from every distinct secret value in the store on every refresh. Worker jobs (`work-run.ts`, `workflow-run-fire.ts`) snapshot the scrubber at job start and wrap every `AgentEvent` they persist — the agent's `Bash` tool calling `env | grep TOKEN`, a plugin's `stderr` echoing a token on auth failure, or an agent paraphrasing the value into a message would all be replaced with `[REDACTED]` before landing in `work_memory`, run replays, or the Briefing. Defense-in-depth on top of the sandbox + capability declarations; the scrubber catches verbatim leaks (the 95% case) but not transformations (`base64(token)`).
+
+**Adapter integration.** When the registry registers an action kind, it builds an `ActionAdapter` that proxies `execute_action` calls through the VM RPC, and hands it to the existing `registerActionAdapter()` from `packages/llm/src/workflows/action-executor.ts`. Approved action requests continue to flow through `packages/llm/src/workflows/policy-engine.ts` exactly as built-in adapters do — the policy engine never knows or cares whether the adapter lives in-process or behind a VM.
+
+**Shared install library.** The install orchestration (`runInstall`), secrets store, marketplace client, and manifest helpers live in `packages/plugin-install/` (`@open-neko/plugin-install`). Both the worker (via the registry) and the CLI consume it — one source of truth for the secrets-store shape, so the file the CLI writes is exactly the file the worker reads.
 
 ## Operating loop (OUDA)
 
@@ -236,7 +249,8 @@ Memory writes/reads are agent-driven (the agent calls explicit `memory_save` / `
 | data-source graphjin | `dosco/graphjin` + `db/graphjin/dev.yml` | Operational DB | Agent's read surface. GraphQL + MCP. Read-only via tool gate. |
 | `neko-db` | `pgvector/pgvector:pg16` | — | App state, jobs, memory vectors. |
 | Agent (hermes \| claude-agent) | spawned by `worker` | LLM provider, data-source graphjin via `graphjin cli` | Never opens a DB connection directly. |
-| plugin VM (per installed plugin) | spawned by `worker` via `MicrosandboxRuntime` | Hosts declared in the plugin manifest's `capabilities.network` (e.g. `api.parallel.ai`) | One microsandbox microVM per plugin. Talks to the worker via JSON-RPC over stdio. Never opens a DB connection. Disabled on unsupported hosts (Windows, Linux without KVM, macOS x86_64). |
+| plugin VM (per installed plugin) | spawned by `worker` via `MicrosandboxRuntime`, **lazy** | Hosts declared in the plugin manifest's `capabilities.network` (e.g. `slack.com`, `search.parallel.ai`) | One microsandbox microVM per plugin. Spawned on first `execute_action` for that plugin, kept warm. Talks to the worker via JSON-RPC over stdio. Never opens a DB connection. Disabled on unsupported hosts (Windows, Linux without KVM, macOS x86_64). |
+| `openneko` CLI | `apps/openneko-cli` (Node), vendored from `@open-neko/cli` | `npm` (to install plugin packages), `openneko.plugins.json` + `~/.config/openneko/secrets.json` on the operator's host | Operator surface for plugin install/list/remove/secrets/marketplace. Published to npm as `@open-neko/cli`; available in-repo as `pnpm openneko …`. Inside the worker container, the binary is on PATH so the agent's Bash tool can drive it directly. |
 
 ## Where to look next
 
@@ -244,9 +258,11 @@ Memory writes/reads are agent-driven (the agent calls explicit `memory_save` / `
 - Agent backends and event stream: `packages/llm/src/agent-backend.ts`, `packages/llm/src/agent-backends/`
 - Subscription manager: `packages/llm/src/workflows/subscription-manager.ts`
 - Worker jobs: `apps/worker/src/jobs/`
-- Plugin runtime + loader: `apps/worker/src/plugins/microsandbox-runtime.ts`, `apps/worker/src/plugins/load-plugins.ts`
+- Plugin runtime + registry: `apps/worker/src/plugins/microsandbox-runtime.ts` (microVM + RPC), `apps/worker/src/plugins/plugin-registry.ts` (fs.watch + lazy spawn + scrubber)
+- Plugin install + secrets shared library: `packages/plugin-install/` (`@open-neko/plugin-install` — consumed by both worker and CLI)
 - Plugin RPC schema: `@open-neko/plugin-types` ([source](https://github.com/open-neko/plugins/tree/main/packages/types))
+- Env-value scrubber: `packages/llm/src/work/secret-scrubber.ts`
 - Plugin source + official marketplace: [github.com/open-neko/plugins](https://github.com/open-neko/plugins) (Pages site at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/))
-- Operator CLI: [github.com/open-neko/cli](https://github.com/open-neko/cli) (`openneko install`, `openneko marketplace add`)
+- Operator CLI (vendored): `apps/openneko-cli/` (published as `@open-neko/cli`; the standalone `open-neko/cli` repo is archived)
 - GraphJin configs: `db/graphjin/neko.yml` (app DB), `db/graphjin/dev.example.yml` (data source)
 - Compose topology: `compose.yml`, `compose.adventureworks.yml`

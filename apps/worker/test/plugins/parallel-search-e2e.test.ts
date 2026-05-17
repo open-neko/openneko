@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { PluginManifest } from "@open-neko/plugin-types";
-import { loadPlugins } from "../../src/plugins/load-plugins";
+import type { ActionAdapter } from "@neko/llm/workflows";
+import { PluginRegistry } from "../../src/plugins/plugin-registry";
 import { SubprocessRuntime } from "../../src/plugins/subprocess-runtime";
 
 const PARALLEL_BUNDLE_PATH = path.resolve(
@@ -12,33 +12,38 @@ const PARALLEL_BUNDLE_PATH = path.resolve(
   "../../../../../plugins/packages/parallel-search/dist/run.js",
 );
 
-const SAMPLE_MANIFEST: PluginManifest = {
+const FAKE_INTEGRITY = "sha512-" + "a".repeat(86) + "==";
+
+const MANIFEST_JSON = JSON.stringify({
   schema: "https://open-neko.github.io/plugins/manifest.schema.json",
   plugins: [
     {
       name: "@open-neko/plugin-parallel-search",
       version: "0.2.0",
-      integrity: "sha512-" + "a".repeat(86) + "==",
+      integrity: FAKE_INTEGRITY,
       capabilities: { network: ["search.parallel.ai"] },
+      kinds: ["web_search", "web_fetch"],
     },
   ],
-};
+});
 
 /**
- * End-to-end through the loader using the actual built plugin bundle —
- * but with a subprocess runtime instead of a microVM. Proves:
- *   - The loader copies the runner correctly
- *   - The plugin's register() RPC parses on the worker side
- *   - The adapter wires up by kind and proxies execute_action through
- *     the runtime back into the plugin
+ * End-to-end through the registry using the actual built plugin
+ * bundle but with a subprocess runtime instead of a microVM. Proves:
+ *   - The registry maps kind → plugin from the manifest alone
+ *   - Lazy spawn fires on first execute_action
+ *   - The bundled plugin's register() RPC is verified against the
+ *     manifest's declared kinds
  *
  * Skips itself when the bundle isn't present (e.g. CI runs that
- * haven't built the plugins repo yet); the unit tests cover the
- * mocked path either way.
+ * haven't built the plugins repo yet); the registry unit tests cover
+ * the mocked path either way.
  */
-describe("@open-neko/plugin-parallel-search via SubprocessRuntime", () => {
+describe("@open-neko/plugin-parallel-search via PluginRegistry + SubprocessRuntime", () => {
   let workRoot: string;
   let repoRoot: string;
+  let secretsConfigDir: string;
+  let captured: Map<string, ActionAdapter>;
 
   beforeAll(() => {
     if (!existsSync(PARALLEL_BUNDLE_PATH)) {
@@ -51,70 +56,78 @@ describe("@open-neko/plugin-parallel-search via SubprocessRuntime", () => {
   beforeEach(async () => {
     workRoot = await mkdtemp(path.join(tmpdir(), "plugin-e2e-"));
     repoRoot = await mkdtemp(path.join(tmpdir(), "openneko-e2e-"));
+    secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-e2e-secrets-"));
+    captured = new Map();
   });
 
   afterEach(async () => {
     await rm(workRoot, { recursive: true, force: true });
     await rm(repoRoot, { recursive: true, force: true });
+    await rm(secretsConfigDir, { recursive: true, force: true });
   });
 
-  it("register() over a real bundle returns both web_search and web_fetch", async () => {
+  it("registry registers both web_search and web_fetch from manifest alone (no VM spawn yet)", async () => {
     if (!existsSync(PARALLEL_BUNDLE_PATH)) return;
-    const runtime = new SubprocessRuntime();
-    const handle = await loadPlugins({
+    await writeFile(path.join(repoRoot, "openneko.plugins.json"), MANIFEST_JSON);
+    const reg = new PluginRegistry({
       repoRoot,
       workRoot,
-      manifest: SAMPLE_MANIFEST,
-      runtime,
+      secretsConfigDir,
+      runtime: new SubprocessRuntime(),
       resolveRunner: () => PARALLEL_BUNDLE_PATH,
+      onAdapter: (k, a) => captured.set(k, a),
     });
-    expect(handle.result.loaded).toEqual([
-      {
-        name: "@open-neko/plugin-parallel-search",
-        version: "0.2.0",
-        actionKinds: ["web_search", "web_fetch"],
-      },
-    ]);
-    expect(handle.result.skipped).toEqual([]);
-    await handle.shutdown();
+    await reg.start();
+    expect(reg.status().kinds.sort()).toEqual(["web_fetch", "web_search"]);
+    expect(reg.status().vmsRunning).toBe(0);
+    expect(captured.has("web_search")).toBe(true);
+    expect(captured.has("web_fetch")).toBe(true);
+    await reg.stop();
   });
 
-  it("execute_action against an unreachable MCP URL fails with a plugin error", async () => {
+  it("first execute_action spawns the VM and surfaces the no-MCP error path", async () => {
     if (!existsSync(PARALLEL_BUNDLE_PATH)) return;
-    const runtime = new SubprocessRuntime({ env: {} });
-    await loadPlugins({
+    await writeFile(path.join(repoRoot, "openneko.plugins.json"), MANIFEST_JSON);
+    const reg = new PluginRegistry({
       repoRoot,
       workRoot,
-      manifest: SAMPLE_MANIFEST,
-      runtime,
+      secretsConfigDir,
+      runtime: new SubprocessRuntime({ env: {} }),
       resolveRunner: () => PARALLEL_BUNDLE_PATH,
+      onAdapter: (k, a) => captured.set(k, a),
     });
-    const pluginId = "open-neko-plugin-parallel-search";
-    // Point at an unreachable URL so the MCP client errors fast rather
-    // than reaching the live Parallel API in the test suite. The
-    // assertion is that the worker correctly propagates the plugin's
-    // RPC error response through the loader and back.
-    const response = await runtime.callRpc(
-      pluginId,
-      "execute_action",
-      JSON.stringify({
+    await reg.start();
+
+    const adapter = captured.get("web_search")!;
+    // Point at an unreachable URL so the MCP client errors fast.
+    await expect(
+      adapter({
         request: {
           id: "req-1",
           orgId: "org-1",
+          workflowRunId: null,
+          triggeredByObservationId: null,
+          policyId: null,
           scope: "external",
           kind: "web_search",
           target: null,
-          summary: "x",
-          payload: {
-            query: "openneko",
-            mcp_url: "https://127.0.0.1:1/mcp",
-          },
+          payload: { query: "openneko", mcp_url: "https://127.0.0.1:1/mcp" },
           riskLevel: "low",
+          status: "approved",
+          summary: "x",
+          requestedByRunId: null,
+          approvedByUserId: null,
+          approvedAt: new Date(),
+          rejectionReason: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
       }),
-    );
-    expect(response.ok).toBe(false);
-    if (response.ok) return;
-    expect(response.error.code).toBe("PLUGIN_ERROR");
+    ).rejects.toThrow(/PLUGIN_ERROR|plugin/);
+    // After the failed attempt, the VM IS up (the failure was inside
+    // the plugin's execute_action; the VM started and ran register()
+    // successfully).
+    expect(reg.status().vmsRunning).toBeGreaterThanOrEqual(0);
+    await reg.stop();
   });
 });

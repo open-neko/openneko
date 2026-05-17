@@ -38,7 +38,8 @@ import {
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
-import { loadPlugins } from "./plugins/load-plugins.js";
+import { PluginRegistry } from "./plugins/plugin-registry.js";
+import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -184,20 +185,23 @@ await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 console.log("[worker] action policies seeded and built-in adapters registered");
 
-const pluginsHandle = await loadPlugins({
+const pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
 });
-if (pluginsHandle.result.loaded.length > 0) {
-  console.log(
-    `[worker] loaded ${pluginsHandle.result.loaded.length} plugin(s): ${pluginsHandle.result.loaded
-      .map((p) => `${p.name}@${p.version} (${p.actionKinds.join(", ") || "no actions"})`)
-      .join("; ")}`,
-  );
-}
-if (pluginsHandle.result.skipped.length > 0) {
-  for (const s of pluginsHandle.result.skipped) {
-    console.warn(`[worker] plugin skipped ${s.name}: ${s.reason}`);
+await pluginRegistry.start();
+setPluginRegistryInstance(pluginRegistry);
+{
+  const s = pluginRegistry.status();
+  if (s.loaded.length > 0) {
+    console.log(
+      `[worker] plugin registry: ${s.loaded.length} plugin(s), ${s.kinds.length} action kind(s) registered (VMs lazy-spawn on first use)`,
+    );
+  } else {
+    console.log(`[worker] plugin registry: no plugins installed`);
+  }
+  for (const skipped of s.skipped) {
+    console.warn(`[worker] plugin skipped ${skipped.name}: ${skipped.reason}`);
   }
 }
 
@@ -469,7 +473,8 @@ const shutdown = async (signal: string) => {
     console.error("[worker] subscription manager stop error:", e);
   }
   try {
-    await pluginsHandle.shutdown();
+    setPluginRegistryInstance(null);
+    await pluginRegistry.stop();
   } catch (e) {
     console.error("[worker] plugin shutdown error:", e);
   }
