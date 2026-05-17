@@ -23,10 +23,25 @@ export const GRAPHJIN_FANOUT_RULE = `- A nested GraphJin response is flattened �
   \`distinct: [parent_id]\` to deduplicate first, or (c) split into two
   queries — one parent-side aggregate and one child-side aggregate.`;
 
-export function buildMemorySection(
-  supportsMemoryTool: boolean,
-  memoryContext: string | undefined,
-): string {
+export type MemorySaveMode = "tool" | "fence" | "none";
+
+export type MemorySectionOptions = {
+  /** True when the agent has the `mcp__neko_memory__search` MCP tool. */
+  searchTool: boolean;
+  /**
+   * How the agent can persist new memories:
+   * - "tool": call `mcp__neko_memory__save`
+   * - "fence": emit a ```neko_memory fenced block (parsed post-run)
+   * - "none": agent does not write memories (operator does it explicitly)
+   */
+  saveMode: MemorySaveMode;
+  /** Prefetched memory list (string). Undefined / empty → "no memories" placeholder. */
+  memoryContext: string | undefined;
+};
+
+export function buildMemorySection(opts: MemorySectionOptions): string {
+  const { searchTool, saveMode, memoryContext } = opts;
+
   const loaded = memoryContext?.trim()
     ? memoryContext.trim()
     : "No memories are currently saved for this workspace.";
@@ -39,14 +54,21 @@ in your reasoning so the operator can verify (e.g.
 "applied memory: don't sum from a flattened nested response"). Don't
 silently ignore a relevant memory.`;
 
-  const writeUsage = supportsMemoryTool
-    ? `To save a new memory: call \`mcp__neko_memory__save\` with the
-exact rule the operator stated. Use \`global\` scope unless they say
-it's only for this thread.
+  const usageBlocks: string[] = [];
 
-To find related memories beyond the ones loaded above: call
-\`mcp__neko_memory__search\` with a short natural-language query.`
-    : `To save a new memory mid-conversation, emit a fenced block:
+  if (searchTool) {
+    usageBlocks.push(`To find related memories beyond the ones loaded above: call
+\`mcp__neko_memory__search\` with a short natural-language query. Do
+this whenever the user's request mentions a domain, metric, or rule
+that isn't already covered by the preloaded list.`);
+  }
+
+  if (saveMode === "tool") {
+    usageBlocks.push(`To save a new memory: call \`mcp__neko_memory__save\` with the
+exact rule the operator stated. Use \`global\` scope unless they say
+it's only for this thread.`);
+  } else if (saveMode === "fence") {
+    usageBlocks.push(`To save a new memory mid-conversation, emit a fenced block:
 
 \`\`\`neko_memory
 [{ "save": { "text": "the exact rule the operator stated",
@@ -57,14 +79,15 @@ To find related memories beyond the ones loaded above: call
 The runtime parses the fence and persists each entry. Multiple
 \`{ "save": ... }\` items in the array are allowed. The block is
 removed from the user-visible output. Only emit this when the operator
-explicitly says to remember/save something — never speculatively.`;
+explicitly says to remember/save something — never speculatively.`);
+  }
+
+  const usage = usageBlocks.length > 0 ? `\n\n${usageBlocks.join("\n\n")}` : "";
 
   return `<long_term_memory>
 ${loaded}
 
-${application}
-
-${writeUsage}
+${application}${usage}
 </long_term_memory>`;
 }
 

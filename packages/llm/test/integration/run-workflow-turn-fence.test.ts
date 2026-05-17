@@ -91,7 +91,7 @@ describeIfDb("runWorkflowTurn — fence-fallback path (Hermes-shape)", () => {
         },
         {
           resolveAgentBackend: async () => backend,
-          formatWorkMemoryPromptContext: async () => "",
+          formatGlobalMemoryPromptContext: async () => "",
         },
       );
 
@@ -171,7 +171,7 @@ describeIfDb("runWorkflowTurn — fence-fallback path (Hermes-shape)", () => {
         },
         {
           resolveAgentBackend: async () => backend,
-          formatWorkMemoryPromptContext: async () => "",
+          formatGlobalMemoryPromptContext: async () => "",
         },
       );
 
@@ -231,7 +231,7 @@ describeIfDb("runWorkflowTurn — fence-fallback path (Hermes-shape)", () => {
         },
         {
           resolveAgentBackend: async () => backend,
-          formatWorkMemoryPromptContext: async () => "",
+          formatGlobalMemoryPromptContext: async () => "",
         },
       );
 

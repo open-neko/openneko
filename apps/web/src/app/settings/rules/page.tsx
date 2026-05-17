@@ -121,7 +121,7 @@ export default function PoliciesPage() {
           <button
             type="button"
             className="policies-new-btn"
-            onClick={() => router.push("/settings/policies/new")}
+            onClick={() => router.push("/settings/rules/new")}
           >
             + New rule
           </button>
@@ -148,7 +148,7 @@ export default function PoliciesPage() {
               <PolicyCard
                 key={p.id}
                 policy={p}
-                onEdit={() => router.push(`/settings/policies/${p.id}/edit`)}
+                onEdit={() => router.push(`/settings/rules/${p.id}/edit`)}
               />
             ))}
           </ul>
@@ -181,7 +181,7 @@ function PolicyCard({
   const limits = describeLimits(policy.limits);
 
   return (
-    <li className={`policy-card${!policy.enabled ? " is-disabled" : ""}`}>
+    <li className={`card policy-card${!policy.enabled ? " is-disabled" : ""}`}>
       <div className="policy-head">
         <div className="policy-name">{policy.name}</div>
         <div className="policy-head-right">
@@ -205,11 +205,11 @@ function PolicyCard({
 
       <dl className="policy-meta">
         <Row label="Applies to">
-          <span className="policy-mono">{appliesKinds}</span>
+          <span className="mono policy-mono">{appliesKinds}</span>
           {appliesScopes && (
             <>
               {" "}· scope{" "}
-              <span className="policy-mono">{appliesScopes}</span>
+              <span className="mono policy-mono">{appliesScopes}</span>
             </>
           )}
         </Row>

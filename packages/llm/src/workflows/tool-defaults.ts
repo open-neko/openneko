@@ -25,8 +25,7 @@ export const WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS = [
   "Skill",
   "mcp__neko_ui__render_cards",
   "mcp__neko_memory__search",
-  "mcp__neko_memory__remember",
-  "mcp__neko_memory__forget",
+  "mcp__neko_memory__save",
   "mcp__neko_workflow_output__emit",
   "mcp__neko_action__request",
 ] as const;

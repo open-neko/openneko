@@ -190,7 +190,11 @@ skills or artifacts when useful.
 </role>`,
     buildRenderingSection(supportsCardTool),
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
-    buildMemorySection(supportsMemoryTool, memoryContext),
+    buildMemorySection({
+      searchTool: supportsMemoryTool,
+      saveMode: supportsMemoryTool ? "tool" : "fence",
+      memoryContext,
+    }),
     buildDataAccessSection({
       shellTool,
       workspace,

@@ -8,7 +8,7 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "../work/graphjin-guard";
-import { formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext } from "../work/memory";
+import { formatGlobalMemoryPromptContext as defaultFormatGlobalMemoryPromptContext } from "../work/memory";
 import {
   createWorkRun,
   createWorkThread,
@@ -122,7 +122,7 @@ export type RunWorkflowTurnOptions = {
 
 export type RunWorkflowTurnDeps = {
   resolveAgentBackend: typeof defaultResolveAgentBackend;
-  formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
+  formatGlobalMemoryPromptContext: typeof defaultFormatGlobalMemoryPromptContext;
 };
 
 export type RunWorkflowTurnResult = {
@@ -164,8 +164,8 @@ export async function runWorkflowTurn(
 
   const resolveAgentBackend =
     deps.resolveAgentBackend ?? defaultResolveAgentBackend;
-  const formatWorkMemoryPromptContext =
-    deps.formatWorkMemoryPromptContext ?? defaultFormatWorkMemoryPromptContext;
+  const formatGlobalMemoryPromptContext =
+    deps.formatGlobalMemoryPromptContext ?? defaultFormatGlobalMemoryPromptContext;
 
   const backend = await resolveAgentBackend(orgId);
   await markWorkRunRunning(workRunId);
@@ -210,11 +210,7 @@ export async function runWorkflowTurn(
       message: `Starting workflow "${workflow.name}" (${triggerKind})…`,
     });
 
-    const memoryContext = await formatWorkMemoryPromptContext({
-      orgId,
-      threadId,
-      runId: workRunId,
-    });
+    const memoryContext = await formatGlobalMemoryPromptContext(orgId);
 
     const knowledge = await readKnowledgePack(
       knowledgePackPaths(workspace.knowledgeRoot),

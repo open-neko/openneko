@@ -223,7 +223,7 @@ export default function NewPolicyPage() {
           <button
             type="button"
             className="builder-crumb-link"
-            onClick={() => router.push("/settings/policies")}
+            onClick={() => router.push("/settings/rules")}
           >
             ← Rules
           </button>
@@ -266,8 +266,8 @@ export default function NewPolicyPage() {
                           payload={event}
                           href={
                             savedPolicyId
-                              ? `/settings/policies/${savedPolicyId}/edit`
-                              : "/settings/policies"
+                              ? `/settings/rules/${savedPolicyId}/edit`
+                              : "/settings/rules"
                           }
                         />
                       </li>,
@@ -314,7 +314,7 @@ export default function NewPolicyPage() {
             <LivePolicyCard
               payload={livePayload}
               saved={Boolean(savedPolicyId)}
-              onBack={() => router.push("/settings/policies")}
+              onBack={() => router.push("/settings/rules")}
             />
           </aside>
         </div>

@@ -88,7 +88,7 @@ export default async function SettingsPage() {
       statusOk: true,
     },
     {
-      href: "/settings/policies",
+      href: "/settings/rules",
       title: "Rules",
       copy: "Decide what OpenNeko can act on its own, what queues for review, and what's never allowed. Create and edit via Ask.",
       status: "Editable via Ask",

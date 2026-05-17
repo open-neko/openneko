@@ -7,6 +7,7 @@ import type { KnowledgePackContents } from "../knowledge-pack";
 import {
   GRAPHJIN_DATE_RULE,
   buildDataAccessSection,
+  buildMemorySection,
 } from "../prompts/sections";
 import type { WorkflowRecord } from "./store";
 
@@ -160,9 +161,13 @@ ${overlay}
 `
     : "";
 
-  const memoryBlock = memoryContext?.trim()
-    ? memoryContext.trim()
-    : "No durable memory entries are currently loaded.";
+  const memorySection = buildMemorySection({
+    searchTool: mcpTools,
+    // Workflow runner has no fence-save pipeline. When MCP isn't
+    // available the agent simply can't write memories.
+    saveMode: mcpTools ? "tool" : "none",
+    memoryContext,
+  });
 
   const goalBlock = workflow.goal.trim()
     ? `<goal>${workflow.goal.trim()}</goal>\n`
@@ -210,9 +215,7 @@ ${outputsBlock}
 
 ${actionsBlock}
 
-<long_term_memory>
-${memoryBlock}
-</long_term_memory>
+${memorySection}
 
 <finishing>
 After producing your output(s), send one short final assistant message

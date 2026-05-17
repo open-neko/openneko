@@ -166,7 +166,20 @@ export function buildSkillBuilderServer(skillsRoot: string) {
 // through the same rememberWorkMemory used by the `save:` chat command,
 // so embeddings get computed in lockstep. We deliberately don't expose
 // `forget` from the agent — archival is operator-driven, not agent-driven.
-export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
+export type WorkMemoryServerOptions = {
+  /**
+   * Expose the `save` tool. Default true. One-shot agents (e.g. the
+   * metric agent) pass `false` so they get search-only — the operator
+   * remains the authority on what gets persisted.
+   */
+  exposeSave?: boolean;
+};
+
+export function buildWorkMemoryServer(
+  ctx: WorkMemoryContext,
+  options: WorkMemoryServerOptions = {},
+) {
+  const exposeSave = options.exposeSave ?? true;
   const search = tool(
     "search",
     [
@@ -235,6 +248,6 @@ export function buildWorkMemoryServer(ctx: WorkMemoryContext) {
   return createSdkMcpServer({
     name: "neko_memory",
     version: "1.0.0",
-    tools: [search, save],
+    tools: exposeSave ? [search, save] : [search],
   });
 }

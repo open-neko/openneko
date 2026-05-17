@@ -114,4 +114,20 @@ describe("buildWorkflowRunnerPrompt", () => {
     const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: false });
     expect(prompt).toContain(sampleKnowledge.syntax);
   });
+
+  it("exposes search + save MCP tools in the long_term_memory block when mcpTools=true", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: true });
+    expect(prompt).toContain("<long_term_memory>");
+    expect(prompt).toContain("mcp__neko_memory__search");
+    expect(prompt).toContain("mcp__neko_memory__save");
+  });
+
+  it("omits MCP memory tools and never falls back to a save fence when mcpTools=false", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: false });
+    expect(prompt).toContain("<long_term_memory>");
+    expect(prompt).not.toContain("mcp__neko_memory__search");
+    expect(prompt).not.toContain("mcp__neko_memory__save");
+    // No fence-save path for workflow runner (runtime doesn't parse one).
+    expect(prompt).not.toContain("```neko_memory");
+  });
 });

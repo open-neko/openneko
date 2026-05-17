@@ -128,14 +128,44 @@ describe("buildMetricPrompt", () => {
     expect(prompt).toContain(ctx);
   });
 
-  it("doesn't expose the MCP memory tool surface (one-shot agent shouldn't be writing memories)", () => {
+  it("never exposes the save tool (one-shot agent — operator persists memories)", () => {
+    const withSearch = buildMetricPrompt({
+      input: fakeInput,
+      knowledge: fakeKnowledge,
+      workspace: fakeWorkspace,
+      shellTool: "terminal",
+      supportsMemorySearch: true,
+    });
+    const withoutSearch = buildMetricPrompt({
+      input: fakeInput,
+      knowledge: fakeKnowledge,
+      workspace: fakeWorkspace,
+      shellTool: "terminal",
+      supportsMemorySearch: false,
+    });
+    expect(withSearch).not.toContain("mcp__neko_memory__save");
+    expect(withoutSearch).not.toContain("mcp__neko_memory__save");
+  });
+
+  it("exposes mcp__neko_memory__search when supportsMemorySearch is true", () => {
     const prompt = buildMetricPrompt({
       input: fakeInput,
       knowledge: fakeKnowledge,
       workspace: fakeWorkspace,
       shellTool: "terminal",
+      supportsMemorySearch: true,
     });
-    expect(prompt).not.toContain("mcp__neko_memory__save");
+    expect(prompt).toContain("mcp__neko_memory__search");
+  });
+
+  it("omits the search instruction when supportsMemorySearch is false", () => {
+    const prompt = buildMetricPrompt({
+      input: fakeInput,
+      knowledge: fakeKnowledge,
+      workspace: fakeWorkspace,
+      shellTool: "terminal",
+      supportsMemorySearch: false,
+    });
     expect(prompt).not.toContain("mcp__neko_memory__search");
   });
 

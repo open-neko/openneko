@@ -707,7 +707,7 @@ function WorkflowDrawer({
             ))}
           </ul>
         )}
-        <a className="workflow-drawer-link" href="/settings/policies">
+        <a className="workflow-drawer-link" href="/settings/rules">
           see all rules →
         </a>
       </Section>

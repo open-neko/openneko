@@ -564,7 +564,7 @@ export default function Dashboard() {
                 <div className="dash-call-eyebrow">
                   <span className="dash-call-dot" aria-hidden="true" />
                   <span className="dash-call-label">Needs your call</span>
-                  <span className="dash-call-count">
+                  <span className="mono dash-call-count">
                     {awaiting.count}
                   </span>
                   <a className="dash-call-skim" href="/actions?filter=awaiting">
@@ -681,7 +681,7 @@ export default function Dashboard() {
                 style={{ animation: "fadeUp 0.5s ease 0.35s both" }}
               >
                 <summary className="dash-proof-summary">
-                  <span className="dash-proof-tick" aria-hidden="true">↳</span>
+                  <span className="mono dash-proof-tick" aria-hidden="true">↳</span>
                   <span className="dash-proof-count">
                     {recentActions.receipts.length}
                   </span>

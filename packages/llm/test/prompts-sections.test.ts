@@ -32,7 +32,11 @@ const fakeKnowledge: KnowledgePackContents = {
 
 describe("buildMemorySection", () => {
   it("renders the operator-saved-context section even when no memories are loaded", () => {
-    const section = buildMemorySection(false, undefined);
+    const section = buildMemorySection({
+      searchTool: false,
+      saveMode: "fence",
+      memoryContext: undefined,
+    });
     expect(section).toContain("<long_term_memory>");
     expect(section).toContain("No memories are currently saved");
     expect(section).toContain("</long_term_memory>");
@@ -40,27 +44,67 @@ describe("buildMemorySection", () => {
 
   it("inlines the loaded memory context when provided", () => {
     const ctx = "- [id-1] business_rule (global): Always cite tables";
-    const section = buildMemorySection(false, ctx);
+    const section = buildMemorySection({
+      searchTool: false,
+      saveMode: "fence",
+      memoryContext: ctx,
+    });
     expect(section).toContain(ctx);
   });
 
-  it("describes the MCP tool path when supportsMemoryTool is true", () => {
-    const section = buildMemorySection(true, "loaded memories here");
+  it("describes the MCP tool path when search + save tools are wired", () => {
+    const section = buildMemorySection({
+      searchTool: true,
+      saveMode: "tool",
+      memoryContext: "loaded memories here",
+    });
     expect(section).toContain("mcp__neko_memory__save");
     expect(section).toContain("mcp__neko_memory__search");
     expect(section).not.toContain("```neko_memory");
   });
 
-  it("describes the neko_memory fence path when supportsMemoryTool is false", () => {
-    const section = buildMemorySection(false, "loaded memories here");
+  it("describes the neko_memory fence path when saveMode is fence", () => {
+    const section = buildMemorySection({
+      searchTool: false,
+      saveMode: "fence",
+      memoryContext: "loaded memories here",
+    });
     expect(section).toContain("```neko_memory");
     expect(section).toContain('"save"');
     expect(section).not.toContain("mcp__neko_memory__save");
   });
 
+  it("emits search-only instruction when saveMode='none' but searchTool=true", () => {
+    const section = buildMemorySection({
+      searchTool: true,
+      saveMode: "none",
+      memoryContext: "loaded memories here",
+    });
+    expect(section).toContain("mcp__neko_memory__search");
+    expect(section).not.toContain("mcp__neko_memory__save");
+    expect(section).not.toContain("```neko_memory");
+  });
+
+  it("emits no write/search usage when both are off", () => {
+    const section = buildMemorySection({
+      searchTool: false,
+      saveMode: "none",
+      memoryContext: "loaded memories here",
+    });
+    expect(section).not.toContain("mcp__neko_memory__search");
+    expect(section).not.toContain("mcp__neko_memory__save");
+    expect(section).not.toContain("```neko_memory");
+  });
+
   it("includes precedence + cite-back framing in every variant", () => {
-    for (const supports of [true, false]) {
-      const section = buildMemorySection(supports, "anything");
+    const variants: Array<Parameters<typeof buildMemorySection>[0]> = [
+      { searchTool: true, saveMode: "tool", memoryContext: "anything" },
+      { searchTool: false, saveMode: "fence", memoryContext: "anything" },
+      { searchTool: true, saveMode: "none", memoryContext: "anything" },
+      { searchTool: false, saveMode: "none", memoryContext: "anything" },
+    ];
+    for (const opts of variants) {
+      const section = buildMemorySection(opts);
       expect(section).toMatch(/take precedence/i);
       expect(section).toMatch(/cite/i);
     }

@@ -303,6 +303,38 @@ export async function formatWorkMemoryPromptContext(
   return lines.join("\n");
 }
 
+// Global-only prefetch used by one-shot/headless agents (metric, workflow
+// runner). Pulls top-N non-archived global memories ordered by pinned desc,
+// updated_at desc. No thread scoping, no semantic match — those agents lean
+// on the search tool instead of a wide preload.
+export async function formatGlobalMemoryPromptContext(
+  orgId: string,
+  limit = 5,
+): Promise<string> {
+  const rows = await db()
+    .select()
+    .from(work_memory)
+    .where(
+      and(
+        eq(work_memory.org_id, orgId),
+        eq(work_memory.scope, "global"),
+        isNull(work_memory.archived_at),
+      ),
+    )
+    .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
+    .limit(limit);
+  const memories = rows.map(rowToMemory);
+  if (memories.length === 0) {
+    return "No global memories are currently saved for this workspace.";
+  }
+  return [
+    "Memories the operator has saved — treat as durable context:",
+    ...memories.map(
+      (memory) => `- [${memory.id}] ${formatMemoryLabel(memory)}: ${memory.text}`,
+    ),
+  ].join("\n");
+}
+
 export async function searchWorkMemory(
   input: SearchWorkMemoryInput,
 ): Promise<{ saved: WorkMemorySearchResult[]; archives: WorkArchiveSearchResult[] }> {

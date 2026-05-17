@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @import "./styles/_tokens.css";
+@import "./styles/_primitives.css";
 @import "./styles/_chrome.css";
 @import "./styles/_dashboard.css";
 @import "./styles/_work.css";

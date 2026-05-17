@@ -39,9 +39,9 @@ const STATE_LABEL: Record<ActCardData["state"], string> = {
 };
 
 const STATE_PILL_CLASS: Record<ActCardData["state"], string> = {
-  live: "act-pill act-pill-live",
-  awaiting: "act-pill act-pill-awaiting",
-  rejected: "act-pill act-pill-rejected",
+  live: "pill pill-live",
+  awaiting: "pill pill-watch",
+  rejected: "pill pill-muted",
 };
 
 export default function ActCard({
@@ -76,14 +76,14 @@ export default function ActCard({
   const router = useRouter();
   return (
     <article
-      className={`act-card act-card-${data.state}`}
+      className={`card act-card act-card-${data.state}`}
       style={{ animation: `fadeUp 0.4s ease ${index * 0.04}s both` }}
     >
       <header className="act-card-topbar">
         <span className={STATE_PILL_CLASS[data.state]}>
           {STATE_LABEL[data.state]}
         </span>
-        <span className="act-time">{formatTime(data.runAt)}</span>
+        <span className="mono act-time">{formatTime(data.runAt)}</span>
       </header>
 
       {data.trigger && <div className="act-trigger">{data.trigger}</div>}
@@ -118,7 +118,7 @@ export default function ActCard({
               <div className="act-row-body">
                 <p className="act-row-headline">{row.headline}</p>
                 {row.target && (
-                  <p className="act-row-mono">{row.target}</p>
+                  <p className="mono act-row-mono">{row.target}</p>
                 )}
                 {row.detail && <p className="act-row-detail">{row.detail}</p>}
                 {row.rejectionReason && (

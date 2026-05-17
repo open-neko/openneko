@@ -150,18 +150,25 @@ export function buildMetricPrompt(args: {
   workspace: AgentWorkspace;
   shellTool: string;
   memoryContext?: string;
+  /** True when the backend supports `mcp__neko_memory__search`. */
+  supportsMemorySearch?: boolean;
 }): string {
-  const { input, knowledge, workspace, shellTool, memoryContext } = args;
+  const { input, knowledge, workspace, shellTool, memoryContext, supportsMemorySearch } = args;
   const sections: string[] = [
     `<role>
 You answer ONE dashboard card by writing GraphQL queries and executing
 them against a GraphJin server, then returning a single JSON object
 describing the snapshot. No prose around the JSON.
 </role>`,
-    // supportsMemoryTool=false — the metric agent runs one-shot and
-    // shouldn't be writing memories itself; the operator does that
-    // explicitly via `save:`.
-    buildMemorySection(false, memoryContext),
+    // saveMode "none" — one-shot agent never writes memories itself; the
+    // operator does that explicitly via `save:`. searchTool is wired
+    // when the backend supports MCP so the agent can look beyond the
+    // preloaded top-5 globals.
+    buildMemorySection({
+      searchTool: supportsMemorySearch ?? false,
+      saveMode: "none",
+      memoryContext,
+    }),
     buildDataAccessSection({
       shellTool,
       workspace,

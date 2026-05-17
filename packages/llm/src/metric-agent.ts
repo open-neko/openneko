@@ -15,8 +15,9 @@ import {
   resolveBinaryOnPath,
 } from "./work/graphjin-guard";
 import {
-  formatWorkMemoryPromptContext,
+  formatGlobalMemoryPromptContext,
 } from "./work/memory";
+import { buildWorkMemoryServer } from "./work/tools";
 import { ensureWorkWorkspace } from "./work/workspace";
 
 export type MetricAgentInput = {
@@ -110,18 +111,12 @@ export async function runMetricAgent(
   }
   await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
 
-  // Pull memories semantically close to this card. Query is title +
-  // rationale + slug — the strongest signal we have for what this run
-  // is about.
-  const memoryContext = await formatWorkMemoryPromptContext(
-    { orgId: input.orgId },
-    {
-      contextQuery: [input.title, input.why, input.slug]
-        .filter(Boolean)
-        .join(" — "),
-      contextLimit: 5,
-    },
-  );
+  // Preload the top-5 global memories so pinned operator rules show up
+  // verbatim. Anything narrower (per-card semantic match) is reachable
+  // via the search MCP tool below.
+  const memoryContext = await formatGlobalMemoryPromptContext(input.orgId);
+
+  const supportsMemorySearch = backend.capabilities.mcpTools;
 
   const prompt = buildMetricPrompt({
     input,
@@ -129,11 +124,24 @@ export async function runMetricAgent(
     workspace,
     shellTool: shellToolName(backend.id),
     memoryContext,
+    supportsMemorySearch,
   });
 
   console.log(
     `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id}`,
   );
+
+  // Search-only memory MCP: one-shot agent never persists memories itself
+  // (the operator does that explicitly via `save:`), but it can look up
+  // anything beyond the preloaded top-5.
+  const mcpServers = supportsMemorySearch
+    ? {
+        neko_memory: buildWorkMemoryServer(
+          { orgId: input.orgId },
+          { exposeSave: false },
+        ),
+      }
+    : undefined;
 
   const startedAt = Date.now();
   const result_ = await backend.run({
@@ -142,6 +150,7 @@ export async function runMetricAgent(
     tag: input.jobId,
     workspace,
     debug,
+    mcpServers,
   });
   if (result_.status !== "completed") {
     const message = result_.error ?? `${backend.id} returned status=${result_.status}`;

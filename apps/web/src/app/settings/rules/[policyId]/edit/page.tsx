@@ -318,7 +318,7 @@ export default function EditPolicyPage() {
           <button
             type="button"
             className="builder-crumb-link"
-            onClick={() => router.push("/settings/policies")}
+            onClick={() => router.push("/settings/rules")}
           >
             ← Rules
           </button>
@@ -364,7 +364,7 @@ export default function EditPolicyPage() {
                       <li key={`${m.id}-event`} className="rule-event-row">
                         <RuleSavedCard
                           payload={event}
-                          href={`/settings/policies/${policyId}/edit`}
+                          href={`/settings/rules/${policyId}/edit`}
                         />
                       </li>,
                     );
@@ -462,7 +462,7 @@ export default function EditPolicyPage() {
                   <button
                     type="button"
                     className="builder-card-btn is-primary"
-                    onClick={() => router.push("/settings/policies")}
+                    onClick={() => router.push("/settings/rules")}
                   >
                     Done — back to policies
                   </button>

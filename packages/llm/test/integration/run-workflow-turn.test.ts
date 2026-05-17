@@ -85,7 +85,7 @@ describeIfDb("runWorkflowTurn", () => {
         },
         {
           resolveAgentBackend: async () => backend,
-          formatWorkMemoryPromptContext: async () => "",
+          formatGlobalMemoryPromptContext: async () => "",
         },
       );
 
@@ -136,7 +136,7 @@ describeIfDb("runWorkflowTurn", () => {
           },
           {
             resolveAgentBackend: async () => backend,
-            formatWorkMemoryPromptContext: async () => "",
+            formatGlobalMemoryPromptContext: async () => "",
           },
         ),
       ).rejects.toThrow(/upstream provider down/);
