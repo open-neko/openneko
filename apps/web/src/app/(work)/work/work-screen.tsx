@@ -96,8 +96,12 @@ import {
 } from "@/lib/linkify-workspace-paths";
 import BriefingCard from "@/components/BriefingCard";
 import {
+  ActionRequestCard,
   RuleSavedCard,
+  WorkflowSavedCard,
+  extractActionRequestEvents,
   extractRuleSaveEvent,
+  extractWorkflowSaveEvent,
   stripNekoFences,
 } from "@/components/RuleChatBubble";
 import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
@@ -1481,6 +1485,8 @@ function FenceAwareBubble({
 }) {
   const text = stripNekoFences(raw);
   const ruleEvent = extractRuleSaveEvent(raw);
+  const workflowEvent = extractWorkflowSaveEvent(raw);
+  const actionEvents = extractActionRequestEvents(raw);
   return (
     <>
       {text ? (
@@ -1497,6 +1503,16 @@ function FenceAwareBubble({
           <RuleSavedCard payload={ruleEvent} />
         </div>
       ) : null}
+      {workflowEvent ? (
+        <div key={`${keyPrefix}-workflow`} className="work-rule-event-row">
+          <WorkflowSavedCard payload={workflowEvent} />
+        </div>
+      ) : null}
+      {actionEvents.map((a, i) => (
+        <div key={`${keyPrefix}-action-${i}`} className="work-rule-event-row">
+          <ActionRequestCard payload={a} />
+        </div>
+      ))}
     </>
   );
 }

@@ -12,6 +12,11 @@ import { useRouter } from "next/navigation";
 import { extractWorkflowSaveFence } from "@neko/llm/workflows/fences";
 import type { WorkflowSavePayload } from "@neko/llm/workflows/fence-schemas";
 import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
+import {
+  WorkflowSavedCard,
+  extractWorkflowSaveEvent,
+  stripNekoFences,
+} from "@/components/RuleChatBubble";
 
 type ChatMessage = {
   id: string;
@@ -212,14 +217,7 @@ export default function NewWorkflowPage() {
     void sendMessage(input);
   };
 
-  const cleanedMessages = useMemo(() => {
-    return messages.map((m) => {
-      if (m.role !== "assistant") return m;
-      // Strip the fence block from the visible chat — the right pane shows it.
-      const parsed = extractWorkflowSaveFence(m.content);
-      return { ...m, content: parsed.text.trim() || m.content };
-    });
-  }, [messages]);
+  const cleanedMessages = messages;
 
   return (
     <div className="builder-root">
@@ -243,14 +241,35 @@ export default function NewWorkflowPage() {
               </div>
             ) : (
               <ul className="builder-msgs">
-                {cleanedMessages.map((m) => (
-                  <li key={m.id} className={`builder-msg builder-msg-${m.role}`}>
-                    {m.content ||
-                      (m.role === "assistant" && activeRunId === m.runId ? (
-                        <span className="builder-msg-typing">…</span>
-                      ) : null)}
-                  </li>
-                ))}
+                {cleanedMessages.flatMap((m) => {
+                  const isTyping =
+                    m.role === "assistant" && activeRunId === m.runId;
+                  const text =
+                    m.role === "assistant" ? stripNekoFences(m.content) : m.content;
+                  const event =
+                    m.role === "assistant" ? extractWorkflowSaveEvent(m.content) : null;
+                  const items: React.ReactNode[] = [];
+                  if (text || (isTyping && !event)) {
+                    items.push(
+                      <li
+                        key={`${m.id}-msg`}
+                        className={`builder-msg builder-msg-${m.role}`}
+                      >
+                        {text || (
+                          <span className="builder-msg-typing">…</span>
+                        )}
+                      </li>,
+                    );
+                  }
+                  if (event) {
+                    items.push(
+                      <li key={`${m.id}-event`} className="rule-event-row">
+                        <WorkflowSavedCard payload={event} />
+                      </li>,
+                    );
+                  }
+                  return items;
+                })}
                 <div ref={scrollAnchorRef} />
               </ul>
             )}
