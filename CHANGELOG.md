@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/open-neko/neko/compare/v1.3.0...v1.4.0) (2026-05-17)
+
+
+### Features
+
+* **memory,ui:** tighten workflow+metric memory; rename /settings/policies → /settings/rules ([3b012db](https://github.com/open-neko/neko/commit/3b012db370294e11bae17ee02a71687fe2b27e7e))
+
 ## [1.3.0](https://github.com/open-neko/neko/compare/v1.2.0...v1.3.0) (2026-05-17)
 
 
