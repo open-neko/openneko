@@ -20,6 +20,33 @@ Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its o
 
 *Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
 
+## Plugins
+
+OpenNeko can be extended with sandboxed plugins that add new action kinds (e.g. web search via Parallel.ai). Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time — neither the plugin nor the agent can reach anything else.
+
+Install from the curated registry:
+
+```bash
+npm install -g @open-neko/cli
+openneko init
+openneko install @open-neko/plugin-parallel-search
+```
+
+Browse the registry at [open-neko.github.io/registry](https://open-neko.github.io/registry/). Run `openneko doctor` to check that your host can run microsandbox.
+
+### Host support
+
+| Host | Plugin system |
+|---|---|
+| macOS arm64 (Apple Silicon) | ✓ supported |
+| Linux x86_64 with `/dev/kvm` | ✓ supported |
+| Linux arm64 with `/dev/kvm` | ✓ supported |
+| macOS x86_64 (Intel) | ✗ not supported (microsandbox ships arm64 only on macOS) |
+| Linux without KVM | ✗ not supported |
+| Windows | ✗ WSL2 viability is being evaluated |
+
+On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs. The built-in `send_webhook` action adapter (no sandbox needed) remains as the extensibility escape hatch.
+
 ## Try it in 10 minutes
 
 What you're about to do: clone the repo, start it, finish a setup wizard, and watch a *"Germany revenue dropped"* alert land on the Briefing within ~15 minutes.

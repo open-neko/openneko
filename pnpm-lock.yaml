@@ -87,6 +87,9 @@ importers:
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@open-neko/plugin-types':
+        specifier: file:../../../plugins/packages/types
+        version: file:../plugins/packages/types
       dotenv:
         specifier: ^17.4.1
         version: 17.4.2
@@ -99,6 +102,10 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
+    optionalDependencies:
+      microsandbox:
+        specifier: 0.4.5
+        version: 0.4.5
     devDependencies:
       '@types/node':
         specifier: ^20
@@ -920,6 +927,9 @@ packages:
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
 
+  '@open-neko/plugin-types@file:../plugins/packages/types':
+    resolution: {directory: ../plugins/packages/types, type: directory}
+
   '@opentelemetry/api@1.9.1':
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
     engines: {node: '>=8.0.0'}
@@ -1098,6 +1108,24 @@ packages:
 
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
+
+  '@superradcompany/microsandbox-darwin-arm64@0.4.5':
+    resolution: {integrity: sha512-juKMuo8lOQi1tUWt3a5txd/XgC2Xe6hyVugS1ZGxDZKCDTQt5T2MSKH2pMFIAekJpcmFOIQlftdtvy/0Jj2gdw==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@superradcompany/microsandbox-linux-arm64-gnu@0.4.5':
+    resolution: {integrity: sha512-DDTIfqy7nHS6Svkq3Hxr+D2su0O+ok0db+juvLh0ogS18Htovd9jNW4VZUqO5rY0O/OVOJQKz0YtMnWKezUNkA==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@superradcompany/microsandbox-linux-x64-gnu@0.4.5':
+    resolution: {integrity: sha512-0KMEjpZUIUxSfeNBHdkEphxy2YC5aqN/+9icXgFzMkYA6e8+7VDjOp4EPBH0MQZ/uBsgh+xCHAc4jER9MNm63A==}
+    engines: {node: '>= 22'}
+    cpu: [x64]
+    os: [linux]
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -2939,6 +2967,11 @@ packages:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
 
+  microsandbox@0.4.5:
+    resolution: {integrity: sha512-02XkAI6LnzcG6dykjhnGe6SAgpDF0J/4srIppe+RuV7wJfr4j8QtOiovmXaaADOLHvI5CAx6IGQT+FMIAp2Egw==}
+    engines: {node: '>= 22'}
+    hasBin: true
+
   mime-db@1.54.0:
     resolution: {integrity: sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==}
     engines: {node: '>= 0.6'}
@@ -4464,6 +4497,10 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
+  '@open-neko/plugin-types@file:../plugins/packages/types':
+    dependencies:
+      zod: 4.3.6
+
   '@opentelemetry/api@1.9.1': {}
 
   '@protobufjs/aspromise@1.1.2': {}
@@ -4581,6 +4618,15 @@ snapshots:
   '@standard-schema/spec@1.1.0': {}
 
   '@standard-schema/utils@0.3.0': {}
+
+  '@superradcompany/microsandbox-darwin-arm64@0.4.5':
+    optional: true
+
+  '@superradcompany/microsandbox-linux-arm64-gnu@0.4.5':
+    optional: true
+
+  '@superradcompany/microsandbox-linux-x64-gnu@0.4.5':
+    optional: true
 
   '@swc/helpers@0.5.15':
     dependencies:
@@ -6727,6 +6773,13 @@ snapshots:
     dependencies:
       braces: 3.0.3
       picomatch: 2.3.2
+
+  microsandbox@0.4.5:
+    optionalDependencies:
+      '@superradcompany/microsandbox-darwin-arm64': 0.4.5
+      '@superradcompany/microsandbox-linux-arm64-gnu': 0.4.5
+      '@superradcompany/microsandbox-linux-x64-gnu': 0.4.5
+    optional: true
 
   mime-db@1.54.0: {}
 

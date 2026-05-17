@@ -38,6 +38,7 @@ import {
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
+import { loadPlugins } from "./plugins/load-plugins.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -182,6 +183,23 @@ console.log(
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 console.log("[worker] action policies seeded and built-in adapters registered");
+
+const pluginsHandle = await loadPlugins({
+  repoRoot: process.cwd(),
+  workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
+});
+if (pluginsHandle.result.loaded.length > 0) {
+  console.log(
+    `[worker] loaded ${pluginsHandle.result.loaded.length} plugin(s): ${pluginsHandle.result.loaded
+      .map((p) => `${p.name}@${p.version} (${p.actionKinds.join(", ") || "no actions"})`)
+      .join("; ")}`,
+  );
+}
+if (pluginsHandle.result.skipped.length > 0) {
+  for (const s of pluginsHandle.result.skipped) {
+    console.warn(`[worker] plugin skipped ${s.name}: ${s.reason}`);
+  }
+}
 
 {
   const sources = await db()
@@ -449,6 +467,11 @@ const shutdown = async (signal: string) => {
     await subscriptionManager.stop();
   } catch (e) {
     console.error("[worker] subscription manager stop error:", e);
+  }
+  try {
+    await pluginsHandle.shutdown();
+  } catch (e) {
+    console.error("[worker] plugin shutdown error:", e);
   }
   try {
     await b.stop({ graceful: true });
