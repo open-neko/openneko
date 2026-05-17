@@ -41,4 +41,4 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           PR_NUMBER=$(echo '${{ steps.release.outputs.prs }}' | jq -r '.[0].number')
-          gh pr merge --auto --squash "$PR_NUMBER"
+          gh pr merge --auto --squash "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
