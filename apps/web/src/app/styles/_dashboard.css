@@ -103,15 +103,6 @@
   margin-left: 4px;
   margin-bottom: 3px;
 }
-.label-count {
-  font-size: 10.5px;
-  letter-spacing: 0;
-  color: var(--text3);
-  background: var(--neutral);
-  padding: 1px 7px;
-  border-radius: 999px;
-}
-
 /* ─── INSIGHT CARD ─── */
 .icard {
   background: var(--card); border-radius: var(--radius); padding: 22px 24px 22px 28px;

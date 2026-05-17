@@ -1,12 +1,50 @@
 @import "tailwindcss";
 
+@theme {
+  --color-bg: #FAFAF7;
+  --color-card: #FFFFFF;
+  --color-text: #2D2A24;
+  --color-text2: #7A756A;
+  --color-text3: #B0AA9F;
+  --color-border: #EEEBE4;
+  --color-neutral: #F2EFE8;
+  --color-neutral-soft: #F7F4ED;
+  --color-accent: #6B5CE7;
+  --color-accent-soft: #EDE9FE;
+  --color-success: #6CFF7F;
+  --color-success-ink: #113719;
+  --color-success-soft: #E2FBE6;
+  --color-success-mid: #4CAF82;
+  --color-watch: #E9A23B;
+  --color-watch-soft: #FFF1D8;
+  --color-warn: #F0D97A;
+  --color-warn-soft: #FFF4CC;
+  --color-warn-ink: #8A6D00;
+  --color-danger: #E05656;
+  --color-danger-soft: #FEECEC;
+
+  --radius-card: 20px;
+
+  --shadow-soft: 0 1px 3px rgba(20,18,12,0.04), 0 4px 16px rgba(20,18,12,0.03);
+  --shadow-hover: 0 2px 8px rgba(20,18,12,0.06), 0 12px 36px -8px rgba(20,18,12,0.07);
+  --shadow-lift: 0 1px 2px rgba(20,18,12,0.04), 0 18px 48px -16px rgba(20,18,12,0.16);
+}
+
+/* font-display / font-body utilities — defined as @utility so they pick up the
+   Next.js font CSS variables at runtime rather than capturing them at @theme
+   resolution time. */
+@utility font-display {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+}
+@utility font-body {
+  font-family: var(--font-body), 'Manrope', sans-serif;
+}
+
 @import "./styles/_tokens.css";
-@import "./styles/_primitives.css";
 @import "./styles/_chrome.css";
 @import "./styles/_dashboard.css";
 @import "./styles/_work.css";
 @import "./styles/_composer.css";
-@import "./styles/_chat.css";
 @import "./styles/_profile-review.css";
 @import "./styles/_toasts.css";
 @import "./styles/_library.css";

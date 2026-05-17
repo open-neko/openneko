@@ -45,8 +45,8 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
 
   return (
     <header className="app-header">
-      <div className="app-header-inner">
-        <div className="app-header-left">
+      <div className="w-full max-w-[1000px] px-5 flex items-start justify-between gap-4 min-h-[41px]">
+        <div className="flex items-center gap-2.5 flex-1 min-w-0 flex-wrap">
           {back && (
             <Link className="settings-backlink" href={back.href}>
               <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
@@ -56,19 +56,22 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
           {children}
         </div>
 
-        <div className="brand-cluster">
+        <div className="inline-flex items-center gap-2.5 self-start">
           <a
             href={MARKETING_URL}
             target="_blank"
             rel="noreferrer"
-            className="brand"
-            style={{ textDecoration: "none" }}
+            className="inline-flex items-center gap-2 select-none text-text no-underline transition-opacity duration-200 hover:opacity-80 self-start h-[41px]"
             aria-label="OpenNeko — open marketing site in a new tab"
           >
-            <img className="brand-icon" src="/cat.png" alt="" width={24} height={24} />
-            <span className="brand-name">OpenNeko</span>
-            <span aria-hidden="true" className="brand-tick">·</span>
-            <span aria-hidden="true" className="brand-version">v{APP_VERSION}</span>
+            <img className="w-6 h-6 object-contain block flex-none" src="/cat.png" alt="" width={24} height={24} />
+            <span className="font-display text-[17px] font-extrabold tracking-[-0.04em] leading-none">
+              OpenNeko
+            </span>
+            <span aria-hidden="true" className="text-text3 text-sm leading-none mx-0.5">·</span>
+            <span aria-hidden="true" className="font-mono text-[10.5px] font-semibold text-text3 tracking-wider lowercase bg-neutral px-1.5 py-0.5 rounded-full leading-none">
+              v{APP_VERSION}
+            </span>
           </a>
 
           {updateAvailable && (

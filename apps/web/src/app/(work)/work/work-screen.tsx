@@ -858,9 +858,9 @@ export default function WorkScreen() {
 
   return (
     <>
-      <div className="work-transcript">
+      <div className="flex-1 min-h-[460px] flex flex-col gap-7 pt-2 pb-6">
         {loadingThread ? (
-          <div className="work-empty">Loading thread…</div>
+          <div className="text-text3 text-[13px] py-3 px-1">Loading thread…</div>
         ) : !bundle?.messages.length ? (
           <EmptyAsk
             onPick={(text) => {
@@ -882,7 +882,7 @@ export default function WorkScreen() {
                 (run ? isRunInFlight(run) : false) ||
                 (sending && activeRunId === message.runId);
               return (
-                <div key={`${message.id}-${index}`} className="work-turn">
+                <div key={`${message.id}-${index}`} className="flex flex-col gap-2.5">
                   <RunTimeline
                     run={run}
                     events={events}
@@ -922,11 +922,11 @@ export default function WorkScreen() {
               (orphanRun.status === "cancelled" ||
                 orphanRun.status === "failed");
             return [
-              <div key={`${message.id}-${index}`} className="work-turn">
+              <div key={`${message.id}-${index}`} className="flex flex-col gap-2.5">
                 {briefingCardCtx ? (
-                  <div className="work-seed-context">
-                    <div className="work-seed-eyebrow">
-                      <span aria-hidden="true" className="work-seed-eyebrow-rule" />
+                  <div className="flex flex-col gap-2 mb-1">
+                    <div className="inline-flex items-center gap-2.5 font-display text-[10.5px] font-bold tracking-[0.14em] uppercase text-text3">
+                      <span aria-hidden="true" className="w-6 h-px bg-border" />
                       From your briefing
                     </div>
                     <BriefingCard ins={briefingCardCtx} index={0} />
@@ -961,7 +961,11 @@ export default function WorkScreen() {
                 ? [
                     <div
                       key={`run-status-${orphanRun.id}`}
-                      className={`work-run-status work-run-status-${orphanRun.status}`}
+                      className={`rounded-xl px-3 py-1.5 text-xs mx-auto mb-1 w-fit tracking-[0.01em] ${
+                        orphanRun.status === "cancelled"
+                          ? "bg-neutral-soft text-text2"
+                          : "bg-warn-soft text-warn-ink"
+                      }`}
                     >
                       {orphanRun.status === "cancelled"
                         ? "Cancelled by user"
@@ -974,7 +978,7 @@ export default function WorkScreen() {
         ) : null}
 
         {streamError ? (
-          <div className="work-error">{streamError}</div>
+          <div className="border border-warn/40 bg-warn-soft text-warn-ink rounded-2xl px-3 py-2.5 text-[13px]">{streamError}</div>
         ) : null}
         <div ref={endRef} />
       </div>
@@ -994,12 +998,14 @@ export default function WorkScreen() {
           className={`work-composer-shell${sending ? " is-working" : ""}`}
         >
           {files.length > 0 ? (
-            <div className="work-files">
+            <div className="flex flex-wrap gap-1.5 px-2 pt-2 pb-1">
               {files.map((file, index) => (
                 <div key={`${file.name}-${index}`} className="work-file-chip">
                   <Paperclip size={11} strokeWidth={2} aria-hidden />
-                  <span className="work-file-chip-name">{file.name}</span>
-                  <span className="work-file-chip-size">
+                  <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap text-text">
+                    {file.name}
+                  </span>
+                  <span className="text-text3 tabular-nums text-[10.5px] tracking-wide">
                     {Math.max(1, Math.round(file.size / 1024))} KB
                   </span>
                   <button
@@ -1034,8 +1040,8 @@ export default function WorkScreen() {
             spellCheck
             enterKeyHint="send"
           />
-          <div className="work-composer-row">
-            <div className="work-composer-row-left">
+          <div className="flex items-center justify-between gap-2.5 px-1.5 py-1 max-[720px]:px-1">
+            <div className="inline-flex items-center gap-2 min-w-0">
               <button
                 className="work-icon-btn"
                 onClick={() => fileInputRef.current?.click()}
@@ -1140,24 +1146,30 @@ const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
 
 function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="work-empty-hero">
-      <div className="work-empty-copy">
-        <h1 className="work-empty-headline">What do you want to know?</h1>
-        <p className="work-empty-sub">
+    <div className="flex flex-col gap-[18px] pt-2 pb-1">
+      <div className="flex flex-col gap-2 max-w-[620px]">
+        <h1 className="font-body text-[22px] font-semibold tracking-[-0.005em] text-text m-0 leading-[1.25]">
+          What do you want to know?
+        </h1>
+        <p className="text-[13.5px] leading-[1.55] text-text2 m-0">
           Ask anything about your business data. I&apos;ll query the database,
           read anything you attach, and answer with charts or tables.
         </p>
       </div>
-      <div className="work-empty-prompts">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2">
         {EMPTY_PROMPTS.map((prompt) => (
           <button
             key={prompt.label}
             type="button"
-            className="work-empty-prompt"
+            className="work-empty-prompt flex flex-col gap-1 px-[13px] py-[11px] bg-white/55 border border-border rounded-xl cursor-pointer text-left font-inherit text-inherit transition-[border-color,background,transform] duration-[180ms]"
             onClick={() => onPick(prompt.text)}
           >
-            <span className="work-empty-prompt-label">{prompt.label}</span>
-            <span className="work-empty-prompt-text">{prompt.text}</span>
+            <span className="text-[10px] font-bold tracking-[0.1em] uppercase text-accent">
+              {prompt.label}
+            </span>
+            <span className="text-[12.5px] leading-[1.4] text-text2">
+              {prompt.text}
+            </span>
           </button>
         ))}
       </div>
@@ -1181,15 +1193,15 @@ function PendingMemoryPanel({
   const item = pending[0];
   if (!item) return null;
   return (
-    <div className="work-memory-prompt">
-      <div className="work-memory-prompt-copy">
-        <div className="work-memory-kind">Memory suggestion</div>
+    <div className="flex items-center justify-between gap-3 border border-border bg-white/80 rounded-2xl px-3 py-2.5 shadow-soft">
+      <div className="min-w-0 text-[12.5px] leading-[1.45] text-text2">
+        <div className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3 mb-0.5">Memory suggestion</div>
         <div>{item.draftText}</div>
         {pending.length > 1 ? (
-          <div className="work-memory-prompt-count">+{pending.length - 1} more</div>
+          <div className="mt-1 text-text3 text-[11px]">+{pending.length - 1} more</div>
         ) : null}
       </div>
-      <div className="work-memory-prompt-actions">
+      <div className="inline-flex gap-[7px] flex-wrap justify-end flex-shrink-0 [&_button]:h-[30px] [&_button]:rounded-[10px] [&_button]:border [&_button]:border-border [&_button]:bg-card [&_button]:text-text2 [&_button]:inline-flex [&_button]:items-center [&_button]:justify-center [&_button]:gap-1 [&_button]:px-2 [&_button]:text-[11px] [&_button]:cursor-pointer [&_button]:transition-all [&_button]:duration-200 [&_button:hover]:border-accent [&_button:hover]:text-accent">
         <button type="button" onClick={() => onDecide(item.id, "decline")} title="Dismiss">
           <X size={14} />
         </button>
@@ -1499,17 +1511,17 @@ function FenceAwareBubble({
         </div>
       ) : null}
       {ruleEvent ? (
-        <div key={`${keyPrefix}-rule`} className="work-rule-event-row">
+        <div key={`${keyPrefix}-rule`} className="flex justify-start mt-1.5 text-left">
           <RuleSavedCard payload={ruleEvent} href="/settings/rules" />
         </div>
       ) : null}
       {workflowEvent ? (
-        <div key={`${keyPrefix}-workflow`} className="work-rule-event-row">
+        <div key={`${keyPrefix}-workflow`} className="flex justify-start mt-1.5 text-left">
           <WorkflowSavedCard payload={workflowEvent} href="/workflows" />
         </div>
       ) : null}
       {actionEvents.map((a, i) => (
-        <div key={`${keyPrefix}-action-${i}`} className="work-rule-event-row">
+        <div key={`${keyPrefix}-action-${i}`} className="flex justify-start mt-1.5 text-left">
           <ActionRequestCard payload={a} href="/actions?filter=awaiting" />
         </div>
       ))}
@@ -1536,7 +1548,7 @@ function RunTimeline({
   const hasContent = items.length > 0 || surfaceMessages.length > 0;
 
   return (
-    <div className="work-timeline">
+    <div className="work-timeline flex flex-col gap-2.5 mt-1">
       {!hasContent && !pending && fallbackContent.trim() ? (
         <FenceAwareBubble keyPrefix="fallback" raw={fallbackContent} />
       ) : null}
@@ -1561,7 +1573,7 @@ function RunTimeline({
           );
         }
         return (
-          <div key={`error-${index}`} className="work-error">
+          <div key={`error-${index}`} className="border border-warn/40 bg-warn-soft text-warn-ink rounded-2xl px-3 py-2.5 text-[13px]">
             {item.message}
           </div>
         );
@@ -1577,7 +1589,7 @@ function RunTimeline({
           <span>{lastStatus ?? "Running…"}</span>
         </div>
       ) : null}
-      {!pending && run?.error ? <div className="work-error">{run.error}</div> : null}
+      {!pending && run?.error ? <div className="border border-warn/40 bg-warn-soft text-warn-ink rounded-2xl px-3 py-2.5 text-[13px]">{run.error}</div> : null}
     </div>
   );
 }
@@ -1765,7 +1777,7 @@ function SurfaceBlock({ messages }: { messages: A2UIMessage[] }) {
   }
 
   if (nodes.length === 0) return null;
-  return <div className="work-surface-stack">{nodes}</div>;
+  return <div className="flex flex-col gap-2.5 mt-1">{nodes}</div>;
 }
 
 function describeToolDelta(delta: unknown): string {

@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { cn } from "@/lib/cn";
 import { extractWorkflowSaveFence } from "@neko/llm/workflows/fences";
 import type { WorkflowSavePayload } from "@neko/llm/workflows/fence-schemas";
 import { fetchAssistantTextFromRun } from "@/lib/run-events-fallback";
@@ -295,7 +296,7 @@ export default function EditWorkflowPage() {
   if (loadError) {
     return (
       <div className="builder-root">
-        <div className="builder-error">Couldn&apos;t load workflow: {loadError}</div>
+        <div className="text-danger text-[12.5px] mt-0 mb-2">Couldn&apos;t load workflow: {loadError}</div>
       </div>
     );
   }
@@ -303,29 +304,29 @@ export default function EditWorkflowPage() {
   if (!workflow) {
     return (
       <div className="builder-root">
-        <div className="builder-seed">Loading workflow…</div>
+        <div className="flex-1 grid place-items-center text-text3 text-sm py-[60px] px-6 leading-[1.55] [&>*]:max-w-80 [&>*]:text-center">Loading workflow…</div>
       </div>
     );
   }
 
   return (
     <div className="builder-root">
-      <div className="builder-crumb">
+      <div className="flex items-center gap-2 text-[12.5px] text-text3 mt-1 mb-[22px] font-mono">
           <button
             type="button"
-            className="builder-crumb-link"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-inherit p-0 hover:text-accent"
             onClick={() => router.push(`/workflows?id=${workflowId}`)}
           >
             ← {workflow.name}
           </button>
-          <span className="builder-crumb-sep">/</span>
+          <span className="opacity-50">/</span>
           <span>Edit</span>
         </div>
 
         <div className="builder-layout">
           <section className="builder-chat">
             {messages.length === 0 ? (
-              <div className="builder-seed">
+              <div className="flex-1 grid place-items-center text-text3 text-sm py-[60px] px-6 leading-[1.55] [&>*]:max-w-80 [&>*]:text-center">
                 <p>
                   Tell me what you want to change about{" "}
                   <strong>{workflow.name}</strong>.
@@ -348,7 +349,7 @@ export default function EditWorkflowPage() {
                         className={`builder-msg builder-msg-${m.role}`}
                       >
                         {text || (
-                          <span className="builder-msg-typing">…</span>
+                          <span className="text-text3">…</span>
                         )}
                       </li>,
                     );
@@ -369,9 +370,9 @@ export default function EditWorkflowPage() {
               </ul>
             )}
 
-            {error && <div className="builder-error">{error}</div>}
+            {error && <div className="text-danger text-[12.5px] mt-0 mb-2">{error}</div>}
 
-            <form className="builder-input-row" onSubmit={onSubmit}>
+            <form className="flex gap-2 items-stretch border-t border-border pt-3" onSubmit={onSubmit}>
               <textarea
                 className="builder-input"
                 placeholder="What should change?"
@@ -388,7 +389,7 @@ export default function EditWorkflowPage() {
               />
               <button
                 type="submit"
-                className="builder-send"
+                className="bg-accent text-white border-0 rounded-xl px-4 font-body text-[13px] font-semibold cursor-pointer self-stretch disabled:bg-neutral disabled:text-text3 disabled:cursor-not-allowed"
                 disabled={!input.trim() || streaming}
               >
                 {streaming ? "…" : "Send"}
@@ -397,15 +398,16 @@ export default function EditWorkflowPage() {
           </section>
 
           <aside className="builder-card">
-            <div className="builder-card-inner">
-              <div className="builder-card-head">
-                <div className="builder-card-name">
+            <div className="bg-card border border-border rounded-2xl p-[18px]">
+              <div className="flex items-center justify-between gap-2 pb-3 mb-3.5 border-b border-border">
+                <div className="font-display text-base font-extrabold tracking-[-0.01em] text-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                   {livePayload.name || workflow.name}
                 </div>
                 <span
-                  className={`builder-card-pill builder-card-pill-${
-                    savedAtLeastOnce ? "saved" : "draft"
-                  }`}
+                  className={cn(
+                    "text-[10px] font-bold tracking-[0.12em] uppercase px-2.5 py-[3px] rounded-full flex-shrink-0",
+                    savedAtLeastOnce ? "bg-success-soft text-success-mid" : "bg-neutral text-text3",
+                  )}
                 >
                   {savedAtLeastOnce ? "saved" : "current"}
                 </span>
@@ -416,7 +418,7 @@ export default function EditWorkflowPage() {
               </CardField>
 
               <CardField label="Steps">
-                <ol className="builder-card-steps">
+                <ol className="m-0 pl-[18px] [&>li]:mb-[3px]">
                   {(livePayload.steps ?? workflow.steps).map((s, i) => (
                     <li key={s.id ?? i}>{s.description}</li>
                   ))}
@@ -425,7 +427,7 @@ export default function EditWorkflowPage() {
 
               <CardField label="Schedule">
                 {livePayload.triggers?.cron || workflow.cron ? (
-                  <span className="builder-card-mono">
+                  <span className="font-mono text-xs text-text2">
                     {livePayload.triggers?.cron ?? workflow.cron} (
                     {livePayload.triggers?.timezone ??
                       workflow.cronTimezone ??
@@ -433,15 +435,15 @@ export default function EditWorkflowPage() {
                     )
                   </span>
                 ) : (
-                  <span className="builder-card-pending">manual only</span>
+                  <span className="text-text3 italic">manual only</span>
                 )}
               </CardField>
 
               {savedAtLeastOnce && (
-                <div className="builder-card-actions">
+                <div className="mt-4 pt-3 border-t border-border flex flex-col gap-2">
                   <button
                     type="button"
-                    className="builder-card-btn is-primary"
+                    className="px-3 py-2 rounded-lg border border-accent bg-accent text-white font-body text-[13px] font-semibold cursor-pointer hover:bg-[#5a4cd1] hover:border-[#5a4cd1]"
                     onClick={() =>
                       router.push(`/workflows?id=${workflowId}`)
                     }
@@ -465,9 +467,9 @@ function CardField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="builder-card-field">
-      <div className="builder-card-label">{label}</div>
-      <div className="builder-card-value">{children}</div>
+    <div className="mb-3 last-of-type:mb-0">
+      <div className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3 mb-1">{label}</div>
+      <div className="text-[13px] text-text leading-[1.5]">{children}</div>
     </div>
   );
 }

@@ -93,38 +93,38 @@ export default function MemoryPage() {
 
   return (
     <>
-      <div className="library-head">
-        <div className="library-head-icon">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-9 h-9 rounded-xl bg-accent-soft text-accent inline-flex items-center justify-center shrink-0">
           <Brain size={16} strokeWidth={2} />
         </div>
         <div>
-          <div className="library-title">Memory</div>
-          <div className="library-sub">
+          <div className="font-display text-2xl font-bold leading-[1.1] text-text">Memory</div>
+          <div className="text-[13px] text-text3 mt-0.5">
             {loading ? "Loading…" : `${active.length} active · ${pending.length} pending`}
           </div>
         </div>
       </div>
 
       {pending.length > 0 ? (
-        <section className="library-section">
-          <div className="library-section-title">Pending review · {pending.length}</div>
-          <div className="library-pending-list">
+        <section className="mt-7">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-text3 mb-2.5">Pending review · {pending.length}</div>
+          <div className="flex flex-col gap-2.5">
             {pending.map((item) => (
-              <div key={item.id} className="library-pending">
-                <div className="library-pending-head">
-                  <span className="library-pending-kind">{item.draftKind.replace(/_/g, " ")}</span>
-                  <span className="library-pending-meta">~{Math.round(item.confidence * 100)}%</span>
+              <div key={item.id} className="border border-[#f4d27a] bg-[#fff7e0] rounded-2xl px-4 py-3.5">
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8b6512]">{item.draftKind.replace(/_/g, " ")}</span>
+                  <span className="text-[11px] text-[#b18128] tabular-nums">~{Math.round(item.confidence * 100)}%</span>
                 </div>
-                <div className="library-pending-text">&ldquo;{item.draftText}&rdquo;</div>
+                <div className="text-[13.5px] leading-[1.5] text-[#4a3a16] italic">&ldquo;{item.draftText}&rdquo;</div>
                 {item.reasoning ? (
-                  <div className="library-pending-reason">{item.reasoning}</div>
+                  <div className="mt-1.5 text-xs text-[#8b6512]">{item.reasoning}</div>
                 ) : null}
-                <div className="library-pending-actions">
+                <div className="mt-2.5 flex gap-1.5 flex-wrap">
                   <button
                     type="button"
                     disabled={busyId === item.id}
                     onClick={() => void decide(item.id, "accept", { scope: "global" })}
-                    className="library-btn is-primary"
+                    className="text-xs px-[11px] py-[5px] rounded-lg border border-[#8b6512] bg-[#8b6512] text-white cursor-pointer transition hover:enabled:bg-[#6b4d10] disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Save globally
                   </button>
@@ -132,7 +132,7 @@ export default function MemoryPage() {
                     type="button"
                     disabled={busyId === item.id}
                     onClick={() => void decide(item.id, "decline")}
-                    className="library-btn"
+                    className="text-xs px-[11px] py-[5px] rounded-lg border border-[#e5b95a] bg-white text-[#6b4d10] cursor-pointer transition hover:enabled:bg-[#fff2cc] disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Decline
                   </button>
@@ -143,26 +143,26 @@ export default function MemoryPage() {
         </section>
       ) : null}
 
-      <section className="library-section">
-        <div className="library-section-title">Saved memories · {active.length}</div>
+      <section className="mt-7">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-text3 mb-2.5">Saved memories · {active.length}</div>
         {active.length === 0 ? (
-          <div className="library-empty is-compact">
+          <div className="bg-card border border-dashed border-border rounded-2xl px-4 py-3.5 text-[13px] leading-[1.55] text-text3">
             Nothing saved yet. Memories appear here when you tell the agent to remember something,
             or when the auto-classifier promotes a turn into a stable rule.
           </div>
         ) : (
-          <ul className="library-list">
+          <ul className="list-none p-0 m-0 flex flex-col gap-2">
             {active.map((memory) => (
-              <li key={memory.id} className="library-item is-static">
-                <div className="library-item-main">
-                  <div className="library-item-meta">
-                    <span className="library-meta-pill">{memory.kind.replace(/_/g, " ")}</span>
+              <li key={memory.id} className="group relative flex items-start gap-2 p-1 bg-card border border-border rounded-2xl text-inherit list-none">
+                <div className="flex-1 min-w-0 flex flex-col gap-1 px-3 py-2.5 rounded-[10px]">
+                  <div className="flex flex-wrap items-center gap-2.5 text-[11.5px] text-text3">
+                    <span className="inline-flex items-center gap-1 bg-black/5 text-text2 px-2 py-0.5 rounded-full text-[11px] font-medium">{memory.kind.replace(/_/g, " ")}</span>
                     <span>
                       {memory.scope}
                       {memory.scopeId ? `:${memory.scopeId.slice(0, 8)}` : ""}
                     </span>
                     {memory.pinned ? (
-                      <span className="library-meta-pill">
+                      <span className="inline-flex items-center gap-1 bg-black/5 text-text2 px-2 py-0.5 rounded-full text-[11px] font-medium">
                         <Pin size={11} strokeWidth={2} /> pinned
                       </span>
                     ) : null}
@@ -170,9 +170,9 @@ export default function MemoryPage() {
                       <span>used {memory.useCount}×</span>
                     ) : null}
                   </div>
-                  <div className="library-item-body">{memory.text}</div>
+                  <div className="text-[13.5px] leading-[1.5] text-text my-0.5">{memory.text}</div>
                   {memory.createdAt ? (
-                    <div className="library-item-meta">
+                    <div className="flex flex-wrap items-center gap-2.5 text-[11.5px] text-text3">
                       <span>created {formatDate(memory.createdAt)}</span>
                       {memory.lastUsedAt ? (
                         <span>last used {formatDate(memory.lastUsedAt)}</span>
@@ -186,7 +186,7 @@ export default function MemoryPage() {
                   onClick={() => void archive(memory.id)}
                   aria-label="Archive memory"
                   title="Archive memory"
-                  className="library-icon-btn library-row-action"
+                  className="mt-1.5 mr-1.5 w-8 h-8 rounded-[9px] bg-transparent border-0 text-text3 inline-flex items-center justify-center transition opacity-0 pointer-events-none cursor-pointer hover:bg-[rgba(220,53,69,0.1)] hover:text-[#c0392b] disabled:opacity-50 disabled:cursor-not-allowed group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
                 >
                   <Trash2 size={14} strokeWidth={2} />
                 </button>

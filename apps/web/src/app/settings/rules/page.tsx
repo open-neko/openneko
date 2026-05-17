@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import { Card } from "@/components/ui/Card";
+import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { cn } from "@/lib/cn";
 
 type Policy = {
   id: string;
@@ -38,6 +41,19 @@ function describeMode(mode: string): string {
       return "never executes";
     default:
       return mode.replace(/_/g, " ");
+  }
+}
+
+function modePillVariant(mode: string): PillVariant {
+  switch (mode) {
+    case "auto_approve":
+      return "success";
+    case "approval_required":
+      return "watch";
+    case "never":
+      return "danger";
+    default:
+      return "muted";
   }
 }
 
@@ -99,51 +115,56 @@ export default function PoliciesPage() {
 
   return (
     <>
-      <div className="root policies-root">
+      <div
+        className="root"
+        style={{ "--page-width": "min(1000px, 100%)" } as React.CSSProperties}
+      >
         <AppHeader>
           <SectionNav current="settings" />
         </AppHeader>
 
-        <div className="policies-crumb">
+        <div className="mt-1 mb-3.5 font-mono text-[12.5px] text-text3 flex items-center gap-2">
           <button
             type="button"
-            className="policies-crumb-link"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-[inherit] p-0 hover:text-accent"
             onClick={() => router.push("/settings")}
           >
             ← Settings
           </button>
-          <span className="policies-crumb-sep">/</span>
+          <span className="opacity-50">/</span>
           <span>Rules</span>
         </div>
 
-        <div className="policies-head">
-          <h1 className="policies-title">Rules</h1>
+        <div className="flex items-baseline justify-between gap-4 mb-3">
+          <h1 className="font-display text-3xl font-extrabold tracking-[-0.02em] text-text">
+            Rules
+          </h1>
           <button
             type="button"
-            className="policies-new-btn"
+            className="px-4 py-2 rounded-full border-[1.5px] border-border bg-white/60 font-body text-sm font-semibold text-text2 cursor-pointer transition-[border-color,color,background,transform] duration-200 hover:border-accent hover:text-accent hover:bg-accent-soft hover:-translate-y-px"
             onClick={() => router.push("/settings/rules/new")}
           >
             + New rule
           </button>
         </div>
 
-        <p className="policies-intro">
+        <p className="text-sm leading-normal text-text2 mb-6 max-w-[640px]">
           Rules decide what OpenNeko can do on its own, what queues for your
           review, and what's never allowed. To add or change a rule, use the
           buttons here — the agent walks you through it in plain language.
         </p>
 
         {error ? (
-          <div className="policies-error">{error}</div>
+          <div className="py-14 text-center text-sm text-danger">{error}</div>
         ) : policies === null ? (
-          <div className="policies-loading">Loading…</div>
+          <div className="py-14 text-center text-sm text-text3">Loading…</div>
         ) : policies.length === 0 ? (
-          <div className="policies-empty">
+          <div className="py-14 px-6 text-center text-sm text-text3 leading-[1.55] max-w-[520px] mx-auto">
             No rules yet. Defaults are seeded automatically the first time a
             workflow proposes an action that needs gating.
           </div>
         ) : (
-          <ul className="policies-list">
+          <ul className="list-none p-0 m-0 flex flex-col gap-3.5">
             {policies.map((p) => (
               <PolicyCard
                 key={p.id}
@@ -181,18 +202,23 @@ function PolicyCard({
   const limits = describeLimits(policy.limits);
 
   return (
-    <li className={`card policy-card${!policy.enabled ? " is-disabled" : ""}`}>
-      <div className="policy-head">
-        <div className="policy-name">{policy.name}</div>
-        <div className="policy-head-right">
-          <span className={`policy-mode policy-mode-${policy.mode}`}>
+    <Card
+      as="li"
+      className={cn("px-5 py-4.5", !policy.enabled && "opacity-60")}
+    >
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="font-display text-[17px] font-bold tracking-[-0.01em] text-text">
+          {policy.name}
+        </div>
+        <div className="flex items-center gap-2">
+          <Pill variant={modePillVariant(policy.mode)}>
             {describeMode(policy.mode)}
-          </span>
+          </Pill>
           <button
             type="button"
-            className="policy-edit-btn"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-[inherit] text-xs px-1.5 py-1 hover:text-accent hover:underline underline-offset-2"
             onClick={onEdit}
-            aria-label={`Edit policy ${policy.name}`}
+            aria-label={`Edit rule ${policy.name}`}
           >
             edit
           </button>
@@ -200,16 +226,18 @@ function PolicyCard({
       </div>
 
       {policy.description && (
-        <p className="policy-description">{policy.description}</p>
+        <p className="text-[13.5px] text-text2 mt-0 mb-3 leading-[1.55]">
+          {policy.description}
+        </p>
       )}
 
-      <dl className="policy-meta">
+      <dl className="m-0 flex flex-col gap-1 text-[13px]">
         <Row label="Applies to">
-          <span className="mono policy-mono">{appliesKinds}</span>
+          <span className="font-mono text-xs text-text2">{appliesKinds}</span>
           {appliesScopes && (
             <>
               {" "}· scope{" "}
-              <span className="mono policy-mono">{appliesScopes}</span>
+              <span className="font-mono text-xs text-text2">{appliesScopes}</span>
             </>
           )}
         </Row>
@@ -220,7 +248,7 @@ function PolicyCard({
         {policy.approverRole && <Row label="Approver">{policy.approverRole}</Row>}
         {!policy.enabled && <Row label="Status">disabled</Row>}
       </dl>
-    </li>
+    </Card>
   );
 }
 
@@ -232,9 +260,11 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="policy-row">
-      <dt className="policy-row-label">{label}</dt>
-      <dd className="policy-row-value">{children}</dd>
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2.5 items-baseline">
+      <dt className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3">
+        {label}
+      </dt>
+      <dd className="m-0 text-text break-words">{children}</dd>
     </div>
   );
 }

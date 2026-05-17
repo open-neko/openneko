@@ -108,9 +108,9 @@ export default function WorkSidebar() {
 
       <div className="work-thread-list">
         {loadingThreads ? (
-          <div className="work-empty">Loading threads…</div>
+          <div className="text-text3 text-[13px] py-3 px-1">Loading threads…</div>
         ) : threads.length === 0 ? (
-          <div className="work-empty">Start a thread to use Work.</div>
+          <div className="text-text3 text-[13px] py-3 px-1">Start a thread to use Work.</div>
         ) : (
           threads.map((thread) => (
             <ThreadRow

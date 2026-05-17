@@ -29,7 +29,7 @@ export default function WorkShellLayout({
 
         <div className="work-layout">
           <WorkSidebar />
-          <section className="work-panel">{children}</section>
+          <section className="min-h-[72vh] flex flex-col gap-[18px]">{children}</section>
         </div>
       </div>
       <CreatorCredit />

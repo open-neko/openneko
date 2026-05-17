@@ -10,6 +10,7 @@ import ActCard, {
   type ActRowData,
   type ActRowTone,
 } from "@/components/ActCard";
+import { cn } from "@/lib/cn";
 
 type Filter = "awaiting" | "fired" | "rejected" | "all";
 
@@ -245,6 +246,8 @@ function ActionsPageInner() {
     [data],
   );
 
+  const kbd = "font-mono bg-neutral border border-border rounded-[4px] px-1.5 py-px text-[11px] text-text2";
+
   return (
     <>
       <div className="root approvals-root">
@@ -252,36 +255,44 @@ function ActionsPageInner() {
           <SectionNav current="actions" />
         </AppHeader>
 
-        <div className="approvals-head">
-          <h1 className="approvals-title">Actions</h1>
+        <div className="flex items-baseline gap-3.5 my-2">
+          <h1 className="font-display text-[30px] font-extrabold tracking-[-0.02em] text-text">Actions</h1>
           {data && filter === "awaiting" && (
-            <span className="approvals-count">{data.count} pending</span>
+            <span className="font-mono text-[13px] text-text3">{data.count} pending</span>
           )}
         </div>
 
-        <div className="actions-tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className={`actions-tab${filter === t.key ? " is-active" : ""}`}
-              onClick={() => switchFilter(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex gap-1 mt-1 mb-[18px] border-b border-border">
+          {TABS.map((t) => {
+            const active = filter === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                className={cn(
+                  "font-body text-[13px] font-semibold px-3.5 py-2 -mb-px border-b-2 transition-[color,border-color] duration-[120ms] ease-out cursor-pointer",
+                  active
+                    ? "text-text border-accent"
+                    : "text-text3 border-transparent hover:text-text2",
+                )}
+                onClick={() => switchFilter(t.key)}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         {filter === "awaiting" && data && data.actions.length > 0 && (
-          <div className="approvals-hint">
-            <kbd>a</kbd> approve · <kbd>r</kbd> reject · <kbd>j</kbd>/<kbd>k</kbd> navigate
+          <div className="font-mono text-[12px] text-text3 mb-6">
+            <kbd className={kbd}>a</kbd> approve · <kbd className={kbd}>r</kbd> reject · <kbd className={kbd}>j</kbd>/<kbd className={kbd}>k</kbd> navigate
           </div>
         )}
 
         {error ? (
-          <div className="approvals-error">{error}</div>
+          <div className="py-[60px] text-center text-danger text-[14px]">{error}</div>
         ) : data === null ? (
-          <div className="approvals-loading">Loading…</div>
+          <div className="py-[60px] text-center text-text3 text-[14px]">Loading…</div>
         ) : data.actions.length === 0 ? (
           <EmptyState filter={filter} onBack={() => router.push("/")} />
         ) : (
@@ -358,10 +369,14 @@ function EmptyState({ filter, onBack }: { filter: Filter; onBack: () => void }) 
               sub: "Workflows haven't proposed anything yet. Once they do, the receipts live here.",
             };
   return (
-    <div className="approvals-empty">
-      <p className="approvals-empty-line">{copy.line}</p>
-      <p className="approvals-empty-sub">{copy.sub}</p>
-      <button type="button" className="approvals-empty-btn" onClick={onBack}>
+    <div className="py-20 px-5 text-center text-text3">
+      <p className="font-display text-2xl font-bold text-text tracking-[-0.01em] mb-2">{copy.line}</p>
+      <p className="text-[14px] leading-[1.5] max-w-[400px] mx-auto mb-6">{copy.sub}</p>
+      <button
+        type="button"
+        className="bg-transparent border-0 text-accent [font:inherit] text-[13px] cursor-pointer p-0 hover:underline hover:[text-underline-offset:3px]"
+        onClick={onBack}
+      >
         ← Back to dashboard
       </button>
     </div>

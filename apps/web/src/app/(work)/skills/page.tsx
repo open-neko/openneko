@@ -54,37 +54,40 @@ export default function SkillsPage() {
 
   return (
     <>
-      <div className="library-head">
-        <div className="library-head-icon">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-9 h-9 rounded-xl bg-accent-soft text-accent inline-flex items-center justify-center shrink-0">
           <Sparkles size={16} strokeWidth={2} />
         </div>
         <div>
-          <div className="library-title">Skills</div>
-          <div className="library-sub">
+          <div className="font-display text-2xl font-bold leading-[1.1] text-text">Skills</div>
+          <div className="text-[13px] text-text3 mt-0.5">
             {loading ? "Loading…" : `${skills.length} installed`}
           </div>
         </div>
       </div>
 
       {loading ? null : skills.length === 0 ? (
-        <div className="library-empty">
+        <div className="bg-card border border-dashed border-border rounded-2xl px-[22px] py-5 text-[13.5px] leading-[1.55] text-text3">
           No skills installed. Skills appear here when the agent saves a reusable capability,
-          or when one is dropped into the org workspace at <code>skills/</code>.
+          or when one is dropped into the org workspace at <code className="font-mono text-xs bg-black/5 px-1.5 py-px rounded">skills/</code>.
         </div>
       ) : (
-        <ul className="library-list">
+        <ul className="list-none p-0 m-0 flex flex-col gap-2">
           {skills.map((skill) => (
-            <li key={skill.name} className="library-item">
+            <li
+              key={skill.name}
+              className="group relative flex items-start gap-2 p-1 bg-card border border-border rounded-2xl text-inherit list-none transition hover:border-accent hover:shadow-soft hover:-translate-y-px"
+            >
               <Link
                 href={`/skills/${encodeURIComponent(skill.name)}`}
-                className="library-item-main library-item-link"
+                className="flex-1 min-w-0 flex flex-col gap-1 px-3 py-2.5 rounded-[10px] no-underline text-inherit cursor-pointer"
               >
-                <div className="library-item-title">{skill.name}</div>
+                <div className="text-sm font-semibold text-text">{skill.name}</div>
                 {skill.description ? (
-                  <div className="library-item-desc">{skill.description}</div>
+                  <div className="text-[13px] leading-[1.5] text-text2 line-clamp-2">{skill.description}</div>
                 ) : null}
-                <div className="library-item-meta">
-                  <span className="library-meta-pill">
+                <div className="flex flex-wrap items-center gap-2.5 text-[11.5px] text-text3">
+                  <span className="inline-flex items-center gap-1 bg-black/5 text-text2 px-2 py-0.5 rounded-full text-[11px] font-medium">
                     <FileText size={11} strokeWidth={2} />
                     {skill.fileCount} {skill.fileCount === 1 ? "file" : "files"}
                   </span>
@@ -97,7 +100,7 @@ export default function SkillsPage() {
                 onClick={() => void remove(skill.name)}
                 aria-label={`Delete skill ${skill.name}`}
                 title="Delete skill"
-                className="library-icon-btn library-row-action"
+                className="mt-1.5 mr-1.5 w-8 h-8 rounded-[9px] bg-transparent border-0 text-text3 inline-flex items-center justify-center transition opacity-0 pointer-events-none cursor-pointer hover:bg-[rgba(220,53,69,0.1)] hover:text-[#c0392b] disabled:opacity-50 disabled:cursor-not-allowed group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
               >
                 <Trash2 size={14} strokeWidth={2} />
               </button>

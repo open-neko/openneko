@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/cn";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
@@ -219,22 +220,22 @@ export default function NewPolicyPage() {
           <SectionNav current="settings" />
         </AppHeader>
 
-        <div className="builder-crumb">
+        <div className="flex items-center gap-2 text-[12.5px] text-text3 mt-1 mb-[22px] font-mono">
           <button
             type="button"
-            className="builder-crumb-link"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-inherit p-0 hover:text-accent"
             onClick={() => router.push("/settings/rules")}
           >
             ← Rules
           </button>
-          <span className="builder-crumb-sep">/</span>
+          <span className="opacity-50">/</span>
           <span>New rule</span>
         </div>
 
         <div className="builder-layout">
           <section className="builder-chat">
             {messages.length === 0 ? (
-              <div className="builder-seed">
+              <div className="flex-1 grid place-items-center text-text3 text-sm py-[60px] px-6 leading-[1.55] [&>*]:max-w-80 [&>*]:text-center">
                 <p>{SEED_HINT}</p>
               </div>
             ) : (
@@ -254,7 +255,7 @@ export default function NewPolicyPage() {
                         className={`builder-msg builder-msg-${m.role}`}
                       >
                         {text || (
-                          <span className="builder-msg-typing">…</span>
+                          <span className="text-text3">…</span>
                         )}
                       </li>,
                     );
@@ -279,9 +280,9 @@ export default function NewPolicyPage() {
               </ul>
             )}
 
-            {error && <div className="builder-error">{error}</div>}
+            {error && <div className="text-danger text-[12.5px] mt-0 mb-2">{error}</div>}
 
-            <form className="builder-input-row" onSubmit={onSubmit}>
+            <form className="flex gap-2 items-stretch border-t border-border pt-3" onSubmit={onSubmit}>
               <textarea
                 className="builder-input"
                 placeholder={
@@ -302,7 +303,7 @@ export default function NewPolicyPage() {
               />
               <button
                 type="submit"
-                className="builder-send"
+                className="bg-accent text-white border-0 rounded-xl px-4 font-body text-[13px] font-semibold cursor-pointer self-stretch disabled:bg-neutral disabled:text-text3 disabled:cursor-not-allowed"
                 disabled={!input.trim() || streaming}
               >
                 {streaming ? "…" : "Send"}
@@ -335,13 +336,16 @@ function LivePolicyCard({
   onBack: () => void;
 }) {
   return (
-    <div className="builder-card-inner">
-      <div className="builder-card-head">
-        <div className="builder-card-name">
+    <div className="bg-card border border-border rounded-2xl p-[18px]">
+      <div className="flex items-center justify-between gap-2 pb-3 mb-3.5 border-b border-border">
+        <div className="font-display text-base font-extrabold tracking-[-0.01em] text-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {payload.name || "Untitled rule"}
         </div>
         <span
-          className={`builder-card-pill builder-card-pill-${saved ? "saved" : "draft"}`}
+          className={cn(
+            "text-[10px] font-bold tracking-[0.12em] uppercase px-2.5 py-[3px] rounded-full flex-shrink-0",
+            saved ? "bg-success-soft text-success-mid" : "bg-neutral text-text3",
+          )}
         >
           {saved ? "saved" : "draft"}
         </span>
@@ -351,55 +355,55 @@ function LivePolicyCard({
         {payload.description ? (
           <span>{payload.description}</span>
         ) : (
-          <span className="builder-card-pending">— pending —</span>
+          <span className="text-text3 italic">— pending —</span>
         )}
       </CardField>
 
       <CardField label="Mode">
         {payload.mode ? (
-          <span className="builder-card-mono">{payload.mode}</span>
+          <span className="font-mono text-xs text-text2">{payload.mode}</span>
         ) : (
-          <span className="builder-card-pending">— pending —</span>
+          <span className="text-text3 italic">— pending —</span>
         )}
       </CardField>
 
       <CardField label="Applies to">
         {payload.applies_to_kinds?.length ? (
-          <span className="builder-card-mono">
+          <span className="font-mono text-xs text-text2">
             {payload.applies_to_kinds.join(", ")}
           </span>
         ) : (
-          <span className="builder-card-pending">— pending —</span>
+          <span className="text-text3 italic">— pending —</span>
         )}
       </CardField>
 
       <CardField label="Auto-approve">
         {payload.risk_threshold_auto_approve ? (
-          <span className="builder-card-mono">
+          <span className="font-mono text-xs text-text2">
             risk ≤ {payload.risk_threshold_auto_approve}
           </span>
         ) : (
-          <span className="builder-card-pending">never</span>
+          <span className="text-text3 italic">never</span>
         )}
       </CardField>
 
       <CardField label="Limits">
         {payload.limits && Object.keys(payload.limits).length > 0 ? (
-          <span className="builder-card-mono">
+          <span className="font-mono text-xs text-text2">
             {Object.entries(payload.limits)
               .map(([k, v]) => `${k}: ${String(v)}`)
               .join(" · ")}
           </span>
         ) : (
-          <span className="builder-card-pending">none</span>
+          <span className="text-text3 italic">none</span>
         )}
       </CardField>
 
       {saved && (
-        <div className="builder-card-actions">
+        <div className="mt-4 pt-3 border-t border-border flex flex-col gap-2">
           <button
             type="button"
-            className="builder-card-btn is-primary"
+            className="px-3 py-2 rounded-lg border border-accent bg-accent text-white font-body text-[13px] font-semibold cursor-pointer hover:bg-[#5a4cd1] hover:border-[#5a4cd1]"
             onClick={onBack}
           >
             Back to rules
@@ -418,9 +422,9 @@ function CardField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="builder-card-field">
-      <div className="builder-card-label">{label}</div>
-      <div className="builder-card-value">{children}</div>
+    <div className="mb-3 last-of-type:mb-0">
+      <div className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3 mb-1">{label}</div>
+      <div className="text-[13px] text-text leading-[1.5]">{children}</div>
     </div>
   );
 }

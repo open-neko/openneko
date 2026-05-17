@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Workflow } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { describeSchedule } from "@/lib/cron-english";
 
 type WorkflowListItem = {
@@ -221,13 +222,13 @@ export default function WorkflowsPage() {
 
   return (
     <>
-      <div className="library-head">
-        <div className="library-head-icon">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-9 h-9 rounded-xl bg-accent-soft text-accent inline-flex items-center justify-center shrink-0">
           <Workflow size={16} strokeWidth={2} />
         </div>
         <div>
-          <div className="library-title">Workflows</div>
-          <div className="library-sub">
+          <div className="font-display text-2xl font-bold leading-[1.1] text-text">Workflows</div>
+          <div className="text-[13px] text-text3 mt-0.5">
             {workflows === null
               ? "Loading…"
               : totalCount === 0
@@ -245,20 +246,20 @@ export default function WorkflowsPage() {
       </div>
 
       {error ? (
-          <div className="workflows-error">{error}</div>
+          <div className="py-10 text-center text-sm text-danger">{error}</div>
         ) : workflows === null ? (
-          <div className="workflows-empty">Loading…</div>
+          <div className="py-20 text-center text-[15px] text-text3">Loading…</div>
         ) : workflows.length === 0 ? (
-          <div className="workflows-empty">
+          <div className="py-20 text-center text-[15px] text-text3">
             No workflows yet. <button
               type="button"
-              className="workflows-empty-link"
+              className="bg-transparent border-0 text-accent font-inherit cursor-pointer underline underline-offset-[3px] p-0"
               onClick={() => router.push("/workflows/new")}
             >+ New workflow</button> gets you started.
           </div>
         ) : (
           <div className="workflows-layout">
-            <div className="workflows-list">
+            <div className="min-w-0">
               {grouped.active.length > 0 && (
                 <WorkflowGroup
                   title="Active"
@@ -328,11 +329,11 @@ function WorkflowGroup({
   onSparkline: (id: string, values: number[]) => void;
 }) {
   return (
-    <section className="workflows-group">
-      <div className="workflows-group-title">
-        {title} <span className="workflows-group-count">({count})</span>
+    <section className="mb-7 last:mb-0">
+      <div className="text-[11px] font-bold tracking-[0.12em] uppercase text-text3 mb-2.5">
+        {title} <span className="text-text3 font-semibold tracking-[0.06em] ml-0.5">({count})</span>
       </div>
-      <ul className="workflows-rows">
+      <ul className="list-none flex flex-col gap-2">
         {items.map((w) => (
           <WorkflowRow
             key={w.id}
@@ -391,17 +392,17 @@ function WorkflowRow({
         className={`workflows-row${active ? " is-active" : ""}`}
         onClick={onSelect}
       >
-        <div className="workflows-row-name">{w.name}</div>
+        <div className="font-display text-base font-bold tracking-[-0.01em] text-text">{w.name}</div>
         {w.description && (
-          <div className="workflows-row-desc">{w.description}</div>
+          <div className="text-[13px] text-text2 mt-1 leading-[1.45]">{w.description}</div>
         )}
         <div className="workflows-row-meta">
-          <span className="workflows-row-schedule">
+          <span>
             {describeSchedule(w.cron, w.cronTimezone, w.cronEnabled)}
           </span>
           {hasActivity && (
             <>
-              <span className="workflows-row-sep">·</span>
+              <span className="opacity-60">·</span>
               <Sparkline values={sparkline ?? []} />
             </>
           )}
@@ -521,14 +522,14 @@ function WorkflowDrawer({
         <div className="workflow-drawer-head">
           <button
             type="button"
-            className="workflow-drawer-close"
+            className="border-0 bg-transparent text-xl leading-none text-text3 cursor-pointer px-1 hover:text-text"
             onClick={onClose}
             aria-label="Close"
           >
             ×
           </button>
         </div>
-        <div className="workflow-drawer-error">{error}</div>
+        <div className="py-6 text-center text-[13px] text-danger">{error}</div>
       </aside>
     );
   }
@@ -539,14 +540,14 @@ function WorkflowDrawer({
         <div className="workflow-drawer-head">
           <button
             type="button"
-            className="workflow-drawer-close"
+            className="border-0 bg-transparent text-xl leading-none text-text3 cursor-pointer px-1 hover:text-text"
             onClick={onClose}
             aria-label="Close"
           >
             ×
           </button>
         </div>
-        <div className="workflow-drawer-loading">Loading…</div>
+        <div className="py-6 text-center text-[13px] text-text3">Loading…</div>
       </aside>
     );
   }
@@ -560,15 +561,15 @@ function WorkflowDrawer({
     <aside className="workflow-drawer">
       <div className="workflow-drawer-head">
         <div>
-          <div className="workflow-drawer-name">{workflow.name}</div>
-          <div className="workflow-drawer-status">
+          <div className="font-display text-lg font-extrabold tracking-[-0.01em] leading-tight text-text">{workflow.name}</div>
+          <div className="text-xs text-text3 mt-1 font-mono">
             {workflow.enabled ? "active" : "paused"}
             {workflow.cron ? ` · ${workflow.cronEnabled ? "cron" : "cron paused"}` : ""}
           </div>
         </div>
         <button
           type="button"
-          className="workflow-drawer-close"
+          className="border-0 bg-transparent text-xl leading-none text-text3 cursor-pointer px-1 hover:text-text"
           onClick={onClose}
           aria-label="Close"
         >
@@ -602,19 +603,19 @@ function WorkflowDrawer({
 
       {workflow.description && (
         <Section title="Description">
-          <p className="workflow-drawer-prose">{workflow.description}</p>
+          <p className="leading-[1.55]">{workflow.description}</p>
         </Section>
       )}
 
       {workflow.goal && (
         <Section title="Goal">
-          <p className="workflow-drawer-prose">{workflow.goal}</p>
+          <p className="leading-[1.55]">{workflow.goal}</p>
         </Section>
       )}
 
       {workflow.steps?.some((s) => s.description?.trim()) && (
         <Section title="Steps">
-          <ol className="workflow-drawer-steps">
+          <ol className="m-0 pl-5 [&>li]:mb-1 [&>li]:leading-[1.4]">
             {workflow.steps
               .filter((s) => s.description?.trim())
               .map((step, i) => (
@@ -626,15 +627,18 @@ function WorkflowDrawer({
 
       <Section title="Watches">
         {subscriptions.length === 0 ? (
-          <p className="workflow-drawer-muted">
+          <p className="text-text3">
             No subscriptions yet. Add one by editing this workflow.
           </p>
         ) : (
-          <ul className="workflow-drawer-subs">
+          <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
             {subscriptions.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} className="flex items-baseline gap-2 leading-[1.45]">
                 <span
-                  className={`workflow-drawer-sub-dot${s.enabled ? " on" : ""}`}
+                  className={cn(
+                    "inline-block w-1.5 h-1.5 rounded-full flex-none -translate-y-px",
+                    s.enabled ? "bg-success-mid" : "bg-text3",
+                  )}
                   aria-hidden="true"
                 />
                 {describeSubscription(s)}
@@ -645,7 +649,7 @@ function WorkflowDrawer({
       </Section>
 
       <Section title="Schedule">
-        <div className="workflow-drawer-row">
+        <div className="flex items-center justify-between gap-3 text-[13px]">
           <span>
             {describeSchedule(
               workflow.cron,
@@ -654,7 +658,7 @@ function WorkflowDrawer({
             )}
           </span>
           {workflow.cron && (
-            <label className="workflow-drawer-toggle">
+            <label className="inline-flex items-center gap-1.5 text-xs text-text3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={workflow.cronEnabled}
@@ -668,16 +672,19 @@ function WorkflowDrawer({
       </Section>
 
       <Section title="Daily budget">
-        <div className="workflow-drawer-row">
+        <div className="flex items-center justify-between gap-3 text-[13px]">
           {budgetCap == null ? (
-            <span className="workflow-drawer-muted">No cap set</span>
+            <span className="text-text3">No cap set</span>
           ) : (
             <>
               <span>
                 {budgetUsed} / {budgetCap} runs used today
               </span>
               <span
-                className={`workflow-drawer-budget-pct${budgetPct >= 80 ? " warn" : ""}`}
+                className={cn(
+                  "font-mono text-xs",
+                  budgetPct >= 80 ? "text-watch font-semibold" : "text-text2",
+                )}
               >
                 {budgetPct}%
               </span>
@@ -688,18 +695,21 @@ function WorkflowDrawer({
 
       <Section title="Rules">
         {policies === null ? (
-          <p className="workflow-drawer-muted">Loading…</p>
+          <p className="text-text3">Loading…</p>
         ) : policies.length === 0 ? (
-          <p className="workflow-drawer-muted">
+          <p className="text-text3">
             No rules set. Actions will require approval by default.
           </p>
         ) : (
-          <ul className="workflow-drawer-policies">
+          <ul className="list-none p-0 mt-0 mb-1.5 flex flex-col gap-1.5">
             {policies.map((p) => (
-              <li key={p.id}>
-                <span className="workflow-drawer-policy-name">{p.name}</span>
+              <li key={p.id} className="flex items-center gap-2 text-[12.5px]">
+                <span className="font-mono text-[11.5px] text-text2">{p.name}</span>
                 <span
-                  className={`workflow-drawer-policy-mode workflow-drawer-policy-mode-${p.mode}`}
+                  className={cn(
+                    "text-[9.5px] font-bold tracking-[0.13em] uppercase px-1.5 py-0.5 rounded-full ml-auto",
+                    policyModeClass(p.mode),
+                  )}
                 >
                   {describePolicyMode(p.mode)}
                 </span>
@@ -707,33 +717,36 @@ function WorkflowDrawer({
             ))}
           </ul>
         )}
-        <a className="workflow-drawer-link" href="/settings/rules">
+        <a className="inline-block mt-1 text-xs text-accent no-underline hover:underline hover:underline-offset-2" href="/settings/rules">
           see all rules →
         </a>
       </Section>
 
       <Section title="Recent runs">
         {recentRuns.length === 0 ? (
-          <p className="workflow-drawer-muted">No runs yet.</p>
+          <p className="text-text3">No runs yet.</p>
         ) : (
-          <ul className="workflow-drawer-runs">
+          <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
             {recentRuns.map((r) => (
-              <li key={r.id}>
+              <li key={r.id} className="flex items-baseline gap-2 text-[13px]">
                 <button
                   type="button"
                   className="workflow-drawer-run-link"
                   onClick={() => router.push(`/runs/${r.id}`)}
                 >
                   <span
-                    className={`workflow-drawer-run-status workflow-drawer-run-status-${r.status}`}
+                    className={cn(
+                      "inline-block w-3.5 text-center font-mono",
+                      runStatusColor(r.status),
+                    )}
                   >
                     {statusGlyph(r.status)}
                   </span>
-                  <span className="workflow-drawer-run-meta">
+                  <span className="workflow-drawer-run-meta font-mono text-xs text-text2">
                     {formatRelative(r.createdAt)} · {r.triggerKind} ·{" "}
                     {formatDuration(r.durationMs)}
                   </span>
-                  <span className="workflow-drawer-run-arrow" aria-hidden="true">
+                  <span className="workflow-drawer-run-arrow ml-auto text-text3 font-mono text-[11.5px] transition-[color,transform] duration-[0.18s]" aria-hidden="true">
                     →
                   </span>
                 </button>
@@ -745,25 +758,28 @@ function WorkflowDrawer({
 
       <Section title="Recent actions">
         {recentActions.length === 0 ? (
-          <p className="workflow-drawer-muted">No actions proposed yet.</p>
+          <p className="text-text3">No actions proposed yet.</p>
         ) : (
-          <ul className="workflow-drawer-actions-list">
+          <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
             {recentActions.map((a) => (
-              <li key={a.id}>
-                <div className="workflow-drawer-action-line">
-                  <span className="workflow-drawer-action-kind">{a.kind}</span>
+              <li key={a.id} className="border border-border bg-neutral-soft rounded-lg px-2.5 py-2">
+                <div className="flex items-center gap-2 flex-wrap text-[12.5px]">
+                  <span className="font-semibold text-text">{a.kind}</span>
                   {a.target && (
-                    <span className="workflow-drawer-action-target">
+                    <span className="font-mono text-[11.5px] text-text2">
                       {a.target}
                     </span>
                   )}
                   <span
-                    className={`workflow-drawer-action-pill workflow-drawer-action-pill-${a.status}`}
+                    className={cn(
+                      "ml-auto text-[10.5px] font-bold tracking-[0.08em] uppercase px-2 py-0.5 rounded-full",
+                      actionPillClass(a.status),
+                    )}
                   >
                     {actionStatusLabel(a.status)}
                   </span>
                 </div>
-                <div className="workflow-drawer-action-meta">
+                <div className="mt-1 text-[11.5px] text-text3">
                   {formatRelative(a.createdAt)}
                   {a.summary ? ` · ${a.summary}` : ""}
                 </div>
@@ -773,10 +789,10 @@ function WorkflowDrawer({
         )}
       </Section>
 
-      <div className="workflow-drawer-foot">
+      <div className="mt-6 pt-3 border-t border-border flex justify-end">
         <button
           type="button"
-          className="workflow-drawer-edit"
+          className="bg-transparent border-0 text-accent cursor-pointer text-xs font-semibold py-1 px-0 hover:underline hover:underline-offset-[3px]"
           onClick={() => router.push(`/workflows/${workflowId}/edit`)}
         >
           edit this workflow
@@ -794,11 +810,52 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="workflow-drawer-section">
-      <div className="workflow-drawer-section-title">{title}</div>
-      <div className="workflow-drawer-section-body">{children}</div>
+    <div className="mb-[18px]">
+      <div className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3 mb-1.5">{title}</div>
+      <div className="text-[13.5px] text-text leading-[1.5]">{children}</div>
     </div>
   );
+}
+
+function policyModeClass(mode: string): string {
+  switch (mode) {
+    case "auto_approve":
+      return "bg-success-soft text-success-mid";
+    case "approval_required":
+      return "bg-watch-soft text-warn-ink";
+    case "never":
+      return "bg-danger-soft text-danger";
+    default:
+      return "bg-neutral text-text2";
+  }
+}
+
+function runStatusColor(status: string): string {
+  switch (status) {
+    case "completed":
+      return "text-success-mid";
+    case "failed":
+      return "text-danger";
+    case "needs_input":
+    case "waiting_approval":
+      return "text-watch";
+    default:
+      return "text-text3";
+  }
+}
+
+function actionPillClass(status: string): string {
+  switch (status) {
+    case "executed":
+      return "bg-success-soft text-success-mid";
+    case "pending_approval":
+      return "bg-watch-soft text-warn-ink";
+    case "rejected":
+    case "failed":
+      return "bg-danger-soft text-danger";
+    default:
+      return "bg-neutral text-text2";
+  }
 }
 
 function statusGlyph(status: string): string {

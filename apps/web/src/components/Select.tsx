@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { cn } from "@/lib/cn";
 
 export type SelectOption = {
   value: string;
@@ -16,6 +17,9 @@ type Props = {
   ariaLabel?: string;
   id?: string;
 };
+
+const TRIGGER_BASE =
+  "px-3.5 py-3 rounded-xl border-[1.5px] border-border bg-bg text-text text-[15px] font-body outline-none transition-all duration-200 focus:border-accent focus:shadow-[0_0_0_3px_rgba(107,92,231,0.08)]";
 
 export default function Select({
   value,
@@ -104,12 +108,17 @@ export default function Select({
   };
 
   return (
-    <div ref={wrapRef} className="select-shell">
+    <div ref={wrapRef} className="relative">
       <button
         ref={buttonRef}
         id={id}
         type="button"
-        className="settings-input select-trigger"
+        className={cn(
+          TRIGGER_BASE,
+          "flex items-center justify-between gap-2.5 w-full text-left cursor-pointer",
+          "enabled:hover:border-accent",
+          "disabled:cursor-not-allowed disabled:opacity-55",
+        )}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
@@ -118,11 +127,19 @@ export default function Select({
         onClick={() => !disabled && (open ? setOpen(false) : openWithCurrent())}
         onKeyDown={onKey}
       >
-        <span className={`select-value${selected ? "" : " select-placeholder"}`}>
+        <span
+          className={cn(
+            "flex-1 whitespace-nowrap overflow-hidden text-ellipsis",
+            !selected && "text-text3",
+          )}
+        >
           {selected?.label ?? placeholder ?? ""}
         </span>
         <svg
-          className="select-chevron"
+          className={cn(
+            "flex-shrink-0 transition-transform duration-[180ms] ease-out",
+            open ? "rotate-180 text-accent" : "text-text2",
+          )}
           width="12"
           height="8"
           viewBox="0 0 12 8"
@@ -144,7 +161,7 @@ export default function Select({
           id={listboxId}
           role="listbox"
           tabIndex={-1}
-          className="select-panel"
+          className="select-panel absolute z-30 top-[calc(100%+6px)] left-0 right-0 m-0 p-1.5 list-none bg-bg border-[1.5px] border-border rounded-[14px] max-h-80 overflow-y-auto"
         >
           {options.map((opt, idx) => (
             <li
@@ -153,17 +170,17 @@ export default function Select({
               aria-selected={opt.value === value}
               data-idx={idx}
               data-focused={idx === focusIdx ? "true" : undefined}
-              className="select-option"
+              className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-[10px] text-[15px] text-text cursor-pointer select-none data-[focused=true]:bg-accent-soft data-[focused=true]:text-accent aria-selected:font-semibold"
               onMouseEnter={() => setFocusIdx(idx)}
               onMouseDown={(e) => {
                 e.preventDefault();
                 select(idx);
               }}
             >
-              <span className="select-option-label">{opt.label}</span>
+              <span>{opt.label}</span>
               {opt.value === value && (
                 <svg
-                  className="select-option-check"
+                  className="text-accent flex-shrink-0"
                   width="14"
                   height="14"
                   viewBox="0 0 14 14"

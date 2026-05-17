@@ -4,6 +4,7 @@ import { useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
+import { Button } from "@/components/ui/Button";
 
 type ProviderOption = { value: string; label: string; description: string };
 type Field = {
@@ -23,6 +24,12 @@ type ProviderConfig = {
   config: Record<string, unknown>;
   secretStatus: Record<string, string>;
 };
+const INPUT_CLS =
+  "px-[13px] py-[11px] sm:px-3.5 sm:py-[13px] rounded-xl border-[1.5px] border-border bg-bg text-text text-base sm:text-[15px] font-body outline-none transition-all duration-200 focus:border-accent focus:shadow-[0_0_0_3px_rgba(107,92,231,0.08)]";
+const FIELD_CLS = "flex flex-col gap-2";
+const LABEL_CLS = "text-[14px] font-semibold text-text";
+const HELP_CLS = "text-[13px] text-text3 leading-[1.45]";
+
 type SettingsPayload = {
   primary: ProviderConfig;
   research: ProviderConfig;
@@ -106,12 +113,12 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
     <div className="root">
       <AppHeader back={{ href: "/settings", label: "All settings" }} />
       <div className="greet">Industry research.</div>
-      <div className="greet-sub" style={{ marginBottom: 24 }}>
+      <div className="greet-sub mb-6">
         Optional. When enabled, OpenNeko enriches the business profile with industry context during onboarding.
       </div>
 
       <section className="settings-card">
-        <label className="settings-toggle">
+        <label className="inline-flex items-center gap-2.5 mt-[18px] text-text2 text-[15px]">
           <input
             type="checkbox"
             checked={enabled}
@@ -121,10 +128,10 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
         </label>
 
         {enabled && (
-          <div className="settings-field-stack">
+          <div className="grid gap-4 mt-4">
             <div className="settings-grid">
-              <label className="settings-field">
-                <span className="settings-label">Provider</span>
+              <label className={FIELD_CLS}>
+                <span className={LABEL_CLS}>Provider</span>
                 <Select
                   value={research.provider}
                   onChange={(v) =>
@@ -141,10 +148,10 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
                   ariaLabel="Research provider"
                 />
               </label>
-              <label className="settings-field">
-                <span className="settings-label">Model</span>
+              <label className={FIELD_CLS}>
+                <span className={LABEL_CLS}>Model</span>
                 <input
-                  className="settings-input"
+                  className={INPUT_CLS}
                   value={research.model}
                   onChange={(e) => setResearch((p) => ({ ...p, model: e.target.value }))}
                 />
@@ -159,13 +166,13 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
                 : (research.config[field.key] as string) ?? "";
 
               return (
-                <label key={field.key} className="settings-field">
-                  <span className="settings-label">
+                <label key={field.key} className={FIELD_CLS}>
+                  <span className={LABEL_CLS}>
                     {field.label}
                     {field.required ? " *" : ""}
                   </span>
                   <input
-                    className="settings-input"
+                    className={INPUT_CLS}
                     type={field.kind === "secret" ? "password" : "text"}
                     value={value}
                     placeholder={field.placeholder}
@@ -184,13 +191,13 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
                       }
                     }}
                   />
-                  {field.help && <span className="settings-help">{field.help}</span>}
+                  {field.help && <span className={HELP_CLS}>{field.help}</span>}
                   {isSecret && masked && !research.clearedSecrets[field.key] && (
-                    <div className="settings-secret-row">
-                      <span className="settings-secret-note">Saved: {masked}</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-text3 text-[13px]">Saved: {masked}</span>
                       <button
                         type="button"
-                        className="settings-clear"
+                        className="border-0 bg-transparent text-[#b05555] cursor-pointer text-[13px] font-semibold"
                         onClick={() =>
                           setResearch((p) => ({
                             ...p,
@@ -209,10 +216,10 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
           </div>
         )}
 
-        <div className="settings-actions">
-          <button type="button" className="pill on" onClick={save} disabled={saving}>
+        <div className="flex justify-end gap-2.5 mt-5 max-[720px]:flex-col max-[720px]:items-stretch [&>button]:max-[720px]:w-full">
+          <Button variant="primary" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save settings"}
-          </button>
+          </Button>
         </div>
       </section>
     </div>

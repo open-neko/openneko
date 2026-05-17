@@ -27,12 +27,17 @@
   --shadow-lift: 0 1px 2px rgba(20,18,12,0.04), 0 18px 48px -16px rgba(20,18,12,0.16);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+/* Live inside @layer base so Tailwind utilities (which live in @layer
+   utilities) can still override padding/margin — unlayered rules win the
+   cascade over any layered rule regardless of specificity in v4. */
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-body {
-  font-family: var(--font-body), 'Manrope', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
+  body {
+    font-family: var(--font-body), 'Manrope', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
 }
 

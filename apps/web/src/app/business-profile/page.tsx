@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import SectionNav from "@/components/SectionNav";
 import EditableMarkdown from "@/components/EditableMarkdown";
+import { Button } from "@/components/ui/Button";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { StageKind } from "@/lib/db";
 
@@ -347,19 +348,19 @@ export default function ProcessingPage() {
           animation: "fadeUp 0.5s ease 0.45s both",
         }}
       >
-        <button
-          className="pill on"
+        <Button
+          variant="primary"
+          className="px-8 py-3.5 text-[15px]"
           onClick={async () => {
             await flushAll();
             router.replace("/");
           }}
-          style={{ padding: "14px 32px", fontSize: 15 }}
         >
           Continue to your briefing
-        </button>
+        </Button>
         {insights && insightsStatus !== "disabled" && (
-          <button
-            className="pill"
+          <Button
+            className="px-6 py-3.5 text-sm"
             onClick={async () => {
               await flushAll();
               try {
@@ -376,10 +377,9 @@ export default function ProcessingPage() {
                 }
               } catch {}
             }}
-            style={{ padding: "14px 24px", fontSize: 14 }}
           >
             Regenerate insights
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -425,16 +425,17 @@ function StageStrip({ current }: { current: StageKind | null }) {
   );
 }
 
+const PM_H2_CLS = "font-display text-[22px] font-bold leading-[1.3] tracking-[-0.3px] mb-4 text-text";
+const PM_H3_CLS = "font-display text-[13px] font-semibold uppercase tracking-[0.8px] text-text3 mt-6 mb-2 first:mt-0";
+const PM_P_CLS = "text-base leading-[1.65] text-text2 mb-1.5";
+const PM_CITE_CLS =
+  "text-[11px] font-semibold text-accent no-underline bg-accent-soft rounded-[4px] px-[5px] py-px mx-px align-super leading-none transition-all duration-150 hover:bg-accent hover:text-white";
+
 function InsightsLoading() {
   return (
-    <div style={{ padding: "24px 4px", textAlign: "center" }}>
-      <div
-        className="pm-h3"
-        style={{ marginTop: 0, marginBottom: 8 }}
-      >
-        Researching your industry…
-      </div>
-      <div className="pm-p" style={{ color: "var(--text2)" }}>
+    <div className="py-6 px-1 text-center">
+      <div className={`${PM_H3_CLS} mt-0 mb-2`}>Researching your industry…</div>
+      <div className={`${PM_P_CLS} text-text2`}>
         Deep-diving into industry trends and benchmarks — this usually takes a minute or two.
       </div>
     </div>
@@ -443,11 +444,9 @@ function InsightsLoading() {
 
 function ProfileEmpty() {
   return (
-    <div style={{ padding: "24px 4px", textAlign: "center" }}>
-      <div className="pm-h3" style={{ marginTop: 0, marginBottom: 8 }}>
-        Your business profile is being assembled
-      </div>
-      <div className="pm-p" style={{ color: "var(--text2)" }}>
+    <div className="py-6 px-1 text-center">
+      <div className={`${PM_H3_CLS} mt-0 mb-2`}>Your business profile is being assembled</div>
+      <div className={`${PM_P_CLS} text-text2`}>
         OpenNeko reads what you shared in onboarding plus signals from your connected
         data sources. The profile will appear here as soon as it&apos;s ready.
       </div>
@@ -457,21 +456,17 @@ function ProfileEmpty() {
 
 function InsightsDisabled() {
   return (
-    <div style={{ padding: "24px 4px", textAlign: "center" }}>
-      <div className="pm-h3" style={{ marginTop: 0, marginBottom: 8 }}>
-        Industry research is off
-      </div>
-      <div className="pm-p" style={{ color: "var(--text2)" }}>
-        Enable industry research from Settings.
-      </div>
+    <div className="py-6 px-1 text-center">
+      <div className={`${PM_H3_CLS} mt-0 mb-2`}>Industry research is off</div>
+      <div className={`${PM_P_CLS} text-text2`}>Enable industry research from Settings.</div>
     </div>
   );
 }
 
 const mdComponents = {
-  h1: (p: React.ComponentProps<"h2">) => <h2 className="pm-h2" {...p} />,
-  h2: (p: React.ComponentProps<"h3">) => <h3 className="pm-h3" {...p} />,
-  p: (p: React.ComponentProps<"p">) => <p className="pm-p" {...p} />,
+  h1: (p: React.ComponentProps<"h2">) => <h2 className={PM_H2_CLS} {...p} />,
+  h2: (p: React.ComponentProps<"h3">) => <h3 className={PM_H3_CLS} {...p} />,
+  p: (p: React.ComponentProps<"p">) => <p className={PM_P_CLS} {...p} />,
   ul: (p: React.ComponentProps<"ul">) => <ul className="pm-ul" {...p} />,
-  a: (p: React.ComponentProps<"a">) => <a className="pm-cite" target="_blank" rel="noopener noreferrer" {...p} />,
+  a: (p: React.ComponentProps<"a">) => <a className={PM_CITE_CLS} target="_blank" rel="noopener noreferrer" {...p} />,
 };

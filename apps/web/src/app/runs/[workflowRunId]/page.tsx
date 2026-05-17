@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import { cn } from "@/lib/cn";
 
 type RunDetailPayload = {
   workflow: {
@@ -106,6 +107,65 @@ const ACTION_STATUS_LABEL: Record<string, string> = {
 
 function actionStatusLabel(s: string): string {
   return ACTION_STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+}
+
+function runStatusClasses(status: string): string {
+  switch (status) {
+    case "completed":
+      return "bg-success-soft text-success-mid";
+    case "failed":
+      return "bg-danger-soft text-danger";
+    case "running":
+    case "queued":
+    case "needs_input":
+    case "waiting_approval":
+      return "bg-watch-soft text-warn-ink";
+    default:
+      return "bg-neutral text-text2";
+  }
+}
+
+function moodClasses(mood: string): string {
+  switch (mood) {
+    case "good":
+      return "bg-success-soft text-success-mid";
+    case "watch":
+      return "bg-watch-soft text-warn-ink";
+    case "act":
+      return "bg-danger-soft text-danger";
+    default:
+      return "bg-neutral text-text2";
+  }
+}
+
+function actionPillClasses(status: string): string {
+  switch (status) {
+    case "pending_approval":
+      return "bg-watch-soft text-warn-ink";
+    case "executed":
+      return "bg-success-soft text-success-mid";
+    case "rejected":
+    case "failed":
+      return "bg-danger-soft text-danger";
+    case "approved":
+      return "bg-accent-soft text-accent";
+    default:
+      return "bg-neutral text-text2";
+  }
+}
+
+function actionRiskClasses(risk: string): string {
+  switch (risk) {
+    case "low":
+      return "text-text2";
+    case "medium":
+      return "text-warn-ink";
+    case "high":
+    case "critical":
+      return "text-danger";
+    default:
+      return "text-text2";
+  }
 }
 
 function formatTrigger(kind: string): string {
@@ -231,7 +291,7 @@ export default function RunPage() {
         <AppHeader>
           <SectionNav current="workflows" />
         </AppHeader>
-        <div className="run-error">{error}</div>
+        <div className="py-[60px] text-center text-sm text-danger">{error}</div>
       </div>
     );
   }
@@ -242,7 +302,7 @@ export default function RunPage() {
         <AppHeader>
           <SectionNav current="workflows" />
         </AppHeader>
-        <div className="run-loading">Loading…</div>
+        <div className="py-[60px] text-center text-sm text-text3">Loading…</div>
       </div>
     );
   }
@@ -260,78 +320,84 @@ export default function RunPage() {
           <SectionNav current="workflows" />
         </AppHeader>
 
-        <div className="run-crumb">
+        <div className="mt-1 mb-3.5 font-mono text-[12.5px] text-text3">
           <button
             type="button"
-            className="run-crumb-link"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-inherit p-0 hover:text-accent"
             onClick={() => router.push("/workflows")}
           >
             ← Workflows
           </button>
         </div>
 
-        <div className="run-header">
-          <div className="run-header-row">
-            <h1 className="run-title">{workflow?.name ?? "Run"}</h1>
+        <div className="mb-[18px]">
+          <div className="flex items-start justify-between gap-4 mb-1.5">
+            <h1 className="font-display text-[26px] font-extrabold tracking-[-0.02em] text-text">{workflow?.name ?? "Run"}</h1>
             <button
               type="button"
-              className="run-followup-btn"
+              className="shrink-0 mt-1 px-3.5 py-[7px] rounded-full border-[1.5px] border-border bg-white/60 font-body text-[12.5px] font-semibold text-text2 cursor-pointer transition hover:border-accent hover:text-accent hover:bg-accent-soft"
               onClick={askFollowUp}
               title="Open an Ask thread pre-loaded with this run's context"
             >
               Ask a follow-up →
             </button>
           </div>
-          <div className="run-header-meta">
-            <span className="run-mono">{formatTime(run.startedAt ?? run.createdAt)}</span>
-            <span className="run-sep">·</span>
+          <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-text2">
+            <span className="font-mono">{formatTime(run.startedAt ?? run.createdAt)}</span>
+            <span className="text-text3/70">·</span>
             <span>{formatTrigger(run.triggerKind)}</span>
-            <span className="run-sep">·</span>
-            <span className={`run-status run-status-${run.status}`}>
+            <span className="text-text3/70">·</span>
+            <span className={cn(
+              "uppercase text-[10.5px] tracking-[0.13em] font-bold px-2 py-0.5 rounded-full",
+              runStatusClasses(run.status),
+            )}>
               {run.status}
             </span>
-            <span className="run-sep">·</span>
-            <span className="run-mono">{formatDuration(durationMs)}</span>
+            <span className="text-text3/70">·</span>
+            <span className="font-mono">{formatDuration(durationMs)}</span>
           </div>
         </div>
 
         {run.status === "completed" &&
           outputs.length === 0 &&
           actions.length === 0 && (
-            <div className="run-silent-note">
+            <div className="my-2 mb-[22px] px-[18px] py-3.5 bg-card border border-border rounded-xl text-sm text-text2 italic">
               {run.summary?.trim() || "Looked at the data; nothing to flag."}
             </div>
           )}
 
         <Section title="Findings">
           {outputs.length === 0 ? (
-            <p className="run-empty">
+            <p className="text-text3 text-[13.5px] italic">
               This run hasn't produced any outputs yet.
             </p>
           ) : (
-            <ul className="run-outputs">
+            <ul className="list-none p-0 m-0 flex flex-col gap-3">
               {outputs.map((o) => (
-                <li key={o.id} className="run-output-card">
-                  <div className="run-output-head">
-                    <div className="run-output-title">{o.title}</div>
+                <li key={o.id} className="bg-card border border-border rounded-2xl px-[18px] py-4">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="font-display text-base font-bold tracking-[-0.01em] text-text">{o.title}</div>
                     {o.mood && (
-                      <span className={`run-output-mood run-output-mood-${o.mood}`}>
+                      <span className={cn(
+                        "text-[10.5px] font-bold tracking-[0.12em] uppercase px-2 py-0.5 rounded-full",
+                        moodClasses(o.mood),
+                      )}>
                         {o.mood}
                       </span>
                     )}
                   </div>
-                  {o.body && <p className="run-output-body">{o.body}</p>}
-                  <div className="run-output-foot">
-                    <span className="run-output-kind">{o.kind}</span>
+                  {o.body && <p className="text-text text-sm leading-[1.55] mb-2">{o.body}</p>}
+                  <div className="flex items-center gap-1.5 text-[11.5px] text-text3">
+                    <span className="font-mono uppercase tracking-[0.08em]">{o.kind}</span>
                     {o.scope && (
                       <>
-                        <span className="run-sep">·</span>
-                        <span className="run-output-scope">scope: {o.scope}</span>
+                        <span className="text-text3/70">·</span>
+                        <span>scope: {o.scope}</span>
                       </>
                     )}
                     <button
                       type="button"
-                      className="run-output-pin"
+                      className="ml-auto bg-transparent border-0 text-text3 font-body text-[11.5px] cursor-pointer p-0 hover:text-accent hover:underline hover:underline-offset-2"
                       onClick={() => pinOutput(o.id)}
                       title="Pin this finding to the Briefing"
                     >
@@ -346,62 +412,63 @@ export default function RunPage() {
 
         <Section title="Actions">
           {actions.length === 0 ? (
-            <p className="run-empty">No actions proposed by this run.</p>
+            <p className="text-text3 text-[13.5px] italic">No actions proposed by this run.</p>
           ) : (
-            <ul className="run-actions">
+            <ul className="list-none p-0 m-0 flex flex-col gap-2.5">
               {actions.map((a) => (
-                <li key={a.id} className="run-action-card">
-                  <div className="run-action-head">
+                <li key={a.id} className="bg-card border border-border rounded-2xl px-4 py-3.5">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
                     <button
                       type="button"
-                      className="run-action-title run-action-title-link"
+                      className="font-semibold text-sm text-text leading-[1.4] bg-transparent border-0 p-0 text-left cursor-pointer hover:underline hover:underline-offset-[3px]"
                       onClick={() => router.push(`/actions/${a.id}`)}
                       title="Open action receipt"
                     >
                       {a.summary || a.kind}
                     </button>
                     <span
-                      className={`run-action-pill run-action-pill-${a.status}`}
+                      className={cn(
+                        "text-[10.5px] font-bold tracking-[0.12em] uppercase px-[9px] py-[3px] rounded-full shrink-0",
+                        actionPillClasses(a.status),
+                      )}
                     >
                       {actionStatusLabel(a.status)}
                     </span>
                   </div>
-                  <div className="run-action-meta">
-                    <span className="run-action-kind">{a.kind}</span>
+                  <div className="flex flex-wrap gap-1.5 items-center text-xs text-text3">
+                    <span className="font-mono text-text2">{a.kind}</span>
                     {a.target && (
                       <>
-                        <span className="run-sep">·</span>
-                        <span className="run-action-target">{a.target}</span>
+                        <span className="text-text3/70">·</span>
+                        <span className="font-mono">{a.target}</span>
                       </>
                     )}
                     {a.riskLevel && (
                       <>
-                        <span className="run-sep">·</span>
-                        <span
-                          className={`run-action-risk run-action-risk-${a.riskLevel}`}
-                        >
+                        <span className="text-text3/70">·</span>
+                        <span className={cn("font-semibold", actionRiskClasses(a.riskLevel))}>
                           {a.riskLevel}
                         </span>
                       </>
                     )}
                   </div>
                   {a.status === "pending_approval" && rejectingId === a.id ? (
-                    <div className="run-action-reject-box">
-                      <label className="run-action-reject-label">
+                    <div className="pt-3 border-t border-border mt-2.5 flex flex-col gap-2">
+                      <label className="text-[11px] font-bold tracking-[0.13em] uppercase text-text3">
                         Why are you rejecting this? (optional)
                       </label>
                       <textarea
-                        className="run-action-reject-textarea"
+                        className="border border-border rounded-[10px] px-3 py-2 font-body text-[13px] text-text bg-card resize-y min-h-[50px] outline-none focus:border-accent"
                         value={rejectReason}
                         placeholder="e.g. wrong channel, retry tomorrow…"
                         onChange={(e) => setRejectReason(e.target.value)}
                         autoFocus
                         rows={2}
                       />
-                      <div className="run-action-buttons">
+                      <div className="flex gap-2 mt-2.5">
                         <button
                           type="button"
-                          className="run-action-btn is-destructive"
+                          className="px-3.5 py-[7px] rounded-[10px] border border-danger bg-danger text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[#c84545] hover:enabled:border-[#c84545] disabled:opacity-55 disabled:cursor-not-allowed"
                           disabled={actionBusyId === a.id}
                           onClick={() => void submitReject()}
                         >
@@ -409,7 +476,7 @@ export default function RunPage() {
                         </button>
                         <button
                           type="button"
-                          className="run-action-btn"
+                          className="px-3.5 py-[7px] rounded-[10px] border border-border bg-card text-text font-body text-[13px] font-semibold cursor-pointer hover:enabled:border-text3 disabled:opacity-55 disabled:cursor-not-allowed"
                           disabled={actionBusyId === a.id}
                           onClick={cancelReject}
                         >
@@ -418,10 +485,10 @@ export default function RunPage() {
                       </div>
                     </div>
                   ) : a.status === "pending_approval" ? (
-                    <div className="run-action-buttons">
+                    <div className="flex gap-2 mt-2.5">
                       <button
                         type="button"
-                        className="run-action-btn is-primary"
+                        className="px-3.5 py-[7px] rounded-[10px] border border-accent bg-accent text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[#5a4cd1] hover:enabled:border-[#5a4cd1] disabled:opacity-55 disabled:cursor-not-allowed"
                         disabled={actionBusyId === a.id}
                         onClick={() => void actOnRequest(a.id, "approve")}
                       >
@@ -429,7 +496,7 @@ export default function RunPage() {
                       </button>
                       <button
                         type="button"
-                        className="run-action-btn"
+                        className="px-3.5 py-[7px] rounded-[10px] border border-border bg-card text-text font-body text-[13px] font-semibold cursor-pointer hover:enabled:border-text3 disabled:opacity-55 disabled:cursor-not-allowed"
                         disabled={actionBusyId === a.id}
                         onClick={() => setRejectingId(a.id)}
                       >
@@ -438,7 +505,7 @@ export default function RunPage() {
                     </div>
                   ) : null}
                   {a.status === "rejected" && a.rejectionReason && (
-                    <p className="run-action-reason">
+                    <p className="mt-2 text-[12.5px] text-text2 italic">
                       Rejected: {a.rejectionReason}
                     </p>
                   )}
@@ -456,9 +523,9 @@ export default function RunPage() {
           <summary className="run-expander-summary">
             How it got there ({data.events.length} events)
           </summary>
-          <div className="run-expander-body">
+          <div className="mt-3 pl-[18px] text-[13.5px] text-text leading-[1.55]">
             {data.events.length === 0 ? (
-              <p className="run-empty">No events recorded.</p>
+              <p className="text-text3 text-[13.5px] italic">No events recorded.</p>
             ) : (
               <EventStream events={data.events} />
             )}
@@ -471,19 +538,19 @@ export default function RunPage() {
           onToggle={(e) => setShowLineage(e.currentTarget.open)}
         >
           <summary className="run-expander-summary">Lineage</summary>
-          <div className="run-expander-body">
+          <div className="mt-3 pl-[18px] text-[13.5px] text-text leading-[1.55]">
             {!lineage.upstream && run.triggerKind === "manual" && (
-              <p className="run-empty">
+              <p className="text-text3 text-[13.5px] italic">
                 Started manually from the workflow drawer.
               </p>
             )}
             {!lineage.upstream && run.triggerKind === "cron" && (
-              <p className="run-empty">
+              <p className="text-text3 text-[13.5px] italic">
                 Scheduled by cron · no upstream output.
               </p>
             )}
             {lineage.upstream && (
-              <div className="run-lineage">
+              <div className="text-[13.5px] leading-[1.55] text-text">
                 <p>
                   Triggered by{" "}
                   {lineage.upstream.workflow ? (
@@ -495,14 +562,14 @@ export default function RunPage() {
                     "an upstream workflow"
                   )}{" "}
                   on output{" "}
-                  <span className="run-lineage-output">
+                  <span className="italic text-text2">
                     &ldquo;{lineage.upstream.output.title}&rdquo;
                   </span>
                 </p>
                 {lineage.upstream.workflowRunId && (
                   <button
                     type="button"
-                    className="run-lineage-link"
+                    className="mt-2 bg-transparent border-0 text-accent cursor-pointer font-inherit text-[12.5px] p-0 hover:underline hover:underline-offset-[3px]"
                     onClick={() =>
                       router.push(`/runs/${lineage.upstream!.workflowRunId}`)
                     }
@@ -560,11 +627,11 @@ function coalesceEvents(events: EventRow[]): RenderedItem[] {
 function EventStream({ events }: { events: EventRow[] }) {
   const items = coalesceEvents(events);
   return (
-    <ul className="run-phase-block-events">
+    <ul className="list-none p-0 m-0 flex flex-col gap-1.5 text-[13.5px] border-l-2 border-border pl-3">
       {items.map((item) => {
         if (item.type === "message-block") {
           return (
-            <li key={item.seq} className="run-evt run-evt-message">
+            <li key={item.seq} className="run-evt-message text-text leading-[1.55]">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {item.content}
               </ReactMarkdown>
@@ -575,7 +642,7 @@ function EventStream({ events }: { events: EventRow[] }) {
         if (ev.type === "status") {
           const message = (ev.event as { message?: string } | null)?.message;
           return (
-            <li key={ev.seq} className="run-evt run-evt-status">
+            <li key={ev.seq} className="text-text3 text-[12.5px] italic">
               · {message}
             </li>
           );
@@ -583,7 +650,7 @@ function EventStream({ events }: { events: EventRow[] }) {
         if (ev.type === "output_emit") {
           const e = ev.event as { kind?: string } | null;
           return (
-            <li key={ev.seq} className="run-evt run-evt-info">
+            <li key={ev.seq} className="text-text2 text-[12.5px]">
               emitted output ({e?.kind ?? "unknown kind"})
             </li>
           );
@@ -593,7 +660,7 @@ function EventStream({ events }: { events: EventRow[] }) {
             | { kind?: string; risk_level?: string }
             | null;
           return (
-            <li key={ev.seq} className="run-evt run-evt-info">
+            <li key={ev.seq} className="text-text2 text-[12.5px]">
               proposed action: {e?.kind ?? "unknown"}
               {e?.risk_level ? ` (risk ${e.risk_level})` : ""}
             </li>
@@ -602,7 +669,7 @@ function EventStream({ events }: { events: EventRow[] }) {
         if (ev.type === "needs_input") {
           const e = ev.event as { question?: string } | null;
           return (
-            <li key={ev.seq} className="run-evt run-evt-warn">
+            <li key={ev.seq} className="text-warn-ink text-[12.5px]">
               paused for input: {e?.question}
             </li>
           );
@@ -610,14 +677,14 @@ function EventStream({ events }: { events: EventRow[] }) {
         if (ev.type === "error") {
           const e = ev.event as { message?: string } | null;
           return (
-            <li key={ev.seq} className="run-evt run-evt-error">
+            <li key={ev.seq} className="text-danger text-[12.5px]">
               error: {e?.message}
             </li>
           );
         }
         if (ev.type === "done") {
           return (
-            <li key={ev.seq} className="run-evt run-evt-done">
+            <li key={ev.seq} className="text-text3 text-[11.5px] font-mono">
               — done
             </li>
           );
@@ -636,9 +703,9 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="run-section">
-      <div className="run-section-title">{title}</div>
-      <div className="run-section-body">{children}</div>
+    <section className="mb-7">
+      <div className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3 mb-2.5">{title}</div>
+      <div>{children}</div>
     </section>
   );
 }

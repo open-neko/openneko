@@ -21,8 +21,6 @@ body > * { position: relative; z-index: 1; }
    Without this, the nav appears to "bounce" between pages with different
    .root widths (Briefing 740, Workflows 1000, Builder etc). */
 .app-header {
-  /* Pull the header out of any parent's content-box width by extending
-     symmetrically to the viewport edges. */
   margin-left: calc(-50vw + 50%);
   margin-right: calc(-50vw + 50%);
   width: 100vw;
@@ -30,47 +28,9 @@ body > * { position: relative; z-index: 1; }
   justify-content: center;
   margin-bottom: 24px;
 }
-.app-header-inner {
-  /* Header band sized to comfortably hold the full nav + brand on a
-     single line (six section links incl. Approvals + the version chip).
-     740px would crowd the row and force a wrap; 1000px matches the
-     wider operating-loop pages (workflows, runs) and keeps the brand
-     visually close to the right edge on briefing too. */
-  width: 100%;
-  max-width: 1000px;
-  padding: 0 20px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  /* Match a .pill's rendered height (border 1.5×2 + padding 8×2 + 14.5px
-     text × ~1.5 line-height ≈ 40.75px). The brand sits in this strip and
-     vertically centers its icon+text within the same band. */
-  min-height: 41px;
-}
-.app-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-.app-header .brand {
-  /* Anchored to the top of the header so it sits on the first wrapped row
-     of left content, with its visual center matching the pill row. */
-  align-self: flex-start;
-  height: 41px;
-}
 
-/* Brand + version cluster (and the "update available" chip that appears
-   next to the brand when a newer build is on the server). */
-.brand-cluster {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  align-self: flex-start;
-}
+/* "Update available" chip beside the brand. Pulse animations would render
+   awkwardly as utility chains — kept as a single named class. */
 .brand-update {
   display: inline-flex;
   align-items: center;
@@ -118,68 +78,17 @@ body > * { position: relative; z-index: 1; }
   50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--success-mid) 0%, transparent); }
 }
 
-/* ─── BRAND ─── */
-/* Match the marketing site's brand lockup (apps/web/.. ↔ Website/..) so
-   the app feels like a continuation of getneko.app: same Archivo display
-   face, same heavy 800 weight, same tight -0.04em tracking. */
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  user-select: none;
-  color: var(--text);
-  transition: opacity 0.18s;
-}
-.brand:hover {
-  opacity: 0.78;
-}
-.brand-icon {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-  display: block;
-  flex: 0 0 auto;
-}
-.brand-name {
-  font-family: var(--font-display), 'Archivo', sans-serif;
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-.brand-tick {
-  color: var(--text3);
-  font-size: 14px;
-  line-height: 1;
-  margin: 0 1px 0 2px;
-}
-.brand-version {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--text3);
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
-  background: var(--neutral);
-  padding: 2px 6px;
-  border-radius: 999px;
-  line-height: 1;
-}
 /* ─── CREATOR CREDIT ─── */
-/* Tiny attribution badge fixed to the bottom-right of the viewport.
-   Default placement (mobile/tablet): floats just above the dashboard
-   input bar (~100px tall) so it never overlaps the send button. On
-   pages without an input bar this just gives the badge a comfortable
-   margin from the viewport edge. */
+/* Acid-green attribution chip fixed bottom-right; positioning gets
+   responsive-aware in /work via body.work-shell. The math (work-shell
+   gutter alignment, mobile-vs-desktop placement) doesn't compress to
+   utilities. */
 .creator-credit {
   position: fixed;
   bottom: 100px;
   right: 16px;
   font-family: var(--font-body), 'Manrope', sans-serif;
   font-size: 11px;
-  /* Acid-green pill — same palette the marketing site (getneko.app)
-     uses for its primary CTAs, so the badge reads as a piece of
-     OpenNeko branding rather than generic app chrome. */
   font-weight: 600;
   color: #113719;
   background: #6cff7f;
@@ -190,7 +99,6 @@ body > * { position: relative; z-index: 1; }
   padding: 6px 10px;
   border-radius: 999px;
   box-shadow: 0 2px 8px rgba(17, 55, 25, 0.08);
-  /* Above the input bar (z-index 100). */
   z-index: 110;
   transition: background 0.18s, box-shadow 0.18s, transform 0.18s;
 }
@@ -199,22 +107,12 @@ body > * { position: relative; z-index: 1; }
   box-shadow: 0 4px 14px rgba(17, 55, 25, 0.16);
   transform: translateY(-1px);
 }
-/* Desktop placement: slot the badge into the right margin beside the
-   input bar's centered 740px column. Math: viewport must be > 1160 for
-   credit (right:24, ~170 wide) not to overlap the inputwrap edge. */
 @media (min-width: 1200px) {
   .creator-credit {
     bottom: 32px;
     right: 24px;
   }
 }
-/* On /work + /skills + /memory the layout has a 280-px sidebar in the
-   left gutter; the floating composer fills the right column. Center the
-   credit on the sidebar's horizontal axis so it stops competing with
-   the conversation. Math: the work-layout is min(1180px, vw - 40px)
-   wide and viewport-centered, so the sidebar's center sits at
-   `50% - layoutHalfWidth + 140`. CSS `min()` clamps to the narrower of
-   the two regimes (capped layout vs. viewport-filling layout). */
 @media (min-width: 960px) {
   body.work-shell .creator-credit {
     left: calc(50% - min(450px, 50vw - 160px));
@@ -227,32 +125,7 @@ body > * { position: relative; z-index: 1; }
   }
 }
 
-/* ─── TOP BAR ─── */
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 36px;
-}
-.topbar-date {
-  font-family: var(--font-body), 'Manrope', sans-serif;
-  font-size: 13px; color: var(--text3); letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-
-/* Dashboard secondary nav (Business Profile, Settings, date) — its own
-   full-width row beneath the AppHeader so it isn't squeezed by the brand
-   mark on the right. With this layout these three items always fit on a
-   single line, regardless of how many persona pills the user has set up. */
-.dash-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 0;
-  margin-bottom: 32px;
-}
-.app-header-left .dash-meta {
-  margin: 0;
-}
+/* ─── SECTION NAV (Dashboard / Ask / Actions / etc.) ─── */
 .settings-link,
 .settings-backlink {
   text-decoration: none;
@@ -297,7 +170,6 @@ body > * { position: relative; z-index: 1; }
   cursor: not-allowed;
   pointer-events: none;
 }
-/* Quiet horizontal divider between section nav and the rest of the page. */
 .section-nav-row {
   display: flex;
   align-items: center;
@@ -307,9 +179,6 @@ body > * { position: relative; z-index: 1; }
   margin-bottom: 28px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
-}
-.section-nav-row .topbar-date {
-  margin-left: auto;
 }
 .settings-backlink {
   display: inline-flex;
@@ -332,31 +201,3 @@ body > * { position: relative; z-index: 1; }
 .settings-backlink:hover .settings-backlink-arrow {
   transform: translateX(-3px);
 }
-
-/* ─── PILLS ─── */
-.pills { display: flex; gap: 7px; flex-wrap: wrap; }
-.pill {
-  padding: 9px 18px; border-radius: 100px; border: 1.5px solid var(--border);
-  background: rgba(255,255,255,0.6); font-family: var(--font-body), 'Manrope', sans-serif;
-  font-size: 14.5px; font-weight: 500; color: var(--text2); cursor: pointer;
-  transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.2s;
-}
-.pill:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); transform: translateY(-1px); }
-.pill.on {
-  background: var(--text);
-  border-color: var(--text);
-  color: #FAFAF7;
-  box-shadow: 0 2px 10px rgba(20,18,12,0.18);
-}
-.pill.on::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success);
-  margin-right: 8px;
-  vertical-align: 1px;
-  box-shadow: 0 0 0 3px rgba(108,255,127,0.18);
-}
-

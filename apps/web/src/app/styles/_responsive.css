@@ -33,7 +33,7 @@ body { overflow-x: hidden; }
   }
   /* Wider .root variants must defer to the viewport at this size. */
   .workflows-root, .builder-root, .run-root,
-  .approvals-root, .policies-root { --page-width: 100%; max-width: 100%; }
+  .approvals-root { --page-width: 100%; max-width: 100%; }
 
   .app-header { margin-bottom: 18px; }
   .app-header-inner { padding: 0 18px; gap: 12px; }
@@ -60,7 +60,7 @@ body { overflow-x: hidden; }
   .act-row-btn, .workflow-drawer-btn { padding: 10px 16px; font-size: 14px; }
 
   /* Hover-reveal actions are always visible — there is no hover. */
-  .iactions, .cbactions, .work-bubble-actions { opacity: 1; }
+  .iactions, .work-bubble-actions { opacity: 1; }
   .work-thread-delete { opacity: 1; }
   .library-row-action { opacity: 1; pointer-events: auto; }
 }
@@ -153,11 +153,8 @@ body { overflow-x: hidden; }
   .settings-card-title { font-size: 19px; }
   .settings-card-copy { font-size: 14.5px; }
   .settings-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 12px; }
-  .settings-input { font-size: 16px; /* iOS no-zoom threshold */ padding: 11px 13px; }
 
   /* Workflows + runs page header rows — title above action button. */
-  .workflows-head { flex-direction: column; align-items: stretch; gap: 12px; margin: 4px 0 20px; }
-  .workflows-title { font-size: 26px; }
   .workflows-new-btn { align-self: flex-start; }
   .workflows-row { padding: 14px 16px; border-radius: 12px; }
   .workflows-row-meta { flex-wrap: wrap; row-gap: 4px; }
@@ -183,12 +180,6 @@ body { overflow-x: hidden; }
   /* Work transcript / composer bubbles. */
   .work-bubble { padding: 14px 16px; font-size: 15px; }
   .work-bubble.is-user { padding: 10px 14px; }
-  .cbuser .bub, .cbai .bub { max-width: 92%; font-size: 15px; }
-
-  /* Input bar — gradient + send button stay comfortable. */
-  .inputbar { padding: 16px 16px 18px; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
-  .input { font-size: 16px; padding: 13px 16px; border-radius: 14px; }
-  .sendbtn { width: 46px; height: 46px; border-radius: 13px; }
 
   /* Builder chat min-height was 520px — too tall to be useful on a phone. */
   .builder-chat { min-height: 360px; padding: 14px 14px 12px; }
@@ -210,7 +201,6 @@ body { overflow-x: hidden; }
 @media (max-width: 380px) {
   .root { padding-left: 14px; padding-right: 14px; }
   .greet { font-size: 30px; }
-  .workflows-title { font-size: 23px; }
   .pill { padding: 8px 12px; font-size: 13.5px; }
   .icard { padding: 16px 14px 16px 18px; }
   .act-row-btn { font-size: 13px; padding: 10px 12px; }
@@ -218,7 +208,7 @@ body { overflow-x: hidden; }
 
 /* ── TOUCH-ONLY: always reveal hover-only chrome ── */
 @media (hover: none) {
-  .iactions, .cbactions, .work-bubble-actions { opacity: 1; }
+  .iactions, .work-bubble-actions { opacity: 1; }
   .work-thread-delete { opacity: 1; }
   .library-row-action { opacity: 1; pointer-events: auto; }
   .ipin:hover:not(:disabled) { background: transparent; border-color: transparent; }

@@ -5,6 +5,36 @@ import { useParams, useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import { cn } from "@/lib/cn";
+
+function actionStatusClasses(status: string): string {
+  switch (status) {
+    case "pending_approval":
+      return "bg-watch-soft text-warn-ink";
+    case "rejected":
+    case "failed":
+      return "bg-danger-soft text-danger";
+    case "executed":
+    case "succeeded":
+      return "bg-success-soft text-success-mid";
+    default:
+      return "bg-accent-soft text-accent";
+  }
+}
+
+function actionRiskBoxClasses(risk: string): string {
+  switch (risk) {
+    case "low":
+      return "bg-success-soft text-success-mid";
+    case "medium":
+      return "bg-watch-soft text-warn-ink";
+    case "high":
+    case "critical":
+      return "bg-danger-soft text-danger";
+    default:
+      return "bg-accent-soft text-accent";
+  }
+}
 
 type ActionDetailPayload = {
   actionRequest: {
@@ -187,7 +217,7 @@ export default function ActionPage() {
         <AppHeader>
           <SectionNav current="actions" />
         </AppHeader>
-        <div className="run-error">{error}</div>
+        <div className="py-[60px] text-center text-sm text-danger">{error}</div>
       </div>
     );
   }
@@ -198,7 +228,7 @@ export default function ActionPage() {
         <AppHeader>
           <SectionNav current="actions" />
         </AppHeader>
-        <div className="run-loading">Loading…</div>
+        <div className="py-[60px] text-center text-sm text-text3">Loading…</div>
       </div>
     );
   }
@@ -214,65 +244,71 @@ export default function ActionPage() {
           <SectionNav current="actions" />
         </AppHeader>
 
-        <div className="run-crumb">
+        <div className="mt-1 mb-3.5 font-mono text-[12.5px] text-text3">
           <button
             type="button"
-            className="run-crumb-link"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-inherit p-0 hover:text-accent"
             onClick={() => router.push(backToActionsHref(ar.status))}
           >
             ← {backToActionsLabel(ar.status)}
           </button>
         </div>
 
-        <div className="run-header">
-          <div className="run-header-row">
-            <h1 className="run-title">{ar.summary || ar.kind}</h1>
+        <div className="mb-[18px]">
+          <div className="flex items-start justify-between gap-4 mb-1.5">
+            <h1 className="font-display text-[26px] font-extrabold tracking-[-0.02em] text-text">{ar.summary || ar.kind}</h1>
             <button
               type="button"
-              className="run-followup-btn"
+              className="shrink-0 mt-1 px-3.5 py-[7px] rounded-full border-[1.5px] border-border bg-white/60 font-body text-[12.5px] font-semibold text-text2 cursor-pointer transition hover:border-accent hover:text-accent hover:bg-accent-soft"
               onClick={askFollowUp}
               title="Open an Ask thread pre-loaded with this action's context"
             >
               Ask a follow-up →
             </button>
           </div>
-          <div className="run-header-meta">
-            <span className={`action-status action-status-${ar.status}`}>
+          <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-text2">
+            <span className={cn(
+              "inline-block px-2 py-0.5 rounded-full text-[11.5px] font-semibold tracking-[0.04em] uppercase",
+              actionStatusClasses(ar.status),
+            )}>
               {statusLabel(ar.status)}
             </span>
-            <span className="run-sep">·</span>
-            <span className="run-mono">{ar.kind}</span>
+            <span className="text-text3/70">·</span>
+            <span className="font-mono">{ar.kind}</span>
             {ar.target && (
               <>
-                <span className="run-sep">·</span>
-                <span className="run-mono">{ar.target}</span>
+                <span className="text-text3/70">·</span>
+                <span className="font-mono">{ar.target}</span>
               </>
             )}
             {ar.riskLevel && (
               <>
-                <span className="run-sep">·</span>
-                <span className={`action-risk action-risk-${ar.riskLevel}`}>
+                <span className="text-text3/70">·</span>
+                <span className={cn(
+                  "inline-block px-[7px] py-px rounded-md text-[11.5px] font-semibold uppercase tracking-[0.04em]",
+                  actionRiskBoxClasses(ar.riskLevel),
+                )}>
                   risk {ar.riskLevel}
                 </span>
               </>
             )}
-            <span className="run-sep">·</span>
-            <span className="run-mono">{formatRelative(ar.createdAt)}</span>
+            <span className="text-text3/70">·</span>
+            <span className="font-mono">{formatRelative(ar.createdAt)}</span>
           </div>
         </div>
 
         <Section title="Receipt">
-          <dl className="action-receipt">
+          <dl className="grid gap-3.5 m-0">
             <Field label="Proposed">
-              <span className="run-mono">{formatTime(ar.createdAt)}</span>
+              <span className="font-mono">{formatTime(ar.createdAt)}</span>
               {workflow && (
                 <>
-                  <span className="run-sep"> · </span>
+                  <span className="text-text3/70"> · </span>
                   <span>
                     by workflow{" "}
                     <button
                       type="button"
-                      className="run-crumb-link action-inline-link"
+                      className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
                         ar.workflowRunId &&
                         router.push(`/runs/${ar.workflowRunId}`)
@@ -288,12 +324,12 @@ export default function ActionPage() {
             <Field label="Approved">
               {ar.approvedAt ? (
                 <>
-                  <span className="run-mono">{formatTime(ar.approvedAt)}</span>
-                  <span className="run-sep"> · </span>
+                  <span className="font-mono">{formatTime(ar.approvedAt)}</span>
+                  <span className="text-text3/70"> · </span>
                   {approverKind === "operator" && (
                     <span>
                       by operator{" "}
-                      <span className="run-mono">{ar.approvedByUserId}</span>
+                      <span className="font-mono">{ar.approvedByUserId}</span>
                     </span>
                   )}
                   {approverKind === "policy" && policy && (
@@ -304,50 +340,53 @@ export default function ActionPage() {
                   {approverKind === "auto" && <span>automatically</span>}
                 </>
               ) : ar.status === "rejected" ? (
-                <span className="run-empty-inline">
+                <span className="text-text3 italic">
                   Rejected
                   {ar.rejectionReason ? `: ${ar.rejectionReason}` : ""}
                 </span>
               ) : (
-                <span className="run-empty-inline">awaiting decision</span>
+                <span className="text-text3 italic">awaiting decision</span>
               )}
             </Field>
 
             <Field label="Executor">
               {latestExecution ? (
                 <>
-                  <span className="run-mono">{latestExecution.executor}</span>
-                  <span className="run-sep"> · </span>
-                  <span className={`action-status action-status-${latestExecution.status}`}>
+                  <span className="font-mono">{latestExecution.executor}</span>
+                  <span className="text-text3/70"> · </span>
+                  <span className={cn(
+                    "inline-block px-2 py-0.5 rounded-full text-[11.5px] font-semibold tracking-[0.04em] uppercase",
+                    actionStatusClasses(latestExecution.status),
+                  )}>
                     {latestExecution.status}
                   </span>
                   {latestExecution.finishedAt && (
                     <>
-                      <span className="run-sep"> · </span>
-                      <span className="run-mono">
+                      <span className="text-text3/70"> · </span>
+                      <span className="font-mono">
                         {formatTime(latestExecution.finishedAt)}
                       </span>
                     </>
                   )}
                   {latestExecution.error && (
-                    <div className="action-error">{latestExecution.error}</div>
+                    <div className="mt-1.5 px-2.5 py-2 bg-danger-soft text-danger rounded-lg font-mono text-[12.5px]">{latestExecution.error}</div>
                   )}
                 </>
               ) : (
-                <span className="run-empty-inline">not yet executed</span>
+                <span className="text-text3 italic">not yet executed</span>
               )}
             </Field>
 
             <Field label="Payload">
               <button
                 type="button"
-                className="action-payload-toggle"
+                className="bg-transparent border-0 p-0 font-inherit text-accent underline underline-offset-2 cursor-pointer"
                 onClick={() => setShowPayload((s) => !s)}
               >
                 {showPayload ? "hide" : "show"} JSON
               </button>
               {showPayload && (
-                <pre className="action-payload">
+                <pre className="mt-2 px-3.5 py-3 bg-card border border-border rounded-[10px] font-mono text-[12.5px] text-text2 whitespace-pre-wrap break-words overflow-x-auto">
                   {JSON.stringify(ar.payload, null, 2)}
                 </pre>
               )}
@@ -358,11 +397,11 @@ export default function ActionPage() {
         {(workflow || upstreamOutput) && (
           <Section title="Lineage">
             {workflow && ar.workflowRunId && (
-              <p className="action-lineage-line">
+              <p className="m-0 mb-2 text-[13.5px] text-text2 leading-[1.55]">
                 Proposed by workflow{" "}
                 <button
                   type="button"
-                  className="run-crumb-link action-inline-link"
+                  className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                   onClick={() => router.push(`/runs/${ar.workflowRunId}`)}
                 >
                   {workflow.name}
@@ -371,7 +410,7 @@ export default function ActionPage() {
               </p>
             )}
             {upstreamOutput && (
-              <p className="action-lineage-line">
+              <p className="m-0 mb-2 text-[13.5px] text-text2 leading-[1.55]">
                 Triggered by finding{" "}
                 <em>{upstreamOutput.title}</em>
                 {upstreamOutput.workflowRunId && (
@@ -379,7 +418,7 @@ export default function ActionPage() {
                     {" "}in{" "}
                     <button
                       type="button"
-                      className="run-crumb-link action-inline-link"
+                      className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
                         router.push(`/runs/${upstreamOutput.workflowRunId}`)
                       }
@@ -396,22 +435,22 @@ export default function ActionPage() {
         {isPending && (
           <Section title="Decide">
             {rejecting ? (
-              <div className="run-action-reject-box">
-                <label className="run-action-reject-label">
+              <div className="pt-3 border-t border-border mt-2.5 flex flex-col gap-2">
+                <label className="text-[11px] font-bold tracking-[0.13em] uppercase text-text3">
                   Why are you rejecting this? (optional)
                 </label>
                 <textarea
-                  className="run-action-reject-textarea"
+                  className="border border-border rounded-[10px] px-3 py-2 font-body text-[13px] text-text bg-card resize-y min-h-[50px] outline-none focus:border-accent"
                   value={rejectReason}
                   placeholder="e.g. wrong channel, retry tomorrow…"
                   onChange={(e) => setRejectReason(e.target.value)}
                   autoFocus
                   rows={2}
                 />
-                <div className="run-action-buttons">
+                <div className="flex gap-2 mt-2.5">
                   <button
                     type="button"
-                    className="run-action-btn is-destructive"
+                    className="px-3.5 py-[7px] rounded-[10px] border border-danger bg-danger text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[#c84545] hover:enabled:border-[#c84545] disabled:opacity-55 disabled:cursor-not-allowed"
                     disabled={busy}
                     onClick={() => void submitReject()}
                   >
@@ -419,7 +458,7 @@ export default function ActionPage() {
                   </button>
                   <button
                     type="button"
-                    className="run-action-btn"
+                    className="px-3.5 py-[7px] rounded-[10px] border border-border bg-card text-text font-body text-[13px] font-semibold cursor-pointer hover:enabled:border-text3 disabled:opacity-55 disabled:cursor-not-allowed"
                     disabled={busy}
                     onClick={() => {
                       setRejecting(false);
@@ -431,10 +470,10 @@ export default function ActionPage() {
                 </div>
               </div>
             ) : (
-              <div className="run-action-buttons">
+              <div className="flex gap-2 mt-2.5">
                 <button
                   type="button"
-                  className="run-action-btn is-primary"
+                  className="px-3.5 py-[7px] rounded-[10px] border border-accent bg-accent text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[#5a4cd1] hover:enabled:border-[#5a4cd1] disabled:opacity-55 disabled:cursor-not-allowed"
                   disabled={busy}
                   onClick={() => void submitDecision("approve")}
                 >
@@ -442,7 +481,7 @@ export default function ActionPage() {
                 </button>
                 <button
                   type="button"
-                  className="run-action-btn"
+                  className="px-3.5 py-[7px] rounded-[10px] border border-border bg-card text-text font-body text-[13px] font-semibold cursor-pointer hover:enabled:border-text3 disabled:opacity-55 disabled:cursor-not-allowed"
                   disabled={busy}
                   onClick={() => setRejecting(true)}
                 >
@@ -467,8 +506,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="run-section">
-      <div className="run-section-title">{title}</div>
+    <div className="mb-7">
+      <div className="text-[10.5px] font-bold tracking-[0.13em] uppercase text-text3 mb-2.5">{title}</div>
       {children}
     </div>
   );
@@ -482,9 +521,9 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="action-field">
-      <dt className="action-field-label">{label}</dt>
-      <dd className="action-field-value">{children}</dd>
+    <div className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5 items-baseline">
+      <dt className="text-[11.5px] font-bold tracking-[0.13em] uppercase text-text3 m-0">{label}</dt>
+      <dd className="m-0 text-[13.5px] text-text2 leading-[1.55]">{children}</dd>
     </div>
   );
 }

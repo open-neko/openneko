@@ -16,6 +16,7 @@ import ActCard, {
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import { cn } from "@/lib/cn";
 
 type FindingsPayload = {
   summary: {
@@ -479,33 +480,47 @@ export default function Dashboard() {
           <SectionNav current="dashboard" />
         </AppHeader>
 
-        <div className="dash-meta" style={{ marginBottom: 36 }}>
-          <div className="pills">
-            {roles.map((k) => (
-              <button key={k} className={`pill${role === k ? " on" : ""}`} onClick={() => setRole(k)}>
-                {k}
-              </button>
-            ))}
+        <div className="flex items-center gap-2.5 flex-wrap mb-9">
+          <div className="flex gap-[7px] flex-wrap">
+            {roles.map((k) => {
+              const isOn = role === k;
+              return (
+                <button
+                  key={k}
+                  onClick={() => setRole(k)}
+                  className={cn(
+                    "px-4.5 py-2.5 rounded-full border-[1.5px] font-body text-[14.5px] font-medium cursor-pointer",
+                    "transition-[color,background,border-color,transform,box-shadow] duration-200",
+                    !isOn &&
+                      "bg-white/60 border-border text-text2 hover:border-accent hover:text-accent hover:bg-accent-soft hover:-translate-y-px",
+                    isOn &&
+                      "bg-text border-text text-bg shadow-[0_2px_10px_rgba(20,18,12,0.18)] before:content-[''] before:inline-block before:w-1.5 before:h-1.5 before:rounded-full before:bg-success before:mr-2 before:align-[1px] before:shadow-[0_0_0_3px_rgba(108,255,127,0.18)]",
+                  )}
+                >
+                  {k}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {gateError ? (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)" }}>
-            <div style={{ marginBottom: 8, color: "var(--text2)" }}>
+          <div className="py-10 text-center text-text3">
+            <div className="mb-2 text-text2">
               Can&apos;t reach the database right now.
             </div>
-            <div style={{ fontSize: 13 }}>
+            <div className="text-[13px]">
               The briefing will load once the connection is back.
             </div>
             <button
               onClick={() => { setGateError(null); setGateChecked(false); setLoading(true); window.location.reload(); }}
-              style={{ marginTop: 16, padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+              className="mt-4 px-3.5 py-1.5 text-[13px] cursor-pointer"
             >
               Retry
             </button>
           </div>
         ) : loading ? (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text3)" }}>
+          <div className="py-10 text-center text-text3">
             Loading briefing...
           </div>
         ) : (
@@ -541,11 +556,11 @@ export default function Dashboard() {
 
             {findings?.summary && (
               <div
-                className="briefing-summary"
+                className="my-5 mb-7 text-base leading-[1.55] text-text max-w-[620px]"
                 style={{ animation: "fadeUp 0.5s ease 0.15s both" }}
               >
-                <p>{findings.summary.summaryMd}</p>
-                <div className="briefing-summary-when">
+                <p className="m-0">{findings.summary.summaryMd}</p>
+                <div className="mt-2 font-mono text-[11.5px] text-text3 italic">
                   as of {new Date(findings.summary.createdAt).toLocaleTimeString("en-IN", {
                     hour: "numeric",
                     minute: "2-digit",
@@ -564,7 +579,7 @@ export default function Dashboard() {
                 <div className="dash-call-eyebrow">
                   <span className="dash-call-dot" aria-hidden="true" />
                   <span className="dash-call-label">Needs your call</span>
-                  <span className="mono dash-call-count">
+                  <span className="font-mono dash-call-count">
                     {awaiting.count}
                   </span>
                   <a className="dash-call-skim" href="/actions?filter=awaiting">
@@ -581,11 +596,13 @@ export default function Dashboard() {
 
             {findings && findings.awaitingYou.actFindings.length > 0 && (
               <section
-                className="briefing-tributary"
+                className="mb-7"
                 style={{ animation: "fadeUp 0.5s ease 0.21s both" }}
               >
-                <div className="briefing-tributary-title">Worth your read</div>
-                <div className="briefing-tributary-list">
+                <div className="text-[11px] font-bold tracking-[0.13em] uppercase text-text3 mb-3">
+                  Worth your read
+                </div>
+                <div className="flex flex-col gap-3">
                   {findings.awaitingYou.actFindings.map((f, i) => (
                     <FindingCard key={f.id} data={f} index={i} />
                   ))}
@@ -595,11 +612,13 @@ export default function Dashboard() {
 
             {findings && findings.pinned.length > 0 && (
               <section
-                className="briefing-tributary"
+                className="mb-7"
                 style={{ animation: "fadeUp 0.5s ease 0.22s both" }}
               >
-                <div className="briefing-tributary-title">Pinned</div>
-                <div className="briefing-tributary-list">
+                <div className="text-[11px] font-bold tracking-[0.13em] uppercase text-text3 mb-3">
+                  Pinned
+                </div>
+                <div className="flex flex-col gap-3">
                   {findings.pinned.map((f, i) => (
                     <FindingCard
                       key={f.pinId ?? f.id}
@@ -619,11 +638,13 @@ export default function Dashboard() {
 
             {findings && findings.worthKnowing.length > 0 && (
               <section
-                className="briefing-tributary"
+                className="mb-7"
                 style={{ animation: "fadeUp 0.5s ease 0.25s both" }}
               >
-                <div className="briefing-tributary-title">Worth knowing</div>
-                <div className="briefing-tributary-list">
+                <div className="text-[11px] font-bold tracking-[0.13em] uppercase text-text3 mb-3">
+                  Worth knowing
+                </div>
+                <div className="flex flex-col gap-3">
                   {findings.worthKnowing.map((f, i) => (
                     <FindingCard key={f.id} data={f} index={i} />
                   ))}
@@ -633,7 +654,7 @@ export default function Dashboard() {
 
             {findings && findings.quiet.goodOutputs > 0 && (
               <div
-                className="briefing-quiet"
+                className="-mt-1.5 mb-7 text-[13px] text-text3 italic"
                 style={{ animation: "fadeUp 0.5s ease 0.3s both" }}
               >
                 {findings.quiet.goodOutputs} healthy run
@@ -646,22 +667,13 @@ export default function Dashboard() {
               metricsProgress.completed + metricsProgress.failed < metricsProgress.total && (
                 <div
                   role="status"
-                  style={{
-                    marginTop: 16,
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    border: "1px solid var(--border)",
-                    background: "var(--accent-soft)",
-                    color: "var(--accent)",
-                    fontSize: 13,
-                    display: "inline-block",
-                  }}
+                  className="mt-4 px-3.5 py-2.5 rounded-[10px] border border-border bg-accent-soft text-accent text-[13px] inline-block"
                 >
                   Building your briefing — {metricsProgress.completed + metricsProgress.failed} of {metricsProgress.total} cards complete
                 </div>
               )}
 
-            <div style={{ marginBottom: 24 }}>
+            <div className="mb-6">
               <div className="label">Today&apos;s Briefing</div>
               {briefingCards.map((ins, i) => (
                 <BriefingCard
@@ -681,7 +693,7 @@ export default function Dashboard() {
                 style={{ animation: "fadeUp 0.5s ease 0.35s both" }}
               >
                 <summary className="dash-proof-summary">
-                  <span className="mono dash-proof-tick" aria-hidden="true">↳</span>
+                  <span className="font-mono dash-proof-tick" aria-hidden="true">↳</span>
                   <span className="dash-proof-count">
                     {recentActions.receipts.length}
                   </span>

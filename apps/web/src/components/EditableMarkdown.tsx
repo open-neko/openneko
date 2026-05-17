@@ -124,6 +124,13 @@ export default function EditableMarkdown({
   );
 
   const handleBlur = useCallback(() => {
+    // The contentEditable session mutates children directly (innerText/insertText).
+    // React's reconciler doesn't track those nodes, so reusing the same <div> for
+    // the idle branch would leave the raw text in place behind the rendered Markdown.
+    // Clear the manual children before flipping state.
+    if (editRef.current) {
+      editRef.current.replaceChildren();
+    }
     setEditing(false);
     onCommit?.();
   }, [onCommit]);
@@ -137,7 +144,7 @@ export default function EditableMarkdown({
     return (
       <div
         ref={editRef}
-        className="pm-edit pm-edit-active"
+        className="outline-none whitespace-pre-wrap break-words text-base leading-[1.65] text-text2 caret-accent"
         contentEditable
         suppressContentEditableWarning
         role="textbox"
@@ -155,7 +162,7 @@ export default function EditableMarkdown({
   const hasContent = value.length > 0;
   return (
     <div
-      className="pm-edit pm-edit-idle"
+      className="outline-none cursor-text"
       onPointerDown={readOnly ? undefined : enterEdit}
       role={readOnly ? undefined : "textbox"}
       aria-label={ariaLabel}

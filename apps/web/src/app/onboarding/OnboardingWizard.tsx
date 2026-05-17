@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
+import { Button } from "@/components/ui/Button";
+
+const INPUT_CLS =
+  "px-[13px] py-[11px] sm:px-3.5 sm:py-[13px] rounded-xl border-[1.5px] border-border bg-bg text-text text-base sm:text-[15px] font-body outline-none transition-all duration-200 focus:border-accent focus:shadow-[0_0_0_3px_rgba(107,92,231,0.08)]";
+const LABEL_CLS = "text-[14px] font-semibold text-text";
 
 const ALL_SEATS = ["CEO", "CFO", "CRO", "COO", "CIO", "CPO"] as const;
 const MONTHS = [
@@ -116,7 +121,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
       <div style={{ display: "flex", flexDirection: "column", gap: 28, marginTop: 36 }}>
         <Field label="What's your company called?">
           <input
-            className="settings-input"
+            className={INPUT_CLS}
             type="text"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
@@ -128,7 +133,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
 
         <Field label="In 2–3 sentences, what does your company do, who do you sell to, and what matters most this quarter?">
           <textarea
-            className="settings-input"
+            className={INPUT_CLS}
             value={companyNote}
             onChange={(e) => setCompanyNote(e.target.value)}
             rows={4}
@@ -163,7 +168,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
 
         <Field label="Anything specific on your mind this quarter? (optional, one per line)">
           <textarea
-            className="settings-input"
+            className={INPUT_CLS}
             value={prioritiesText}
             onChange={(e) => setPrioritiesText(e.target.value)}
             rows={3}
@@ -174,15 +179,14 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
 
         {error && <div style={{ color: "#c33" }}>{error}</div>}
 
-        <button
-          type="button"
+        <Button
+          variant="primary"
           disabled={!canSubmit}
           onClick={submit}
-          className="pill on"
-          style={{ alignSelf: "flex-start", padding: "14px 28px", fontSize: 16, opacity: canSubmit ? 1 : 0.5 }}
+          className="self-start px-7 py-3.5 text-base"
         >
           {submitting ? "Setting up…" : "Build my briefing"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -191,7 +195,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span className="settings-label">{label}</span>
+      <span className={LABEL_CLS}>{label}</span>
       {children}
     </label>
   );

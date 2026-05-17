@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import Select from "@/components/Select";
+import { Button } from "@/components/ui/Button";
+
+const INPUT_CLS =
+  "px-[13px] py-[11px] sm:px-3.5 sm:py-[13px] rounded-xl border-[1.5px] border-border bg-bg text-text text-base sm:text-[15px] font-body outline-none transition-all duration-200 focus:border-accent focus:shadow-[0_0_0_3px_rgba(107,92,231,0.08)]";
 
 type ProviderOption = { value: string; label: string; description: string };
 type Field = {
@@ -426,7 +430,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
         >
           <Field label="New password (min 8 chars)">
             <input
-              className="settings-input"
+              className={INPUT_CLS}
               type="password"
               value={newPassword}
               autoComplete="new-password"
@@ -435,22 +439,21 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
           </Field>
           <Field label="Confirm password">
             <input
-              className="settings-input"
+              className={INPUT_CLS}
               type="password"
               value={confirmPassword}
               autoComplete="new-password"
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
             {confirmPassword.length > 0 && confirmPassword !== newPassword && (
-              <span className="settings-help" style={{ color: "#c33" }}>
+              <span className="text-[13px] text-[#c33] leading-[1.45]">
                 Passwords don&apos;t match.
               </span>
             )}
           </Field>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className="pill on"
+          <div className="flex justify-end gap-2.5 mt-5 max-[720px]:flex-col max-[720px]:items-stretch [&>button]:max-[720px]:w-full">
+            <Button
+              variant="primary"
               onClick={savePasswordAndAdvance}
               disabled={
                 savingPassword ||
@@ -459,7 +462,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               }
             >
               {savingPassword ? "Saving…" : "Continue"}
-            </button>
+            </Button>
           </div>
         </Step>
       )}
@@ -471,7 +474,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
         >
           <Field label="GraphJin URL *">
             <input
-              className="settings-input"
+              className={INPUT_CLS}
               value={data.rootUrl}
               placeholder="http://localhost:8080"
               onChange={(e) => {
@@ -479,36 +482,33 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
                 setData((p) => ({ ...p, rootUrl: e.target.value }));
               }}
             />
-            <span className="settings-help">
+            <span className="text-[13px] text-text3 leading-[1.45]">
               Just the base URL — OpenNeko handles the GraphQL and MCP endpoints automatically.
             </span>
           </Field>
           <Field label="Label">
             <input
-              className="settings-input"
+              className={INPUT_CLS}
               value={data.label}
               placeholder="primary"
               onChange={(e) => setData((p) => ({ ...p, label: e.target.value }))}
             />
           </Field>
           <InlineError message={dataError} />
-          <div className="settings-actions">
-            <button
-              type="button"
-              className="pill"
+          <div className="flex justify-end gap-2.5 mt-5 max-[720px]:flex-col max-[720px]:items-stretch [&>button]:max-[720px]:w-full">
+            <Button
               onClick={testData}
               disabled={testingData || !data.rootUrl.trim()}
             >
               {testingData ? "Testing…" : "Test connection"}
-            </button>
-            <button
-              type="button"
-              className="pill on"
+            </Button>
+            <Button
+              variant="primary"
               onClick={saveDataAndAdvance}
               disabled={savingData || !data.rootUrl.trim()}
             >
               {savingData ? "Saving…" : "Continue"}
-            </button>
+            </Button>
           </div>
         </Step>
       )}
@@ -525,7 +525,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               options={initial.agent.options}
               ariaLabel="Agent backend"
             />
-            <span className="settings-help">
+            <span className="text-[13px] text-text3 leading-[1.45]">
               {initial.agent.options.find((o) => o.value === backend)?.description}
             </span>
           </Field>
@@ -540,12 +540,12 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
                 ariaLabel="Primary provider"
               />
               {backend === "claude-agent" && (
-                <span className="settings-help">Locked because Agent backend = Claude Agent.</span>
+                <span className="text-[13px] text-text3 leading-[1.45]">Locked because Agent backend = Claude Agent.</span>
               )}
             </Field>
             <Field label="Model">
               <input
-                className="settings-input"
+                className={INPUT_CLS}
                 value={primary.model}
                 onChange={(e) => setPrimary((p) => ({ ...p, model: e.target.value }))}
               />
@@ -573,32 +573,31 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
           <Field label="Concurrent jobs">
             <input
-              className="settings-input"
+              className={INPUT_CLS}
               type="number"
               min={1}
               max={1000}
               value={concurrentJobs}
               onChange={(e) => setConcurrentJobs(e.target.value)}
             />
-            <span className="settings-help">
+            <span className="text-[13px] text-text3 leading-[1.45]">
               How many metric jobs the worker runs in parallel. Worker restart applies changes.
             </span>
           </Field>
 
           <InlineError message={primaryError} />
 
-          <div className="settings-actions">
-            <button type="button" className="pill" onClick={() => setStep(step - 1)} disabled={savingPrimary}>
+          <div className="flex justify-end gap-2.5 mt-5 max-[720px]:flex-col max-[720px]:items-stretch [&>button]:max-[720px]:w-full">
+            <Button onClick={() => setStep(step - 1)} disabled={savingPrimary}>
               Back
-            </button>
-            <button
-              type="button"
-              className="pill on"
+            </Button>
+            <Button
+              variant="primary"
               onClick={savePrimaryAndAdvance}
               disabled={savingPrimary}
             >
               {savingPrimary ? "Validating & saving…" : "Continue"}
-            </button>
+            </Button>
           </div>
         </Step>
       )}
@@ -608,7 +607,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
           title="Research (optional)"
           description="Lets the system pull industry context from Perplexity once your business team submits the onboarding profile. Leave the toggle off to set this up later."
         >
-          <label className="settings-toggle">
+          <label className="inline-flex items-center gap-2.5 mt-[18px] text-text2 text-[15px]">
             <input
               type="checkbox"
               checked={researchEnabled}
@@ -639,7 +638,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
                 </Field>
                 <Field label="Model">
                   <input
-                    className="settings-input"
+                    className={INPUT_CLS}
                     value={research.model}
                     onChange={(e) => setResearch((p) => ({ ...p, model: e.target.value }))}
                   />
@@ -675,18 +674,17 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
           <InlineError message={researchError} />
 
-          <div className="settings-actions">
-            <button type="button" className="pill" onClick={() => setStep(step - 1)} disabled={finishing || savingResearch}>
+          <div className="flex justify-end gap-2.5 mt-5 max-[720px]:flex-col max-[720px]:items-stretch [&>button]:max-[720px]:w-full">
+            <Button onClick={() => setStep(step - 1)} disabled={finishing || savingResearch}>
               Back
-            </button>
-            <button
-              type="button"
-              className="pill on"
+            </Button>
+            <Button
+              variant="primary"
               onClick={() => finish(!researchEnabled)}
               disabled={finishing || savingResearch}
             >
               {finishing || savingResearch ? "Saving…" : "Finish setup"}
-            </button>
+            </Button>
           </div>
         </Step>
       )}
@@ -733,15 +731,15 @@ function Step({
           <p className="settings-card-copy">{description}</p>
         </div>
       </div>
-      <div className="settings-field-stack">{children}</div>
+      <div className="grid gap-4 mt-4">{children}</div>
     </section>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="settings-field">
-      <span className="settings-label">{label}</span>
+    <label className="flex flex-col gap-2">
+      <span className="text-[14px] font-semibold text-text">{label}</span>
       {children}
     </label>
   );
@@ -750,7 +748,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function InlineError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div role="alert" className="settings-error">
+    <div
+      role="alert"
+      className="rounded-2xl px-4 py-3.5 mt-3.5 text-[14px] leading-[1.5] bg-[#fff0ee] border border-[#f2c9c3] text-[#9a4035]"
+    >
       {message}
     </div>
   );
@@ -766,19 +767,19 @@ function ProviderFieldInput({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="settings-field">
-      <span className="settings-label">
+    <label className="flex flex-col gap-2">
+      <span className="text-[14px] font-semibold text-text">
         {field.label}
         {field.required ? " *" : ""}
       </span>
       <input
-        className="settings-input"
+        className={INPUT_CLS}
         type={field.kind === "secret" ? "password" : "text"}
         value={value}
         placeholder={field.placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
-      {field.help && <span className="settings-help">{field.help}</span>}
+      {field.help && <span className="text-[13px] text-text3 leading-[1.45]">{field.help}</span>}
     </label>
   );
 }

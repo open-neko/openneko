@@ -102,13 +102,13 @@ export default async function SettingsPage() {
         <SectionNav current="settings" />
       </AppHeader>
       <div className="greet">Workspace settings.</div>
-      <div className="greet-sub" style={{ marginBottom: 24 }}>
+      <div className="greet-sub mb-6">
         Operator-side configuration. The business onboarding lives at /onboarding.
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
+      <div className="flex flex-col gap-4 mt-6">
         {cards.map((card) => (
-          <Link key={card.href} href={card.href} className="settings-card" style={{ textDecoration: "none" }}>
+          <Link key={card.href} href={card.href} className="settings-card block no-underline">
             <div className="settings-card-head">
               <div>
                 <h2 className="settings-card-title">{card.title}</h2>

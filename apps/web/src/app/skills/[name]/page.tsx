@@ -49,9 +49,9 @@ export default function SkillDetailPage({ params }: PageProps) {
       <>
         <div className="root">
           <AppHeader back={{ href: "/skills", label: "All skills" }} />
-          <div className="library-empty">
+          <div className="bg-card border border-dashed border-border rounded-2xl px-[22px] py-5 text-[13.5px] leading-[1.55] text-text3">
             Skill not found.{" "}
-            <Link href="/skills" className="library-link">
+            <Link href="/skills" className="text-accent no-underline hover:underline">
               Back to skills
             </Link>
             .
@@ -67,7 +67,7 @@ export default function SkillDetailPage({ params }: PageProps) {
       <>
         <div className="root">
           <AppHeader back={{ href: "/skills", label: "All skills" }} />
-          <div className="library-empty">Loading…</div>
+          <div className="bg-card border border-dashed border-border rounded-2xl px-[22px] py-5 text-[13.5px] leading-[1.55] text-text3">Loading…</div>
         </div>
         <CreatorCredit />
       </>
@@ -79,40 +79,43 @@ export default function SkillDetailPage({ params }: PageProps) {
       <div className="root">
         <AppHeader back={{ href: "/skills", label: "All skills" }} />
 
-        <div className="library-head">
-          <div className="library-head-icon">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-9 h-9 rounded-xl bg-accent-soft text-accent inline-flex items-center justify-center shrink-0">
             <Sparkles size={16} strokeWidth={2} />
           </div>
           <div>
-            <div className="library-title">{skill.name}</div>
+            <div className="font-display text-2xl font-bold leading-[1.1] text-text">{skill.name}</div>
             {skill.description ? (
-              <div className="library-sub">{skill.description}</div>
+              <div className="text-[13px] text-text3 mt-0.5">{skill.description}</div>
             ) : null}
           </div>
         </div>
 
-        <section className="library-section">
-          <div className="library-section-title">Location</div>
-          <div className="library-mono">{skill.path}</div>
+        <section className="mt-7">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-text3 mb-2.5">Location</div>
+          <div className="font-mono text-xs text-text2 bg-card border border-border rounded-xl px-3 py-2.5 break-all">{skill.path}</div>
         </section>
 
-        <section className="library-section">
-          <div className="library-section-title">Files</div>
-          <div className="library-files">
+        <section className="mt-7">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-text3 mb-2.5">Files</div>
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
             {skill.files.map((file) => (
-              <div key={file.path} className="library-file-row">
-                <span className="library-file-name">
-                  <FileText size={12} strokeWidth={2} />
-                  <span>{file.path}</span>
+              <div
+                key={file.path}
+                className="flex items-center justify-between gap-3 px-3 py-2 text-[12.5px] border-t border-border first:border-t-0"
+              >
+                <span className="inline-flex items-center gap-2 text-text font-mono text-xs min-w-0">
+                  <FileText size={12} strokeWidth={2} className="text-text3 shrink-0" />
+                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">{file.path}</span>
                 </span>
-                <span className="library-file-size">{file.bytes.toLocaleString()} B</span>
+                <span className="font-mono text-[11.5px] text-text3 tabular-nums shrink-0">{file.bytes.toLocaleString()} B</span>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="library-section">
-          <div className="library-section-title">SKILL.md</div>
+        <section className="mt-7">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-text3 mb-2.5">SKILL.md</div>
           <div className="library-markdown">
             <ReactMarkdown>{stripFrontmatter(skill.skillMarkdown)}</ReactMarkdown>
           </div>

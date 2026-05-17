@@ -14,17 +14,6 @@
   border: 1px solid var(--border);
   border-radius: 22px;
   box-shadow: var(--shadow);
-}
-/* The transcript panel sits directly on the page background — matches the
-   Dashboard's "card on page" feel and avoids the card-on-card-on-card stack
-   that competes with the cards inside the conversation. */
-.work-panel {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  border-radius: 0;
-}
-.work-sidebar {
   position: sticky;
   top: 24px;
   padding: 14px 12px 12px;
@@ -33,8 +22,7 @@
   gap: 10px;
   max-height: calc(100vh - 48px);
 }
-.work-sidebar-head,
-.work-panel-head {
+.work-sidebar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -225,64 +213,9 @@
   border-radius: 999px;
   line-height: 1.5;
 }
-.work-panel {
-  padding: 0;
-  min-height: 72vh;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.work-transcript {
-  flex: 1;
-  min-height: 460px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  padding-top: 8px;
-  /* Floor matches the composer + dock padding so the last message never
-     hides under the sticky composer. The body's own bottom padding (130px
-     on .root) keeps a comfortable scroll-end too. */
-  padding-bottom: 24px;
-}
-/* "Deep dive" briefing card pinned at the top of a thread that was opened
-   from the dashboard. Uses the same BriefingCard chrome but is preceded by
-   an editorial small-caps eyebrow tying it to its source. */
-.work-seed-context {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.work-seed-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-display), 'Archivo', sans-serif;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text3);
-}
-.work-seed-eyebrow-rule {
-  width: 24px;
-  height: 1px;
-  background: var(--border);
-}
-.work-turn {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .work-bubble-row {
   display: flex;
   justify-content: flex-start;
-}
-.work-rule-event-row {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 6px;
-  text-align: left;
 }
 .work-bubble-row.is-user {
   justify-content: flex-end;
@@ -478,14 +411,6 @@
 }
 .user-copy {
   white-space: pre-wrap;
-}
-.work-activity,
-.work-timeline,
-.work-surface-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
 }
 .work-status-row {
   display: flex;
@@ -727,52 +652,4 @@
   border-radius: 18px;
   padding: 14px 18px;
   box-shadow: var(--shadow);
-}
-.work-memory-prompt {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.82);
-  border-radius: 16px;
-  padding: 10px 12px;
-  box-shadow: var(--shadow);
-}
-.work-memory-prompt-copy {
-  min-width: 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--text2);
-}
-.work-memory-prompt-count {
-  margin-top: 4px;
-  color: var(--text3);
-  font-size: 11px;
-}
-.work-memory-prompt-actions {
-  display: inline-flex;
-  gap: 7px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  flex-shrink: 0;
-}
-.work-memory-prompt-actions button {
-  height: 30px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 9px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.work-memory-prompt-actions button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
 }

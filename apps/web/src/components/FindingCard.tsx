@@ -4,6 +4,9 @@
 // Distinct from the existing BriefingCard which is heavy/KPI-shaped.
 
 import { useRouter } from "next/navigation";
+import { Card } from "@/components/ui/Card";
+import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { cn } from "@/lib/cn";
 
 export type FindingCardData = {
   id: string;
@@ -34,6 +37,26 @@ function formatRelative(iso: string): string {
   });
 }
 
+function moodVariant(mood?: string | null): PillVariant {
+  switch (mood) {
+    case "good": return "success";
+    case "watch": return "watch";
+    case "act": return "danger";
+    default: return "muted";
+  }
+}
+
+function riskVariant(risk?: string | null): PillVariant {
+  switch (risk) {
+    case "low": return "muted";
+    case "medium": return "watch";
+    case "high":
+    case "critical":
+      return "danger";
+    default: return "muted";
+  }
+}
+
 export default function FindingCard({
   data,
   index,
@@ -48,9 +71,9 @@ export default function FindingCard({
   const pillLabel = isApproval
     ? data.riskLevel ?? "pending"
     : data.mood ?? "watch";
-  const pillClass = isApproval
-    ? `finding-card-pill finding-card-pill-risk-${data.riskLevel ?? "unknown"}`
-    : `finding-card-pill finding-card-pill-mood-${data.mood ?? "watch"}`;
+  const pillVariant = isApproval
+    ? riskVariant(data.riskLevel)
+    : moodVariant(data.mood);
 
   const onDrillIn = () => {
     if (isApproval) {
@@ -61,8 +84,13 @@ export default function FindingCard({
   };
 
   return (
-    <article
-      className="finding-card"
+    <Card
+      as="article"
+      className={cn(
+        "group px-5 py-4 cursor-pointer transition-[border-color,transform] duration-200",
+        "hover:border-text3 hover:-translate-y-px",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+      )}
       style={{ animation: `fadeUp 0.4s ease ${index * 0.04}s both` }}
       onClick={onDrillIn}
       role="button"
@@ -74,30 +102,36 @@ export default function FindingCard({
         }
       }}
     >
-      <div className="finding-card-head">
-        <h3 className="finding-card-title">{data.title}</h3>
-        <span className={pillClass}>{pillLabel}</span>
+      <div className="flex items-start justify-between gap-3 mb-1.5">
+        <h3 className="font-display text-[17px] font-bold tracking-[-0.01em] text-text leading-snug m-0">
+          {data.title}
+        </h3>
+        <Pill variant={pillVariant} className="flex-shrink-0">
+          {pillLabel}
+        </Pill>
       </div>
 
-      {data.body && <p className="finding-card-body">{data.body}</p>}
+      {data.body && (
+        <p className="m-0 mb-2.5 text-sm leading-[1.55] text-text">{data.body}</p>
+      )}
 
       {isApproval && data.target && (
-        <div className="finding-card-target">
-          <span className="finding-card-mono">{data.target}</span>
+        <div className="mb-2">
+          <span className="font-mono text-xs text-text2">{data.target}</span>
         </div>
       )}
 
-      <div className="finding-card-byline">
+      <div className="flex items-center gap-1.5 text-xs text-text3 flex-wrap">
         <span>
           from{" "}
-          <span className="finding-card-workflow">{data.workflow.name}</span>
+          <span className="text-text2 font-medium">{data.workflow.name}</span>
         </span>
-        <span className="finding-card-sep">·</span>
-        <span className="finding-card-mono">{formatRelative(data.createdAt)}</span>
+        <span className="opacity-50">·</span>
+        <span className="font-mono text-xs text-text2">{formatRelative(data.createdAt)}</span>
         {data.pinId && onUnpin && (
           <button
             type="button"
-            className="finding-card-unpin"
+            className="bg-transparent border-0 text-text3 font-[inherit] text-[11.5px] p-0 cursor-pointer hover:text-danger hover:underline underline-offset-2"
             onClick={(e) => {
               e.stopPropagation();
               onUnpin(data.pinId as string);
@@ -107,10 +141,10 @@ export default function FindingCard({
             unpin
           </button>
         )}
-        <span className="finding-card-drill">
+        <span className="ml-auto text-xs text-accent group-hover:underline underline-offset-2">
           {isApproval ? "open approvals →" : "drill in →"}
         </span>
       </div>
-    </article>
+    </Card>
   );
 }
