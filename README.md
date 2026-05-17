@@ -24,7 +24,7 @@ Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its o
 
 OpenNeko can be extended with sandboxed plugins that add new action kinds (e.g. web search via Parallel.ai). Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time — neither the plugin nor the agent can reach anything else.
 
-Install from the curated registry:
+Install from the official marketplace:
 
 ```bash
 npm install -g @open-neko/cli
@@ -32,7 +32,18 @@ openneko init
 openneko install @open-neko/plugin-parallel-search
 ```
 
-Browse the registry at [open-neko.github.io/registry](https://open-neko.github.io/registry/). Run `openneko doctor` to check that your host can run microsandbox.
+Browse it at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). Run `openneko doctor` to check that your host can run microsandbox.
+
+### Federated marketplaces
+
+The official marketplace ships only first-party `@open-neko/*` plugins that the OpenNeko team writes and supports. Anyone else can publish their own `marketplace.json` at any stable URL and operators trust it explicitly:
+
+```bash
+openneko marketplace add https://example.com/marketplace.json
+openneko install @example/openneko-plugin-foo
+```
+
+OpenNeko makes no representation about non-official marketplaces — that trust is between the operator and the publisher. The sandbox enforces capability declarations regardless of where a plugin came from. See [open-neko/plugins/CONTRIBUTING.md](https://github.com/open-neko/plugins/blob/main/CONTRIBUTING.md) for the marketplace publish guide.
 
 ### Host support
 

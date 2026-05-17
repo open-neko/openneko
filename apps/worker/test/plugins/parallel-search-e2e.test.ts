@@ -13,7 +13,7 @@ const PARALLEL_BUNDLE_PATH = path.resolve(
 );
 
 const SAMPLE_MANIFEST: PluginManifest = {
-  schema: "https://open-neko.github.io/registry/manifest.schema.json",
+  schema: "https://open-neko.github.io/plugins/manifest.schema.json",
   plugins: [
     {
       name: "@open-neko/plugin-parallel-search",

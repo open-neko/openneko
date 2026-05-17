@@ -72,7 +72,7 @@ class FakeRuntime implements PluginRuntime {
 const FAKE_INTEGRITY = "sha512-" + "a".repeat(86) + "==";
 
 const SAMPLE_MANIFEST: PluginManifest = {
-  schema: "https://open-neko.github.io/registry/manifest.schema.json",
+  schema: "https://open-neko.github.io/plugins/manifest.schema.json",
   plugins: [
     {
       name: "@open-neko/plugin-parallel-search",
@@ -376,7 +376,7 @@ describe("loadPlugins", () => {
       repoRoot,
       workRoot,
       manifest: {
-        schema: "https://open-neko.github.io/registry/manifest.schema.json",
+        schema: "https://open-neko.github.io/plugins/manifest.schema.json",
         plugins: [
           {
             name: "@open-neko/plugin-offline",

@@ -136,7 +136,11 @@ Both backends expose the same `AgentEvent` stream (`message`, `tool_start/end`, 
 
 ## Plugin runtime
 
-Plugins extend the action surface (and, in a future revision, the MCP tool surface). They are installed by the operator with `openneko plugin install <name>` against the curated [registry](https://open-neko.github.io/registry/) and listed in `openneko.plugins.json` at the repo root. Each plugin lives in npm under `@open-neko/plugin-*` (first-party) or anywhere on npm (third-party). **Every plugin runs inside a microsandbox microVM** — no exceptions, no "in-process for trusted" gradient. The rationale: AI harnesses compose tool calls unpredictably, operators are not expected to audit plugin source, and OSS has no support contract — so the platform owns blast-radius containment regardless of who shipped the plugin. On hosts where microsandbox cannot run, the plugin subsystem is disabled with a clear log line; the built-in `send_webhook` adapter remains as the unsandboxed extensibility path.
+Plugins extend the action surface (and, in a future revision, the MCP tool surface). They are installed by the operator with `openneko install <name>` and listed in `openneko.plugins.json` at the repo root. Discovery is federated: the OpenNeko-shipped [official marketplace](https://open-neko.github.io/plugins/) lists only the first-party `@open-neko/plugin-*` packages the OpenNeko team writes and supports. Anyone else can publish their own `marketplace.json` at a stable URL; operators trust it explicitly with `openneko marketplace add <url>`. OpenNeko makes no representation about non-official marketplaces — that trust is between the operator and the publisher.
+
+**Every plugin runs inside a microsandbox microVM** — no exceptions, no "in-process for trusted" gradient, regardless of which marketplace it came from. The rationale: AI harnesses compose tool calls unpredictably, operators are not expected to audit plugin source, and OSS has no support contract — so the platform owns blast-radius containment for every plugin. The sandbox + the manifest's declared `requires_network` are what make federated curation defensible (compare Claude Code's marketplaces or OpenClaw's ClawHub, which run plugins unsandboxed and lean entirely on user-side trust).
+
+On hosts where microsandbox cannot run, the plugin subsystem is disabled with a clear log line; the built-in `send_webhook` adapter remains as the unsandboxed extensibility path.
 
 ```mermaid
 flowchart LR
@@ -169,7 +173,7 @@ flowchart LR
 
 **RPC contract.** Worker invokes `node /workspace/run.js <method> <json-params>` inside the VM via `microsandbox.exec()`. One process per call — the runner reads the request, dispatches, prints a single `RpcResponse` JSON object on stdout, exits. Methods: `register` (called once at boot — plugin reports its declared action kinds), `execute_action` (per approved action request). RPC schema lives in `@open-neko/plugin-types`.
 
-**Network policy from manifest.** Each plugin manifest entry declares `capabilities.network: [...]`. The loader translates this into a microsandbox network mode (empty list → `NetworkPolicy.none()`; non-empty → `NetworkPolicy.publicOnly()`) and applies it at VM creation. Per-host allowlist enforcement at the VM boundary is a v2 follow-up that depends on richer microsandbox `NetworkPolicy` modes; today the manifest declaration is the operator-visible contract surfaced on the registry Pages site.
+**Network policy from manifest.** Each plugin manifest entry declares `capabilities.network: [...]`. The loader translates this into a microsandbox network mode (empty list → `NetworkPolicy.none()`; non-empty → `NetworkPolicy.publicOnly()`) and applies it at VM creation. Per-host allowlist enforcement at the VM boundary is a v2 follow-up that depends on richer microsandbox `NetworkPolicy` modes; today the manifest declaration is the operator-visible contract surfaced on the marketplace Pages site.
 
 **Adapter integration.** When the plugin's `register()` reports an action kind, the loader builds an `ActionAdapter` that proxies `execute_action` calls through the VM RPC, and hands it to the existing `registerActionAdapter()` from `packages/llm/src/workflows/action-executor.ts`. Approved action requests continue to flow through `packages/llm/src/workflows/policy-engine.ts` exactly as built-in adapters do — the policy engine never knows or cares whether the adapter lives in-process or behind a VM.
 
@@ -240,6 +244,7 @@ Memory writes/reads are agent-driven (the agent calls explicit `memory_save` / `
 - Worker jobs: `apps/worker/src/jobs/`
 - Plugin runtime + loader: `apps/worker/src/plugins/microsandbox-runtime.ts`, `apps/worker/src/plugins/load-plugins.ts`
 - Plugin RPC schema: `@open-neko/plugin-types` ([source](https://github.com/open-neko/plugins/tree/main/packages/types))
-- Plugin registry: [github.com/open-neko/registry](https://github.com/open-neko/registry) (Pages site at [open-neko.github.io/registry](https://open-neko.github.io/registry/))
+- Plugin source + official marketplace: [github.com/open-neko/plugins](https://github.com/open-neko/plugins) (Pages site at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/))
+- Operator CLI: [github.com/open-neko/cli](https://github.com/open-neko/cli) (`openneko install`, `openneko marketplace add`)
 - GraphJin configs: `db/graphjin/neko.yml` (app DB), `db/graphjin/dev.example.yml` (data source)
 - Compose topology: `compose.yml`, `compose.adventureworks.yml`
