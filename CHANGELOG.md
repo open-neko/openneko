@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/open-neko/neko/compare/v1.4.0...v1.5.0) (2026-05-17)
+
+
+### Features
+
+* **plugins:** sandboxed plugin system + hot-reload registry + vendored CLI ([#20](https://github.com/open-neko/neko/issues/20)) ([1c41d30](https://github.com/open-neko/neko/commit/1c41d30b4e702103ccb7137b89bb7455676ffbea))
+
 ## [1.4.0](https://github.com/open-neko/neko/compare/v1.3.0...v1.4.0) (2026-05-17)
 
 
