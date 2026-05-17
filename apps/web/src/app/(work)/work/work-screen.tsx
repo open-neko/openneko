@@ -95,6 +95,11 @@ import {
   linkifyWorkspacePaths,
 } from "@/lib/linkify-workspace-paths";
 import BriefingCard from "@/components/BriefingCard";
+import {
+  RuleSavedCard,
+  extractRuleSaveEvent,
+  stripNekoFences,
+} from "@/components/RuleChatBubble";
 import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
@@ -1467,6 +1472,35 @@ function buildRunTimeline(events: WorkEvent[]): {
   return { items, lastStatus, surfaceMessages, isDone };
 }
 
+function FenceAwareBubble({
+  keyPrefix,
+  raw,
+}: {
+  keyPrefix: string;
+  raw: string;
+}) {
+  const text = stripNekoFences(raw);
+  const ruleEvent = extractRuleSaveEvent(raw);
+  return (
+    <>
+      {text ? (
+        <div key={`${keyPrefix}-text`} className="work-bubble-row">
+          <div className="work-bubble">
+            <div className="work-markdown">
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(text)}</ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {ruleEvent ? (
+        <div key={`${keyPrefix}-rule`} className="work-rule-event-row">
+          <RuleSavedCard payload={ruleEvent} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function RunTimeline({
   run,
   events,
@@ -1488,25 +1522,17 @@ function RunTimeline({
   return (
     <div className="work-timeline">
       {!hasContent && !pending && fallbackContent.trim() ? (
-        <div className="work-bubble-row">
-          <div className="work-bubble">
-            <div className="work-markdown">
-              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(fallbackContent)}</ReactMarkdown>
-            </div>
-          </div>
-        </div>
+        <FenceAwareBubble keyPrefix="fallback" raw={fallbackContent} />
       ) : null}
 
       {items.map((item, index) => {
         if (item.kind === "text") {
           return (
-            <div key={`text-${index}`} className="work-bubble-row">
-              <div className="work-bubble">
-                <div className="work-markdown">
-                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{linkifyWorkspacePaths(item.content)}</ReactMarkdown>
-                </div>
-              </div>
-            </div>
+            <FenceAwareBubble
+              key={`text-${index}`}
+              keyPrefix={`text-${index}`}
+              raw={item.content}
+            />
           );
         }
         if (item.kind === "tools") {

@@ -278,6 +278,12 @@
   display: flex;
   justify-content: flex-start;
 }
+.work-rule-event-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 6px;
+  text-align: left;
+}
 .work-bubble-row.is-user {
   justify-content: flex-end;
   flex-direction: column;
