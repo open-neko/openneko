@@ -128,6 +128,62 @@ http://graphjin:8080
 
 OpenNeko appends the GraphQL and MCP endpoint paths automatically.
 
+## Plugins
+
+OpenNeko can be extended with sandboxed plugins that add new action kinds (web search, Slack messaging, etc.). Each plugin is pulled from npm, integrity-checked against a marketplace pin, and run inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time.
+
+### Host support
+
+Plugins run inside a microVM with hardware-virtualization acceleration. The Docker install path supports plugins **only on Linux hosts with `/dev/kvm`**:
+
+```bash
+docker compose -f compose.yml -f compose.plugins.yml up -d --build
+```
+
+The overlay passes `/dev/kvm` into the worker container. If your kernel doesn't expose KVM, Docker Compose refuses to start — that's the correct failure mode (a worker without KVM can't run plugins).
+
+**macOS:** Docker Desktop's Linux VM hides KVM from containers, so plugins do not work under Docker on macOS. macOS operators run the worker directly on the host with `pnpm dev` (see Developer Setup); microsandbox then uses macOS Hypervisor.framework.
+
+**Windows:** unsupported for plugins. Use Linux or macOS.
+
+### Installing a plugin
+
+Inside the running worker container the `openneko` CLI is on `PATH`. From your host:
+
+```bash
+docker compose exec worker openneko init
+docker compose exec worker openneko install @open-neko/plugin-parallel-search
+```
+
+You can also let the agent drive these via its Bash tool — `openneko install/list/remove/secrets/marketplace` are documented in `openneko --help`.
+
+If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to a per-user secrets file at `/config/openneko/secrets.json` (mode 0600). Secrets never enter the tracked plugin manifest and never enter `action_request.payload`.
+
+### Where state lives
+
+- `/config/openneko/plugins.json` (on the `openneko-config` volume) — installed-plugin manifest. The worker watches this file and hot-loads plugins on the next action_request; no restart needed.
+- `/config/openneko/secrets.json` — per-deployment plugin secrets, 0600.
+
+Override the manifest path with the `OPENNEKO_PLUGINS_MANIFEST_PATH` env var if you want it somewhere else.
+
+### Adding a third-party marketplace
+
+The official `@open-neko/*` plugins ship from `https://open-neko.github.io/plugins/`. To trust an additional publisher:
+
+```bash
+docker compose exec worker openneko marketplace add https://example.com/marketplace.json
+```
+
+OpenNeko makes no representation about the safety of non-official marketplaces — that trust is between you and the publisher.
+
+### Checking plugin health
+
+```bash
+docker compose exec worker openneko doctor
+```
+
+Reports host capability (KVM/Hypervisor.framework detected), manifest path + plugin count, and whether the runtime is available.
+
 ## Update
 
 Pull the latest code and rebuild:

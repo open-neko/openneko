@@ -36,6 +36,7 @@ import {
 import {
   allSecretValues,
   defaultSecretsPath,
+  manifestPathFor,
   readSecretsStoreSoft,
   type SecretsStore,
 } from "@open-neko/plugin-install";
@@ -230,7 +231,7 @@ export class PluginRegistry {
   }
 
   private installWatchers(): void {
-    const manifestPath = path.join(this.options.repoRoot, "openneko.plugins.json");
+    const manifestPath = manifestPathFor(this.options.repoRoot);
     try {
       // fs.watch on the manifest file directly. macOS sometimes drops
       // the watcher when the file is replaced (atomic rename); the
@@ -423,7 +424,7 @@ export class PluginRegistry {
 async function readManifestFromDisk(
   repoRoot: string,
 ): Promise<PluginManifest | null> {
-  const manifestPath = path.join(repoRoot, "openneko.plugins.json");
+  const manifestPath = manifestPathFor(repoRoot);
   let raw: string;
   try {
     raw = await readFile(manifestPath, "utf8");
@@ -435,7 +436,7 @@ async function readManifestFromDisk(
     return PluginManifest.parse(JSON.parse(raw));
   } catch (err) {
     console.warn(
-      `[plugin-registry] openneko.plugins.json is malformed; treating as empty: ${err instanceof Error ? err.message : err}`,
+      `[plugin-registry] ${manifestPath} is malformed; treating as empty: ${err instanceof Error ? err.message : err}`,
     );
     return null;
   }

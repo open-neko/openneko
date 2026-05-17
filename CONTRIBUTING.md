@@ -20,10 +20,13 @@ Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services 
 ```text
 apps/
   web/                 Next.js UI and API routes
-  worker/              Background job runner
+  worker/              Background job runner, plugin registry, microsandbox runtime
+  openneko-cli/        `openneko` CLI (plugin install/list/remove/secrets/marketplace)
 packages/
   db/                  Drizzle ORM client, schema, migrations, job queue
   llm/                 Providers, agents, classifier, GraphJin work support
+  plugin-install/      Manifest, secrets store, marketplace client, install orchestrator
+  plugin-types/        Plugin RPC schemas (zod) + manifest types — shared with plugin authors
 db/
   migrations/          Metadata database migrations
   graphjin/            Sample GraphJin config

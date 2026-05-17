@@ -27,7 +27,9 @@ export {
 
 export {
   emptyManifest,
+  manifestPathFor,
   PLUGIN_MANIFEST_FILE,
+  PLUGIN_MANIFEST_PATH_ENV,
   PLUGIN_MANIFEST_SCHEMA_URL,
   readManifest,
   removeEntry,

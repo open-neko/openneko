@@ -110,6 +110,13 @@ services:
     environment:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      # Plugin manifest + per-user secrets live on the openneko-config
+      # volume, not under /app (which is read-only-ish post-build). The
+      # vendored `openneko` CLI on PATH writes to these same paths, so
+      # `openneko install …` from inside the worker hot-loads on the
+      # next action_request without a rebuild. Default config dir is
+      # /config so secrets land at /config/openneko/secrets.json.
+      OPENNEKO_PLUGINS_MANIFEST_PATH: /config/openneko/plugins.json
     expose:
       - "4100"
     volumes:

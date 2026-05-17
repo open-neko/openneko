@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
-import path from "node:path";
-import { PLUGIN_MANIFEST_FILE, readManifest } from "@open-neko/plugin-install";
+import { manifestPathFor, readManifest } from "@open-neko/plugin-install";
 import { checkHost, type HostCheckResult } from "../host-check.js";
 
 export interface DoctorReport {
@@ -15,7 +14,7 @@ export interface DoctorReport {
 export async function runDoctor(options: {
   repoRoot: string;
 }): Promise<DoctorReport> {
-  const manifestPath = path.join(options.repoRoot, PLUGIN_MANIFEST_FILE);
+  const manifestPath = manifestPathFor(options.repoRoot);
   const present = existsSync(manifestPath);
   let pluginCount = 0;
   if (present) {

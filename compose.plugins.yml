@@ -1,0 +1,23 @@
+# Linux + KVM overlay for the sandboxed plugin runtime.
+#
+# Plugins run inside microsandbox microVMs, which use libkrun under the
+# hood. libkrun needs `/dev/kvm` from the host kernel — Docker Desktop
+# on macOS does NOT expose this (its Linux VM hides it from
+# containers), so this overlay only helps Linux operators running a
+# real KVM-capable kernel. macOS operators run the OpenNeko worker
+# directly on the host (see INSTALL.md → Plugins) and let microsandbox
+# use the macOS arm64 Hypervisor.framework path instead.
+#
+# Usage (Linux only):
+#
+#   docker compose -f compose.yml -f compose.plugins.yml up -d --build
+#
+# If `/dev/kvm` does not exist on the host (no virtualization support,
+# or a non-Linux host), `docker compose` will refuse to start — that's
+# the correct failure mode; we'd rather fail loud than silently boot a
+# worker that can't run plugins.
+
+services:
+  worker:
+    devices:
+      - "/dev/kvm:/dev/kvm"

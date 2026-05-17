@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
-import path from "node:path";
 import {
   emptyManifest,
-  PLUGIN_MANIFEST_FILE,
+  manifestPathFor,
   writeManifest,
 } from "@open-neko/plugin-install";
 
@@ -13,7 +12,7 @@ export interface InitOptions {
 export async function runInit(
   options: InitOptions,
 ): Promise<{ created: boolean; path: string }> {
-  const file = path.join(options.repoRoot, PLUGIN_MANIFEST_FILE);
+  const file = manifestPathFor(options.repoRoot);
   if (existsSync(file)) {
     return { created: false, path: file };
   }
