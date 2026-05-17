@@ -45,6 +45,16 @@ openneko install @example/openneko-plugin-foo
 
 OpenNeko makes no representation about non-official marketplaces — that trust is between the operator and the publisher. The sandbox enforces capability declarations regardless of where a plugin came from. See [open-neko/plugins/CONTRIBUTING.md](https://github.com/open-neko/plugins/blob/main/CONTRIBUTING.md) for the marketplace publish guide.
 
+### Bypass every marketplace (`--unverified`)
+
+To install a plugin directly from npm without going through any marketplace (plugin authoring, or an emergency hotfix before a marketplace entry exists):
+
+```bash
+openneko install <npm-package-name> --unverified
+```
+
+The CLI prints a loud warning. The integrity hash is taken on trust from npm rather than verified against a marketplace listing; everything else (sandboxing, manifest capability enforcement) still applies.
+
 ### Host support
 
 | Host | Plugin system |
