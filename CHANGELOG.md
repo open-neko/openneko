@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/open-neko/neko/compare/v1.2.0...v1.3.0) (2026-05-17)
+
+
+### Features
+
+* **ui:** grouped Auto-response cards, three-act dashboard, rule-save chips ([29964fe](https://github.com/open-neko/neko/commit/29964fec3d087ed902938ae8bfa9faa46dbd08ac))
+* **ui:** make rule/workflow/action event chips clickable ([4e4a6ef](https://github.com/open-neko/neko/commit/4e4a6ef96abcba249ee4444e3092ab56c7a1d3f2))
+* **ui:** WorkflowSavedCard + ActionRequestCard chips for chat fences ([50501fe](https://github.com/open-neko/neko/commit/50501fe8c9408ae224da8e5863730aa8fd009cc9))
+
+
+### Bug Fixes
+
+* **work:** strip neko_policy_save fence + show RuleSavedCard in /work ([6d9a0a4](https://github.com/open-neko/neko/commit/6d9a0a4c58ca1c1ef40b6740ece04f2b82d38a05))
+
 ## [1.2.0](https://github.com/open-neko/neko/compare/v1.1.0...v1.2.0) (2026-05-15)
 
 
