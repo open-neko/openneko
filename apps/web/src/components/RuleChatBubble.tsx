@@ -78,7 +78,32 @@ function modeLabel(mode: PolicySavePayload["mode"]): string {
   return mode;
 }
 
-export function RuleSavedCard({ payload }: { payload: PolicySavePayload }) {
+function EventShell({
+  href,
+  className,
+  children,
+}: {
+  href?: string;
+  className: string;
+  children: React.ReactNode;
+}) {
+  if (href) {
+    return (
+      <a className={`${className} rule-event-link`} href={href}>
+        {children}
+      </a>
+    );
+  }
+  return <article className={className}>{children}</article>;
+}
+
+export function RuleSavedCard({
+  payload,
+  href,
+}: {
+  payload: PolicySavePayload;
+  href?: string;
+}) {
   const limits =
     payload.limits && Object.keys(payload.limits).length > 0
       ? Object.entries(payload.limits)
@@ -87,7 +112,7 @@ export function RuleSavedCard({ payload }: { payload: PolicySavePayload }) {
       : null;
 
   return (
-    <article className="rule-event">
+    <EventShell href={href} className="rule-event">
       <span className="rule-event-tick" aria-hidden="true">✓</span>
       <div className="rule-event-body">
         <div className="rule-event-eyebrow">Rule saved</div>
@@ -102,15 +127,22 @@ export function RuleSavedCard({ payload }: { payload: PolicySavePayload }) {
           )}
         </div>
       </div>
-    </article>
+      {href && <span className="rule-event-arrow" aria-hidden="true">→</span>}
+    </EventShell>
   );
 }
 
-export function WorkflowSavedCard({ payload }: { payload: WorkflowSavePayload }) {
+export function WorkflowSavedCard({
+  payload,
+  href,
+}: {
+  payload: WorkflowSavePayload;
+  href?: string;
+}) {
   const stepCount = payload.steps.length;
   const cron = payload.triggers?.cron;
   return (
-    <article className="rule-event workflow-event">
+    <EventShell href={href} className="rule-event workflow-event">
       <span className="rule-event-tick workflow-event-tick" aria-hidden="true">⚙</span>
       <div className="rule-event-body">
         <div className="rule-event-eyebrow">Workflow saved</div>
@@ -125,13 +157,20 @@ export function WorkflowSavedCard({ payload }: { payload: WorkflowSavePayload })
           )}
         </div>
       </div>
-    </article>
+      {href && <span className="rule-event-arrow" aria-hidden="true">→</span>}
+    </EventShell>
   );
 }
 
-export function ActionRequestCard({ payload }: { payload: ActionRequestPayload }) {
+export function ActionRequestCard({
+  payload,
+  href,
+}: {
+  payload: ActionRequestPayload;
+  href?: string;
+}) {
   return (
-    <article className="rule-event action-event">
+    <EventShell href={href} className="rule-event action-event">
       <span className="rule-event-tick action-event-tick" aria-hidden="true">→</span>
       <div className="rule-event-body">
         <div className="rule-event-eyebrow">Action proposed</div>
@@ -154,6 +193,7 @@ export function ActionRequestCard({ payload }: { payload: ActionRequestPayload }
           )}
         </div>
       </div>
-    </article>
+      {href && <span className="rule-event-arrow" aria-hidden="true">→</span>}
+    </EventShell>
   );
 }

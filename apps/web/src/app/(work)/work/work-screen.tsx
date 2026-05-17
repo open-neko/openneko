@@ -1500,17 +1500,17 @@ function FenceAwareBubble({
       ) : null}
       {ruleEvent ? (
         <div key={`${keyPrefix}-rule`} className="work-rule-event-row">
-          <RuleSavedCard payload={ruleEvent} />
+          <RuleSavedCard payload={ruleEvent} href="/settings/policies" />
         </div>
       ) : null}
       {workflowEvent ? (
         <div key={`${keyPrefix}-workflow`} className="work-rule-event-row">
-          <WorkflowSavedCard payload={workflowEvent} />
+          <WorkflowSavedCard payload={workflowEvent} href="/workflows" />
         </div>
       ) : null}
       {actionEvents.map((a, i) => (
         <div key={`${keyPrefix}-action-${i}`} className="work-rule-event-row">
-          <ActionRequestCard payload={a} />
+          <ActionRequestCard payload={a} href="/actions?filter=awaiting" />
         </div>
       ))}
     </>

@@ -664,6 +664,39 @@
 .action-event-risk-high { background: var(--danger-soft); color: var(--danger); }
 .action-event-risk-critical { background: var(--danger); color: #fff; }
 
+/* Clickable variant — when an href is set, the card itself is the link. */
+.rule-event-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.rule-event-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px -8px rgba(0, 0, 0, 0.15);
+}
+.rule-event-link .rule-event-name {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 25%, transparent);
+}
+.rule-event-link:hover .rule-event-name {
+  text-decoration-color: currentColor;
+}
+.rule-event-arrow {
+  align-self: center;
+  margin-left: 6px;
+  color: var(--text3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  transition: transform 0.15s ease;
+}
+.rule-event-link:hover .rule-event-arrow {
+  transform: translateX(2px);
+  color: var(--text);
+}
+
 .builder-error {
   color: var(--danger);
   font-size: 12.5px;

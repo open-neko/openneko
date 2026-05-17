@@ -356,7 +356,10 @@ export default function EditWorkflowPage() {
                   if (event) {
                     items.push(
                       <li key={`${m.id}-event`} className="rule-event-row">
-                        <WorkflowSavedCard payload={event} />
+                        <WorkflowSavedCard
+                          payload={event}
+                          href={`/workflows?id=${workflowId}`}
+                        />
                       </li>,
                     );
                   }

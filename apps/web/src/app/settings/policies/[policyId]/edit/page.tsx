@@ -362,7 +362,10 @@ export default function EditPolicyPage() {
                   if (event) {
                     items.push(
                       <li key={`${m.id}-event`} className="rule-event-row">
-                        <RuleSavedCard payload={event} />
+                        <RuleSavedCard
+                          payload={event}
+                          href={`/settings/policies/${policyId}/edit`}
+                        />
                       </li>,
                     );
                   }
