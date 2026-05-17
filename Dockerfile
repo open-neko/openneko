@@ -61,17 +61,25 @@ WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
+COPY apps/openneko-cli/package.json apps/openneko-cli/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/llm/package.json packages/llm/package.json
+COPY packages/plugin-install/package.json packages/plugin-install/package.json
+COPY packages/plugin-types/package.json packages/plugin-types/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# ─── 4. build: next build (standalone output) ──────────────────────────
+# ─── 4. build: next build (standalone output) + openneko-cli bundle ────
 FROM deps AS build
 WORKDIR /app
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @neko/web build
+# The openneko CLI is a bun/esbuild-bundled single file. The worker image
+# copies the built dist/cli.js + symlinks it onto PATH so the agent's
+# Bash tool can invoke `openneko install/secrets/marketplace …` from
+# inside the worker container.
+RUN pnpm --filter @open-neko/cli build
 
 # ─── 4b. embedding-model prewarm ───────────────────────────────────────
 # Download Xenova/all-MiniLM-L6-v2 (q8 quantized, ~22MB) into a stable
@@ -144,6 +152,13 @@ COPY --chown=neko:neko db/migrations ./db/migrations
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN ln -s /app/apps/worker/node_modules/tsx /app/node_modules/tsx
+# Vendor the openneko CLI's built bundle so the agent's Bash tool inside
+# the worker container can run `openneko install/secrets/marketplace …`
+# without an extra install step. Source isn't needed at runtime — the
+# bundled cli.js is self-contained (esbuild --bundle + inlined deps).
+COPY --from=build --chown=neko:neko /app/apps/openneko-cli/dist /app/apps/openneko-cli/dist
+RUN ln -s /app/apps/openneko-cli/dist/cli.js /usr/local/bin/openneko \
+    && chmod +x /app/apps/openneko-cli/dist/cli.js
 # Vendored embedding model (see embedding-prewarm stage above). Ships the
 # ~22MB model files inside the image so worker auto-memory and metric-agent
 # context retrieval never block on a network fetch.

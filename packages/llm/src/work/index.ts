@@ -8,6 +8,15 @@ export {
 } from "./tools";
 export * from "./memory";
 export * from "./store";
+export {
+  createScrubber,
+  escapeRegex,
+  isNoopScrubber,
+  REDACTED_PLACEHOLDER,
+  scrubAgentEvent,
+  scrubJson,
+  type Scrubber,
+} from "./secret-scrubber";
 export { KNOWN_SKILL_DEPS, aggregateSkillDeps, type SkillDeps } from "./skill-deps";
 // Last so its module load sees all the above already-evaluated barrel exports,
 // which means run-chat-turn.ts can safely import its in-package dependencies

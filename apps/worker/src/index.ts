@@ -38,6 +38,8 @@ import {
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
+import { PluginRegistry } from "./plugins/plugin-registry.js";
+import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -182,6 +184,26 @@ console.log(
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 console.log("[worker] action policies seeded and built-in adapters registered");
+
+const pluginRegistry = new PluginRegistry({
+  repoRoot: process.cwd(),
+  workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
+});
+await pluginRegistry.start();
+setPluginRegistryInstance(pluginRegistry);
+{
+  const s = pluginRegistry.status();
+  if (s.loaded.length > 0) {
+    console.log(
+      `[worker] plugin registry: ${s.loaded.length} plugin(s), ${s.kinds.length} action kind(s) registered (VMs lazy-spawn on first use)`,
+    );
+  } else {
+    console.log(`[worker] plugin registry: no plugins installed`);
+  }
+  for (const skipped of s.skipped) {
+    console.warn(`[worker] plugin skipped ${skipped.name}: ${skipped.reason}`);
+  }
+}
 
 {
   const sources = await db()
@@ -449,6 +471,12 @@ const shutdown = async (signal: string) => {
     await subscriptionManager.stop();
   } catch (e) {
     console.error("[worker] subscription manager stop error:", e);
+  }
+  try {
+    setPluginRegistryInstance(null);
+    await pluginRegistry.stop();
+  } catch (e) {
+    console.error("[worker] plugin shutdown error:", e);
   }
   try {
     await b.stop({ graceful: true });

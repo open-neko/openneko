@@ -20,6 +20,55 @@ Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its o
 
 *Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
 
+## Plugins
+
+OpenNeko can be extended with sandboxed plugins that add new action kinds — web search via Parallel.ai, posting messages and DMs to Slack, more on the way. Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time, and any secrets it needs (Slack bot tokens, API keys) live in a per-user `~/.config/openneko/secrets.json` (0600 perms) that the worker injects into the VM at exec time — never in `openneko.plugins.json` (which is tracked) and never in `action_request.payload` (which is logged).
+
+Install from the official marketplace. The `openneko` CLI ships with OpenNeko (vendored under `apps/openneko-cli/`); from your OpenNeko checkout use `pnpm openneko …`, or `npm install -g @open-neko/cli` for a host-wide binary:
+
+```bash
+pnpm openneko init
+pnpm openneko install @open-neko/plugin-parallel-search
+```
+
+**No worker restart needed.** OpenNeko's plugin registry watches `openneko.plugins.json` and the per-user secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. Each plugin's microVM starts lazily on first use.
+
+Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). Run `pnpm openneko doctor` to check that your host can run microsandbox.
+
+### Federated marketplaces
+
+The official marketplace ships only first-party `@open-neko/*` plugins that the OpenNeko team writes and supports. Anyone else can publish their own `marketplace.json` at any stable URL and operators trust it explicitly:
+
+```bash
+pnpm openneko marketplace add https://example.com/marketplace.json
+pnpm openneko install @example/openneko-plugin-foo
+```
+
+OpenNeko makes no representation about non-official marketplaces — that trust is between the operator and the publisher. The sandbox enforces capability declarations regardless of where a plugin came from. See [open-neko/plugins/CONTRIBUTING.md](https://github.com/open-neko/plugins/blob/main/CONTRIBUTING.md) for the marketplace publish guide.
+
+### Bypass every marketplace (`--unverified`)
+
+To install a plugin directly from npm without going through any marketplace (plugin authoring, or an emergency hotfix before a marketplace entry exists):
+
+```bash
+pnpm openneko install <npm-package-name> --unverified
+```
+
+The CLI prints a loud warning. The integrity hash is taken on trust from npm rather than verified against a marketplace listing; everything else (sandboxing, manifest capability enforcement) still applies.
+
+### Host support
+
+| Host | Plugin system |
+|---|---|
+| macOS arm64 (Apple Silicon) | ✓ supported |
+| Linux x86_64 with `/dev/kvm` | ✓ supported |
+| Linux arm64 with `/dev/kvm` | ✓ supported |
+| macOS x86_64 (Intel) | ✗ not supported (microsandbox ships arm64 only on macOS) |
+| Linux without KVM | ✗ not supported |
+| Windows | ✗ WSL2 viability is being evaluated |
+
+On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs. The built-in `send_webhook` action adapter (no sandbox needed) remains as the extensibility escape hatch.
+
 ## Try it in 10 minutes
 
 What you're about to do: clone the repo, start it, finish a setup wizard, and watch a *"Germany revenue dropped"* alert land on the Briefing within ~15 minutes.
@@ -63,6 +112,10 @@ That's the loop: watcher runs → finding lands → action proposed → you appr
   - [INSTALL.md](INSTALL.md) — install, update, requirements, troubleshooting, connecting your data
 - **How it works**
   - [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
+- **Plugins**
+  - [open-neko.github.io/plugins](https://open-neko.github.io/plugins/) — the official marketplace; browse what's installable
+  - [open-neko/plugins](https://github.com/open-neko/plugins) — first-party plugin source + the publish-your-own-marketplace guide
+  - [apps/openneko-cli/](apps/openneko-cli/) — the operator CLI, vendored in-monorepo (also published to npm as `@open-neko/cli`)
 - **Project**
   - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
   - [CHANGELOG.md](CHANGELOG.md) — releases
