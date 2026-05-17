@@ -22,7 +22,7 @@ Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its o
 
 ## Plugins
 
-OpenNeko can be extended with sandboxed plugins that add new action kinds (e.g. web search via Parallel.ai). Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time — neither the plugin nor the agent can reach anything else.
+OpenNeko can be extended with sandboxed plugins that add new action kinds — web search via Parallel.ai, posting messages and DMs to Slack, more on the way. Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time, and any secrets it needs (Slack bot tokens, API keys) live in a per-user `~/.config/openneko/secrets.json` (0600 perms) that the worker injects into the VM at exec time — never in `openneko.plugins.json` (which is tracked) and never in `action_request.payload` (which is logged).
 
 Install from the official marketplace:
 
@@ -111,6 +111,10 @@ That's the loop: watcher runs → finding lands → action proposed → you appr
   - [INSTALL.md](INSTALL.md) — install, update, requirements, troubleshooting, connecting your data
 - **How it works**
   - [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
+- **Plugins**
+  - [open-neko.github.io/plugins](https://open-neko.github.io/plugins/) — the official marketplace; browse what's installable
+  - [open-neko/plugins](https://github.com/open-neko/plugins) — first-party plugin source + the publish-your-own-marketplace guide
+  - [open-neko/cli](https://github.com/open-neko/cli) — `openneko` operator CLI (install, marketplace, secrets, doctor)
 - **Project**
   - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
   - [CHANGELOG.md](CHANGELOG.md) — releases

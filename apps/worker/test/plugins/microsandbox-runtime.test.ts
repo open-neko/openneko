@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  buildExecCommand,
   MicrosandboxRuntime,
   networkModeFor,
   type MicrosandboxFactory,
@@ -377,6 +378,108 @@ describe("networkModeFor", () => {
   it("returns 'public' for any declared host", () => {
     expect(networkModeFor(["api.example.com"])).toBe("public");
     expect(networkModeFor(["a.b.c", "*.example.org"])).toBe("public");
+  });
+});
+
+describe("buildExecCommand", () => {
+  it("with empty env, returns plain node exec (fast path)", () => {
+    expect(buildExecCommand("register", "{}", {})).toEqual({
+      cmd: "node",
+      args: ["/workspace/run.js", "register", "{}"],
+    });
+  });
+
+  it("with env, wraps in sh -c with exports + exec node", () => {
+    const out = buildExecCommand("execute_action", '{"x":1}', {
+      SLACK_BOT_TOKEN: "xoxb-abc",
+      RUN_ID: "r-1",
+    });
+    expect(out.cmd).toBe("sh");
+    expect(out.args[0]).toBe("-c");
+    const inner = out.args[1] ?? "";
+    expect(inner).toContain("export SLACK_BOT_TOKEN='xoxb-abc'");
+    expect(inner).toContain("export RUN_ID='r-1'");
+    expect(inner).toContain("exec node /workspace/run.js 'execute_action' '{\"x\":1}'");
+  });
+
+  it("POSIX-escapes single quotes inside env values", () => {
+    const out = buildExecCommand("m", "{}", { FOO: "it's ok" });
+    expect(out.args[1]).toContain(`export FOO='it'\\''s ok'`);
+  });
+
+  it("rejects bad env key names that could be shell-substring attacks", () => {
+    expect(() =>
+      buildExecCommand("m", "{}", { "FOO; rm -rf /": "x" }),
+    ).toThrow(/UPPER_SNAKE_CASE/);
+    expect(() =>
+      buildExecCommand("m", "{}", { lowercase: "x" }),
+    ).toThrow(/UPPER_SNAKE_CASE/);
+  });
+});
+
+describe("MicrosandboxRuntime.callRpc with env", () => {
+  let workdir: string;
+  let runtime: MicrosandboxRuntime;
+  let factory: ReturnType<typeof makeFakeFactoryAndPolicy>;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(path.join(tmpdir(), "msbx-env-"));
+    factory = makeFakeFactoryAndPolicy();
+    runtime = new MicrosandboxRuntime({
+      image: "node:20-alpine",
+      cpus: 1,
+      memoryMb: 256,
+      sandboxFactory: factory.factory,
+      networkPolicy: factory.policy,
+      onLog: () => {},
+    });
+  });
+
+  afterEach(async () => {
+    await runtime.destroyAll();
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it("execs node directly when callRpc gets no env", async () => {
+    await runtime.start({
+      id: "p",
+      hostWorkspacePath: path.join(workdir, "p"),
+      network: "public",
+    });
+    const inst = factory.state.instances.get("p")!;
+    inst.controls.execResult = {
+      code: 0,
+      stdout: JSON.stringify({ ok: true, result: { x: 1 } }),
+      stderr: "",
+    };
+    await runtime.callRpc("p", "execute_action", "{}");
+    expect(inst.execs[0]?.cmd).toBe("node");
+    expect(inst.execs[0]?.args).toEqual([
+      "/workspace/run.js",
+      "execute_action",
+      "{}",
+    ]);
+  });
+
+  it("wraps in sh -c when callRpc gets an env map", async () => {
+    await runtime.start({
+      id: "p",
+      hostWorkspacePath: path.join(workdir, "p"),
+      network: "public",
+    });
+    const inst = factory.state.instances.get("p")!;
+    inst.controls.execResult = {
+      code: 0,
+      stdout: JSON.stringify({ ok: true, result: {} }),
+      stderr: "",
+    };
+    await runtime.callRpc("p", "execute_action", '{"q":1}', {
+      env: { SLACK_BOT_TOKEN: "xoxb-test" },
+    });
+    expect(inst.execs[0]?.cmd).toBe("sh");
+    const inner = inst.execs[0]?.args[1] ?? "";
+    expect(inner).toContain("export SLACK_BOT_TOKEN='xoxb-test'");
+    expect(inner).toContain("/workspace/run.js");
   });
 });
 

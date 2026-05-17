@@ -53,17 +53,19 @@ export class SubprocessRuntime implements PluginRuntime {
     pluginId: string,
     method: string,
     paramsJson: string,
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; env?: Record<string, string> } = {},
   ): Promise<RpcResponse> {
     const entry = this.entries.get(pluginId);
     if (!entry) {
       throw new Error(`SubprocessRuntime: plugin not started: ${pluginId}`);
     }
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    // Per-call env layers over the runtime-level default; per-call wins.
+    const mergedEnv = { ...(this.options.env ?? {}), ...(options.env ?? {}) };
     const stdout = await runProcessOnce(
       "node",
       [`${entry.spec.hostWorkspacePath}/run.js`, method, paramsJson],
-      { env: this.options.env, timeoutMs },
+      { env: mergedEnv, timeoutMs },
     );
     return parseRpcLastLine(stdout, pluginId, method);
   }

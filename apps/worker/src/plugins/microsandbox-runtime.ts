@@ -39,12 +39,14 @@ export interface PluginRuntime {
   /**
    * Invokes the plugin's runner with `node /workspace/run.js <method>
    * <paramsJson>` and parses the single JSON response from stdout.
+   * If `env` is provided, values are injected into the VM at exec time
+   * via a bash wrapper (microsandbox 0.4.x has no builder-level env).
    */
   callRpc(
     pluginId: string,
     method: string,
     paramsJson: string,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; env?: Record<string, string> },
   ): Promise<RpcResponse>;
   stop(pluginId: string): Promise<void>;
   destroyAll(): Promise<void>;
@@ -92,17 +94,19 @@ export class MicrosandboxRuntime implements PluginRuntime {
     pluginId: string,
     method: string,
     paramsJson: string,
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; env?: Record<string, string> } = {},
   ): Promise<RpcResponse> {
     const entry = this.vms.get(pluginId);
     if (!entry) {
       throw new Error(`plugin VM not started: ${pluginId}`);
     }
     const timeoutMs = options.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
+    const env = options.env ?? {};
+    const { cmd, args } = buildExecCommand(method, paramsJson, env);
     const output = await this.execWithTimeout(
       entry.sandbox,
-      "node",
-      ["/workspace/run.js", method, paramsJson],
+      cmd,
+      args,
       timeoutMs,
     );
     if (output.code !== 0 && !output.stdout.trim()) {
@@ -221,6 +225,60 @@ function applyNetwork(
     return builder.network((n) => n.policy(api.none()));
   }
   return builder.network((n) => n.policy(api.publicOnly()));
+}
+
+/**
+ * POSIX shell single-quote escape: wrap the value in single quotes and
+ * replace any embedded single quote with `'\''`. Safe for all bytes.
+ */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+const ENV_KEY_RX = /^[A-Z][A-Z0-9_]*$/;
+
+/**
+ * Returns the command + argv the runtime will invoke inside the VM.
+ * Without env: a plain `node` exec, fastest path. With env: wrap in
+ * `sh -c '<exports>; exec node ...'` so the env is bound for the
+ * plugin process. Microsandbox 0.4.x exposes no builder.env(); this
+ * is the established workaround.
+ *
+ * Why `sh` not `bash`: the default plugin VM image is `node:20-alpine`,
+ * which ships `ash` at `/bin/sh` and no `bash`. POSIX `sh` is enough
+ * for our needs (export + exec + single-quote-escaped values). Operators
+ * who configure a non-alpine image still get a working POSIX shell.
+ *
+ * Env keys are validated to UPPER_SNAKE_CASE before they reach the
+ * shell so a bad manifest entry can't smuggle a command-injection
+ * substring like `FOO; rm -rf /`. Values are POSIX-quoted.
+ */
+export function buildExecCommand(
+  method: string,
+  paramsJson: string,
+  env: Record<string, string>,
+): { cmd: string; args: string[] } {
+  const keys = Object.keys(env);
+  if (keys.length === 0) {
+    return {
+      cmd: "node",
+      args: ["/workspace/run.js", method, paramsJson],
+    };
+  }
+  for (const k of keys) {
+    if (!ENV_KEY_RX.test(k)) {
+      throw new Error(
+        `plugin env key "${k}" is not a valid UPPER_SNAKE_CASE name`,
+      );
+    }
+  }
+  const exports = keys
+    .map((k) => `export ${k}=${shellQuote(env[k] ?? "")}`)
+    .join("; ");
+  const inner =
+    `${exports}; exec node /workspace/run.js ` +
+    `${shellQuote(method)} ${shellQuote(paramsJson)}`;
+  return { cmd: "sh", args: ["-c", inner] };
 }
 
 async function ensureHostPath(hostPath: string): Promise<void> {

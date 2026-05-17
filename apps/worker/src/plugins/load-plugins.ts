@@ -42,6 +42,14 @@ export interface LoadPluginsOptions {
   manifest?: PluginManifest;
   /** For tests: resolve a plugin package to its bundled runner script. */
   resolveRunner?: (pkg: string) => string;
+  /**
+   * Per-user secrets store path. Defaults to
+   * $XDG_CONFIG_HOME/openneko/secrets.json (or ~/.config/...). The
+   * file is keyed by plugin npm name; each value is an env-var map
+   * the worker passes into the plugin's VM at exec time. Tests pass
+   * an explicit path to a tmp file.
+   */
+  secretsPath?: string;
 }
 
 export interface LoadedPlugin {
@@ -107,13 +115,18 @@ export async function loadPlugins(
   }
 
   const resolveRunner = options.resolveRunner ?? defaultResolveRunner(options.repoRoot);
+  const secretsStore = await readSecretsStore(
+    options.secretsPath ?? defaultSecretsPath(),
+  );
 
   for (const entry of manifest.plugins) {
     try {
+      const env = mergeEnv(entry, secretsStore);
       const result = await bootPlugin(entry, {
         runtime,
         workRoot: options.workRoot,
         resolveRunner,
+        env,
       });
       loaded.push(result);
     } catch (err) {
@@ -144,6 +157,7 @@ interface BootOptions {
   runtime: PluginRuntime;
   workRoot: string;
   resolveRunner: (pkg: string) => string;
+  env: Record<string, string>;
 }
 
 async function bootPlugin(
@@ -166,6 +180,9 @@ async function bootPlugin(
     network: networkModeFor(validated.capabilities.network),
   });
 
+  // register() doesn't need env — the plugin's declared action kinds
+  // are baked into the bundle. Action invocations get env passed; see
+  // makeAdapterFor.
   const response = await options.runtime.callRpc(pluginId, "register", "{}");
   if (!response.ok) {
     throw new Error(
@@ -190,7 +207,12 @@ async function bootPlugin(
   }
 
   for (const action of registered.actions) {
-    const adapter = makeAdapterFor(options.runtime, pluginId, action.kind);
+    const adapter = makeAdapterFor(
+      options.runtime,
+      pluginId,
+      action.kind,
+      options.env,
+    );
     registerActionAdapter(action.kind, adapter);
   }
 
@@ -205,6 +227,7 @@ function makeAdapterFor(
   runtime: PluginRuntime,
   pluginId: string,
   kind: string,
+  env: Record<string, string>,
 ): ActionAdapter {
   return async ({ request }) => {
     const params: PluginActionRequest = {
@@ -221,6 +244,7 @@ function makeAdapterFor(
       pluginId,
       "execute_action",
       JSON.stringify(ExecuteActionParams.parse({ request: params })),
+      { env },
     );
     if (!response.ok) {
       throw new Error(
@@ -249,6 +273,67 @@ async function readManifestFromDisk(
     throw err;
   }
   return PluginManifest.parse(JSON.parse(raw));
+}
+
+/**
+ * Shape of the per-user secrets file at ~/.config/openneko/secrets.json.
+ * Keyed by plugin npm name (e.g. "@open-neko/plugin-slack"); each
+ * value is a flat env-var map.
+ */
+export type SecretsStore = Record<string, Record<string, string>>;
+
+function defaultSecretsPath(): string {
+  const xdg = process.env.XDG_CONFIG_HOME;
+  const base = xdg
+    ? path.join(xdg, "openneko")
+    : path.join(process.env.HOME ?? "/tmp", ".config", "openneko");
+  return path.join(base, "secrets.json");
+}
+
+async function readSecretsStore(file: string): Promise<SecretsStore> {
+  let raw: string;
+  try {
+    raw = await readFile(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw err;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.warn(
+      `[plugin-loader] secrets file ${file} is invalid JSON; treating as empty: ${err instanceof Error ? err.message : err}`,
+    );
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const store: SecretsStore = {};
+  for (const [pkg, env] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof env !== "object" || env === null) continue;
+    const map: Record<string, string> = {};
+    for (const [k, v] of Object.entries(env as Record<string, unknown>)) {
+      if (typeof v === "string") map[k] = v;
+    }
+    store[pkg] = map;
+  }
+  return store;
+}
+
+/**
+ * Merge the plugin's manifest-inlined env (non-secret defaults) with
+ * the per-user secrets store. Per-user wins on conflicts — operators
+ * set sensitive values in the secrets file; manifest values exist for
+ * non-secret defaults and tests.
+ */
+function mergeEnv(
+  entry: PluginManifestEntry,
+  store: SecretsStore,
+): Record<string, string> {
+  return {
+    ...(entry.env ?? {}),
+    ...(store[entry.name] ?? {}),
+  };
 }
 
 async function createDefaultRuntime(
