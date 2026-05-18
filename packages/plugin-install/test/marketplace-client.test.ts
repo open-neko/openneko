@@ -24,15 +24,19 @@ function marketplace(): Marketplace {
           {
             version: "0.1.0",
             integrity: INTEGRITY,
-            requires_network: [],
-            kinds: ["a"],
+            permissions: { network: [], env: [] },
+            capabilities: {
+              action: { kinds: [{ kind: "a", description: "a" }] },
+            },
             publishedAt: "2026-05-17",
           },
           {
             version: "0.2.0",
             integrity: INTEGRITY,
-            requires_network: ["api.example.com"],
-            kinds: ["a"],
+            permissions: { network: ["api.example.com"], env: [] },
+            capabilities: {
+              action: { kinds: [{ kind: "a", description: "a" }] },
+            },
             publishedAt: "2026-05-18",
           },
         ],

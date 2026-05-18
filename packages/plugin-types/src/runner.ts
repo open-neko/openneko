@@ -20,13 +20,9 @@ export interface RunPluginOptions {
 
 /**
  * Single-shot RPC dispatcher used by plugin runner scripts. Reads the
- * method name + params JSON, dispatches to the plugin's declarations or
- * handlers, returns an RpcResponse. The plugin runner writes the
- * response as JSON to stdout for the worker to parse.
- *
- * v1 contract: one process per call. If/when a future microsandbox SDK
- * supports long-running stdio streams, the same dispatcher can be
- * driven in a loop reading newline-delimited requests.
+ * method name + params JSON, dispatches to the plugin's declared
+ * capability handlers, returns an RpcResponse. The plugin runner writes
+ * the response as JSON to stdout for the worker to parse.
  */
 export async function dispatchPluginRpc(
   plugin: PluginDefinition,
@@ -52,19 +48,26 @@ export async function dispatchPluginRpc(
 }
 
 function buildRegisterResult(plugin: PluginDefinition): RegisterResult {
+  const caps = plugin.capabilities;
   return RegisterResult.parse({
     protocol: RPC_PROTOCOL_VERSION,
     pluginName: plugin.name,
     pluginVersion: plugin.version,
-    actions: (plugin.actions ?? []).map((a) => ({
-      kind: a.kind,
-      description: a.description,
-    })),
-    auth: plugin.auth
-      ? plugin.auth.providerLabel
-        ? { providerLabel: plugin.auth.providerLabel }
-        : {}
-      : undefined,
+    capabilities: {
+      action: caps.action
+        ? {
+            kinds: caps.action.kinds.map((a) => ({
+              kind: a.kind,
+              description: a.description,
+            })),
+          }
+        : undefined,
+      auth: caps.auth
+        ? caps.auth.providerLabel
+          ? { providerLabel: caps.auth.providerLabel }
+          : {}
+        : undefined,
+    },
   });
 }
 
@@ -73,11 +76,13 @@ async function runExecuteAction(
   paramsJson: string,
 ): Promise<ExecuteActionResult> {
   const parsed = ExecuteActionParams.parse(JSON.parse(paramsJson));
-  const action = (plugin.actions ?? []).find(
+  const action = plugin.capabilities.action?.kinds.find(
     (a) => a.kind === parsed.request.kind,
   );
   if (!action) {
-    throw new Error(`plugin does not handle action kind "${parsed.request.kind}"`);
+    throw new Error(
+      `plugin does not handle action kind "${parsed.request.kind}"`,
+    );
   }
   const outcome = await action.handler(parsed.request);
   return ExecuteActionResult.parse({ outcome });
@@ -87,11 +92,12 @@ async function runBeginAuth(
   plugin: PluginDefinition,
   paramsJson: string,
 ): Promise<BeginAuthRpcResult> {
-  if (!plugin.auth) {
+  const auth = plugin.capabilities.auth;
+  if (!auth) {
     throw new Error("plugin does not implement an auth provider");
   }
   const parsed = BeginAuthRpcParams.parse(JSON.parse(paramsJson));
-  const result = await plugin.auth.begin(parsed.params);
+  const result = await auth.begin(parsed.params);
   return BeginAuthRpcResult.parse({ result });
 }
 
@@ -99,11 +105,12 @@ async function runCompleteAuth(
   plugin: PluginDefinition,
   paramsJson: string,
 ): Promise<CompleteAuthRpcResult> {
-  if (!plugin.auth) {
+  const auth = plugin.capabilities.auth;
+  if (!auth) {
     throw new Error("plugin does not implement an auth provider");
   }
   const parsed = CompleteAuthRpcParams.parse(JSON.parse(paramsJson));
-  const result = await plugin.auth.complete(parsed.params);
+  const result = await auth.complete(parsed.params);
   return CompleteAuthRpcResult.parse({ result });
 }
 
@@ -114,7 +121,7 @@ async function runCompleteAuth(
  *
  *     // run.js
  *     import plugin from "./plugin.js";
- *     import { runPluginEntrypoint } from "@open-neko/plugin-types/runner";
+ *     import { runPluginEntrypoint } from "@open-neko/plugin-types";
  *     await runPluginEntrypoint(plugin);
  */
 export async function runPluginEntrypoint(

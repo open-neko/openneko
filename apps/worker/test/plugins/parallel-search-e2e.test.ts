@@ -21,8 +21,15 @@ const MANIFEST_JSON = JSON.stringify({
       name: "@open-neko/plugin-parallel-search",
       version: "0.2.0",
       integrity: FAKE_INTEGRITY,
-      capabilities: { network: ["search.parallel.ai"] },
-      kinds: ["web_search", "web_fetch"],
+      permissions: { network: ["search.parallel.ai"], env: [] },
+      capabilities: {
+        action: {
+          kinds: [
+            { kind: "web_search", description: "Search the web" },
+            { kind: "web_fetch", description: "Fetch a page" },
+          ],
+        },
+      },
     },
   ],
 });

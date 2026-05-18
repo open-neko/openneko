@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PluginActionDeclaration } from "./action.js";
 
 export const HostPattern = z
   .string()
@@ -19,11 +20,12 @@ export const EnvVarName = z
   );
 
 /**
- * One env var a plugin needs at runtime. Listed in the marketplace
- * entry; the openneko CLI prompts the operator for any required ones
- * during `openneko install` and stores them in the per-user secrets
- * file at ~/.config/openneko/secrets.json. The worker reads that file
- * and injects the values into the plugin's microVM at exec time.
+ * One env var a plugin needs at runtime. Listed under `permissions.env`
+ * in the marketplace entry and installed manifest; the openneko CLI
+ * prompts the operator for any required ones during `openneko install`
+ * and stores values in ~/.config/openneko/secrets.json. The worker
+ * reads that file and injects values into the plugin's microVM at exec
+ * time.
  */
 export const PluginEnvRequirement = z.object({
   key: EnvVarName,
@@ -35,21 +37,74 @@ export const PluginEnvRequirement = z.object({
 
 export type PluginEnvRequirement = z.infer<typeof PluginEnvRequirement>;
 
-export const PluginCapabilities = z
+/**
+ * What the plugin needs from the runtime to operate.
+ *
+ * - `network`: hostnames the sandbox must allow outbound traffic to.
+ *   Enforced at the VM boundary — the plugin cannot reach hosts not
+ *   listed here.
+ * - `env`: env vars the operator must supply. `openneko install`
+ *   prompts and refuses to complete if a required value is missing.
+ *
+ * Same shape in the marketplace entry and the installed manifest.
+ */
+export const PluginPermissions = z
   .object({
     network: z.array(HostPattern).default([]),
+    env: z.array(PluginEnvRequirement).default([]),
   })
-  .default({ network: [] });
+  .default({ network: [], env: [] });
 
-export type PluginCapabilities = z.infer<typeof PluginCapabilities>;
+export type PluginPermissions = z.infer<typeof PluginPermissions>;
 
-export const ActionKindName = z
-  .string()
-  .min(1)
-  .regex(
-    /^[a-z][a-z0-9_]*$/,
-    "action kind must be lowercase snake_case",
-  );
+/**
+ * Action capability — a plugin contributes one or more named action
+ * handlers the agent can invoke. Each kind has a snake_case identifier
+ * and a description the agent uses to pick the right one.
+ */
+export const ActionCapabilityDeclaration = z.object({
+  kinds: z.array(PluginActionDeclaration).min(1),
+});
+
+export type ActionCapabilityDeclaration = z.infer<
+  typeof ActionCapabilityDeclaration
+>;
+
+/**
+ * Auth capability — a plugin acts as the SSO provider for OpenNeko.
+ * Singleton: only one installed plugin may declare this. Presence of
+ * `capabilities.auth` on a manifest entry is what lights up the
+ * "Sign in with …" UI; no VM spawn needed to make that decision.
+ */
+export const AuthCapabilityDeclaration = z.object({
+  /**
+   * Short human-readable provider label rendered on the sign-in
+   * button (e.g. "Scalekit", "Okta", "Keycloak"). The host falls back
+   * to a name-derived label when this is absent.
+   */
+  providerLabel: z.string().min(1).optional(),
+});
+
+export type AuthCapabilityDeclaration = z.infer<typeof AuthCapabilityDeclaration>;
+
+/**
+ * The full capability map a plugin contributes. Each surface a plugin
+ * implements becomes a key here; the keyset IS the declaration — there
+ * are no parallel flags. To add a new surface: add a key, its
+ * declaration schema, the matching impl, and the RPC dispatch.
+ */
+export const PluginCapabilitiesDeclaration = z
+  .object({
+    action: ActionCapabilityDeclaration.optional(),
+    auth: AuthCapabilityDeclaration.optional(),
+  })
+  .refine((c) => c.action != null || c.auth != null, {
+    message: "capabilities must declare at least one surface (action, auth)",
+  });
+
+export type PluginCapabilitiesDeclaration = z.infer<
+  typeof PluginCapabilitiesDeclaration
+>;
 
 export const PluginManifestEntry = z.object({
   name: z
@@ -68,27 +123,10 @@ export const PluginManifestEntry = z.object({
   integrity: z
     .string()
     .regex(/^sha512-[A-Za-z0-9+/=]+$/, "integrity must be sha512-<base64>"),
-  capabilities: PluginCapabilities,
+  permissions: PluginPermissions,
+  capabilities: PluginCapabilitiesDeclaration,
   /**
-   * Action kinds this plugin handles — copied at install time from
-   * the marketplace entry's `kinds`. Lets the worker build a kind →
-   * plugin map from the file alone, without spawning a VM to call
-   * register(). Optional so older manifests written before this
-   * field existed still parse; the worker treats a missing list as
-   * "discover via register() at boot" (legacy fallback).
-   */
-  kinds: z.array(ActionKindName).optional(),
-  /**
-   * True when this plugin implements the SSO contract (begin_auth +
-   * complete_auth RPC methods). Copied at install time from the
-   * marketplace entry. The host inspects this flag to decide whether
-   * to show a "Sign in with …" button on the sign-in page — no VM
-   * spawn needed to make that decision. At most one installed plugin
-   * may set this; the registry refuses to register a second.
-   */
-  provides_auth: z.boolean().optional(),
-  /**
-   * Inline env values to set for this plugin. The CLI normally writes
+   * Resolved env values for this plugin. The CLI normally writes
    * secrets to the gitignored per-user store at ~/.config/openneko/
    * secrets.json; this field is for tests + non-secret defaults. The
    * worker merges both, with the per-user store winning.

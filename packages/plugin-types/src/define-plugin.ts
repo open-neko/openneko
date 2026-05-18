@@ -26,50 +26,57 @@ export type CompleteAuthHandler = (
   params: CompleteAuthParams,
 ) => Promise<CompleteAuthResult> | CompleteAuthResult;
 
-/**
- * SSO provider implementation. Plugins that opt in to OpenNeko's auth
- * contract supply both handlers. The host (worker → web) drives the
- * OIDC dance: it calls `begin` to get an authorization URL,
- * redirects the browser there, then on callback calls `complete` to
- * trade the code for an identity assertion.
- */
-export interface PluginAuthDefinition {
-  /** Short label rendered on the sign-in button. */
+/** Implementation shape for the action capability — kinds with handlers. */
+export interface ActionCapabilityImpl {
+  kinds: PluginActionDefinition[];
+}
+
+/** Implementation shape for the auth capability — the OIDC begin/complete handlers. */
+export interface AuthCapabilityImpl {
   providerLabel?: string;
   begin: BeginAuthHandler;
   complete: CompleteAuthHandler;
 }
 
+/**
+ * What the plugin author returns from definePlugin. Mirror of
+ * PluginCapabilitiesDeclaration but each present surface carries
+ * handlers in addition to its declared metadata.
+ */
+export interface PluginCapabilitiesImpl {
+  action?: ActionCapabilityImpl;
+  auth?: AuthCapabilityImpl;
+}
+
 export interface PluginDefinition {
   name: string;
   version: string;
-  actions?: PluginActionDefinition[];
-  /**
-   * Optional SSO provider implementation. When set, the plugin's
-   * manifest entry should also carry `provides_auth: true` so the
-   * host can light up the "Sign in with …" UI without first spawning
-   * the VM.
-   */
-  auth?: PluginAuthDefinition;
+  capabilities: PluginCapabilitiesImpl;
 }
 
 /**
- * Plugin entrypoint helper. Returns the same object passed in, but with
- * the type narrowed so editors give plugin authors completion on the
- * action shape. Authors do:
+ * Plugin entrypoint helper. Validates that `capabilities` declares at
+ * least one surface and that each declared surface has its required
+ * handlers, then returns the same object so editors give plugin
+ * authors completion on the capability shape.
  *
  *     export default definePlugin({
  *       name: "@open-neko/plugin-parallel-search",
  *       version: "0.1.0",
- *       actions: [{
- *         kind: "web_search",
- *         description: "Search the web via Parallel.ai",
- *         handler: async (req) => { ... },
- *       }],
+ *       capabilities: {
+ *         action: {
+ *           kinds: [{
+ *             kind: "web_search",
+ *             description: "Search the web",
+ *             handler: async (req) => { ... },
+ *           }],
+ *         },
+ *       },
  *     });
  *
- * The plugin's runner script (provided by this package via `runPlugin`)
- * imports the default export and dispatches RPC calls to it.
+ * The plugin's runner script (provided by this package via
+ * `runPluginEntrypoint`) imports the default export and dispatches RPC
+ * calls to it.
  */
 export function definePlugin(definition: PluginDefinition): PluginDefinition {
   if (!definition.name) {
@@ -78,19 +85,34 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
   if (!definition.version) {
     throw new Error("definePlugin: version is required");
   }
-  for (const action of definition.actions ?? []) {
-    if (typeof action.handler !== "function") {
+  const caps = definition.capabilities;
+  if (!caps || (caps.action == null && caps.auth == null)) {
+    throw new Error(
+      "definePlugin: capabilities must declare at least one surface (action, auth)",
+    );
+  }
+  if (caps.action) {
+    if (!Array.isArray(caps.action.kinds) || caps.action.kinds.length === 0) {
       throw new Error(
-        `definePlugin: action "${action.kind}" must provide a handler function`,
+        "definePlugin: capabilities.action.kinds must list at least one action",
       );
     }
-  }
-  if (definition.auth) {
-    if (typeof definition.auth.begin !== "function") {
-      throw new Error("definePlugin: auth.begin must be a function");
+    for (const a of caps.action.kinds) {
+      if (typeof a.handler !== "function") {
+        throw new Error(
+          `definePlugin: action "${a.kind}" must provide a handler function`,
+        );
+      }
     }
-    if (typeof definition.auth.complete !== "function") {
-      throw new Error("definePlugin: auth.complete must be a function");
+  }
+  if (caps.auth) {
+    if (typeof caps.auth.begin !== "function") {
+      throw new Error("definePlugin: capabilities.auth.begin must be a function");
+    }
+    if (typeof caps.auth.complete !== "function") {
+      throw new Error(
+        "definePlugin: capabilities.auth.complete must be a function",
+      );
     }
   }
   return definition;

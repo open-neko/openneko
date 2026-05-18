@@ -9,19 +9,14 @@ import {
   BeginAuthResult,
   CompleteAuthParams,
   CompleteAuthResult,
-  PluginAuthDeclaration,
 } from "./auth.js";
+import { AuthCapabilityDeclaration } from "./manifest.js";
 
 /**
  * JSON-RPC over stdio between the OpenNeko worker (caller) and a plugin
  * process inside its microsandbox VM (callee). v1 uses one-shot exec per
  * call — the worker invokes `node /workspace/plugin/run.js <method>
- * <json-params>` and reads a single JSON response from stdout. This
- * matches microsandbox's one-shot `exec()` model without requiring
- * long-running stdio streaming.
- *
- * If/when we add long-running stdio in a future microsandbox SDK rev,
- * this same wire format applies — just framed by newlines per request.
+ * <json-params>` and reads a single JSON response from stdout.
  */
 
 export const RPC_PROTOCOL_VERSION = 1 as const;
@@ -42,20 +37,23 @@ export const RpcHello = z.object({
 });
 export type RpcHello = z.infer<typeof RpcHello>;
 
-/** Returned by the plugin's register() — the surface it contributes. */
+/**
+ * Returned by the plugin's register() — the live-from-code capability
+ * map. The worker validates this against the manifest's declared
+ * capabilities; mismatched name, version, or surfaces refuse the VM.
+ */
 export const RegisterResult = z.object({
   protocol: z.literal(RPC_PROTOCOL_VERSION),
   pluginName: z.string(),
   pluginVersion: z.string(),
-  actions: z.array(PluginActionDeclaration).default([]),
-  /**
-   * Present when the plugin acts as an SSO identity provider. Absence
-   * is normal — most plugins only contribute actions. The host pairs
-   * this with the manifest's `provides_auth: true` flag: the flag is
-   * what makes the auth flow visible in the UI; this declaration
-   * supplies the human-readable label.
-   */
-  auth: PluginAuthDeclaration.optional(),
+  capabilities: z.object({
+    action: z
+      .object({
+        kinds: z.array(PluginActionDeclaration),
+      })
+      .optional(),
+    auth: AuthCapabilityDeclaration.optional(),
+  }),
 });
 export type RegisterResult = z.infer<typeof RegisterResult>;
 
@@ -69,24 +67,16 @@ export const ExecuteActionResult = z.object({
 });
 export type ExecuteActionResult = z.infer<typeof ExecuteActionResult>;
 
-export const BeginAuthRpcParams = z.object({
-  params: BeginAuthParams,
-});
+export const BeginAuthRpcParams = z.object({ params: BeginAuthParams });
 export type BeginAuthRpcParams = z.infer<typeof BeginAuthRpcParams>;
 
-export const BeginAuthRpcResult = z.object({
-  result: BeginAuthResult,
-});
+export const BeginAuthRpcResult = z.object({ result: BeginAuthResult });
 export type BeginAuthRpcResult = z.infer<typeof BeginAuthRpcResult>;
 
-export const CompleteAuthRpcParams = z.object({
-  params: CompleteAuthParams,
-});
+export const CompleteAuthRpcParams = z.object({ params: CompleteAuthParams });
 export type CompleteAuthRpcParams = z.infer<typeof CompleteAuthRpcParams>;
 
-export const CompleteAuthRpcResult = z.object({
-  result: CompleteAuthResult,
-});
+export const CompleteAuthRpcResult = z.object({ result: CompleteAuthResult });
 export type CompleteAuthRpcResult = z.infer<typeof CompleteAuthRpcResult>;
 
 export const RpcOk = z.object({

@@ -37,17 +37,31 @@ describe("RegisterResult", () => {
         protocol: 999,
         pluginName: "@x/y",
         pluginVersion: "0.0.0",
-        actions: [],
+        capabilities: {},
       }),
     ).toThrow();
-    expect(
-      RegisterResult.parse({
-        protocol: RPC_PROTOCOL_VERSION,
-        pluginName: "@x/y",
-        pluginVersion: "0.0.0",
-        actions: [{ kind: "web_search", description: "search the web" }],
-      }).actions,
-    ).toHaveLength(1);
+    const parsed = RegisterResult.parse({
+      protocol: RPC_PROTOCOL_VERSION,
+      pluginName: "@x/y",
+      pluginVersion: "0.0.0",
+      capabilities: {
+        action: {
+          kinds: [{ kind: "web_search", description: "search the web" }],
+        },
+      },
+    });
+    expect(parsed.capabilities.action?.kinds).toHaveLength(1);
+  });
+
+  it("accepts an auth-only register result", () => {
+    const parsed = RegisterResult.parse({
+      protocol: RPC_PROTOCOL_VERSION,
+      pluginName: "@x/y-auth",
+      pluginVersion: "0.0.0",
+      capabilities: { auth: { providerLabel: "Test IdP" } },
+    });
+    expect(parsed.capabilities.auth?.providerLabel).toBe("Test IdP");
+    expect(parsed.capabilities.action).toBeUndefined();
   });
 });
 

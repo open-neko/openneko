@@ -7,8 +7,8 @@
 //   - Reads openneko.plugins.json + the per-user secrets file
 //   - Watches both via fs.watch, with a small debounce
 //   - Maps action kind → plugin id from the manifest entries'
-//     `kinds: string[]` field (populated at install time from the
-//     marketplace entry)
+//     `capabilities.action.kinds` field (populated at install time
+//     from the marketplace entry)
 //   - Spawns each plugin's microVM LAZILY — first execute_action for
 //     that kind triggers the VM spawn; cold-start cost only paid once
 //   - Owns the env-value scrubber, rebuilt on every secrets file
@@ -329,12 +329,13 @@ export class PluginRegistry {
         this.skipped.push({
           name,
           reason:
-            'provides_auth claimed by another plugin (only one SSO provider supported per deployment)',
+            'auth capability claimed by another plugin (only one SSO provider supported per deployment)',
         });
       }
       const seenKinds = new Set<string>();
       for (const [pluginId, entry] of newState.entriesByPluginId) {
-        for (const kind of entry.kinds ?? []) {
+        for (const decl of entry.capabilities.action?.kinds ?? []) {
+          const kind = decl.kind;
           if (seenKinds.has(kind)) {
             this.skipped.push({
               name: entry.name,
@@ -486,7 +487,7 @@ export class PluginRegistry {
     await this.runtime.start({
       id: pluginId,
       hostWorkspacePath,
-      network: networkModeFor(entry.capabilities.network),
+      network: networkModeFor(entry.permissions.network),
     });
 
     // Sanity-check: the VM's register() must match the manifest's
@@ -519,9 +520,13 @@ export class PluginRegistry {
         `${entry.name}: VM reports version ${registered.pluginVersion}, manifest pin is ${entry.version}`,
       );
     }
-    if (entry.kinds) {
-      const declared = new Set(entry.kinds);
-      const reported = new Set(registered.actions.map((a) => a.kind));
+    if (entry.capabilities.action) {
+      const declared = new Set(
+        entry.capabilities.action.kinds.map((a) => a.kind),
+      );
+      const reported = new Set(
+        (registered.capabilities.action?.kinds ?? []).map((a) => a.kind),
+      );
       const missing = [...declared].filter((k) => !reported.has(k));
       if (missing.length > 0) {
         await this.runtime.stop(pluginId).catch(() => {});
@@ -530,15 +535,18 @@ export class PluginRegistry {
         );
       }
     }
-    if (entry.provides_auth) {
-      if (!registered.auth) {
+    if (entry.capabilities.auth) {
+      if (!registered.capabilities.auth) {
         await this.runtime.stop(pluginId).catch(() => {});
         throw new Error(
-          `${entry.name}: manifest declares provides_auth: true but VM register() reports no auth provider`,
+          `${entry.name}: manifest declares the auth capability but VM register() reports no auth provider`,
         );
       }
-      if (registered.auth.providerLabel) {
-        this.authProviderLabels.set(pluginId, registered.auth.providerLabel);
+      if (registered.capabilities.auth.providerLabel) {
+        this.authProviderLabels.set(
+          pluginId,
+          registered.capabilities.auth.providerLabel,
+        );
       }
     }
   }
@@ -605,22 +613,18 @@ function buildState(manifest: PluginManifest | null): {
   for (const entry of manifest.plugins) {
     const pluginId = pluginIdFromName(entry.name);
     entriesByPluginId.set(pluginId, entry);
-    for (const kind of entry.kinds ?? []) {
-      if (kindToPluginId.has(kind)) {
-        // Last writer wins for the runtime path; refresh() emits a
-        // warning when this happens via the skipped[] mechanism.
-      }
-      kindToPluginId.set(kind, pluginId);
+    for (const decl of entry.capabilities.action?.kinds ?? []) {
+      // Last writer wins for the runtime path; refresh() emits a
+      // warning via the skipped[] mechanism.
+      kindToPluginId.set(decl.kind, pluginId);
     }
-    if (entry.provides_auth) {
+    if (entry.capabilities.auth) {
       if (authPluginId === null) {
         authPluginId = pluginId;
       } else {
         // Second auth-claimant — first one wins. The web app's
         // sign-in flow only handles one provider; surfacing two
-        // would mean making the operator pick at the sign-in screen,
-        // which the proposal explicitly avoids (one IdP per
-        // OpenNeko deployment is the contract).
+        // would mean making the operator pick at the sign-in screen.
         authDuplicates.push(entry.name);
       }
     }

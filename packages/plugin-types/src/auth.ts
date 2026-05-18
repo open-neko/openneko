@@ -4,15 +4,13 @@ import { z } from "zod";
  * Plugin-as-SSO-provider contract.
  *
  * OpenNeko's core stays identity-vendor-neutral by delegating the OIDC
- * code-exchange to any installed plugin whose manifest declares
- * `provides_auth: true`. The contract is intentionally generic: a
- * begin-auth call yields a provider URL + state, and a complete-auth
- * call exchanges the authorization code for an identity assertion.
+ * code-exchange to any installed plugin whose manifest declares an
+ * `auth` capability. A begin-auth call yields a provider URL + state,
+ * and a complete-auth call exchanges the authorization code for an
+ * identity assertion.
  *
- * Plugins implement these two methods and the core gets a pluggable
- * "Sign in with <provider>" flow — Scalekit (which fronts Okta /
- * Entra / Google Workspace / etc.), a direct Okta plugin, a
- * self-hosted Keycloak plugin, all fit the same shape.
+ * Scalekit (fronts Okta / Entra / Google Workspace / etc.), a direct
+ * Okta plugin, a self-hosted Keycloak plugin — all fit the same shape.
  */
 
 export const AuthIdentity = z.object({
@@ -24,7 +22,6 @@ export const AuthIdentity = z.object({
   /**
    * IdP-supplied tenant identifier. Scalekit returns its organization id
    * here; raw OIDC plugins typically map this to the `org_id` claim.
-   * Optional because not every IdP supplies it.
    */
   orgId: z.string().nullable().optional(),
   /**
@@ -54,8 +51,7 @@ export const BeginAuthParams = z.object({
   /**
    * Optional email or hostname hint the user typed at the sign-in
    * page. Lets the plugin route to the right downstream IdP without
-   * an extra "which company are you?" screen — Scalekit uses this
-   * for connection discovery.
+   * an extra "which company are you?" screen.
    */
   loginHint: z.string().nullable().optional(),
 });
@@ -93,14 +89,3 @@ export const CompleteAuthResult = z.object({
 });
 
 export type CompleteAuthResult = z.infer<typeof CompleteAuthResult>;
-
-export const PluginAuthDeclaration = z.object({
-  /**
-   * Short human-readable provider label rendered on the sign-in
-   * button (e.g. "Scalekit", "Okta", "Keycloak"). The core falls back
-   * to the plugin's package name when this is absent.
-   */
-  providerLabel: z.string().min(1).optional(),
-});
-
-export type PluginAuthDeclaration = z.infer<typeof PluginAuthDeclaration>;

@@ -123,8 +123,15 @@ describe("install", () => {
           {
             version: "0.2.0",
             integrity: INTEGRITY,
-            requires_network: ["search.parallel.ai"],
-            kinds: ["web_search", "web_fetch"],
+            permissions: { network: ["search.parallel.ai"], env: [] },
+            capabilities: {
+              action: {
+                kinds: [
+                  { kind: "web_search", description: "search" },
+                  { kind: "web_fetch", description: "fetch" },
+                ],
+              },
+            },
             publishedAt: "2026-05-17",
           },
         ],
@@ -153,7 +160,7 @@ describe("install", () => {
       await readFile(path.join(repoDir, PLUGIN_MANIFEST_FILE), "utf8"),
     ) as { plugins: ManifestEntry[] };
     expect(written.plugins[0]?.marketplace).toBe("official");
-    expect(written.plugins[0]?.capabilities.network).toEqual([
+    expect(written.plugins[0]?.permissions.network).toEqual([
       "search.parallel.ai",
     ]);
   });
@@ -202,8 +209,10 @@ describe("install", () => {
         {
           version: "0.1.0",
           integrity: INTEGRITY,
-          requires_network: [],
-          kinds: ["k"],
+          permissions: { network: [], env: [] },
+          capabilities: {
+            action: { kinds: [{ kind: "k", description: "k" }] },
+          },
           publishedAt: "2026-05-17",
         },
       ],
@@ -251,8 +260,10 @@ describe("install", () => {
         {
           version: "0.1.0",
           integrity: INTEGRITY,
-          requires_network: [],
-          kinds: ["k"],
+          permissions: { network: [], env: [] },
+          capabilities: {
+            action: { kinds: [{ kind: "k", description: "k" }] },
+          },
           publishedAt: "2026-05-17",
         },
       ],
@@ -293,22 +304,30 @@ describe("install", () => {
         {
           version: "0.1.0",
           integrity: INTEGRITY,
-          requires_network: ["slack.com"],
-          requires_env: [
-            {
-              key: "SLACK_BOT_TOKEN",
-              required: true,
-              secret: true,
-              description: "xoxb- token",
+          permissions: {
+            network: ["slack.com"],
+            env: [
+              {
+                key: "SLACK_BOT_TOKEN",
+                required: true,
+                secret: true,
+                description: "xoxb- token",
+              },
+              {
+                key: "SLACK_DEFAULT_CHANNEL",
+                required: false,
+                secret: false,
+                description: "default channel",
+              },
+            ],
+          },
+          capabilities: {
+            action: {
+              kinds: [
+                { kind: "send_slack_message", description: "post" },
+              ],
             },
-            {
-              key: "SLACK_DEFAULT_CHANNEL",
-              required: false,
-              secret: false,
-              description: "default channel",
-            },
-          ],
-          kinds: ["send_slack_message"],
+          },
           publishedAt: "2026-05-17",
         },
       ],
@@ -360,16 +379,24 @@ describe("install", () => {
         {
           version: "0.1.0",
           integrity: INTEGRITY,
-          requires_network: ["slack.com"],
-          requires_env: [
-            {
-              key: "SLACK_BOT_TOKEN",
-              required: true,
-              secret: true,
-              description: "xoxb-",
+          permissions: {
+            network: ["slack.com"],
+            env: [
+              {
+                key: "SLACK_BOT_TOKEN",
+                required: true,
+                secret: true,
+                description: "xoxb-",
+              },
+            ],
+          },
+          capabilities: {
+            action: {
+              kinds: [
+                { kind: "send_slack_message", description: "post" },
+              ],
             },
-          ],
-          kinds: ["send_slack_message"],
+          },
           publishedAt: "2026-05-17",
         },
       ],
@@ -401,16 +428,24 @@ describe("install", () => {
         {
           version: "0.1.0",
           integrity: INTEGRITY,
-          requires_network: ["slack.com"],
-          requires_env: [
-            {
-              key: "SLACK_BOT_TOKEN",
-              required: true,
-              secret: true,
-              description: "xoxb-",
+          permissions: {
+            network: ["slack.com"],
+            env: [
+              {
+                key: "SLACK_BOT_TOKEN",
+                required: true,
+                secret: true,
+                description: "xoxb-",
+              },
+            ],
+          },
+          capabilities: {
+            action: {
+              kinds: [
+                { kind: "send_slack_message", description: "post" },
+              ],
             },
-          ],
-          kinds: ["send_slack_message"],
+          },
           publishedAt: "2026-05-17",
         },
       ],
@@ -454,7 +489,15 @@ describe("list", () => {
             name: "@open-neko/plugin-parallel-search",
             version: "0.2.0",
             integrity: INTEGRITY,
-            capabilities: { network: ["search.parallel.ai"] },
+            permissions: { network: ["search.parallel.ai"], env: [] },
+            capabilities: {
+              action: {
+                kinds: [
+                  { kind: "web_search", description: "search" },
+                  { kind: "web_fetch", description: "fetch" },
+                ],
+              },
+            },
             marketplace: "official",
           },
         ],
@@ -486,7 +529,10 @@ describe("remove", () => {
             name: "@open-neko/plugin-x",
             version: "0.1.0",
             integrity: INTEGRITY,
-            capabilities: { network: [] },
+            permissions: { network: [], env: [] },
+            capabilities: {
+              action: { kinds: [{ kind: "k", description: "k" }] },
+            },
           },
         ],
       }),

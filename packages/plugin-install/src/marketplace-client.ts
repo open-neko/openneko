@@ -19,14 +19,26 @@ export interface MarketplaceEnvRequirement {
   description: string;
 }
 
+export interface MarketplacePermissions {
+  network: string[];
+  env: MarketplaceEnvRequirement[];
+}
+
+export interface MarketplaceActionDeclaration {
+  kind: string;
+  description: string;
+}
+
+export interface MarketplaceCapabilities {
+  action?: { kinds: MarketplaceActionDeclaration[] };
+  auth?: { providerLabel?: string };
+}
+
 export interface MarketplaceVersion {
   version: string;
   integrity: string;
-  requires_network: string[];
-  requires_env?: MarketplaceEnvRequirement[];
-  kinds: string[];
-  /** True when this version implements the SSO auth contract. */
-  provides_auth?: boolean;
+  permissions: MarketplacePermissions;
+  capabilities: MarketplaceCapabilities;
   publishedAt: string;
   yanked?: boolean;
   yanked_reason?: string;
