@@ -79,6 +79,15 @@ export const PluginManifestEntry = z.object({
    */
   kinds: z.array(ActionKindName).optional(),
   /**
+   * True when this plugin implements the SSO contract (begin_auth +
+   * complete_auth RPC methods). Copied at install time from the
+   * marketplace entry. The host inspects this flag to decide whether
+   * to show a "Sign in with …" button on the sign-in page — no VM
+   * spawn needed to make that decision. At most one installed plugin
+   * may set this; the registry refuses to register a second.
+   */
+  provides_auth: z.boolean().optional(),
+  /**
    * Inline env values to set for this plugin. The CLI normally writes
    * secrets to the gitignored per-user store at ~/.config/openneko/
    * secrets.json; this field is for tests + non-secret defaults. The

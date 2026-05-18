@@ -25,6 +25,8 @@ export interface MarketplaceVersion {
   requires_network: string[];
   requires_env?: MarketplaceEnvRequirement[];
   kinds: string[];
+  /** True when this version implements the SSO auth contract. */
+  provides_auth?: boolean;
   publishedAt: string;
   yanked?: boolean;
   yanked_reason?: string;

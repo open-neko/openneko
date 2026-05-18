@@ -48,4 +48,54 @@ describe("definePlugin", () => {
       }),
     ).toThrow(/handler/);
   });
+
+  it("accepts an auth-only plugin", () => {
+    const plugin = definePlugin({
+      name: "@open-neko/plugin-auth",
+      version: "0.1.0",
+      auth: {
+        providerLabel: "Test IdP",
+        begin: async () => ({
+          authorizationUrl: "https://idp.example.com/oauth/authorize",
+        }),
+        complete: async () => ({
+          identity: {
+            sub: "u-1",
+            email: "x@y.com",
+            groups: [],
+          },
+        }),
+      },
+    });
+    expect(plugin.auth?.providerLabel).toBe("Test IdP");
+    expect(plugin.actions).toBeUndefined();
+  });
+
+  it("throws when auth.begin is not a function", () => {
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        auth: {
+          begin: "nope" as unknown as () => Promise<never>,
+          complete: async () => ({
+            identity: { sub: "x", email: "x@y.com", groups: [] },
+          }),
+        },
+      }),
+    ).toThrow(/auth\.begin/);
+  });
+
+  it("throws when auth.complete is not a function", () => {
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        auth: {
+          begin: async () => ({ authorizationUrl: "https://x" }),
+          complete: "nope" as unknown as () => Promise<never>,
+        },
+      }),
+    ).toThrow(/auth\.complete/);
+  });
 });

@@ -1,4 +1,8 @@
 import {
+  BeginAuthRpcParams,
+  BeginAuthRpcResult,
+  CompleteAuthRpcParams,
+  CompleteAuthRpcResult,
   ExecuteActionParams,
   ExecuteActionResult,
   RegisterResult,
@@ -34,6 +38,10 @@ export async function dispatchPluginRpc(
         return rpcOk(buildRegisterResult(plugin));
       case "execute_action":
         return rpcOk(await runExecuteAction(plugin, options.paramsJson));
+      case "begin_auth":
+        return rpcOk(await runBeginAuth(plugin, options.paramsJson));
+      case "complete_auth":
+        return rpcOk(await runCompleteAuth(plugin, options.paramsJson));
       default:
         return rpcErr("UNKNOWN_METHOD", `unknown RPC method: ${options.method}`);
     }
@@ -52,6 +60,11 @@ function buildRegisterResult(plugin: PluginDefinition): RegisterResult {
       kind: a.kind,
       description: a.description,
     })),
+    auth: plugin.auth
+      ? plugin.auth.providerLabel
+        ? { providerLabel: plugin.auth.providerLabel }
+        : {}
+      : undefined,
   });
 }
 
@@ -68,6 +81,30 @@ async function runExecuteAction(
   }
   const outcome = await action.handler(parsed.request);
   return ExecuteActionResult.parse({ outcome });
+}
+
+async function runBeginAuth(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<BeginAuthRpcResult> {
+  if (!plugin.auth) {
+    throw new Error("plugin does not implement an auth provider");
+  }
+  const parsed = BeginAuthRpcParams.parse(JSON.parse(paramsJson));
+  const result = await plugin.auth.begin(parsed.params);
+  return BeginAuthRpcResult.parse({ result });
+}
+
+async function runCompleteAuth(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<CompleteAuthRpcResult> {
+  if (!plugin.auth) {
+    throw new Error("plugin does not implement an auth provider");
+  }
+  const parsed = CompleteAuthRpcParams.parse(JSON.parse(paramsJson));
+  const result = await plugin.auth.complete(parsed.params);
+  return CompleteAuthRpcResult.parse({ result });
 }
 
 /**

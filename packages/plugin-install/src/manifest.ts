@@ -31,6 +31,13 @@ export interface ManifestEntry {
    * handles what — enables hot-reload).
    */
   kinds?: string[];
+  /**
+   * True when this plugin implements the SSO contract. Copied at
+   * install time from the marketplace entry's `provides_auth`. The
+   * web app reads this flag (via the worker admin endpoint) to
+   * decide whether to light up "Sign in with …" on the sign-in page.
+   */
+  provides_auth?: boolean;
   env?: Record<string, string>;
   /** Display name of the marketplace this plugin came from (for traceability). */
   marketplace?: string;

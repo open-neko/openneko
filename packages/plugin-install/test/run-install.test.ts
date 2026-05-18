@@ -286,6 +286,76 @@ describe("runInstall", () => {
     expect(result.marketplace).toBe("acme");
   });
 
+  it("copies provides_auth into the manifest entry when the marketplace version declares it", async () => {
+    const plugin = {
+      name: "@open-neko/plugin-scalekit",
+      title: "Scalekit SSO",
+      description: "...",
+      source: "https://github.com/open-neko/plugins",
+      versions: [
+        {
+          version: "0.1.0",
+          integrity: INTEGRITY,
+          requires_network: ["*.scalekit.com"],
+          kinds: [],
+          provides_auth: true,
+          publishedAt: "2026-05-17",
+        },
+      ],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    await runInstall({
+      repoRoot: repoDir,
+      spec: "@open-neko/plugin-scalekit",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+    });
+    const written = JSON.parse(
+      await readFile(path.join(repoDir, PLUGIN_MANIFEST_FILE), "utf8"),
+    );
+    expect(written.plugins[0].provides_auth).toBe(true);
+    expect(written.plugins[0].kinds).toEqual([]);
+  });
+
+  it("omits provides_auth from the manifest when the version doesn't declare it", async () => {
+    const plugin = {
+      name: "@open-neko/plugin-noauth",
+      title: "noauth",
+      description: "...",
+      source: "https://github.com/open-neko/plugins",
+      versions: [
+        {
+          version: "0.1.0",
+          integrity: INTEGRITY,
+          requires_network: [],
+          kinds: ["do_something"],
+          publishedAt: "2026-05-17",
+        },
+      ],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    await runInstall({
+      repoRoot: repoDir,
+      spec: "@open-neko/plugin-noauth",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+    });
+    const written = JSON.parse(
+      await readFile(path.join(repoDir, PLUGIN_MANIFEST_FILE), "utf8"),
+    );
+    expect(written.plugins[0].provides_auth).toBeUndefined();
+  });
+
   it("errors on conflict when a plugin appears in multiple trusted marketplaces", async () => {
     const plugin = {
       name: "@conflict/p",

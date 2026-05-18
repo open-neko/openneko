@@ -170,6 +170,7 @@ export async function runInstall(
     integrity: version.integrity,
     capabilities: { network: version.requires_network ?? [] },
     kinds: version.kinds ?? [],
+    ...(version.provides_auth ? { provides_auth: true } : {}),
     marketplace: chosen.marketplaceName,
   };
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));

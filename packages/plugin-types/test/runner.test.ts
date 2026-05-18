@@ -103,3 +103,89 @@ describe("dispatchPluginRpc", () => {
     expect(response.ok).toBe(false);
   });
 });
+
+describe("dispatchPluginRpc — auth", () => {
+  const authPlugin = definePlugin({
+    name: "@open-neko/plugin-auth-example",
+    version: "0.1.0",
+    auth: {
+      providerLabel: "Example IdP",
+      begin: async ({ state }) => ({
+        authorizationUrl: `https://idp.example.com/oauth/authorize?state=${state}`,
+      }),
+      complete: async ({ code }) => ({
+        identity: {
+          sub: `sub-${code}`,
+          email: "amit@example.com",
+          name: "Amit",
+          orgId: null,
+          groups: ["everyone"],
+        },
+      }),
+    },
+  });
+
+  it("register surfaces providerLabel for auth plugins", async () => {
+    const r = await dispatchPluginRpc(authPlugin, {
+      method: "register",
+      paramsJson: "{}",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as { auth?: { providerLabel?: string } };
+    expect(out.auth?.providerLabel).toBe("Example IdP");
+  });
+
+  it("begin_auth returns the plugin's authorization URL", async () => {
+    const r = await dispatchPluginRpc(authPlugin, {
+      method: "begin_auth",
+      paramsJson: JSON.stringify({
+        params: {
+          redirectUri: "https://app.example.com/cb",
+          state: "csrf-token",
+        },
+      }),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as { result: { authorizationUrl: string } };
+    expect(out.result.authorizationUrl).toBe(
+      "https://idp.example.com/oauth/authorize?state=csrf-token",
+    );
+  });
+
+  it("complete_auth returns the identity", async () => {
+    const r = await dispatchPluginRpc(authPlugin, {
+      method: "complete_auth",
+      paramsJson: JSON.stringify({
+        params: {
+          code: "auth-code",
+          redirectUri: "https://app.example.com/cb",
+          state: "csrf-token",
+        },
+      }),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as {
+      result: { identity: { sub: string; email: string } };
+    };
+    expect(out.result.identity.sub).toBe("sub-auth-code");
+    expect(out.result.identity.email).toBe("amit@example.com");
+  });
+
+  it("begin_auth on a non-auth plugin returns PLUGIN_ERROR", async () => {
+    const r = await dispatchPluginRpc(samplePlugin, {
+      method: "begin_auth",
+      paramsJson: JSON.stringify({
+        params: {
+          redirectUri: "https://x",
+          state: "x",
+        },
+      }),
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.message).toMatch(/auth provider/);
+  });
+});

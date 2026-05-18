@@ -3,6 +3,12 @@ import {
   PluginActionOutcome,
   PluginActionRequest,
 } from "./action.js";
+import {
+  BeginAuthParams,
+  BeginAuthResult,
+  CompleteAuthParams,
+  CompleteAuthResult,
+} from "./auth.js";
 
 export type PluginActionHandler = (
   request: PluginActionRequest,
@@ -12,10 +18,39 @@ export interface PluginActionDefinition extends PluginActionDeclaration {
   handler: PluginActionHandler;
 }
 
+export type BeginAuthHandler = (
+  params: BeginAuthParams,
+) => Promise<BeginAuthResult> | BeginAuthResult;
+
+export type CompleteAuthHandler = (
+  params: CompleteAuthParams,
+) => Promise<CompleteAuthResult> | CompleteAuthResult;
+
+/**
+ * SSO provider implementation. Plugins that opt in to OpenNeko's auth
+ * contract supply both handlers. The host (worker → web) drives the
+ * OIDC dance: it calls `begin` to get an authorization URL,
+ * redirects the browser there, then on callback calls `complete` to
+ * trade the code for an identity assertion.
+ */
+export interface PluginAuthDefinition {
+  /** Short label rendered on the sign-in button. */
+  providerLabel?: string;
+  begin: BeginAuthHandler;
+  complete: CompleteAuthHandler;
+}
+
 export interface PluginDefinition {
   name: string;
   version: string;
   actions?: PluginActionDefinition[];
+  /**
+   * Optional SSO provider implementation. When set, the plugin's
+   * manifest entry should also carry `provides_auth: true` so the
+   * host can light up the "Sign in with …" UI without first spawning
+   * the VM.
+   */
+  auth?: PluginAuthDefinition;
 }
 
 /**
@@ -48,6 +83,14 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
       throw new Error(
         `definePlugin: action "${action.kind}" must provide a handler function`,
       );
+    }
+  }
+  if (definition.auth) {
+    if (typeof definition.auth.begin !== "function") {
+      throw new Error("definePlugin: auth.begin must be a function");
+    }
+    if (typeof definition.auth.complete !== "function") {
+      throw new Error("definePlugin: auth.complete must be a function");
     }
   }
   return definition;

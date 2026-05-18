@@ -54,6 +54,21 @@ describe("PluginManifestEntry", () => {
     const parsed = PluginManifestEntry.parse({ ...base, capabilities: undefined });
     expect(parsed.capabilities.network).toEqual([]);
   });
+
+  it("accepts provides_auth: true on an auth-only entry", () => {
+    const parsed = PluginManifestEntry.parse({
+      ...base,
+      kinds: [],
+      provides_auth: true,
+    });
+    expect(parsed.provides_auth).toBe(true);
+    expect(parsed.kinds).toEqual([]);
+  });
+
+  it("provides_auth defaults to undefined when omitted", () => {
+    const parsed = PluginManifestEntry.parse(base);
+    expect(parsed.provides_auth).toBeUndefined();
+  });
 });
 
 describe("EnvVarName", () => {

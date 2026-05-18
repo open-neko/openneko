@@ -192,6 +192,8 @@ flowchart LR
 
 **Shared install library.** The install orchestration (`runInstall`), secrets store, marketplace client, and manifest helpers live in `packages/plugin-install/` (`@open-neko/plugin-install`). Both the worker (via the registry) and the CLI consume it — one source of truth for the secrets-store shape, so the file the CLI writes is exactly the file the worker reads.
 
+**Plugin-as-SSO-provider.** A plugin can opt in to OpenNeko's SSO contract by declaring `provides_auth: true` in its marketplace entry. When such a plugin is installed, the web app's `/signin` page renders a "Sign in with <provider>" button; clicking it kicks off an OIDC code-exchange that the plugin implements (`begin_auth` returns the IdP authorization URL, `complete_auth` exchanges the callback code for an `AuthIdentity`). The core upserts `app_user` from the identity and sets a signed session cookie — it never sees the IdP client secret, which lives in the plugin's VM env. The first-party `@open-neko/plugin-scalekit` fronts the entire enterprise IdP stack (Okta, Entra ID, Google Workspace, …) behind one integration. At most one auth plugin may be installed at a time; the registry surfaces a second claimant as `skipped`. The web app discovers whether an auth plugin is installed via `GET /admin/auth/status` on the worker; that endpoint reads the manifest entry's flag (no VM spawn needed) and is hot-reload-aware for the same reason actions are.
+
 ## Operating loop (OUDA)
 
 Cron starts a chain; subscriptions propagate every link after. Outputs are non-mutating; action requests are the only thing that touches the world.

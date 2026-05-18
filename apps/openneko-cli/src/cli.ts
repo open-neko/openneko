@@ -215,7 +215,8 @@ async function handleList(
         ? "no network"
         : entry.capabilities.network.join(", ");
     const from = entry.marketplace ? `  from=${entry.marketplace}` : "";
-    stdout(`${entry.name}@${entry.version}  [${hosts}]${from}`);
+    const flags = entry.provides_auth ? "  [SSO provider]" : "";
+    stdout(`${entry.name}@${entry.version}  [${hosts}]${flags}${from}`);
   }
   return 0;
 }
