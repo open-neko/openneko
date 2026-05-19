@@ -79,6 +79,54 @@ describe("PluginCapabilitiesDeclaration", () => {
     ).toThrow();
   });
 
+  it("accepts a per-scope default_mode object", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [
+          {
+            kind: "send_message",
+            description: "post",
+            default_mode: { external: "ask", internal: "auto" },
+          },
+        ],
+      },
+    });
+    const decl = parsed.action?.kinds[0];
+    expect(decl?.default_mode).toEqual({ external: "ask", internal: "auto" });
+  });
+
+  it("accepts a partial per-scope default_mode (only external)", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [
+          {
+            kind: "demo",
+            description: "x",
+            default_mode: { external: "auto" },
+          },
+        ],
+      },
+    });
+    const decl = parsed.action?.kinds[0];
+    expect(decl?.default_mode).toEqual({ external: "auto" });
+  });
+
+  it("rejects per-scope object with an unknown mode value", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        action: {
+          kinds: [
+            {
+              kind: "demo",
+              description: "x",
+              default_mode: { external: "wat" },
+            },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
   it("accepts an auth-only plugin", () => {
     const parsed = PluginCapabilitiesDeclaration.parse({
       auth: { providerLabel: "Scalekit" },

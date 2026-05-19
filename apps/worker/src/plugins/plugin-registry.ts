@@ -187,16 +187,34 @@ export class PluginRegistry {
    * builder to build one MCP tool per kind. Returns an empty array
    * when no action-capable plugins are installed (auth-only plugins
    * don't contribute anything here).
+   *
+   * `default_mode` is passed through as-declared — scalar OR
+   * per-scope object. The seeder + tool builder both understand both
+   * shapes.
    */
   getRegisteredActionDescriptors(): Array<{
     kind: string;
     description: string;
-    default_mode?: "auto" | "ask" | "deny";
+    default_mode?:
+      | "auto"
+      | "ask"
+      | "deny"
+      | {
+          external?: "auto" | "ask" | "deny";
+          internal?: "auto" | "ask" | "deny";
+        };
   }> {
     const out: Array<{
       kind: string;
       description: string;
-      default_mode?: "auto" | "ask" | "deny";
+      default_mode?:
+        | "auto"
+        | "ask"
+        | "deny"
+        | {
+            external?: "auto" | "ask" | "deny";
+            internal?: "auto" | "ask" | "deny";
+          };
     }> = [];
     for (const entry of this.state.entriesByPluginId.values()) {
       for (const decl of entry.capabilities.action?.kinds ?? []) {

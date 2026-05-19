@@ -91,7 +91,14 @@ function describeLimits(limits: Record<string, unknown>): string | null {
 type PluginActionDescriptor = {
   kind: string;
   description: string;
-  default_mode?: "auto" | "ask" | "deny";
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | {
+        external?: "auto" | "ask" | "deny";
+        internal?: "auto" | "ask" | "deny";
+      };
 };
 
 function resolveEffectiveMode(
@@ -338,11 +345,20 @@ function pluginNameFromKind(kind: string): string {
   return kind.split("_")[0] ?? kind;
 }
 
-function describeDefaultMode(mode: string | undefined): string {
-  if (mode === "auto") return "auto by default";
-  if (mode === "ask") return "asks by default";
-  if (mode === "deny") return "denied by default";
-  return "no default declared";
+function describeDefaultMode(
+  mode: PluginActionDescriptor["default_mode"],
+): string {
+  if (mode === undefined) return "no default declared";
+  if (typeof mode === "string") {
+    if (mode === "auto") return "auto by default";
+    if (mode === "ask") return "asks by default";
+    if (mode === "deny") return "denied by default";
+    return "no default declared";
+  }
+  const parts: string[] = [];
+  if (mode.external) parts.push(`external: ${mode.external}`);
+  if (mode.internal) parts.push(`internal: ${mode.internal}`);
+  return parts.length > 0 ? parts.join(" · ") : "no default declared";
 }
 
 function InstalledPluginsSection({

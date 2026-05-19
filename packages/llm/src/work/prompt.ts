@@ -155,7 +155,38 @@ ${GRAPHJIN_DATE_RULE}
 export interface PluginActionPromptDescriptor {
   kind: string;
   description: string;
-  default_mode?: "auto" | "ask" | "deny";
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | {
+        external?: "auto" | "ask" | "deny";
+        internal?: "auto" | "ask" | "deny";
+      };
+}
+
+function summarizeMode(
+  default_mode: PluginActionPromptDescriptor["default_mode"],
+): string {
+  if (default_mode === undefined) return "ask";
+  if (typeof default_mode === "string") return default_mode;
+  const parts: string[] = [];
+  if (default_mode.external) parts.push(`external:${default_mode.external}`);
+  if (default_mode.internal) parts.push(`internal:${default_mode.internal}`);
+  return parts.length > 0 ? parts.join("/") : "ask";
+}
+
+function isDeniedEverywhere(
+  default_mode: PluginActionPromptDescriptor["default_mode"],
+): boolean {
+  if (default_mode === "deny") return true;
+  if (default_mode && typeof default_mode === "object") {
+    const keys = Object.keys(default_mode) as Array<"external" | "internal">;
+    if (keys.length > 0 && keys.every((k) => default_mode[k] === "deny")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function buildPluginActionsSection(
@@ -167,18 +198,13 @@ function buildPluginActionsSection(
   // Hermes has no tool discovery — the system prompt is where it
   // learns kinds exist. Only emit the fence-syntax block in that case.
   if (!useFences) return "";
-  const active = descriptors.filter((d) => d.default_mode !== "deny");
+  const active = descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return "";
   const rows = active
-    .map((d) => {
-      const mode =
-        d.default_mode === "auto"
-          ? "auto"
-          : d.default_mode === "ask"
-            ? "ask"
-            : "ask";
-      return `  - \`${d.kind}\` (${mode}) — ${d.description.split("\n")[0]}`;
-    })
+    .map(
+      (d) =>
+        `  - \`${d.kind}\` (${summarizeMode(d.default_mode)}) — ${d.description.split("\n")[0]}`,
+    )
     .join("\n");
   return `<plugin_actions>
 Plugins contribute action kinds you can request inline. Emit each as

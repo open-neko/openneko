@@ -269,8 +269,55 @@ export function buildWorkMemoryServer(
 export interface PluginActionDescriptor {
   kind: string;
   description: string;
-  /** Seeded approval mode from the manifest; runtime policy may override. */
-  default_mode?: "auto" | "ask" | "deny";
+  /**
+   * Seeded approval mode from the manifest; runtime policy may
+   * override. Accepts either a scalar (applies to all scopes) or a
+   * per-scope object for kinds whose default depends on the scope
+   * they're invoked under.
+   */
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | {
+        external?: "auto" | "ask" | "deny";
+        internal?: "auto" | "ask" | "deny";
+      };
+}
+
+function modeForScope(
+  default_mode: PluginActionDescriptor["default_mode"],
+  scope: "external" | "internal",
+): "auto" | "ask" | "deny" | undefined {
+  if (default_mode === undefined) return undefined;
+  if (typeof default_mode === "string") return default_mode;
+  return scope === "external" ? default_mode.external : default_mode.internal;
+}
+
+function isDeniedEverywhere(
+  default_mode: PluginActionDescriptor["default_mode"],
+): boolean {
+  if (default_mode === "deny") return true;
+  if (default_mode && typeof default_mode === "object") {
+    const keys = Object.keys(default_mode) as Array<"external" | "internal">;
+    if (keys.length > 0 && keys.every((k) => default_mode[k] === "deny")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function needsIntentForKind(
+  default_mode: PluginActionDescriptor["default_mode"],
+): boolean {
+  // Intent is required at schema-time whenever the kind COULD land in
+  // ask-mode under any scope — so the agent has to author one
+  // regardless of which scope it picks. Auto-only kinds skip it.
+  if (default_mode === "ask") return true;
+  if (default_mode && typeof default_mode === "object") {
+    return Object.values(default_mode).some((m) => m === "ask");
+  }
+  return false;
 }
 
 export interface BuildPluginActionServerOptions {
@@ -316,11 +363,11 @@ export interface BuildPluginActionServerOptions {
 export function buildPluginActionServer(
   opts: BuildPluginActionServerOptions,
 ): ReturnType<typeof createSdkMcpServer> | null {
-  const active = opts.descriptors.filter((d) => d.default_mode !== "deny");
+  const active = opts.descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return null;
 
   const tools = active.map((d) => {
-    const needsIntent = d.default_mode === "ask";
+    const needsIntent = needsIntentForKind(d.default_mode);
     const baseSchema = {
       target: z
         .string()
@@ -366,12 +413,24 @@ export function buildPluginActionServer(
       ...baseSchema,
     };
 
+    const externalMode = modeForScope(d.default_mode, "external");
+    const internalMode = modeForScope(d.default_mode, "internal");
     const modeHint =
-      d.default_mode === "auto"
-        ? "Auto-approved by default — runs without user confirmation. Operators can override via /settings/rules."
-        : d.default_mode === "ask"
-          ? "Asks the user for approval before running. You MUST set `intent` to a clear one-sentence explanation."
-          : "Approval policy decided per-call.";
+      d.default_mode === undefined
+        ? "Approval policy decided per-call."
+        : typeof d.default_mode === "string"
+          ? d.default_mode === "auto"
+            ? "Auto-approved by default — runs without user confirmation. Operators can override via /settings/rules."
+            : "Asks the user for approval before running. You MUST set `intent` to a clear one-sentence explanation."
+          : [
+              externalMode ? `external: ${externalMode}` : null,
+              internalMode ? `internal: ${internalMode}` : null,
+            ]
+              .filter(Boolean)
+              .join(", ") +
+            (needsIntent
+              ? " — set `intent` whenever the call might land in ask-mode."
+              : "");
 
     return tool(
       d.kind,

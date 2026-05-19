@@ -58,7 +58,14 @@ export interface PluginsHandlerSurface {
   getRegisteredActionDescriptors(): Array<{
     kind: string;
     description: string;
-    default_mode?: "auto" | "ask" | "deny";
+    default_mode?:
+      | "auto"
+      | "ask"
+      | "deny"
+      | {
+          external?: "auto" | "ask" | "deny";
+          internal?: "auto" | "ask" | "deny";
+        };
   }>;
 }
 

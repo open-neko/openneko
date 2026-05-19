@@ -242,7 +242,22 @@ export interface PluginActionSeed {
   pluginName: string;
   kind: string;
   description: string;
-  default_mode?: "auto" | "ask" | "deny";
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | { external?: "auto" | "ask" | "deny"; internal?: "auto" | "ask" | "deny" };
+}
+
+type PluginActionScope = "external" | "internal";
+
+function modeForScope(
+  default_mode: PluginActionSeed["default_mode"],
+  scope: PluginActionScope,
+): "auto" | "ask" | "deny" | undefined {
+  if (default_mode === undefined) return undefined;
+  if (typeof default_mode === "string") return default_mode;
+  return scope === "external" ? default_mode.external : default_mode.internal;
 }
 
 export async function seedPluginActionPolicies(
@@ -256,32 +271,46 @@ export async function seedPluginActionPolicies(
   let created = 0;
   let skipped = 0;
   for (const seed of seeds) {
-    if (seed.default_mode !== "auto") {
-      skipped++;
-      continue;
+    // Walk every scope the kind cares about. Scalar default_mode is
+    // applied to "external" only (the common case — every existing
+    // first-party kind is external-facing). Object form lets plugin
+    // authors opt into per-scope defaults.
+    const scopes: PluginActionScope[] =
+      seed.default_mode && typeof seed.default_mode === "object"
+        ? (Object.keys(seed.default_mode) as PluginActionScope[])
+        : ["external"];
+    for (const scope of scopes) {
+      const mode = modeForScope(seed.default_mode, scope);
+      // Only auto kinds need a seeded row — ask falls through to
+      // external_default (approval_required); deny is the agent
+      // tool-builder's job to enforce by omission.
+      if (mode !== "auto") {
+        skipped++;
+        continue;
+      }
+      const name = `plugin:${seed.pluginName}:auto:${seed.kind}:${scope}`;
+      if (existingNames.has(name)) {
+        skipped++;
+        continue;
+      }
+      await createActionPolicy({
+        orgId,
+        name,
+        description: `Auto-approve "${seed.kind}" (${scope}) — seeded from ${seed.pluginName}. ${seed.description}`,
+        appliesToKinds: [seed.kind],
+        appliesToScopes: [scope],
+        mode: "auto_approve" as ActionPolicyMode,
+        riskThresholdAutoApprove: null,
+        allowedTargets: null,
+        deniedTargets: null,
+        limits: {},
+        approverRole: null,
+        priority: 900,
+        enabled: true,
+      });
+      existingNames.add(name);
+      created++;
     }
-    const name = `plugin:${seed.pluginName}:auto:${seed.kind}`;
-    if (existingNames.has(name)) {
-      skipped++;
-      continue;
-    }
-    await createActionPolicy({
-      orgId,
-      name,
-      description: `Auto-approve "${seed.kind}" — seeded from ${seed.pluginName}. ${seed.description}`,
-      appliesToKinds: [seed.kind],
-      appliesToScopes: ["external"],
-      mode: "auto_approve" as ActionPolicyMode,
-      riskThresholdAutoApprove: null,
-      allowedTargets: null,
-      deniedTargets: null,
-      limits: {},
-      approverRole: null,
-      priority: 900,
-      enabled: true,
-    });
-    existingNames.add(name);
-    created++;
   }
   return { created, skipped };
 }

@@ -144,7 +144,14 @@ export async function beginAuth(params: {
 export interface PluginActionDescriptor {
   kind: string;
   description: string;
-  default_mode?: "auto" | "ask" | "deny";
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | {
+        external?: "auto" | "ask" | "deny";
+        internal?: "auto" | "ask" | "deny";
+      };
 }
 
 export async function getPluginActionDescriptors(): Promise<

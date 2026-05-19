@@ -58,6 +58,36 @@ export const ActionMode = z.enum(["auto", "ask", "deny"]);
 export type ActionMode = z.infer<typeof ActionMode>;
 
 /**
+ * Per-scope default-mode override. Use when the same action kind
+ * should have different blast-radius defaults depending on whether
+ * it targets external or internal resources. e.g. a future
+ * `send_message` kind might default `external: "ask"` (asking the
+ * user before posting to a customer-visible channel) but
+ * `internal: "auto"` (auto-firing in a bot-to-bot in-org context).
+ *
+ * Either key is optional; the host falls back to "ask" for a scope
+ * that's omitted.
+ */
+export const ActionModePerScope = z.object({
+  external: ActionMode.optional(),
+  internal: ActionMode.optional(),
+});
+
+export type ActionModePerScope = z.infer<typeof ActionModePerScope>;
+
+/**
+ * The declaration's default_mode accepts either:
+ *   - a scalar ActionMode applied to all scopes the kind is invoked
+ *     under (the common case — most plugin kinds are external-only
+ *     and the operator never sees a difference)
+ *   - a per-scope object for kinds that legitimately want different
+ *     defaults per scope
+ */
+export const ActionDefaultMode = z.union([ActionMode, ActionModePerScope]);
+
+export type ActionDefaultMode = z.infer<typeof ActionDefaultMode>;
+
+/**
  * Single declared action — a snake_case kind the agent can request,
  * plus the description the agent uses to pick it. Same shape lives in
  * the marketplace entry, the installed manifest, and the plugin's
@@ -67,7 +97,24 @@ export type ActionMode = z.infer<typeof ActionMode>;
 export const PluginActionDeclaration = z.object({
   kind: ActionKindName,
   description: z.string().min(1),
-  default_mode: ActionMode.optional(),
+  default_mode: ActionDefaultMode.optional(),
 });
 
 export type PluginActionDeclaration = z.infer<typeof PluginActionDeclaration>;
+
+/**
+ * Convenience: collapse a declaration's default_mode into a per-scope
+ * lookup so callers (the host's policy seeder, the agent tool builder)
+ * always see the same shape. Scalar mode becomes both-scopes mode;
+ * undefined keys stay undefined (operator falls through to the
+ * scope's default policy).
+ */
+export function resolveDefaultModeForScope(
+  declaration: PluginActionDeclaration,
+  scope: "external" | "internal",
+): ActionMode | undefined {
+  const dm = declaration.default_mode;
+  if (dm === undefined) return undefined;
+  if (typeof dm === "string") return dm;
+  return scope === "external" ? dm.external : dm.internal;
+}
