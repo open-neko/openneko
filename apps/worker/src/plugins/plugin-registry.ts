@@ -85,6 +85,13 @@ export interface PluginRegistryOptions {
    * the action-executor module.
    */
   onAdapter?: (kind: string, adapter: ActionAdapter) => void;
+  /**
+   * Called after every successful manifest refresh with the parsed
+   * manifest entries. Lets the worker seed action_policy rows from
+   * each plugin's declared `default_mode` without the registry having
+   * to know about the org_id or the policy subsystem.
+   */
+  onManifestRefresh?: (entries: PluginManifestEntry[]) => Promise<void> | void;
 }
 
 export interface RegistryStatus {
@@ -356,6 +363,16 @@ export class PluginRegistry {
       }
 
       this.state = newState;
+
+      if (this.options.onManifestRefresh) {
+        try {
+          await this.options.onManifestRefresh([...newState.entriesByPluginId.values()]);
+        } catch (err) {
+          console.warn(
+            `[plugin-registry] onManifestRefresh hook failed: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
     } finally {
       this.refreshing = false;
       if (this.pendingRefresh) {

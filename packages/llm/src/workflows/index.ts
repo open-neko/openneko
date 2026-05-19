@@ -162,6 +162,8 @@ export {
 export {
   evaluateActionPolicy,
   seedDefaultActionPolicies,
+  seedPluginActionPolicies,
+  type PluginActionSeed,
   type PolicyDecision,
   type PolicyRequestSubject,
 } from "./policy-engine";

@@ -215,3 +215,73 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
     });
   }
 }
+
+/**
+ * Per-plugin-kind policy seeder. Reads the seeded `default_mode` each
+ * plugin declares on its action kinds and creates a kind-specific
+ * action_policy row when the declaration deviates from the host's
+ * baseline.
+ *
+ * Mapping:
+ *   default_mode = "auto"  → seed auto_approve at priority 900
+ *                            (overrides the external_default
+ *                            approval_required at 950)
+ *   default_mode = "ask"   → no seed; falls through to external_default
+ *                            (approval_required) — already the safe
+ *                            default
+ *   default_mode = "deny"  → no seed; the agent tool builder excludes
+ *                            the kind from the agent's surface entirely
+ *   undefined              → treated as "ask"
+ *
+ * Idempotent: each kind gets one policy row named
+ * "plugin:<pluginName>:auto:<kind>". Re-running this function (e.g.
+ * after a manifest refresh) is a no-op for kinds already seeded;
+ * operators who edit or disable the row keep their changes.
+ */
+export interface PluginActionSeed {
+  pluginName: string;
+  kind: string;
+  description: string;
+  default_mode?: "auto" | "ask" | "deny";
+}
+
+export async function seedPluginActionPolicies(
+  orgId: string,
+  seeds: readonly PluginActionSeed[],
+): Promise<{ created: number; skipped: number }> {
+  if (seeds.length === 0) return { created: 0, skipped: 0 };
+  const existing = await defaultListEnabledPolicies(orgId);
+  const existingNames = new Set(existing.map((p) => p.name));
+
+  let created = 0;
+  let skipped = 0;
+  for (const seed of seeds) {
+    if (seed.default_mode !== "auto") {
+      skipped++;
+      continue;
+    }
+    const name = `plugin:${seed.pluginName}:auto:${seed.kind}`;
+    if (existingNames.has(name)) {
+      skipped++;
+      continue;
+    }
+    await createActionPolicy({
+      orgId,
+      name,
+      description: `Auto-approve "${seed.kind}" — seeded from ${seed.pluginName}. ${seed.description}`,
+      appliesToKinds: [seed.kind],
+      appliesToScopes: ["external"],
+      mode: "auto_approve" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: null,
+      priority: 900,
+      enabled: true,
+    });
+    existingNames.add(name);
+    created++;
+  }
+  return { created, skipped };
+}
