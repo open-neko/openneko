@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 
 interface ProviderInfo {
@@ -37,43 +38,36 @@ function SignInBody() {
     };
   }, []);
 
-  const signInHref = (() => {
-    const url = new URL("/api/auth/begin", "http://placeholder");
-    url.searchParams.set("returnTo", returnTo);
-    if (loginHint.length > 0) {
-      url.searchParams.set("loginHint", loginHint);
-    }
-    return `${url.pathname}${url.search}`;
-  })();
-
   return (
     <div className="root">
-      <main className="max-w-md mx-auto pt-24 pb-12 px-6">
-        <h1 className="font-display text-3xl font-bold mb-2">Sign in</h1>
-        <p className="text-text2 text-sm mb-8">
-          Access your OpenNeko deployment.
-        </p>
+      <AppHeader />
+
+      <div className="max-w-[480px] mx-auto">
+        <h1 className="greet">Sign in</h1>
+        <p className="greet-sub">Access your OpenNeko deployment.</p>
 
         {error && (
           <div
             role="alert"
-            className="mb-6 px-4 py-3 rounded-[10px] border border-border bg-accent-soft text-accent text-sm"
+            className="mb-6 px-4 py-3.5 rounded-[14px] border border-danger-soft bg-danger-soft text-danger text-[13px] leading-[1.5]"
           >
             {error}
           </div>
         )}
 
         {!providerLoaded ? (
-          <div className="text-text3 text-sm">Checking sign-in options…</div>
+          <p className="text-text3 text-sm">Checking sign-in options…</p>
         ) : provider ? (
           <form
-            method="GET"
             action="/api/auth/begin"
-            className="flex flex-col gap-3"
+            method="GET"
+            className="settings-card"
           >
             <input type="hidden" name="returnTo" value={returnTo} />
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-text2">Email (optional)</span>
+            <label className="block">
+              <span className="block font-display text-[12px] font-bold uppercase tracking-[0.12em] text-text3 mb-2">
+                Email <span className="font-body normal-case tracking-normal text-text3 font-normal">(optional)</span>
+              </span>
               <input
                 type="email"
                 name="loginHint"
@@ -81,44 +75,39 @@ function SignInBody() {
                 onChange={(e) => setLoginHint(e.target.value)}
                 placeholder="you@company.com"
                 autoComplete="email"
-                className="px-3 py-2.5 rounded-[10px] border border-border bg-white text-text text-sm focus:outline-none focus:border-accent"
+                className="w-full px-3.5 py-3 rounded-[12px] border border-border bg-white text-text text-[14px] placeholder:text-text3 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft transition-colors"
               />
-              <span className="text-text3 text-[12px]">
+              <span className="mt-2 block text-text3 text-[12px] leading-[1.5]">
                 Speeds up routing to the right IdP behind {provider.providerLabel}.
               </span>
             </label>
             <button
               type="submit"
-              className="mt-2 px-4 py-2.5 rounded-[10px] bg-text text-bg font-medium text-sm hover:opacity-90 cursor-pointer"
+              className="mt-6 w-full px-4 py-3 rounded-[12px] bg-text text-bg font-display font-bold text-[15px] tracking-[-0.01em] hover:opacity-90 active:translate-y-px transition-all cursor-pointer"
             >
               Sign in with {provider.providerLabel}
             </button>
-            <a
-              href={signInHref}
-              className="hidden"
-              aria-hidden="true"
-              tabIndex={-1}
-            >
-              {/* Mirror of the form's GET URL for keyboard/screen-reader users
-                  who can't submit forms in this environment. */}
-              Sign in with {provider.providerLabel}
-            </a>
-            <p className="text-text3 text-[12px] mt-2">
-              Provided by the <code>{provider.pluginName}</code> plugin.
+            <p className="mt-5 text-text3 text-[11px] tracking-[0.02em] text-center">
+              Provided by <code className="font-mono text-text2">{provider.pluginName}</code>
             </p>
           </form>
         ) : (
-          <div className="rounded-[10px] border border-border p-4 text-sm text-text2 leading-[1.5]">
-            <p className="mb-2">No SSO plugin is installed.</p>
-            <p>
-              An operator with shell access can install one — for example,{" "}
-              <code>openneko install @open-neko/plugin-scalekit</code> — to
-              enable enterprise sign-in. Until then, OpenNeko runs in
+          <div className="settings-card">
+            <p className="font-display text-[20px] font-bold text-text mb-2 leading-tight">
+              No SSO plugin is installed.
+            </p>
+            <p className="text-text2 text-[14px] leading-[1.6]">
+              An operator with shell access can install one — for example{" "}
+              <code className="font-mono text-text bg-neutral px-1.5 py-0.5 rounded-[6px] text-[13px]">
+                openneko install @open-neko/plugin-scalekit
+              </code>{" "}
+              — to enable enterprise sign-in. Until then, OpenNeko runs in
               single-operator mode.
             </p>
           </div>
         )}
-      </main>
+      </div>
+
       <CreatorCredit />
     </div>
   );
