@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/open-neko/neko/compare/v1.5.0...v1.6.0) (2026-05-19)
+
+
+### Features
+
+* **auth,web,worker:** SSO via the plugin runtime + Scalekit-ready sign-in ([#22](https://github.com/open-neko/neko/issues/22)) ([0f5ee16](https://github.com/open-neko/neko/commit/0f5ee16003e625b6837bf6bb61dd7b8392849f28))
+
 ## [1.5.0](https://github.com/open-neko/neko/compare/v1.4.0...v1.5.0) (2026-05-17)
 
 
