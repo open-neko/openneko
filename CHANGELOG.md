@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/open-neko/neko/compare/v1.6.0...v1.7.0) (2026-05-19)
+
+
+### Features
+
+* SSO via plugin runtime + plugin action tools in /work ([#24](https://github.com/open-neko/neko/issues/24)) ([ccaee8d](https://github.com/open-neko/neko/commit/ccaee8d7ed5b7e5dc5884b88f4fcdd4025cb9369))
+
 ## [1.6.0](https://github.com/open-neko/neko/compare/v1.5.0...v1.6.0) (2026-05-19)
 
 

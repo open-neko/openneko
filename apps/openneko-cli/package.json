@@ -1,6 +1,6 @@
 {
   "name": "@open-neko/cli",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Operator CLI for OpenNeko. Installs sandboxed plugins from the curated registry. Vendored into the open-neko/neko monorepo (was github.com/open-neko/cli).",
   "license": "Apache-2.0",
   "repository": {
