@@ -5,6 +5,8 @@ import {
   PluginEnvRequirement,
   PluginManifest,
   PluginManifestEntry,
+  PluginPermissions,
+  PluginCapabilitiesDeclaration,
 } from "../src/manifest";
 
 describe("HostPattern", () => {
@@ -21,24 +23,103 @@ describe("HostPattern", () => {
   });
 });
 
+describe("PluginPermissions", () => {
+  it("defaults network and env to empty arrays", () => {
+    const parsed = PluginPermissions.parse(undefined);
+    expect(parsed.network).toEqual([]);
+    expect(parsed.env).toEqual([]);
+  });
+
+  it("accepts populated network + env", () => {
+    const parsed = PluginPermissions.parse({
+      network: ["api.parallel.ai"],
+      env: [{ key: "API_KEY", description: "a key" }],
+    });
+    expect(parsed.network).toEqual(["api.parallel.ai"]);
+    expect(parsed.env[0]?.key).toBe("API_KEY");
+    expect(parsed.env[0]?.required).toBe(true);
+    expect(parsed.env[0]?.secret).toBe(true);
+  });
+});
+
+describe("PluginCapabilitiesDeclaration", () => {
+  it("accepts an action-only plugin", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [{ kind: "demo", description: "demo action" }],
+      },
+    });
+    expect(parsed.action?.kinds[0]?.kind).toBe("demo");
+    expect(parsed.auth).toBeUndefined();
+  });
+
+  it("accepts an auth-only plugin", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      auth: { providerLabel: "Scalekit" },
+    });
+    expect(parsed.auth?.providerLabel).toBe("Scalekit");
+    expect(parsed.action).toBeUndefined();
+  });
+
+  it("accepts a plugin contributing both surfaces", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: { kinds: [{ kind: "demo", description: "x" }] },
+      auth: {},
+    });
+    expect(parsed.action).toBeDefined();
+    expect(parsed.auth).toBeDefined();
+  });
+
+  it("rejects a capability map with neither surface declared", () => {
+    expect(() => PluginCapabilitiesDeclaration.parse({})).toThrow(
+      /at least one surface/,
+    );
+  });
+
+  it("rejects action with an empty kinds list", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({ action: { kinds: [] } }),
+    ).toThrow();
+  });
+
+  it("rejects malformed action kind name", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        action: { kinds: [{ kind: "BadKind", description: "x" }] },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("PluginManifestEntry", () => {
   const base: Record<string, unknown> = {
     name: "@open-neko/plugin-parallel-search",
     version: "0.1.0",
-    integrity: "sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    capabilities: { network: ["api.parallel.ai"] },
+    integrity:
+      "sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    permissions: { network: ["api.parallel.ai"], env: [] },
+    capabilities: {
+      action: { kinds: [{ kind: "web_search", description: "search" }] },
+    },
   };
 
   it("accepts a valid entry", () => {
     const parsed = PluginManifestEntry.parse(base);
     expect(parsed.name).toBe("@open-neko/plugin-parallel-search");
-    expect(parsed.capabilities.network).toEqual(["api.parallel.ai"]);
+    expect(parsed.permissions.network).toEqual(["api.parallel.ai"]);
+    expect(parsed.capabilities.action?.kinds[0]?.kind).toBe("web_search");
   });
 
   it("rejects semver ranges (must be pinned)", () => {
-    expect(() => PluginManifestEntry.parse({ ...base, version: "^0.1.0" })).toThrow();
-    expect(() => PluginManifestEntry.parse({ ...base, version: "0.1.x" })).toThrow();
-    expect(() => PluginManifestEntry.parse({ ...base, version: "latest" })).toThrow();
+    expect(() =>
+      PluginManifestEntry.parse({ ...base, version: "^0.1.0" }),
+    ).toThrow();
+    expect(() =>
+      PluginManifestEntry.parse({ ...base, version: "0.1.x" }),
+    ).toThrow();
+    expect(() =>
+      PluginManifestEntry.parse({ ...base, version: "latest" }),
+    ).toThrow();
   });
 
   it("rejects integrity that is not sha512", () => {
@@ -50,9 +131,25 @@ describe("PluginManifestEntry", () => {
     ).toThrow();
   });
 
-  it("defaults capabilities to empty network array", () => {
-    const parsed = PluginManifestEntry.parse({ ...base, capabilities: undefined });
-    expect(parsed.capabilities.network).toEqual([]);
+  it("defaults permissions to empty network + env when omitted", () => {
+    const parsed = PluginManifestEntry.parse({ ...base, permissions: undefined });
+    expect(parsed.permissions.network).toEqual([]);
+    expect(parsed.permissions.env).toEqual([]);
+  });
+
+  it("accepts an auth-only entry", () => {
+    const parsed = PluginManifestEntry.parse({
+      ...base,
+      capabilities: { auth: { providerLabel: "Scalekit" } },
+    });
+    expect(parsed.capabilities.auth?.providerLabel).toBe("Scalekit");
+    expect(parsed.capabilities.action).toBeUndefined();
+  });
+
+  it("rejects an entry with no capability declared", () => {
+    expect(() =>
+      PluginManifestEntry.parse({ ...base, capabilities: {} }),
+    ).toThrow(/at least one surface/);
   });
 });
 

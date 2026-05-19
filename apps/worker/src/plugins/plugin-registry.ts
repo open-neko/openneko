@@ -7,8 +7,8 @@
 //   - Reads openneko.plugins.json + the per-user secrets file
 //   - Watches both via fs.watch, with a small debounce
 //   - Maps action kind → plugin id from the manifest entries'
-//     `kinds: string[]` field (populated at install time from the
-//     marketplace entry)
+//     `capabilities.action.kinds` field (populated at install time
+//     from the marketplace entry)
 //   - Spawns each plugin's microVM LAZILY — first execute_action for
 //     that kind triggers the VM spawn; cold-start cost only paid once
 //   - Owns the env-value scrubber, rebuilt on every secrets file
@@ -19,17 +19,29 @@
 // new plugin's actions are usable on the next action_request. After
 // `openneko secrets set …`, the new env value is in effect on the
 // next execute_action. No restart anywhere.
-import { type FSWatcher, existsSync, watch as fsWatch } from "node:fs";
+import {
+  type FSWatcher,
+  existsSync,
+  readFileSync,
+  watch as fsWatch,
+} from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import {
+  BeginAuthParams,
+  BeginAuthRpcParams,
+  BeginAuthRpcResult,
+  CompleteAuthParams,
+  CompleteAuthRpcParams,
+  CompleteAuthRpcResult,
   ExecuteActionParams,
   ExecuteActionResult,
   PluginManifest,
   PluginManifestEntry,
   RegisterResult,
   RPC_PROTOCOL_VERSION,
+  type AuthIdentity,
   type PluginActionOutcome,
   type PluginActionRequest,
 } from "@open-neko/plugin-types";
@@ -80,16 +92,28 @@ export interface RegistryStatus {
   skipped: Array<{ name: string; reason: string }>;
   kinds: string[];
   vmsRunning: number;
+  /** Plugin id of the installed SSO provider (if any). */
+  authProvider: string | null;
+}
+
+/** Snapshot of the auth provider for the web app to render the sign-in page. */
+export interface AuthProviderInfo {
+  pluginId: string;
+  pluginName: string;
+  providerLabel: string;
 }
 
 interface ManifestState {
   entriesByPluginId: Map<string, PluginManifestEntry>;
   kindToPluginId: Map<string, string>;
+  /** Plugin id chosen as the SSO provider (or null if none). */
+  authPluginId: string | null;
 }
 
 const EMPTY_STATE: ManifestState = {
   entriesByPluginId: new Map(),
   kindToPluginId: new Map(),
+  authPluginId: null,
 };
 
 const REFRESH_DEBOUNCE_MS = 200;
@@ -106,6 +130,13 @@ export class PluginRegistry {
   private refreshing = false;
   private pendingRefresh = false;
   private stopped = false;
+  /**
+   * Provider labels reported by each auth plugin's register() call.
+   * Populated lazily — the first begin/complete RPC drives ensureVm
+   * which runs register() and records the label here. The web app's
+   * status endpoint falls back to a name-derived label until then.
+   */
+  private authProviderLabels: Map<string, string> = new Map();
 
   constructor(private readonly options: PluginRegistryOptions) {}
 
@@ -150,7 +181,102 @@ export class PluginRegistry {
       skipped: [...this.skipped],
       kinds: [...this.state.kindToPluginId.keys()].sort(),
       vmsRunning: countRunningVms(this.runtime, this.state),
+      authProvider: this.state.authPluginId,
     };
+  }
+
+  /**
+   * Snapshot of the installed SSO provider, if any. The web app's
+   * `/api/auth/status` route hits this through the worker's admin
+   * endpoint to decide whether to surface a "Sign in with …" button.
+   * The label defaults to the package name when the manifest doesn't
+   * carry one — the label is upgraded once register() runs and the
+   * VM reports its providerLabel.
+   */
+  getAuthProvider(): AuthProviderInfo | null {
+    const pluginId = this.state.authPluginId;
+    if (!pluginId) return null;
+    const entry = this.state.entriesByPluginId.get(pluginId);
+    if (!entry) return null;
+    const reported = this.authProviderLabels.get(pluginId);
+    return {
+      pluginId,
+      pluginName: entry.name,
+      providerLabel: reported ?? defaultProviderLabel(entry.name),
+    };
+  }
+
+  /**
+   * Drive the auth plugin's `begin_auth` over RPC. The web app calls
+   * this through the worker admin endpoint; the registry handles VM
+   * lifecycle + env injection exactly like an action call.
+   */
+  async beginAuth(
+    params: BeginAuthParams,
+  ): Promise<{ authorizationUrl: string }> {
+    const provider = this.requireAuthProviderEntry();
+    await this.ensureVm(provider.pluginId, provider.entry);
+    const env = mergeEnv(provider.entry, this.secrets);
+    if (!this.runtime) {
+      throw new Error("plugin-registry: runtime unavailable");
+    }
+    const response = await this.runtime.callRpc(
+      provider.pluginId,
+      "begin_auth",
+      JSON.stringify(BeginAuthRpcParams.parse({ params })),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `auth plugin ${provider.entry.name} begin_auth failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    return BeginAuthRpcResult.parse(response.result).result;
+  }
+
+  /**
+   * Drive the auth plugin's `complete_auth` over RPC. Returns the
+   * normalized identity assertion the web app uses to upsert the
+   * `app_user` row.
+   */
+  async completeAuth(params: CompleteAuthParams): Promise<AuthIdentity> {
+    const provider = this.requireAuthProviderEntry();
+    await this.ensureVm(provider.pluginId, provider.entry);
+    const env = mergeEnv(provider.entry, this.secrets);
+    if (!this.runtime) {
+      throw new Error("plugin-registry: runtime unavailable");
+    }
+    const response = await this.runtime.callRpc(
+      provider.pluginId,
+      "complete_auth",
+      JSON.stringify(CompleteAuthRpcParams.parse({ params })),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `auth plugin ${provider.entry.name} complete_auth failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    return CompleteAuthRpcResult.parse(response.result).result.identity;
+  }
+
+  private requireAuthProviderEntry(): {
+    pluginId: string;
+    entry: PluginManifestEntry;
+  } {
+    const pluginId = this.state.authPluginId;
+    if (!pluginId) {
+      throw new Error(
+        "no auth plugin installed — install one with `openneko install <name>` (e.g. @open-neko/plugin-scalekit)",
+      );
+    }
+    const entry = this.state.entriesByPluginId.get(pluginId);
+    if (!entry) {
+      throw new Error(
+        `plugin-registry: auth provider ${pluginId} disappeared from manifest mid-flight`,
+      );
+    }
+    return { pluginId, entry };
   }
 
   /**
@@ -176,8 +302,15 @@ export class PluginRegistry {
       this.secrets = secrets;
       this.scrubber = createScrubber(allSecretValues(secrets));
 
-      const newState = buildState(manifest);
+      const { state: newState, authDuplicates } = buildState(manifest);
       const removed = diffRemoved(this.state, newState);
+
+      // Clear cached labels for plugins no longer in the manifest so
+      // the next install of a different auth plugin doesn't pick up
+      // the prior plugin's label.
+      for (const id of removed) {
+        this.authProviderLabels.delete(id);
+      }
 
       // Stop VMs for plugins no longer in the manifest.
       if (this.runtime) {
@@ -197,9 +330,17 @@ export class PluginRegistry {
       // and surface conflicts when two plugins claim the same kind —
       // the first registration wins, the loser is recorded in skipped.
       this.skipped = [];
+      for (const name of authDuplicates) {
+        this.skipped.push({
+          name,
+          reason:
+            'auth capability claimed by another plugin (only one SSO provider supported per deployment)',
+        });
+      }
       const seenKinds = new Set<string>();
       for (const [pluginId, entry] of newState.entriesByPluginId) {
-        for (const kind of entry.kinds ?? []) {
+        for (const decl of entry.capabilities.action?.kinds ?? []) {
+          const kind = decl.kind;
           if (seenKinds.has(kind)) {
             this.skipped.push({
               name: entry.name,
@@ -351,7 +492,7 @@ export class PluginRegistry {
     await this.runtime.start({
       id: pluginId,
       hostWorkspacePath,
-      network: networkModeFor(entry.capabilities.network),
+      network: networkModeFor(entry.permissions.network),
     });
 
     // Sanity-check: the VM's register() must match the manifest's
@@ -384,14 +525,32 @@ export class PluginRegistry {
         `${entry.name}: VM reports version ${registered.pluginVersion}, manifest pin is ${entry.version}`,
       );
     }
-    if (entry.kinds) {
-      const declared = new Set(entry.kinds);
-      const reported = new Set(registered.actions.map((a) => a.kind));
+    if (entry.capabilities.action) {
+      const declared = new Set(
+        entry.capabilities.action.kinds.map((a) => a.kind),
+      );
+      const reported = new Set(
+        (registered.capabilities.action?.kinds ?? []).map((a) => a.kind),
+      );
       const missing = [...declared].filter((k) => !reported.has(k));
       if (missing.length > 0) {
         await this.runtime.stop(pluginId).catch(() => {});
         throw new Error(
           `${entry.name}: manifest declares kinds [${[...declared].join(", ")}] but VM reports [${[...reported].join(", ")}] — re-run \`openneko install\``,
+        );
+      }
+    }
+    if (entry.capabilities.auth) {
+      if (!registered.capabilities.auth) {
+        await this.runtime.stop(pluginId).catch(() => {});
+        throw new Error(
+          `${entry.name}: manifest declares the auth capability but VM register() reports no auth provider`,
+        );
+      }
+      if (registered.capabilities.auth.providerLabel) {
+        this.authProviderLabels.set(
+          pluginId,
+          registered.capabilities.auth.providerLabel,
         );
       }
     }
@@ -442,22 +601,43 @@ async function readManifestFromDisk(
   }
 }
 
-function buildState(manifest: PluginManifest | null): ManifestState {
+function buildState(manifest: PluginManifest | null): {
+  state: ManifestState;
+  authDuplicates: string[];
+} {
   const entriesByPluginId = new Map<string, PluginManifestEntry>();
   const kindToPluginId = new Map<string, string>();
-  if (!manifest) return { entriesByPluginId, kindToPluginId };
+  if (!manifest) {
+    return {
+      state: { entriesByPluginId, kindToPluginId, authPluginId: null },
+      authDuplicates: [],
+    };
+  }
+  let authPluginId: string | null = null;
+  const authDuplicates: string[] = [];
   for (const entry of manifest.plugins) {
     const pluginId = pluginIdFromName(entry.name);
     entriesByPluginId.set(pluginId, entry);
-    for (const kind of entry.kinds ?? []) {
-      if (kindToPluginId.has(kind)) {
-        // Last writer wins for the runtime path; refresh() emits a
-        // warning when this happens via the skipped[] mechanism.
+    for (const decl of entry.capabilities.action?.kinds ?? []) {
+      // Last writer wins for the runtime path; refresh() emits a
+      // warning via the skipped[] mechanism.
+      kindToPluginId.set(decl.kind, pluginId);
+    }
+    if (entry.capabilities.auth) {
+      if (authPluginId === null) {
+        authPluginId = pluginId;
+      } else {
+        // Second auth-claimant — first one wins. The web app's
+        // sign-in flow only handles one provider; surfacing two
+        // would mean making the operator pick at the sign-in screen.
+        authDuplicates.push(entry.name);
       }
-      kindToPluginId.set(kind, pluginId);
     }
   }
-  return { entriesByPluginId, kindToPluginId };
+  return {
+    state: { entriesByPluginId, kindToPluginId, authPluginId },
+    authDuplicates,
+  };
 }
 
 function diffRemoved(prev: ManifestState, next: ManifestState): string[] {
@@ -480,6 +660,19 @@ function mergeEnv(
 
 function pluginIdFromName(name: string): string {
   return name.replace(/^@/, "").replace(/\//g, "-");
+}
+
+/**
+ * Best-effort label when the plugin's VM hasn't reported one yet.
+ * `@open-neko/plugin-scalekit` → `Scalekit`,
+ * `@some-org/plugin-okta` → `Okta`.
+ */
+function defaultProviderLabel(packageName: string): string {
+  const base =
+    packageName.split("/").pop() ?? packageName.replace(/^@/, "");
+  const stripped = base.replace(/^plugin-/, "");
+  if (!stripped) return packageName;
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 }
 
 function defaultResolveRunner(repoRoot: string): (pkg: string) => string {
@@ -513,9 +706,8 @@ interface PluginPackageMeta {
 
 function readPluginPackageMeta(packageJsonPath: string): PluginPackageMeta | null {
   try {
-    const fs = require("node:fs") as typeof import("node:fs");
     return JSON.parse(
-      fs.readFileSync(packageJsonPath, "utf8"),
+      readFileSync(packageJsonPath, "utf8"),
     ) as PluginPackageMeta;
   } catch {
     return null;

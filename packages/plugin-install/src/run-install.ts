@@ -69,7 +69,7 @@ export interface InstallResult {
   name: string;
   version: string;
   integrity: string;
-  capabilities: { network: string[] };
+  permissions: { network: string[] };
   marketplace: string | null;
   source: "marketplace" | "unverified";
   /** Required env keys that were prompted for and saved during this install. */
@@ -168,8 +168,11 @@ export async function runInstall(
     name: plugin.name,
     version: version.version,
     integrity: version.integrity,
-    capabilities: { network: version.requires_network ?? [] },
-    kinds: version.kinds ?? [],
+    permissions: {
+      network: version.permissions?.network ?? [],
+      env: version.permissions?.env ?? [],
+    },
+    capabilities: version.capabilities,
     marketplace: chosen.marketplaceName,
   };
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));
@@ -177,7 +180,7 @@ export async function runInstall(
     name: plugin.name,
     version: version.version,
     integrity: version.integrity,
-    capabilities: { network: version.requires_network ?? [] },
+    permissions: { network: entry.permissions.network },
     marketplace: chosen.marketplaceName,
     source: "marketplace",
     envSaved: envOutcome.saved,
@@ -190,7 +193,7 @@ async function resolveRequiredEnv(
   version: MarketplaceVersion,
   options: InstallOptions,
 ): Promise<{ saved: string[]; alreadySet: string[] }> {
-  const required = (version.requires_env ?? []).filter(
+  const required = (version.permissions?.env ?? []).filter(
     (r) => r.required !== false,
   );
   if (required.length === 0) return { saved: [], alreadySet: [] };
@@ -232,16 +235,29 @@ async function installUnverified(
       `--unverified install: cannot read package.json for ${name} after install`,
     );
   }
+  const ozNeko = meta.openneko;
+  if (!ozNeko?.capabilities) {
+    throw new Error(
+      `--unverified install: ${name} package.json must declare openneko.capabilities`,
+    );
+  }
   const entry: ManifestEntry = {
     name,
     version: meta.version,
     integrity: meta._integrity ?? "sha512-unknown",
-    capabilities: { network: meta.openneko?.requires_network ?? [] },
+    permissions: {
+      network: ozNeko.permissions?.network ?? [],
+      env: ozNeko.permissions?.env ?? [],
+    },
+    capabilities: ozNeko.capabilities,
   };
   const manifest = (await readManifest(options.repoRoot)) ?? emptyManifest();
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));
   return {
-    ...entry,
+    name,
+    version: entry.version,
+    integrity: entry.integrity,
+    permissions: { network: entry.permissions.network },
     marketplace: null,
     source: "unverified",
     envSaved: [],
@@ -252,7 +268,21 @@ async function installUnverified(
 interface NpmPackageMeta {
   version: string;
   _integrity?: string;
-  openneko?: { requires_network?: string[] };
+  openneko?: {
+    permissions?: {
+      network?: string[];
+      env?: Array<{
+        key: string;
+        required?: boolean;
+        secret?: boolean;
+        description: string;
+      }>;
+    };
+    capabilities?: {
+      action?: { kinds: Array<{ kind: string; description: string }> };
+      auth?: { providerLabel?: string };
+    };
+  };
 }
 
 async function readPackageMeta(

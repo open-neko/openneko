@@ -22,6 +22,13 @@ import type {
 
 const FAKE_INTEGRITY = "sha512-" + "a".repeat(86) + "==";
 
+const SLACK_KIND_DECLS = [
+  { kind: "send_slack_message", description: "post" },
+  { kind: "send_slack_dm", description: "dm" },
+  { kind: "react_slack_message", description: "react" },
+  { kind: "lookup_slack_entity", description: "lookup" },
+];
+
 interface RecordedRpc {
   pluginId: string;
   method: string;
@@ -85,7 +92,9 @@ async function writeFakeRunner(file: string): Promise<void> {
   await writeFile(file, "// runner — never executed in these tests\n", "utf8");
 }
 
-function manifestWithSlackEntry(opts: { kinds?: string[] } = {}) {
+function manifestWithSlackEntry(
+  opts: { kinds?: Array<{ kind: string; description: string }> } = {},
+) {
   return {
     schema: "https://open-neko.github.io/plugins/manifest.schema.json",
     plugins: [
@@ -93,13 +102,10 @@ function manifestWithSlackEntry(opts: { kinds?: string[] } = {}) {
         name: "@open-neko/plugin-slack",
         version: "0.1.0",
         integrity: FAKE_INTEGRITY,
-        capabilities: { network: ["slack.com"] },
-        kinds: opts.kinds ?? [
-          "send_slack_message",
-          "send_slack_dm",
-          "react_slack_message",
-          "lookup_slack_entity",
-        ],
+        permissions: { network: ["slack.com"], env: [] },
+        capabilities: {
+          action: { kinds: opts.kinds ?? SLACK_KIND_DECLS },
+        },
         marketplace: "official",
       },
     ],
@@ -111,12 +117,9 @@ function fullRegisterResponse(): RpcResponse {
     protocol: RPC_PROTOCOL_VERSION,
     pluginName: "@open-neko/plugin-slack",
     pluginVersion: "0.1.0",
-    actions: [
-      { kind: "send_slack_message", description: "post" },
-      { kind: "send_slack_dm", description: "dm" },
-      { kind: "react_slack_message", description: "react" },
-      { kind: "lookup_slack_entity", description: "lookup" },
-    ],
+    capabilities: {
+      action: { kinds: SLACK_KIND_DECLS },
+    },
   });
 }
 
@@ -188,6 +191,7 @@ describe("PluginRegistry", () => {
       skipped: [],
       kinds: [],
       vmsRunning: 0,
+      authProvider: null,
     });
     await reg.stop();
   });
@@ -368,7 +372,10 @@ describe("PluginRegistry", () => {
       path.join(repoRoot, "openneko.plugins.json"),
       JSON.stringify(
         manifestWithSlackEntry({
-          kinds: ["send_slack_message", "lookup_slack_entity"],
+          kinds: [
+            { kind: "send_slack_message", description: "post" },
+            { kind: "lookup_slack_entity", description: "lookup" },
+          ],
         }),
       ),
       "utf8",
@@ -379,7 +386,11 @@ describe("PluginRegistry", () => {
           protocol: RPC_PROTOCOL_VERSION,
           pluginName: "@open-neko/plugin-slack",
           pluginVersion: "0.1.0",
-          actions: [{ kind: "send_slack_message", description: "post" }],
+          capabilities: {
+            action: {
+              kinds: [{ kind: "send_slack_message", description: "post" }],
+            },
+          },
         }),
       },
     });
@@ -404,15 +415,23 @@ describe("PluginRegistry", () => {
             name: "@open-neko/plugin-slack",
             version: "0.1.0",
             integrity: FAKE_INTEGRITY,
-            capabilities: { network: ["slack.com"] },
-            kinds: ["send_slack_message"],
+            permissions: { network: ["slack.com"], env: [] },
+            capabilities: {
+              action: {
+                kinds: [{ kind: "send_slack_message", description: "post" }],
+              },
+            },
           },
           {
             name: "@acme/plugin-slack-alt",
             version: "0.1.0",
             integrity: FAKE_INTEGRITY,
-            capabilities: { network: ["slack.com"] },
-            kinds: ["send_slack_message"],
+            permissions: { network: ["slack.com"], env: [] },
+            capabilities: {
+              action: {
+                kinds: [{ kind: "send_slack_message", description: "post" }],
+              },
+            },
           },
         ],
       }),
@@ -454,6 +473,256 @@ describe("PluginRegistry", () => {
         request: makeRequest("send_slack_message"),
       }),
     ).rejects.toThrow(/register\(\) failed/);
+    await reg.stop();
+  });
+});
+
+function manifestWithAuthEntry() {
+  return {
+    schema: "https://open-neko.github.io/plugins/manifest.schema.json",
+    plugins: [
+      {
+        name: "@open-neko/plugin-scalekit",
+        version: "0.1.0",
+        integrity: FAKE_INTEGRITY,
+        permissions: { network: ["*.scalekit.com"], env: [] },
+        capabilities: { auth: { providerLabel: "Scalekit" } },
+      },
+    ],
+  };
+}
+
+function authRegisterResponse(providerLabel = "Scalekit"): RpcResponse {
+  return rpcOk({
+    protocol: RPC_PROTOCOL_VERSION,
+    pluginName: "@open-neko/plugin-scalekit",
+    pluginVersion: "0.1.0",
+    capabilities: { auth: { providerLabel } },
+  });
+}
+
+describe("PluginRegistry — auth provider", () => {
+  let repoRoot: string;
+  let workRoot: string;
+  let secretsConfigDir: string;
+  let runnerPath: string;
+
+  beforeEach(async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), "openneko-repo-"));
+    workRoot = await mkdtemp(path.join(tmpdir(), "openneko-vmwork-"));
+    secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
+    runnerPath = path.join(repoRoot, "fake-runner.js");
+    await writeFakeRunner(runnerPath);
+    setDefaultActionAdapter(mockActionAdapter);
+  });
+
+  afterEach(async () => {
+    await rm(repoRoot, { recursive: true, force: true });
+    await rm(workRoot, { recursive: true, force: true });
+    await rm(secretsConfigDir, { recursive: true, force: true });
+    setDefaultActionAdapter(mockActionAdapter);
+  });
+
+  function newRegistry(runtime: PluginRuntime) {
+    return new PluginRegistry({
+      repoRoot,
+      workRoot,
+      secretsConfigDir,
+      runtime,
+      resolveRunner: () => runnerPath,
+    });
+  }
+
+  it("getAuthProvider returns null when no auth plugin is installed", async () => {
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    expect(reg.getAuthProvider()).toBeNull();
+    expect(reg.status().authProvider).toBeNull();
+    await reg.stop();
+  });
+
+  it("status reports the installed auth provider with the manifest label pre-VM-spawn", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithAuthEntry()),
+      "utf8",
+    );
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    const provider = reg.getAuthProvider();
+    expect(provider).not.toBeNull();
+    expect(provider?.pluginName).toBe("@open-neko/plugin-scalekit");
+    expect(provider?.providerLabel).toBe("Scalekit");
+    expect(reg.status().authProvider).toContain("scalekit");
+    await reg.stop();
+  });
+
+  it("beginAuth runs ensureVm then RPCs the plugin", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithAuthEntry()),
+      "utf8",
+    );
+    const runtime = new FakeRuntime({
+      responses: {
+        register: authRegisterResponse(),
+        begin_auth: rpcOk({
+          result: {
+            authorizationUrl: "https://foo.scalekit.com/oauth/authorize?stub=1",
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+
+    const out = await reg.beginAuth({
+      redirectUri: "https://app.example.com/cb",
+      state: "csrf-1",
+    });
+    expect(out.authorizationUrl).toBe(
+      "https://foo.scalekit.com/oauth/authorize?stub=1",
+    );
+    expect(runtime.rpcs.map((r) => r.method)).toEqual([
+      "register",
+      "begin_auth",
+    ]);
+    expect(runtime.starts).toHaveLength(1);
+    await reg.stop();
+  });
+
+  it("upgrades providerLabel from the VM's register() response", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithAuthEntry()),
+      "utf8",
+    );
+    const runtime = new FakeRuntime({
+      responses: {
+        register: authRegisterResponse("Scalekit (prod)"),
+        begin_auth: rpcOk({
+          result: { authorizationUrl: "https://x" },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await reg.beginAuth({ redirectUri: "https://x", state: "x" });
+    expect(reg.getAuthProvider()?.providerLabel).toBe("Scalekit (prod)");
+    await reg.stop();
+  });
+
+  it("completeAuth proxies the identity from the plugin", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithAuthEntry()),
+      "utf8",
+    );
+    const runtime = new FakeRuntime({
+      responses: {
+        register: authRegisterResponse(),
+        complete_auth: rpcOk({
+          result: {
+            identity: {
+              sub: "user-42",
+              email: "amit@example.com",
+              name: "Amit Patel",
+              orgId: "org-abc",
+              groups: ["engineering"],
+            },
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    const identity = await reg.completeAuth({
+      code: "auth-code",
+      redirectUri: "https://app.example.com/cb",
+      state: "csrf-1",
+    });
+    expect(identity.sub).toBe("user-42");
+    expect(identity.email).toBe("amit@example.com");
+    expect(identity.groups).toEqual(["engineering"]);
+    await reg.stop();
+  });
+
+  it("rejects an auth plugin whose VM register() does not declare auth", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithAuthEntry()),
+      "utf8",
+    );
+    const runtime = new FakeRuntime({
+      responses: {
+        register: rpcOk({
+          protocol: RPC_PROTOCOL_VERSION,
+          pluginName: "@open-neko/plugin-scalekit",
+          pluginVersion: "0.1.0",
+          capabilities: {},
+        }),
+        begin_auth: rpcOk({
+          result: { authorizationUrl: "https://x" },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await expect(
+      reg.beginAuth({ redirectUri: "https://x", state: "x" }),
+    ).rejects.toThrow(/no auth provider/);
+    await reg.stop();
+  });
+
+  it("beginAuth/completeAuth throw a clear message when no auth plugin is installed", async () => {
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    await expect(
+      reg.beginAuth({ redirectUri: "https://x", state: "x" }),
+    ).rejects.toThrow(/no auth plugin/);
+    await expect(
+      reg.completeAuth({
+        code: "x",
+        redirectUri: "https://x",
+        state: "x",
+      }),
+    ).rejects.toThrow(/no auth plugin/);
+    await reg.stop();
+  });
+
+  it("flags a second auth-capability claimant in skipped", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify({
+        schema: "https://open-neko.github.io/plugins/manifest.schema.json",
+        plugins: [
+          {
+            name: "@open-neko/plugin-scalekit",
+            version: "0.1.0",
+            integrity: FAKE_INTEGRITY,
+            permissions: { network: ["*.scalekit.com"], env: [] },
+            capabilities: { auth: { providerLabel: "Scalekit" } },
+          },
+          {
+            name: "@acme/plugin-okta",
+            version: "0.1.0",
+            integrity: FAKE_INTEGRITY,
+            permissions: { network: ["*.okta.com"], env: [] },
+            capabilities: { auth: { providerLabel: "Okta" } },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    expect(reg.getAuthProvider()?.pluginName).toBe(
+      "@open-neko/plugin-scalekit",
+    );
+    expect(reg.status().skipped.length).toBeGreaterThanOrEqual(1);
+    expect(reg.status().skipped.some((s) => /auth capability/.test(s.reason))).toBe(
+      true,
+    );
     await reg.stop();
   });
 });

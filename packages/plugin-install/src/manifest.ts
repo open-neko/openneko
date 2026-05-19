@@ -19,20 +19,50 @@ export function manifestPathFor(repoRoot: string): string {
   return path.join(repoRoot, PLUGIN_MANIFEST_FILE);
 }
 
+/** Env-var requirement schema (same shape across marketplace + manifest). */
+export interface ManifestEnvRequirement {
+  key: string;
+  required?: boolean;
+  secret?: boolean;
+  description: string;
+}
+
+/** What the plugin needs from the runtime — sandbox network + operator-supplied env. */
+export interface ManifestPermissions {
+  network: string[];
+  env: ManifestEnvRequirement[];
+}
+
+/** A single declared action — kind + description, no handler. */
+export interface ManifestActionDeclaration {
+  kind: string;
+  description: string;
+}
+
+/**
+ * What the plugin contributes. The keyset declares the surfaces this
+ * plugin implements; absence of a key means the plugin does not
+ * contribute that surface.
+ */
+export interface ManifestCapabilities {
+  action?: { kinds: ManifestActionDeclaration[] };
+  auth?: { providerLabel?: string };
+}
+
 export interface ManifestEntry {
   name: string;
   version: string;
   integrity: string;
-  capabilities: { network: string[] };
+  /** Runtime requirements: network egress + env-var schema. */
+  permissions: ManifestPermissions;
+  /** Surfaces this plugin contributes (presence = declaration). */
+  capabilities: ManifestCapabilities;
   /**
-   * Action kinds this plugin handles. Copied at install time from
-   * the marketplace version entry so the worker can build a kind →
-   * plugin map from the file alone (no VM spawn needed to know who
-   * handles what — enables hot-reload).
+   * Resolved env values (operator-supplied). Worker merges these with
+   * the per-user secrets store, with the per-user store winning.
    */
-  kinds?: string[];
   env?: Record<string, string>;
-  /** Display name of the marketplace this plugin came from (for traceability). */
+  /** Display name of the marketplace this plugin came from (traceability). */
   marketplace?: string;
 }
 

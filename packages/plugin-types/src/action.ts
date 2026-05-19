@@ -1,16 +1,18 @@
 import { z } from "zod";
 
+export const ActionKindName = z
+  .string()
+  .min(1)
+  .regex(
+    /^[a-z][a-z0-9_]*$/,
+    "action kind must be lowercase snake_case (matches OpenNeko convention)",
+  );
+
 /**
  * Serializable subset of OpenNeko's ActionRequestRecord that crosses the
  * worker ↔ plugin RPC boundary. The worker's plugin loader translates
  * its internal record into this shape before dispatch, and the plugin
  * returns a PluginActionOutcome that the loader translates back.
- *
- * Field choices:
- * - omit DB-only fields (workflow_run_id, observation refs, status,
- *   timestamps) — plugins should never depend on those
- * - keep payload as the agent-supplied object the plugin needs to act on
- * - keep target as the canonical resource identifier
  */
 export const PluginActionRequest = z.object({
   id: z.string(),
@@ -33,14 +35,15 @@ export const PluginActionOutcome = z.object({
 
 export type PluginActionOutcome = z.infer<typeof PluginActionOutcome>;
 
+/**
+ * Single declared action — a snake_case kind the agent can request,
+ * plus the description the agent uses to pick it. Same shape lives in
+ * the marketplace entry, the installed manifest, and the plugin's
+ * runtime register() result; the worker checks all three agree before
+ * dispatching.
+ */
 export const PluginActionDeclaration = z.object({
-  kind: z
-    .string()
-    .min(1)
-    .regex(
-      /^[a-z][a-z0-9_]*$/,
-      "action kind must be lowercase snake_case (matches OpenNeko convention)",
-    ),
+  kind: ActionKindName,
   description: z.string().min(1),
 });
 

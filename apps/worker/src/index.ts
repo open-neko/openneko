@@ -164,7 +164,30 @@ async function runMetricRefreshSweep() {
   console.log(`[worker] scheduled sweep: enqueued ${enqueued} metric_refresh job(s)`);
 }
 
-const server = createServer(createAdminHandler());
+// The plugin registry is constructed below before the server starts
+// taking requests; we expose its auth surface via a closure so the
+// admin handler can lazily reach a freshly-installed auth plugin
+// without a server restart.
+let pluginRegistry: PluginRegistry | null = null;
+const server = createServer(
+  createAdminHandler({
+    auth: {
+      getAuthProvider: () => pluginRegistry?.getAuthProvider() ?? null,
+      beginAuth: (params) => {
+        if (!pluginRegistry) {
+          throw new Error("plugin registry not initialised");
+        }
+        return pluginRegistry.beginAuth(params);
+      },
+      completeAuth: (params) => {
+        if (!pluginRegistry) {
+          throw new Error("plugin registry not initialised");
+        }
+        return pluginRegistry.completeAuth(params);
+      },
+    },
+  }),
+);
 
 try {
   await verifyAiCredentials();
@@ -185,7 +208,7 @@ await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 console.log("[worker] action policies seeded and built-in adapters registered");
 
-const pluginRegistry = new PluginRegistry({
+pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
 });
@@ -199,6 +222,9 @@ setPluginRegistryInstance(pluginRegistry);
     );
   } else {
     console.log(`[worker] plugin registry: no plugins installed`);
+  }
+  if (s.authProvider) {
+    console.log(`[worker] auth provider plugin active: ${s.authProvider}`);
   }
   for (const skipped of s.skipped) {
     console.warn(`[worker] plugin skipped ${skipped.name}: ${skipped.reason}`);
@@ -474,7 +500,9 @@ const shutdown = async (signal: string) => {
   }
   try {
     setPluginRegistryInstance(null);
-    await pluginRegistry.stop();
+    if (pluginRegistry) {
+      await pluginRegistry.stop();
+    }
   } catch (e) {
     console.error("[worker] plugin shutdown error:", e);
   }

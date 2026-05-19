@@ -177,9 +177,9 @@ async function handleInstall(
     configDir: cliOptions.configDir,
   });
   const network =
-    result.capabilities.network.length === 0
+    result.permissions.network.length === 0
       ? "none"
-      : result.capabilities.network.join(", ");
+      : result.permissions.network.join(", ");
   const provenance =
     result.source === "unverified"
       ? "unverified npm"
@@ -211,11 +211,12 @@ async function handleList(
   }
   for (const entry of result.entries) {
     const hosts =
-      entry.capabilities.network.length === 0
+      entry.permissions.network.length === 0
         ? "no network"
-        : entry.capabilities.network.join(", ");
+        : entry.permissions.network.join(", ");
     const from = entry.marketplace ? `  from=${entry.marketplace}` : "";
-    stdout(`${entry.name}@${entry.version}  [${hosts}]${from}`);
+    const flags = entry.capabilities.auth ? "  [SSO provider]" : "";
+    stdout(`${entry.name}@${entry.version}  [${hosts}]${flags}${from}`);
   }
   return 0;
 }

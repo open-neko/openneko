@@ -155,7 +155,12 @@ describe("runCli", () => {
             name: "@open-neko/plugin-parallel-search",
             version: "0.2.0",
             integrity: INTEGRITY,
-            capabilities: { network: ["search.parallel.ai"] },
+            permissions: { network: ["search.parallel.ai"], env: [] },
+            capabilities: {
+              action: {
+                kinds: [{ kind: "web_search", description: "search" }],
+              },
+            },
             marketplace: "official",
           },
         ],
