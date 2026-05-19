@@ -36,6 +36,28 @@ export const PluginActionOutcome = z.object({
 export type PluginActionOutcome = z.infer<typeof PluginActionOutcome>;
 
 /**
+ * How an action should be approved by default when the plugin is
+ * freshly installed. The host seeds an action_policy row using this
+ * value; operators can override later in /settings/rules.
+ *
+ *  - "auto"  — adapter runs inline with no human gate (read-only or
+ *              otherwise low-blast-radius kinds, e.g. web_search)
+ *  - "ask"   — agent's turn suspends, user sees an approval card
+ *              inline in /work, then the result completes the turn
+ *              (externally observable kinds, e.g. send_slack_message)
+ *  - "deny"  — the kind is never invokable; declared on plugins that
+ *              want a "this exists but I never want the agent calling
+ *              it without explicit opt-in" stance
+ *
+ * Optional: the host falls back to "ask" when omitted — safer to
+ * surprise the user with an approval prompt than to fire a side
+ * effect they didn't expect.
+ */
+export const ActionMode = z.enum(["auto", "ask", "deny"]);
+
+export type ActionMode = z.infer<typeof ActionMode>;
+
+/**
  * Single declared action — a snake_case kind the agent can request,
  * plus the description the agent uses to pick it. Same shape lives in
  * the marketplace entry, the installed manifest, and the plugin's
@@ -45,6 +67,7 @@ export type PluginActionOutcome = z.infer<typeof PluginActionOutcome>;
 export const PluginActionDeclaration = z.object({
   kind: ActionKindName,
   description: z.string().min(1),
+  default_mode: ActionMode.optional(),
 });
 
 export type PluginActionDeclaration = z.infer<typeof PluginActionDeclaration>;

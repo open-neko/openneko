@@ -50,7 +50,33 @@ describe("PluginCapabilitiesDeclaration", () => {
       },
     });
     expect(parsed.action?.kinds[0]?.kind).toBe("demo");
+    expect(parsed.action?.kinds[0]?.default_mode).toBeUndefined();
     expect(parsed.auth).toBeUndefined();
+  });
+
+  it("accepts a declared default_mode on an action", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [
+          { kind: "web_search", description: "search", default_mode: "auto" },
+          { kind: "send_slack", description: "post", default_mode: "ask" },
+        ],
+      },
+    });
+    expect(parsed.action?.kinds[0]?.default_mode).toBe("auto");
+    expect(parsed.action?.kinds[1]?.default_mode).toBe("ask");
+  });
+
+  it("rejects an unknown default_mode", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        action: {
+          kinds: [
+            { kind: "demo", description: "x", default_mode: "yolo" },
+          ],
+        },
+      }),
+    ).toThrow();
   });
 
   it("accepts an auth-only plugin", () => {
