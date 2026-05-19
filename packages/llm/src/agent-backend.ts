@@ -58,6 +58,25 @@ export type AgentEvent =
       scope: "internal" | "external";
       risk_level?: string;
     }
+  | {
+      /**
+       * Terminal status of an action_request that was either
+       * auto-approved or user-approved. Surfaced inline in /work so
+       * the user (and agent, on the next turn) sees what happened.
+       */
+      type: "action_request_result";
+      action_request_id: string;
+      kind: string;
+      status: "succeeded" | "failed" | "rejected";
+      outcome?: {
+        result?: Record<string, unknown> | null;
+        externalRef?: string | null;
+        commandOrOperation?: string | null;
+      };
+      error?: string;
+      /** Operator-supplied reason when the user rejected the request. */
+      rejection_reason?: string;
+    }
   | { type: "needs_input"; question: string; options?: string[] };
 
 export type AgentChatMessage = {

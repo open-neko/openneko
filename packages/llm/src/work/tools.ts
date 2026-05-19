@@ -8,10 +8,10 @@ import {
   searchWorkMemoryByContext,
   type WorkMemoryContext,
 } from "./memory";
+import { enqueue, QUEUE } from "@neko/db/jobs";
 import {
   createActionRequest,
   evaluateActionPolicy,
-  executeApprovedActionRequest,
   listEnabledPolicies,
   type RiskLevel,
 } from "../workflows";
@@ -436,6 +436,14 @@ export function buildPluginActionServer(
         const riskLevel = (args.risk_level as RiskLevel | undefined) ?? null;
 
         if (decision.decision === "allow") {
+          // Auto-approve path: persist as approved and enqueue the
+          // action_execute pg-boss job. We deliberately do NOT call
+          // executeApprovedActionRequest inline here — the plugin VM
+          // adapters are registered in the worker process, not the
+          // web process that hosts /work runs. Enqueuing decouples
+          // the two: any process can submit the job, only the worker
+          // (which holds the plugin registry + microsandbox runtime)
+          // runs it.
           const request = await createActionRequest({
             orgId: opts.orgId,
             scope: "external",
@@ -447,23 +455,31 @@ export function buildPluginActionServer(
             policyId: decision.policy.id,
             summary: intent,
             intent,
+            workRunId: opts.runId,
             requestedByRunId: null,
           });
-          const result = await executeApprovedActionRequest(
-            opts.orgId,
-            request.id,
-          );
+          await enqueue(QUEUE.ACTION_EXECUTE, {
+            orgId: opts.orgId,
+            actionRequestId: request.id,
+          });
+          await opts.emit({
+            type: "action_request_emit",
+            action_request_id: request.id,
+            kind: d.kind,
+            scope: "external",
+            ...(riskLevel ? { risk_level: riskLevel } : {}),
+          });
           return {
             content: [
               {
                 type: "text" as const,
                 text: JSON.stringify({
-                  ok: result.ok,
+                  ok: true,
                   decision: "auto_approved",
                   action_request_id: request.id,
                   policy: decision.policy.name,
-                  outcome: result.outcome ?? null,
-                  error: result.error,
+                  status: "queued_for_execution",
+                  note: "Action queued. The result will arrive as an action_request_result event in this run — you can stop here; the user will see the outcome inline.",
                 }),
               },
             ],
@@ -485,6 +501,7 @@ export function buildPluginActionServer(
           policyId: decision.policy.id,
           summary: intent,
           intent,
+          workRunId: opts.runId,
           requestedByRunId: null,
         });
         await opts.emit({

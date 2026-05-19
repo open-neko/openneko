@@ -133,6 +133,42 @@ export async function beginAuth(params: {
   return (await res.json()) as { authorizationUrl: string };
 }
 
+/**
+ * Plugin action descriptors snapshot. /work hands these to the agent's
+ * tool builder so it can register one MCP tool per registered plugin
+ * kind. Fetched fresh per turn — the registry hot-reloads on
+ * `openneko install`, and the agent should pick up new kinds without
+ * a web restart. Best-effort: an unreachable worker yields an empty
+ * list (the agent simply won't have plugin tools that turn).
+ */
+export interface PluginActionDescriptor {
+  kind: string;
+  description: string;
+  default_mode?: "auto" | "ask" | "deny";
+}
+
+export async function getPluginActionDescriptors(): Promise<
+  PluginActionDescriptor[]
+> {
+  try {
+    const res = await fetch(
+      `${workerAdminBase()}/admin/plugins/action-descriptors`,
+      {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(2000),
+      },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      descriptors?: PluginActionDescriptor[];
+    };
+    return body.descriptors ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function completeAuth(params: {
   code: string;
   redirectUri: string;

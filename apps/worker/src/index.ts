@@ -188,6 +188,10 @@ const server = createServer(
         return pluginRegistry.completeAuth(params);
       },
     },
+    plugins: {
+      getRegisteredActionDescriptors: () =>
+        pluginRegistry?.getRegisteredActionDescriptors() ?? [],
+    },
   }),
 );
 

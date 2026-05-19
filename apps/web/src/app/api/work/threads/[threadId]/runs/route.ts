@@ -6,6 +6,7 @@ import {
   getWorkRun,
   runChatTurn,
 } from "@neko/llm/work";
+import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import {
@@ -83,6 +84,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     runId: run.id,
   });
 
+  const pluginActions = await getPluginActionDescriptors();
+
   void runChatTurn({
     orgId,
     threadId,
@@ -90,6 +93,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     message,
     emit,
     signal: abortController.signal,
+    pluginActions,
   })
     .catch(async (err) => {
       console.error(`[work-run/inproc] run ${run.id} threw:`, err);

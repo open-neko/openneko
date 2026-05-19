@@ -47,6 +47,21 @@ export interface AuthHandlerSurface {
   }): Promise<AuthIdentity>;
 }
 
+export interface PluginsHandlerSurface {
+  /**
+   * Flat list of every plugin's declared action kinds + seeded
+   * default approval mode. Consumed by the web process's /work
+   * route so the in-process runChatTurn can build the agent's MCP
+   * tool surface — the web doesn't have the plugin registry
+   * locally (registry + adapters live in the worker).
+   */
+  getRegisteredActionDescriptors(): Array<{
+    kind: string;
+    description: string;
+    default_mode?: "auto" | "ask" | "deny";
+  }>;
+}
+
 export type AdminHandlerOptions = {
   /**
    * Called from POST /admin/reconnect after responding 202. Defaults to
@@ -64,12 +79,19 @@ export type AdminHandlerOptions = {
    * routes return 503 with a clear message.
    */
   auth?: AuthHandlerSurface | null;
+  /**
+   * Plugins surface — typically wired to the PluginRegistry. Absent
+   * when the plugin subsystem is disabled, in which case
+   * /admin/plugins/action-descriptors returns an empty array.
+   */
+  plugins?: PluginsHandlerSurface | null;
 };
 
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exit = opts.exit ?? ((code = 0) => process.exit(code));
   const exitDelayMs = opts.exitDelayMs ?? 100;
   const auth = opts.auth ?? null;
+  const plugins = opts.plugins ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -96,8 +118,23 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleAuthComplete(req, res, auth);
       return;
     }
+    if (
+      req.method === "GET" &&
+      req.url === "/admin/plugins/action-descriptors"
+    ) {
+      handlePluginActionDescriptors(res, plugins);
+      return;
+    }
     res.writeHead(404).end();
   };
+}
+
+function handlePluginActionDescriptors(
+  res: ServerResponse,
+  plugins: PluginsHandlerSurface | null,
+) {
+  const descriptors = plugins?.getRegisteredActionDescriptors() ?? [];
+  json(res, 200, { descriptors });
 }
 
 function handleAuthStatus(res: ServerResponse, auth: AuthHandlerSurface | null) {
