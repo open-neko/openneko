@@ -33,10 +33,21 @@ export interface ManifestPermissions {
   env: ManifestEnvRequirement[];
 }
 
-/** A single declared action — kind + description, no handler. */
+/** A single declared action — kind + description + seeded approval policy, no handler. */
 export interface ManifestActionDeclaration {
   kind: string;
   description: string;
+  /**
+   * Seeded action_policy mode. Undefined → host applies "ask" as the safe
+   * default. Accepts either a scalar (applies to all scopes) or a per-scope
+   * object {external?, internal?} for kinds that need different defaults
+   * per scope.
+   */
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | { external?: "auto" | "ask" | "deny"; internal?: "auto" | "ask" | "deny" };
 }
 
 /**

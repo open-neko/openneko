@@ -6,7 +6,10 @@ import {
   runChatTurn,
   scrubAgentEvent,
 } from "@neko/llm/work";
-import { getCurrentScrubber } from "../plugins/registry-instance.js";
+import {
+  getCurrentScrubber,
+  getPluginRegistryInstance,
+} from "../plugins/registry-instance.js";
 
 export async function runWorkRun(
   _jobId: string,
@@ -40,5 +43,15 @@ export async function runWorkRun(
     });
   };
 
-  await runChatTurn({ orgId, threadId, runId, message, emit });
+  const pluginActions =
+    getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [];
+
+  await runChatTurn({
+    orgId,
+    threadId,
+    runId,
+    message,
+    emit,
+    pluginActions,
+  });
 }

@@ -162,11 +162,16 @@ export {
 export {
   evaluateActionPolicy,
   seedDefaultActionPolicies,
+  seedPluginActionPolicies,
+  type PluginActionSeed,
   type PolicyDecision,
   type PolicyRequestSubject,
 } from "./policy-engine";
 export {
   buildWorkflowActionServer,
+  handleWorkActionRequest,
+  type HandleWorkActionRequestResult,
+  type WorkActionContext,
   type WorkflowActionContext,
 } from "./action-server";
 export {

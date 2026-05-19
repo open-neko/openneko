@@ -456,6 +456,40 @@ describe("PluginRegistry", () => {
     await reg.stop();
   });
 
+  it("invokes onManifestRefresh with the parsed entries after each refresh", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithSlackEntry()),
+      "utf8",
+    );
+    const refreshes: Array<Array<{ name: string; kindCount: number }>> = [];
+    const reg = new PluginRegistry({
+      repoRoot,
+      workRoot,
+      secretsConfigDir,
+      runtime: new FakeRuntime(),
+      resolveRunner: () => runnerPath,
+      onManifestRefresh: (entries) => {
+        refreshes.push(
+          entries.map((e) => ({
+            name: e.name,
+            kindCount: e.capabilities.action?.kinds.length ?? 0,
+          })),
+        );
+      },
+    });
+    await reg.start();
+    await reg.refresh();
+    expect(refreshes).toHaveLength(2);
+    expect(refreshes[0]).toEqual([
+      { name: "@open-neko/plugin-slack", kindCount: 4 },
+    ]);
+    expect(refreshes[1]).toEqual([
+      { name: "@open-neko/plugin-slack", kindCount: 4 },
+    ]);
+    await reg.stop();
+  });
+
   it("surfaces register() failures with a clear plugin-specific message", async () => {
     await writeFile(
       path.join(repoRoot, "openneko.plugins.json"),

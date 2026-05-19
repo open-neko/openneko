@@ -57,6 +57,39 @@ export type AgentEvent =
       kind: string;
       scope: "internal" | "external";
       risk_level?: string;
+      /**
+       * Agent's natural-language framing — populated when the request
+       * is awaiting approval so the chat UI can render the headline
+       * on the inline card. Omitted for auto-approved requests where
+       * no human ever sees it.
+       */
+      intent?: string;
+      /** Pre-policy summary string suitable as a fallback when intent is absent. */
+      summary?: string;
+      /**
+       * "auto_approved" → queued; "pending_approval" → needs the user
+       * to click Approve before the worker fires the adapter.
+       */
+      decision: "auto_approved" | "pending_approval";
+    }
+  | {
+      /**
+       * Terminal status of an action_request that was either
+       * auto-approved or user-approved. Surfaced inline in /work so
+       * the user (and agent, on the next turn) sees what happened.
+       */
+      type: "action_request_result";
+      action_request_id: string;
+      kind: string;
+      status: "succeeded" | "failed" | "rejected";
+      outcome?: {
+        result?: Record<string, unknown> | null;
+        externalRef?: string | null;
+        commandOrOperation?: string | null;
+      };
+      error?: string;
+      /** Operator-supplied reason when the user rejected the request. */
+      rejection_reason?: string;
     }
   | { type: "needs_input"; question: string; options?: string[] };
 

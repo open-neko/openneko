@@ -140,6 +140,29 @@ type WorkEvent =
   | { type: "artifact"; artifact: { path: string; label: string; mimeType?: string } }
   | { type: "status"; message: string }
   | { type: "error"; message: string }
+  | {
+      type: "action_request_emit";
+      action_request_id: string;
+      kind: string;
+      scope: "internal" | "external";
+      risk_level?: string;
+      intent?: string;
+      summary?: string;
+      decision: "auto_approved" | "pending_approval";
+    }
+  | {
+      type: "action_request_result";
+      action_request_id: string;
+      kind: string;
+      status: "succeeded" | "failed" | "rejected";
+      outcome?: {
+        result?: Record<string, unknown> | null;
+        externalRef?: string | null;
+        commandOrOperation?: string | null;
+      };
+      error?: string;
+      rejection_reason?: string;
+    }
   | { type: "done"; result?: unknown };
 
 type ThreadBundle = {
@@ -884,6 +907,7 @@ export default function WorkScreen() {
               return (
                 <div key={`${message.id}-${index}`} className="flex flex-col gap-2.5">
                   <RunTimeline
+                    threadId={activeThreadId ?? ""}
                     run={run}
                     events={events}
                     pending={isPending}
@@ -1377,9 +1401,21 @@ type ToolItem = {
   end?: Extract<WorkEvent, { type: "tool_end" }>;
 };
 
+type ApprovalItem = {
+  actionRequestId: string;
+  actionKind: string;
+  intent: string | null;
+  summary: string | null;
+  decision: "auto_approved" | "pending_approval";
+  result:
+    | Extract<WorkEvent, { type: "action_request_result" }>
+    | null;
+};
+
 type TimelineItem =
   | { kind: "text"; content: string }
   | { kind: "tools"; tools: ToolItem[]; followedByText: boolean }
+  | { kind: "approval"; approval: ApprovalItem }
   | { kind: "error"; message: string };
 
 // Walks a run's event stream chronologically and produces an interleaved
@@ -1395,6 +1431,7 @@ function buildRunTimeline(events: WorkEvent[]): {
 } {
   const items: TimelineItem[] = [];
   const toolsById = new Map<string, ToolItem>();
+  const approvalIndexByRequest = new Map<string, number>();
   const surfaceMessages: A2UIMessage[] = [];
   let pendingText = "";
   let lastStatus: string | null = null;
@@ -1459,6 +1496,28 @@ function buildRunTimeline(events: WorkEvent[]): {
       }
       case "surface": {
         for (const msg of event.messages) surfaceMessages.push(msg);
+        break;
+      }
+      case "action_request_emit": {
+        flushTextSegment();
+        const approval: ApprovalItem = {
+          actionRequestId: event.action_request_id,
+          actionKind: event.kind,
+          intent: event.intent ?? null,
+          summary: event.summary ?? null,
+          decision: event.decision,
+          result: null,
+        };
+        approvalIndexByRequest.set(event.action_request_id, items.length);
+        items.push({ kind: "approval", approval });
+        break;
+      }
+      case "action_request_result": {
+        const idx = approvalIndexByRequest.get(event.action_request_id);
+        if (idx == null) break;
+        const target = items[idx];
+        if (target?.kind !== "approval") break;
+        target.approval = { ...target.approval, result: event };
         break;
       }
       case "done": {
@@ -1530,11 +1589,13 @@ function FenceAwareBubble({
 }
 
 function RunTimeline({
+  threadId,
   run,
   events,
   pending,
   fallbackContent,
 }: {
+  threadId: string;
   run: RunRecord | null;
   events: WorkEvent[];
   pending: boolean;
@@ -1572,6 +1633,16 @@ function RunTimeline({
             />
           );
         }
+        if (item.kind === "approval") {
+          return (
+            <ActionApprovalCard
+              key={`approval-${item.approval.actionRequestId}`}
+              threadId={threadId}
+              runId={run?.id ?? ""}
+              approval={item.approval}
+            />
+          );
+        }
         return (
           <div key={`error-${index}`} className="border border-warn/40 bg-warn-soft text-warn-ink rounded-2xl px-3 py-2.5 text-[13px]">
             {item.message}
@@ -1590,6 +1661,180 @@ function RunTimeline({
         </div>
       ) : null}
       {!pending && run?.error ? <div className="border border-warn/40 bg-warn-soft text-warn-ink rounded-2xl px-3 py-2.5 text-[13px]">{run.error}</div> : null}
+    </div>
+  );
+}
+
+function ActionApprovalCard({
+  threadId,
+  runId,
+  approval,
+}: {
+  threadId: string;
+  runId: string;
+  approval: ApprovalItem;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const headline =
+    approval.intent ??
+    approval.summary ??
+    `Agent wants to run "${approval.actionKind}".`;
+  const pending = approval.decision === "pending_approval" && !approval.result;
+  const settled = approval.result !== null;
+
+  async function decide(decision: "approve" | "reject") {
+    if (!runId) {
+      setLocalError("Run not ready yet — try again in a moment.");
+      return;
+    }
+    setBusy(true);
+    setLocalError(null);
+    try {
+      const res = await fetch(
+        `/api/work/threads/${threadId}/runs/${runId}/approve-action`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            actionRequestId: approval.actionRequestId,
+            decision,
+            ...(decision === "reject" && rejectReason
+              ? { rejectionReason: rejectReason }
+              : {}),
+          }),
+        },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setLocalError(
+          body.error ?? `Request failed (${res.status} ${res.statusText})`,
+        );
+      }
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border border-border bg-card rounded-2xl px-4 py-3.5 text-[13px] flex flex-col gap-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text3">
+          Agent says
+        </div>
+        <code className="font-mono text-[11px] text-text3">
+          {approval.actionKind}
+        </code>
+      </div>
+      <div className="text-text leading-[1.45] italic">“{headline}”</div>
+
+      {pending && !rejectMode ? (
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => decide("approve")}
+            className="px-3 py-1.5 rounded-[10px] bg-text text-bg font-display font-bold text-[12px] tracking-[-0.01em] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+          >
+            {busy ? "Approving…" : "Approve"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setRejectMode(true)}
+            className="px-3 py-1.5 rounded-[10px] border border-border text-text2 font-medium text-[12px] hover:bg-neutral-soft disabled:opacity-50 cursor-pointer"
+          >
+            Reject
+          </button>
+        </div>
+      ) : null}
+
+      {pending && rejectMode ? (
+        <div className="flex flex-col gap-2 pt-1">
+          <input
+            type="text"
+            placeholder="Reason (optional, shown to the agent)"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            disabled={busy}
+            className="w-full px-2.5 py-1.5 rounded-[8px] border border-border bg-white text-text text-[12px] focus:outline-none focus:border-accent"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide("reject")}
+              className="px-3 py-1.5 rounded-[10px] bg-danger text-white font-display font-bold text-[12px] tracking-[-0.01em] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            >
+              {busy ? "Rejecting…" : "Confirm reject"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setRejectMode(false);
+                setRejectReason("");
+              }}
+              className="px-3 py-1.5 rounded-[10px] border border-border text-text2 font-medium text-[12px] hover:bg-neutral-soft cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {approval.decision === "auto_approved" && !settled ? (
+        <div className="text-text3 text-[12px] flex items-center gap-1.5">
+          <Loader2 className="work-status-spin" size={11} />
+          Queued — running in the background…
+        </div>
+      ) : null}
+
+      {settled ? <ActionResultStrip result={approval.result!} /> : null}
+
+      {localError ? (
+        <div className="text-danger text-[12px]">{localError}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionResultStrip({
+  result,
+}: {
+  result: Extract<WorkEvent, { type: "action_request_result" }>;
+}) {
+  const tone =
+    result.status === "succeeded"
+      ? "border-success-mid/40 bg-success-soft text-success-ink"
+      : result.status === "rejected"
+        ? "border-border bg-neutral-soft text-text2"
+        : "border-warn/40 bg-warn-soft text-warn-ink";
+  const label =
+    result.status === "succeeded"
+      ? "Done"
+      : result.status === "rejected"
+        ? "Rejected"
+        : "Failed";
+  return (
+    <div className={`mt-1 rounded-[10px] border px-3 py-2 text-[12px] ${tone}`}>
+      <span className="font-display font-bold uppercase tracking-[0.1em] text-[10px] mr-2">
+        {label}
+      </span>
+      <span>
+        {result.status === "rejected"
+          ? (result.rejection_reason ?? "Operator rejected the request.")
+          : result.status === "failed"
+            ? (result.error ?? "The plugin returned an error.")
+            : (result.outcome?.externalRef
+                ? `ref: ${result.outcome.externalRef}`
+                : "The action completed.")}
+      </span>
     </div>
   );
 }

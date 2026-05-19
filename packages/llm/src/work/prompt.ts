@@ -152,6 +152,89 @@ const RULES_SECTION = `<rules>
 ${GRAPHJIN_DATE_RULE}
 </rules>`;
 
+export interface PluginActionPromptDescriptor {
+  kind: string;
+  description: string;
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | {
+        external?: "auto" | "ask" | "deny";
+        internal?: "auto" | "ask" | "deny";
+      };
+}
+
+function summarizeMode(
+  default_mode: PluginActionPromptDescriptor["default_mode"],
+): string {
+  if (default_mode === undefined) return "ask";
+  if (typeof default_mode === "string") return default_mode;
+  const parts: string[] = [];
+  if (default_mode.external) parts.push(`external:${default_mode.external}`);
+  if (default_mode.internal) parts.push(`internal:${default_mode.internal}`);
+  return parts.length > 0 ? parts.join("/") : "ask";
+}
+
+function isDeniedEverywhere(
+  default_mode: PluginActionPromptDescriptor["default_mode"],
+): boolean {
+  if (default_mode === "deny") return true;
+  if (default_mode && typeof default_mode === "object") {
+    const keys = Object.keys(default_mode) as Array<"external" | "internal">;
+    if (keys.length > 0 && keys.every((k) => default_mode[k] === "deny")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildPluginActionsSection(
+  descriptors: readonly PluginActionPromptDescriptor[],
+  useFences: boolean,
+): string {
+  // claude-agent receives plugin kinds via the MCP tool registry; no
+  // prompt-level docs needed (MCP listTools answers the question).
+  // Hermes has no tool discovery — the system prompt is where it
+  // learns kinds exist. Only emit the fence-syntax block in that case.
+  if (!useFences) return "";
+  const active = descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
+  if (active.length === 0) return "";
+  const rows = active
+    .map(
+      (d) =>
+        `  - \`${d.kind}\` (${summarizeMode(d.default_mode)}) — ${d.description.split("\n")[0]}`,
+    )
+    .join("\n");
+  return `<plugin_actions>
+Plugins contribute action kinds you can request inline. Emit each as
+a fenced JSON block; the runtime catches the fence, evaluates the
+operator's rules, and either fires it (auto) or asks the user to
+approve (ask). The fence body must be valid JSON.
+
+\`\`\`neko_action_request
+{
+  "scope": "external",
+  "kind": "<one of the kinds below>",
+  "payload": { /* kind-specific */ },
+  "summary": "One sentence — what you're doing and why, written for the user.",
+  "risk_level": "low"
+}
+\`\`\`
+
+Installed kinds:
+${rows}
+
+For ask-mode kinds: set \`summary\` to a single clear sentence the
+operator will read on the approval card. It's how they decide.
+
+Auto-mode kinds run inline; the outcome lands as an
+action_request_result event in the same turn — you may stop after
+the fence and let the runtime narrate, or continue the conversation
+naturally.
+</plugin_actions>`;
+}
+
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
@@ -166,6 +249,8 @@ export function buildWorkPrompt(args: {
   // True when prior turns must be inlined into the system prompt because the
   // backend can't reload them out-of-band (i.e. no session resume).
   inlineTranscript: boolean;
+  /** Installed plugin action kinds — Hermes sees these in the prompt; claude-agent finds them via MCP. */
+  pluginActions?: readonly PluginActionPromptDescriptor[];
 }): string {
   const {
     backend,
@@ -179,6 +264,7 @@ export function buildWorkPrompt(args: {
     supportsSkillTool,
     supportsMemoryTool,
     inlineTranscript,
+    pluginActions,
   } = args;
   const shellTool = shellToolName(backend);
 
@@ -202,8 +288,9 @@ skills or artifacts when useful.
       inlineKnowledge: "syntax",
     }),
     buildWorkspaceSection(workspace, shellTool),
+    buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
-  ];
+  ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {
     sections.push(

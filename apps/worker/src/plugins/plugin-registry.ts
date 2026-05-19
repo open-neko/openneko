@@ -85,6 +85,13 @@ export interface PluginRegistryOptions {
    * the action-executor module.
    */
   onAdapter?: (kind: string, adapter: ActionAdapter) => void;
+  /**
+   * Called after every successful manifest refresh with the parsed
+   * manifest entries. Lets the worker seed action_policy rows from
+   * each plugin's declared `default_mode` without the registry having
+   * to know about the org_id or the policy subsystem.
+   */
+  onManifestRefresh?: (entries: PluginManifestEntry[]) => Promise<void> | void;
 }
 
 export interface RegistryStatus {
@@ -172,6 +179,53 @@ export class PluginRegistry {
   /** Current scrubber. Worker jobs call this once per agent invocation. */
   getScrubber(): Scrubber {
     return this.scrubber;
+  }
+
+  /**
+   * Snapshot of every installed plugin's declared action kinds plus
+   * the seeded approval-mode hint. Consumed by the /work agent's tool
+   * builder to build one MCP tool per kind. Returns an empty array
+   * when no action-capable plugins are installed (auth-only plugins
+   * don't contribute anything here).
+   *
+   * `default_mode` is passed through as-declared — scalar OR
+   * per-scope object. The seeder + tool builder both understand both
+   * shapes.
+   */
+  getRegisteredActionDescriptors(): Array<{
+    kind: string;
+    description: string;
+    default_mode?:
+      | "auto"
+      | "ask"
+      | "deny"
+      | {
+          external?: "auto" | "ask" | "deny";
+          internal?: "auto" | "ask" | "deny";
+        };
+  }> {
+    const out: Array<{
+      kind: string;
+      description: string;
+      default_mode?:
+        | "auto"
+        | "ask"
+        | "deny"
+        | {
+            external?: "auto" | "ask" | "deny";
+            internal?: "auto" | "ask" | "deny";
+          };
+    }> = [];
+    for (const entry of this.state.entriesByPluginId.values()) {
+      for (const decl of entry.capabilities.action?.kinds ?? []) {
+        out.push({
+          kind: decl.kind,
+          description: decl.description,
+          default_mode: decl.default_mode,
+        });
+      }
+    }
+    return out;
   }
 
   /** Human-readable snapshot for `openneko doctor` and admin endpoints. */
@@ -356,6 +410,16 @@ export class PluginRegistry {
       }
 
       this.state = newState;
+
+      if (this.options.onManifestRefresh) {
+        try {
+          await this.options.onManifestRefresh([...newState.entriesByPluginId.values()]);
+        } catch (err) {
+          console.warn(
+            `[plugin-registry] onManifestRefresh hook failed: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
     } finally {
       this.refreshing = false;
       if (this.pendingRefresh) {

@@ -356,6 +356,24 @@ export async function getWorkRun(orgId: string, runId: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * Lookup the thread a /work run belongs to. Used by the action-execute
+ * worker job to figure out which thread to emit the terminal
+ * action_request_result event into.
+ */
+export async function getWorkThreadForRun(
+  orgId: string,
+  runId: string,
+): Promise<{ id: string } | null> {
+  const rows = await db()
+    .select({ id: work_thread.id })
+    .from(work_run)
+    .innerJoin(work_thread, eq(work_run.thread_id, work_thread.id))
+    .where(and(eq(work_run.org_id, orgId), eq(work_run.id, runId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function getWorkThreadBundle(
   orgId: string,
   threadId: string,

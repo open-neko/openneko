@@ -2,6 +2,8 @@ import { data_source, db, eq } from "@neko/db";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import { extractMemoryFences } from "../agent-backends/memory-fence";
+import { extractActionRequestFences } from "../workflows/fence-parsers";
+import { handleWorkActionRequest } from "../workflows";
 import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
@@ -25,9 +27,11 @@ import {
   setWorkThreadBackendState,
 } from "./store";
 import {
+  buildPluginActionServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
+  type PluginActionDescriptor,
 } from "./tools";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
@@ -41,6 +45,13 @@ export type RunChatTurnOptions = {
   message: string;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
+  /**
+   * Plugin action kinds to surface to the agent as MCP tools, one
+   * per kind. The worker passes its plugin registry snapshot here;
+   * tests pass an empty array to keep the agent's surface stable.
+   * Only honored when the backend supports MCP tools (claude-agent).
+   */
+  pluginActions?: readonly PluginActionDescriptor[];
 };
 
 // Tests can substitute any of these without touching the call site. Production
@@ -180,7 +191,19 @@ export async function runChatTurn(
       supportsSkillTool,
       supportsMemoryTool,
       inlineTranscript: !backend.capabilities.sessionResume,
+      pluginActions: opts.pluginActions ?? [],
     });
+
+    const pluginActions = opts.pluginActions ?? [];
+    const pluginActionServer = backend.capabilities.mcpTools
+      ? buildPluginActionServer({
+          orgId,
+          threadId,
+          runId,
+          descriptors: pluginActions,
+          emit: wrappedEmit,
+        })
+      : null;
 
     const mcpServers = backend.capabilities.mcpTools
       ? {
@@ -198,6 +221,9 @@ export async function runChatTurn(
                   runId,
                 }),
               }
+            : {}),
+          ...(pluginActionServer
+            ? { neko_plugin_actions: pluginActionServer }
             : {}),
         }
       : undefined;
@@ -223,12 +249,38 @@ export async function runChatTurn(
 
     await finishWorkRun(runId, result.status, result.error ?? null);
 
+    // Hermes /work emits plugin action calls as `neko_action_request`
+    // fences (no MCP tool registry to use). Parse them out and route
+    // each through the same policy + DB + emit path the MCP tools
+    // use, so the agent's tool surface is identical across backends
+    // from the user's perspective.
+    const rawTextForActions = result.finalText.trim() || assistantText.trim();
+    const actionFences = extractActionRequestFences(rawTextForActions);
+    for (const payload of actionFences.payloads) {
+      try {
+        await handleWorkActionRequest(
+          {
+            orgId,
+            workRunId: runId,
+            threadId,
+            emit: wrappedEmit,
+          },
+          payload,
+          payload.summary,
+        );
+      } catch (err) {
+        console.warn(
+          `[work-run] handleWorkActionRequest failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
     // Pull any neko_memory fences out of the agent response, persist
     // them, and strip from the user-facing text. Backend-agnostic: works
     // for Hermes (which has no MCP tool registry) and is harmless for
     // claude-agent (which would have used the MCP save tool, but we
     // accept either path).
-    const rawText = result.finalText.trim() || assistantText.trim();
+    const rawText = actionFences.text;
     const { text: persistedText, ops: memoryOps } = extractMemoryFences(rawText);
     for (const op of memoryOps) {
       try {

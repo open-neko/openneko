@@ -149,9 +149,25 @@ export function scrubAgentEvent<T>(scrubber: Scrubber, event: T): T {
           : e.options,
       } as T;
     case "output_emit":
-    case "action_request_emit":
-      // These carry identifiers + kind names, no user-supplied content.
+      // Just identifiers + kind names, no user-supplied content.
       return event;
+    case "action_request_emit":
+      // Identifiers + kind are fine, but intent + summary are
+      // agent-authored prose that could echo a leaked secret —
+      // scrub those defensively.
+      return {
+        ...e,
+        ...(typeof e.intent === "string"
+          ? { intent: scrubber(e.intent) }
+          : {}),
+        ...(typeof e.summary === "string"
+          ? { summary: scrubber(e.summary) }
+          : {}),
+      } as T;
+    case "action_request_result":
+      // outcome.result / error / rejection_reason all could carry
+      // leaked values. Run the JSON scrubber over the whole object.
+      return scrubJson(scrubber, event) as T;
     default:
       // Unknown event type — scrub every string field defensively.
       return scrubJson(scrubber, event) as T;

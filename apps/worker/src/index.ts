@@ -34,7 +34,9 @@ import {
   handleSubscriptionMatch,
   registerBuiltinAdapters,
   seedDefaultActionPolicies,
+  seedPluginActionPolicies,
   startSubscriptionManager,
+  type PluginActionSeed,
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
@@ -186,6 +188,10 @@ const server = createServer(
         return pluginRegistry.completeAuth(params);
       },
     },
+    plugins: {
+      getRegisteredActionDescriptors: () =>
+        pluginRegistry?.getRegisteredActionDescriptors() ?? [],
+    },
   }),
 );
 
@@ -211,6 +217,28 @@ console.log("[worker] action policies seeded and built-in adapters registered");
 pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
+  onManifestRefresh: async (entries) => {
+    const seeds: PluginActionSeed[] = [];
+    for (const entry of entries) {
+      for (const decl of entry.capabilities.action?.kinds ?? []) {
+        seeds.push({
+          pluginName: entry.name,
+          kind: decl.kind,
+          description: decl.description,
+          default_mode: decl.default_mode,
+        });
+      }
+    }
+    const { created, skipped } = await seedPluginActionPolicies(
+      ADMIN_ORG_ID,
+      seeds,
+    );
+    if (created > 0) {
+      console.log(
+        `[worker] seeded ${created} plugin action_policy row(s) (${skipped} already present or non-auto)`,
+      );
+    }
+  },
 });
 await pluginRegistry.start();
 setPluginRegistryInstance(pluginRegistry);

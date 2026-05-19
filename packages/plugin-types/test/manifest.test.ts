@@ -50,7 +50,81 @@ describe("PluginCapabilitiesDeclaration", () => {
       },
     });
     expect(parsed.action?.kinds[0]?.kind).toBe("demo");
+    expect(parsed.action?.kinds[0]?.default_mode).toBeUndefined();
     expect(parsed.auth).toBeUndefined();
+  });
+
+  it("accepts a declared default_mode on an action", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [
+          { kind: "web_search", description: "search", default_mode: "auto" },
+          { kind: "send_slack", description: "post", default_mode: "ask" },
+        ],
+      },
+    });
+    expect(parsed.action?.kinds[0]?.default_mode).toBe("auto");
+    expect(parsed.action?.kinds[1]?.default_mode).toBe("ask");
+  });
+
+  it("rejects an unknown default_mode", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        action: {
+          kinds: [
+            { kind: "demo", description: "x", default_mode: "yolo" },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("accepts a per-scope default_mode object", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [
+          {
+            kind: "send_message",
+            description: "post",
+            default_mode: { external: "ask", internal: "auto" },
+          },
+        ],
+      },
+    });
+    const decl = parsed.action?.kinds[0];
+    expect(decl?.default_mode).toEqual({ external: "ask", internal: "auto" });
+  });
+
+  it("accepts a partial per-scope default_mode (only external)", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: {
+        kinds: [
+          {
+            kind: "demo",
+            description: "x",
+            default_mode: { external: "auto" },
+          },
+        ],
+      },
+    });
+    const decl = parsed.action?.kinds[0];
+    expect(decl?.default_mode).toEqual({ external: "auto" });
+  });
+
+  it("rejects per-scope object with an unknown mode value", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        action: {
+          kinds: [
+            {
+              kind: "demo",
+              description: "x",
+              default_mode: { external: "wat" },
+            },
+          ],
+        },
+      }),
+    ).toThrow();
   });
 
   it("accepts an auth-only plugin", () => {
