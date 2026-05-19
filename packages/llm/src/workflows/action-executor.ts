@@ -81,7 +81,11 @@ export class ActionRequestNotApprovedError extends Error {
 export async function executeApprovedActionRequest(
   orgId: string,
   actionRequestId: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  outcome?: ActionExecutionOutcome;
+}> {
   const request = await getActionRequest(orgId, actionRequestId);
   if (!request) {
     throw new Error(`action_request ${actionRequestId} not found`);
@@ -118,7 +122,7 @@ export async function executeApprovedActionRequest(
       externalRef: outcome.externalRef ?? null,
     });
     await markActionRequestExecuted(request.id);
-    return { ok: true };
+    return { ok: true, outcome };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await finishActionExecution({

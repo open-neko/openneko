@@ -181,6 +181,35 @@ export class PluginRegistry {
     return this.scrubber;
   }
 
+  /**
+   * Snapshot of every installed plugin's declared action kinds plus
+   * the seeded approval-mode hint. Consumed by the /work agent's tool
+   * builder to build one MCP tool per kind. Returns an empty array
+   * when no action-capable plugins are installed (auth-only plugins
+   * don't contribute anything here).
+   */
+  getRegisteredActionDescriptors(): Array<{
+    kind: string;
+    description: string;
+    default_mode?: "auto" | "ask" | "deny";
+  }> {
+    const out: Array<{
+      kind: string;
+      description: string;
+      default_mode?: "auto" | "ask" | "deny";
+    }> = [];
+    for (const entry of this.state.entriesByPluginId.values()) {
+      for (const decl of entry.capabilities.action?.kinds ?? []) {
+        out.push({
+          kind: decl.kind,
+          description: decl.description,
+          default_mode: decl.default_mode,
+        });
+      }
+    }
+    return out;
+  }
+
   /** Human-readable snapshot for `openneko doctor` and admin endpoints. */
   status(): RegistryStatus {
     return {

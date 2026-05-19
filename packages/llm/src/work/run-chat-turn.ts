@@ -25,9 +25,11 @@ import {
   setWorkThreadBackendState,
 } from "./store";
 import {
+  buildPluginActionServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
+  type PluginActionDescriptor,
 } from "./tools";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
@@ -41,6 +43,13 @@ export type RunChatTurnOptions = {
   message: string;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
+  /**
+   * Plugin action kinds to surface to the agent as MCP tools, one
+   * per kind. The worker passes its plugin registry snapshot here;
+   * tests pass an empty array to keep the agent's surface stable.
+   * Only honored when the backend supports MCP tools (claude-agent).
+   */
+  pluginActions?: readonly PluginActionDescriptor[];
 };
 
 // Tests can substitute any of these without touching the call site. Production
@@ -182,6 +191,17 @@ export async function runChatTurn(
       inlineTranscript: !backend.capabilities.sessionResume,
     });
 
+    const pluginActions = opts.pluginActions ?? [];
+    const pluginActionServer = backend.capabilities.mcpTools
+      ? buildPluginActionServer({
+          orgId,
+          threadId,
+          runId,
+          descriptors: pluginActions,
+          emit: wrappedEmit,
+        })
+      : null;
+
     const mcpServers = backend.capabilities.mcpTools
       ? {
           ...(supportsCardTool
@@ -198,6 +218,9 @@ export async function runChatTurn(
                   runId,
                 }),
               }
+            : {}),
+          ...(pluginActionServer
+            ? { neko_plugin_actions: pluginActionServer }
             : {}),
         }
       : undefined;
