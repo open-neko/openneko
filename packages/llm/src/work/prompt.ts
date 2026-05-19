@@ -152,6 +152,63 @@ const RULES_SECTION = `<rules>
 ${GRAPHJIN_DATE_RULE}
 </rules>`;
 
+export interface PluginActionPromptDescriptor {
+  kind: string;
+  description: string;
+  default_mode?: "auto" | "ask" | "deny";
+}
+
+function buildPluginActionsSection(
+  descriptors: readonly PluginActionPromptDescriptor[],
+  useFences: boolean,
+): string {
+  // claude-agent receives plugin kinds via the MCP tool registry; no
+  // prompt-level docs needed (MCP listTools answers the question).
+  // Hermes has no tool discovery — the system prompt is where it
+  // learns kinds exist. Only emit the fence-syntax block in that case.
+  if (!useFences) return "";
+  const active = descriptors.filter((d) => d.default_mode !== "deny");
+  if (active.length === 0) return "";
+  const rows = active
+    .map((d) => {
+      const mode =
+        d.default_mode === "auto"
+          ? "auto"
+          : d.default_mode === "ask"
+            ? "ask"
+            : "ask";
+      return `  - \`${d.kind}\` (${mode}) — ${d.description.split("\n")[0]}`;
+    })
+    .join("\n");
+  return `<plugin_actions>
+Plugins contribute action kinds you can request inline. Emit each as
+a fenced JSON block; the runtime catches the fence, evaluates the
+operator's rules, and either fires it (auto) or asks the user to
+approve (ask). The fence body must be valid JSON.
+
+\`\`\`neko_action_request
+{
+  "scope": "external",
+  "kind": "<one of the kinds below>",
+  "payload": { /* kind-specific */ },
+  "summary": "One sentence — what you're doing and why, written for the user.",
+  "risk_level": "low"
+}
+\`\`\`
+
+Installed kinds:
+${rows}
+
+For ask-mode kinds: set \`summary\` to a single clear sentence the
+operator will read on the approval card. It's how they decide.
+
+Auto-mode kinds run inline; the outcome lands as an
+action_request_result event in the same turn — you may stop after
+the fence and let the runtime narrate, or continue the conversation
+naturally.
+</plugin_actions>`;
+}
+
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
@@ -166,6 +223,8 @@ export function buildWorkPrompt(args: {
   // True when prior turns must be inlined into the system prompt because the
   // backend can't reload them out-of-band (i.e. no session resume).
   inlineTranscript: boolean;
+  /** Installed plugin action kinds — Hermes sees these in the prompt; claude-agent finds them via MCP. */
+  pluginActions?: readonly PluginActionPromptDescriptor[];
 }): string {
   const {
     backend,
@@ -179,6 +238,7 @@ export function buildWorkPrompt(args: {
     supportsSkillTool,
     supportsMemoryTool,
     inlineTranscript,
+    pluginActions,
   } = args;
   const shellTool = shellToolName(backend);
 
@@ -202,8 +262,9 @@ skills or artifacts when useful.
       inlineKnowledge: "syntax",
     }),
     buildWorkspaceSection(workspace, shellTool),
+    buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
-  ];
+  ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {
     sections.push(

@@ -164,6 +164,124 @@ export async function handleActionRequest(
   };
 }
 
+/**
+ * /work fence-emission context — Hermes emits `neko_action_request`
+ * fences inline in its prose; the runtime parses them after the turn
+ * ends and routes each through this handler. Mirrors
+ * handleActionRequest but writes to the action_request row's
+ * work_run_id column instead of workflow_run_id, and emits the
+ * intent/summary fields the inline approval card in /work consumes.
+ */
+export type WorkActionContext = {
+  orgId: string;
+  workRunId: string;
+  threadId: string;
+  /** Defaults to "external" when the agent's fence omits it. */
+  emit: (event: AgentEvent) => Promise<void> | void;
+  listPolicies?: typeof defaultListEnabledPolicies;
+  enqueue?: typeof defaultEnqueue;
+};
+
+export type HandleWorkActionRequestResult =
+  | { ok: false; decision: "denied"; reason: string; policy?: string }
+  | {
+      ok: true;
+      decision: "auto_approved" | "needs_approval";
+      actionRequestId: string;
+      policy: string;
+      status: "queued_for_execution" | "pending_approval";
+    };
+
+export async function handleWorkActionRequest(
+  ctx: WorkActionContext,
+  args: ActionRequestPayload,
+  agentIntent?: string,
+): Promise<HandleWorkActionRequestResult> {
+  const listPolicies = ctx.listPolicies ?? defaultListEnabledPolicies;
+  const enqueue = ctx.enqueue ?? defaultEnqueue;
+
+  const policies = await listPolicies(ctx.orgId);
+  const decision = evaluateActionPolicy(
+    {
+      scope: args.scope as ActionScope,
+      kind: args.kind,
+      target: args.target ?? null,
+      riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+    },
+    policies,
+  );
+
+  if (decision.decision === "deny") {
+    return {
+      ok: false,
+      decision: "denied",
+      reason: decision.reason,
+      policy: decision.policy.name,
+    };
+  }
+  if (decision.decision === "no_policy") {
+    return {
+      ok: false,
+      decision: "denied",
+      reason:
+        "no policy matches this scope/kind — refuse for safety. Operator must define a rule in /settings/rules.",
+    };
+  }
+
+  const status =
+    decision.decision === "allow" ? "approved" : "pending_approval";
+  const intent =
+    typeof agentIntent === "string" && agentIntent.length > 0
+      ? agentIntent
+      : args.summary;
+
+  const request = await createActionRequest({
+    orgId: ctx.orgId,
+    workRunId: ctx.workRunId,
+    policyId: decision.policy.id,
+    scope: args.scope as ActionScope,
+    kind: args.kind,
+    target: args.target ?? null,
+    payload: args.payload ?? {},
+    riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+    summary: args.summary,
+    intent: intent ?? null,
+    status,
+  });
+
+  await ctx.emit({
+    type: "action_request_emit",
+    action_request_id: request.id,
+    kind: request.kind,
+    scope: request.scope,
+    decision: status === "approved" ? "auto_approved" : "pending_approval",
+    ...(intent ? { intent, summary: intent } : args.summary ? { summary: args.summary } : {}),
+    ...(request.riskLevel ? { risk_level: request.riskLevel } : {}),
+  });
+
+  if (status === "approved") {
+    await enqueue(QUEUE.ACTION_EXECUTE, {
+      orgId: ctx.orgId,
+      actionRequestId: request.id,
+    });
+    return {
+      ok: true,
+      decision: "auto_approved",
+      actionRequestId: request.id,
+      policy: decision.policy.name,
+      status: "queued_for_execution",
+    };
+  }
+
+  return {
+    ok: true,
+    decision: "needs_approval",
+    actionRequestId: request.id,
+    policy: decision.policy.name,
+    status: "pending_approval",
+  };
+}
+
 export function buildWorkflowActionServer(ctx: WorkflowActionContext) {
   const requestAction = tool(
     "request",

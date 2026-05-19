@@ -169,6 +169,9 @@ export {
 } from "./policy-engine";
 export {
   buildWorkflowActionServer,
+  handleWorkActionRequest,
+  type HandleWorkActionRequestResult,
+  type WorkActionContext,
   type WorkflowActionContext,
 } from "./action-server";
 export {
