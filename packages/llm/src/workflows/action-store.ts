@@ -189,6 +189,13 @@ export type ActionRequestRecord = {
   riskLevel: RiskLevel | null;
   status: ActionRequestStatus;
   summary: string | null;
+  /**
+   * Agent's natural-language framing of *why* this action was
+   * requested — populated for ask-mode requests so the inline
+   * approval card in /work has a human-authored headline. Null
+   * for auto-mode and pre-intent legacy rows.
+   */
+  intent: string | null;
   requestedByRunId: string | null;
   approvedByUserId: string | null;
   approvedAt: Date | null;
@@ -213,6 +220,7 @@ function toRequestRecord(
     riskLevel: (row.risk_level as RiskLevel | null) ?? null,
     status: row.status as ActionRequestStatus,
     summary: row.summary,
+    intent: row.intent ?? null,
     requestedByRunId: row.requested_by_run_id,
     approvedByUserId: row.approved_by_user_id,
     approvedAt: row.approved_at,
@@ -234,6 +242,8 @@ export type CreateActionRequestInput = {
   riskLevel?: RiskLevel | null;
   status: ActionRequestStatus;
   summary?: string | null;
+  /** Agent's NL framing — required at the app layer for ask-mode rows. */
+  intent?: string | null;
   requestedByRunId?: string | null;
 };
 
@@ -254,6 +264,7 @@ export async function createActionRequest(
       risk_level: input.riskLevel ?? null,
       status: input.status,
       summary: input.summary ?? null,
+      intent: input.intent ?? null,
       requested_by_run_id: input.requestedByRunId ?? null,
     })
     .returning();

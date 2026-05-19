@@ -919,6 +919,7 @@ export const action_request = pgTable(
     risk_level: text("risk_level"),
     status: text("status").notNull().default("pending_approval"),
     summary: text("summary"),
+    intent: text("intent"),
     requested_by_run_id: uuid("requested_by_run_id").references(
       () => workflow_run.id,
       { onDelete: "set null" },
