@@ -467,6 +467,8 @@ export function buildPluginActionServer(
             action_request_id: request.id,
             kind: d.kind,
             scope: "external",
+            decision: "auto_approved",
+            summary: intent,
             ...(riskLevel ? { risk_level: riskLevel } : {}),
           });
           return {
@@ -509,6 +511,9 @@ export function buildPluginActionServer(
           action_request_id: request.id,
           kind: d.kind,
           scope: "external",
+          decision: "pending_approval",
+          intent,
+          summary: intent,
           ...(riskLevel ? { risk_level: riskLevel } : {}),
         });
         return {

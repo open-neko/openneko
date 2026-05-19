@@ -191,6 +191,8 @@ async function emitActionRequestEvent(
     kind: request.kind,
     scope: request.scope,
     risk_level: request.riskLevel ?? undefined,
+    decision: decision.decision === "allow" ? "auto_approved" : "pending_approval",
+    ...(request.summary ? { summary: request.summary } : {}),
   });
 }
 

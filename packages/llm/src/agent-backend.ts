@@ -57,6 +57,20 @@ export type AgentEvent =
       kind: string;
       scope: "internal" | "external";
       risk_level?: string;
+      /**
+       * Agent's natural-language framing — populated when the request
+       * is awaiting approval so the chat UI can render the headline
+       * on the inline card. Omitted for auto-approved requests where
+       * no human ever sees it.
+       */
+      intent?: string;
+      /** Pre-policy summary string suitable as a fallback when intent is absent. */
+      summary?: string;
+      /**
+       * "auto_approved" → queued; "pending_approval" → needs the user
+       * to click Approve before the worker fires the adapter.
+       */
+      decision: "auto_approved" | "pending_approval";
     }
   | {
       /**
