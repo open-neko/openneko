@@ -19,7 +19,12 @@
 // new plugin's actions are usable on the next action_request. After
 // `openneko secrets set …`, the new env value is in effect on the
 // next execute_action. No restart anywhere.
-import { type FSWatcher, existsSync, watch as fsWatch } from "node:fs";
+import {
+  type FSWatcher,
+  existsSync,
+  readFileSync,
+  watch as fsWatch,
+} from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -701,9 +706,8 @@ interface PluginPackageMeta {
 
 function readPluginPackageMeta(packageJsonPath: string): PluginPackageMeta | null {
   try {
-    const fs = require("node:fs") as typeof import("node:fs");
     return JSON.parse(
-      fs.readFileSync(packageJsonPath, "utf8"),
+      readFileSync(packageJsonPath, "utf8"),
     ) as PluginPackageMeta;
   } catch {
     return null;

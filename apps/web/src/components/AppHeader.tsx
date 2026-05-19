@@ -15,6 +15,7 @@ export type AppHeaderProps = {
 
 export default function AppHeader({ back, children }: AppHeaderProps) {
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [user, setUser] = useState<{ email: string } | null>(null);
 
   // Quiet poll for the server's current version. When it diverges from the
   // version baked into this client bundle at build time, a new deploy has
@@ -39,6 +40,37 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
       clearInterval(id);
     };
   }, []);
+
+  // Sign-out affordance is only meaningful when the user has a session
+  // (i.e. an SSO plugin is installed AND they've signed in). When no
+  // plugin is installed the proxy lets every request through and the
+  // session is always null, so nothing renders.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as {
+          user: { id: string; email: string; name: string | null } | null;
+        };
+        if (data.user) setUser({ email: data.user.email });
+      } catch {
+        // best-effort
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSignOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.href = "/signin";
+    }
+  }
 
   const updateAvailable =
     latestVersion !== null && latestVersion !== APP_VERSION;
@@ -84,6 +116,20 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
             >
               <span className="brand-update-dot" aria-hidden="true" />
               <span className="brand-update-label">v{latestVersion} ready · reload</span>
+            </button>
+          )}
+
+          {user && (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              aria-label={`Sign out ${user.email}`}
+              title={user.email}
+              className="inline-flex items-center gap-1.5 self-start h-[41px] bg-transparent border-0 p-0 cursor-pointer text-text2 hover:text-text text-[12px] font-medium leading-none"
+            >
+              <span className="hidden sm:inline truncate max-w-[160px]">{user.email}</span>
+              <span aria-hidden="true" className="text-text3 hidden sm:inline">·</span>
+              <span>Sign out</span>
             </button>
           )}
         </div>
