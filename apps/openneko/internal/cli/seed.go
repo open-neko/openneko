@@ -30,17 +30,23 @@ func newSeedCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Seed always lives under the demo project, regardless of what
+			// other mode the operator may be running in this dir.
+			project, err := sup.ProjectName(compose.ModeDemo)
+			if err != nil {
+				return err
+			}
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 
 			// One-shot: load the AdventureWorks CSVs.
-			if code, err := sup.Run(ctx, files, []string{"run", "--rm", "adventureworks-init"}, os.Stdout, os.Stderr); err != nil {
+			if code, err := sup.Run(ctx, project, files, []string{"run", "--rm", "adventureworks-init"}, os.Stdout, os.Stderr); err != nil {
 				return err
 			} else if code != 0 {
 				return WithExit(code, errors.New("adventureworks-init failed"))
 			}
 			// One-shot: seed neko-db workflows that reference adventureworks data.
-			if code, err := sup.Run(ctx, files, []string{"run", "--rm", "neko-adventureworks-seed"}, os.Stdout, os.Stderr); err != nil {
+			if code, err := sup.Run(ctx, project, files, []string{"run", "--rm", "neko-adventureworks-seed"}, os.Stdout, os.Stderr); err != nil {
 				return err
 			} else if code != 0 {
 				return WithExit(code, errors.New("neko-adventureworks-seed failed"))

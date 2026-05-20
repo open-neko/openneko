@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
@@ -108,10 +109,42 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	return out, nil
 }
 
-// Run shells out to `docker compose -f <files…> <args…>`, forwarding I/O and
-// signals. Returns the child's exit code.
-func (s *Supervisor) Run(ctx context.Context, files, args []string, stdout, stderr *os.File) (int, error) {
+// ProjectName returns the compose project name to use for the current
+// invocation. On `start`, callers should pass the mode so containers/
+// volumes/networks land as openneko-<mode>-*. start persists the chosen
+// project name to .openneko/runtime/.project-name so stop/logs/status
+// pick the same project up without needing --mode every time. Falls
+// back to "openneko" when no .project-name marker exists.
+func (s *Supervisor) ProjectName(modeIfStarting Mode) (string, error) {
+	rt, err := s.runtimeDir()
+	if err != nil {
+		return "", err
+	}
+	marker := filepath.Join(rt, ".project-name")
+	if modeIfStarting != "" {
+		name := "openneko-" + string(modeIfStarting)
+		_ = os.MkdirAll(rt, 0o755)
+		_ = os.WriteFile(marker, []byte(name+"\n"), 0o644)
+		return name, nil
+	}
+	if b, err := os.ReadFile(marker); err == nil {
+		v := strings.TrimSpace(string(b))
+		if v != "" {
+			return v, nil
+		}
+	}
+	return "openneko", nil
+}
+
+// Run shells out to `docker compose -p <project> -f <files…> <args…>`,
+// forwarding I/O and signals. Returns the child's exit code. Pass
+// projectName as the empty string to let docker compose default to the
+// runtime dir name (not recommended).
+func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []string, stdout, stderr *os.File) (int, error) {
 	dockerArgs := []string{"compose"}
+	if projectName != "" {
+		dockerArgs = append(dockerArgs, "-p", projectName)
+	}
 	for _, f := range files {
 		dockerArgs = append(dockerArgs, "-f", f)
 	}

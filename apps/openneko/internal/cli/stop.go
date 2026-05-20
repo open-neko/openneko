@@ -24,11 +24,16 @@ func newStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Reads the project name persisted by the matching `openneko start`.
+			project, err := sup.ProjectName("")
+			if err != nil {
+				return err
+			}
 			args := []string{"down"}
 			if volumes {
 				args = append(args, "-v")
 			}
-			code, err := sup.Run(context.Background(), files, args, os.Stdout, os.Stderr)
+			code, err := sup.Run(context.Background(), project, files, args, os.Stdout, os.Stderr)
 			if err != nil {
 				return err
 			}

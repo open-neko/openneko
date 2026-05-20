@@ -21,12 +21,16 @@ func newLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			project, err := sup.ProjectName("")
+			if err != nil {
+				return err
+			}
 			dargs := []string{"logs"}
 			if follow {
 				dargs = append(dargs, "-f")
 			}
 			dargs = append(dargs, args...)
-			code, err := sup.Run(context.Background(), files, dargs, os.Stdout, os.Stderr)
+			code, err := sup.Run(context.Background(), project, files, dargs, os.Stdout, os.Stderr)
 			if err != nil {
 				return err
 			}

@@ -28,8 +28,10 @@ func newResetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := sup.Run(context.Background(), files, []string{"down", "-v"}, os.Stdout, os.Stderr); err != nil {
-				return err
+			// Tear down every possible project name an operator could have used
+			// in this dir, so reset works regardless of the last mode.
+			for _, m := range []compose.Mode{compose.ModeProd, compose.ModeDev, compose.ModeDemo} {
+				_, _ = sup.Run(context.Background(), "openneko-"+string(m), files, []string{"down", "-v"}, os.Stdout, os.Stderr)
 			}
 
 			cfgFile := filepath.Join(config.Dir(""), "config.json")

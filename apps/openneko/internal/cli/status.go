@@ -21,7 +21,11 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			code, err := sup.Run(context.Background(), files, []string{"ps"}, os.Stdout, os.Stderr)
+			project, err := sup.ProjectName("")
+			if err != nil {
+				return err
+			}
+			code, err := sup.Run(context.Background(), project, files, []string{"ps"}, os.Stdout, os.Stderr)
 			if err != nil {
 				return err
 			}

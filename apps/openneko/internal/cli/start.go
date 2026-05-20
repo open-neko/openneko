@@ -42,13 +42,17 @@ Modes:
 			if err != nil {
 				return err
 			}
+			project, err := sup.ProjectName(m)
+			if err != nil {
+				return err
+			}
 
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 
 			// Stage 1: bring up neko-db only, wait healthy, run migrations.
 			if !skipMigrate {
-				if _, err := sup.Run(ctx, files, []string{"up", "-d", "neko-db"}, os.Stdout, os.Stderr); err != nil {
+				if _, err := sup.Run(ctx, project, files, []string{"up", "-d", "neko-db"}, os.Stdout, os.Stderr); err != nil {
 					return err
 				}
 				if err := waitDBHealthy(ctx, time.Minute); err != nil {
@@ -64,7 +68,7 @@ Modes:
 			if detach {
 				upArgs = append(upArgs, "-d")
 			}
-			code, err := sup.Run(ctx, files, upArgs, os.Stdout, os.Stderr)
+			code, err := sup.Run(ctx, project, files, upArgs, os.Stdout, os.Stderr)
 			if err != nil {
 				return err
 			}
