@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/open-neko/neko/compare/v1.7.0...v1.7.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **docker,demo:** self-contained worker image for openneko --mode demo ([5da2214](https://github.com/open-neko/neko/commit/5da2214d29e0e79633318d73aecc352f6b12efbf))
+
 ## [1.7.0](https://github.com/open-neko/neko/compare/v1.6.0...v1.7.0) (2026-05-19)
 
 
