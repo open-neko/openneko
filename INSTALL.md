@@ -93,7 +93,12 @@ OpenNeko can be extended with sandboxed plugins that add new action kinds (web s
 
 ### Host support
 
-Plugins run inside a microVM with hardware-virtualization acceleration. Plugins are supported on **macOS arm64** (Apple Silicon, via the Hypervisor.framework) and **Linux with `/dev/kvm`**. On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs and the built-in `send_webhook` adapter remains as an unsandboxed extensibility path.
+Plugins run inside a microVM with hardware-virtualization acceleration.
+
+- **macOS arm64 with the brew-installed binary + `openneko start --mode demo`**: plugins are **not supported** on this path today. Docker Desktop on macOS hides `/dev/kvm` from Linux containers, so the worker container cannot spawn the plugin microsandbox VM. To run plugins on a Mac you need the source-build *Developer Setup* path below — `pnpm dev` runs the worker on the macOS host where microsandbox uses Hypervisor.framework directly.
+- **Linux with `/dev/kvm`** (amd64 or arm64): plugins are supported. The worker container needs `/dev/kvm` passed in; the embedded compose's `plugins.linux.yml` overlay does this automatically when the binary detects KVM at start time.
+
+On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs and the built-in `send_webhook` adapter remains as an unsandboxed extensibility path.
 
 `openneko doctor` reports host capability, docker version, and manifest state.
 
