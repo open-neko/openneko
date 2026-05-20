@@ -46,6 +46,10 @@ release:
 
 brews:
   - name: openneko
+    # Don't overwrite the tap's pinned stable formula when releasing a
+    # prerelease (vX.Y.Z-rc1 etc). "auto" → skip when GoReleaser sees a
+    # prerelease tag; stable releases push as usual.
+    skip_upload: auto
     repository:
       owner: open-neko
       name: homebrew-tap

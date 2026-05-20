@@ -90,6 +90,20 @@ jobs:
           cache-from: type=gha,scope=neko-graphjin
           cache-to: type=gha,scope=neko-graphjin,mode=max
 
+      # First push of each package lands as `private` by default. Flip to
+      # public so `docker pull ghcr.io/open-neko/neko-*` works for any
+      # operator without ghcr.io login. Idempotent on subsequent releases.
+      - name: Ensure container packages are public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for pkg in neko-web neko-worker neko-graphjin; do
+            echo "[visibility] $pkg"
+            gh api -X PATCH "/orgs/open-neko/packages/container/$pkg/visibility" \
+              -f visibility=public \
+              || echo "[visibility] $pkg: skipped (already public or insufficient scope)"
+          done
+
   goreleaser:
     name: goreleaser
     runs-on: ubuntu-22.04
