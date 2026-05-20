@@ -174,6 +174,8 @@ COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
 COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps --chown=neko:neko /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=deps --chown=neko:neko /app/packages/llm/node_modules ./packages/llm/node_modules
+COPY --from=deps --chown=neko:neko /app/packages/plugin-install/node_modules ./packages/plugin-install/node_modules
+COPY --from=deps --chown=neko:neko /app/packages/plugin-types/node_modules ./packages/plugin-types/node_modules
 COPY --chown=neko:neko package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY --chown=neko:neko apps/worker ./apps/worker
 COPY --chown=neko:neko packages ./packages
