@@ -263,9 +263,19 @@ CI runs this with `--check` and fails on drift.
 
 **Provider key fails.** Confirm the provider key is active, has billing/quota available, and matches the provider selected in `/settings`.
 
+**Stale `pnpm dev` processes hammering port 5432.** If you previously ran the worker from source via `pnpm dev`, those `tsx watch` processes survive `openneko stop` (the binary only manages docker containers, not host processes). They reconnect every ~10s with a stale password and surface as `password authentication failed for user "neko"` bursts in `openneko logs neko-db`. Fix:
+
+```bash
+pkill -f "tsx.*apps/worker/src/index"
+pkill -f "tsx.*apps/web"
+```
+
+Then `openneko stop --volumes && openneko start --mode demo --detach`.
+
 **Start from a clean slate.**
 
 ```bash
 openneko reset --all
 brew uninstall openneko && brew untap open-neko/tap  # if also reinstalling the binary
+pkill -f "tsx.*apps/(worker|web)"                    # if you ever ran pnpm dev
 ```
