@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/open-neko/neko/compare/v1.7.3...v1.7.4) (2026-05-20)
+
+
+### Bug Fixes
+
+* **docker:** copy onnxruntime-node native libs into web image ([9ccda7d](https://github.com/open-neko/neko/commit/9ccda7d0b3677f4abcf1ca1c7b3273a263091750))
+
 ## [1.7.3](https://github.com/open-neko/neko/compare/v1.7.2...v1.7.3) (2026-05-20)
 
 
