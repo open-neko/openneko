@@ -78,20 +78,21 @@ On unsupported hosts the plugin subsystem is disabled with a clear log line; Ope
 
 ## Try it in 10 minutes
 
-What you're about to do: clone the repo, start it, finish a setup wizard, and watch a *"Germany revenue dropped"* alert land on the Briefing within ~15 minutes.
+What you're about to do: install OpenNeko, start it, finish a setup wizard, and watch a *"Germany revenue dropped"* alert land on the Briefing within ~15 minutes.
 
-You'll need Docker and one LLM provider API key. Spin up OpenNeko with the included AdventureWorks sample-data services:
+You'll need Docker and one LLM provider API key. macOS:
 
 ```bash
-git clone https://github.com/open-neko/neko.git
-cd neko
-docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
-docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
+brew install open-neko/tap/openneko
+mkdir -p ~/openneko && cd ~/openneko
+openneko start --mode demo --detach
 ```
+
+Linux: download the binary from the [latest release](https://github.com/open-neko/neko/releases/latest), then the same `openneko start --mode demo --detach`.
 
 Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
 
-For full install steps, requirements, updates, troubleshooting, and connecting your own data, see [INSTALL.md](INSTALL.md).
+For the full live-trial flow — including the order-trickle simulator and the `germany-revenue-drop` scenario injector — use the source-build path documented in [INSTALL.md](INSTALL.md#build-from-source-advanced). Those continuous services aren't yet baked into the binary's embedded compose.
 
 ### Watch the loop fire end-to-end
 
@@ -101,7 +102,7 @@ The seed pre-loads three workflows on the AdventureWorks data so the trial isn't
 - **Revenue Drop Alert** (hourly cron) — per-territory current-hour revenue vs the same hour-of-week baseline averaged over the prior 4 weeks; if any territory falls below 50%, proposes a Slack alert to `#revenue-alerts` for your approval.
 - **Slow-Ship Operations** (8:30am cron) — orders stuck in *pending* for more than 5 days, with the oldest 3 order IDs.
 
-To see the loop without waiting for an organic dip, fire the Germany revenue-drop scenario. It tells the order trickle to stop generating new orders for territory 8 (Germany) for three hours:
+To see the loop without waiting for an organic dip, fire the Germany revenue-drop scenario. It tells the order trickle to stop generating new orders for territory 8 (Germany) for three hours. The scenario injector currently lives in the source-build path only — `git clone` and use `compose.adventureworks.yml`:
 
 ```bash
 docker compose -f compose.yml -f compose.adventureworks.yml \
