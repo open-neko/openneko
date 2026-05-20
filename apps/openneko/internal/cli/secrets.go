@@ -23,8 +23,11 @@ func newSecretsListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list [<plugin>]",
 		Short: "Show env keys stored for a plugin (or all plugins); values never echoed",
-		Args:  cobra.MaximumNArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			store, err := secrets.Read("")
 			if err != nil {
 				return err
@@ -86,8 +89,11 @@ func newSecretsSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <plugin> <key> [<value>]",
 		Short: "Set an env value for a plugin",
-		Args:  cobra.RangeArgs(2, 3),
+		Args: cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			plugin := args[0]
 			key := args[1]
 			if plugin == "" || key == "" {
@@ -138,8 +144,11 @@ func newSecretsUnsetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unset <plugin> <key>",
 		Short: "Remove an env value",
-		Args:  cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			plugin := args[0]
 			key := args[1]
 			if plugin == "" || key == "" {

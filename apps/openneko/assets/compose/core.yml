@@ -88,6 +88,11 @@ services:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_PLUGINS_MANIFEST_PATH: /config/openneko/plugins.json
+      # Plugin npm packages install into a dedicated dir, isolated from /app's
+      # pnpm-managed node_modules. Both the openneko CLI (via env-var pickup
+      # in internal/plugin/install/) and the worker plugin-registry's runner
+      # resolver use this path.
+      OPENNEKO_PLUGIN_INSTALL_DIR: /var/lib/openneko/plugins
     expose:
       - "4100"
     volumes:
@@ -95,6 +100,7 @@ services:
       - openneko-graphjin-cli:/config/graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
+      - openneko-plugins:/var/lib/openneko/plugins
     restart: unless-stopped
 
 volumes:
@@ -103,3 +109,4 @@ volumes:
   openneko-graphjin-cli:
   openneko-agent-home:
   openneko-agent-tmp:
+  openneko-plugins:

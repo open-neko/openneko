@@ -178,8 +178,14 @@ RUN useradd --system --create-home --uid 1001 neko
 # /app must also be writable by neko so `openneko install` (run in-container
 # via docker exec) can write pnpm temp files + update package.json /
 # pnpm-lock.yaml during plugin installs.
-RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache \
-    && chown -R neko:neko /app /config /tmp/openneko-home /tmp/openneko-tmp /cache
+RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache /var/lib/openneko/plugins \
+    && chown -R neko:neko /app /config /tmp/openneko-home /tmp/openneko-tmp /cache /var/lib/openneko
+# Seed the plugin install dir with an empty package.json so `npm install`
+# inside that dir has a workspace to operate on. This dir is isolated from
+# /app's pnpm-managed node_modules — plugin packages land here cleanly
+# regardless of how the worker's own deps were installed.
+RUN printf '{\n  "name": "openneko-plugins",\n  "version": "0.0.0",\n  "private": true\n}\n' > /var/lib/openneko/plugins/package.json \
+    && chown neko:neko /var/lib/openneko/plugins/package.json
 COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
 COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps --chown=neko:neko /app/packages/db/node_modules ./packages/db/node_modules

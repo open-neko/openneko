@@ -65,6 +65,15 @@ import { isSupportedHost, platformTriple } from "./microsandbox-sdk.js";
 export interface PluginRegistryOptions {
   /** OpenNeko repo root — manifest lives here. */
   repoRoot: string;
+  /**
+   * Directory containing the installed plugin npm packages (a node_modules
+   * dir gets created here by `openneko install`). When unset, defaults to
+   * repoRoot — the source-build dev workflow keeps using /app's node_modules.
+   * In the docker-distributed worker image OPENNEKO_PLUGIN_INSTALL_DIR points
+   * to /var/lib/openneko/plugins/ so plugin installs don't fight the worker's
+   * own pnpm-managed node_modules.
+   */
+  pluginInstallDir?: string;
   /** Per-plugin VM bind-mount root. */
   workRoot: string;
   /** Optional secrets config dir; defaults to XDG/$HOME-derived path. */
@@ -547,7 +556,10 @@ export class PluginRegistry {
     if (this.runtime.hasPlugin(pluginId)) return;
 
     const resolveRunner =
-      this.options.resolveRunner ?? defaultResolveRunner(this.options.repoRoot);
+      this.options.resolveRunner ??
+      defaultResolveRunner(
+        this.options.pluginInstallDir ?? this.options.repoRoot,
+      );
     const runnerPath = resolveRunner(entry.name);
     const hostWorkspacePath = path.join(this.options.workRoot, pluginId);
     await mkdir(hostWorkspacePath, { recursive: true });
@@ -739,18 +751,18 @@ function defaultProviderLabel(packageName: string): string {
   return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 }
 
-function defaultResolveRunner(repoRoot: string): (pkg: string) => string {
-  return (pkg) => resolveRunnerForPackage(pkg, repoRoot);
+function defaultResolveRunner(resolverRoot: string): (pkg: string) => string {
+  return (pkg) => resolveRunnerForPackage(pkg, resolverRoot);
 }
 
-function resolveRunnerForPackage(pkg: string, repoRoot: string): string {
-  const require = createRequire(path.join(repoRoot, "noop.js"));
+function resolveRunnerForPackage(pkg: string, resolverRoot: string): string {
+  const require = createRequire(path.join(resolverRoot, "noop.js"));
   let packageJsonPath: string;
   try {
     packageJsonPath = require.resolve(`${pkg}/package.json`);
   } catch (err) {
     throw new Error(
-      `cannot resolve plugin package "${pkg}" from ${repoRoot}: ${err instanceof Error ? err.message : err}`,
+      `cannot resolve plugin package "${pkg}" from ${resolverRoot}: ${err instanceof Error ? err.message : err}`,
     );
   }
   const pkgRoot = path.dirname(packageJsonPath);

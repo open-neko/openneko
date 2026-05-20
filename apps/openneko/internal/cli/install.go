@@ -22,8 +22,11 @@ func newInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install <name>[@<marketplace>]",
 		Short: "Install a plugin from a trusted marketplace",
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			spec := args[0]
 			if spec == "" {
 				return WithExit(2, errors.New("install: package name required"))

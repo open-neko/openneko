@@ -39,6 +39,24 @@ type Options struct {
 	Client              marketplace.Client
 	NpmRunner           NpmRunner
 	EnvPrompt           EnvPromptFunc
+	// InstallDir overrides where `npm install` runs and where node_modules
+	// is looked up. Defaults to RepoRoot. Env var OPENNEKO_PLUGIN_INSTALL_DIR
+	// also wins when set, useful inside the worker container which installs
+	// plugins to /var/lib/openneko/plugins/ to avoid clashing with the
+	// pre-existing pnpm-managed workspace at /app.
+	InstallDir string
+}
+
+// installDir resolves the directory used for npm install + node_modules
+// reads. Precedence: explicit option > env var > RepoRoot.
+func installDir(opts Options) string {
+	if opts.InstallDir != "" {
+		return opts.InstallDir
+	}
+	if v := os.Getenv("OPENNEKO_PLUGIN_INSTALL_DIR"); v != "" {
+		return v
+	}
+	return opts.RepoRoot
 }
 
 type Result struct {
@@ -149,7 +167,7 @@ func runMarketplace(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	if err := opts.NpmRunner(ctx, []string{"install", parsed.Name + "@" + version.Version}, opts.RepoRoot); err != nil {
+	if err := opts.NpmRunner(ctx, []string{"install", parsed.Name + "@" + version.Version}, installDir(opts)); err != nil {
 		return nil, err
 	}
 
@@ -252,10 +270,10 @@ func runUnverified(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Version != "" {
 		spec = parsed.Name + "@" + opts.Version
 	}
-	if err := opts.NpmRunner(ctx, []string{"install", spec}, opts.RepoRoot); err != nil {
+	if err := opts.NpmRunner(ctx, []string{"install", spec}, installDir(opts)); err != nil {
 		return nil, err
 	}
-	meta, err := readPackageMeta(parsed.Name, opts.RepoRoot)
+	meta, err := readPackageMeta(parsed.Name, installDir(opts))
 	if err != nil {
 		return nil, fmt.Errorf("--unverified install: cannot read package.json for %s after install: %w", parsed.Name, err)
 	}

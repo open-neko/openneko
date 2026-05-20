@@ -16,8 +16,11 @@ func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Show plugins listed in the project's openneko.plugins.json",
-		Args:  cobra.NoArgs,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err

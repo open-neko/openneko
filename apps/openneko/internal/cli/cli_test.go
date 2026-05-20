@@ -72,7 +72,7 @@ func TestListJSONOutput(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"list", "--output", "json"})
+	root.SetArgs([]string{"--local", "list", "--output", "json"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestInitCreates(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"init"})
+	root.SetArgs([]string{"--local", "init"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestRemoveMissingPluginIsHarmless(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"remove", "no-such"})
+	root.SetArgs([]string{"--local", "remove", "no-such"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}

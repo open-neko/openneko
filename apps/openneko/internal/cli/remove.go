@@ -14,8 +14,11 @@ func newRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Remove a plugin from openneko.plugins.json",
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+				return WithExit(code, nil)
+			}
 			name := args[0]
 			if name == "" {
 				return WithExit(2, errors.New("remove: package name required"))

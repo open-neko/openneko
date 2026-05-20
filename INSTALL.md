@@ -95,8 +95,8 @@ OpenNeko can be extended with sandboxed plugins that add new action kinds (web s
 
 Plugins run inside a microVM with hardware-virtualization acceleration.
 
-- **macOS arm64 with the brew-installed binary + `openneko start --mode demo`**: plugins are **not supported** on this path today. Docker Desktop on macOS hides `/dev/kvm` from Linux containers, so the worker container cannot spawn the plugin microsandbox VM. To run plugins on a Mac you need the source-build *Developer Setup* path below — `pnpm dev` runs the worker on the macOS host where microsandbox uses Hypervisor.framework directly.
-- **Linux with `/dev/kvm`** (amd64 or arm64): plugins are supported. The worker container needs `/dev/kvm` passed in; the embedded compose's `plugins.linux.yml` overlay does this automatically when the binary detects KVM at start time.
+- **macOS arm64 with the brew-installed binary + `openneko start --mode demo`**: plugin *installation* works (the host openneko CLI auto-proxies into the running worker container via `docker exec`, npm installs into the isolated `/var/lib/openneko/plugins/` dir, plugins.json hot-reloads); plugin *execution* still needs Hypervisor.framework which Docker Desktop hides from Linux containers, so the microVM spawn fails at action time. Result: installs land cleanly, the marketplace is browsable from the binary, but actions that need a plugin VM no-op. Full execution requires the source-build *Developer Setup* path below — `pnpm dev` runs the worker on the macOS host where microsandbox uses Hypervisor.framework directly.
+- **Linux with `/dev/kvm`** (amd64 or arm64): both install AND execution supported. The worker container needs `/dev/kvm` passed in; the embedded compose's `plugins.linux.yml` overlay does this automatically when the binary detects KVM at start time.
 
 On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs and the built-in `send_webhook` adapter remains as an unsandboxed extensibility path.
 
@@ -104,24 +104,23 @@ On unsupported hosts the plugin subsystem is disabled with a clear log line; Ope
 
 ### Installing a plugin
 
-The brew-installed `openneko` binary on your host can't reach the worker container's plugin volume or its baked node_modules, so plugin installs run **inside** the worker container instead. The same Go binary is on PATH there.
+The host `openneko` CLI auto-detects a running `openneko-*-worker-1` container and proxies plugin-op commands into it via `docker exec`, so installs Just Work from your laptop:
 
 ```bash
-docker exec -it openneko-demo-worker-1 openneko init
-docker exec -it openneko-demo-worker-1 openneko install @open-neko/plugin-parallel-search
+openneko install @open-neko/plugin-parallel-search
 ```
 
-(Container name is `openneko-prod-worker-1` / `openneko-dev-worker-1` / `openneko-demo-worker-1` depending on the mode you started with.)
-
 If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to `/config/openneko/secrets.json` inside the container (mode 0600, on the `openneko-config` volume). Secrets never enter the tracked plugin manifest and never enter `action_request.payload`.
+
+Pass `--local` to bypass the proxy and install host-side instead (useful for source-build dev workflows where the worker runs via `pnpm dev`, not docker).
 
 The worker watches `openneko.plugins.json` and the secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. No restart needed.
 
 ### Adding a third-party marketplace
 
 ```bash
-docker exec -it openneko-demo-worker-1 openneko marketplace add https://example.com/marketplace.json
-docker exec -it openneko-demo-worker-1 openneko install @example/openneko-plugin-foo
+openneko marketplace add https://example.com/marketplace.json
+openneko install @example/openneko-plugin-foo
 ```
 
 OpenNeko makes no representation about the safety of non-official marketplaces — that trust is between you and the publisher.

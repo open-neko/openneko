@@ -216,6 +216,7 @@ console.log("[worker] action policies seeded and built-in adapters registered");
 
 pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
+  pluginInstallDir: process.env.OPENNEKO_PLUGIN_INSTALL_DIR || undefined,
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
   onManifestRefresh: async (entries) => {
     const seeds: PluginActionSeed[] = [];
