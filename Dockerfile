@@ -86,7 +86,7 @@ RUN pnpm --filter @neko/web build
 # image so the agent's Bash tool can run `openneko install/secrets/...`
 # from inside the worker container. The same binary operators install via
 # Homebrew / GitHub Releases on their host.
-FROM golang:1.24-bookworm AS go-build
+FROM golang:1.25-bookworm AS go-build
 WORKDIR /src
 COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
 RUN cd apps/openneko && go mod download
@@ -164,8 +164,12 @@ ENV NODE_ENV=production \
     HOME=/tmp/openneko-home \
     XDG_CONFIG_HOME=/tmp/openneko-config
 RUN useradd --system --create-home --uid 1001 neko
-RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp \
-    && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp
+# /cache is mounted by the demo-mode adventureworks-init step; pre-creating
+# it here lets the named volume initialize with neko ownership instead of
+# root (Docker copies image-side ownership into a fresh named volume on
+# first mount). Without this the loader can't write the downloaded zip.
+RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache \
+    && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp /cache
 COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
 COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps --chown=neko:neko /app/packages/db/node_modules ./packages/db/node_modules
