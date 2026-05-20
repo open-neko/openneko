@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.3](https://github.com/open-neko/neko/compare/v1.7.2...v1.7.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* **docker:** copy plugin-install + plugin-types node_modules into worker ([96aae00](https://github.com/open-neko/neko/commit/96aae00bc62c163d50a757add909403360409655))
+
 ## [1.7.2](https://github.com/open-neko/neko/compare/v1.7.1...v1.7.2) (2026-05-20)
 
 
