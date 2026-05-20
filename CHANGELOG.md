@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/open-neko/neko/compare/v1.7.1...v1.7.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* **docker:** bump go-build to golang:1.25-bookworm + pre-create /cache ([3083277](https://github.com/open-neko/neko/commit/30832779e2ec655478246f39fc514a037665ee28))
+
 ## [1.7.1](https://github.com/open-neko/neko/compare/v1.7.0...v1.7.1) (2026-05-20)
 
 
