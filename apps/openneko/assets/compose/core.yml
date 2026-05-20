@@ -1,0 +1,105 @@
+# Embedded core compose. The `openneko` binary materializes this and overlays
+# dev.yml / demo.yml depending on `openneko start --mode`. Image tags are
+# pinned to the binary's release version via the ${OPENNEKO_VERSION} env var
+# (set by the supervisor before invoking docker compose). Operators who want
+# to build from source should use the repo-root compose.yml instead.
+x-neko-app-env: &neko-app-env
+  HOME: /tmp/openneko-home
+  TMPDIR: /tmp/openneko-tmp
+  XDG_CONFIG_HOME: /config
+  XDG_CACHE_HOME: /tmp/openneko-home/.cache
+  XDG_DATA_HOME: /tmp/openneko-home/.local/share
+  XDG_STATE_HOME: /tmp/openneko-home/.local/state
+  NEKO_PG_HOST: neko-db
+  NEKO_PG_PORT: "5432"
+  NEKO_PG_USER: neko
+  NEKO_PG_PASSWORD: secret
+  NEKO_PG_DATABASE: neko
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,worker,web,neko-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+
+services:
+  neko-db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: neko
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: neko
+    ports:
+      - "${OPENNEKO_DB_PORT:-5432}:5432"
+    volumes:
+      - neko-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U neko -d neko
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  neko-graphjin:
+    image: ghcr.io/open-neko/neko-graphjin:${OPENNEKO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    environment:
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+    volumes:
+      - openneko-config:/openneko-config:ro
+    ports:
+      - "${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    image: ghcr.io/open-neko/neko-web:${OPENNEKO_VERSION:-latest}
+    depends_on:
+      neko-db:
+        condition: service_healthy
+      neko-graphjin:
+        condition: service_started
+    environment:
+      <<: *neko-app-env
+      WORKER_ADMIN_URL: http://worker:4100
+      OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
+      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+    ports:
+      - "${OPENNEKO_PORT:-3000}:8080"
+    volumes:
+      - openneko-config:/config/openneko
+      - openneko-graphjin-cli:/config/graphjin
+      - openneko-agent-home:/tmp/openneko-home
+      - openneko-agent-tmp:/tmp/openneko-tmp
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    depends_on:
+      neko-db:
+        condition: service_healthy
+      neko-graphjin:
+        condition: service_started
+    environment:
+      <<: *neko-app-env
+      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      OPENNEKO_PLUGINS_MANIFEST_PATH: /config/openneko/plugins.json
+    expose:
+      - "4100"
+    volumes:
+      - openneko-config:/config/openneko
+      - openneko-graphjin-cli:/config/graphjin
+      - openneko-agent-home:/tmp/openneko-home
+      - openneko-agent-tmp:/tmp/openneko-tmp
+    restart: unless-stopped
+
+volumes:
+  neko-db-data:
+  openneko-config:
+  openneko-graphjin-cli:
+  openneko-agent-home:
+  openneko-agent-tmp:

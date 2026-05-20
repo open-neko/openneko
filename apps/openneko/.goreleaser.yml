@@ -1,0 +1,72 @@
+version: 2
+
+project_name: openneko
+
+before:
+  hooks:
+    - go mod tidy
+    - ./scripts/sync-migrations.sh --check
+
+builds:
+  - id: openneko
+    main: ./cmd/openneko
+    binary: openneko
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/open-neko/neko/apps/openneko/internal/version.Version={{.Version}}
+
+archives:
+  - id: openneko
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  github:
+    owner: open-neko
+    name: neko
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: openneko
+    repository:
+      owner: open-neko
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://getneko.app"
+    description: "OpenNeko operator CLI — supervises the stack and manages plugins"
+    license: "Apache-2.0"
+    install: |
+      bin.install "openneko"
+    test: |
+      system "#{bin}/openneko", "version"
+    caveats: |
+      OpenNeko needs Docker. Install Docker Desktop (macOS) or Docker Engine (Linux) first.
+      `openneko start` materializes its compose file under .openneko/runtime/ in the
+      current directory; run it from a working dir you control.
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

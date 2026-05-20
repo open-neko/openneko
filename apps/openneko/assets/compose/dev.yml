@@ -1,0 +1,4 @@
+# Dev overlay: layered on top of core.yml. Adds anything an operator running
+# `openneko start --mode dev` should see (e.g. mailhog later). Empty for now
+# — kept as a real file so the supervisor's overlay flag points somewhere.
+services: {}

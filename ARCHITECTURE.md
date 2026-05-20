@@ -252,7 +252,7 @@ Memory writes/reads are agent-driven (the agent calls explicit `memory_save` / `
 | `neko-db` | `pgvector/pgvector:pg16` | — | App state, jobs, memory vectors. |
 | Agent (hermes \| claude-agent) | spawned by `worker` | LLM provider, data-source graphjin via `graphjin cli` | Never opens a DB connection directly. |
 | plugin VM (per installed plugin) | spawned by `worker` via `MicrosandboxRuntime`, **lazy** | Hosts declared in the plugin manifest's `capabilities.network` (e.g. `slack.com`, `search.parallel.ai`) | One microsandbox microVM per plugin. Spawned on first `execute_action` for that plugin, kept warm. Talks to the worker via JSON-RPC over stdio. Never opens a DB connection. Disabled on unsupported hosts (Windows, Linux without KVM, macOS x86_64). |
-| `openneko` CLI | `apps/openneko-cli` (Node), vendored from `@open-neko/cli` | `npm` (to install plugin packages), `openneko.plugins.json` + `~/.config/openneko/secrets.json` on the operator's host | Operator surface for plugin install/list/remove/secrets/marketplace. Published to npm as `@open-neko/cli`; available in-repo as `pnpm openneko …`. Inside the worker container, the binary is on PATH so the agent's Bash tool can drive it directly. |
+| `openneko` CLI + stack supervisor | `apps/openneko` (Go), distributed as a single binary | `docker compose` (stack supervision), `npm` (plugin packages), `openneko.plugins.json` + `~/.config/openneko/secrets.json` on the operator's host, embedded migrations + compose files | Operator surface for both `start`/`stop`/`migrate`/`seed` of the stack AND plugin `install`/`list`/`remove`/`secrets`/`marketplace`. Installed via Homebrew (macOS) or GitHub Releases (Linux). Inside the worker container, the same Go binary is on PATH so the agent's Bash tool can drive it directly. |
 
 ## Where to look next
 
@@ -261,10 +261,10 @@ Memory writes/reads are agent-driven (the agent calls explicit `memory_save` / `
 - Subscription manager: `packages/llm/src/workflows/subscription-manager.ts`
 - Worker jobs: `apps/worker/src/jobs/`
 - Plugin runtime + registry: `apps/worker/src/plugins/microsandbox-runtime.ts` (microVM + RPC), `apps/worker/src/plugins/plugin-registry.ts` (fs.watch + lazy spawn + scrubber)
-- Plugin install + secrets shared library: `packages/plugin-install/` (`@open-neko/plugin-install` — consumed by both worker and CLI)
+- Plugin install + secrets shared library: `packages/plugin-install/` (`@open-neko/plugin-install` — consumed by the worker at runtime; the Go `openneko` binary has its own port at `apps/openneko/internal/plugin/`)
 - Plugin RPC schema: `@open-neko/plugin-types` ([source](https://github.com/open-neko/plugins/tree/main/packages/types))
 - Env-value scrubber: `packages/llm/src/work/secret-scrubber.ts`
 - Plugin source + official marketplace: [github.com/open-neko/plugins](https://github.com/open-neko/plugins) (Pages site at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/))
-- Operator CLI (vendored): `apps/openneko-cli/` (published as `@open-neko/cli`; the standalone `open-neko/cli` repo is archived)
+- Operator CLI (Go): `apps/openneko/` (single binary, published to Homebrew + GitHub Releases; supervises the stack and manages plugins)
 - GraphJin configs: `db/graphjin/neko.yml` (app DB), `db/graphjin/dev.example.yml` (data source)
-- Compose topology: `compose.yml`, `compose.adventureworks.yml`
+- Compose topology: `compose.yml` (source-build, dev), `compose.adventureworks.yml` (demo overlay), `apps/openneko/assets/compose/*.yml` (image-based, embedded in the Go binary)

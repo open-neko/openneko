@@ -24,24 +24,31 @@ Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its o
 
 OpenNeko can be extended with sandboxed plugins that add new action kinds — web search via Parallel.ai, posting messages and DMs to Slack, more on the way. Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time, and any secrets it needs (Slack bot tokens, API keys) live in a per-user `~/.config/openneko/secrets.json` (0600 perms) that the worker injects into the VM at exec time — never in `openneko.plugins.json` (which is tracked) and never in `action_request.payload` (which is logged).
 
-Install from the official marketplace. The `openneko` CLI ships with OpenNeko (vendored under `apps/openneko-cli/`); from your OpenNeko checkout use `pnpm openneko …`, or `npm install -g @open-neko/cli` for a host-wide binary:
+Install from the official marketplace. The `openneko` CLI is a single Go binary — install via Homebrew (macOS) or download from the GitHub Releases page (Linux):
 
 ```bash
+# macOS
+brew install open-neko/tap/openneko
+
+# Linux — download from https://github.com/open-neko/neko/releases
+# or, from a repo checkout while developing:
 pnpm openneko init
 pnpm openneko install @open-neko/plugin-parallel-search
 ```
 
+`pnpm openneko …` runs the Go binary via `go run` for developers working from a repo checkout; everyone else uses the installed `openneko` binary directly.
+
 **No worker restart needed.** OpenNeko's plugin registry watches `openneko.plugins.json` and the per-user secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. Each plugin's microVM starts lazily on first use.
 
-Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). Run `pnpm openneko doctor` to check that your host can run microsandbox.
+Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). Run `openneko doctor` to check that your host can run microsandbox.
 
 ### Federated marketplaces
 
 The official marketplace ships only first-party `@open-neko/*` plugins that the OpenNeko team writes and supports. Anyone else can publish their own `marketplace.json` at any stable URL and operators trust it explicitly:
 
 ```bash
-pnpm openneko marketplace add https://example.com/marketplace.json
-pnpm openneko install @example/openneko-plugin-foo
+openneko marketplace add https://example.com/marketplace.json
+openneko install @example/openneko-plugin-foo
 ```
 
 OpenNeko makes no representation about non-official marketplaces — that trust is between the operator and the publisher. The sandbox enforces capability declarations regardless of where a plugin came from. See [open-neko/plugins/CONTRIBUTING.md](https://github.com/open-neko/plugins/blob/main/CONTRIBUTING.md) for the marketplace publish guide.
@@ -51,7 +58,7 @@ OpenNeko makes no representation about non-official marketplaces — that trust 
 To install a plugin directly from npm without going through any marketplace (plugin authoring, or an emergency hotfix before a marketplace entry exists):
 
 ```bash
-pnpm openneko install <npm-package-name> --unverified
+openneko install <npm-package-name> --unverified
 ```
 
 The CLI prints a loud warning. The integrity hash is taken on trust from npm rather than verified against a marketplace listing; everything else (sandboxing, manifest capability enforcement) still applies.
@@ -115,7 +122,7 @@ That's the loop: watcher runs → finding lands → action proposed → you appr
 - **Plugins**
   - [open-neko.github.io/plugins](https://open-neko.github.io/plugins/) — the official marketplace; browse what's installable
   - [open-neko/plugins](https://github.com/open-neko/plugins) — first-party plugin source + the publish-your-own-marketplace guide
-  - [apps/openneko-cli/](apps/openneko-cli/) — the operator CLI, vendored in-monorepo (also published to npm as `@open-neko/cli`)
+  - [apps/openneko/](apps/openneko/) — the operator CLI (Go binary), installable via Homebrew or GitHub Releases
 - **Project**
   - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
   - [CHANGELOG.md](CHANGELOG.md) — releases
