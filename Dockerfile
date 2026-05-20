@@ -175,8 +175,11 @@ RUN useradd --system --create-home --uid 1001 neko
 # it here lets the named volume initialize with neko ownership instead of
 # root (Docker copies image-side ownership into a fresh named volume on
 # first mount). Without this the loader can't write the downloaded zip.
+# /app must also be writable by neko so `openneko install` (run in-container
+# via docker exec) can write pnpm temp files + update package.json /
+# pnpm-lock.yaml during plugin installs.
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache \
-    && chown -R neko:neko /config /tmp/openneko-home /tmp/openneko-tmp /cache
+    && chown -R neko:neko /app /config /tmp/openneko-home /tmp/openneko-tmp /cache
 COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
 COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps --chown=neko:neko /app/packages/db/node_modules ./packages/db/node_modules

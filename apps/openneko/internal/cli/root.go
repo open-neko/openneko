@@ -56,6 +56,13 @@ Stack ops:  start, stop, logs, status, migrate, seed, reset.`,
 		SilenceErrors: true,
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
+	// Persistent flag: plugin-op commands (init/install/remove/list/
+	// marketplace/secrets) auto-proxy into a running openneko-*-worker-1
+	// container so the brew-installed binary on the host can manage
+	// plugins for an operator-side docker compose stack. --local forces
+	// host-side execution (use this for source-build dev workflows that
+	// happen to have a compose stack running alongside `pnpm dev`).
+	cmd.PersistentFlags().Bool("local", false, "Force local execution; don't auto-proxy plugin ops into a running worker container")
 	cmd.AddCommand(
 		newInitCmd(),
 		newInstallCmd(),
