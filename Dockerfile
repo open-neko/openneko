@@ -26,11 +26,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM base AS cli
 ARG GRAPHJIN_VERSION=3.18.18
 ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
+# TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
+# graphjin download pick the right tarball when building multi-arch.
+ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL -o /tmp/graphjin.tgz \
-      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz" \
+      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
     && rm /tmp/graphjin.tgz \
     && graphjin version
@@ -194,11 +197,12 @@ CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
 # and a real healthcheck.
 FROM node:22-bookworm-slim AS neko-graphjin
 ARG GRAPHJIN_VERSION=3.18.18
+ARG TARGETARCH
 ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
     && curl -fsSL -o /tmp/graphjin.tgz \
-      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz" \
+      "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
     && rm /tmp/graphjin.tgz \
     && rm -rf /var/lib/apt/lists/* \
