@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/open-neko/neko/compare/v1.9.0...v1.10.0) (2026-05-20)
+
+
+### Features
+
+* **plugins:** host-to-worker install proxy + isolated plugin dir ([417583d](https://github.com/open-neko/neko/commit/417583d3f108c9d699e607f65fd29e578e289cfb))
+
 ## [1.9.0](https://github.com/open-neko/neko/compare/v1.8.0...v1.9.0) (2026-05-20)
 
 
