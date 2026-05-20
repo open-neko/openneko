@@ -1,0 +1,153 @@
+// Package compose is a thin wrapper around `docker compose`. It materializes
+// the embedded compose files to <cwd>/.openneko/runtime/ on first use, picks
+// the right overlay per mode, and forwards I/O + signals to the child.
+package compose
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"runtime"
+	"syscall"
+
+	"github.com/open-neko/neko/apps/openneko/internal/config"
+)
+
+type Mode string
+
+const (
+	ModeProd Mode = "prod"
+	ModeDev  Mode = "dev"
+	ModeDemo Mode = "demo"
+)
+
+// Supervisor is the host-side controller; assets are the embedded files the
+// supervisor materializes before running compose.
+type Supervisor struct {
+	// AssetsFS holds the embedded compose files. Layout:
+	//   compose/core.yml
+	//   compose/dev.yml
+	//   compose/demo.yml
+	//   compose/plugins.linux.yml
+	AssetsFS fs.FS
+	// RuntimeDir is where compose files are written. Defaults to
+	// <cwd>/.openneko/runtime/.
+	RuntimeDir string
+	// HasKVM lets tests stub the Linux microsandbox auto-overlay.
+	HasKVM func() bool
+	// GOOS lets tests stub the platform.
+	GOOS string
+}
+
+func New(assets fs.FS) *Supervisor {
+	return &Supervisor{
+		AssetsFS: assets,
+		HasKVM:   defaultHasKVM,
+		GOOS:     runtime.GOOS,
+	}
+}
+
+func (s *Supervisor) runtimeDir() (string, error) {
+	if s.RuntimeDir != "" {
+		return s.RuntimeDir, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cwd, ".openneko", "runtime"), nil
+}
+
+// Materialize writes the embedded compose files for the given mode into the
+// runtime dir and returns the list of `-f` paths to pass to `docker compose`.
+func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
+	rt, err := s.runtimeDir()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(rt, 0o755); err != nil {
+		return nil, err
+	}
+	files := []string{"compose/core.yml"}
+	switch mode {
+	case ModeDev:
+		files = append(files, "compose/dev.yml")
+	case ModeDemo:
+		files = append(files, "compose/demo.yml")
+	case ModeProd, "":
+		// core only
+	default:
+		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
+	}
+	if s.GOOS == "linux" && s.HasKVM() {
+		files = append(files, "compose/plugins.linux.yml")
+	}
+	var out []string
+	for _, name := range files {
+		raw, err := fs.ReadFile(s.AssetsFS, name)
+		if err != nil {
+			return nil, fmt.Errorf("compose: missing embedded asset %s: %w", name, err)
+		}
+		dst := filepath.Join(rt, filepath.Base(name))
+		if err := os.WriteFile(dst, raw, 0o644); err != nil {
+			return nil, err
+		}
+		out = append(out, dst)
+	}
+	override := filepath.Join(config.Dir(""), "compose.override.yml")
+	if _, err := os.Stat(override); err == nil {
+		out = append(out, override)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Run shells out to `docker compose -f <files…> <args…>`, forwarding I/O and
+// signals. Returns the child's exit code.
+func (s *Supervisor) Run(ctx context.Context, files, args []string, stdout, stderr *os.File) (int, error) {
+	dockerArgs := []string{"compose"}
+	for _, f := range files {
+		dockerArgs = append(dockerArgs, "-f", f)
+	}
+	dockerArgs = append(dockerArgs, args...)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Start(); err != nil {
+		return 1, err
+	}
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigs)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	for {
+		select {
+		case sig := <-sigs:
+			if cmd.Process != nil {
+				_ = cmd.Process.Signal(sig)
+			}
+		case err := <-done:
+			if err != nil {
+				var exitErr *exec.ExitError
+				if errors.As(err, &exitErr) {
+					return exitErr.ExitCode(), nil
+				}
+				return 1, err
+			}
+			return 0, nil
+		}
+	}
+}
+
+func defaultHasKVM() bool {
+	_, err := os.Stat("/dev/kvm")
+	return !errors.Is(err, fs.ErrNotExist)
+}

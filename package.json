@@ -23,7 +23,7 @@
     "test:e2e": "pnpm --filter @neko/worker test:e2e",
     "skills:check": "node --experimental-strip-types scripts/skill-doctor.ts",
     "skills:install": "node --experimental-strip-types scripts/skill-doctor.ts --install",
-    "openneko": "tsx apps/openneko-cli/src/cli.ts"
+    "openneko": "go run ./apps/openneko/cmd/openneko"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

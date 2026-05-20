@@ -1,0 +1,58 @@
+# Demo overlay: AdventureWorks trial bundle. Spins up a second Postgres for
+# the AdventureWorks dataset, one-shot CSV loader, the long-running data
+# simulator, the trial scenario injector, and the neko-side seed step that
+# wires demo workflows into the operator's neko-db. Image-pinned variants of
+# the services in compose.adventureworks.yml.
+services:
+  adventureworks-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CUSTOMER_PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      POSTGRES_DB: ${ADVENTUREWORKS_DB:-adventureworks}
+    volumes:
+      - adventureworks-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CUSTOMER_PGUSER:-postgres} -d ${ADVENTUREWORKS_DB:-adventureworks}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  adventureworks-init:
+    image: ghcr.io/open-neko/neko-adventureworks-init:${OPENNEKO_VERSION:-latest}
+    depends_on:
+      adventureworks-db:
+        condition: service_healthy
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      ADVENTUREWORKS_DB: ${ADVENTUREWORKS_DB:-adventureworks}
+    volumes:
+      - adventureworks-cache:/cache
+    restart: "no"
+
+  neko-adventureworks-seed:
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    depends_on:
+      neko-db:
+        condition: service_healthy
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      XDG_CONFIG_HOME: /config
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+    volumes:
+      - openneko-config:/config/openneko
+    command: ["node", "packages/db/src/seed-adventureworks.mjs"]
+    restart: "no"
+
+volumes:
+  adventureworks-db-data:
+  adventureworks-cache:

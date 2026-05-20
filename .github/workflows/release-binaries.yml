@@ -1,0 +1,131 @@
+name: openneko release binaries
+
+# Fires when release-please publishes a GitHub release. Two ordered jobs:
+# 1. build-images  — buildx-pushes the three runtime images to ghcr.io
+#                    tagged with the release version + :latest
+# 2. goreleaser    — builds the openneko Go binary for linux/darwin
+#                    x amd64/arm64, uploads tarballs to the release, and
+#                    pushes the Homebrew formula to open-neko/homebrew-tap
+#
+# The `needs:` ordering matters: the binary's embedded compose references
+# the images by version, so they MUST exist on ghcr before the release
+# artifacts go out — otherwise operators get a binary whose stack can't
+# pull its images.
+#
+# Manual trigger (workflow_dispatch) is available for sanity rehearsals
+# against a pre-release tag without waiting for release-please.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (must already exist; e.g. v0.0.0-rc1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-images:
+    name: build container images
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - name: Resolve release tag
+        id: tag
+        run: echo "value=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push neko-web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/open-neko/neko-web:${{ steps.tag.outputs.value }}
+            ghcr.io/open-neko/neko-web:latest
+          cache-from: type=gha,scope=neko-web
+          cache-to: type=gha,scope=neko-web,mode=max
+
+      - name: Build & push neko-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/open-neko/neko-worker:${{ steps.tag.outputs.value }}
+            ghcr.io/open-neko/neko-worker:latest
+          cache-from: type=gha,scope=neko-worker
+          cache-to: type=gha,scope=neko-worker,mode=max
+
+      - name: Build & push neko-graphjin
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: neko-graphjin
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/open-neko/neko-graphjin:${{ steps.tag.outputs.value }}
+            ghcr.io/open-neko/neko-graphjin:latest
+          cache-from: type=gha,scope=neko-graphjin
+          cache-to: type=gha,scope=neko-graphjin,mode=max
+
+  goreleaser:
+    name: goreleaser
+    runs-on: ubuntu-22.04
+    needs: build-images
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: apps/openneko/go.sum
+
+      # Mint a short-lived installation token scoped to the open-neko/neko
+      # repo (release upload) AND open-neko/homebrew-tap (formula push).
+      # Same GitHub App release-please.yml uses — must be installed on
+      # both repos. If the app isn't installed on homebrew-tap yet, this
+      # step fails with a clear error; install it via the App's settings
+      # page once.
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: open-neko
+          repositories: |
+            neko
+            homebrew-tap
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+          workdir: apps/openneko
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
