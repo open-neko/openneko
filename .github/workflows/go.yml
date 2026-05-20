@@ -24,7 +24,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        # ubuntu-22.04 has a smaller preinstalled toolchain than ubuntu-latest
+        # (currently 24.04), so the runner spins up faster. We pull our own Go
+        # via setup-go and don't need anything else from the image.
+        os: [ubuntu-22.04, macos-14]
     defaults:
       run:
         working-directory: apps/openneko
@@ -49,7 +52,7 @@ jobs:
 
   integration-migrator:
     name: integration - migrator (real postgres)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: apps/openneko
@@ -63,9 +66,16 @@ jobs:
       - name: go test (integration tag)
         run: go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 
+  # Heavy: builds three full multi-stage images locally before invoking the
+  # supervisor. Gated to main-only — every PR run would burn ~10min of CI
+  # without catching much beyond what integration-migrator + the rc1
+  # rehearsal already cover. PRs that touch compose/Dockerfile still get
+  # tested via the unit + migrator jobs above; the smoke catches the rare
+  # "the assembled stack stops being healthy" drift on main.
   integration-supervisor:
     name: integration - supervisor smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -121,7 +131,7 @@ jobs:
 
   goreleaser-check:
     name: goreleaser check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

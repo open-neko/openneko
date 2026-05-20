@@ -31,7 +31,7 @@ permissions:
 jobs:
   build-images:
     name: build container images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,7 +92,7 @@ jobs:
 
   goreleaser:
     name: goreleaser
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build-images
     steps:
       - uses: actions/checkout@v4
