@@ -20,7 +20,11 @@ services:
       retries: 20
 
   adventureworks-init:
-    image: ghcr.io/open-neko/neko-adventureworks-init:${OPENNEKO_VERSION:-latest}
+    # Uses the worker image with the baked AdventureWorks loader
+    # (db/load-adventureworks-baked.sh + apps/worker/scripts/load-adventureworks.ts).
+    # No separate image needed — the worker image already has node, tsx,
+    # pg, curl, unzip, and postgresql-client.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
     depends_on:
       adventureworks-db:
         condition: service_healthy
@@ -30,6 +34,8 @@ services:
       PGUSER: ${CUSTOMER_PGUSER:-postgres}
       PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
       ADVENTUREWORKS_DB: ${ADVENTUREWORKS_DB:-adventureworks}
+      ADVENTUREWORKS_CACHE_DIR: /cache
+    entrypoint: ["/bin/sh", "/app/db/load-adventureworks-baked.sh"]
     volumes:
       - adventureworks-cache:/cache
     restart: "no"

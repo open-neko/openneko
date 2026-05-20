@@ -29,8 +29,11 @@ ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
 # TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
 # graphjin download pick the right tarball when building multi-arch.
 ARG TARGETARCH
+# unzip + postgresql-client are needed by db/load-adventureworks-baked.sh
+# (demo seeder, runs inside the worker container with no apt-get available
+# at runtime since the container runs as the `neko` user, not root).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git \
+      git unzip postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL -o /tmp/graphjin.tgz \
       "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
@@ -105,10 +108,15 @@ RUN cd apps/openneko && \
 # on a HuggingFace download (and would fail in air-gapped deployments).
 FROM deps AS embedding-prewarm
 WORKDIR /app
-COPY packages/llm/scripts/prewarm-embedding.mjs /tmp/prewarm-embedding.mjs
+# The script imports @huggingface/transformers, which pnpm installs under
+# /app/packages/llm/node_modules/ (isolated workspace deps, not hoisted
+# to /app/node_modules). Running from the package directory lets Node's
+# resolver find it. Same path packages/llm's `models:warm` script uses
+# in dev, so behavior matches.
+COPY packages/llm/scripts/prewarm-embedding.mjs /app/packages/llm/scripts/prewarm-embedding.mjs
 ENV NODE_ENV=production
 RUN mkdir -p /app/.transformers-cache && \
-    node /tmp/prewarm-embedding.mjs
+    cd /app/packages/llm && node scripts/prewarm-embedding.mjs
 
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 FROM cli AS web
@@ -165,7 +173,9 @@ COPY --from=deps --chown=neko:neko /app/packages/llm/node_modules ./packages/llm
 COPY --chown=neko:neko package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY --chown=neko:neko apps/worker ./apps/worker
 COPY --chown=neko:neko packages ./packages
-COPY --chown=neko:neko db/migrations ./db/migrations
+# Whole db/ (not just migrations): seeds + load-adventureworks-baked.sh
+# are needed for `openneko start --mode demo`'s adventureworks-init step.
+COPY --chown=neko:neko db ./db
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN ln -s /app/apps/worker/node_modules/tsx /app/node_modules/tsx
