@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/open-neko/neko/compare/v1.8.0...v1.9.0) (2026-05-20)
+
+
+### Features
+
+* **cli:** host-to-worker plugin-op proxy + chown /app ([2c7e574](https://github.com/open-neko/neko/commit/2c7e574065cf4642444e4e941d6952c33aac0c28))
+
 ## [1.8.0](https://github.com/open-neko/neko/compare/v1.7.5...v1.8.0) (2026-05-20)
 
 
