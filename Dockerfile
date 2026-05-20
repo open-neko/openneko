@@ -141,6 +141,13 @@ COPY --from=build --chown=neko:neko /app/apps/web/.next/static ./apps/web/.next/
 COPY --from=build --chown=neko:neko /app/apps/web/public ./apps/web/public
 # Next.js standalone tracing misses static asset dirs — copy explicitly.
 COPY --from=build --chown=neko:neko /app/packages/llm/assets ./packages/llm/assets
+# Next.js standalone tracing also misses the onnxruntime-node native .so
+# libraries (they're loaded by @huggingface/transformers at runtime via
+# dlopen, not via require()). Without these copies, /settings and every
+# other route that touches the embedding model 500s with
+# "libonnxruntime.so.1: cannot open shared object file".
+COPY --from=build --chown=neko:neko /app/node_modules/.pnpm/onnxruntime-node@1.24.3/node_modules/onnxruntime-node ./node_modules/.pnpm/onnxruntime-node@1.24.3/node_modules/onnxruntime-node
+COPY --from=build --chown=neko:neko /app/node_modules/.pnpm/onnxruntime-common@1.24.3/node_modules/onnxruntime-common ./node_modules/.pnpm/onnxruntime-common@1.24.3/node_modules/onnxruntime-common
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Vendored embedding model (see embedding-prewarm stage above). Ships the
