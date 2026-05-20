@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/open-neko/neko/compare/v1.7.5...v1.8.0) (2026-05-20)
+
+
+### Features
+
+* **supervisor:** name compose project openneko-&lt;mode&gt; instead of "runtime" ([396f129](https://github.com/open-neko/neko/commit/396f12917d60bb42e3322242f0bd62a3405b8582))
+
 ## [1.7.5](https://github.com/open-neko/neko/compare/v1.7.4...v1.7.5) (2026-05-20)
 
 
