@@ -99,20 +99,24 @@ Plugins run inside a microVM with hardware-virtualization acceleration. Plugins 
 
 ### Installing a plugin
 
+The brew-installed `openneko` binary on your host can't reach the worker container's plugin volume or its baked node_modules, so plugin installs run **inside** the worker container instead. The same Go binary is on PATH there.
+
 ```bash
-openneko init
-openneko install @open-neko/plugin-parallel-search
+docker exec -it openneko-demo-worker-1 openneko init
+docker exec -it openneko-demo-worker-1 openneko install @open-neko/plugin-parallel-search
 ```
 
-If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to `~/.config/openneko/secrets.json` (mode 0600). Secrets never enter the tracked plugin manifest and never enter `action_request.payload`.
+(Container name is `openneko-prod-worker-1` / `openneko-dev-worker-1` / `openneko-demo-worker-1` depending on the mode you started with.)
+
+If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to `/config/openneko/secrets.json` inside the container (mode 0600, on the `openneko-config` volume). Secrets never enter the tracked plugin manifest and never enter `action_request.payload`.
 
 The worker watches `openneko.plugins.json` and the secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. No restart needed.
 
 ### Adding a third-party marketplace
 
 ```bash
-openneko marketplace add https://example.com/marketplace.json
-openneko install @example/openneko-plugin-foo
+docker exec -it openneko-demo-worker-1 openneko marketplace add https://example.com/marketplace.json
+docker exec -it openneko-demo-worker-1 openneko install @example/openneko-plugin-foo
 ```
 
 OpenNeko makes no representation about the safety of non-official marketplaces — that trust is between you and the publisher.
