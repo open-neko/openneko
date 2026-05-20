@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/open-neko/neko/compare/v1.7.4...v1.7.5) (2026-05-20)
+
+
+### Bug Fixes
+
+* **demo:** add data-source graphjin + config-init to embedded demo.yml ([3cca884](https://github.com/open-neko/neko/commit/3cca8845842b2dfa99110277ed070ae8f6f57aaf))
+
 ## [1.7.4](https://github.com/open-neko/neko/compare/v1.7.3...v1.7.4) (2026-05-20)
 
 
