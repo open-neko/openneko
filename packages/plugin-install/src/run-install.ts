@@ -12,6 +12,10 @@
 // the CLI's per-user marketplace-trust file, which the worker
 // doesn't need.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { cp, mkdir, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
 import {
   emptyManifest,
   readManifest,
@@ -50,6 +54,12 @@ export interface InstallOptions {
   trustedMarketplaces: TrustedMarketplace[];
   /** Override config dir for the secrets store. */
   secretsConfigDir?: string;
+  /**
+   * Override the root the bundled-skill half copies into. Default
+   * `~/.openneko/skills/`. The worker's skill loader (M8) walks this
+   * dir to find community skills.
+   */
+  skillsInstallDir?: string;
   marketplaceClient?: MarketplaceClient;
   /** For tests: skip the npm subprocess call. */
   npmRunner?: (args: string[], cwd: string) => Promise<void>;
@@ -90,6 +100,13 @@ export interface InstallResult {
   envAlreadySet: string[];
   /** ISO timestamp recorded on the manifest entry. */
   installedAt: string;
+  /**
+   * If the installed package bundled a skill half (openneko.skill in
+   * package.json), this is the absolute path it was copied to under
+   * ~/.openneko/skills/<skill-name>/. Absent when the package only
+   * contributed a plugin half.
+   */
+  skillInstalledAt?: string;
 }
 
 export interface ParsedSpec {
@@ -194,6 +211,11 @@ export async function runInstall(
     policySnapshot: options.policySnapshot ?? null,
   };
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));
+  const skillInstalledAt = await copyBundledSkill(
+    plugin.name,
+    options.repoRoot,
+    options.skillsInstallDir,
+  );
   return {
     name: plugin.name,
     version: version.version,
@@ -204,6 +226,7 @@ export async function runInstall(
     envSaved: envOutcome.saved,
     envAlreadySet: envOutcome.alreadySet,
     installedAt,
+    ...(skillInstalledAt ? { skillInstalledAt } : {}),
   };
 }
 
@@ -276,6 +299,11 @@ async function installUnverified(
   };
   const manifest = (await readManifest(options.repoRoot)) ?? emptyManifest();
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));
+  const skillInstalledAt = await copyBundledSkill(
+    name,
+    options.repoRoot,
+    options.skillsInstallDir,
+  );
   return {
     name,
     version: entry.version,
@@ -286,6 +314,7 @@ async function installUnverified(
     envSaved: [],
     envAlreadySet: [],
     installedAt,
+    ...(skillInstalledAt ? { skillInstalledAt } : {}),
   };
 }
 
@@ -293,6 +322,14 @@ interface NpmPackageMeta {
   version: string;
   _integrity?: string;
   openneko?: {
+    /** Path to the runner entrypoint, relative to the package root. */
+    runner?: string;
+    /**
+     * Path to a bundled SKILL folder, relative to the package root.
+     * When present, install copies it under ~/.openneko/skills/<name>/
+     * after the plugin npm install completes.
+     */
+    skill?: string;
     permissions?: {
       network?: string[];
       env?: Array<{
@@ -305,6 +342,11 @@ interface NpmPackageMeta {
     capabilities?: {
       action?: { kinds: Array<{ kind: string; description: string }> };
       auth?: { providerLabel?: string };
+      connect?: {
+        providerLabel: string;
+        scopes: string[];
+        flow?: "oauth2-pkce";
+      };
     };
   };
 }
@@ -332,4 +374,69 @@ function runNpm(args: string[], cwd: string): Promise<void> {
       else reject(new Error(`npm ${args.join(" ")} exited ${code}`));
     });
   });
+}
+
+/**
+ * If the just-installed package declares `openneko.skill` in its
+ * package.json, copy the skill folder under ~/.openneko/skills/<skill-name>/
+ * so the worker's skill loader (M8) can pick it up. The skill's name is
+ * taken from its SKILL.md frontmatter; falls back to the package's
+ * unscoped basename when the SKILL.md can't be parsed.
+ *
+ * Returns the absolute destination path on success, or null when the
+ * package declared no skill half (most plugins).
+ */
+async function copyBundledSkill(
+  pluginName: string,
+  repoRoot: string,
+  skillsInstallDir?: string,
+): Promise<string | null> {
+  const meta = await readPackageMeta(pluginName, repoRoot);
+  if (!meta?.openneko?.skill) return null;
+  const pkgRoot = path.join(repoRoot, "node_modules", pluginName);
+  const skillSrc = path.resolve(pkgRoot, meta.openneko.skill);
+  if (!existsSync(skillSrc)) {
+    // Package declared a skill but the folder isn't on disk — silently
+    // skip. Don't fail the install over a malformed plugin package.
+    return null;
+  }
+  const skillMd = path.join(skillSrc, "SKILL.md");
+  let skillName = pluginName.split("/").pop() ?? pluginName;
+  if (existsSync(skillMd)) {
+    try {
+      const content = await readFile(skillMd, "utf8");
+      const frontmatterName = extractNameFromFrontmatter(content);
+      if (frontmatterName) skillName = frontmatterName;
+    } catch {
+      // Treat as "use the package basename" — better than failing.
+    }
+  }
+  const dest = path.join(
+    skillsInstallDir ?? path.join(homedir(), ".openneko", "skills"),
+    skillName,
+  );
+  await mkdir(path.dirname(dest), { recursive: true });
+  await cp(skillSrc, dest, { recursive: true, force: true });
+  return dest;
+}
+
+/**
+ * Minimal SKILL.md name-field extractor. Reuses-by-duplication a tiny
+ * slice of the frontmatter parser to avoid pulling @neko/llm into
+ * plugin-install (cyclic dep risk + plugin-install ships independently).
+ */
+function extractNameFromFrontmatter(content: string): string | null {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return null;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (line.trim() === "---") return null;
+    const m = /^name\s*:\s*(.+?)\s*$/.exec(line);
+    if (m) {
+      const raw = (m[1] ?? "").trim();
+      const stripped = raw.replace(/^['"]|['"]$/g, "");
+      return stripped || null;
+    }
+  }
+  return null;
 }

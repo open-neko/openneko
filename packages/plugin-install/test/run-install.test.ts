@@ -472,6 +472,95 @@ describe("runInstall", () => {
     expect(entry.policySnapshot.allowUnverified).toBe(true);
   });
 
+  it("copies a bundled skill folder under skillsInstallDir when openneko.skill is declared", async () => {
+    // The CLI runs the npm install first, which leaves the package on
+    // disk under node_modules/<name>/. Stub that by writing the
+    // expected layout BEFORE runInstall and using a no-op npmRunner.
+    const skillsDir = await import("node:fs/promises").then((fs) =>
+      fs.mkdtemp(path.join(tmpdir(), "pi-skills-")),
+    );
+    const pkgRoot = path.join(repoDir, "node_modules", "@vendor", "connector-x");
+    await import("node:fs/promises").then((fs) =>
+      fs.mkdir(pkgRoot, { recursive: true }),
+    );
+    await writeFile(
+      path.join(pkgRoot, "package.json"),
+      JSON.stringify({
+        version: "0.1.0",
+        _integrity: "sha512-skillpkgtest",
+        openneko: {
+          runner: "./dist/run.js",
+          skill: "./skill",
+          permissions: { network: ["api.example.com"], env: [] },
+          capabilities: {
+            action: { kinds: [{ kind: "do_x", description: "x" }] },
+          },
+        },
+      }),
+      "utf8",
+    );
+    await import("node:fs/promises").then((fs) =>
+      fs.mkdir(path.join(pkgRoot, "skill"), { recursive: true }),
+    );
+    await writeFile(
+      path.join(pkgRoot, "skill", "SKILL.md"),
+      `---\nname: vendor-x\ndescription: Operate against Vendor X.\n---\nbody`,
+      "utf8",
+    );
+
+    const plugin = {
+      name: "@vendor/connector-x",
+      title: "Connector X",
+      description: "...",
+      source: "https://github.com/vendor/plugins",
+      versions: [actionVersion({ kinds: [{ kind: "do_x", description: "x" }] })],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@vendor/connector-x",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {
+        // No-op — the test already wrote the package's layout above.
+      },
+      envPrompt: async () => "",
+      skillsInstallDir: skillsDir,
+    });
+
+    expect(result.skillInstalledAt).toBeTruthy();
+    expect(result.skillInstalledAt).toBe(path.join(skillsDir, "vendor-x"));
+    const skillCopy = path.join(skillsDir, "vendor-x", "SKILL.md");
+    const body = await readFile(skillCopy, "utf8");
+    expect(body).toContain("name: vendor-x");
+  });
+
+  it("does not error when the package declares no skill half", async () => {
+    const plugin = {
+      name: "@open-neko/plugin-plain",
+      title: "Plain",
+      description: "...",
+      source: "https://github.com/open-neko/plugins",
+      versions: [actionVersion({ kinds: [{ kind: "x", description: "x" }] })],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@open-neko/plugin-plain",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+    });
+    expect(result.skillInstalledAt).toBeUndefined();
+  });
+
   it("install without policySnapshot records null (pre-feature compat)", async () => {
     const plugin = {
       name: "@open-neko/plugin-legacy",

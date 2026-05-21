@@ -874,10 +874,31 @@ export class PluginRegistry {
         );
       }
       await this.ensureVm(pluginId, entry);
-      const env = mergeEnv(entry, this.secrets);
+      let env = mergeEnv(entry, this.secrets);
+      // For connect-capable plugins, inject the calling operator's
+      // credential as OPENNEKO_CONNECTOR_CREDENTIAL_TOKENS. The plugin's
+      // action handler reads + parses this env var to make the API call.
+      // Absent operator → no credential → action handler errors clearly
+      // (the operator must Connect via /integrations first).
+      const actorId = (request as { actorId?: string | null }).actorId ?? null;
+      if (entry.capabilities.connect && actorId) {
+        const credential = getOperatorCredential(
+          { env: this.secrets, operators: this.operators },
+          actorId,
+          entry.name,
+        );
+        if (credential) {
+          env = {
+            ...env,
+            OPENNEKO_CONNECTOR_CREDENTIAL_TOKENS: JSON.stringify(credential.tokens),
+            OPENNEKO_OPERATOR_ID: actorId,
+          };
+        }
+      }
       const params: PluginActionRequest = {
         id: request.id,
         orgId: request.orgId,
+        actorId,
         scope: request.scope,
         kind: request.kind,
         target: request.target ?? null,

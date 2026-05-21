@@ -157,3 +157,29 @@ export function aggregateSkillDeps(): {
     brewCasks: [...brewCasks],
   };
 }
+
+/**
+ * Synthesise a SkillDeps record from raw SKILL.md frontmatter — used
+ * by the doctor for community skills installed under ~/.openneko/
+ * skills/ that don't have a hand-maintained KNOWN_SKILL_DEPS entry.
+ *
+ * Only the binary-presence check matters here: we can't reliably map
+ * a binary name (e.g. `blogwatcher-cli`) to an apt/brew package name,
+ * so we record the binary for the OK/MISSING report and leave apt/brew
+ * empty (operators install community-skill binaries manually).
+ *
+ * Python imports declared in skill prose aren't parsed — too varied
+ * across community skills to extract reliably.
+ */
+export function synthesizeSkillDeps(prereq: {
+  commands?: string[];
+  envVars?: string[];
+}): SkillDeps {
+  return {
+    python: [],
+    pip: [],
+    binaries: [...(prereq.commands ?? [])],
+    apt: [],
+    brew: [],
+  };
+}
