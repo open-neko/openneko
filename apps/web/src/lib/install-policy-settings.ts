@@ -31,10 +31,10 @@ export type InstallPolicy = {
   allowSandboxedSkillEscape: boolean;
 };
 
-/** Returned to the admin UI alongside the policy itself. */
+/** Returned to the settings UI alongside the policy itself. */
 export type InstallPolicyPayload = {
   policy: InstallPolicy;
-  /** "org" when admin saved a row; "default" when the row is absent. */
+  /** "org" when an operator saved a row; "default" when the row is absent. */
   source: "org" | "default";
 };
 
@@ -46,7 +46,7 @@ const PROVIDER_TAG = "install-policy";
 
 /**
  * Secure-by-default. New deployments don't allow community plugins or
- * unverified npm installs until an admin opts in. The official
+ * unverified npm installs until an operator opts in. The official
  * marketplace is always trusted (without that, operators couldn't
  * install the first-party Slack/Parallel/Scalekit plugins).
  */
