@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # claude:   required by the claude-agent backend (Anthropic SDK spawns it).
 FROM base AS cli
 ARG GRAPHJIN_VERSION=3.18.18
-ARG HERMES_AGENT_REF=64145a1996554e4e81b694e9737421f34f44e212
+ARG HERMES_AGENT_REF=a91a57fa5a13d516c38b07a141a9ce8a3daabeb0
 # TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
 # graphjin download pick the right tarball when building multi-arch.
 ARG TARGETARCH
