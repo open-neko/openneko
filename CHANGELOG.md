@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.3](https://github.com/open-neko/neko/compare/v1.11.2...v1.11.3) (2026-05-21)
+
+
+### Bug Fixes
+
+* **deploy:** split privileged setup into a one-time on-VM script ([e0c2a02](https://github.com/open-neko/neko/commit/e0c2a020dcb31e64973f48910b832f209001f57a))
+
 ## [1.11.2](https://github.com/open-neko/neko/compare/v1.11.1...v1.11.2) (2026-05-21)
 
 
