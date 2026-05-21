@@ -63,6 +63,18 @@ export interface InstallOptions {
     plugin: string,
     requirement: MarketplaceEnvRequirement,
   ) => Promise<string>;
+  /**
+   * Policy values in effect when this install runs. Recorded verbatim
+   * on the new manifest entry's policySnapshot so audit can answer
+   * "how did this get installed?" months later. Omit to skip the
+   * snapshot (pre-feature compatibility; tests).
+   */
+  policySnapshot?: {
+    allowUnverified: boolean;
+    allowGitUrlInstalls: boolean;
+    allowSandboxedSkillEscape: boolean;
+    allowedMarketplaces: string[];
+  };
 }
 
 export interface InstallResult {
@@ -71,11 +83,13 @@ export interface InstallResult {
   integrity: string;
   permissions: { network: string[] };
   marketplace: string | null;
-  source: "marketplace" | "unverified";
+  source: "marketplace" | "unverified" | "git-url";
   /** Required env keys that were prompted for and saved during this install. */
   envSaved: string[];
   /** Required env keys that were already present in the secrets store. */
   envAlreadySet: string[];
+  /** ISO timestamp recorded on the manifest entry. */
+  installedAt: string;
 }
 
 export interface ParsedSpec {
@@ -164,6 +178,7 @@ export async function runInstall(
   );
 
   const manifest = (await readManifest(options.repoRoot)) ?? emptyManifest();
+  const installedAt = new Date().toISOString();
   const entry: ManifestEntry = {
     name: plugin.name,
     version: version.version,
@@ -174,6 +189,9 @@ export async function runInstall(
     },
     capabilities: version.capabilities,
     marketplace: chosen.marketplaceName,
+    installSource: "marketplace",
+    installedAt,
+    policySnapshot: options.policySnapshot ?? null,
   };
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));
   return {
@@ -185,6 +203,7 @@ export async function runInstall(
     source: "marketplace",
     envSaved: envOutcome.saved,
     envAlreadySet: envOutcome.alreadySet,
+    installedAt,
   };
 }
 
@@ -241,6 +260,7 @@ async function installUnverified(
       `--unverified install: ${name} package.json must declare openneko.capabilities`,
     );
   }
+  const installedAt = new Date().toISOString();
   const entry: ManifestEntry = {
     name,
     version: meta.version,
@@ -250,6 +270,9 @@ async function installUnverified(
       env: ozNeko.permissions?.env ?? [],
     },
     capabilities: ozNeko.capabilities,
+    installSource: "unverified",
+    installedAt,
+    policySnapshot: options.policySnapshot ?? null,
   };
   const manifest = (await readManifest(options.repoRoot)) ?? emptyManifest();
   await writeManifest(options.repoRoot, upsertEntry(manifest, entry));
@@ -262,6 +285,7 @@ async function installUnverified(
     source: "unverified",
     envSaved: [],
     envAlreadySet: [],
+    installedAt,
   };
 }
 

@@ -10,7 +10,18 @@ import {
   CompleteAuthParams,
   CompleteAuthResult,
 } from "./auth.js";
-import { AuthCapabilityDeclaration } from "./manifest.js";
+import {
+  BeginConnectParams,
+  BeginConnectResult,
+  CompleteConnectParams,
+  CompleteConnectResult,
+  RefreshConnectParams,
+  RefreshConnectResult,
+} from "./connect.js";
+import {
+  AuthCapabilityDeclaration,
+  ConnectCapabilityDeclaration,
+} from "./manifest.js";
 
 /**
  * JSON-RPC over stdio between the OpenNeko worker (caller) and a plugin
@@ -26,6 +37,9 @@ export const RpcMethod = z.enum([
   "execute_action",
   "begin_auth",
   "complete_auth",
+  "begin_connect",
+  "complete_connect",
+  "refresh_connect",
 ]);
 export type RpcMethod = z.infer<typeof RpcMethod>;
 
@@ -53,6 +67,7 @@ export const RegisterResult = z.object({
       })
       .optional(),
     auth: AuthCapabilityDeclaration.optional(),
+    connect: ConnectCapabilityDeclaration.optional(),
   }),
 });
 export type RegisterResult = z.infer<typeof RegisterResult>;
@@ -78,6 +93,24 @@ export type CompleteAuthRpcParams = z.infer<typeof CompleteAuthRpcParams>;
 
 export const CompleteAuthRpcResult = z.object({ result: CompleteAuthResult });
 export type CompleteAuthRpcResult = z.infer<typeof CompleteAuthRpcResult>;
+
+export const BeginConnectRpcParams = z.object({ params: BeginConnectParams });
+export type BeginConnectRpcParams = z.infer<typeof BeginConnectRpcParams>;
+
+export const BeginConnectRpcResult = z.object({ result: BeginConnectResult });
+export type BeginConnectRpcResult = z.infer<typeof BeginConnectRpcResult>;
+
+export const CompleteConnectRpcParams = z.object({ params: CompleteConnectParams });
+export type CompleteConnectRpcParams = z.infer<typeof CompleteConnectRpcParams>;
+
+export const CompleteConnectRpcResult = z.object({ result: CompleteConnectResult });
+export type CompleteConnectRpcResult = z.infer<typeof CompleteConnectRpcResult>;
+
+export const RefreshConnectRpcParams = z.object({ params: RefreshConnectParams });
+export type RefreshConnectRpcParams = z.infer<typeof RefreshConnectRpcParams>;
+
+export const RefreshConnectRpcResult = z.object({ result: RefreshConnectResult });
+export type RefreshConnectRpcResult = z.infer<typeof RefreshConnectRpcResult>;
 
 export const RpcOk = z.object({
   ok: z.literal(true),

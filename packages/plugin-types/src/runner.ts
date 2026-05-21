@@ -1,10 +1,16 @@
 import {
   BeginAuthRpcParams,
   BeginAuthRpcResult,
+  BeginConnectRpcParams,
+  BeginConnectRpcResult,
   CompleteAuthRpcParams,
   CompleteAuthRpcResult,
+  CompleteConnectRpcParams,
+  CompleteConnectRpcResult,
   ExecuteActionParams,
   ExecuteActionResult,
+  RefreshConnectRpcParams,
+  RefreshConnectRpcResult,
   RegisterResult,
   RPC_PROTOCOL_VERSION,
   RpcResponse,
@@ -38,6 +44,12 @@ export async function dispatchPluginRpc(
         return rpcOk(await runBeginAuth(plugin, options.paramsJson));
       case "complete_auth":
         return rpcOk(await runCompleteAuth(plugin, options.paramsJson));
+      case "begin_connect":
+        return rpcOk(await runBeginConnect(plugin, options.paramsJson));
+      case "complete_connect":
+        return rpcOk(await runCompleteConnect(plugin, options.paramsJson));
+      case "refresh_connect":
+        return rpcOk(await runRefreshConnect(plugin, options.paramsJson));
       default:
         return rpcErr("UNKNOWN_METHOD", `unknown RPC method: ${options.method}`);
     }
@@ -66,6 +78,13 @@ function buildRegisterResult(plugin: PluginDefinition): RegisterResult {
         ? caps.auth.providerLabel
           ? { providerLabel: caps.auth.providerLabel }
           : {}
+        : undefined,
+      connect: caps.connect
+        ? {
+            providerLabel: caps.connect.providerLabel,
+            scopes: caps.connect.scopes,
+            flow: caps.connect.flow ?? "oauth2-pkce",
+          }
         : undefined,
     },
   });
@@ -112,6 +131,50 @@ async function runCompleteAuth(
   const parsed = CompleteAuthRpcParams.parse(JSON.parse(paramsJson));
   const result = await auth.complete(parsed.params);
   return CompleteAuthRpcResult.parse({ result });
+}
+
+async function runBeginConnect(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<BeginConnectRpcResult> {
+  const connect = plugin.capabilities.connect;
+  if (!connect) {
+    throw new Error("plugin does not implement a connect capability");
+  }
+  const parsed = BeginConnectRpcParams.parse(JSON.parse(paramsJson));
+  const result = await connect.begin(parsed.params);
+  return BeginConnectRpcResult.parse({ result });
+}
+
+async function runCompleteConnect(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<CompleteConnectRpcResult> {
+  const connect = plugin.capabilities.connect;
+  if (!connect) {
+    throw new Error("plugin does not implement a connect capability");
+  }
+  const parsed = CompleteConnectRpcParams.parse(JSON.parse(paramsJson));
+  const result = await connect.complete(parsed.params);
+  return CompleteConnectRpcResult.parse({ result });
+}
+
+async function runRefreshConnect(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<RefreshConnectRpcResult> {
+  const connect = plugin.capabilities.connect;
+  if (!connect) {
+    throw new Error("plugin does not implement a connect capability");
+  }
+  if (!connect.refresh) {
+    throw new Error(
+      "plugin's connect capability does not implement refresh — tokens won't be rotated",
+    );
+  }
+  const parsed = RefreshConnectRpcParams.parse(JSON.parse(paramsJson));
+  const result = await connect.refresh(parsed.params);
+  return RefreshConnectRpcResult.parse({ result });
 }
 
 /**

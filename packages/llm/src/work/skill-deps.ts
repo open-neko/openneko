@@ -57,6 +57,76 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     apt: [],
     brew: [],
   },
+  // ─── Tier-A finance skills (Hermes-sourced, Apache-2.0) ────────────
+  // All five model skills pair with excel-author and use openpyxl — same
+  // dep set as the generic xlsx builtin, so no new pip/apt requirements
+  // beyond what's already baked.
+  "excel-author": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "pptx-author": {
+    python: ["pptx", "PIL"],
+    pip: ["python-pptx", "Pillow"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "3-statement-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "dcf-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "lbo-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "comps-analysis": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "merger-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  // ─── Tier-A devops procedural-knowledge skills ─────────────────────
+  // Both are pure procedural prompts — no Python imports beyond stdlib,
+  // no binaries beyond the worker's shell tools.
+  watchers: {
+    python: [],
+    pip: [],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "webhook-subscriptions": {
+    python: [],
+    pip: [],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
 };
 
 // Union of all pip / apt / brew deps across the manifest. Used by the

@@ -28,7 +28,12 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AuthIdentity } from "@open-neko/plugin-types";
+import type {
+  AuthIdentity,
+  BeginConnectParams,
+  CompleteConnectParams,
+  ConnectorCredential,
+} from "@open-neko/plugin-types";
 
 export interface AuthHandlerSurface {
   getAuthProvider(): {
@@ -45,6 +50,52 @@ export interface AuthHandlerSurface {
     redirectUri: string;
     state: string;
   }): Promise<AuthIdentity>;
+}
+
+/**
+ * Connect (per-operator OAuth) surface exposed to the web app. The
+ * worker delegates each call to the matching plugin registry method;
+ * credentials are persisted in the per-operator section of the secrets
+ * file by the registry, not by the web.
+ */
+export interface ConnectHandlerSurface {
+  getConnectProviders(): Array<{
+    pluginId: string;
+    pluginName: string;
+    providerLabel: string;
+    scopes: string[];
+  }>;
+  getOperatorConnectStatus(
+    operatorId: string,
+  ): Array<{ pluginName: string; connectedAt: string; scopes?: string[] }>;
+  beginConnect(
+    pluginName: string,
+    params: BeginConnectParams,
+  ): Promise<{ authorizationUrl: string }>;
+  completeConnect(
+    pluginName: string,
+    params: CompleteConnectParams,
+  ): Promise<ConnectorCredential>;
+  refreshConnect(
+    pluginName: string,
+    operatorId: string,
+  ): Promise<ConnectorCredential>;
+  disconnect(pluginName: string, operatorId: string): Promise<boolean>;
+}
+
+/**
+ * Install-policy surface exposed to the CLI (via the worker admin
+ * port) for the install-time enforcement check. The CLI calls
+ * `GET /admin/install-policy` before running install and refuses to
+ * proceed with --unverified when the policy disallows it.
+ */
+export interface InstallPolicyHandlerSurface {
+  getInstallPolicy(): Promise<{
+    allowUnverified: boolean;
+    allowGitUrlInstalls: boolean;
+    allowedMarketplaces: string[];
+    allowSandboxedSkillEscape: boolean;
+  }>;
 }
 
 export interface PluginsHandlerSurface {
@@ -92,6 +143,19 @@ export type AdminHandlerOptions = {
    * /admin/plugins/action-descriptors returns an empty array.
    */
   plugins?: PluginsHandlerSurface | null;
+  /**
+   * Connect surface — typically wired to the PluginRegistry. Absent
+   * when the plugin subsystem is disabled, in which case
+   * /admin/connect/* routes return 503.
+   */
+  connect?: ConnectHandlerSurface | null;
+  /**
+   * Install-policy reader. Absent when the plugin subsystem is
+   * disabled — in that case /admin/install-policy returns a default
+   * (most-restrictive) policy so the CLI errs on the side of
+   * refusing privileged install paths.
+   */
+  installPolicy?: InstallPolicyHandlerSurface | null;
 };
 
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
@@ -99,6 +163,8 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exitDelayMs = opts.exitDelayMs ?? 100;
   const auth = opts.auth ?? null;
   const plugins = opts.plugins ?? null;
+  const connect = opts.connect ?? null;
+  const installPolicy = opts.installPolicy ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -132,8 +198,65 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       handlePluginActionDescriptors(res, plugins);
       return;
     }
+    if (req.method === "GET" && req.url === "/admin/connect/providers") {
+      handleConnectProviders(res, connect);
+      return;
+    }
+    const statusMatch = req.method === "GET" && req.url?.startsWith("/admin/connect/status/");
+    if (statusMatch) {
+      handleConnectStatus(res, connect, req.url!);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/connect/begin") {
+      void handleConnectBegin(req, res, connect);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/connect/complete") {
+      void handleConnectComplete(req, res, connect);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/connect/refresh") {
+      void handleConnectRefresh(req, res, connect);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/connect/disconnect") {
+      void handleConnectDisconnect(req, res, connect);
+      return;
+    }
+    if (req.method === "GET" && req.url === "/admin/install-policy") {
+      void handleInstallPolicy(res, installPolicy);
+      return;
+    }
     res.writeHead(404).end();
   };
+}
+
+async function handleInstallPolicy(
+  res: ServerResponse,
+  installPolicy: InstallPolicyHandlerSurface | null,
+) {
+  if (!installPolicy) {
+    // No reader wired → return defaults (most-restrictive). The CLI
+    // will treat this as "no privileged install paths allowed".
+    json(res, 200, {
+      policy: {
+        allowUnverified: false,
+        allowGitUrlInstalls: false,
+        allowedMarketplaces: [
+          "https://open-neko.github.io/plugins/marketplace.json",
+        ],
+        allowSandboxedSkillEscape: false,
+      },
+      source: "default",
+    });
+    return;
+  }
+  try {
+    const policy = await installPolicy.getInstallPolicy();
+    json(res, 200, { policy, source: "org" });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 function handlePluginActionDescriptors(
@@ -234,6 +357,169 @@ async function handleAuthComplete(
     json(res, 500, {
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+// ─── Connect (per-operator OAuth) ──────────────────────────────────────
+
+function handleConnectProviders(
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 200, { providers: [] });
+    return;
+  }
+  json(res, 200, { providers: connect.getConnectProviders() });
+}
+
+function handleConnectStatus(
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+  url: string,
+) {
+  if (!connect) {
+    json(res, 200, { connected: [] });
+    return;
+  }
+  const operatorId = decodeURIComponent(
+    url.slice("/admin/connect/status/".length).split(/[?#]/, 1)[0] ?? "",
+  );
+  if (!operatorId) {
+    json(res, 400, { error: "operatorId path segment required" });
+    return;
+  }
+  json(res, 200, { connected: connect.getOperatorConnectStatus(operatorId) });
+}
+
+async function handleConnectBegin(
+  req: IncomingMessage,
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 503, { error: "plugin subsystem disabled" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    json(res, 400, { error: "request body must be JSON" });
+    return;
+  }
+  const pluginName = body.pluginName;
+  const params = body.params;
+  if (typeof pluginName !== "string" || !pluginName) {
+    json(res, 400, { error: "pluginName (string) is required" });
+    return;
+  }
+  if (!params || typeof params !== "object") {
+    json(res, 400, { error: "params (object) is required" });
+    return;
+  }
+  try {
+    const result = await connect.beginConnect(pluginName, params as BeginConnectParams);
+    json(res, 200, { authorizationUrl: result.authorizationUrl });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function handleConnectComplete(
+  req: IncomingMessage,
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 503, { error: "plugin subsystem disabled" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    json(res, 400, { error: "request body must be JSON" });
+    return;
+  }
+  const pluginName = body.pluginName;
+  const params = body.params;
+  if (typeof pluginName !== "string" || !pluginName) {
+    json(res, 400, { error: "pluginName (string) is required" });
+    return;
+  }
+  if (!params || typeof params !== "object") {
+    json(res, 400, { error: "params (object) is required" });
+    return;
+  }
+  try {
+    const credential = await connect.completeConnect(
+      pluginName,
+      params as CompleteConnectParams,
+    );
+    json(res, 200, { credential });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function handleConnectRefresh(
+  req: IncomingMessage,
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 503, { error: "plugin subsystem disabled" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    json(res, 400, { error: "request body must be JSON" });
+    return;
+  }
+  const pluginName = body.pluginName;
+  const operatorId = body.operatorId;
+  if (typeof pluginName !== "string" || !pluginName) {
+    json(res, 400, { error: "pluginName (string) is required" });
+    return;
+  }
+  if (typeof operatorId !== "string" || !operatorId) {
+    json(res, 400, { error: "operatorId (string) is required" });
+    return;
+  }
+  try {
+    const credential = await connect.refreshConnect(pluginName, operatorId);
+    json(res, 200, { credential });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function handleConnectDisconnect(
+  req: IncomingMessage,
+  res: ServerResponse,
+  connect: ConnectHandlerSurface | null,
+) {
+  if (!connect) {
+    json(res, 503, { error: "plugin subsystem disabled" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    json(res, 400, { error: "request body must be JSON" });
+    return;
+  }
+  const pluginName = body.pluginName;
+  const operatorId = body.operatorId;
+  if (typeof pluginName !== "string" || !pluginName) {
+    json(res, 400, { error: "pluginName (string) is required" });
+    return;
+  }
+  if (typeof operatorId !== "string" || !operatorId) {
+    json(res, 400, { error: "operatorId (string) is required" });
+    return;
+  }
+  try {
+    const removed = await connect.disconnect(pluginName, operatorId);
+    json(res, 200, { removed });
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 

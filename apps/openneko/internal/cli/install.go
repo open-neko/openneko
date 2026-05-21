@@ -12,6 +12,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/host"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/install"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/marketplace"
+	"github.com/open-neko/neko/apps/openneko/internal/plugin/policy"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/store"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 )
@@ -48,6 +49,23 @@ func newInstallCmd() *cobra.Command {
 				fmt.Fprintf(errOut, "WARNING: host check: %s\n  Install will proceed. Plugin execution requires a host that can spawn microsandbox VMs (Linux with /dev/kvm, or macOS arm64 via pnpm-dev). Pass --skip-host-check to suppress this warning.\n", reason)
 			}
 			out := cmd.OutOrStdout()
+
+			// Fetch the deployment-wide install policy. Privileged install
+			// paths (--unverified, --git-url) need an admin to have opted
+			// in via /settings/security. If the worker is unreachable, the
+			// fetch falls back to the secure default — operators can't
+			// turn off the policy by killing the worker.
+			pol, source, fetchErr := policy.Fetch(context.Background())
+			if fetchErr != nil {
+				fmt.Fprintf(errOut, "WARNING: install policy check failed (%s) — defaulting to most-restrictive\n", fetchErr.Error())
+			}
+			if unverified && !pol.Allows(policy.SourceUnverified) {
+				hint := "ask an admin to enable it at /settings/security"
+				if source == "unreachable" {
+					hint = "start the worker so the policy can be read, or ask an admin to enable --unverified at /settings/security"
+				}
+				return WithExit(2, fmt.Errorf("install: --unverified is disabled by deployment policy. %s", hint))
+			}
 			if unverified {
 				fmt.Fprintln(errOut, "WARNING: --unverified bypasses every trusted marketplace. The plugin is not reviewed and its integrity hash is taken on trust from npm. Use only for plugin authoring or emergency hotfixes.")
 			}

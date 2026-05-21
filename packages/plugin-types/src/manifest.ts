@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PluginActionDeclaration } from "./action.js";
+import { ConnectScope } from "./connect.js";
 
 export const HostPattern = z
   .string()
@@ -88,6 +89,26 @@ export const AuthCapabilityDeclaration = z.object({
 export type AuthCapabilityDeclaration = z.infer<typeof AuthCapabilityDeclaration>;
 
 /**
+ * Connect capability — per-operator OAuth/connector.
+ *
+ * Unlike `auth` (singleton SSO, one identity for the whole
+ * deployment), `connect` is non-singleton: any number of installed
+ * plugins can declare it, and each operator authorizes independently.
+ * Credentials land in the per-operator section of the secrets store
+ * (`_operators[operatorId][pluginName]` → ConnectorCredential).
+ */
+export const ConnectCapabilityDeclaration = z.object({
+  /** Display label shown on the Connect button + status row. */
+  providerLabel: z.string().min(1),
+  /** OAuth scopes the connector will request at consent time. */
+  scopes: z.array(ConnectScope).min(1),
+  /** Flow type the worker should drive. v1 supports oauth2-pkce only. */
+  flow: z.enum(["oauth2-pkce"]).default("oauth2-pkce"),
+});
+
+export type ConnectCapabilityDeclaration = z.infer<typeof ConnectCapabilityDeclaration>;
+
+/**
  * The full capability map a plugin contributes. Each surface a plugin
  * implements becomes a key here; the keyset IS the declaration — there
  * are no parallel flags. To add a new surface: add a key, its
@@ -97,14 +118,30 @@ export const PluginCapabilitiesDeclaration = z
   .object({
     action: ActionCapabilityDeclaration.optional(),
     auth: AuthCapabilityDeclaration.optional(),
+    connect: ConnectCapabilityDeclaration.optional(),
   })
-  .refine((c) => c.action != null || c.auth != null, {
-    message: "capabilities must declare at least one surface (action, auth)",
+  .refine((c) => c.action != null || c.auth != null || c.connect != null, {
+    message: "capabilities must declare at least one surface (action, auth, connect)",
   });
 
 export type PluginCapabilitiesDeclaration = z.infer<
   typeof PluginCapabilitiesDeclaration
 >;
+
+/**
+ * Snapshot of the install policy in effect when this entry was added.
+ * Lets the worker registry flag entries whose source no longer matches
+ * the current policy (grandfather, don't yank). Null on entries that
+ * pre-date the install-policy gate.
+ */
+export const PluginManifestPolicySnapshot = z.object({
+  allowUnverified: z.boolean(),
+  allowGitUrlInstalls: z.boolean(),
+  allowSandboxedSkillEscape: z.boolean(),
+  allowedMarketplaces: z.array(z.string()),
+});
+
+export type PluginManifestPolicySnapshot = z.infer<typeof PluginManifestPolicySnapshot>;
 
 export const PluginManifestEntry = z.object({
   name: z
@@ -134,6 +171,16 @@ export const PluginManifestEntry = z.object({
   env: z.record(z.string(), z.string()).optional(),
   /** Display name of the marketplace this plugin came from (traceability). */
   marketplace: z.string().optional(),
+  /**
+   * Where this entry came from. "marketplace" = via a trusted catalog;
+   * "unverified" = bypassed marketplaces; "git-url" = community skill.
+   * Absent on legacy entries pre-dating the install-policy gate.
+   */
+  installSource: z.enum(["marketplace", "unverified", "git-url"]).optional(),
+  /** ISO timestamp the entry was added. Absent on legacy entries. */
+  installedAt: z.string().optional(),
+  /** Policy snapshot — see PluginManifestPolicySnapshot. */
+  policySnapshot: PluginManifestPolicySnapshot.nullable().optional(),
 });
 
 export type PluginManifestEntry = z.infer<typeof PluginManifestEntry>;

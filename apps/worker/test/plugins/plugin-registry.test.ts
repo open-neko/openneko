@@ -189,6 +189,7 @@ describe("PluginRegistry", () => {
     expect(reg.status()).toEqual({
       loaded: [],
       skipped: [],
+      flagged: [],
       kinds: [],
       vmsRunning: 0,
       authProvider: null,
@@ -760,3 +761,656 @@ describe("PluginRegistry — auth provider", () => {
     await reg.stop();
   });
 });
+
+// ─── connect capability (per-operator OAuth) ───────────────────────────
+
+const GOOGLE_CONNECT_NAME = "@open-neko/connector-google-workspace";
+
+function manifestWithConnectEntry() {
+  return {
+    schema: "https://open-neko.github.io/plugins/manifest.schema.json",
+    plugins: [
+      {
+        name: GOOGLE_CONNECT_NAME,
+        version: "0.1.0",
+        integrity: FAKE_INTEGRITY,
+        permissions: { network: ["*.googleapis.com", "accounts.google.com"], env: [] },
+        capabilities: {
+          connect: {
+            providerLabel: "Google Workspace",
+            scopes: ["gmail.readonly", "calendar.readonly"],
+            flow: "oauth2-pkce",
+          },
+        },
+      },
+    ],
+  };
+}
+
+function connectRegisterResponse(): RpcResponse {
+  return rpcOk({
+    protocol: RPC_PROTOCOL_VERSION,
+    pluginName: GOOGLE_CONNECT_NAME,
+    pluginVersion: "0.1.0",
+    capabilities: {
+      connect: {
+        providerLabel: "Google Workspace",
+        scopes: ["gmail.readonly", "calendar.readonly"],
+        flow: "oauth2-pkce",
+      },
+    },
+  });
+}
+
+describe("PluginRegistry — connect capability", () => {
+  let repoRoot: string;
+  let workRoot: string;
+  let secretsConfigDir: string;
+  let runnerPath: string;
+
+  beforeEach(async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), "openneko-repo-"));
+    workRoot = await mkdtemp(path.join(tmpdir(), "openneko-vmwork-"));
+    secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
+    runnerPath = path.join(repoRoot, "fake-runner.js");
+    await writeFakeRunner(runnerPath);
+    setDefaultActionAdapter(mockActionAdapter);
+  });
+
+  afterEach(async () => {
+    await rm(repoRoot, { recursive: true, force: true });
+    await rm(workRoot, { recursive: true, force: true });
+    await rm(secretsConfigDir, { recursive: true, force: true });
+    setDefaultActionAdapter(mockActionAdapter);
+  });
+
+  function newRegistry(runtime: PluginRuntime) {
+    return new PluginRegistry({
+      repoRoot,
+      workRoot,
+      secretsConfigDir,
+      runtime,
+      resolveRunner: () => runnerPath,
+    });
+  }
+
+  async function writeConnectManifest(): Promise<void> {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithConnectEntry()),
+      "utf8",
+    );
+  }
+
+  it("getConnectProviders surfaces every installed connect plugin", async () => {
+    await writeConnectManifest();
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    const providers = reg.getConnectProviders();
+    expect(providers).toHaveLength(1);
+    expect(providers[0]).toMatchObject({
+      pluginName: GOOGLE_CONNECT_NAME,
+      providerLabel: "Google Workspace",
+      scopes: ["gmail.readonly", "calendar.readonly"],
+    });
+    await reg.stop();
+  });
+
+  it("beginConnect runs ensureVm then RPCs the plugin", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        begin_connect: rpcOk({
+          result: {
+            authorizationUrl: "https://accounts.google.com/oauth2/auth?stub=1",
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    const out = await reg.beginConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      redirectUri: "https://app.example.com/integrations/callback",
+      state: "csrf-1",
+      scopes: ["gmail.readonly"],
+      codeVerifier: "verifier-xyz",
+    });
+    expect(out.authorizationUrl).toBe(
+      "https://accounts.google.com/oauth2/auth?stub=1",
+    );
+    expect(runtime.rpcs.map((r) => r.method)).toEqual(["register", "begin_connect"]);
+    await reg.stop();
+  });
+
+  it("completeConnect persists the credential under the operator slot", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        complete_connect: rpcOk({
+          result: {
+            credential: {
+              tokens: { access_token: "at-1", refresh_token: "rt-1", expires_in: 3600 },
+              scopes: ["gmail.readonly", "calendar.readonly"],
+              providerLabel: "Google Workspace",
+              connectedAt: "2026-05-21T10:00:00Z",
+            },
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    const cred = await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      code: "auth-code",
+      redirectUri: "https://app.example.com/integrations/callback",
+      state: "csrf-1",
+      codeVerifier: "verifier-xyz",
+      scopes: ["gmail.readonly"],
+    });
+    expect(cred.tokens.access_token).toBe("at-1");
+    expect(reg.isOperatorConnected("op-1", GOOGLE_CONNECT_NAME)).toBe(true);
+    expect(reg.isOperatorConnected("op-2", GOOGLE_CONNECT_NAME)).toBe(false);
+
+    // Verify it survives a reload (file was written to disk).
+    const reg2 = newRegistry(new FakeRuntime());
+    await reg2.start();
+    expect(reg2.isOperatorConnected("op-1", GOOGLE_CONNECT_NAME)).toBe(true);
+    await reg.stop();
+    await reg2.stop();
+  });
+
+  it("scrubber redacts tokens stored in operator credentials", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        complete_connect: rpcOk({
+          result: {
+            credential: {
+              tokens: { access_token: "very-secret-token-xyz", refresh_token: "rt-1" },
+              connectedAt: "2026-05-21T10:00:00Z",
+            },
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      code: "code",
+      redirectUri: "https://x",
+      state: "x",
+      scopes: [],
+    });
+    expect(
+      reg.getScrubber()("Authorization: Bearer very-secret-token-xyz"),
+    ).toBe("Authorization: Bearer [REDACTED]");
+    await reg.stop();
+  });
+
+  it("refreshConnect rotates the credential and writes back", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        complete_connect: rpcOk({
+          result: {
+            credential: {
+              tokens: { access_token: "at-old", refresh_token: "rt-old" },
+              connectedAt: "2026-05-21T10:00:00Z",
+            },
+          },
+        }),
+        refresh_connect: (rec) => {
+          // Mirror the plugin's expected behavior: take the current credential
+          // and return a rotated one.
+          const parsed = JSON.parse(rec.paramsJson) as {
+            params: { current: { tokens: Record<string, unknown> } };
+          };
+          return rpcOk({
+            result: {
+              credential: {
+                tokens: { ...parsed.params.current.tokens, access_token: "at-rotated" },
+                connectedAt: "2026-05-21T10:00:00Z",
+                refreshedAt: "2026-05-21T11:00:00Z",
+              },
+            },
+          });
+        },
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      code: "code",
+      redirectUri: "https://x",
+      state: "x",
+      scopes: [],
+    });
+    const rotated = await reg.refreshConnect(GOOGLE_CONNECT_NAME, "op-1");
+    expect(rotated.tokens.access_token).toBe("at-rotated");
+    expect(rotated.tokens.refresh_token).toBe("rt-old");
+    expect(rotated.refreshedAt).toBe("2026-05-21T11:00:00Z");
+    await reg.stop();
+  });
+
+  it("refreshConnect errors clearly when no credential exists for the operator", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: { register: connectRegisterResponse() },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await expect(
+      reg.refreshConnect(GOOGLE_CONNECT_NAME, "op-never-connected"),
+    ).rejects.toThrow(/no credential to refresh/);
+    await reg.stop();
+  });
+
+  it("disconnect removes the credential and reports removal", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        complete_connect: rpcOk({
+          result: {
+            credential: {
+              tokens: { access_token: "at-1" },
+              connectedAt: "2026-05-21T10:00:00Z",
+            },
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      code: "code",
+      redirectUri: "https://x",
+      state: "x",
+      scopes: [],
+    });
+    expect(await reg.disconnect(GOOGLE_CONNECT_NAME, "op-1")).toBe(true);
+    expect(reg.isOperatorConnected("op-1", GOOGLE_CONNECT_NAME)).toBe(false);
+    // Second disconnect is a no-op.
+    expect(await reg.disconnect(GOOGLE_CONNECT_NAME, "op-1")).toBe(false);
+    await reg.stop();
+  });
+
+  it("operators are independent — disconnecting op-1 doesn't affect op-2", async () => {
+    await writeConnectManifest();
+    let counter = 0;
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        complete_connect: () => {
+          counter++;
+          return rpcOk({
+            result: {
+              credential: {
+                tokens: { access_token: `at-${counter}` },
+                connectedAt: "2026-05-21T10:00:00Z",
+              },
+            },
+          });
+        },
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      code: "c1",
+      redirectUri: "https://x",
+      state: "x",
+      scopes: [],
+    });
+    await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-2",
+      code: "c2",
+      redirectUri: "https://x",
+      state: "x",
+      scopes: [],
+    });
+    expect(reg.isOperatorConnected("op-1", GOOGLE_CONNECT_NAME)).toBe(true);
+    expect(reg.isOperatorConnected("op-2", GOOGLE_CONNECT_NAME)).toBe(true);
+    await reg.disconnect(GOOGLE_CONNECT_NAME, "op-1");
+    expect(reg.isOperatorConnected("op-1", GOOGLE_CONNECT_NAME)).toBe(false);
+    expect(reg.isOperatorConnected("op-2", GOOGLE_CONNECT_NAME)).toBe(true);
+    await reg.stop();
+  });
+
+  it("beginConnect on a not-installed plugin errors", async () => {
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    await expect(
+      reg.beginConnect("@open-neko/connector-missing", {
+        operatorId: "op-1",
+        redirectUri: "https://x",
+        state: "x",
+        scopes: [],
+      }),
+    ).rejects.toThrow(/not installed/);
+    await reg.stop();
+  });
+
+  it("beginConnect on an installed plugin without connect capability errors", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithSlackEntry()),
+      "utf8",
+    );
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    await expect(
+      reg.beginConnect("@open-neko/plugin-slack", {
+        operatorId: "op-1",
+        redirectUri: "https://x",
+        state: "x",
+        scopes: [],
+      }),
+    ).rejects.toThrow(/does not declare a connect/);
+    await reg.stop();
+  });
+
+  it("rejects a connect plugin whose VM omits connect from register()", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: rpcOk({
+          protocol: RPC_PROTOCOL_VERSION,
+          pluginName: GOOGLE_CONNECT_NAME,
+          pluginVersion: "0.1.0",
+          capabilities: {},
+        }),
+        begin_connect: rpcOk({ result: { authorizationUrl: "https://x" } }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await expect(
+      reg.beginConnect(GOOGLE_CONNECT_NAME, {
+        operatorId: "op-1",
+        redirectUri: "https://x",
+        state: "x",
+        scopes: [],
+      }),
+    ).rejects.toThrow(/no connect handler/);
+    await reg.stop();
+  });
+
+  it("rejects a connect plugin whose VM reports fewer scopes than manifest declares", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: rpcOk({
+          protocol: RPC_PROTOCOL_VERSION,
+          pluginName: GOOGLE_CONNECT_NAME,
+          pluginVersion: "0.1.0",
+          capabilities: {
+            connect: {
+              providerLabel: "Google Workspace",
+              scopes: ["gmail.readonly"], // missing calendar.readonly
+              flow: "oauth2-pkce",
+            },
+          },
+        }),
+        begin_connect: rpcOk({ result: { authorizationUrl: "https://x" } }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await expect(
+      reg.beginConnect(GOOGLE_CONNECT_NAME, {
+        operatorId: "op-1",
+        redirectUri: "https://x",
+        state: "x",
+        scopes: [],
+      }),
+    ).rejects.toThrow(/connect scopes/);
+    await reg.stop();
+  });
+
+  it("disconnect works on a plugin that's no longer installed (orphan cleanup)", async () => {
+    await writeConnectManifest();
+    const runtime = new FakeRuntime({
+      responses: {
+        register: connectRegisterResponse(),
+        complete_connect: rpcOk({
+          result: {
+            credential: {
+              tokens: { access_token: "at-1" },
+              connectedAt: "2026-05-21T10:00:00Z",
+            },
+          },
+        }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await reg.completeConnect(GOOGLE_CONNECT_NAME, {
+      operatorId: "op-1",
+      code: "c",
+      redirectUri: "https://x",
+      state: "x",
+      scopes: [],
+    });
+    // Operator removes the plugin between connect + disconnect.
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify({
+        schema: "https://open-neko.github.io/plugins/manifest.schema.json",
+        plugins: [],
+      }),
+      "utf8",
+    );
+    await reg.refresh();
+    expect(await reg.disconnect(GOOGLE_CONNECT_NAME, "op-1")).toBe(true);
+    await reg.stop();
+  });
+});
+
+// ─── Policy flagging (M4) ──────────────────────────────────────────────
+
+describe("PluginRegistry — install-policy flagging", () => {
+  let repoRoot: string;
+  let workRoot: string;
+  let secretsConfigDir: string;
+  let runnerPath: string;
+
+  beforeEach(async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), "openneko-repo-"));
+    workRoot = await mkdtemp(path.join(tmpdir(), "openneko-vmwork-"));
+    secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
+    runnerPath = path.join(repoRoot, "fake-runner.js");
+    await writeFakeRunner(runnerPath);
+    setDefaultActionAdapter(mockActionAdapter);
+  });
+
+  afterEach(async () => {
+    await rm(repoRoot, { recursive: true, force: true });
+    await rm(workRoot, { recursive: true, force: true });
+    await rm(secretsConfigDir, { recursive: true, force: true });
+    setDefaultActionAdapter(mockActionAdapter);
+  });
+
+  function newRegistry(
+    runtime: PluginRuntime,
+    loadInstallPolicy?: () =>
+      | Promise<{
+          allowUnverified: boolean;
+          allowGitUrlInstalls: boolean;
+          allowedMarketplaces: string[];
+        } | null>
+      | { allowUnverified: boolean; allowGitUrlInstalls: boolean; allowedMarketplaces: string[] } | null,
+  ) {
+    return new PluginRegistry({
+      repoRoot,
+      workRoot,
+      secretsConfigDir,
+      runtime,
+      resolveRunner: () => runnerPath,
+      ...(loadInstallPolicy
+        ? { loadInstallPolicy: () => Promise.resolve(loadInstallPolicy()) }
+        : {}),
+    });
+  }
+
+  async function writeManifest(entry: Record<string, unknown>): Promise<void> {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify({
+        schema: "https://open-neko.github.io/plugins/manifest.schema.json",
+        plugins: [entry],
+      }),
+      "utf8",
+    );
+  }
+
+  const unverifiedSlackEntry = {
+    name: "@some-author/plugin-thing",
+    version: "0.1.0",
+    integrity: FAKE_INTEGRITY,
+    permissions: { network: ["thing.io"], env: [] },
+    capabilities: {
+      action: { kinds: [{ kind: "do_thing", description: "thing" }] },
+    },
+    installSource: "unverified" as const,
+    installedAt: "2026-05-21T10:00:00Z",
+    policySnapshot: {
+      allowUnverified: true,
+      allowGitUrlInstalls: false,
+      allowSandboxedSkillEscape: false,
+      allowedMarketplaces: ["https://open-neko.github.io/plugins/marketplace.json"],
+    },
+  };
+
+  it("no policy loader → no flags (default behavior)", async () => {
+    await writeManifest(unverifiedSlackEntry);
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    await reg.stop();
+  });
+
+  it("policy allows unverified → entry installed via unverified is NOT flagged", async () => {
+    await writeManifest(unverifiedSlackEntry);
+    const reg = newRegistry(new FakeRuntime(), () => ({
+      allowUnverified: true,
+      allowGitUrlInstalls: true,
+      allowedMarketplaces: [],
+    }));
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    expect(reg.status().loaded).toContain(unverifiedSlackEntry.name);
+    await reg.stop();
+  });
+
+  it("policy disallows unverified → entry is flagged but stays loaded", async () => {
+    await writeManifest(unverifiedSlackEntry);
+    const reg = newRegistry(new FakeRuntime(), () => ({
+      allowUnverified: false,
+      allowGitUrlInstalls: false,
+      allowedMarketplaces: [],
+    }));
+    await reg.start();
+    expect(reg.status().loaded).toContain(unverifiedSlackEntry.name);
+    expect(reg.status().flagged.map((f) => f.pluginName)).toContain(
+      unverifiedSlackEntry.name,
+    );
+    expect(reg.status().flagged[0]?.reason).toMatch(/unverified/);
+    expect(reg.status().kinds).toContain("do_thing");
+    await reg.stop();
+  });
+
+  it("flag re-evaluates on refresh — flipping policy off then on toggles the flag", async () => {
+    await writeManifest(unverifiedSlackEntry);
+    let allow = true;
+    const reg = newRegistry(new FakeRuntime(), () => ({
+      allowUnverified: allow,
+      allowGitUrlInstalls: false,
+      allowedMarketplaces: [],
+    }));
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    allow = false;
+    await reg.refresh();
+    expect(reg.status().flagged.length).toBe(1);
+    allow = true;
+    await reg.refresh();
+    expect(reg.status().flagged).toEqual([]);
+    await reg.stop();
+  });
+
+  it("legacy entries with no installSource are NEVER flagged (grandfather)", async () => {
+    const legacy = {
+      name: "@legacy/plugin",
+      version: "0.1.0",
+      integrity: FAKE_INTEGRITY,
+      permissions: { network: ["x.com"], env: [] },
+      capabilities: {
+        action: { kinds: [{ kind: "legacy_action", description: "x" }] },
+      },
+      // no installSource, no policySnapshot — pre-feature shape
+    };
+    await writeManifest(legacy);
+    const reg = newRegistry(new FakeRuntime(), () => ({
+      allowUnverified: false,
+      allowGitUrlInstalls: false,
+      allowedMarketplaces: [],
+    }));
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    expect(reg.status().loaded).toContain(legacy.name);
+    await reg.stop();
+  });
+
+  it("marketplace entries are not flagged regardless of policy (current behavior)", async () => {
+    const marketplaceEntry = {
+      name: "@open-neko/plugin-slack",
+      version: "0.1.0",
+      integrity: FAKE_INTEGRITY,
+      permissions: { network: ["slack.com"], env: [] },
+      capabilities: { action: { kinds: SLACK_KIND_DECLS } },
+      installSource: "marketplace" as const,
+      installedAt: "2026-05-21T10:00:00Z",
+      marketplace: "official",
+    };
+    await writeManifest(marketplaceEntry);
+    const reg = newRegistry(new FakeRuntime(), () => ({
+      allowUnverified: false,
+      allowGitUrlInstalls: false,
+      allowedMarketplaces: [], // even though empty, marketplace installs grandfather
+    }));
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    await reg.stop();
+  });
+
+  it("loadInstallPolicy returning null → no flags (treated as policy not set)", async () => {
+    await writeManifest(unverifiedSlackEntry);
+    const reg = newRegistry(new FakeRuntime(), () => null);
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    await reg.stop();
+  });
+
+  it("loadInstallPolicy that throws is logged + no flags applied", async () => {
+    await writeManifest(unverifiedSlackEntry);
+    const reg = newRegistry(new FakeRuntime(), () => {
+      throw new Error("DB unreachable");
+    });
+    await reg.start();
+    expect(reg.status().flagged).toEqual([]);
+    expect(reg.status().loaded).toContain(unverifiedSlackEntry.name);
+    await reg.stop();
+  });
+});
+

@@ -156,4 +156,156 @@ describe("definePlugin", () => {
       }),
     ).toThrow(/auth\.complete/);
   });
+
+  // ─── connect capability ─────────────────────────────────────────────
+
+  const sampleCred = () => ({
+    credential: {
+      tokens: { access_token: "at", refresh_token: "rt" },
+      connectedAt: "2026-05-21T10:00:00Z",
+    },
+  });
+
+  it("accepts a connect-only plugin", () => {
+    const plugin = definePlugin({
+      name: "@open-neko/connector-example",
+      version: "0.1.0",
+      capabilities: {
+        connect: {
+          providerLabel: "Example",
+          scopes: ["read:user"],
+          begin: async () => ({ authorizationUrl: "https://idp/auth" }),
+          complete: async () => sampleCred(),
+        },
+      },
+    });
+    expect(plugin.capabilities.connect?.providerLabel).toBe("Example");
+    expect(plugin.capabilities.connect?.refresh).toBeUndefined();
+  });
+
+  it("accepts a connect plugin with refresh", () => {
+    const plugin = definePlugin({
+      name: "@open-neko/connector-refresh",
+      version: "0.1.0",
+      capabilities: {
+        connect: {
+          providerLabel: "Example",
+          scopes: ["read:user"],
+          begin: async () => ({ authorizationUrl: "https://x" }),
+          complete: async () => sampleCred(),
+          refresh: async () => sampleCred(),
+        },
+      },
+    });
+    expect(typeof plugin.capabilities.connect?.refresh).toBe("function");
+  });
+
+  it("accepts a plugin that combines action + connect", () => {
+    const plugin = definePlugin({
+      name: "@open-neko/connector-google-workspace",
+      version: "0.1.0",
+      capabilities: {
+        action: {
+          kinds: [
+            {
+              kind: "send_gmail",
+              description: "send email",
+              handler: async () => ({ result: { ok: true } }),
+            },
+          ],
+        },
+        connect: {
+          providerLabel: "Google Workspace",
+          scopes: ["gmail.send"],
+          begin: async () => ({ authorizationUrl: "https://accounts.google.com" }),
+          complete: async () => sampleCred(),
+        },
+      },
+    });
+    expect(plugin.capabilities.action?.kinds[0]?.kind).toBe("send_gmail");
+    expect(plugin.capabilities.connect?.providerLabel).toBe("Google Workspace");
+  });
+
+  it("throws when connect.providerLabel is missing", () => {
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        capabilities: {
+          connect: {
+            providerLabel: "",
+            scopes: ["x"],
+            begin: async () => ({ authorizationUrl: "https://x" }),
+            complete: async () => sampleCred(),
+          },
+        },
+      }),
+    ).toThrow(/providerLabel/);
+  });
+
+  it("throws when connect.scopes is empty", () => {
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        capabilities: {
+          connect: {
+            providerLabel: "X",
+            scopes: [],
+            begin: async () => ({ authorizationUrl: "https://x" }),
+            complete: async () => sampleCred(),
+          },
+        },
+      }),
+    ).toThrow(/scopes/);
+  });
+
+  it("throws when connect.begin or .complete is not a function", () => {
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        capabilities: {
+          connect: {
+            providerLabel: "X",
+            scopes: ["s"],
+            begin: "nope" as unknown as () => Promise<never>,
+            complete: async () => sampleCred(),
+          },
+        },
+      }),
+    ).toThrow(/connect\.begin/);
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        capabilities: {
+          connect: {
+            providerLabel: "X",
+            scopes: ["s"],
+            begin: async () => ({ authorizationUrl: "https://x" }),
+            complete: "nope" as unknown as () => Promise<never>,
+          },
+        },
+      }),
+    ).toThrow(/connect\.complete/);
+  });
+
+  it("throws when connect.refresh is provided but not a function", () => {
+    expect(() =>
+      definePlugin({
+        name: "@x/y",
+        version: "0.1.0",
+        capabilities: {
+          connect: {
+            providerLabel: "X",
+            scopes: ["s"],
+            begin: async () => ({ authorizationUrl: "https://x" }),
+            complete: async () => sampleCred(),
+            refresh: "nope" as unknown as () => Promise<never>,
+          },
+        },
+      }),
+    ).toThrow(/connect\.refresh/);
+  });
 });

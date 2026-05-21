@@ -33,24 +33,38 @@ import {
   BeginAuthParams,
   BeginAuthRpcParams,
   BeginAuthRpcResult,
+  BeginConnectParams,
+  BeginConnectRpcParams,
+  BeginConnectRpcResult,
   CompleteAuthParams,
   CompleteAuthRpcParams,
   CompleteAuthRpcResult,
+  CompleteConnectParams,
+  CompleteConnectRpcParams,
+  CompleteConnectRpcResult,
   ExecuteActionParams,
   ExecuteActionResult,
   PluginManifest,
   PluginManifestEntry,
+  RefreshConnectRpcParams,
+  RefreshConnectRpcResult,
   RegisterResult,
   RPC_PROTOCOL_VERSION,
   type AuthIdentity,
+  type ConnectorCredential,
   type PluginActionOutcome,
   type PluginActionRequest,
 } from "@open-neko/plugin-types";
 import {
-  allSecretValues,
+  allSecretValuesFull,
   defaultSecretsPath,
+  getOperatorCredential,
   manifestPathFor,
-  readSecretsStoreSoft,
+  readFullSecretsFileSoft,
+  setOperatorCredential,
+  unsetOperatorCredential,
+  writeFullSecretsFile,
+  type FullSecretsFile,
   type SecretsStore,
 } from "@open-neko/plugin-install";
 import { createScrubber, type Scrubber } from "@neko/llm/work";
@@ -62,6 +76,18 @@ import {
   type PluginRuntime,
 } from "./microsandbox-runtime.js";
 import { isSupportedHost, platformTriple } from "./microsandbox-sdk.js";
+
+/**
+ * Snapshot of the install policy + a per-entry flag, surfaced via
+ * status() so the /integrations admin UI can render yellow rows for
+ * entries that don't match the current policy. We grandfather (not
+ * yank) — the policy change blocks NEW installs from that source,
+ * existing ones keep running until the admin removes them manually.
+ */
+export interface FlaggedEntry {
+  pluginName: string;
+  reason: string;
+}
 
 export interface PluginRegistryOptions {
   /** OpenNeko repo root — manifest lives here. */
@@ -102,11 +128,29 @@ export interface PluginRegistryOptions {
    * to know about the org_id or the policy subsystem.
    */
   onManifestRefresh?: (entries: PluginManifestEntry[]) => Promise<void> | void;
+  /**
+   * Fetch the current install policy. Called once per refresh; result
+   * is used to flag installed entries whose source no longer matches.
+   * Omit to disable policy-flagging (tests that don't care). The
+   * worker wires this up to `getInstallPolicyForOrg(orgId)` from
+   * @neko/db; tests pass a stub.
+   */
+  loadInstallPolicy?: () => Promise<{
+    allowUnverified: boolean;
+    allowGitUrlInstalls: boolean;
+    allowedMarketplaces: string[];
+  } | null>;
 }
 
 export interface RegistryStatus {
   loaded: string[];
   skipped: Array<{ name: string; reason: string }>;
+  /**
+   * Entries that are still loaded but whose install source no longer
+   * matches the current install policy. Admin should remove them
+   * manually via `openneko remove <pkg>` or /integrations.
+   */
+  flagged: FlaggedEntry[];
   kinds: string[];
   vmsRunning: number;
   /** Plugin id of the installed SSO provider (if any). */
@@ -139,8 +183,16 @@ export class PluginRegistry {
   private runtime: PluginRuntime | null = null;
   private state: ManifestState = EMPTY_STATE;
   private secrets: SecretsStore = {};
+  /**
+   * Per-operator credentials produced by `connect` capability OAuth
+   * dances. Refreshed every refresh() pass from disk; persisted back
+   * by completeConnect/refreshConnect. Kept in memory so per-call
+   * envelope injection doesn't hit the disk on every action call.
+   */
+  private operators: Record<string, Record<string, ConnectorCredential>> = {};
   private scrubber: Scrubber = createScrubber([]);
   private skipped: Array<{ name: string; reason: string }> = [];
+  private flagged: FlaggedEntry[] = [];
   private manifestWatcher: FSWatcher | null = null;
   private secretsWatcher: FSWatcher | null = null;
   // Poll fallback: fs.watch misses file events that come from outside the
@@ -260,6 +312,7 @@ export class PluginRegistry {
     return {
       loaded: [...this.state.entriesByPluginId.values()].map((e) => e.name),
       skipped: [...this.skipped],
+      flagged: [...this.flagged],
       kinds: [...this.state.kindToPluginId.keys()].sort(),
       vmsRunning: countRunningVms(this.runtime, this.state),
       authProvider: this.state.authPluginId,
@@ -360,6 +413,268 @@ export class PluginRegistry {
     return { pluginId, entry };
   }
 
+  // ─── connect capability (per-operator OAuth) ─────────────────────────
+
+  /**
+   * List installed plugins that declare a `connect` capability. Used by
+   * the `/integrations` web page to render one Connect button per
+   * available connector.
+   */
+  getConnectProviders(): Array<{
+    pluginId: string;
+    pluginName: string;
+    providerLabel: string;
+    scopes: string[];
+  }> {
+    const out: Array<{
+      pluginId: string;
+      pluginName: string;
+      providerLabel: string;
+      scopes: string[];
+    }> = [];
+    for (const [pluginId, entry] of this.state.entriesByPluginId) {
+      const decl = entry.capabilities.connect;
+      if (!decl) continue;
+      out.push({
+        pluginId,
+        pluginName: entry.name,
+        providerLabel: decl.providerLabel,
+        scopes: decl.scopes,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Whether a given operator has an active credential for the named
+   * plugin. The web app's `/integrations` page uses this to decide
+   * whether to show "Connect" vs "Disconnect".
+   */
+  isOperatorConnected(operatorId: string, pluginName: string): boolean {
+    return this.operators[operatorId]?.[pluginName] != null;
+  }
+
+  /**
+   * Per-operator connect status across every installed connector. Lets
+   * the web app render the integrations page in one query.
+   */
+  getOperatorConnectStatus(
+    operatorId: string,
+  ): Array<{ pluginName: string; connectedAt: string; scopes?: string[] }> {
+    const byPlugin = this.operators[operatorId] ?? {};
+    return Object.entries(byPlugin)
+      .map(([pluginName, cred]) => ({
+        pluginName,
+        connectedAt: cred.connectedAt,
+        scopes: cred.scopes,
+      }))
+      .sort((a, b) => a.pluginName.localeCompare(b.pluginName));
+  }
+
+  /**
+   * Drive the connect plugin's `begin_connect` RPC. Returns the
+   * authorization URL the browser should redirect to. The web app
+   * mints `state` (CSRF) and `codeVerifier` (PKCE) and threads them
+   * through so the matching `complete_connect` call can bind them.
+   */
+  async beginConnect(
+    pluginName: string,
+    params: BeginConnectParams,
+  ): Promise<{ authorizationUrl: string }> {
+    const { pluginId, entry } = this.requireConnectPluginEntry(pluginName);
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) {
+      throw new Error("plugin-registry: runtime unavailable");
+    }
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "begin_connect",
+      JSON.stringify(BeginConnectRpcParams.parse({ params })),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `connect plugin ${entry.name} begin_connect failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    return BeginConnectRpcResult.parse(response.result).result;
+  }
+
+  /**
+   * Drive the connect plugin's `complete_connect` RPC, then persist
+   * the returned credential under the operator's slot in the secrets
+   * file. The worker remains the only writer to secrets.json — the
+   * plugin never touches disk directly.
+   */
+  async completeConnect(
+    pluginName: string,
+    params: CompleteConnectParams,
+  ): Promise<ConnectorCredential> {
+    const { pluginId, entry } = this.requireConnectPluginEntry(pluginName);
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) {
+      throw new Error("plugin-registry: runtime unavailable");
+    }
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "complete_connect",
+      JSON.stringify(CompleteConnectRpcParams.parse({ params })),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `connect plugin ${entry.name} complete_connect failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    const credential = CompleteConnectRpcResult.parse(response.result).result.credential;
+    await this.persistOperatorCredential(params.operatorId, entry.name, credential);
+    return credential;
+  }
+
+  /**
+   * Drive the plugin's `refresh_connect` to rotate an expiring access
+   * token, persist the new credential. Errors if the plugin doesn't
+   * declare a refresh handler — most OAuth providers expire tokens
+   * after an hour, so this is virtually always required.
+   */
+  async refreshConnect(
+    pluginName: string,
+    operatorId: string,
+  ): Promise<ConnectorCredential> {
+    const { pluginId, entry } = this.requireConnectPluginEntry(pluginName);
+    const current = getOperatorCredential(
+      { env: this.secrets, operators: this.operators },
+      operatorId,
+      entry.name,
+    );
+    if (!current) {
+      throw new Error(
+        `connect plugin ${entry.name}: no credential to refresh for operator ${operatorId}`,
+      );
+    }
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) {
+      throw new Error("plugin-registry: runtime unavailable");
+    }
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "refresh_connect",
+      JSON.stringify(RefreshConnectRpcParams.parse({ params: { operatorId, current } })),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `connect plugin ${entry.name} refresh_connect failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    const credential = RefreshConnectRpcResult.parse(response.result).result.credential;
+    const stamped: ConnectorCredential = {
+      ...credential,
+      refreshedAt: credential.refreshedAt ?? new Date().toISOString(),
+    };
+    await this.persistOperatorCredential(operatorId, entry.name, stamped);
+    return stamped;
+  }
+
+  /**
+   * Disconnect an operator from a plugin — deletes the credential
+   * locally. Token revocation against the upstream provider is the
+   * plugin's concern via an action call beforehand if it cares.
+   */
+  async disconnect(pluginName: string, operatorId: string): Promise<boolean> {
+    // Don't require the plugin to still be installed — a removed
+    // plugin's orphaned credentials should still be cleanable.
+    const before: FullSecretsFile = { env: this.secrets, operators: this.operators };
+    const { store, removed } = unsetOperatorCredential(before, operatorId, pluginName);
+    if (!removed) return false;
+    this.operators = store.operators;
+    await writeFullSecretsFile(store, this.options.secretsConfigDir);
+    // Re-derive scrubber so the removed credential's tokens stop
+    // showing up in the redaction set after a delay.
+    this.scrubber = createScrubber(allSecretValuesFull(store));
+    return true;
+  }
+
+  private async persistOperatorCredential(
+    operatorId: string,
+    pluginName: string,
+    credential: ConnectorCredential,
+  ): Promise<void> {
+    const before: FullSecretsFile = { env: this.secrets, operators: this.operators };
+    const after = setOperatorCredential(before, operatorId, pluginName, credential);
+    this.operators = after.operators;
+    await writeFullSecretsFile(after, this.options.secretsConfigDir);
+    // Newly-stored tokens become part of the redaction set immediately.
+    this.scrubber = createScrubber(allSecretValuesFull(after));
+  }
+
+  /**
+   * Compare each entry's installSource against the current policy and
+   * surface every mismatch as a flag. Entries with no installSource
+   * (pre-feature legacy installs) are never flagged — we can't know
+   * where they came from. Entries whose source IS allowed are clean.
+   */
+  private async computeFlagged(state: ManifestState): Promise<FlaggedEntry[]> {
+    if (!this.options.loadInstallPolicy) return [];
+    let policy: Awaited<ReturnType<typeof this.options.loadInstallPolicy>>;
+    try {
+      policy = await this.options.loadInstallPolicy();
+    } catch (err) {
+      console.warn(
+        `[plugin-registry] loadInstallPolicy failed; skipping flag eval: ${err instanceof Error ? err.message : err}`,
+      );
+      return [];
+    }
+    if (!policy) return [];
+    const flagged: FlaggedEntry[] = [];
+    for (const entry of state.entriesByPluginId.values()) {
+      const source = entry.installSource;
+      if (!source) continue; // pre-feature legacy: unknowable, don't flag
+      if (source === "marketplace") {
+        // Marketplace entries carry the URL on entry.marketplace? Currently
+        // a name like "official" — for now, treat marketplace installs as
+        // grandfathered. Once the marketplace URL flows through, gate by
+        // policy.allowedMarketplaces.includes(url).
+        continue;
+      }
+      if (source === "unverified" && !policy.allowUnverified) {
+        flagged.push({
+          pluginName: entry.name,
+          reason: "installed via --unverified; current policy disallows new unverified installs",
+        });
+      }
+      if (source === "git-url" && !policy.allowGitUrlInstalls) {
+        flagged.push({
+          pluginName: entry.name,
+          reason: "installed via git URL; current policy disallows new git-URL installs",
+        });
+      }
+    }
+    return flagged;
+  }
+
+  private requireConnectPluginEntry(pluginName: string): {
+    pluginId: string;
+    entry: PluginManifestEntry;
+  } {
+    for (const [pluginId, entry] of this.state.entriesByPluginId) {
+      if (entry.name === pluginName) {
+        if (!entry.capabilities.connect) {
+          throw new Error(
+            `${pluginName}: installed but does not declare a connect capability`,
+          );
+        }
+        return { pluginId, entry };
+      }
+    }
+    throw new Error(
+      `connect plugin ${pluginName} not installed — run \`openneko install ${pluginName}\``,
+    );
+  }
+
   /**
    * Re-read manifest + secrets, diff against current state, register
    * adapters for new kinds, stop VMs for removed plugins, rebuild the
@@ -376,12 +691,16 @@ export class PluginRegistry {
     this.refreshing = true;
     try {
       const manifest = await readManifestFromDisk(this.options.repoRoot);
-      const secrets = await readSecretsStoreSoft(
+      const full = await readFullSecretsFileSoft(
         this.options.secretsConfigDir,
         (line) => console.warn(`[plugin-registry] ${line}`),
       );
-      this.secrets = secrets;
-      this.scrubber = createScrubber(allSecretValues(secrets));
+      this.secrets = full.env;
+      this.operators = full.operators;
+      // Scrubber walks both env values AND tokens nested inside
+      // per-operator credentials, so an accidentally-leaked
+      // refresh_token gets redacted from agent output too.
+      this.scrubber = createScrubber(allSecretValuesFull(full));
 
       const { state: newState, authDuplicates } = buildState(manifest);
       const removed = diffRemoved(this.state, newState);
@@ -437,6 +756,10 @@ export class PluginRegistry {
       }
 
       this.state = newState;
+
+      // Re-evaluate the install-policy flag for every entry. Grandfather
+      // (don't unregister) — operators told us to flag, not yank.
+      this.flagged = await this.computeFlagged(newState);
 
       if (this.options.onManifestRefresh) {
         try {
@@ -663,6 +986,23 @@ export class PluginRegistry {
         this.authProviderLabels.set(
           pluginId,
           registered.capabilities.auth.providerLabel,
+        );
+      }
+    }
+    if (entry.capabilities.connect) {
+      if (!registered.capabilities.connect) {
+        await this.runtime.stop(pluginId).catch(() => {});
+        throw new Error(
+          `${entry.name}: manifest declares the connect capability but VM register() reports no connect handler`,
+        );
+      }
+      const declaredScopes = new Set(entry.capabilities.connect.scopes);
+      const reportedScopes = new Set(registered.capabilities.connect.scopes);
+      const missing = [...declaredScopes].filter((s) => !reportedScopes.has(s));
+      if (missing.length > 0) {
+        await this.runtime.stop(pluginId).catch(() => {});
+        throw new Error(
+          `${entry.name}: manifest declares connect scopes [${[...declaredScopes].join(", ")}] but VM reports [${[...reportedScopes].join(", ")}]`,
         );
       }
     }

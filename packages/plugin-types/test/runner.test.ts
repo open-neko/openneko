@@ -199,3 +199,173 @@ describe("dispatchPluginRpc — auth capability", () => {
     expect(r.error.message).toMatch(/auth provider/);
   });
 });
+
+describe("dispatchPluginRpc — connect capability", () => {
+  const connectPlugin = definePlugin({
+    name: "@open-neko/connector-example",
+    version: "0.1.0",
+    capabilities: {
+      connect: {
+        providerLabel: "Example Workspace",
+        scopes: ["read:user", "read:email"],
+        begin: async ({ state, operatorId }) => ({
+          authorizationUrl: `https://provider.example/auth?state=${state}&op=${operatorId}`,
+        }),
+        complete: async ({ code, operatorId }) => ({
+          credential: {
+            tokens: {
+              access_token: `at-${code}`,
+              refresh_token: `rt-${code}`,
+              expires_in: 3600,
+            },
+            scopes: ["read:user", "read:email"],
+            providerLabel: "Example Workspace",
+            connectedAt: `2026-05-21T10:00:00Z`,
+            // Stash operatorId via providerLabel for verification only — real impls don't.
+          },
+        }),
+        refresh: async ({ current }) => ({
+          credential: {
+            ...current,
+            tokens: { ...current.tokens, access_token: "at-rotated" },
+            refreshedAt: "2026-05-21T11:00:00Z",
+          },
+        }),
+      },
+    },
+  });
+
+  it("register surfaces connect capability with scopes + flow", async () => {
+    const r = await dispatchPluginRpc(connectPlugin, {
+      method: "register",
+      paramsJson: "{}",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as {
+      capabilities: {
+        connect?: { providerLabel?: string; scopes?: string[]; flow?: string };
+      };
+    };
+    expect(out.capabilities.connect?.providerLabel).toBe("Example Workspace");
+    expect(out.capabilities.connect?.scopes).toEqual(["read:user", "read:email"]);
+    expect(out.capabilities.connect?.flow).toBe("oauth2-pkce");
+  });
+
+  it("begin_connect forwards operatorId + state to the plugin", async () => {
+    const r = await dispatchPluginRpc(connectPlugin, {
+      method: "begin_connect",
+      paramsJson: JSON.stringify({
+        params: {
+          operatorId: "op-1",
+          redirectUri: "https://app.example.com/integrations/callback",
+          state: "csrf-token",
+          scopes: ["read:user"],
+        },
+      }),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as { result: { authorizationUrl: string } };
+    expect(out.result.authorizationUrl).toBe(
+      "https://provider.example/auth?state=csrf-token&op=op-1",
+    );
+  });
+
+  it("complete_connect returns a credential", async () => {
+    const r = await dispatchPluginRpc(connectPlugin, {
+      method: "complete_connect",
+      paramsJson: JSON.stringify({
+        params: {
+          operatorId: "op-1",
+          code: "auth-code",
+          redirectUri: "https://app.example.com/integrations/callback",
+          state: "csrf-token",
+          scopes: ["read:user"],
+        },
+      }),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as {
+      result: {
+        credential: {
+          tokens: Record<string, unknown>;
+          scopes?: string[];
+          connectedAt: string;
+        };
+      };
+    };
+    expect(out.result.credential.tokens.access_token).toBe("at-auth-code");
+    expect(out.result.credential.tokens.refresh_token).toBe("rt-auth-code");
+    expect(out.result.credential.scopes).toEqual(["read:user", "read:email"]);
+  });
+
+  it("refresh_connect rotates the credential", async () => {
+    const r = await dispatchPluginRpc(connectPlugin, {
+      method: "refresh_connect",
+      paramsJson: JSON.stringify({
+        params: {
+          operatorId: "op-1",
+          current: {
+            tokens: { access_token: "old-at", refresh_token: "rt-old" },
+            connectedAt: "2026-05-21T10:00:00Z",
+          },
+        },
+      }),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = r.result as {
+      result: { credential: { tokens: Record<string, unknown>; refreshedAt?: string } };
+    };
+    expect(out.result.credential.tokens.access_token).toBe("at-rotated");
+    expect(out.result.credential.refreshedAt).toBe("2026-05-21T11:00:00Z");
+  });
+
+  it("begin_connect on a non-connect plugin errors", async () => {
+    const r = await dispatchPluginRpc(samplePlugin, {
+      method: "begin_connect",
+      paramsJson: JSON.stringify({
+        params: {
+          operatorId: "op-1",
+          redirectUri: "https://x",
+          state: "x",
+          scopes: [],
+        },
+      }),
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.message).toMatch(/connect capability/);
+  });
+
+  it("refresh_connect on a connect plugin without refresh errors clearly", async () => {
+    const noRefreshPlugin = definePlugin({
+      name: "@open-neko/connector-no-refresh",
+      version: "0.1.0",
+      capabilities: {
+        connect: {
+          providerLabel: "X",
+          scopes: ["s"],
+          begin: async () => ({ authorizationUrl: "https://x" }),
+          complete: async () => ({
+            credential: { tokens: {}, connectedAt: "2026-05-21T10:00:00Z" },
+          }),
+        },
+      },
+    });
+    const r = await dispatchPluginRpc(noRefreshPlugin, {
+      method: "refresh_connect",
+      paramsJson: JSON.stringify({
+        params: {
+          operatorId: "op-1",
+          current: { tokens: {}, connectedAt: "2026-05-21T10:00:00Z" },
+        },
+      }),
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.message).toMatch(/refresh/);
+  });
+});

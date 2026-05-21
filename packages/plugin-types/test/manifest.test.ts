@@ -163,6 +163,69 @@ describe("PluginCapabilitiesDeclaration", () => {
       }),
     ).toThrow();
   });
+
+  // ─── connect capability ───────────────────────────────────────────
+
+  it("accepts a connect-only plugin", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      connect: {
+        providerLabel: "Google Workspace",
+        scopes: ["gmail.send", "calendar"],
+      },
+    });
+    expect(parsed.connect?.providerLabel).toBe("Google Workspace");
+    expect(parsed.connect?.scopes).toEqual(["gmail.send", "calendar"]);
+    expect(parsed.connect?.flow).toBe("oauth2-pkce");
+    expect(parsed.action).toBeUndefined();
+    expect(parsed.auth).toBeUndefined();
+  });
+
+  it("accepts a connect plugin that also contributes actions", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      action: { kinds: [{ kind: "send_gmail", description: "send" }] },
+      connect: {
+        providerLabel: "Google Workspace",
+        scopes: ["gmail.send"],
+      },
+    });
+    expect(parsed.action).toBeDefined();
+    expect(parsed.connect).toBeDefined();
+  });
+
+  it("requires connect.scopes to be non-empty", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        connect: { providerLabel: "X", scopes: [] },
+      }),
+    ).toThrow();
+  });
+
+  it("requires connect.providerLabel", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        connect: { providerLabel: "", scopes: ["s"] },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects unknown connect flow values", () => {
+    expect(() =>
+      PluginCapabilitiesDeclaration.parse({
+        connect: {
+          providerLabel: "X",
+          scopes: ["s"],
+          flow: "saml" as unknown as "oauth2-pkce",
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("connect declared without auth or action still satisfies the at-least-one-surface refine", () => {
+    const parsed = PluginCapabilitiesDeclaration.parse({
+      connect: { providerLabel: "X", scopes: ["s"] },
+    });
+    expect(parsed.connect).toBeDefined();
+  });
 });
 
 describe("PluginManifestEntry", () => {
