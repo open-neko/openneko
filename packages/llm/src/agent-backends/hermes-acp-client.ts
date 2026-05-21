@@ -1,9 +1,9 @@
 /**
  * Minimal JSON-RPC 2.0 client over a child process's stdio, scoped to the
  * subset of ACP (Agent Client Protocol) that Hermes' `acp` subcommand emits.
- * Frame schema captured from `hermes acp` v0.12.0 — notifications wrap their
- * payload under `params.update` (NOT `params` directly), and the discriminator
- * is `params.update.sessionUpdate`.
+ * Frame schema validated against `hermes acp` v2026.5.16 (v0.14.0) —
+ * notifications wrap their payload under `params.update` (NOT `params`
+ * directly), and the discriminator is `params.update.sessionUpdate`.
  */
 
 import type { ChildProcess } from "node:child_process";
