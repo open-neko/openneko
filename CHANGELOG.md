@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/open-neko/neko/compare/v1.11.4...v1.12.0) (2026-05-21)
+
+
+### Features
+
+* connect capability, install policy, /integrations, M6+M7+M8+M9+M10+M11 ([#42](https://github.com/open-neko/neko/issues/42)) ([a12124e](https://github.com/open-neko/neko/commit/a12124e253021769cb8dd5eb263273c65b476b3e))
+
 ## [1.11.4](https://github.com/open-neko/neko/compare/v1.11.3...v1.11.4) (2026-05-21)
 
 
