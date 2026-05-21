@@ -26,7 +26,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           GIT_REF: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 "$SSH_USER@$SSH_HOST" bash -se <<EOF
+          ssh -i ~/.ssh/id_ed25519 "$SSH_USER@$SSH_HOST" bash -se <<'EOF'
             set -euo pipefail
             cd /opt/neko
             git fetch origin main
@@ -34,6 +34,19 @@ jobs:
             export AX_SKIP_SKILL_INSTALL=1
             pnpm install --frozen-lockfile
             pnpm build
+
+            # Provision the isolated plugin install dir + seed package.json.
+            # Worker reads OPENNEKO_PLUGIN_INSTALL_DIR (set in the systemd
+            # unit) and uses this dir as the npm-install + node_modules-
+            # resolver root. Without this dir, `openneko install` would
+            # write into /opt/neko/node_modules which is pnpm-managed and
+            # crashes npm's Arborist (see commits referencing dockerproxy).
+            mkdir -p /opt/neko/.plugins
+            if [ ! -f /opt/neko/.plugins/package.json ]; then
+              printf '{\n  "name": "openneko-plugins",\n  "version": "0.0.0",\n  "private": true\n}\n' \
+                > /opt/neko/.plugins/package.json
+            fi
+
             set -a
             source .env
             set +a

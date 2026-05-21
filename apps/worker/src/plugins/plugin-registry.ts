@@ -23,6 +23,7 @@ import {
   type FSWatcher,
   existsSync,
   readFileSync,
+  statSync,
   watch as fsWatch,
 } from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
@@ -142,6 +143,15 @@ export class PluginRegistry {
   private skipped: Array<{ name: string; reason: string }> = [];
   private manifestWatcher: FSWatcher | null = null;
   private secretsWatcher: FSWatcher | null = null;
+  // Poll fallback: fs.watch misses file events that come from outside the
+  // process tree (e.g. a `docker exec` writing into a bind-mounted volume
+  // doesn't reliably propagate inotify to a long-lived container process,
+  // and on first-create the watcher hasn't been armed yet). A cheap stat
+  // every few seconds catches these cases. The watcher path stays as the
+  // fast path on supported FS-event setups.
+  private pollTimer: NodeJS.Timeout | null = null;
+  private lastManifestMtimeMs = 0;
+  private lastSecretsMtimeMs = 0;
   private refreshTimer: NodeJS.Timeout | null = null;
   private refreshing = false;
   private pendingRefresh = false;
@@ -165,6 +175,13 @@ export class PluginRegistry {
   }
 
   /** Stop watchers + destroy all VMs. Idempotent. */
+  private stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
@@ -172,6 +189,7 @@ export class PluginRegistry {
     this.secretsWatcher?.close();
     this.manifestWatcher = null;
     this.secretsWatcher = null;
+    this.stopPolling();
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = null;
     if (this.runtime) {
@@ -486,6 +504,24 @@ export class PluginRegistry {
         `[plugin-registry] could not watch secrets dir: ${err instanceof Error ? err.message : err}`,
       );
     }
+
+    // Poll fallback — fires the same scheduleRefresh path on mtime change.
+    // 3 s cadence is fine; plugin operations are infrequent and the
+    // debounce in scheduleRefresh coalesces with watcher hits.
+    this.lastManifestMtimeMs = mtimeOrZero(manifestPath);
+    this.lastSecretsMtimeMs = mtimeOrZero(secretsFile);
+    this.pollTimer = setInterval(() => {
+      if (this.stopped) return;
+      const m = mtimeOrZero(manifestPath);
+      const s = mtimeOrZero(secretsFile);
+      if (m !== this.lastManifestMtimeMs || s !== this.lastSecretsMtimeMs) {
+        this.lastManifestMtimeMs = m;
+        this.lastSecretsMtimeMs = s;
+        this.scheduleRefresh();
+      }
+    }, 3000);
+    // Don't keep the event loop alive just for the poll timer.
+    this.pollTimer.unref?.();
   }
 
   private scheduleRefresh(): void {
@@ -749,6 +785,17 @@ function defaultProviderLabel(packageName: string): string {
   const stripped = base.replace(/^plugin-/, "");
   if (!stripped) return packageName;
   return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
+/** stat.mtimeMs, or 0 if the file doesn't exist. The poll loop uses 0 as
+ *  "file is absent" — a transition from 0 → non-zero (file appeared) or
+ *  vice-versa (file removed) also triggers refresh. */
+function mtimeOrZero(filePath: string): number {
+  try {
+    return statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 function defaultResolveRunner(resolverRoot: string): (pkg: string) => string {

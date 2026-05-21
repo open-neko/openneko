@@ -19,10 +19,11 @@ import (
 func newInstallCmd() *cobra.Command {
 	var version string
 	var unverified bool
+	var skipHostCheck bool
 	cmd := &cobra.Command{
 		Use:   "install <name>[@<marketplace>]",
 		Short: "Install a plugin from a trusted marketplace",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
@@ -31,16 +32,22 @@ func newInstallCmd() *cobra.Command {
 			if spec == "" {
 				return WithExit(2, errors.New("install: package name required"))
 			}
+			errOut := cmd.ErrOrStderr()
 			h := host.Check()
-			if !h.Supported && !unverified {
+			if !h.Supported && !skipHostCheck {
+				// Used to be a hard exit. Softened to a warning because
+				// install is increasingly decoupled from run: operators
+				// stage plugin installs from one host (e.g. Mac) and the
+				// VMs actually execute on another (Linux+KVM container,
+				// or pnpm-dev on the same Mac). --skip-host-check passed
+				// = silence the warning entirely.
 				reason := h.Reason
 				if reason == "" {
 					reason = "(unknown reason)"
 				}
-				return WithExit(3, fmt.Errorf("host not supported: %s\nIf you understand and want to install anyway, re-run with --unverified.", reason))
+				fmt.Fprintf(errOut, "WARNING: host check: %s\n  Install will proceed. Plugin execution requires a host that can spawn microsandbox VMs (Linux with /dev/kvm, or macOS arm64 via pnpm-dev). Pass --skip-host-check to suppress this warning.\n", reason)
 			}
 			out := cmd.OutOrStdout()
-			errOut := cmd.ErrOrStderr()
 			if unverified {
 				fmt.Fprintln(errOut, "WARNING: --unverified bypasses every trusted marketplace. The plugin is not reviewed and its integrity hash is taken on trust from npm. Use only for plugin authoring or emergency hotfixes.")
 			}
@@ -93,6 +100,7 @@ func newInstallCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&version, "version", "", "Pin to a specific version (default: latest non-yanked)")
 	cmd.Flags().BoolVar(&unverified, "unverified", false, "Bypass trusted marketplaces and install directly from npm")
+	cmd.Flags().BoolVar(&skipHostCheck, "skip-host-check", false, "Silence the host-compatibility warning when installing on a host that can't execute plugin VMs (Mac+docker, Linux without KVM, etc.)")
 	return cmd
 }
 
