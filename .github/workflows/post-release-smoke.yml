@@ -1,0 +1,117 @@
+name: post-release smoke
+
+# Smoke-test the assembled stack against the multi-arch images that
+# release-binaries.yml just pushed. This replaces the per-main-push
+# `integration-supervisor` job in go.yml — that version tried to use
+# locally-built `:ci-smoke` tags and lost the race with compose's
+# default pull-from-registry policy (`manifest unknown` flakes).
+#
+# Triggered after release-binaries.yml succeeds. The release version
+# is taken from the just-published tag. If the stack fails to come up
+# against the new images, this workflow's failure is the operator-
+# visible signal: a release is bad and the homebrew tap should be
+# yanked (or release-please should not advance).
+
+on:
+  workflow_run:
+    workflows: ["openneko release binaries"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to smoke-test (e.g. v1.11.4). Defaults to :latest."
+        required: false
+        default: "latest"
+
+jobs:
+  smoke:
+    name: post-release supervisor smoke
+    runs-on: ubuntu-22.04
+    # Only run when release-binaries actually succeeded (workflow_run
+    # fires for failure too) OR when manually dispatched.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # For workflow_run, check out the SHA the release-binaries run
+          # was built from (so the openneko binary + compose match the
+          # images being tested).
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          set -euxo pipefail
+          # workflow_run carries head_branch/sha but not the release tag.
+          # Derive the tag from the head_sha via the GH API, falling back
+          # to `latest` for manual dispatches without a version input.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag=$(gh api "repos/${{ github.repository }}/releases" \
+            --jq '.[] | select(.target_commitish=="main") | .tag_name' \
+            | head -1)
+          if [ -z "$tag" ]; then
+            echo "no release tag found; defaulting to :latest"
+            tag="latest"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build openneko binary
+        working-directory: apps/openneko
+        run: go build -o /usr/local/bin/openneko ./cmd/openneko
+
+      # Sanity: confirm the three images this version pinned actually
+      # exist on the registry before invoking the supervisor. A missing
+      # image surfaces as a clear `manifest unknown` line here rather
+      # than a mid-pull `docker compose up` failure later.
+      - name: Verify image manifests exist
+        run: |
+          set -euxo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          for image in neko-web neko-worker neko-graphjin; do
+            ref="ghcr.io/open-neko/${image}:${tag}"
+            echo "checking ${ref}"
+            docker manifest inspect "${ref}" > /dev/null
+          done
+
+      - name: openneko start (detached) against published images
+        env:
+          OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euxo pipefail
+          openneko start --mode prod --detach
+
+      - name: openneko status (poll until healthy)
+        env:
+          OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euxo pipefail
+          for i in $(seq 1 60); do
+            if openneko status | grep -E "running|healthy"; then
+              echo "stack is up after ${i} polls"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "stack did not come up within 120s — final state:"
+          openneko status || true
+          openneko logs || true
+          exit 1
+
+      - name: openneko stop --volumes
+        if: always()
+        env:
+          OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
+        run: openneko stop --volumes || true
