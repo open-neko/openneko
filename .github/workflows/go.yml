@@ -66,68 +66,20 @@ jobs:
       - name: go test (integration tag)
         run: go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 
-  # Heavy: builds three full multi-stage images locally before invoking the
-  # supervisor. Gated to main-only — every PR run would burn ~10min of CI
-  # without catching much beyond what integration-migrator + the rc1
-  # rehearsal already cover. PRs that touch compose/Dockerfile still get
-  # tested via the unit + migrator jobs above; the smoke catches the rare
-  # "the assembled stack stops being healthy" drift on main.
-  integration-supervisor:
-    name: integration - supervisor smoke
-    runs-on: ubuntu-22.04
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache-dependency-path: apps/openneko/go.sum
-
-      - name: Build openneko binary
-        working-directory: apps/openneko
-        run: go build -o /usr/local/bin/openneko ./cmd/openneko
-
-      # Build local image-tagged copies of the published images. The Go
-      # binary's embedded compose references `image: ghcr.io/.../neko-*:vX`;
-      # we tag the locally-built variants with the same name so the
-      # supervisor can pull-skip them via the local docker engine cache.
-      - name: Build local image tags
-        run: |
-          set -euxo pipefail
-          export OPENNEKO_VERSION=ci-smoke
-          docker build -t "ghcr.io/open-neko/neko-web:${OPENNEKO_VERSION}" --target web .
-          docker build -t "ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION}" --target worker .
-          docker build -t "ghcr.io/open-neko/neko-graphjin:${OPENNEKO_VERSION}" --target neko-graphjin .
-
-      - name: openneko start (detached)
-        env:
-          OPENNEKO_VERSION: ci-smoke
-        run: |
-          set -euxo pipefail
-          openneko start --mode prod --detach
-
-      - name: openneko status (poll until healthy)
-        env:
-          OPENNEKO_VERSION: ci-smoke
-        run: |
-          set -euxo pipefail
-          for i in $(seq 1 60); do
-            if openneko status | grep -E "running|healthy"; then
-              echo "stack is up after ${i} polls"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "stack did not come up within 120s — final state:"
-          openneko status || true
-          openneko logs || true
-          exit 1
-
-      - name: openneko stop --volumes
-        if: always()
-        env:
-          OPENNEKO_VERSION: ci-smoke
-        run: openneko stop --volumes || true
+  # NOTE: integration-supervisor (smoke that builds three Dockerfile
+  # targets locally + runs `openneko start`) moved to
+  # .github/workflows/post-release-smoke.yml. Reasons:
+  #   - It only catches "the assembled stack is healthy" drift — which
+  #     only matters for operators installing via the published image
+  #     tags (Homebrew / release binaries). Per-merge runs against
+  #     locally-built `:ci-smoke` tags collide with compose's default
+  #     pull-from-registry policy and race-fail on `manifest unknown`.
+  #   - Running the smoke against the just-published multi-arch images
+  #     instead (workflow_run: release-binaries.yml on success) catches
+  #     the right regression at the right time, with no race.
+  #   - The Dockerfile/compose drift PRs would otherwise smoke at PR
+  #     time is still caught by `integration-migrator` (migrations) and
+  #     `pr-checks` (TS/JS).
 
   goreleaser-check:
     name: goreleaser check
