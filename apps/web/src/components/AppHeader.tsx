@@ -93,7 +93,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
             href={MARKETING_URL}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-2 select-none text-text no-underline transition-opacity duration-200 hover:opacity-80 self-start h-[41px]"
+            className="hidden sm:inline-flex items-center gap-2 select-none text-text no-underline transition-opacity duration-200 hover:opacity-80 self-start h-[41px]"
             aria-label="OpenNeko — open marketing site in a new tab"
           >
             <img className="w-6 h-6 object-contain block flex-none" src="/cat.png" alt="" width={24} height={24} />
