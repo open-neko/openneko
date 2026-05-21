@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/open-neko/neko/compare/v1.10.0...v1.11.0) (2026-05-21)
+
+
+### Features
+
+* **plugins:** poll-fallback watcher + host-check warn + neko-vm plugin dir ([a5a8ffa](https://github.com/open-neko/neko/commit/a5a8ffab694fbd83248f49b49f1a397f01038091))
+
 ## [1.10.0](https://github.com/open-neko/neko/compare/v1.9.0...v1.10.0) (2026-05-20)
 
 
