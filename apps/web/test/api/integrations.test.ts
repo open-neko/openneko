@@ -12,6 +12,7 @@ import {
   expect,
   it,
   vi,
+  type MockInstance,
 } from "vitest";
 import { callRoute } from "../_helpers/route";
 
@@ -24,7 +25,10 @@ vi.mock("@/lib/auth", async () => {
   return { ...actual, getCurrentUser: mockGetCurrentUser };
 });
 
-let fetchMock: ReturnType<typeof vi.spyOn>;
+// `MockInstance` (no generic args) keeps the type loose enough to
+// hold the spy on `globalThis.fetch` (overloaded signature) without
+// CI's stricter TS resolution rejecting the assignment.
+let fetchMock: MockInstance;
 
 beforeAll(() => {
   process.env.OPENNEKO_SESSION_SECRET = process.env.OPENNEKO_SESSION_SECRET ?? "a".repeat(48);
