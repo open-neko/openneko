@@ -14,6 +14,9 @@
 set -euo pipefail
 
 GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.18.18}"
+# Pin Hermes to the same ref baked into the Dockerfile so local-dev installs
+# match what ships in the container image. v2026.5.16 / v0.14.0.
+HERMES_AGENT_REF="${HERMES_AGENT_REF:-a91a57fa5a13d516c38b07a141a9ce8a3daabeb0}"
 
 SKIP_GRAPHJIN=false
 SKIP_CLAUDE=false
@@ -78,10 +81,10 @@ fi
 
 # ─── hermes (Nous Research) ────────────────────────────────────────────
 # Hermes is a Python tool installed via uv. Needs Python 3.11+ + git.
-# We install uv first if missing, then run their installer with --skip-setup
-# so the interactive wizard doesn't block scripted installs.
+# Install via `uv tool install` pinned to HERMES_AGENT_REF, matching the
+# Dockerfile so local-dev and container builds run the same version.
 if ! $SKIP_HERMES && ! have hermes; then
-  log "installing hermes (Nous Research)"
+  log "installing hermes (Nous Research) @ ${HERMES_AGENT_REF:0:7}"
   if [ "$os" = linux ] && have apt-get; then
     sudo apt-get update -qq
     sudo apt-get install -y -qq python3 python3-venv python3-dev libffi-dev git build-essential ripgrep ffmpeg
@@ -94,8 +97,8 @@ if ! $SKIP_HERMES && ! have hermes; then
       curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh -s -- --no-modify-path
     fi
   fi
-  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
-    | bash -s -- --skip-setup
+  uv tool install --python 3.11 \
+    "hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git@${HERMES_AGENT_REF}"
 fi
 
 log "done. installed:"
