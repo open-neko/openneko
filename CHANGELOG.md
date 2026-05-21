@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2](https://github.com/open-neko/neko/compare/v1.11.1...v1.11.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **header:** hide brand chip on mobile so it stops covering the menu ([cf95873](https://github.com/open-neko/neko/commit/cf958739f884030b825aa90cc3fa1c418e3b7502))
+
 ## [1.11.1](https://github.com/open-neko/neko/compare/v1.11.0...v1.11.1) (2026-05-21)
 
 
