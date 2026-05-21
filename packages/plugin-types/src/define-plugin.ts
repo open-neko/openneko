@@ -9,6 +9,14 @@ import {
   CompleteAuthParams,
   CompleteAuthResult,
 } from "./auth.js";
+import {
+  BeginConnectParams,
+  BeginConnectResult,
+  CompleteConnectParams,
+  CompleteConnectResult,
+  RefreshConnectParams,
+  RefreshConnectResult,
+} from "./connect.js";
 
 export type PluginActionHandler = (
   request: PluginActionRequest,
@@ -26,6 +34,18 @@ export type CompleteAuthHandler = (
   params: CompleteAuthParams,
 ) => Promise<CompleteAuthResult> | CompleteAuthResult;
 
+export type BeginConnectHandler = (
+  params: BeginConnectParams,
+) => Promise<BeginConnectResult> | BeginConnectResult;
+
+export type CompleteConnectHandler = (
+  params: CompleteConnectParams,
+) => Promise<CompleteConnectResult> | CompleteConnectResult;
+
+export type RefreshConnectHandler = (
+  params: RefreshConnectParams,
+) => Promise<RefreshConnectResult> | RefreshConnectResult;
+
 /** Implementation shape for the action capability — kinds with handlers. */
 export interface ActionCapabilityImpl {
   kinds: PluginActionDefinition[];
@@ -39,6 +59,23 @@ export interface AuthCapabilityImpl {
 }
 
 /**
+ * Implementation shape for the connect capability — per-operator OAuth.
+ *
+ * `refresh` is optional: connectors whose tokens never need rotation
+ * (rare — most OAuth providers expire access tokens after an hour) can
+ * omit it. When omitted, the worker raises a clear error if any action
+ * invocation looks like it needs a refresh.
+ */
+export interface ConnectCapabilityImpl {
+  providerLabel: string;
+  scopes: string[];
+  flow?: "oauth2-pkce";
+  begin: BeginConnectHandler;
+  complete: CompleteConnectHandler;
+  refresh?: RefreshConnectHandler;
+}
+
+/**
  * What the plugin author returns from definePlugin. Mirror of
  * PluginCapabilitiesDeclaration but each present surface carries
  * handlers in addition to its declared metadata.
@@ -46,6 +83,7 @@ export interface AuthCapabilityImpl {
 export interface PluginCapabilitiesImpl {
   action?: ActionCapabilityImpl;
   auth?: AuthCapabilityImpl;
+  connect?: ConnectCapabilityImpl;
 }
 
 export interface PluginDefinition {
@@ -86,9 +124,9 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
     throw new Error("definePlugin: version is required");
   }
   const caps = definition.capabilities;
-  if (!caps || (caps.action == null && caps.auth == null)) {
+  if (!caps || (caps.action == null && caps.auth == null && caps.connect == null)) {
     throw new Error(
-      "definePlugin: capabilities must declare at least one surface (action, auth)",
+      "definePlugin: capabilities must declare at least one surface (action, auth, connect)",
     );
   }
   if (caps.action) {
@@ -112,6 +150,29 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
     if (typeof caps.auth.complete !== "function") {
       throw new Error(
         "definePlugin: capabilities.auth.complete must be a function",
+      );
+    }
+  }
+  if (caps.connect) {
+    if (!caps.connect.providerLabel) {
+      throw new Error("definePlugin: capabilities.connect.providerLabel is required");
+    }
+    if (!Array.isArray(caps.connect.scopes) || caps.connect.scopes.length === 0) {
+      throw new Error(
+        "definePlugin: capabilities.connect.scopes must list at least one scope",
+      );
+    }
+    if (typeof caps.connect.begin !== "function") {
+      throw new Error("definePlugin: capabilities.connect.begin must be a function");
+    }
+    if (typeof caps.connect.complete !== "function") {
+      throw new Error(
+        "definePlugin: capabilities.connect.complete must be a function",
+      );
+    }
+    if (caps.connect.refresh != null && typeof caps.connect.refresh !== "function") {
+      throw new Error(
+        "definePlugin: capabilities.connect.refresh must be a function when present",
       );
     }
   }

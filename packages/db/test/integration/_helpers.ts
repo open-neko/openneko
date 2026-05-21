@@ -75,7 +75,7 @@ export async function seedDataSource(
 }
 
 export type ProviderSeed = {
-  scope: "primary" | "research" | "agent";
+  scope: "primary" | "research" | "agent" | "install-policy";
   provider: string;
   model?: string | null;
   enabled?: boolean;
@@ -97,7 +97,7 @@ export async function seedProvider(orgId: string, seed: ProviderSeed): Promise<v
 
 export async function clearProvider(
   orgId: string,
-  scope: "primary" | "research" | "agent",
+  scope: "primary" | "research" | "agent" | "install-policy",
 ): Promise<void> {
   await db()
     .delete(llm_provider_config)

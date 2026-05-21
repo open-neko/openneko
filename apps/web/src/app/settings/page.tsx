@@ -18,6 +18,7 @@ import {
   getAgentBackendSettings,
   getAgentSettingsPayload,
 } from "@/lib/agent-backend-settings";
+import { getInstallPolicy } from "@/lib/install-policy-settings";
 import SetupWizard from "./SetupWizard";
 
 /**
@@ -55,12 +56,26 @@ export default async function SettingsPage() {
   }
 
   // ── Ongoing-edits mode: card index linking to focused sub-pages. ──
-  const [dataReady, primaryReady, researchStatus, agent] = await Promise.all([
+  const [dataReady, primaryReady, researchStatus, agent, installPolicy] = await Promise.all([
     hasDataSourceSetup(orgId),
     hasPrimaryProviderSetup(orgId),
     resolveResearchStatus(orgId),
     getAgentBackendSettings(orgId),
+    getInstallPolicy(orgId),
   ]);
+
+  const wideningSwitches = [
+    installPolicy.allowUnverified,
+    installPolicy.allowGitUrlInstalls,
+    installPolicy.allowSandboxedSkillEscape,
+  ].filter(Boolean).length;
+  const communityMarketplaces = installPolicy.allowedMarketplaces.length - 1;
+  const securityStatus =
+    wideningSwitches === 0 && communityMarketplaces <= 0
+      ? "Secure defaults"
+      : `${wideningSwitches} widening switch${wideningSwitches === 1 ? "" : "es"}${
+          communityMarketplaces > 0 ? `, +${communityMarketplaces} marketplace${communityMarketplaces === 1 ? "" : "s"}` : ""
+        }`;
 
   const cards = [
     {
@@ -92,6 +107,13 @@ export default async function SettingsPage() {
       title: "Rules",
       copy: "Decide what OpenNeko can act on its own, what queues for review, and what's never allowed. Create and edit via Ask.",
       status: "Editable via Ask",
+      statusOk: true,
+    },
+    {
+      href: "/settings/security",
+      title: "Security",
+      copy: "Trust floor for plugin and skill installs — which marketplaces are allowed, whether unverified or community installs are permitted.",
+      status: securityStatus,
       statusOk: true,
     },
   ];

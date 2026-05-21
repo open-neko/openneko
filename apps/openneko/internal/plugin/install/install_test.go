@@ -263,6 +263,101 @@ func TestRunUnverified(t *testing.T) {
 	}
 }
 
+func TestRunUnverifiedCopiesBundledSkill(t *testing.T) {
+	dir := t.TempDir()
+	skillsDir := t.TempDir()
+	pkgDir := filepath.Join(dir, "node_modules", "plug")
+	if err := os.MkdirAll(filepath.Join(pkgDir, "skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := map[string]any{
+		"version":    "0.1.0",
+		"_integrity": "sha512-localpnpmtest",
+		"openneko": map[string]any{
+			"runner": "./dist/run.js",
+			"skill":  "./skill",
+			"permissions": map[string]any{
+				"network": []string{"api.x"},
+				"env":     []any{},
+			},
+			"capabilities": map[string]any{
+				"action": map[string]any{
+					"kinds": []map[string]any{{"kind": "x", "description": "x"}},
+				},
+			},
+		},
+	}
+	raw, _ := json.Marshal(pkg)
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skillMd := "---\nname: vendor-x\ndescription: Operate against Vendor X.\n---\nbody"
+	if err := os.WriteFile(filepath.Join(pkgDir, "skill", "SKILL.md"), []byte(skillMd), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Run(context.Background(), Options{
+		RepoRoot:         dir,
+		Spec:             "plug",
+		Unverified:       true,
+		SkillsInstallDir: skillsDir,
+		NpmRunner: func(_ context.Context, _ []string, _ string) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDest := filepath.Join(skillsDir, "vendor-x")
+	if res.SkillInstalledAt != wantDest {
+		t.Fatalf("SkillInstalledAt: got %q want %q", res.SkillInstalledAt, wantDest)
+	}
+	body, err := os.ReadFile(filepath.Join(wantDest, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("could not read copied SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(body), "name: vendor-x") {
+		t.Fatalf("SKILL.md content not as expected: %s", body)
+	}
+}
+
+func TestRunUnverifiedNoSkillFieldLeavesSkillInstalledAtEmpty(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "node_modules", "plug")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := map[string]any{
+		"version":    "0.1.0",
+		"_integrity": "sha512-localpnpmtest",
+		"openneko": map[string]any{
+			"capabilities": map[string]any{
+				"action": map[string]any{
+					"kinds": []map[string]any{{"kind": "x", "description": "x"}},
+				},
+			},
+		},
+	}
+	raw, _ := json.Marshal(pkg)
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Run(context.Background(), Options{
+		RepoRoot:   dir,
+		Spec:       "plug",
+		Unverified: true,
+		NpmRunner: func(_ context.Context, _ []string, _ string) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SkillInstalledAt != "" {
+		t.Fatalf("expected empty SkillInstalledAt, got %q", res.SkillInstalledAt)
+	}
+}
+
 func TestRunUnverifiedFallbackIntegrity(t *testing.T) {
 	dir := t.TempDir()
 	pkgDir := filepath.Join(dir, "node_modules", "plug")

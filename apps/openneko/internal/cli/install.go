@@ -12,6 +12,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/host"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/install"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/marketplace"
+	"github.com/open-neko/neko/apps/openneko/internal/plugin/policy"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/store"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 )
@@ -21,8 +22,8 @@ func newInstallCmd() *cobra.Command {
 	var unverified bool
 	var skipHostCheck bool
 	cmd := &cobra.Command{
-		Use:   "install <name>[@<marketplace>]",
-		Short: "Install a plugin from a trusted marketplace",
+		Use:   "install <name>[@<marketplace>] | <git-url>[#<sub-path>]",
+		Short: "Install a plugin from a trusted marketplace or a community skill from a git URL",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
@@ -33,6 +34,39 @@ func newInstallCmd() *cobra.Command {
 				return WithExit(2, errors.New("install: package name required"))
 			}
 			errOut := cmd.ErrOrStderr()
+			out := cmd.OutOrStdout()
+
+			// Fetch the deployment-wide install policy. Privileged install
+			// paths (--unverified, git-URL skills) need an admin to have
+			// opted in via /settings/security. If the worker is
+			// unreachable, the fetch falls back to the secure default —
+			// operators can't turn off the policy by killing the worker.
+			pol, source, fetchErr := policy.Fetch(context.Background())
+			if fetchErr != nil {
+				fmt.Fprintf(errOut, "WARNING: install policy check failed (%s) — defaulting to most-restrictive\n", fetchErr.Error())
+			}
+
+			if isGitURLSpec(spec) {
+				if !pol.Allows(policy.SourceGitURL) {
+					hint := "ask an admin to enable Git-URL skill installs at /settings/security"
+					if source == "unreachable" {
+						hint = "start the worker so the policy can be read, or ask an admin to enable Git-URL skill installs at /settings/security"
+					}
+					return WithExit(2, fmt.Errorf("install: Git-URL skill installs are disabled by deployment policy. %s", hint))
+				}
+				fmt.Fprintln(errOut, "Installing community skill from Git URL. The SKILL.md will be loaded as-is from the upstream repo; there is no integrity check beyond the agentskills.io spec validation.")
+				res, err := install.RunGitSkill(context.Background(), install.GitSkillOptions{Spec: spec})
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "installed skill %q (git-url, source: %s", res.SkillName, res.SourceURL)
+				if res.SourceSubPath != "" {
+					fmt.Fprintf(out, "#%s", res.SourceSubPath)
+				}
+				fmt.Fprintf(out, ")\n  installed at: %s\n", res.SkillInstalledAt)
+				return nil
+			}
+
 			h := host.Check()
 			if !h.Supported && !skipHostCheck {
 				// Used to be a hard exit. Softened to a warning because
@@ -47,7 +81,14 @@ func newInstallCmd() *cobra.Command {
 				}
 				fmt.Fprintf(errOut, "WARNING: host check: %s\n  Install will proceed. Plugin execution requires a host that can spawn microsandbox VMs (Linux with /dev/kvm, or macOS arm64 via pnpm-dev). Pass --skip-host-check to suppress this warning.\n", reason)
 			}
-			out := cmd.OutOrStdout()
+
+			if unverified && !pol.Allows(policy.SourceUnverified) {
+				hint := "ask an admin to enable it at /settings/security"
+				if source == "unreachable" {
+					hint = "start the worker so the policy can be read, or ask an admin to enable --unverified at /settings/security"
+				}
+				return WithExit(2, fmt.Errorf("install: --unverified is disabled by deployment policy. %s", hint))
+			}
 			if unverified {
 				fmt.Fprintln(errOut, "WARNING: --unverified bypasses every trusted marketplace. The plugin is not reviewed and its integrity hash is taken on trust from npm. Use only for plugin authoring or emergency hotfixes.")
 			}
@@ -95,6 +136,9 @@ func newInstallCmd() *cobra.Command {
 			if len(res.EnvAlreadySet) > 0 {
 				fmt.Fprintf(out, "  env already set: %s\n", strings.Join(res.EnvAlreadySet, ", "))
 			}
+			if res.SkillInstalledAt != "" {
+				fmt.Fprintf(out, "  bundled skill installed at: %s\n", res.SkillInstalledAt)
+			}
 			return nil
 		},
 	}
@@ -102,6 +146,15 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&unverified, "unverified", false, "Bypass trusted marketplaces and install directly from npm")
 	cmd.Flags().BoolVar(&skipHostCheck, "skip-host-check", false, "Silence the host-compatibility warning when installing on a host that can't execute plugin VMs (Mac+docker, Linux without KVM, etc.)")
 	return cmd
+}
+
+// isGitURLSpec returns true when the install spec looks like a clone
+// URL rather than a marketplace/npm package name. We accept only
+// https against the same forge hosts the marketplace schema does.
+func isGitURLSpec(spec string) bool {
+	return strings.HasPrefix(spec, "https://github.com/") ||
+		strings.HasPrefix(spec, "https://gitlab.com/") ||
+		strings.HasPrefix(spec, "https://codeberg.org/")
 }
 
 func defaultEnvPrompt() install.EnvPromptFunc {

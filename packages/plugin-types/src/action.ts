@@ -13,10 +13,18 @@ export const ActionKindName = z
  * worker ↔ plugin RPC boundary. The worker's plugin loader translates
  * its internal record into this shape before dispatch, and the plugin
  * returns a PluginActionOutcome that the loader translates back.
+ *
+ * `actorId` is the operator on whose behalf this action is being run.
+ * For connect-capable plugins, the worker uses it to look up the
+ * operator's stored credential and inject it as
+ * OPENNEKO_CONNECTOR_CREDENTIAL_TOKENS into the action's env. Absent
+ * for non-operator-scoped actions (e.g. webhook deliveries, scheduled
+ * cron sweeps).
  */
 export const PluginActionRequest = z.object({
   id: z.string(),
   orgId: z.string(),
+  actorId: z.string().nullable().optional(),
   scope: z.string(),
   kind: z.string(),
   target: z.string().nullable(),

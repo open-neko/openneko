@@ -192,6 +192,33 @@ const server = createServer(
       getRegisteredActionDescriptors: () =>
         pluginRegistry?.getRegisteredActionDescriptors() ?? [],
     },
+    installPolicy: {
+      getInstallPolicy: async () => {
+        const { getInstallPolicyForOrg } = await import("@neko/db");
+        return getInstallPolicyForOrg(ADMIN_ORG_ID);
+      },
+    },
+    connect: {
+      getConnectProviders: () => pluginRegistry?.getConnectProviders() ?? [],
+      getOperatorConnectStatus: (operatorId) =>
+        pluginRegistry?.getOperatorConnectStatus(operatorId) ?? [],
+      beginConnect: (pluginName, params) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return pluginRegistry.beginConnect(pluginName, params);
+      },
+      completeConnect: (pluginName, params) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return pluginRegistry.completeConnect(pluginName, params);
+      },
+      refreshConnect: (pluginName, operatorId) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return pluginRegistry.refreshConnect(pluginName, operatorId);
+      },
+      disconnect: (pluginName, operatorId) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return pluginRegistry.disconnect(pluginName, operatorId);
+      },
+    },
   }),
 );
 
@@ -218,6 +245,10 @@ pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
   pluginInstallDir: process.env.OPENNEKO_PLUGIN_INSTALL_DIR || undefined,
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
+  loadInstallPolicy: async () => {
+    const { getInstallPolicyForOrg } = await import("@neko/db");
+    return getInstallPolicyForOrg(ADMIN_ORG_ID);
+  },
   onManifestRefresh: async (entries) => {
     const seeds: PluginActionSeed[] = [];
     for (const entry of entries) {

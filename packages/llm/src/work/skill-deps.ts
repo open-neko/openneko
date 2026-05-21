@@ -57,6 +57,76 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     apt: [],
     brew: [],
   },
+  // ─── Tier-A finance skills (Hermes-sourced, Apache-2.0) ────────────
+  // All five model skills pair with excel-author and use openpyxl — same
+  // dep set as the generic xlsx builtin, so no new pip/apt requirements
+  // beyond what's already baked.
+  "excel-author": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "pptx-author": {
+    python: ["pptx", "PIL"],
+    pip: ["python-pptx", "Pillow"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "3-statement-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "dcf-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "lbo-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "comps-analysis": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "merger-model": {
+    python: ["openpyxl"],
+    pip: ["openpyxl"],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  // ─── Tier-A devops procedural-knowledge skills ─────────────────────
+  // Both are pure procedural prompts — no Python imports beyond stdlib,
+  // no binaries beyond the worker's shell tools.
+  watchers: {
+    python: [],
+    pip: [],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
+  "webhook-subscriptions": {
+    python: [],
+    pip: [],
+    binaries: [],
+    apt: [],
+    brew: [],
+  },
 };
 
 // Union of all pip / apt / brew deps across the manifest. Used by the
@@ -85,5 +155,31 @@ export function aggregateSkillDeps(): {
     apt: [...apt],
     brewFormulas: [...brewFormulas],
     brewCasks: [...brewCasks],
+  };
+}
+
+/**
+ * Synthesise a SkillDeps record from raw SKILL.md frontmatter — used
+ * by the doctor for community skills installed under ~/.openneko/
+ * skills/ that don't have a hand-maintained KNOWN_SKILL_DEPS entry.
+ *
+ * Only the binary-presence check matters here: we can't reliably map
+ * a binary name (e.g. `blogwatcher-cli`) to an apt/brew package name,
+ * so we record the binary for the OK/MISSING report and leave apt/brew
+ * empty (operators install community-skill binaries manually).
+ *
+ * Python imports declared in skill prose aren't parsed — too varied
+ * across community skills to extract reliably.
+ */
+export function synthesizeSkillDeps(prereq: {
+  commands?: string[];
+  envVars?: string[];
+}): SkillDeps {
+  return {
+    python: [],
+    pip: [],
+    binaries: [...(prereq.commands ?? [])],
+    apt: [],
+    brew: [],
   };
 }

@@ -378,4 +378,214 @@ describe("runInstall", () => {
       }),
     ).rejects.toThrow(/multiple trusted marketplaces/);
   });
+
+  // ─── Install receipt: installSource + installedAt + policySnapshot ─────
+
+  it("marketplace install records installSource='marketplace', installedAt, and policySnapshot", async () => {
+    const plugin = {
+      name: "@open-neko/plugin-good",
+      title: "Good",
+      description: "...",
+      source: "https://github.com/open-neko/plugins",
+      versions: [actionVersion({ kinds: [{ kind: "x", description: "x" }] })],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    const before = Date.now();
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@open-neko/plugin-good",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+      policySnapshot: {
+        allowUnverified: false,
+        allowGitUrlInstalls: false,
+        allowSandboxedSkillEscape: false,
+        allowedMarketplaces: [OFFICIAL_MARKETPLACE_URL],
+      },
+    });
+    const after = Date.now();
+    expect(result.source).toBe("marketplace");
+    expect(result.installedAt).toBeTruthy();
+    const ts = Date.parse(result.installedAt);
+    expect(ts).toBeGreaterThanOrEqual(before);
+    expect(ts).toBeLessThanOrEqual(after);
+
+    const written = JSON.parse(
+      await readFile(path.join(repoDir, PLUGIN_MANIFEST_FILE), "utf8"),
+    );
+    const entry = written.plugins[0];
+    expect(entry.installSource).toBe("marketplace");
+    expect(entry.installedAt).toBe(result.installedAt);
+    expect(entry.policySnapshot).toEqual({
+      allowUnverified: false,
+      allowGitUrlInstalls: false,
+      allowSandboxedSkillEscape: false,
+      allowedMarketplaces: [OFFICIAL_MARKETPLACE_URL],
+    });
+  });
+
+  it("unverified install records installSource='unverified' on the manifest entry", async () => {
+    // Stub the npm install + the package.json read by writing what the
+    // post-install path expects to find under node_modules.
+    const pkgRoot = path.join(repoDir, "node_modules", "@x", "y");
+    await import("node:fs/promises").then((fs) =>
+      fs.mkdir(pkgRoot, { recursive: true }),
+    );
+    await writeFile(
+      path.join(pkgRoot, "package.json"),
+      JSON.stringify({
+        version: "0.2.0",
+        _integrity: "sha512-localpnpmtest",
+        openneko: {
+          permissions: { network: ["acme.com"], env: [] },
+          capabilities: { action: { kinds: [{ kind: "x", description: "x" }] } },
+        },
+      }),
+      "utf8",
+    );
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@x/y",
+      unverified: true,
+      trustedMarketplaces: [],
+      secretsConfigDir: configDir,
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+      policySnapshot: {
+        allowUnverified: true, // operator opted in
+        allowGitUrlInstalls: false,
+        allowSandboxedSkillEscape: false,
+        allowedMarketplaces: [OFFICIAL_MARKETPLACE_URL],
+      },
+    });
+    expect(result.source).toBe("unverified");
+    const written = JSON.parse(
+      await readFile(path.join(repoDir, PLUGIN_MANIFEST_FILE), "utf8"),
+    );
+    const entry = written.plugins[0];
+    expect(entry.installSource).toBe("unverified");
+    expect(entry.policySnapshot.allowUnverified).toBe(true);
+  });
+
+  it("copies a bundled skill folder under skillsInstallDir when openneko.skill is declared", async () => {
+    // The CLI runs the npm install first, which leaves the package on
+    // disk under node_modules/<name>/. Stub that by writing the
+    // expected layout BEFORE runInstall and using a no-op npmRunner.
+    const skillsDir = await import("node:fs/promises").then((fs) =>
+      fs.mkdtemp(path.join(tmpdir(), "pi-skills-")),
+    );
+    const pkgRoot = path.join(repoDir, "node_modules", "@vendor", "connector-x");
+    await import("node:fs/promises").then((fs) =>
+      fs.mkdir(pkgRoot, { recursive: true }),
+    );
+    await writeFile(
+      path.join(pkgRoot, "package.json"),
+      JSON.stringify({
+        version: "0.1.0",
+        _integrity: "sha512-skillpkgtest",
+        openneko: {
+          runner: "./dist/run.js",
+          skill: "./skill",
+          permissions: { network: ["api.example.com"], env: [] },
+          capabilities: {
+            action: { kinds: [{ kind: "do_x", description: "x" }] },
+          },
+        },
+      }),
+      "utf8",
+    );
+    await import("node:fs/promises").then((fs) =>
+      fs.mkdir(path.join(pkgRoot, "skill"), { recursive: true }),
+    );
+    await writeFile(
+      path.join(pkgRoot, "skill", "SKILL.md"),
+      `---\nname: vendor-x\ndescription: Operate against Vendor X.\n---\nbody`,
+      "utf8",
+    );
+
+    const plugin = {
+      name: "@vendor/connector-x",
+      title: "Connector X",
+      description: "...",
+      source: "https://github.com/vendor/plugins",
+      versions: [actionVersion({ kinds: [{ kind: "do_x", description: "x" }] })],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@vendor/connector-x",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {
+        // No-op — the test already wrote the package's layout above.
+      },
+      envPrompt: async () => "",
+      skillsInstallDir: skillsDir,
+    });
+
+    expect(result.skillInstalledAt).toBeTruthy();
+    expect(result.skillInstalledAt).toBe(path.join(skillsDir, "vendor-x"));
+    const skillCopy = path.join(skillsDir, "vendor-x", "SKILL.md");
+    const body = await readFile(skillCopy, "utf8");
+    expect(body).toContain("name: vendor-x");
+  });
+
+  it("does not error when the package declares no skill half", async () => {
+    const plugin = {
+      name: "@open-neko/plugin-plain",
+      title: "Plain",
+      description: "...",
+      source: "https://github.com/open-neko/plugins",
+      versions: [actionVersion({ kinds: [{ kind: "x", description: "x" }] })],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@open-neko/plugin-plain",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+    });
+    expect(result.skillInstalledAt).toBeUndefined();
+  });
+
+  it("install without policySnapshot records null (pre-feature compat)", async () => {
+    const plugin = {
+      name: "@open-neko/plugin-legacy",
+      title: "Legacy",
+      description: "...",
+      source: "https://github.com/open-neko/plugins",
+      versions: [actionVersion({ kinds: [{ kind: "x", description: "x" }] })],
+    };
+    const fixtures = new Map([
+      [OFFICIAL_MARKETPLACE_URL, marketplaceWith([plugin])],
+    ]);
+    const result = await runInstall({
+      repoRoot: repoDir,
+      spec: "@open-neko/plugin-legacy",
+      trustedMarketplaces: [officialMarketplace],
+      secretsConfigDir: configDir,
+      marketplaceClient: fakeClient(fixtures),
+      npmRunner: async () => {},
+      envPrompt: async () => "",
+      // no policySnapshot
+    });
+    expect(result.installedAt).toBeTruthy();
+    const written = JSON.parse(
+      await readFile(path.join(repoDir, PLUGIN_MANIFEST_FILE), "utf8"),
+    );
+    expect(written.plugins[0].policySnapshot).toBeNull();
+  });
 });

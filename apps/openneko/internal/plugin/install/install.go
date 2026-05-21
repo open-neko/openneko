@@ -45,6 +45,10 @@ type Options struct {
 	// plugins to /var/lib/openneko/plugins/ to avoid clashing with the
 	// pre-existing pnpm-managed workspace at /app.
 	InstallDir string
+	// SkillsInstallDir overrides where bundled skill halves are copied
+	// (declared via package.json's openneko.skill). Default ~/.openneko/
+	// skills/. The worker's skill-doctor (M8) walks this dir.
+	SkillsInstallDir string
 }
 
 // installDir resolves the directory used for npm install + node_modules
@@ -68,6 +72,10 @@ type Result struct {
 	Source        string // "marketplace" | "unverified"
 	EnvSaved      []string
 	EnvAlreadySet []string
+	// SkillInstalledAt is the absolute path under SkillsInstallDir where
+	// the package's bundled skill half landed, or empty when the package
+	// declared no skill.
+	SkillInstalledAt string
 }
 
 type ParsedSpec struct {
@@ -195,15 +203,21 @@ func runMarketplace(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	skillInstalledAt, err := copyBundledSkill(parsed.Name, installDir(opts), opts.SkillsInstallDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Result{
-		Name:          parsed.Name,
-		Version:       version.Version,
-		Integrity:     version.Integrity,
-		Network:       entry.Permissions.Network,
-		Marketplace:   chosen.name,
-		Source:        "marketplace",
-		EnvSaved:      envSaved,
-		EnvAlreadySet: envAlreadySet,
+		Name:             parsed.Name,
+		Version:          version.Version,
+		Integrity:        version.Integrity,
+		Network:          entry.Permissions.Network,
+		Marketplace:      chosen.name,
+		Source:           "marketplace",
+		EnvSaved:         envSaved,
+		EnvAlreadySet:    envAlreadySet,
+		SkillInstalledAt: skillInstalledAt,
 	}, nil
 }
 
@@ -309,13 +323,132 @@ func runUnverified(ctx context.Context, opts Options) (*Result, error) {
 	if err := manifest.Write(opts.RepoRoot, manifest.Upsert(*m, entry)); err != nil {
 		return nil, err
 	}
+	skillInstalledAt, err := copyBundledSkill(parsed.Name, installDir(opts), opts.SkillsInstallDir)
+	if err != nil {
+		return nil, err
+	}
 	return &Result{
-		Name:      parsed.Name,
-		Version:   entry.Version,
-		Integrity: entry.Integrity,
-		Network:   entry.Permissions.Network,
-		Source:    "unverified",
+		Name:             parsed.Name,
+		Version:          entry.Version,
+		Integrity:        entry.Integrity,
+		Network:          entry.Permissions.Network,
+		Source:           "unverified",
+		SkillInstalledAt: skillInstalledAt,
 	}, nil
+}
+
+// copyBundledSkill is the Go mirror of plugin-install/run-install.ts's
+// copyBundledSkill. After npm install completes, look for an
+// openneko.skill folder declared in the installed package's
+// package.json; copy it under the operator's ~/.openneko/skills/
+// directory keyed by the skill's frontmatter name. Returns the
+// destination path on success, empty string when the package declared
+// no skill, or an error on filesystem failure.
+func copyBundledSkill(pluginName, installRoot, skillsInstallDir string) (string, error) {
+	meta, err := readPackageMeta(pluginName, installRoot)
+	if err != nil {
+		// readPackageMeta only errors when package.json is unreadable.
+		// For --unverified that already errored upstream; for marketplace
+		// installs the lack of package.json is a separate bug. Treat as
+		// "no skill to copy" rather than failing.
+		return "", nil
+	}
+	if meta.Openneko == nil || meta.Openneko.Skill == "" {
+		return "", nil
+	}
+	pkgRoot := filepath.Join(installRoot, "node_modules", pluginName)
+	skillSrc := filepath.Join(pkgRoot, meta.Openneko.Skill)
+	if info, err := os.Stat(skillSrc); err != nil || !info.IsDir() {
+		// Declared but missing on disk — skip silently.
+		return "", nil
+	}
+
+	skillName := unscopedName(pluginName)
+	skillMd := filepath.Join(skillSrc, "SKILL.md")
+	if frontmatterName, err := readSkillFrontmatterName(skillMd); err == nil && frontmatterName != "" {
+		skillName = frontmatterName
+	}
+
+	dest := filepath.Join(resolveSkillsInstallDir(skillsInstallDir), skillName)
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return "", err
+	}
+	// Remove any prior copy so re-installs reflect upstream changes.
+	_ = os.RemoveAll(dest)
+	if err := copyDir(skillSrc, dest); err != nil {
+		return "", fmt.Errorf("copy skill: %w", err)
+	}
+	return dest, nil
+}
+
+func unscopedName(pkg string) string {
+	if i := strings.LastIndex(pkg, "/"); i >= 0 {
+		return pkg[i+1:]
+	}
+	return pkg
+}
+
+func resolveSkillsInstallDir(override string) string {
+	if override != "" {
+		return override
+	}
+	if v := os.Getenv("OPENNEKO_SKILLS_DIR"); v != "" {
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = os.TempDir()
+	}
+	return filepath.Join(home, ".openneko", "skills")
+}
+
+// readSkillFrontmatterName extracts the `name:` field from a
+// SKILL.md's YAML frontmatter — the absolute minimum the install
+// path needs. Mirrors extractNameFromFrontmatter on the TS side.
+func readSkillFrontmatterName(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
+		return "", nil
+	}
+	for i := 1; i < len(lines); i++ {
+		line := strings.TrimRight(lines[i], "\r")
+		if line == "---" {
+			return "", nil
+		}
+		const prefix = "name:"
+		if strings.HasPrefix(line, prefix) {
+			val := strings.TrimSpace(line[len(prefix):])
+			val = strings.Trim(val, `"' `)
+			return val, nil
+		}
+	}
+	return "", nil
+}
+
+// copyDir mirrors a directory tree. Filesystem-only, no symlinks.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode())
+	})
 }
 
 type pkgEnv struct {
@@ -336,6 +469,8 @@ type pkgCapabilities struct {
 }
 
 type pkgOpenneko struct {
+	Runner       string           `json:"runner,omitempty"`
+	Skill        string           `json:"skill,omitempty"`
 	Permissions  *pkgPermissions  `json:"permissions,omitempty"`
 	Capabilities *pkgCapabilities `json:"capabilities,omitempty"`
 }

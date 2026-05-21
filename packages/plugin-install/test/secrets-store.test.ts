@@ -4,14 +4,27 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   allSecretValues,
+  allSecretValuesFull,
   defaultSecretsPath,
+  getOperatorCredential,
   isValidEnvKey,
+  isValidOperatorId,
+  listConnectedPluginsForOperator,
   listKeysForPlugin,
+  listOperatorsForPlugin,
+  OPERATORS_KEY,
+  readFullSecretsFile,
+  readFullSecretsFileSoft,
   readSecretsStore,
   readSecretsStoreSoft,
+  setOperatorCredential,
   setSecret,
+  unsetOperatorCredential,
   unsetSecret,
+  writeFullSecretsFile,
   writeSecretsStore,
+  type ConnectorCredential,
+  type FullSecretsFile,
   type SecretsStore,
 } from "../src/secrets-store";
 
@@ -148,5 +161,254 @@ describe("allSecretValues", () => {
 describe("defaultSecretsPath", () => {
   it("returns the secrets.json under the provided dir", () => {
     expect(defaultSecretsPath("/tmp/x")).toBe("/tmp/x/secrets.json");
+  });
+});
+
+// ─── Per-operator credentials ─────────────────────────────────────────
+
+const sampleCredential = (overrides: Partial<ConnectorCredential> = {}): ConnectorCredential => ({
+  tokens: { access_token: "at-123", refresh_token: "rt-456" },
+  scopes: ["gmail.readonly", "calendar.readonly"],
+  providerLabel: "Google Workspace",
+  connectedAt: "2026-05-21T10:00:00Z",
+  ...overrides,
+});
+
+describe("isValidOperatorId", () => {
+  it("accepts alphanumeric with _ and -", () => {
+    expect(isValidOperatorId("op1")).toBe(true);
+    expect(isValidOperatorId("op-1_x")).toBe(true);
+    expect(isValidOperatorId("a")).toBe(true);
+  });
+  it("rejects bad inputs", () => {
+    expect(isValidOperatorId("")).toBe(false);
+    expect(isValidOperatorId("-leading-dash")).toBe(false);
+    expect(isValidOperatorId("contains spaces")).toBe(false);
+    expect(isValidOperatorId("a".repeat(129))).toBe(false);
+  });
+});
+
+describe("setOperatorCredential / get / unset", () => {
+  const empty: FullSecretsFile = { env: {}, operators: {} };
+  it("setOperatorCredential writes a new credential", () => {
+    const next = setOperatorCredential(empty, "op1", "@x/y", sampleCredential());
+    expect(getOperatorCredential(next, "op1", "@x/y")?.connectedAt).toBe(
+      "2026-05-21T10:00:00Z",
+    );
+  });
+  it("setOperatorCredential refuses bad operator ids", () => {
+    expect(() =>
+      setOperatorCredential(empty, "bad id", "@x/y", sampleCredential()),
+    ).toThrow(/operator id/);
+  });
+  it("setOperatorCredential overwrites prior credentials (refresh path)", () => {
+    let s = setOperatorCredential(empty, "op1", "@x/y", sampleCredential());
+    s = setOperatorCredential(
+      s,
+      "op1",
+      "@x/y",
+      sampleCredential({
+        tokens: { access_token: "at-rotated" },
+        refreshedAt: "2026-05-21T11:00:00Z",
+      }),
+    );
+    const cred = getOperatorCredential(s, "op1", "@x/y");
+    expect(cred?.tokens.access_token).toBe("at-rotated");
+    expect(cred?.refreshedAt).toBe("2026-05-21T11:00:00Z");
+  });
+  it("unsetOperatorCredential removes a credential + reports removal", () => {
+    const s = setOperatorCredential(empty, "op1", "@x/y", sampleCredential());
+    const { store, removed } = unsetOperatorCredential(s, "op1", "@x/y");
+    expect(removed).toBe(true);
+    expect(getOperatorCredential(store, "op1", "@x/y")).toBeNull();
+  });
+  it("unsetOperatorCredential drops the operator entry when empty", () => {
+    let s = setOperatorCredential(empty, "op1", "@x/a", sampleCredential());
+    s = setOperatorCredential(s, "op1", "@x/b", sampleCredential());
+    let after = unsetOperatorCredential(s, "op1", "@x/a");
+    expect(after.store.operators.op1).toEqual({ "@x/b": sampleCredential() });
+    after = unsetOperatorCredential(after.store, "op1", "@x/b");
+    expect(after.store.operators).toEqual({});
+  });
+  it("operators are independent", () => {
+    let s = setOperatorCredential(empty, "op1", "@x/y", sampleCredential());
+    s = setOperatorCredential(s, "op2", "@x/y", sampleCredential({ connectedAt: "2026-06-01T00:00:00Z" }));
+    expect(getOperatorCredential(s, "op1", "@x/y")?.connectedAt).toBe("2026-05-21T10:00:00Z");
+    expect(getOperatorCredential(s, "op2", "@x/y")?.connectedAt).toBe("2026-06-01T00:00:00Z");
+    const after = unsetOperatorCredential(s, "op1", "@x/y");
+    expect(getOperatorCredential(after.store, "op2", "@x/y")).not.toBeNull();
+  });
+});
+
+describe("listConnectedPluginsForOperator / listOperatorsForPlugin", () => {
+  let full: FullSecretsFile = { env: {}, operators: {} };
+  full = setOperatorCredential(full, "op1", "@x/a", sampleCredential());
+  full = setOperatorCredential(full, "op1", "@x/b", sampleCredential());
+  full = setOperatorCredential(full, "op2", "@x/a", sampleCredential());
+  it("listConnectedPluginsForOperator returns sorted plugin names", () => {
+    expect(listConnectedPluginsForOperator(full, "op1")).toEqual(["@x/a", "@x/b"]);
+  });
+  it("listConnectedPluginsForOperator returns [] for unknown operator", () => {
+    expect(listConnectedPluginsForOperator(full, "nobody")).toEqual([]);
+  });
+  it("listOperatorsForPlugin returns sorted operator ids", () => {
+    expect(listOperatorsForPlugin(full, "@x/a")).toEqual(["op1", "op2"]);
+    expect(listOperatorsForPlugin(full, "@x/b")).toEqual(["op1"]);
+    expect(listOperatorsForPlugin(full, "@x/missing")).toEqual([]);
+  });
+});
+
+describe("readFullSecretsFile / writeFullSecretsFile", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "pi-secrets-full-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("readFullSecretsFile returns empty when file missing", async () => {
+    expect(await readFullSecretsFile(dir)).toEqual({ env: {}, operators: {} });
+  });
+
+  it("round-trips an env-only file (backwards compatibility)", async () => {
+    await writeSecretsStore({ "@x/y": { K: "v" } }, dir);
+    const back = await readFullSecretsFile(dir);
+    expect(back.env["@x/y"]?.K).toBe("v");
+    expect(back.operators).toEqual({});
+    const raw = await readFile(defaultSecretsPath(dir), "utf8");
+    expect(raw).not.toContain(OPERATORS_KEY);
+  });
+
+  it("round-trips both env and operator sections", async () => {
+    const full: FullSecretsFile = {
+      env: { "@x/y": { K: "v" } },
+      operators: { op1: { "@x/y": sampleCredential() } },
+    };
+    await writeFullSecretsFile(full, dir);
+    const back = await readFullSecretsFile(dir);
+    expect(back.env["@x/y"]?.K).toBe("v");
+    expect(back.operators.op1?.["@x/y"]?.tokens.access_token).toBe("at-123");
+  });
+
+  it("writeSecretsStore preserves the operator section already on disk", async () => {
+    const full: FullSecretsFile = {
+      env: {},
+      operators: { op1: { "@x/y": sampleCredential() } },
+    };
+    await writeFullSecretsFile(full, dir);
+    // Now mutate env via the legacy entry point.
+    await writeSecretsStore({ "@x/y": { K: "v" } }, dir);
+    const back = await readFullSecretsFile(dir);
+    expect(back.env["@x/y"]?.K).toBe("v");
+    expect(back.operators.op1?.["@x/y"]).toBeTruthy();
+  });
+
+  it("writeFullSecretsFile creates the file with 0600 perms", async () => {
+    await writeFullSecretsFile(
+      { env: {}, operators: { op1: { "@x/y": sampleCredential() } } },
+      dir,
+    );
+    const s = await stat(defaultSecretsPath(dir));
+    if (process.platform !== "win32") {
+      expect(s.mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("sorts operators + plugins deterministically", async () => {
+    await writeFullSecretsFile(
+      {
+        env: {},
+        operators: {
+          opZ: { "@b/y": sampleCredential(), "@a/y": sampleCredential() },
+          opA: { "@a/y": sampleCredential() },
+        },
+      },
+      dir,
+    );
+    const raw = await readFile(defaultSecretsPath(dir), "utf8");
+    expect(raw.indexOf("\"opA\"")).toBeLessThan(raw.indexOf("\"opZ\""));
+    const zBlock = raw.slice(raw.indexOf("opZ"));
+    expect(zBlock.indexOf("@a/y")).toBeLessThan(zBlock.indexOf("@b/y"));
+  });
+
+  it("tolerates malformed operator entries", async () => {
+    await writeFile(
+      defaultSecretsPath(dir),
+      JSON.stringify({
+        "@good/p": { K: "v" },
+        _operators: {
+          good: { "@x/y": sampleCredential() },
+          notObject: 42,
+          missingFields: { "@x/y": { tokens: "not-an-object" } },
+          partial: { "@x/y": { tokens: { a: 1 } } /* no connectedAt */ },
+        },
+      }),
+      "utf8",
+    );
+    const back = await readFullSecretsFile(dir);
+    expect(back.env["@good/p"]?.K).toBe("v");
+    expect(back.operators.good?.["@x/y"]).toBeTruthy();
+    expect(back.operators.notObject).toBeUndefined();
+    expect(back.operators.missingFields).toBeUndefined();
+    expect(back.operators.partial).toBeUndefined();
+  });
+
+  it("readSecretsStore is unchanged by the operator section", async () => {
+    await writeFullSecretsFile(
+      {
+        env: { "@x/y": { K: "v" } },
+        operators: { op1: { "@x/y": sampleCredential() } },
+      },
+      dir,
+    );
+    const env = await readSecretsStore(dir);
+    expect(env).toEqual({ "@x/y": { K: "v" } });
+  });
+
+  it("readFullSecretsFileSoft returns empty + warns on invalid JSON", async () => {
+    await writeFile(defaultSecretsPath(dir), "not json", "utf8");
+    const warnings: string[] = [];
+    const out = await readFullSecretsFileSoft(dir, (m) => warnings.push(m));
+    expect(out).toEqual({ env: {}, operators: {} });
+    expect(warnings.join("\n")).toMatch(/invalid JSON/);
+  });
+});
+
+describe("allSecretValuesFull", () => {
+  it("collects values from both env and operator credentials", () => {
+    const full: FullSecretsFile = {
+      env: { "@x/y": { K: "envval" } },
+      operators: {
+        op1: {
+          "@x/y": {
+            tokens: { access_token: "at-xyz", refresh_token: "rt-xyz" },
+            connectedAt: "2026-05-21T10:00:00Z",
+            scopes: ["gmail.readonly"],
+          },
+        },
+      },
+    };
+    const values = allSecretValuesFull(full);
+    expect(values.sort()).toEqual(["at-xyz", "envval", "rt-xyz"]);
+  });
+  it("walks nested objects + arrays inside token blobs", () => {
+    const full: FullSecretsFile = {
+      env: {},
+      operators: {
+        op1: {
+          "@x/y": {
+            tokens: {
+              nested: { deep: "secret-deep" },
+              arr: ["s1", "s2"],
+              n: 42,
+            },
+            connectedAt: "2026-05-21T10:00:00Z",
+          },
+        },
+      },
+    };
+    const values = allSecretValuesFull(full);
+    expect(values.sort()).toEqual(["s1", "s2", "secret-deep"]);
   });
 });

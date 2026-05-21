@@ -58,6 +58,24 @@ export interface ManifestActionDeclaration {
 export interface ManifestCapabilities {
   action?: { kinds: ManifestActionDeclaration[] };
   auth?: { providerLabel?: string };
+  connect?: {
+    providerLabel: string;
+    scopes: string[];
+    flow?: "oauth2-pkce";
+  };
+}
+
+/**
+ * Snapshot of the install policy at the moment this entry was added,
+ * so audit can answer "how did this get installed?" months later. Has
+ * to be present for entries added since the policy gate shipped;
+ * pre-feature entries carry null.
+ */
+export interface ManifestPolicySnapshot {
+  allowUnverified: boolean;
+  allowGitUrlInstalls: boolean;
+  allowSandboxedSkillEscape: boolean;
+  allowedMarketplaces: string[];
 }
 
 export interface ManifestEntry {
@@ -75,6 +93,22 @@ export interface ManifestEntry {
   env?: Record<string, string>;
   /** Display name of the marketplace this plugin came from (traceability). */
   marketplace?: string;
+  /**
+   * Where the entry came from. "marketplace" = from a trusted catalog;
+   * "unverified" = bypassed marketplaces; "git-url" = community skill
+   * via `openneko install <git-url>`. Absent on entries written before
+   * the install-policy gate shipped.
+   */
+  installSource?: "marketplace" | "unverified" | "git-url";
+  /** ISO timestamp the entry was added. Absent on pre-feature entries. */
+  installedAt?: string;
+  /**
+   * Policy values in effect when this entry was added. Null when
+   * the entry pre-dates the install-policy gate. Used by the worker
+   * registry to decide whether to flag an entry that doesn't match
+   * the *current* policy (grandfather + flag, don't yank).
+   */
+  policySnapshot?: ManifestPolicySnapshot | null;
 }
 
 export interface Manifest {
