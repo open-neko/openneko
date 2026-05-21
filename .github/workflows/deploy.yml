@@ -64,14 +64,19 @@ jobs:
               export OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins
               export OPENNEKO_PLUGINS_MANIFEST_PATH=/opt/neko/.plugins/openneko.plugins.json
               [ -f "$OPENNEKO_PLUGINS_MANIFEST_PATH" ] || openneko init
-              if ! openneko list 2>/dev/null | grep -q '@open-neko/plugin-slack'; then
-                openneko install @open-neko/plugin-slack --skip-host-check
-              fi
+              # Set the SLACK_BOT_TOKEN BEFORE running install. The install
+              # path validates required env vars from the marketplace manifest
+              # and errors out non-interactively if they're missing. Saving
+              # to the secrets store first means install sees it as
+              # already-set and skips the prompt.
               if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
                 openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN"
                 echo "[deploy] SLACK_BOT_TOKEN saved"
               else
-                echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack auth not wired"
+                echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack install will be skipped"
+              fi
+              if [ -n "${SLACK_BOT_TOKEN:-}" ] && ! openneko list 2>/dev/null | grep -q '@open-neko/plugin-slack'; then
+                openneko install @open-neko/plugin-slack --skip-host-check
               fi
               # Worker's poll fallback picks up manifest+secrets changes
               # within 3s — no restart needed.
