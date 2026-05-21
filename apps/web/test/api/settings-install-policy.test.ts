@@ -124,19 +124,12 @@ describeIfDb("/api/settings/install-policy", () => {
     expect(res.status).toBe(401);
   });
 
-  it("PATCH returns 403 for non-admin user", async () => {
+  // OpenNeko has no admin/member role separation today — any signed-
+  // in operator can change install policy, matching the rest of
+  // /settings. When a real role gate ships, restore an "only admin
+  // PATCHes" test here.
+  it("PATCH as any signed-in operator persists the policy", async () => {
     const userId = await seedUser("member");
-    mockGetCurrentUser.mockResolvedValue({ id: userId, email: "x@y.com", name: null });
-    const res = await callRoute(PATCH, {
-      method: "PATCH",
-      body: { allowUnverified: true },
-    });
-    expect(res.status).toBe(403);
-    expect((res.body as { error: string }).error).toMatch(/admin/);
-  });
-
-  it("PATCH as admin persists the policy", async () => {
-    const userId = await seedUser("admin");
     mockGetCurrentUser.mockResolvedValue({ id: userId, email: "x@y.com", name: null });
     const res = await callRoute(PATCH, {
       method: "PATCH",
@@ -154,7 +147,7 @@ describeIfDb("/api/settings/install-policy", () => {
   });
 
   it("PATCH is partial — omitted keys don't clobber existing values", async () => {
-    const userId = await seedUser("admin");
+    const userId = await seedUser("member");
     mockGetCurrentUser.mockResolvedValue({ id: userId, email: "x@y.com", name: null });
     await callRoute(PATCH, { method: "PATCH", body: { allowUnverified: true } });
     await callRoute(PATCH, { method: "PATCH", body: { allowSandboxedSkillEscape: true } });
@@ -167,7 +160,7 @@ describeIfDb("/api/settings/install-policy", () => {
   });
 
   it("PATCH rejects http: marketplace URLs with 400", async () => {
-    const userId = await seedUser("admin");
+    const userId = await seedUser("member");
     mockGetCurrentUser.mockResolvedValue({ id: userId, email: "x@y.com", name: null });
     const res = await callRoute(PATCH, {
       method: "PATCH",
@@ -178,7 +171,7 @@ describeIfDb("/api/settings/install-policy", () => {
   });
 
   it("PATCH adding a community marketplace preserves the official one", async () => {
-    const userId = await seedUser("admin");
+    const userId = await seedUser("member");
     mockGetCurrentUser.mockResolvedValue({ id: userId, email: "x@y.com", name: null });
     const community = "https://example.com/marketplace.json";
     const res = await callRoute(PATCH, {
@@ -192,7 +185,7 @@ describeIfDb("/api/settings/install-policy", () => {
   });
 
   it("PATCH ignores non-boolean values for boolean fields", async () => {
-    const userId = await seedUser("admin");
+    const userId = await seedUser("member");
     mockGetCurrentUser.mockResolvedValue({ id: userId, email: "x@y.com", name: null });
     await callRoute(PATCH, {
       method: "PATCH",
