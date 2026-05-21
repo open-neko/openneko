@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.4](https://github.com/open-neko/neko/compare/v1.11.3...v1.11.4) (2026-05-21)
+
+
+### Bug Fixes
+
+* **deploy:** write slack secret before install, not after ([5674f9b](https://github.com/open-neko/neko/commit/5674f9b3977d814624c386b75fe8c417d0236c15))
+
 ## [1.11.3](https://github.com/open-neko/neko/compare/v1.11.2...v1.11.3) (2026-05-21)
 
 
