@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/open-neko/neko/compare/v1.11.0...v1.11.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* **deploy:** unbreak heredoc + install openneko + auto-install slack plugin ([7f94c67](https://github.com/open-neko/neko/commit/7f94c675bf2cf3866af91e11457d6108b2abb221))
+
 ## [1.11.0](https://github.com/open-neko/neko/compare/v1.10.0...v1.11.0) (2026-05-21)
 
 
