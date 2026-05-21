@@ -31,9 +31,11 @@ jobs:
           # tolerated — the deploy still completes, slack just isn't wired.
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
+          # NOTE: privileged steps (systemd drop-in, openneko binary install,
+          # systemd daemon-reload) live in scripts/neko-vm-setup.sh and are
+          # run once manually on the VM. This deploy only does what the
+          # SSH_USER can do without prompting for a sudo password.
           ssh -i ~/.ssh/id_ed25519 \
-              -o SendEnv=GIT_REF \
-              -o SendEnv=SLACK_BOT_TOKEN \
               "$SSH_USER@$SSH_HOST" \
               GIT_REF="$GIT_REF" SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
               bash -se <<'EOF'
@@ -45,51 +47,6 @@ jobs:
             pnpm install --frozen-lockfile
             pnpm build
 
-            # ── plugin install dir + seed package.json (idempotent) ──
-            # OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins keeps plugin
-            # npm installs out of /opt/neko/node_modules (which is pnpm-
-            # managed and breaks npm's Arborist on plugin install).
-            mkdir -p /opt/neko/.plugins
-            if [ ! -f /opt/neko/.plugins/package.json ]; then
-              printf '{\n  "name": "openneko-plugins",\n  "version": "0.0.0",\n  "private": true\n}\n' \
-                > /opt/neko/.plugins/package.json
-            fi
-
-            # ── systemd drop-in for OPENNEKO_PLUGIN_INSTALL_DIR (idempotent) ──
-            DROPIN=/etc/systemd/system/neko-worker.service.d/openneko-plugins.conf
-            if ! sudo test -f "$DROPIN" || ! sudo grep -q OPENNEKO_PLUGIN_INSTALL_DIR "$DROPIN"; then
-              sudo mkdir -p "$(dirname "$DROPIN")"
-              echo '[Service]' | sudo tee "$DROPIN" > /dev/null
-              echo 'Environment="OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins"' | sudo tee -a "$DROPIN" > /dev/null
-              sudo /usr/bin/systemctl daemon-reload
-              echo "[deploy] systemd drop-in installed at $DROPIN"
-            fi
-
-            # ── openneko binary on PATH (idempotent, refreshes on version bump) ──
-            # Plugin installs proxy into a worker container when one is
-            # running; this VM uses systemd, so installs run locally.
-            # OPENNEKO_PLUGIN_INSTALL_DIR points them at /opt/neko/.plugins.
-            ARCH=$(uname -m)
-            case "$ARCH" in
-              x86_64) GOARCH=amd64 ;;
-              aarch64|arm64) GOARCH=arm64 ;;
-              *) echo "[deploy] unsupported arch: $ARCH"; exit 1 ;;
-            esac
-            LATEST=$(curl -fsSL https://api.github.com/repos/open-neko/neko/releases/latest | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | cut -d'"' -f4)
-            INSTALLED=$(openneko version 2>/dev/null || echo "none")
-            WANTED="${LATEST#v}"
-            if [ "$INSTALLED" != "$WANTED" ]; then
-              echo "[deploy] installing openneko $LATEST (had: $INSTALLED)"
-              TMP=$(mktemp -d)
-              curl -fsSL -o "$TMP/openneko.tar.gz" \
-                "https://github.com/open-neko/neko/releases/download/$LATEST/openneko_${WANTED}_linux_${GOARCH}.tar.gz"
-              tar -xzf "$TMP/openneko.tar.gz" -C "$TMP" openneko
-              sudo install -m 0755 "$TMP/openneko" /usr/local/bin/openneko
-              rm -rf "$TMP"
-            else
-              echo "[deploy] openneko $LATEST already installed"
-            fi
-
             set -a
             source .env
             set +a
@@ -98,26 +55,28 @@ jobs:
             sudo /usr/bin/systemctl restart neko-web
             sudo /usr/bin/systemctl restart neko-worker
 
-            # ── slack plugin install + secret (idempotent) ──
-            # Happens AFTER the worker restart so the new
-            # OPENNEKO_PLUGIN_INSTALL_DIR env is live. Plugin manifest +
-            # secrets file changes hot-reload via the registry's poll
-            # fallback (200ms debounce, 3s poll); no second restart needed.
-            export OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins
-            export OPENNEKO_PLUGINS_MANIFEST_PATH=/opt/neko/.plugins/openneko.plugins.json
-            if [ ! -f "$OPENNEKO_PLUGINS_MANIFEST_PATH" ]; then
-              openneko init
-            fi
-            if ! openneko list 2>/dev/null | grep -q '@open-neko/plugin-slack'; then
-              openneko install @open-neko/plugin-slack --skip-host-check
+            # ── plugin install + secret (only if neko-vm-setup.sh has run) ──
+            # The setup script provisions /opt/neko/.plugins, installs the
+            # openneko binary, and writes the systemd drop-in. If it hasn't
+            # run yet, skip this block — deploy still succeeds, slack just
+            # isn't wired until setup is done once.
+            if command -v openneko >/dev/null 2>&1 && [ -d /opt/neko/.plugins ]; then
+              export OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins
+              export OPENNEKO_PLUGINS_MANIFEST_PATH=/opt/neko/.plugins/openneko.plugins.json
+              [ -f "$OPENNEKO_PLUGINS_MANIFEST_PATH" ] || openneko init
+              if ! openneko list 2>/dev/null | grep -q '@open-neko/plugin-slack'; then
+                openneko install @open-neko/plugin-slack --skip-host-check
+              fi
+              if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
+                openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN"
+                echo "[deploy] SLACK_BOT_TOKEN saved"
+              else
+                echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack auth not wired"
+              fi
+              # Worker's poll fallback picks up manifest+secrets changes
+              # within 3s — no restart needed.
             else
-              echo "[deploy] @open-neko/plugin-slack already installed"
-            fi
-            if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
-              openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN"
-              echo "[deploy] SLACK_BOT_TOKEN saved to secrets store"
-            else
-              echo "[deploy] SLACK_BOT_TOKEN secret not set; slack plugin installed but won't authenticate"
+              echo "[deploy] skipping plugin install — run scripts/neko-vm-setup.sh on the VM once to enable"
             fi
           EOF
 
