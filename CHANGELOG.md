@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/open-neko/neko/compare/v1.12.0...v1.12.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **demo:** wire trial sim + scenario injector into packaged demo.yml ([#47](https://github.com/open-neko/neko/issues/47)) ([e0deef4](https://github.com/open-neko/neko/commit/e0deef478f88f4ac9443d61f78349321a8dced09))
+
 ## [1.12.0](https://github.com/open-neko/neko/compare/v1.11.4...v1.12.0) (2026-05-21)
 
 
