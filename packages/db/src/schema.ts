@@ -882,6 +882,13 @@ export const action_policy = pgTable(
     approver_role: text("approver_role"),
     priority: integer("priority").notNull().default(100),
     enabled: boolean("enabled").notNull().default(true),
+    created_by_thread_id: uuid("created_by_thread_id").references(
+      () => work_thread.id,
+      { onDelete: "set null" },
+    ),
+    created_by_run_id: uuid("created_by_run_id").references(() => work_run.id, {
+      onDelete: "set null",
+    }),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

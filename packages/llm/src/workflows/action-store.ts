@@ -51,6 +51,8 @@ export type ActionPolicyRecord = {
   approverRole: string | null;
   priority: number;
   enabled: boolean;
+  createdByThreadId: string | null;
+  createdByRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -76,6 +78,8 @@ function toPolicyRecord(
     approverRole: row.approver_role,
     priority: row.priority,
     enabled: row.enabled,
+    createdByThreadId: row.created_by_thread_id,
+    createdByRunId: row.created_by_run_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -94,10 +98,24 @@ export async function listEnabledPolicies(
   return rows.map(toPolicyRecord);
 }
 
+export async function listAllPolicies(
+  orgId: string,
+): Promise<ActionPolicyRecord[]> {
+  const rows = await db()
+    .select()
+    .from(action_policy)
+    .where(eq(action_policy.org_id, orgId))
+    .orderBy(asc(action_policy.priority), asc(action_policy.name));
+  return rows.map(toPolicyRecord);
+}
+
 export type CreateActionPolicyInput = Omit<
   ActionPolicyRecord,
-  "id" | "createdAt" | "updatedAt"
->;
+  "id" | "createdAt" | "updatedAt" | "createdByThreadId" | "createdByRunId"
+> & {
+  createdByThreadId?: string | null;
+  createdByRunId?: string | null;
+};
 
 export async function createActionPolicy(
   input: CreateActionPolicyInput,
@@ -118,6 +136,8 @@ export async function createActionPolicy(
       approver_role: input.approverRole,
       priority: input.priority,
       enabled: input.enabled,
+      created_by_thread_id: input.createdByThreadId ?? null,
+      created_by_run_id: input.createdByRunId ?? null,
     })
     .returning();
   return toPolicyRecord(row);
@@ -133,6 +153,51 @@ export async function getActionPolicy(
     .where(and(eq(action_policy.org_id, orgId), eq(action_policy.id, policyId)))
     .limit(1);
   return rows[0] ? toPolicyRecord(rows[0]) : null;
+}
+
+export async function getActionPolicyByName(
+  orgId: string,
+  name: string,
+): Promise<ActionPolicyRecord | null> {
+  const rows = await db()
+    .select()
+    .from(action_policy)
+    .where(and(eq(action_policy.org_id, orgId), eq(action_policy.name, name)))
+    .limit(1);
+  return rows[0] ? toPolicyRecord(rows[0]) : null;
+}
+
+export type UpsertActionPolicyResult = {
+  action: "created" | "updated";
+  policy: ActionPolicyRecord;
+};
+
+export async function upsertActionPolicyByName(
+  input: CreateActionPolicyInput,
+): Promise<UpsertActionPolicyResult> {
+  const existing = await getActionPolicyByName(input.orgId, input.name);
+  if (!existing) {
+    const created = await createActionPolicy(input);
+    return { action: "created", policy: created };
+  }
+  const updated = await updateActionPolicy(input.orgId, existing.id, {
+    description: input.description,
+    appliesToKinds: input.appliesToKinds,
+    appliesToScopes: input.appliesToScopes,
+    mode: input.mode,
+    riskThresholdAutoApprove: input.riskThresholdAutoApprove,
+    allowedTargets: input.allowedTargets,
+    deniedTargets: input.deniedTargets,
+    limits: input.limits,
+    approverRole: input.approverRole,
+    priority: input.priority,
+    enabled: input.enabled,
+  });
+  if (!updated) throw new Error(`action_policy ${existing.id} disappeared`);
+  // Provenance fields (createdByThreadId/createdByRunId) are creation-only:
+  // an edit doesn't overwrite the originating thread, so the rule's audit
+  // trail still points at the conversation that produced it the first time.
+  return { action: "updated", policy: updated };
 }
 
 export type UpdateActionPolicyInput = Partial<

@@ -25,16 +25,27 @@ const knowledge: KnowledgePackContents = {
   syntax: "{}",
 };
 
-function build(backend: "claude-agent" | "hermes"): string {
+function build(
+  backend: "claude-agent" | "hermes",
+  overrides: {
+    supportsCardTool?: boolean;
+    supportsSkillTool?: boolean;
+    supportsMemoryTool?: boolean;
+    supportsWorkflowTool?: boolean;
+    supportsPolicyTool?: boolean;
+  } = {},
+): string {
   return buildWorkPrompt({
     backend,
     workspace,
     knowledge,
     messages: [],
     currentUserMessage: "test",
-    supportsCardTool: false,
-    supportsSkillTool: false,
-    supportsMemoryTool: false,
+    supportsCardTool: overrides.supportsCardTool ?? false,
+    supportsSkillTool: overrides.supportsSkillTool ?? false,
+    supportsMemoryTool: overrides.supportsMemoryTool ?? false,
+    supportsWorkflowTool: overrides.supportsWorkflowTool ?? false,
+    supportsPolicyTool: overrides.supportsPolicyTool ?? false,
     inlineTranscript: false,
   });
 }
@@ -65,5 +76,38 @@ describe("buildWorkPrompt attachments guidance", () => {
     // explicitly say to read them.
     expect(prompt).not.toMatch(/Uploaded files are auxiliary/);
     expect(prompt).toMatch(/read the file/i);
+  });
+});
+
+describe("buildWorkPrompt workflow + policy management", () => {
+  it("advertises workflow tools when supportsWorkflowTool is true", () => {
+    const prompt = build("claude-agent", { supportsWorkflowTool: true });
+    expect(prompt).toContain("mcp__neko_workflow_builder__list_workflows");
+    expect(prompt).toContain("mcp__neko_workflow_builder__create_workflow");
+    // Operators are not developers — should warn against showing cron syntax.
+    expect(prompt).toMatch(/never show them cron syntax/i);
+  });
+
+  it("falls back to the workflow save fence when MCP tools unavailable", () => {
+    const prompt = build("hermes", { supportsWorkflowTool: false });
+    expect(prompt).toContain("neko_workflow_save");
+    expect(prompt).not.toContain("mcp__neko_workflow_builder__");
+  });
+
+  it("advertises policy tools when supportsPolicyTool is true", () => {
+    const prompt = build("claude-agent", { supportsPolicyTool: true });
+    expect(prompt).toContain("mcp__neko_policy_builder__list_policies");
+    expect(prompt).toContain("mcp__neko_policy_builder__save_policy");
+  });
+
+  it("falls back to the policy save fence when MCP tools unavailable", () => {
+    const prompt = build("hermes", { supportsPolicyTool: false });
+    expect(prompt).toContain("neko_policy_save");
+    expect(prompt).not.toContain("mcp__neko_policy_builder__");
+  });
+
+  it("frames /work as the single chat surface for everything", () => {
+    const prompt = build("claude-agent");
+    expect(prompt).toMatch(/only chat surface/i);
   });
 });

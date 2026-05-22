@@ -58,6 +58,8 @@ type DrawerPayload = {
     systemPromptOverlay: string;
     dailyRunBudget: number | null;
     runsToday: number;
+    createdByThreadId: string | null;
+    createdByRunId: string | null;
   };
   subscriptions: Subscription[];
   recentRuns: RecentRun[];
@@ -239,7 +241,11 @@ export default function WorkflowsPage() {
         <button
           type="button"
           className="workflows-new-btn library-head-action"
-          onClick={() => router.push("/workflows/new")}
+          onClick={() =>
+            router.push(
+              `/work?seed=${encodeURIComponent("Set up a new workflow that ")}`,
+            )
+          }
         >
           + New workflow
         </button>
@@ -254,7 +260,11 @@ export default function WorkflowsPage() {
             No workflows yet. <button
               type="button"
               className="bg-transparent border-0 text-accent font-inherit cursor-pointer underline underline-offset-[3px] p-0"
-              onClick={() => router.push("/workflows/new")}
+              onClick={() =>
+                router.push(
+                  `/work?seed=${encodeURIComponent("Set up a new workflow that ")}`,
+                )
+              }
             >+ New workflow</button> gets you started.
           </div>
         ) : (
@@ -789,13 +799,30 @@ function WorkflowDrawer({
         )}
       </Section>
 
-      <div className="mt-6 pt-3 border-t border-border flex justify-end">
+      <div className="mt-6 pt-3 border-t border-border flex items-center justify-between gap-3">
+        {workflow.createdByThreadId ? (
+          <button
+            type="button"
+            className="bg-transparent border-0 text-text3 cursor-pointer text-xs font-semibold py-1 px-0 hover:text-accent hover:underline hover:underline-offset-[3px]"
+            onClick={() => router.push(`/work/${workflow.createdByThreadId}`)}
+          >
+            view conversation
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           type="button"
           className="bg-transparent border-0 text-accent cursor-pointer text-xs font-semibold py-1 px-0 hover:underline hover:underline-offset-[3px]"
-          onClick={() => router.push(`/workflows/${workflowId}/edit`)}
+          onClick={() =>
+            router.push(
+              `/work?seed=${encodeURIComponent(
+                `Update the '${workflow.name}' workflow to `,
+              )}`,
+            )
+          }
         >
-          edit this workflow
+          edit in /work
         </button>
       </div>
     </aside>

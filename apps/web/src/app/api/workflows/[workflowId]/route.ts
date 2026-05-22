@@ -131,6 +131,8 @@ export async function GET(_request: Request, context: RouteContext) {
       cronEnabled: workflow.cronEnabled,
       dailyRunBudget: workflow.dailyRunBudget,
       runsToday: todayCount?.count ?? 0,
+      createdByThreadId: workflow.createdByThreadId,
+      createdByRunId: workflow.createdByRunId,
       createdAt: workflow.createdAt.toISOString(),
       updatedAt: workflow.updatedAt.toISOString(),
     },

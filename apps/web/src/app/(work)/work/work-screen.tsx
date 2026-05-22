@@ -15,7 +15,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 // Matches paths to agent-generated/uploaded files inside the per-org workspace.
 // Two shapes:
@@ -295,6 +295,7 @@ function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadBundle {
 export default function WorkScreen() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
   const { setActiveRunId } = useWorkShell();
@@ -304,7 +305,7 @@ export default function WorkScreen() {
   const [bundle, setBundle] = useState<ThreadBundle | null>(null);
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [pendingMemories, setPendingMemories] = useState<PendingMemory[]>([]);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => searchParams?.get("seed") ?? "");
   const [files, setFiles] = useState<File[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);

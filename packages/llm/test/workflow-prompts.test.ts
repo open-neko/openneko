@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
-import { buildWorkflowBuilderPrompt } from "../src/workflows/builder-prompt";
 import { buildWorkflowRunnerPrompt } from "../src/workflows/runner-prompt";
 import type { WorkflowRecord } from "../src/workflows/store";
 
@@ -39,29 +38,6 @@ const sampleWorkflow: WorkflowRecord = {
   createdAt: new Date(),
   updatedAt: new Date(),
 };
-
-describe("buildWorkflowBuilderPrompt", () => {
-  it("instructs the agent to call the MCP tool when mcpTools=true", () => {
-    const prompt = buildWorkflowBuilderPrompt({ mcpTools: true });
-    expect(prompt).toContain("mcp__neko_workflow_builder__create_workflow");
-    expect(prompt).not.toContain("```neko_workflow_save");
-  });
-
-  it("instructs the agent to emit a fence when mcpTools=false", () => {
-    const prompt = buildWorkflowBuilderPrompt({ mcpTools: false });
-    expect(prompt).toContain("```neko_workflow_save");
-    expect(prompt).not.toContain("mcp__neko_workflow_builder__create_workflow");
-  });
-
-  it("never leaks risk_level prose in either branch", () => {
-    for (const mcpTools of [true, false]) {
-      const prompt = buildWorkflowBuilderPrompt({ mcpTools });
-      // The builder prompt has no actions block, so risk_level shouldn't
-      // appear at all.
-      expect(prompt.toLowerCase()).not.toContain("risk level");
-    }
-  });
-});
 
 describe("buildWorkflowRunnerPrompt", () => {
   const sampleKnowledge = {

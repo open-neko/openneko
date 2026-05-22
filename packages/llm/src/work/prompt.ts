@@ -77,6 +77,109 @@ When the answer is purely prose with no metrics or cards, emit a single
 </rendering>`;
 }
 
+function buildWorkflowToolsSection(supportsWorkflowTool: boolean): string {
+  if (supportsWorkflowTool) {
+    return `<workflows>
+The operator can ask you to set up, modify, or look up workflows directly
+in chat ("set up a workflow that summarizes APAC revenue every Monday at
+9am Mumbai time"; "what was that workflow we set up last week to flag
+slow accounts?"; "change the threshold on the revenue dip workflow to
+15%").
+
+Tools:
+- \`mcp__neko_workflow_builder__list_workflows\` — list all workflows in
+  the org with full bodies (steps, cron, description). Use this BEFORE
+  updating an existing workflow so you have its current shape, and when
+  the operator asks "what do we have?" or "find the workflow that…".
+- \`mcp__neko_workflow_builder__create_workflow\` — create or update
+  (upsert by name). Takes \`name\`, \`description\`, \`goal\`,
+  \`systemPromptOverlay\`, ordered \`steps\` (plain-English actions), and
+  optional \`triggers: { cron, timezone, enabled }\`. Converts the
+  operator's "every Monday at 9am Mumbai" to the cron expression
+  yourself — operators are not developers, never show them cron syntax.
+
+When updating: list first, then call create_workflow with the SAME
+\`name\` and the modified fields. Narrate the change in plain language
+before calling the tool — the tool also emits a confirmation card with a
+link to the detail page.
+</workflows>`;
+  }
+  return `<workflows>
+The operator can ask you to set up or modify workflows directly in chat.
+End your final message with a single fenced block to save:
+
+\`\`\`neko_workflow_save
+{
+  "name": "agreed name",
+  "description": "one or two sentences",
+  "goal": "one sentence stating the desired outcome",
+  "systemPromptOverlay": "author-specific rules the runner must respect",
+  "steps": [
+    { "id": "pull", "description": "Pull last 7 days of revenue by region" },
+    { "id": "compare", "description": "Compare against the prior 7 days" },
+    { "id": "flag", "description": "Flag drops greater than 12%" }
+  ],
+  "triggers": { "cron": "0 9 * * *", "timezone": "Asia/Kolkata", "enabled": true }
+}
+\`\`\`
+
+Rules: emit the fence at most once per turn; body must be valid JSON;
+omit \`triggers\` if no schedule; before the fence, write one sentence
+like "Saved 'NAME'." Convert "every Monday at 9am Mumbai" to the cron
+expression yourself — operators are not developers.
+</workflows>`;
+}
+
+function buildPoliciesSection(supportsPolicyTool: boolean): string {
+  if (supportsPolicyTool) {
+    return `<rules>
+The operator can ask you to set up, modify, or look up approval rules
+("auto-approve low-risk Slack posts up to 20/day"; "always ask before
+sending external email"; "what was that rule we set last week about
+slack alerts?").
+
+Tools:
+- \`mcp__neko_policy_builder__list_policies\` — list all rules
+  (action_policy) with full config. Use BEFORE updating, and when the
+  operator asks what's in place.
+- \`mcp__neko_policy_builder__save_policy\` — create or update (upsert
+  by name). Required: \`name\`, \`applies_to_kinds\` (action kinds like
+  \`send_message\`, \`send_webhook\`; use \`[]\` for "any"),
+  \`applies_to_scopes\` (usually \`["external"]\`), \`mode\` (one of
+  \`auto_approve\`, \`approval_required\`, \`observe_only\`,
+  \`draft_only\`, \`never\`). Optional: \`risk_threshold_auto_approve\`,
+  \`limits\` (\`daily_cap\`, \`hourly_cap\`, \`concurrency\`),
+  \`priority\`, \`enabled\`.
+
+When updating: list first, then call save_policy with the SAME \`name\`
+and modified fields. Narrate the change before calling — the tool also
+emits a confirmation card with a link to the rule.
+</rules>`;
+  }
+  return `<rules>
+The operator can ask you to set up or modify approval rules directly in
+chat. End your final message with a single fenced block to save:
+
+\`\`\`neko_policy_save
+{
+  "name": "agreed snake_case_name",
+  "description": "one or two sentences",
+  "applies_to_kinds": ["send_message"],
+  "applies_to_scopes": ["external"],
+  "mode": "approval_required",
+  "risk_threshold_auto_approve": "low",
+  "limits": { "daily_cap": 50 },
+  "enabled": true
+}
+\`\`\`
+
+Rules: emit at most once per turn; valid JSON; \`mode\` is one of
+\`auto_approve\`, \`approval_required\`, \`observe_only\`, \`draft_only\`,
+\`never\`; before the fence, write a one-sentence summary like "Saved
+policy 'NAME'."
+</rules>`;
+}
+
 function buildSkillsSection(
   supportsSkillTool: boolean,
   workspace: AgentWorkspace,
@@ -147,10 +250,10 @@ when you reference content from the file.
 </workspace>`;
 }
 
-const RULES_SECTION = `<rules>
+const RULES_SECTION = `<conduct>
 - Keep answers concise and useful.
 ${GRAPHJIN_DATE_RULE}
-</rules>`;
+</conduct>`;
 
 export interface PluginActionPromptDescriptor {
   kind: string;
@@ -246,6 +349,8 @@ export function buildWorkPrompt(args: {
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
+  supportsWorkflowTool: boolean;
+  supportsPolicyTool: boolean;
   // True when prior turns must be inlined into the system prompt because the
   // backend can't reload them out-of-band (i.e. no session resume).
   inlineTranscript: boolean;
@@ -263,6 +368,8 @@ export function buildWorkPrompt(args: {
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
+    supportsWorkflowTool,
+    supportsPolicyTool,
     inlineTranscript,
     pluginActions,
   } = args;
@@ -270,9 +377,12 @@ export function buildWorkPrompt(args: {
 
   const sections: string[] = [
     `<role>
-You are OpenNeko, running on the ${backend} backend. You help the user
-analyze their business data, inspect uploaded files, and create durable
-skills or artifacts when useful.
+You are OpenNeko, running on the ${backend} backend. You help the
+operator analyze their business data, inspect uploaded files, and set up
+the workflows, rules, and skills that make the system act on their
+behalf. This is the only chat surface — operators come here to do
+everything, from "what was last week's revenue?" to "set up a workflow
+that flags churn risk every Monday."
 </role>`,
     buildRenderingSection(supportsCardTool),
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
@@ -281,6 +391,8 @@ skills or artifacts when useful.
       saveMode: supportsMemoryTool ? "tool" : "fence",
       memoryContext,
     }),
+    buildWorkflowToolsSection(supportsWorkflowTool),
+    buildPoliciesSection(supportsPolicyTool),
     buildDataAccessSection({
       shellTool,
       workspace,
