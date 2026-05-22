@@ -201,6 +201,31 @@ func TestDSNOverrides(t *testing.T) {
 	}
 }
 
+func TestApplyAcquiresAndReleasesAdvisoryLock(t *testing.T) {
+	mfs := fstest.MapFS{
+		"migrations/0001_init.sql": {Data: []byte("noop;")},
+	}
+	c := &fakeConn{}
+	mig := &Migrator{FS: mfs, Dir: "migrations"}
+	if _, err := mig.Apply(context.Background(), c, nil); err != nil {
+		t.Fatal(err)
+	}
+	// First exec must be the lock; some later exec must be the unlock.
+	if len(c.exec) == 0 || !strings.Contains(c.exec[0], "pg_advisory_lock") {
+		t.Fatalf("expected first exec to acquire pg_advisory_lock, got: %v", c.exec)
+	}
+	unlocked := false
+	for _, s := range c.exec {
+		if strings.Contains(s, "pg_advisory_unlock") {
+			unlocked = true
+			break
+		}
+	}
+	if !unlocked {
+		t.Fatalf("expected pg_advisory_unlock to be called, got: %v", c.exec)
+	}
+}
+
 func TestShouldRunInTransaction(t *testing.T) {
 	cases := map[string]bool{
 		"0001_init.sql":                              true,

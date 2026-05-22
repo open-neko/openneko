@@ -212,7 +212,7 @@ pnpm bootstrap
 
 # DB + metadata GraphJin only — app runs from source
 docker compose up -d neko-db neko-graphjin
-pnpm --filter @neko/db migrate
+(cd apps/openneko && go run ./cmd/openneko migrate)
 
 pnpm dev
 ```
@@ -232,7 +232,7 @@ With sample data:
 ```bash
 docker compose -f compose.yml -f compose.adventureworks.yml up -d \
   neko-db neko-graphjin adventureworks-db graphjin
-pnpm --filter @neko/db migrate
+(cd apps/openneko && go run ./cmd/openneko migrate)
 pnpm dev
 ```
 

@@ -69,11 +69,32 @@ type Conn interface {
 	Close(ctx context.Context) error
 }
 
+// migrateAdvisoryLockKey serializes concurrent migrators. Both web's and
+// worker's container entrypoints call `openneko migrate` at boot; whichever
+// gets the lock first runs the SQL, the other blocks at pg_advisory_lock and
+// then no-ops because every file is already recorded in schema_migrations.
+// The value is an arbitrary 64-bit constant pinned for this codebase — only
+// other things calling pg_advisory_lock with this same key need to coordinate
+// with the migrator (currently nothing does).
+const migrateAdvisoryLockKey int64 = 7283264971838383631
+
 // Apply runs every pending *.sql migration. Returns the number applied.
+// Safe to call concurrently from multiple processes against the same DB —
+// callers serialize on a pg_advisory_lock so only one runs the SQL while
+// the others wait, then observe an empty pending set.
 func (m *Migrator) Apply(ctx context.Context, conn Conn, logf func(string, ...any)) (int, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateAdvisoryLockKey); err != nil {
+		return 0, fmt.Errorf("acquire migrate lock: %w", err)
+	}
+	defer func() {
+		// Best-effort release. Postgres also drops session-level advisory locks
+		// when the connection closes, so a missed unlock here is recoverable
+		// by the caller closing the conn (which start.go does).
+		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, migrateAdvisoryLockKey)
+	}()
 	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return 0, err
 	}

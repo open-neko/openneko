@@ -91,4 +91,28 @@ if (force || !fs.existsSync(secretPath)) {
 }
 JS
 
+# Apply DB migrations using the vendored openneko binary. Both web and worker
+# call this on every boot; an advisory lock inside migrator.Apply() serializes
+# concurrent invocations so the slow side blocks until the fast side is done
+# and then no-ops. Skips cleanly in environments without openneko on PATH (e.g.
+# minimal test images) — callers there are expected to have migrated separately.
+if command -v openneko >/dev/null 2>&1; then
+  PG_HOST="${NEKO_PG_HOST:-neko-db}"
+  PG_PORT="${NEKO_PG_PORT:-5432}"
+  PG_USER="${NEKO_PG_USER:-neko}"
+  PG_DB="${NEKO_PG_DATABASE:-neko}"
+  echo "[entrypoint] waiting for postgres at ${PG_HOST}:${PG_PORT}"
+  i=0
+  until pg_isready -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -d "${PG_DB}" >/dev/null 2>&1; do
+    i=$((i+1))
+    if [ "$i" -ge 60 ]; then
+      echo "[entrypoint] postgres did not become reachable within 60s; bailing" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  echo "[entrypoint] running openneko migrate"
+  openneko migrate
+fi
+
 exec "$@"

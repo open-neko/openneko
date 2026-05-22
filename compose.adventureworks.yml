@@ -157,7 +157,13 @@ services:
       context: .
       target: worker
     depends_on:
-      neko-db-init:
+      # Worker's healthcheck only flips green AFTER its entrypoint runs
+      # `openneko migrate`, so this is our schema-is-ready signal — the seed
+      # writes into organization / data_source / onboarding_wizard / workflow
+      # tables that the migrator just produced.
+      worker:
+        condition: service_healthy
+      adventureworks-init:
         condition: service_completed_successfully
     environment:
       XDG_CONFIG_HOME: /config
