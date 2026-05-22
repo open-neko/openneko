@@ -80,7 +80,7 @@ describe("workflowSavedCard", () => {
     expect(body?.text).toContain("3 step(s)");
     expect(body?.text).toContain("0 9 * * *");
     expect(body?.text).toContain("Asia/Kolkata");
-    expect(body?.text).toContain("[Open detail](/work/workflows/wf-1)");
+    expect(body?.text).toContain("[Open detail](/workflows?id=wf-1)");
   });
 
   it("uses 'Created' vs 'Updated' verb based on the action", () => {
