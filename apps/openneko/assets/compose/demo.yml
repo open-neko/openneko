@@ -105,6 +105,77 @@ services:
     command: ["node", "packages/db/src/seed-adventureworks.mjs"]
     restart: "no"
 
+  adventureworks-simulator:
+    # Trickles realistic sales orders into the AdventureWorks DB on a
+    # schedule so the workspace reacts during a trial (briefing numbers
+    # drift, cron workflows fire, runs accumulate). Set AW_SIM_ENABLED=0
+    # to disable. Uses the worker image because psql + the tick script
+    # are already baked in at /app/db/seeds/dev/aw-sim-tick.sql; no
+    # bind-mount of repo files needed for the packaged install.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      PGDATABASE: ${ADVENTUREWORKS_DB:-adventureworks}
+      AW_SIM_INTERVAL_SEC: ${AW_SIM_INTERVAL_SEC:-600}
+      AW_SIM_ORDERS_MIN: ${AW_SIM_ORDERS_MIN:-3}
+      AW_SIM_ORDERS_MAX: ${AW_SIM_ORDERS_MAX:-10}
+      AW_SIM_ENABLED: ${AW_SIM_ENABLED:-1}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ "$${AW_SIM_ENABLED}" != "1" ]; then
+          echo "[aw-sim] AW_SIM_ENABLED=$${AW_SIM_ENABLED}; sleeping forever"
+          exec tail -f /dev/null
+        fi
+        echo "[aw-sim] starting: interval=$${AW_SIM_INTERVAL_SEC}s, orders=$${AW_SIM_ORDERS_MIN}-$${AW_SIM_ORDERS_MAX} per tick"
+        while true; do
+          ORDERS=$$(awk -v mn=$${AW_SIM_ORDERS_MIN} -v mx=$${AW_SIM_ORDERS_MAX} 'BEGIN{srand(); print int(mn + rand()*(mx-mn+1))}')
+          psql -v ON_ERROR_STOP=1 -c "SET trial_sim.orders_per_tick TO '$$ORDERS'" -f /app/db/seeds/dev/aw-sim-tick.sql \
+            || echo "[aw-sim] tick failed; will retry next interval"
+          sleep "$${AW_SIM_INTERVAL_SEC}"
+        done
+
+  adventureworks-scenario-injector:
+    # L3 scripted-scenario scheduler. On startup: bootstraps trial_sim
+    # schema, then runs advance-dates.sql so demo dates land on or after
+    # CURRENT_DATE (idempotent — gated to once per 12 hours via
+    # trial_sim.state.advance_dates_at). Then loops the scenario
+    # scheduler. Set TRIAL_SIM_ENABLED=0 to disable. Uses the worker
+    # image because all scripts + scenarios + psql are baked at
+    # /app/db/seeds/dev/.
+    image: ghcr.io/open-neko/neko-worker:${OPENNEKO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      adventureworks-init:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: adventureworks-db
+      PGPORT: 5432
+      PGUSER: ${CUSTOMER_PGUSER:-postgres}
+      PGPASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
+      PGDATABASE: ${ADVENTUREWORKS_DB:-adventureworks}
+      TRIAL_SIM_TICK_SEC: ${TRIAL_SIM_TICK_SEC:-300}
+      TRIAL_SIM_ENABLED: ${TRIAL_SIM_ENABLED:-1}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ "$${TRIAL_SIM_ENABLED}" != "1" ]; then
+          echo "[trial-sim] TRIAL_SIM_ENABLED=$${TRIAL_SIM_ENABLED}; sleeping forever"
+          exec tail -f /dev/null
+        fi
+        exec /bin/sh /app/db/seeds/dev/scenario-injector.sh loop
+
   web:
     depends_on:
       graphjin:
