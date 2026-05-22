@@ -196,7 +196,11 @@ export default function PoliciesPage() {
           <button
             type="button"
             className="px-4 py-2 rounded-full border-[1.5px] border-border bg-white/60 font-body text-sm font-semibold text-text2 cursor-pointer transition-[border-color,color,background,transform] duration-200 hover:border-accent hover:text-accent hover:bg-accent-soft hover:-translate-y-px"
-            onClick={() => router.push("/settings/rules/new")}
+            onClick={() =>
+              router.push(
+                `/work?seed=${encodeURIComponent("Add a new rule that ")}`,
+              )
+            }
           >
             + New rule
           </button>
@@ -218,9 +222,13 @@ export default function PoliciesPage() {
               <InstalledPluginsSection
                 descriptors={pluginDescriptors}
                 policies={policies}
-                onEditPolicy={(policyId) =>
-                  router.push(`/settings/rules/${policyId}/edit`)
-                }
+                onEditPolicy={(policyId) => {
+                  const policy = policies.find((p) => p.id === policyId);
+                  const name = policy?.name ?? "this rule";
+                  router.push(
+                    `/work?seed=${encodeURIComponent(`Update the '${name}' rule to `)}`,
+                  );
+                }}
               />
             ) : null}
 
@@ -235,7 +243,12 @@ export default function PoliciesPage() {
                   <PolicyCard
                     key={p.id}
                     policy={p}
-                    onEdit={() => router.push(`/settings/rules/${p.id}/edit`)}
+                    onEdit={() =>
+                      router.push(
+                        `/work?seed=${encodeURIComponent(`Update the '${p.name}' rule to `)}`,
+                      )
+                    }
+                    onOpen={() => router.push(`/settings/rules/${p.id}`)}
                   />
                 ))}
               </ul>
@@ -252,9 +265,11 @@ export default function PoliciesPage() {
 function PolicyCard({
   policy,
   onEdit,
+  onOpen,
 }: {
   policy: Policy;
   onEdit: () => void;
+  onOpen: () => void;
 }) {
   const appliesKinds = policy.appliesToKinds.length
     ? policy.appliesToKinds.join(", ")
@@ -282,6 +297,14 @@ function PolicyCard({
           <Pill variant={modePillVariant(policy.mode)}>
             {describeMode(policy.mode)}
           </Pill>
+          <button
+            type="button"
+            className="bg-transparent border-0 text-text3 cursor-pointer font-[inherit] text-xs px-1.5 py-1 hover:text-accent hover:underline underline-offset-2"
+            onClick={onOpen}
+            aria-label={`Open rule ${policy.name}`}
+          >
+            open
+          </button>
           <button
             type="button"
             className="bg-transparent border-0 text-text3 cursor-pointer font-[inherit] text-xs px-1.5 py-1 hover:text-accent hover:underline underline-offset-2"

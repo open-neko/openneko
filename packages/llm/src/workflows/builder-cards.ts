@@ -53,7 +53,7 @@ export function workflowSavedCard(args: {
       "",
       args.workflow.description || "_No description._",
       "",
-      `[Open detail](/work/workflows/${args.workflow.id})`,
+      `[Open detail](/workflows?id=${args.workflow.id})`,
     ].join("\n"),
   });
 }
