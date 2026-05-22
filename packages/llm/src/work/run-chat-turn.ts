@@ -2,8 +2,23 @@ import { data_source, db, eq } from "@neko/db";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import { extractMemoryFences } from "../agent-backends/memory-fence";
-import { extractActionRequestFences } from "../workflows/fence-parsers";
-import { handleWorkActionRequest } from "../workflows";
+import {
+  extractActionRequestFences,
+  extractPolicySaveFence,
+  extractWorkflowSaveFence,
+} from "../workflows/fence-parsers";
+import {
+  buildPolicyBuilderServer,
+  buildWorkflowBuilderServer,
+  handleWorkActionRequest,
+  policySavedCard,
+  saveWorkflow,
+  upsertActionPolicyByName,
+  workflowSavedCard,
+  type ActionPolicyMode,
+  type ActionScope,
+  type RiskLevel,
+} from "../workflows";
 import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
@@ -156,6 +171,8 @@ export async function runChatTurn(
     const supportsCardTool = backend.capabilities.mcpTools;
     const supportsSkillTool = backend.capabilities.mcpTools;
     const supportsMemoryTool = backend.capabilities.mcpTools;
+    const supportsWorkflowTool = backend.capabilities.mcpTools;
+    const supportsPolicyTool = backend.capabilities.mcpTools;
 
     const messages: AgentChatMessage[] = bundle.messages.map((row) => ({
       id: row.id,
@@ -190,6 +207,8 @@ export async function runChatTurn(
       supportsCardTool,
       supportsSkillTool,
       supportsMemoryTool,
+      supportsWorkflowTool,
+      supportsPolicyTool,
       inlineTranscript: !backend.capabilities.sessionResume,
       pluginActions: opts.pluginActions ?? [],
     });
@@ -219,6 +238,24 @@ export async function runChatTurn(
                   orgId,
                   threadId,
                   runId,
+                }),
+              }
+            : {}),
+          ...(supportsWorkflowTool
+            ? {
+                neko_workflow_builder: buildWorkflowBuilderServer({
+                  orgId,
+                  createdByThreadId: threadId,
+                  createdByRunId: runId,
+                  emit: wrappedEmit,
+                }),
+              }
+            : {}),
+          ...(supportsPolicyTool
+            ? {
+                neko_policy_builder: buildPolicyBuilderServer({
+                  orgId,
+                  emit: wrappedEmit,
                 }),
               }
             : {}),
@@ -275,12 +312,93 @@ export async function runChatTurn(
       }
     }
 
+    // Workflow / policy save fences (Hermes path — claude-agent uses
+    // the workflow_builder / policy_builder MCP tools). Same chain
+    // pattern as action fences above: persist, emit a confirmation
+    // surface, strip the fence body from the displayed text.
+    const workflowFence = extractWorkflowSaveFence(actionFences.text);
+    if (workflowFence.payload) {
+      try {
+        const saved = await saveWorkflow({
+          orgId,
+          name: workflowFence.payload.name,
+          description: workflowFence.payload.description,
+          goal: workflowFence.payload.goal,
+          systemPromptOverlay: workflowFence.payload.systemPromptOverlay,
+          steps: workflowFence.payload.steps,
+          triggers: workflowFence.payload.triggers,
+          createdByThreadId: threadId,
+          createdByRunId: runId,
+        });
+        await wrappedEmit({
+          type: "surface",
+          messages: workflowSavedCard({
+            workflow: saved.workflow,
+            action: saved.action,
+          }),
+        });
+      } catch (err) {
+        await wrappedEmit({
+          type: "error",
+          message: `workflow save failed: ${err instanceof Error ? err.message : err}`,
+        });
+      }
+    } else if (workflowFence.errors.length > 0) {
+      const reasons = workflowFence.errors.map((e) => e.reason).join("; ");
+      await wrappedEmit({
+        type: "error",
+        message: `workflow save fence invalid: ${reasons}`,
+      });
+    }
+
+    const policyFence = extractPolicySaveFence(workflowFence.text);
+    if (policyFence.payload) {
+      try {
+        const saved = await upsertActionPolicyByName({
+          orgId,
+          name: policyFence.payload.name,
+          description: policyFence.payload.description ?? "",
+          appliesToKinds: policyFence.payload.applies_to_kinds,
+          appliesToScopes: policyFence.payload.applies_to_scopes as ActionScope[],
+          mode: policyFence.payload.mode as ActionPolicyMode,
+          riskThresholdAutoApprove:
+            (policyFence.payload.risk_threshold_auto_approve as
+              | RiskLevel
+              | undefined) ?? null,
+          allowedTargets: policyFence.payload.allowed_targets ?? null,
+          deniedTargets: policyFence.payload.denied_targets ?? null,
+          limits: policyFence.payload.limits,
+          approverRole: policyFence.payload.approver_role ?? null,
+          priority: policyFence.payload.priority,
+          enabled: policyFence.payload.enabled,
+        });
+        await wrappedEmit({
+          type: "surface",
+          messages: policySavedCard({
+            policy: saved.policy,
+            action: saved.action,
+          }),
+        });
+      } catch (err) {
+        await wrappedEmit({
+          type: "error",
+          message: `policy save failed: ${err instanceof Error ? err.message : err}`,
+        });
+      }
+    } else if (policyFence.errors.length > 0) {
+      const reasons = policyFence.errors.map((e) => e.reason).join("; ");
+      await wrappedEmit({
+        type: "error",
+        message: `policy save fence invalid: ${reasons}`,
+      });
+    }
+
     // Pull any neko_memory fences out of the agent response, persist
     // them, and strip from the user-facing text. Backend-agnostic: works
     // for Hermes (which has no MCP tool registry) and is harmless for
     // claude-agent (which would have used the MCP save tool, but we
     // accept either path).
-    const rawText = actionFences.text;
+    const rawText = policyFence.text;
     const { text: persistedText, ops: memoryOps } = extractMemoryFences(rawText);
     for (const op of memoryOps) {
       try {
