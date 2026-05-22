@@ -46,6 +46,8 @@ const policyFixture: ActionPolicyRecord = {
   approverRole: null,
   priority: 100,
   enabled: true,
+  createdByThreadId: null,
+  createdByRunId: null,
   createdAt: new Date("2026-05-01T00:00:00Z"),
   updatedAt: new Date("2026-05-15T00:00:00Z"),
 };

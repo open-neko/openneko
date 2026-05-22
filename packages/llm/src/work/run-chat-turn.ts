@@ -255,6 +255,8 @@ export async function runChatTurn(
             ? {
                 neko_policy_builder: buildPolicyBuilderServer({
                   orgId,
+                  createdByThreadId: threadId,
+                  createdByRunId: runId,
                   emit: wrappedEmit,
                 }),
               }
@@ -371,6 +373,8 @@ export async function runChatTurn(
           approverRole: policyFence.payload.approver_role ?? null,
           priority: policyFence.payload.priority,
           enabled: policyFence.payload.enabled,
+          createdByThreadId: threadId,
+          createdByRunId: runId,
         });
         await wrappedEmit({
           type: "surface",

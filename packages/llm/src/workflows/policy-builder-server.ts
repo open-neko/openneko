@@ -13,6 +13,8 @@ import { POLICY_SAVE_SCHEMA } from "./fence-schemas";
 
 export type PolicyBuilderContext = {
   orgId: string;
+  createdByThreadId?: string | null;
+  createdByRunId?: string | null;
   emit?: (event: AgentEvent) => Promise<void> | void;
 };
 
@@ -44,6 +46,8 @@ export function buildPolicyBuilderServer(ctx: PolicyBuilderContext) {
         approverRole: args.approver_role ?? null,
         priority: args.priority,
         enabled: args.enabled,
+        createdByThreadId: ctx.createdByThreadId ?? null,
+        createdByRunId: ctx.createdByRunId ?? null,
       });
       if (ctx.emit) {
         await ctx.emit({

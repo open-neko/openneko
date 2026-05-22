@@ -51,6 +51,8 @@ export type ActionPolicyRecord = {
   approverRole: string | null;
   priority: number;
   enabled: boolean;
+  createdByThreadId: string | null;
+  createdByRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -76,6 +78,8 @@ function toPolicyRecord(
     approverRole: row.approver_role,
     priority: row.priority,
     enabled: row.enabled,
+    createdByThreadId: row.created_by_thread_id,
+    createdByRunId: row.created_by_run_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -107,8 +111,11 @@ export async function listAllPolicies(
 
 export type CreateActionPolicyInput = Omit<
   ActionPolicyRecord,
-  "id" | "createdAt" | "updatedAt"
->;
+  "id" | "createdAt" | "updatedAt" | "createdByThreadId" | "createdByRunId"
+> & {
+  createdByThreadId?: string | null;
+  createdByRunId?: string | null;
+};
 
 export async function createActionPolicy(
   input: CreateActionPolicyInput,
@@ -129,6 +136,8 @@ export async function createActionPolicy(
       approver_role: input.approverRole,
       priority: input.priority,
       enabled: input.enabled,
+      created_by_thread_id: input.createdByThreadId ?? null,
+      created_by_run_id: input.createdByRunId ?? null,
     })
     .returning();
   return toPolicyRecord(row);
@@ -185,6 +194,9 @@ export async function upsertActionPolicyByName(
     enabled: input.enabled,
   });
   if (!updated) throw new Error(`action_policy ${existing.id} disappeared`);
+  // Provenance fields (createdByThreadId/createdByRunId) are creation-only:
+  // an edit doesn't overwrite the originating thread, so the rule's audit
+  // trail still points at the conversation that produced it the first time.
   return { action: "updated", policy: updated };
 }
 

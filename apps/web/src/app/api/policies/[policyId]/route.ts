@@ -31,6 +31,8 @@ export async function GET(_: Request, context: RouteContext) {
       approverRole: policy.approverRole,
       priority: policy.priority,
       enabled: policy.enabled,
+      createdByThreadId: policy.createdByThreadId,
+      createdByRunId: policy.createdByRunId,
       createdAt: policy.createdAt.toISOString(),
       updatedAt: policy.updatedAt.toISOString(),
     },
