@@ -45,6 +45,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # Needed for the "Run migrations" step below — single migrator path now,
+      # via `go run ./apps/openneko/cmd/openneko migrate` (embeds db/migrations).
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: apps/openneko/go.sum
+
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
@@ -72,7 +79,11 @@ jobs:
           NEKO_PG_USER: neko
           NEKO_PG_PASSWORD: secret
           NEKO_PG_DATABASE: neko
-        run: node packages/db/src/migrate.mjs
+        # Single migrator path — same Go binary the container entrypoints run.
+        # Embedded migrations are pulled in at compile time from apps/openneko/
+        # assets/migrations (kept in sync with db/migrations by sync-migrations.sh).
+        working-directory: apps/openneko
+        run: go run ./cmd/openneko migrate
 
       # Typecheck apps/web + apps/worker. Deploy runs `pnpm build`, which
       # invokes next build → tsc; PR checks otherwise only run vitest, so a

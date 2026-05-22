@@ -150,6 +150,11 @@ COPY --from=build --chown=neko:neko /app/node_modules/.pnpm/onnxruntime-node@1.2
 COPY --from=build --chown=neko:neko /app/node_modules/.pnpm/onnxruntime-common@1.24.3/node_modules/onnxruntime-common ./node_modules/.pnpm/onnxruntime-common@1.24.3/node_modules/onnxruntime-common
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+# Vendor the openneko Go binary so the entrypoint can run `openneko migrate`
+# at boot (replaces the legacy neko-db-init container). Same binary as the
+# worker image and the host install.
+COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
+RUN chmod +x /usr/local/bin/openneko
 # Vendored embedding model (see embedding-prewarm stage above). Ships the
 # ~22MB model files inside the image so save:/auto-context never blocks
 # on a network download at runtime.

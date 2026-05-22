@@ -50,7 +50,11 @@ jobs:
             set -a
             source .env
             set +a
-            pnpm -F @neko/db migrate
+            # Single migrator path. neko-vm-setup.sh installs the openneko
+            # binary at /usr/local/bin/openneko; if it hasn't run on this VM
+            # yet, this step fails loudly with "command not found" — fix by
+            # running scripts/neko-vm-setup.sh on the host once.
+            openneko migrate
 
             sudo /usr/bin/systemctl restart neko-web
             sudo /usr/bin/systemctl restart neko-worker
