@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.8](https://github.com/open-neko/neko/compare/v1.13.7...v1.13.8) (2026-05-23)
+
+
+### Bug Fixes
+
+* **ci:** pre-pull pgvector/pgvector:pg16 too for --pull never start ([56ad289](https://github.com/open-neko/neko/commit/56ad28903d077ebd97a5bcf135dab1a86f404f0e))
+
 ## [1.13.7](https://github.com/open-neko/neko/compare/v1.13.6...v1.13.7) (2026-05-23)
 
 
