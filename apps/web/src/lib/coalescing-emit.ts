@@ -61,7 +61,6 @@ export function createCoalescingEmit(
   const persistEvent = deps.persistEvent ?? appendWorkRunEvent;
   const notify = deps.notify ?? notifyRunSubscribers;
 
-  let seq = 0;
   let buffer: { role: "assistant" | "user"; content: string } | null = null;
   let bufferTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -73,9 +72,8 @@ export function createCoalescingEmit(
   };
 
   const persist = async (event: AgentEvent): Promise<void> => {
-    seq += 1;
-    await persistEvent({ orgId, threadId, runId, seq, event });
-    notify(runId, event, seq);
+    const id = await persistEvent({ orgId, threadId, runId, event });
+    notify(runId, event, id);
   };
 
   const flushBuffer = async (): Promise<void> => {
