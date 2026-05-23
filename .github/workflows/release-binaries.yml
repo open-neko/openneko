@@ -3,12 +3,12 @@ name: openneko release binaries
 # Fires when release-please publishes a GitHub release.
 #
 # Job graph:
-#   build-image (matrix 3 images × 2 arches = 6 cells)
+#   build-image (matrix 4 images × 2 arches = 8 cells)
 #       → publishes by digest only, no tags
 #       → runs natively on ubuntu-22.04 (amd64) and ubuntu-24.04-arm (arm64)
 #         so neither arch pays QEMU emulation overhead
-#       → all six cells run in parallel when runners are available
-#   merge-manifests (3 cells — one per image)
+#       → all eight cells run in parallel when runners are available
+#   merge-manifests (4 cells — one per image)
 #       → consumes the matched (amd64,arm64) digests for each image and
 #         publishes the multi-arch manifest as :vX.Y.Z + :latest
 #       → needs: [build-image]
@@ -39,9 +39,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      # 6-cell matrix enumerated explicitly: 3 images × 2 arches. Native
+      # 8-cell matrix enumerated explicitly: 4 images × 2 arches. Native
       # runners for both archs (arm64 lands on ubuntu-24.04-arm, free for
-      # public repos) so no QEMU emulation penalty. All six builds run
+      # public repos) so no QEMU emulation penalty. All eight builds run
       # in parallel when runners are available.
       matrix:
         include:
@@ -67,6 +67,14 @@ jobs:
             runner: ubuntu-22.04
           - image: neko-graphjin
             target: neko-graphjin
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: neko-cli
+            target: neko-cli
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-cli
+            target: neko-cli
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -123,7 +131,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-graphjin]
+        image: [neko-web, neko-worker, neko-graphjin, neko-cli]
     steps:
       - name: Resolve release tag
         id: tag

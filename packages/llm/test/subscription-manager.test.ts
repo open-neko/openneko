@@ -39,7 +39,7 @@ describe("startSubscriptionManager — transport resolver", () => {
   beforeEach(() => {
     subscribeMock.mockReset();
     listEnabledMock.mockReset();
-    subscribeMock.mockReturnValue({ stop: vi.fn() });
+    subscribeMock.mockReturnValue({ stop: vi.fn(), ready: Promise.resolve() });
   });
 
   afterEach(() => {
@@ -134,7 +134,7 @@ describe("startSubscriptionManager — transport resolver", () => {
       | undefined;
     subscribeMock.mockImplementation((args: { onNext: (m: unknown) => unknown }) => {
       pushedOnNext = args.onNext;
-      return { stop: vi.fn() };
+      return { stop: vi.fn(), ready: Promise.resolve() };
     });
 
     const onMatch = vi.fn();
