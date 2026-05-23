@@ -152,17 +152,26 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
         </Field>
 
         <Field label="Which CXO seats are active?">
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {ALL_SEATS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleSeat(s)}
-                className={`pill${seats.includes(s) ? " on" : ""}`}
-              >
-                {s}
-              </button>
-            ))}
+          <div className="flex gap-[7px] flex-wrap">
+            {ALL_SEATS.map((s) => {
+              const isOn = seats.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleSeat(s)}
+                  className={[
+                    "px-4.5 py-2.5 rounded-full border-[1.5px] font-body text-[14.5px] font-medium cursor-pointer",
+                    "transition-[color,background,border-color,transform,box-shadow] duration-200",
+                    isOn
+                      ? "bg-text border-text text-bg shadow-[0_2px_10px_rgba(20,18,12,0.18)]"
+                      : "bg-white/60 border-border text-text2 hover:border-accent hover:text-accent hover:bg-accent-soft hover:-translate-y-px",
+                  ].join(" ")}
+                >
+                  {s}
+                </button>
+              );
+            })}
           </div>
         </Field>
 
