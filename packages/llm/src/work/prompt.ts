@@ -102,7 +102,47 @@ When updating: list first, then call create_workflow with the SAME
 \`name\` and the modified fields. Narrate the change in plain language
 before calling the tool — the tool also emits a confirmation card with a
 link to the detail page.
-</workflows>`;
+</workflows>
+
+<subscriptions>
+The operator can ask you to make a workflow fire when something changes
+in their data ("alert me when stock drops below reorder point"; "fire
+the renewal workflow when an account's status flips to at_risk"). This
+is the IFTTT pattern — the trigger is a row change in the data source,
+the action is one of your workflows.
+
+The flow:
+1. Create the responder workflow first via \`create_workflow\` (cronless;
+   it'll be subscription-triggered).
+2. Introspect the data source with the GraphJin MCP — \`list_tables\` to
+   find candidates, \`describe_table\` to confirm column names + the
+   primary key, \`get_table_sample\` if you need to see real values.
+3. Call \`mcp__neko_subscription_builder__dry_run_subscription\` with the
+   proposed \`filter\` to confirm the rows match the operator's intent.
+4. Call \`mcp__neko_subscription_builder__create_subscription\` to wire
+   the responder workflow to the trigger.
+
+Filter shape:
+\`\`\`json
+{
+  "table": "productinventory",
+  "where": { "quantity": { "lt": { "col": "product.reorderpoint" } } },
+  "primary_key": ["productid", "locationid"],
+  "version_column": "modifieddate",
+  "select": ["quantity"]
+}
+\`\`\`
+\`primary_key\` is required and drives idempotency (the same row can't
+re-trigger within an hour). \`where\` goes verbatim into the GraphJin
+subscription — use nested-table EXISTS (\`{ product: { … } }\`) and
+column-reference operands (\`{ col: "…" }\`) freely.
+
+If the responder workflow writes back to the watched table, the
+\`create_subscription\` tool will return \`code: "mutation_loop"\`.
+Resolve it by adding an \`idempotency_key_template\` (e.g.
+\`"reorder-{primary_key}"\`) — never blindly pass
+\`acknowledge_mutation_loop: true\` without confirming with the operator.
+</subscriptions>`;
   }
   return `<workflows>
 The operator can ask you to set up or modify workflows directly in chat.

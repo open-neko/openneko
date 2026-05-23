@@ -18,6 +18,12 @@ cors_allowed_origins:
 default_limit: 20
 enable_tracing: true
 
+# Subscription polling — GraphJin re-runs each subscription's query on this
+# cadence and pushes new matches over the WebSocket. Latency for source_change
+# triggers is bounded by this interval. 5s is a safe default for an operational
+# DB; tune down on quiet schemas, up on busy ones.
+subs_poll_duration: 5s
+
 mcp:
   disable: false
   allow_config_updates: false

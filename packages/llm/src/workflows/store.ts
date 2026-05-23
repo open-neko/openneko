@@ -1,10 +1,12 @@
 import {
   and,
+  data_source,
   db,
   desc,
   eq,
   inArray,
   observation,
+  source_change_log,
   sql,
   subscription,
   workflow_definition,
@@ -771,4 +773,87 @@ export async function listRecentOutputsByWorkflow(
     mood: r.mood,
     createdAt: r.created_at,
   }));
+}
+
+// ─── data_source helpers ────────────────────────────────────────────────────
+
+export type DataSourceContext = {
+  id: string;
+  graphqlUrl: string;
+  subscriptionUrl: string | null;
+  mcpUrl: string | null;
+};
+
+export async function getDataSourceForOrg(
+  orgId: string,
+): Promise<DataSourceContext | null> {
+  const rows = await db()
+    .select({
+      id: data_source.id,
+      graphql_url: data_source.graphql_url,
+      subscription_url: data_source.subscription_url,
+      mcp_url: data_source.mcp_url,
+    })
+    .from(data_source)
+    .where(eq(data_source.org_id, orgId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    graphqlUrl: row.graphql_url,
+    subscriptionUrl: row.subscription_url,
+    mcpUrl: row.mcp_url,
+  };
+}
+
+// ─── source_change helpers ──────────────────────────────────────────────────
+
+/**
+ * Has any recent workflow_run of `workflowId` mutated (table, primaryKey)?
+ * Backs the source_change cycle check — a responder workflow that writes
+ * back to the table it's subscribed to would otherwise re-trigger itself.
+ * Adapters populate `workflow_run.source_writes` (jsonb array of
+ * `{table, primary_key}`); we check containment via `@>`.
+ */
+export async function hasRecentSourceWriteForWorkflow(args: {
+  workflowId: string;
+  table: string;
+  primaryKey: Record<string, unknown>;
+  sinceMs: number;
+}): Promise<boolean> {
+  const since = new Date(Date.now() - args.sinceMs);
+  const needle = JSON.stringify([
+    { table: args.table, primary_key: args.primaryKey },
+  ]);
+  const rows = await db()
+    .select({ id: workflow_run.id })
+    .from(workflow_run)
+    .where(
+      and(
+        eq(workflow_run.workflow_id, args.workflowId),
+        sql`${workflow_run.created_at} >= ${since}`,
+        sql`${workflow_run.source_writes} @> ${needle}::jsonb`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+export async function writeSourceChangeLog(args: {
+  orgId: string;
+  sourceId: string;
+  tableName: string;
+  changeKind: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  await db()
+    .insert(source_change_log)
+    .values({
+      org_id: args.orgId,
+      source_id: args.sourceId,
+      table_name: args.tableName,
+      change_kind: args.changeKind,
+      payload: args.payload,
+    });
 }

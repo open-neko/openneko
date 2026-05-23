@@ -35,10 +35,18 @@ export {
   type WorkflowBuilderContext,
 } from "./builder-server";
 export {
+  buildSubscriptionBuilderServer,
+  type SubscriptionBuilderContext,
+} from "./subscription-builder-server";
+export {
   buildPolicyBuilderServer,
   type PolicyBuilderContext,
 } from "./policy-builder-server";
-export { policySavedCard, workflowSavedCard } from "./builder-cards";
+export {
+  policySavedCard,
+  subscriptionSavedCard,
+  workflowSavedCard,
+} from "./builder-cards";
 export { buildWorkflowOutputServer } from "./output-server";
 export { buildWorkflowRunnerPrompt } from "./runner-prompt";
 export {
@@ -70,10 +78,12 @@ export {
   deleteSubscription,
   emitWorkflowOutput,
   finishWorkflowRun,
+  getDataSourceForOrg,
   getObservation,
   getWorkflow,
   getWorkflowByOrgName,
   getWorkflowRunChainDepth,
+  hasRecentSourceWriteForWorkflow,
   linkOutputSourceObservations,
   listRecentOutputsByWorkflow,
   listCronWorkflows,
@@ -85,9 +95,11 @@ export {
   saveWorkflow,
   setSubscriptionEnabled,
   startOfTodayUtc,
+  writeSourceChangeLog,
   type CreateObservationInput,
   type CreateSubscriptionInput,
   type CreateWorkflowRunInput,
+  type DataSourceContext,
   type ObservationConsumerKind,
   type ObservationRecord,
   type SaveWorkflowInput,
@@ -102,8 +114,14 @@ export {
   type WorkflowTriggers,
 } from "./store";
 export {
+  buildSourceChangeDryRunQuery,
   buildSubscriptionQuery,
+  parseSourceChangeFilter,
+  parseSourceChangeMatch,
   parseWorkflowOutputMatch,
+  type JsonScalar,
+  type SourceChangeFilter,
+  type SourceChangeMatch,
   type SubscriptionQueryPayload,
   type WorkflowOutputFilter,
   type WorkflowOutputMatch,
@@ -113,19 +131,25 @@ export {
   type SubscriptionManagerHandle,
   type SubscriptionManagerOptions,
   type SubscriptionMatchEvent,
+  type SubscriptionTransport,
+  type ResolveTransport,
 } from "./subscription-manager";
 export {
+  handleSourceChangeMatch,
   handleSubscriptionMatch,
+  type HandleSourceChangeMatchOptions,
   type HandleSubscriptionMatchOptions,
   type MatchHandlerDecision,
 } from "./match-handler";
 export {
   checkSubscriptionWouldLoop,
+  detectMutationLoop,
   isWorkflowInAncestorChain,
   outputMatchesFilter,
   SubscriptionSelfLoopError,
   type CheckSubscriptionWouldLoopOptions,
   type FilterableOutput,
+  type MutationLoopCheck,
 } from "./cycle-detection";
 export {
   approveActionRequest,

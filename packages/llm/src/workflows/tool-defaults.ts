@@ -10,6 +10,10 @@ export const WORKFLOW_BUILDER_ALLOWED_TOOLS = [
   "WebSearch",
   "AskUserQuestion",
   "mcp__neko_workflow_builder__create_workflow",
+  "mcp__neko_workflow_builder__list_workflows",
+  "mcp__neko_subscription_builder__create_subscription",
+  "mcp__neko_subscription_builder__dry_run_subscription",
+  "mcp__neko_subscription_builder__list_subscriptions",
 ] as const;
 
 export const WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS = [

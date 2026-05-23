@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   checkSubscriptionWouldLoop,
   createSubscription,
+  detectMutationLoop,
+  getDataSourceForOrg,
+  getWorkflow,
   listSubscriptionsByWorkflow,
+  parseSourceChangeFilter,
   SubscriptionSelfLoopError,
   type SubscriptionSourceKind,
 } from "@neko/llm/workflows";
@@ -77,6 +81,52 @@ export async function POST(req: NextRequest, context: RouteContext) {
         );
       }
       throw e;
+    }
+  }
+
+  if (sourceKind === "source_change") {
+    const parsed = parseSourceChangeFilter(filter);
+    if (!parsed) {
+      return NextResponse.json(
+        {
+          error:
+            "source_change filter requires { table: string, primary_key: string[] } and optional where/select/version_column (identifiers only)",
+          code: "invalid_filter",
+        },
+        { status: 400 },
+      );
+    }
+
+    const dataSource = await getDataSourceForOrg(orgId);
+    if (!dataSource) {
+      return NextResponse.json(
+        {
+          error:
+            "no data_source configured for this org — source_change subscriptions need a configured data source",
+          code: "no_data_source",
+        },
+        { status: 422 },
+      );
+    }
+
+    if (!body.acknowledgeMutationLoop) {
+      const workflow = await getWorkflow(orgId, workflowId);
+      if (workflow) {
+        const loopCheck = detectMutationLoop({ filter: parsed, workflow });
+        const hasIdempotency =
+          typeof body.idempotencyKeyTemplate === "string" &&
+          body.idempotencyKeyTemplate.length > 0;
+        if (loopCheck.loops && !hasIdempotency) {
+          return NextResponse.json(
+            {
+              error: loopCheck.reason,
+              code: "mutation_loop",
+              mutationKeyword: loopCheck.mutationKeyword,
+            },
+            { status: 422 },
+          );
+        }
+      }
     }
   }
 

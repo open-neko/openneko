@@ -1,6 +1,7 @@
 import type { AgentSurfaceMessage } from "../agent-backend";
 import type { ActionPolicyRecord } from "./action-store";
-import type { WorkflowRecord } from "./store";
+import type { SubscriptionRecord, WorkflowRecord } from "./store";
+import type { SourceChangeFilter } from "./subscription-query";
 
 function briefingCard(args: {
   surfaceId: string;
@@ -55,6 +56,40 @@ export function workflowSavedCard(args: {
       "",
       `[Open detail](/workflows?id=${args.workflow.id})`,
     ].join("\n"),
+  });
+}
+
+export function subscriptionSavedCard(args: {
+  subscription: SubscriptionRecord;
+  workflowName: string;
+}): AgentSurfaceMessage[] {
+  const filter = args.subscription.filter as Partial<SourceChangeFilter>;
+  const table = typeof filter.table === "string" ? filter.table : "?";
+  const pkList = Array.isArray(filter.primary_key)
+    ? filter.primary_key.join(", ")
+    : "?";
+  const whereSummary =
+    filter.where && Object.keys(filter.where).length > 0
+      ? "`" +
+        Object.keys(filter.where as Record<string, unknown>).join("`, `") +
+        "`"
+      : "_(no filter)_";
+  return briefingCard({
+    surfaceId: `subscription-save-${args.subscription.id}`,
+    greeting: "Wired subscription",
+    subtitle: args.workflowName,
+    body: [
+      `**${args.workflowName}** will fire on changes to \`${table}\` (pk: \`${pkList}\`).`,
+      "",
+      `**Filter columns:** ${whereSummary}`,
+      args.subscription.idempotencyKeyTemplate
+        ? `**Idempotency key:** \`${args.subscription.idempotencyKeyTemplate}\``
+        : null,
+      "",
+      `[Open detail](/workflows?id=${args.subscription.workflowId})`,
+    ]
+      .filter((s) => s !== null)
+      .join("\n"),
   });
 }
 

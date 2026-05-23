@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { enqueue as defaultEnqueue, QUEUE } from "@neko/db/jobs";
 import { isWorkflowInAncestorChain as defaultIsCycle } from "./cycle-detection";
 import {
@@ -6,10 +7,17 @@ import {
   countWorkflowRunsSince as defaultCountRunsSince,
   createObservation as defaultCreateObservation,
   getWorkflow as defaultGetWorkflow,
+  hasRecentSourceWriteForWorkflow as defaultHasRecentSourceWrite,
   startOfTodayUtc,
+  writeSourceChangeLog as defaultWriteSourceChangeLog,
   type SubscriptionRecord,
+  type WorkflowRecord,
 } from "./store";
-import type { WorkflowOutputMatch } from "./subscription-query";
+import type {
+  JsonScalar,
+  SourceChangeMatch,
+  WorkflowOutputMatch,
+} from "./subscription-query";
 
 export type MatchHandlerDecision =
   | { action: "enqueued"; observationId: string; jobId: string | null }
@@ -35,15 +43,29 @@ export type HandleSubscriptionMatchOptions = {
   ) => Promise<number | null>;
 };
 
+export type HandleSourceChangeMatchOptions = {
+  subscription: SubscriptionRecord;
+  match: SourceChangeMatch;
+  dataSourceId: string;
+  fanoutWindowMs?: number;
+  /** Override for tests. */
+  enqueue?: typeof defaultEnqueue;
+  createObservation?: typeof defaultCreateObservation;
+  countWorkflowRunsForSubscription?: typeof defaultCountInFlight;
+  countWorkflowRunsSince?: typeof defaultCountRunsSince;
+  getWorkflow?: typeof defaultGetWorkflow;
+  hasRecentSourceWriteForWorkflow?: typeof defaultHasRecentSourceWrite;
+  writeSourceChangeLog?: typeof defaultWriteSourceChangeLog;
+};
+
 const DEFAULT_MAX_CHAIN_DEPTH = 20;
 const DEFAULT_MAX_FANOUT_PER_OUTPUT = 32;
 const DEFAULT_FANOUT_WINDOW_MS = 60_000;
 
 /**
- * Handle a subscription match: enforce loop-safety limits, write a
- * consumer-side observation row, then enqueue a WORKFLOW_RUN_FIRE job
- * for the consuming workflow. Returns the decision so callers can log
- * or assert against it.
+ * Handle a workflow_output subscription match: enforce loop-safety limits,
+ * write a consumer-side observation row, then enqueue a WORKFLOW_RUN_FIRE
+ * job for the consuming workflow.
  */
 export async function handleSubscriptionMatch(
   opts: HandleSubscriptionMatchOptions,
@@ -85,10 +107,6 @@ export async function handleSubscriptionMatch(
     }
   }
 
-  // Precise cycle check: walk the lineage backwards from the producing
-  // run. If the consumer workflow already appears in the chain, firing
-  // would close a cycle. Catches multi-workflow loops (A→B→A) and any
-  // misauthored self-subscription the save-time check missed.
   const cycle = await isCycle(
     opts.output.workflow_run_id,
     opts.subscription.workflowId,
@@ -108,31 +126,13 @@ export async function handleSubscriptionMatch(
     };
   }
 
-  const inFlight = await countInFlight(opts.subscription.id, "running");
-  if (inFlight >= opts.subscription.maxConcurrentRuns) {
-    return {
-      action: "dropped",
-      reason: `subscription ${opts.subscription.id} at max_concurrent_runs (${inFlight}/${opts.subscription.maxConcurrentRuns})`,
-    };
-  }
-
-  const consumer = await getWorkflow(
-    opts.subscription.orgId,
-    opts.subscription.workflowId,
-  );
-  if (consumer?.dailyRunBudget !== null && consumer?.dailyRunBudget !== undefined) {
-    const ranToday = await countRunsSince(
-      opts.subscription.orgId,
-      opts.subscription.workflowId,
-      startOfTodayUtc(),
-    );
-    if (ranToday >= consumer.dailyRunBudget) {
-      return {
-        action: "dropped",
-        reason: `consumer workflow ${opts.subscription.workflowId} reached daily_run_budget (${ranToday}/${consumer.dailyRunBudget})`,
-      };
-    }
-  }
+  const guard = await applyDeliveryGuards({
+    subscription: opts.subscription,
+    countInFlight,
+    countRunsSince,
+    getWorkflow,
+  });
+  if (!guard.allowed) return { action: "dropped", reason: guard.reason };
 
   const observationRow = await createObservation({
     orgId: opts.subscription.orgId,
@@ -144,7 +144,10 @@ export async function handleSubscriptionMatch(
     mood: (opts.output.mood as "good" | "watch" | "act" | null) ?? null,
   });
 
-  const singletonKey = buildIdempotencyKey(opts.subscription, opts.output);
+  const singletonKey = buildWorkflowOutputIdempotencyKey(
+    opts.subscription,
+    opts.output,
+  );
 
   const jobId = await enqueue(
     QUEUE.WORKFLOW_RUN_FIRE,
@@ -174,7 +177,150 @@ export async function handleSubscriptionMatch(
   };
 }
 
-function buildIdempotencyKey(
+/**
+ * Handle a source_change subscription match: detect the responder-write cycle
+ * via `workflow_run.source_writes`, write an audit row to source_change_log,
+ * write a consumer-side observation (no source_output_id — the trigger came
+ * from the operator's data, not an OpenNeko workflow), then enqueue
+ * WORKFLOW_RUN_FIRE.
+ */
+export async function handleSourceChangeMatch(
+  opts: HandleSourceChangeMatchOptions,
+): Promise<MatchHandlerDecision> {
+  const enqueue = opts.enqueue ?? defaultEnqueue;
+  const createObservation = opts.createObservation ?? defaultCreateObservation;
+  const countInFlight =
+    opts.countWorkflowRunsForSubscription ?? defaultCountInFlight;
+  const countRunsSince =
+    opts.countWorkflowRunsSince ?? defaultCountRunsSince;
+  const getWorkflow = opts.getWorkflow ?? defaultGetWorkflow;
+  const hasRecentSourceWrite =
+    opts.hasRecentSourceWriteForWorkflow ?? defaultHasRecentSourceWrite;
+  const writeAudit = opts.writeSourceChangeLog ?? defaultWriteSourceChangeLog;
+  const fanoutWindowMs = opts.fanoutWindowMs ?? DEFAULT_FANOUT_WINDOW_MS;
+
+  const recentWrite = await hasRecentSourceWrite({
+    workflowId: opts.subscription.workflowId,
+    table: opts.match.table,
+    primaryKey: opts.match.primary_key,
+    sinceMs: fanoutWindowMs,
+  });
+  if (recentWrite) {
+    return {
+      action: "dropped",
+      reason: `cycle detected — workflow ${opts.subscription.workflowId} recently wrote to ${opts.match.table}:${JSON.stringify(opts.match.primary_key)}`,
+    };
+  }
+
+  const guard = await applyDeliveryGuards({
+    subscription: opts.subscription,
+    countInFlight,
+    countRunsSince,
+    getWorkflow,
+  });
+  if (!guard.allowed) return { action: "dropped", reason: guard.reason };
+
+  const pkSummary = summarizePrimaryKey(opts.match.primary_key);
+  const observationRow = await createObservation({
+    orgId: opts.subscription.orgId,
+    sourceOutputId: null,
+    consumerKind: "workflow",
+    consumerWorkflowId: opts.subscription.workflowId,
+    subscriptionId: opts.subscription.id,
+    title: `${opts.match.table} ${pkSummary}`,
+    body: JSON.stringify(opts.match.snapshot).slice(0, 4_000),
+    mood: null,
+  });
+
+  await writeAudit({
+    orgId: opts.subscription.orgId,
+    sourceId: opts.dataSourceId,
+    tableName: opts.match.table,
+    changeKind: "subscription_match",
+    payload: {
+      subscription_id: opts.subscription.id,
+      observation_id: observationRow.id,
+      primary_key: opts.match.primary_key,
+      snapshot: opts.match.snapshot,
+      version_token: opts.match.version_token,
+    },
+  });
+
+  const singletonKey = buildSourceChangeIdempotencyKey(
+    opts.subscription,
+    opts.match,
+  );
+
+  const jobId = await enqueue(
+    QUEUE.WORKFLOW_RUN_FIRE,
+    {
+      orgId: opts.subscription.orgId,
+      workflowId: opts.subscription.workflowId,
+      triggerKind: "subscription" as const,
+      triggerPayload: {
+        subscription_id: opts.subscription.id,
+        observation_id: observationRow.id,
+        table: opts.match.table,
+        primary_key: opts.match.primary_key,
+        snapshot: opts.match.snapshot,
+        version_token: opts.match.version_token,
+      },
+      triggeredBySubscriptionId: opts.subscription.id,
+      triggeredByObservationId: observationRow.id,
+    },
+    {
+      singletonKey,
+      singletonHours: 1,
+    },
+  );
+
+  return {
+    action: "enqueued",
+    observationId: observationRow.id,
+    jobId,
+  };
+}
+
+type GuardArgs = {
+  subscription: SubscriptionRecord;
+  countInFlight: typeof defaultCountInFlight;
+  countRunsSince: typeof defaultCountRunsSince;
+  getWorkflow: typeof defaultGetWorkflow;
+};
+
+type GuardResult =
+  | { allowed: true }
+  | { allowed: false; reason: string };
+
+async function applyDeliveryGuards(args: GuardArgs): Promise<GuardResult> {
+  const inFlight = await args.countInFlight(args.subscription.id, "running");
+  if (inFlight >= args.subscription.maxConcurrentRuns) {
+    return {
+      allowed: false,
+      reason: `subscription ${args.subscription.id} at max_concurrent_runs (${inFlight}/${args.subscription.maxConcurrentRuns})`,
+    };
+  }
+  const consumer: WorkflowRecord | null = await args.getWorkflow(
+    args.subscription.orgId,
+    args.subscription.workflowId,
+  );
+  if (consumer?.dailyRunBudget != null) {
+    const ranToday = await args.countRunsSince(
+      args.subscription.orgId,
+      args.subscription.workflowId,
+      startOfTodayUtc(),
+    );
+    if (ranToday >= consumer.dailyRunBudget) {
+      return {
+        allowed: false,
+        reason: `consumer workflow ${args.subscription.workflowId} reached daily_run_budget (${ranToday}/${consumer.dailyRunBudget})`,
+      };
+    }
+  }
+  return { allowed: true };
+}
+
+function buildWorkflowOutputIdempotencyKey(
   sub: SubscriptionRecord,
   output: WorkflowOutputMatch,
 ): string {
@@ -185,4 +331,35 @@ function buildIdempotencyKey(
       .replace("{source_version}", output.created_at);
   }
   return `${sub.id}:${output.id}:${output.created_at}`;
+}
+
+function buildSourceChangeIdempotencyKey(
+  sub: SubscriptionRecord,
+  match: SourceChangeMatch,
+): string {
+  const pkHash = hashPrimaryKey(match.primary_key);
+  const versionToken = match.version_token ?? "none";
+  if (sub.idempotencyKeyTemplate) {
+    return sub.idempotencyKeyTemplate
+      .replace("{subscription_id}", sub.id)
+      .replace("{source_record_id}", pkHash)
+      .replace("{primary_key}", pkHash)
+      .replace("{source_version}", versionToken);
+  }
+  return `${sub.id}:${pkHash}:${versionToken}`;
+}
+
+function hashPrimaryKey(pk: Record<string, JsonScalar>): string {
+  const parts = Object.entries(pk)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v == null ? "" : String(v)}`);
+  return createHash("sha256")
+    .update(parts.join(""))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function summarizePrimaryKey(pk: Record<string, JsonScalar>): string {
+  const parts = Object.entries(pk).map(([k, v]) => `${k}=${v == null ? "" : String(v)}`);
+  return parts.length === 0 ? "()" : `(${parts.join(", ")})`;
 }
