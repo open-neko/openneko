@@ -6,20 +6,21 @@ import {
 } from "@/lib/coalescing-emit";
 
 type PersistedRow = {
-  seq: number;
+  id: number;
   event: AgentEvent;
 };
 
 function makeHarness(flushIdleMs = 100) {
   const persisted: PersistedRow[] = [];
-  const notified: Array<{ seq: number; event: AgentEvent }> = [];
-  const persistEvent = vi.fn(
-    async (args: { seq: number; event: AgentEvent }) => {
-      persisted.push({ seq: args.seq, event: args.event });
-    },
-  ) as unknown as CoalescingEmitDeps["persistEvent"];
-  const notify = vi.fn((_runId: string, event: AgentEvent, seq: number) => {
-    notified.push({ seq, event });
+  const notified: Array<{ id: number; event: AgentEvent }> = [];
+  let nextId = 0;
+  const persistEvent = vi.fn(async (args: { event: AgentEvent }) => {
+    nextId += 1;
+    persisted.push({ id: nextId, event: args.event });
+    return nextId;
+  }) as unknown as CoalescingEmitDeps["persistEvent"];
+  const notify = vi.fn((_runId: string, event: AgentEvent, id: number) => {
+    notified.push({ id, event });
   });
   const { emit, finalize } = createCoalescingEmit(
     {
@@ -53,7 +54,7 @@ describe("createCoalescingEmit", () => {
     await h.finalize();
 
     expect(h.persisted).toHaveLength(1);
-    expect(h.persisted[0].seq).toBe(1);
+    expect(h.persisted[0].id).toBe(1);
     expect(h.persisted[0].event).toEqual({
       type: "message",
       role: "assistant",
@@ -76,7 +77,7 @@ describe("createCoalescingEmit", () => {
     ]);
     expect(h.persisted[0].event).toMatchObject({ content: "narrating" });
     expect(h.persisted[2].event).toMatchObject({ content: "after tool" });
-    expect(h.persisted.map((r) => r.seq)).toEqual([1, 2, 3]);
+    expect(h.persisted.map((r) => r.id)).toEqual([1, 2, 3]);
   });
 
   it("flushes idle buffer when the timer fires", async () => {
@@ -141,14 +142,14 @@ describe("createCoalescingEmit", () => {
     expect(h.persisted).toHaveLength(0);
   });
 
-  it("notifies live subscribers with the same seq as DB rows", async () => {
+  it("notifies live subscribers with the same id as DB rows", async () => {
     const h = makeHarness();
 
     await h.emit({ type: "message", role: "assistant", content: "hi" });
     await h.emit({ type: "status", message: "thinking" });
     await h.finalize();
 
-    expect(h.notified.map((n) => n.seq)).toEqual(h.persisted.map((r) => r.seq));
+    expect(h.notified.map((n) => n.id)).toEqual(h.persisted.map((r) => r.id));
     expect(h.notified.map((n) => n.event.type)).toEqual([
       "message",
       "status",
