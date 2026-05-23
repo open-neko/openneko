@@ -1,6 +1,4 @@
-// Pinned GraphJin binary release. Keep in sync with:
-//   - Dockerfile ARG GRAPHJIN_VERSION
-//   - scripts/install-graphjin-binary.ts download URL
-// Bump together; a mismatch between embedded server (worker spawn) and
-// CLI surface (agent path) is hard to debug after the fact.
+// Bump together with the GRAPHJIN_VERSION pins in Dockerfile,
+// scripts/install-clis.sh, and the dosco/graphjin image tag in both
+// compose.adventureworks.yml and apps/openneko/assets/compose/demo.yml.
 export const GRAPHJIN_VERSION = "3.18.25";
