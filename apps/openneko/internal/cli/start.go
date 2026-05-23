@@ -37,7 +37,14 @@ Modes:
 			if m == "" {
 				m = compose.ModeProd
 			}
-			_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
+			// Pin compose's image tags to this binary's version unless the
+			// caller has already set OPENNEKO_VERSION — that lets the smoke
+			// workflow (which builds openneko fresh from source, so its
+			// embedded version is "0.0.0-dev") test against a real release
+			// tag.
+			if os.Getenv("OPENNEKO_VERSION") == "" {
+				_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
+			}
 
 			sup := compose.New(assets.ComposeFS)
 			files, err := sup.Materialize(m)
