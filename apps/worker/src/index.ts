@@ -30,12 +30,15 @@ import {
   verifyAiCredentials,
 } from "@neko/llm";
 import {
+  getDataSourceForOrg,
   getWorkflowRunChainDepth,
+  handleSourceChangeMatch,
   handleSubscriptionMatch,
   registerBuiltinAdapters,
   seedDefaultActionPolicies,
   seedPluginActionPolicies,
   startSubscriptionManager,
+  type DataSourceContext,
   type PluginActionSeed,
 } from "@neko/llm/workflows";
 import { ensureOrgWorkspace } from "@neko/llm/work";
@@ -466,24 +469,65 @@ await b.schedule(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, "0 * * * *", {}, {
 });
 console.log("[worker] scheduled workflow_output ttl sweep hourly");
 
+type CachedDataSource = { ctx: DataSourceContext; expiresAt: number };
+const DATA_SOURCE_CACHE_MS = 60_000;
+const dataSourceCache = new Map<string, CachedDataSource>();
+
+async function loadDataSourceContext(orgId: string): Promise<DataSourceContext> {
+  const now = Date.now();
+  const cached = dataSourceCache.get(orgId);
+  if (cached && cached.expiresAt > now) return cached.ctx;
+  const ctx = await getDataSourceForOrg(orgId);
+  if (!ctx) throw new Error(`no data_source configured for org ${orgId}`);
+  dataSourceCache.set(orgId, { ctx, expiresAt: now + DATA_SOURCE_CACHE_MS });
+  return ctx;
+}
+
 const subscriptionManager = startSubscriptionManager({
-  baseUrl: GRAPHJIN_URL,
+  resolveTransport: async (sub) => {
+    if (sub.sourceKind === "source_change") {
+      const ctx = await loadDataSourceContext(sub.orgId);
+      return { baseUrl: ctx.subscriptionUrl ?? ctx.graphqlUrl };
+    }
+    return { baseUrl: GRAPHJIN_URL };
+  },
   refreshIntervalMs: 60_000,
   onMatch: async (event) => {
-    if (event.kind !== "workflow_output") return;
-    const decision = await handleSubscriptionMatch({
-      subscription: event.subscription,
-      output: event.output,
-      resolveProducingRunChainDepth: getWorkflowRunChainDepth,
-    });
-    if (decision.action === "dropped") {
-      console.log(
-        `[subscription-manager] dropped match sub=${event.subscription.id} output=${event.output.id}: ${decision.reason}`,
-      );
-    } else {
-      console.log(
-        `[subscription-manager] enqueued sub=${event.subscription.id} output=${event.output.id} obs=${decision.observationId}`,
-      );
+    if (event.kind === "workflow_output") {
+      const decision = await handleSubscriptionMatch({
+        subscription: event.subscription,
+        output: event.output,
+        resolveProducingRunChainDepth: getWorkflowRunChainDepth,
+      });
+      if (decision.action === "dropped") {
+        console.log(
+          `[subscription-manager] dropped match sub=${event.subscription.id} output=${event.output.id}: ${decision.reason}`,
+        );
+      } else {
+        console.log(
+          `[subscription-manager] enqueued sub=${event.subscription.id} output=${event.output.id} obs=${decision.observationId}`,
+        );
+      }
+      return;
+    }
+    if (event.kind === "source_change") {
+      const ctx = await loadDataSourceContext(event.subscription.orgId);
+      const decision = await handleSourceChangeMatch({
+        subscription: event.subscription,
+        match: event.match,
+        dataSourceId: ctx.id,
+      });
+      const pk = JSON.stringify(event.match.primary_key);
+      if (decision.action === "dropped") {
+        console.log(
+          `[subscription-manager] dropped source_change sub=${event.subscription.id} ${event.match.table}:${pk}: ${decision.reason}`,
+        );
+      } else {
+        console.log(
+          `[subscription-manager] enqueued source_change sub=${event.subscription.id} ${event.match.table}:${pk} obs=${decision.observationId}`,
+        );
+      }
+      return;
     }
   },
   onError: (err, sub) => {

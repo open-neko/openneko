@@ -13,18 +13,6 @@ export type SubscriptionQueryPayload = {
   variables: Record<string, unknown>;
 };
 
-/**
- * Build the GraphJin subscription query for a subscription row's filter.
- * The shape is shaped per source_kind:
- *   workflow_output → matches workflow_output rows (the canonical
- *     workflow-chaining case)
- *   source_change   → not implemented yet (will hit source_change_log)
- *   external_event  → not implemented yet
- *
- * Returns null for source kinds that aren't wired in this slice; the
- * subscription manager logs and skips those rows so future work can land
- * additively without breaking existing subscriptions.
- */
 export function buildSubscriptionQuery(args: {
   sourceKind: SubscriptionSourceKind;
   filter: Record<string, unknown>;
@@ -32,6 +20,9 @@ export function buildSubscriptionQuery(args: {
 }): SubscriptionQueryPayload | null {
   if (args.sourceKind === "workflow_output") {
     return buildWorkflowOutputSubscription(args.filter, args.orgId);
+  }
+  if (args.sourceKind === "source_change") {
+    return buildSourceChangeSubscription(args.filter);
   }
   return null;
 }
@@ -102,4 +93,167 @@ export function parseWorkflowOutputMatch(
     title: String(row.title ?? ""),
     created_at: String(row.created_at),
   };
+}
+
+// ─── source_change ──────────────────────────────────────────────────────────
+// Subscriptions over the operator's data-source DB. Filter is a passthrough to
+// GraphJin: `table` + `where` go straight into the compiled subscription. Org
+// isolation is enforced by which data_source row the manager subscribes to
+// (the operator's tables have no org_id column we could inject).
+
+export type JsonScalar = string | number | boolean | null;
+
+export type SourceChangeFilter = {
+  table: string;
+  where?: Record<string, unknown>;
+  select?: string[];
+  primary_key: string[];
+  version_column?: string;
+};
+
+export type SourceChangeMatch = {
+  table: string;
+  primary_key: Record<string, JsonScalar>;
+  snapshot: Record<string, unknown>;
+  version_token: string | null;
+};
+
+function buildSourceChangeSubscription(
+  filter: Record<string, unknown>,
+): SubscriptionQueryPayload | null {
+  return buildSourceChangeOperation(filter, {
+    kind: "subscription",
+    operationName: "SourceChangeMatch",
+    limit: 1,
+  });
+}
+
+/**
+ * Build a one-shot read against the data source using the same filter as the
+ * subscription, for the dry-run endpoint. Same projection, ordering, and where
+ * clause; just a `query` instead of a `subscription` and a configurable limit.
+ */
+export function buildSourceChangeDryRunQuery(
+  filter: Record<string, unknown>,
+  limit = 5,
+): SubscriptionQueryPayload | null {
+  return buildSourceChangeOperation(filter, {
+    kind: "query",
+    operationName: "SourceChangeDryRun",
+    limit,
+  });
+}
+
+function buildSourceChangeOperation(
+  filter: Record<string, unknown>,
+  opts: {
+    kind: "subscription" | "query";
+    operationName: string;
+    limit: number;
+  },
+): SubscriptionQueryPayload | null {
+  const parsed = parseSourceChangeFilter(filter);
+  if (!parsed) return null;
+
+  const orderCol = parsed.version_column ?? parsed.primary_key[0];
+  const selectCols = uniqueOrdered([
+    ...parsed.primary_key,
+    ...(parsed.select ?? []),
+    ...(parsed.version_column ? [parsed.version_column] : []),
+  ]);
+
+  const whereInputType = `${parsed.table}WhereInput`;
+  const projection = selectCols.map((c) => `    ${c}`).join("\n");
+  const query = `${opts.kind} ${opts.operationName}($where: ${whereInputType}) {
+  ${parsed.table}(where: $where, order_by: { ${orderCol}: desc }, limit: ${opts.limit}) {
+${projection}
+  }
+}`;
+
+  return { query, variables: { where: parsed.where ?? {} } };
+}
+
+/** Validates a SourceChangeFilter's shape; returns null when invalid. */
+export function parseSourceChangeFilter(
+  filter: Record<string, unknown>,
+): SourceChangeFilter | null {
+  if (!filter || typeof filter !== "object") return null;
+  const f = filter as Partial<SourceChangeFilter>;
+  if (typeof f.table !== "string" || f.table.length === 0) return null;
+  if (!isIdentifier(f.table)) return null;
+  if (!Array.isArray(f.primary_key) || f.primary_key.length === 0) return null;
+  if (!f.primary_key.every((c) => typeof c === "string" && isIdentifier(c))) {
+    return null;
+  }
+  if (f.where != null && (typeof f.where !== "object" || Array.isArray(f.where))) {
+    return null;
+  }
+  if (
+    f.select != null &&
+    (!Array.isArray(f.select) ||
+      !f.select.every((c) => typeof c === "string" && isIdentifier(c)))
+  ) {
+    return null;
+  }
+  if (
+    f.version_column != null &&
+    (typeof f.version_column !== "string" || !isIdentifier(f.version_column))
+  ) {
+    return null;
+  }
+  return {
+    table: f.table,
+    where: f.where ?? {},
+    select: f.select,
+    primary_key: f.primary_key,
+    version_column: f.version_column,
+  };
+}
+
+export function parseSourceChangeMatch(
+  payload: { data: unknown } | null | undefined,
+  filter: SourceChangeFilter,
+): SourceChangeMatch | null {
+  if (!payload || !payload.data || typeof payload.data !== "object") return null;
+  const data = payload.data as Record<string, unknown>;
+  const rows = data[filter.table];
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const row = rows[0];
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const rowObj = row as Record<string, unknown>;
+
+  const pk: Record<string, JsonScalar> = {};
+  for (const col of filter.primary_key) {
+    const v = rowObj[col];
+    if (v === undefined) return null;
+    pk[col] = v as JsonScalar;
+  }
+
+  const versionCol = filter.version_column;
+  const version_token =
+    versionCol && rowObj[versionCol] != null ? String(rowObj[versionCol]) : null;
+
+  return {
+    table: filter.table,
+    primary_key: pk,
+    snapshot: rowObj,
+    version_token,
+  };
+}
+
+const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+function isIdentifier(s: string): boolean {
+  return IDENT_RE.test(s);
+}
+
+function uniqueOrdered(xs: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of xs) {
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }

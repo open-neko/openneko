@@ -81,10 +81,11 @@ const sourceRows = await client.query(
 );
 if (sourceRows.rowCount === 0) {
   await client.query(
-    `insert into data_source (org_id, kind, graphql_url, mcp_url, label)
-     values ($1, 'graphjin', $2, $3, 'AdventureWorks')`,
+    `insert into data_source (org_id, kind, graphql_url, subscription_url, mcp_url, label)
+     values ($1, 'graphjin', $2, $3, $4, 'AdventureWorks')`,
     [
       orgId,
+      `${DEFAULT_GRAPHJIN_ROOT}/api/v1/graphql`,
       `${DEFAULT_GRAPHJIN_ROOT}/api/v1/graphql`,
       `${DEFAULT_GRAPHJIN_ROOT}/api/v1/mcp`,
     ],
@@ -154,18 +155,61 @@ if (wfRows.rowCount === 0) {
       cron: "30 8 * * *",
       cron_timezone: "UTC",
     },
+    {
+      name: "Stock Reorder Watch",
+      description: "Reacts to inventory rows that drop below the product's reorder point. Subscription-triggered (no cron); fires per low-stock row.",
+      goal: "Triggered by a source_change subscription on production.productinventory when a row's quantity falls below the related product's reorderpoint. The trigger_payload includes table, primary_key={productid,locationid}, and snapshot. Query AdventureWorks via GraphJin to fetch the product name, current quantity, reorderpoint, and listprice. Emit one workflow_output with kind=recommendation, mood=act, scope='inventory', topic='reorder_point' summarizing the gap and recommending a reorder quantity. Do NOT mutate productinventory or productorders here — the responder reads only.",
+      cron: null,
+      cron_timezone: null,
+    },
   ];
   for (const wf of trialWorkflows) {
+    const hasCron = wf.cron !== null && wf.cron !== undefined;
     await client.query(
       `insert into workflow_definition (
          org_id, name, description, goal, cron, cron_timezone,
          cron_enabled, enabled, status
-       ) values ($1, $2, $3, $4, $5, $6, true, true, 'active')
+       ) values ($1, $2, $3, $4, $5, $6, $7, true, 'active')
        on conflict (org_id, name) do nothing`,
-      [orgId, wf.name, wf.description, wf.goal, wf.cron, wf.cron_timezone],
+      [
+        orgId,
+        wf.name,
+        wf.description,
+        wf.goal,
+        wf.cron,
+        wf.cron_timezone ?? "UTC",
+        hasCron,
+      ],
     );
   }
   console.log(`[seed-adventureworks] inserted ${trialWorkflows.length} trial workflows`);
+
+  const stockWatchRows = await client.query(
+    "select id from workflow_definition where org_id = $1 and name = 'Stock Reorder Watch' limit 1",
+    [orgId],
+  );
+  const stockWatchWorkflowId = stockWatchRows.rows[0]?.id;
+  if (stockWatchWorkflowId) {
+    await client.query(
+      `insert into subscription (
+         org_id, workflow_id, source_kind, filter, enabled,
+         max_concurrent_runs, idempotency_key_template
+       ) values ($1, $2, 'source_change', $3::jsonb, true, 5, $4)`,
+      [
+        orgId,
+        stockWatchWorkflowId,
+        JSON.stringify({
+          table: "productinventory",
+          where: { quantity: { lt: { col: "product.reorderpoint" } } },
+          primary_key: ["productid", "locationid"],
+          version_column: "modifieddate",
+          select: ["quantity"],
+        }),
+        "reorder-{primary_key}",
+      ],
+    );
+    console.log("[seed-adventureworks] wired Stock Reorder Watch subscription");
+  }
 } else {
   console.log("[seed-adventureworks] workflows already exist; leaving them unchanged");
 }

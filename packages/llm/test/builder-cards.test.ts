@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   policySavedCard,
+  subscriptionSavedCard,
   workflowSavedCard,
 } from "../src/workflows/builder-cards";
 import type { ActionPolicyRecord } from "../src/workflows/action-store";
-import type { WorkflowRecord } from "../src/workflows/store";
+import type {
+  SubscriptionRecord,
+  WorkflowRecord,
+} from "../src/workflows/store";
 
 const workflowFixture: WorkflowRecord = {
   id: "wf-1",
@@ -101,6 +105,77 @@ describe("workflowSavedCard", () => {
     });
     const body = (messages[1].updateComponents as { components: Array<{ id: string; text?: string }> }).components.find((c) => c.id === "body");
     expect(body?.text).toContain("_No description._");
+  });
+});
+
+const subscriptionFixture: SubscriptionRecord = {
+  id: "sub-1",
+  orgId: "org-1",
+  workflowId: "wf-1",
+  sourceKind: "source_change",
+  filter: {
+    table: "productinventory",
+    where: { quantity: { lt: { col: "product.reorderpoint" } } },
+    primary_key: ["productid", "locationid"],
+    version_column: "modifieddate",
+  },
+  enabled: true,
+  debounceMs: 0,
+  maxConcurrentRuns: 5,
+  maxChainDepthOverride: null,
+  idempotencyKeyTemplate: "reorder-{primary_key}",
+  createdAt: new Date("2026-05-23T00:00:00Z"),
+  updatedAt: new Date("2026-05-23T00:00:00Z"),
+};
+
+describe("subscriptionSavedCard", () => {
+  it("emits a v0.9 createSurface + updateComponents pair keyed by sub id", () => {
+    const messages = subscriptionSavedCard({
+      subscription: subscriptionFixture,
+      workflowName: "Stock alert",
+    });
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      createSurface: { surfaceId: "subscription-save-sub-1" },
+    });
+  });
+
+  it("renders table, primary_key, filter columns, and idempotency key", () => {
+    const messages = subscriptionSavedCard({
+      subscription: subscriptionFixture,
+      workflowName: "Stock alert",
+    });
+    const body = (
+      messages[1].updateComponents as {
+        components: Array<{ id: string; text?: string }>;
+      }
+    ).components.find((c) => c.id === "body");
+    expect(body?.text).toContain("Stock alert");
+    expect(body?.text).toContain("productinventory");
+    expect(body?.text).toContain("productid, locationid");
+    expect(body?.text).toContain("quantity");
+    expect(body?.text).toContain("reorder-{primary_key}");
+    expect(body?.text).toContain("[Open detail](/workflows?id=wf-1)");
+  });
+
+  it("falls back to '(no filter)' when the where clause is empty", () => {
+    const messages = subscriptionSavedCard({
+      subscription: {
+        ...subscriptionFixture,
+        filter: {
+          table: "productinventory",
+          where: {},
+          primary_key: ["productid", "locationid"],
+        },
+      },
+      workflowName: "Stock alert",
+    });
+    const body = (
+      messages[1].updateComponents as {
+        components: Array<{ id: string; text?: string }>;
+      }
+    ).components.find((c) => c.id === "body");
+    expect(body?.text).toContain("_(no filter)_");
   });
 });
 

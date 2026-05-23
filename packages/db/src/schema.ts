@@ -697,6 +697,9 @@ export const workflow_run = pgTable(
     finished_at: ts("finished_at"),
     summary: text("summary"),
     error: text("error"),
+    source_writes: jsonb("source_writes")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

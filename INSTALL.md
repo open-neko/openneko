@@ -125,17 +125,40 @@ openneko install @example/openneko-plugin-foo
 
 OpenNeko makes no representation about the safety of non-official marketplaces — that trust is between you and the publisher.
 
-## Update
+## Upgrade
+
+OpenNeko upgrades by replacing the `openneko` binary on your machine. The new binary embeds the bumped image pins (so `openneko start` pulls fresh `ghcr.io/open-neko/neko-*` images) and the new migrations (which apply in-process against the existing `neko-db` on next start). There's no `openneko upgrade` subcommand and no version nag — subscribe to [release notifications](https://github.com/open-neko/neko/releases) if you want a push.
+
+### macOS
 
 ```bash
-brew upgrade openneko        # macOS
-openneko stop                # leave volumes intact to preserve config + data
-openneko start --mode demo --detach
+brew update
+brew upgrade openneko
+cd ~/openneko
+openneko stop                          # leaves volumes intact — preserves config, secrets, data
+openneko start --mode demo --detach    # use the same --mode you started with
 ```
 
-`openneko start` always runs any pending migrations against `neko-db` in-process before bringing up the rest of the stack.
+### Linux
 
-For Linux, re-download the latest tarball from the [releases page](https://github.com/open-neko/neko/releases/latest) and replace `/usr/local/bin/openneko`.
+Re-download the matching tarball, replace `/usr/local/bin/openneko`, and restart:
+
+```bash
+curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
+  | tar -xz openneko
+sudo install -m 0755 openneko /usr/local/bin/
+rm openneko
+cd ~/openneko
+openneko stop                          # leaves volumes intact
+openneko start --mode demo --detach    # use the same --mode you started with
+```
+
+### What happens on `openneko start`
+
+- **Stage 1 — migrate.** Connects to `neko-db`, acquires a Postgres advisory lock, applies any pending migrations from the binary's embedded `db/migrations/*.sql`, releases the lock. Idempotent — interrupted upgrades re-apply cleanly on the next start.
+- **Stage 2 — compose up.** Writes the new embedded compose files to `.openneko/runtime/` and runs `docker compose up`. Docker pulls the `ghcr.io/open-neko/neko-*` image tags pinned to this release.
+
+Data is preserved because `openneko stop` doesn't touch volumes. Use `openneko stop --volumes` only when you want a clean slate — that wipes the metadata DB, the AdventureWorks demo state, and agent workspaces.
 
 ## Reset
 

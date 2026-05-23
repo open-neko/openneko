@@ -154,7 +154,7 @@ That's the loop: watcher runs → finding lands → action proposed → you appr
 ## Docs
 
 - **Getting started**
-  - [INSTALL.md](INSTALL.md) — install, update, requirements, troubleshooting, connecting your data
+  - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data
 - **How it works**
   - [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
 - **Plugins**

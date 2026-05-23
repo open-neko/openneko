@@ -9,6 +9,7 @@ import {
 } from "../workflows/fence-parsers";
 import {
   buildPolicyBuilderServer,
+  buildSubscriptionBuilderServer,
   buildWorkflowBuilderServer,
   handleWorkActionRequest,
   policySavedCard,
@@ -247,6 +248,10 @@ export async function runChatTurn(
                   orgId,
                   createdByThreadId: threadId,
                   createdByRunId: runId,
+                  emit: wrappedEmit,
+                }),
+                neko_subscription_builder: buildSubscriptionBuilderServer({
+                  orgId,
                   emit: wrappedEmit,
                 }),
               }

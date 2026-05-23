@@ -8,7 +8,10 @@ import {
 } from "./store";
 import {
   buildSubscriptionQuery,
+  parseSourceChangeFilter,
+  parseSourceChangeMatch,
   parseWorkflowOutputMatch,
+  type SourceChangeMatch,
   type WorkflowOutputMatch,
 } from "./subscription-query";
 
@@ -17,10 +20,23 @@ export type SubscriptionMatchEvent =
       kind: "workflow_output";
       subscription: SubscriptionRecord;
       output: WorkflowOutputMatch;
+    }
+  | {
+      kind: "source_change";
+      subscription: SubscriptionRecord;
+      match: SourceChangeMatch;
     };
 
-export type SubscriptionManagerOptions = {
+export type SubscriptionTransport = {
   baseUrl: string;
+};
+
+export type ResolveTransport = (
+  sub: SubscriptionRecord,
+) => Promise<SubscriptionTransport>;
+
+export type SubscriptionManagerOptions = {
+  resolveTransport: ResolveTransport;
   onMatch: (event: SubscriptionMatchEvent) => void | Promise<void>;
   refreshIntervalMs?: number;
   onError?: (err: Error, sub?: SubscriptionRecord) => void;
@@ -52,7 +68,7 @@ export function startSubscriptionManager(
     rejectReady = rej;
   });
 
-  const openOne = (sub: SubscriptionRecord) => {
+  const openOne = async (sub: SubscriptionRecord): Promise<void> => {
     const payload = buildSubscriptionQuery({
       sourceKind: sub.sourceKind,
       filter: sub.filter,
@@ -60,30 +76,55 @@ export function startSubscriptionManager(
     });
     if (!payload) {
       console.warn(
-        `[subscription-manager] skipping subscription ${sub.id} — source_kind="${sub.sourceKind}" not wired yet`,
+        `[subscription-manager] skipping subscription ${sub.id} — source_kind="${sub.sourceKind}" not wired or filter invalid`,
       );
       return;
     }
-    const handle = graphjinSubscribe<{ workflow_output?: unknown }>({
-      baseUrl: opts.baseUrl,
+
+    let transport: SubscriptionTransport;
+    try {
+      transport = await opts.resolveTransport(sub);
+    } catch (err) {
+      opts.onError?.(
+        err instanceof Error ? err : new Error(String(err)),
+        sub,
+      );
+      return;
+    }
+
+    const handle = graphjinSubscribe<{ data?: unknown } & Record<string, unknown>>({
+      baseUrl: transport.baseUrl,
       query: payload.query,
       variables: payload.variables,
       onNext: async (msg) => {
-        if (sub.sourceKind === "workflow_output") {
-          const match = parseWorkflowOutputMatch(msg);
-          if (!match) return;
-          try {
+        try {
+          if (sub.sourceKind === "workflow_output") {
+            const match = parseWorkflowOutputMatch(msg);
+            if (!match) return;
             await opts.onMatch({
               kind: "workflow_output",
               subscription: sub,
               output: match,
             });
-          } catch (err) {
-            opts.onError?.(
-              err instanceof Error ? err : new Error(String(err)),
-              sub,
-            );
+            return;
           }
+          if (sub.sourceKind === "source_change") {
+            const filter = parseSourceChangeFilter(sub.filter);
+            if (!filter) return;
+            const match = parseSourceChangeMatch(msg, filter);
+            if (!match) return;
+            await opts.onMatch({
+              kind: "source_change",
+              subscription: sub,
+              match,
+            });
+            return;
+          }
+        } catch (err) {
+          opts.onError?.(
+            err instanceof Error ? err : new Error(String(err)),
+            sub,
+          );
         }
       },
       onError: (err) => {
@@ -108,7 +149,8 @@ export function startSubscriptionManager(
       if (!desired.has(id)) closeOne(id);
     }
     for (const row of rows) {
-      if (!handles.has(row.id)) openOne(row);
+      if (handles.has(row.id)) continue;
+      await openOne(row);
     }
   };
 

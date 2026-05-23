@@ -202,7 +202,9 @@ VALUES
   ('france-takeover',         'france-takeover.sql',          150,  '0 22 * * 0',  'UTC',
    'top-territory-watch',     ARRAY['briefing','run']),
   ('approved-action-history', 'approved-action-history.sql',  NULL, '0 0 * * *',   'UTC',
-   NULL,                      ARRAY[]::text[])
+   NULL,                      ARRAY[]::text[]),
+  ('low-stock-reorder',       'low-stock-reorder.sql',        15,   '0 13 * * 4',  'UTC',
+   'stock-reorder-watch',     ARRAY['briefing','run'])
 ON CONFLICT (id) DO UPDATE SET
   sql_path               = EXCLUDED.sql_path,
   initial_offset_minutes = EXCLUDED.initial_offset_minutes,
