@@ -5,6 +5,7 @@ node_modules/
 # or via `pnpm --filter @neko/llm models:warm`. Files are large (>20MB
 # quantized, >80MB FP32) and reproducible, so we don't track them.
 packages/llm/.cache/
+apps/web/.cache/
 
 docs/
 .turbo/
@@ -38,3 +39,12 @@ adventureworks-onboarding.md
 
 # design preview screenshots
 design-preview/
+
+# CLI runtime dir — embedded compose + scratch artifacts written when
+# `openneko start` runs from the source checkout
+.openneko/
+
+# Per-host plugin manifest — written by `openneko plugin install`. Tracks
+# the operator's installed plugins; not part of the source tree.
+openneko.plugins.json
+apps/*/openneko.plugins.json
