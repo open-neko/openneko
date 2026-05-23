@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.4](https://github.com/open-neko/neko/compare/v1.13.3...v1.13.4) (2026-05-23)
+
+
+### Bug Fixes
+
+* **work:** drop seq from coalescing-emit after work_run_event column removal ([933c3b6](https://github.com/open-neko/neko/commit/933c3b657ba2c84625c3320256f846a97fb8bc67))
+
 ## [1.13.3](https://github.com/open-neko/neko/compare/v1.13.2...v1.13.3) (2026-05-23)
 
 
