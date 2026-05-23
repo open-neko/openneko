@@ -349,33 +349,38 @@ function buildPluginActionsSection(
         `  - \`${d.kind}\` (${summarizeMode(d.default_mode)}) — ${d.description.split("\n")[0]}`,
     )
     .join("\n");
-  return `<plugin_actions>
-Plugins contribute action kinds you can request inline. Emit each as
-a fenced JSON block; the runtime catches the fence, evaluates the
-operator's rules, and either fires it (auto) or asks the user to
-approve (ask). The fence body must be valid JSON.
+  return `<action_tools>
+The following are tools you can call to take action in external systems
+(Slack, webhooks, etc.). They are tools — not files, not session
+history. Don't search the filesystem or session memory for them. Call
+them by emitting a fenced JSON block; the runtime executes the call on
+the same turn.
+
+Available tools:
+${rows}
+
+How to call:
 
 \`\`\`neko_action_request
 {
   "scope": "external",
-  "kind": "<one of the kinds below>",
+  "kind": "<one of the kinds above>",
   "payload": { /* kind-specific */ },
   "summary": "One sentence — what you're doing and why, written for the user.",
   "risk_level": "low"
 }
 \`\`\`
 
-Installed kinds:
-${rows}
+When the operator says something like "DM @someone on slack" or
+"post the briefing to #some-channel" — call the matching tool. The
+token and connection are already configured; nothing to look up first.
 
-For ask-mode kinds: set \`summary\` to a single clear sentence the
-operator will read on the approval card. It's how they decide.
+For ask-mode tools: \`summary\` is the one-line text the operator sees
+on the approval card. Write it for them.
 
-Auto-mode kinds run inline; the outcome lands as an
-action_request_result event in the same turn — you may stop after
-the fence and let the runtime narrate, or continue the conversation
-naturally.
-</plugin_actions>`;
+Auto-mode tools run inline; the result lands as an action_request_result
+event in the same turn. You may stop after the fence or keep talking.
+</action_tools>`;
 }
 
 export function buildWorkPrompt(args: {
