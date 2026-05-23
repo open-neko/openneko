@@ -13,7 +13,7 @@
 #   ./scripts/install-clis.sh --skip-hermes  # graphjin + claude only
 set -euo pipefail
 
-GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.18.18}"
+GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.18.25}"
 # Pin Hermes to the same ref baked into the Dockerfile so local-dev installs
 # match what ships in the container image. v2026.5.16 / v0.14.0.
 HERMES_AGENT_REF="${HERMES_AGENT_REF:-a91a57fa5a13d516c38b07a141a9ce8a3daabeb0}"
