@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.13.3](https://github.com/open-neko/neko/compare/v1.13.2...v1.13.3) (2026-05-23)
+
+
+### Bug Fixes
+
+* **config:** propagate rotated DB password to graphjin and neko-migrate ([147cc64](https://github.com/open-neko/neko/commit/147cc64e467f672f8ba9f9efb159aae6bf50f5a2))
+* **onboarding:** restore seat-pill styling on CXO toggles ([8ea1e3a](https://github.com/open-neko/neko/commit/8ea1e3ae6ec48d70eefec89a8864028dc906f798))
+* **prompt:** rename plugin_actions block to action_tools for tool discovery ([3851649](https://github.com/open-neko/neko/commit/3851649d252bb0afc469921bdc3f2fd00477476e))
+* **work:** drop event seq column to eliminate duplicate-key race ([185e5e2](https://github.com/open-neko/neko/commit/185e5e20d6efc1e55de83c789a5193669d61d2bd))
+
 ## [1.13.2](https://github.com/open-neko/neko/compare/v1.13.1...v1.13.2) (2026-05-23)
 
 
