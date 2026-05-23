@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.7](https://github.com/open-neko/neko/compare/v1.13.6...v1.13.7) (2026-05-23)
+
+
+### Bug Fixes
+
+* **openneko:** add --pull passthrough; smoke uses --pull never after pre-pull ([59b2a46](https://github.com/open-neko/neko/commit/59b2a4647cd5cafd62868783a818e82e1a4c4be2))
+
 ## [1.13.6](https://github.com/open-neko/neko/compare/v1.13.5...v1.13.6) (2026-05-23)
 
 
