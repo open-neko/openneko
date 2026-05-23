@@ -220,6 +220,26 @@ EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
 
+# ─── 5c. neko-cli runtime ──────────────────────────────────────────────
+# Minimal image containing just the openneko Go binary. Used as the
+# `neko-migrate` one-shot container in compose: starts, runs
+# `openneko migrate`, exits. web / worker / neko-graphjin all depend on
+# its successful completion via service_completed_successfully, so by
+# the time they boot the schema is in place.
+#
+# Static Go binary (CGO_ENABLED=0), so debian-slim is enough — no glibc
+# version pinning needed. tini gives clean Ctrl-C / SIGTERM behavior;
+# ca-certs keeps TLS-to-managed-Postgres working if anyone points this
+# at a remote DB.
+FROM debian:bookworm-slim AS neko-cli
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=go-build /out/openneko /usr/local/bin/openneko
+RUN chmod +x /usr/local/bin/openneko
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/openneko"]
+CMD ["--help"]
+
 # ─── 6. neko-graphjin runtime ──────────────────────────────────────────
 # OpenNeko's own GraphJin instance — exposes the metadata Postgres
 # (workflow_definition, workflow_run, workflow_output, observation,

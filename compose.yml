@@ -36,20 +36,40 @@ services:
       timeout: 5s
       retries: 20
 
+  # One-shot: applies SQL migrations to neko-db and exits. Every long-
+  # running service (web, worker, neko-graphjin) depends on this completing
+  # successfully, so by the time they start the schema is in place.
+  neko-migrate:
+    build:
+      context: .
+      target: neko-cli
+    restart: "no"
+    command: ["migrate"]
+    depends_on:
+      neko-db:
+        condition: service_healthy
+    environment:
+      NEKO_PG_HOST: neko-db
+      NEKO_PG_PORT: "5432"
+      NEKO_PG_USER: neko
+      NEKO_PG_PASSWORD: secret
+      NEKO_PG_DATABASE: neko
+
   neko-graphjin:
     build:
       context: .
       target: neko-graphjin
     restart: unless-stopped
     depends_on:
-      # Waits on worker (not neko-db directly) because GraphJin caches the
-      # neko schema at startup; if it boots before migrations finish it sees
-      # an empty schema. The worker entrypoint runs `openneko migrate` before
-      # serving /health on 4100, so worker:service_healthy is our "migrations
-      # are done" signal. Web migrates concurrently — the migrator's advisory
-      # lock keeps them from racing.
-      worker:
+      # neko-db must be reachable for graphjin to connect; neko-migrate must
+      # have finished so graphjin's schema cache reflects all pending
+      # migrations. db_schema_poll_duration: 10s in neko.yml also picks up
+      # post-boot migrations, but the explicit dep keeps first-boot
+      # deterministic.
+      neko-db:
         condition: service_healthy
+      neko-migrate:
+        condition: service_completed_successfully
     # The custom entrypoint reads the password from /openneko-config/config.json
     # (written by the worker entrypoint + the /setup wizard) on every container
     # start, so password rotation works after a simple `docker compose restart
@@ -72,11 +92,9 @@ services:
       context: .
       target: web
     depends_on:
-      # Web's entrypoint applies migrations itself (`openneko migrate`),
-      # serialized with worker via a Postgres advisory lock, so it only needs
-      # the DB to be reachable — no init container, no ordering versus worker.
-      neko-db:
-        condition: service_healthy
+      # Schema is guaranteed ready by neko-migrate before web boots.
+      neko-migrate:
+        condition: service_completed_successfully
       neko-graphjin:
         condition: service_started
     environment:
@@ -98,10 +116,9 @@ services:
       context: .
       target: worker
     depends_on:
-      # Same story as web — entrypoint migrates. No ordering versus
-      # neko-graphjin needed; in fact graphjin depends on us via healthcheck.
-      neko-db:
-        condition: service_healthy
+      # Schema is guaranteed ready by neko-migrate before worker boots.
+      neko-migrate:
+        condition: service_completed_successfully
     environment:
       <<: *neko-app-env
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
@@ -120,10 +137,6 @@ services:
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
     healthcheck:
-      # The admin server (apps/worker/src/admin-server.ts) starts AFTER the
-      # entrypoint's `openneko migrate` step, so /health responding 200 is
-      # our schema-is-ready signal. neko-graphjin and other downstream
-      # services key off this.
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
       interval: 5s
       timeout: 3s

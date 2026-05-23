@@ -131,6 +131,11 @@ export function startSubscriptionManager(
         opts.onError?.(err, sub);
       },
     });
+    // The handle's `ready` promise rejects when the WS connection fails;
+    // the same failure already fires onError above, so absorb the rejection
+    // here to keep it from surfacing as an unhandled rejection that crashes
+    // the worker. Manager-level callers consume errors via opts.onError.
+    handle.ready.catch(() => {});
     handles.set(sub.id, handle);
   };
 
