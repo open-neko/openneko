@@ -21,6 +21,7 @@ func newStartCmd() *cobra.Command {
 	var mode string
 	var detach bool
 	var skipMigrate bool
+	var pullPolicy string
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Bring up the OpenNeko stack",
@@ -51,9 +52,19 @@ Modes:
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 
+			pullFlag := []string{}
+			if pullPolicy != "" {
+				switch pullPolicy {
+				case "always", "missing", "never":
+					pullFlag = []string{"--pull", pullPolicy}
+				default:
+					return fmt.Errorf("--pull must be one of: always, missing, never (got %q)", pullPolicy)
+				}
+			}
+
 			// Stage 1: bring up neko-db only, wait healthy, run migrations.
 			if !skipMigrate {
-				if _, err := sup.Run(ctx, project, files, []string{"up", "-d", "neko-db"}, os.Stdout, os.Stderr); err != nil {
+				if _, err := sup.Run(ctx, project, files, append([]string{"up", "-d"}, append(pullFlag, "neko-db")...), os.Stdout, os.Stderr); err != nil {
 					return err
 				}
 				if err := waitDBHealthy(ctx, time.Minute); err != nil {
@@ -69,6 +80,7 @@ Modes:
 			if detach {
 				upArgs = append(upArgs, "-d")
 			}
+			upArgs = append(upArgs, pullFlag...)
 			code, err := sup.Run(ctx, project, files, upArgs, os.Stdout, os.Stderr)
 			if err != nil {
 				return err
@@ -82,6 +94,7 @@ Modes:
 	cmd.Flags().StringVar(&mode, "mode", "prod", "Stack mode: prod|dev|demo")
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in the background after services start")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
+	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
 	return cmd
 }
 
