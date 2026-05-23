@@ -48,12 +48,19 @@ services:
     depends_on:
       neko-db:
         condition: service_healthy
+    # NEKO_PG_PASSWORD here is the bootstrap fallback only — once /setup
+    # rotates the password the openneko CLI's defaultConn reads it from
+    # /config/openneko/config.json on the shared volume. Without this volume
+    # mount, re-`compose up` after rotation would fail with stale creds.
     environment:
       NEKO_PG_HOST: neko-db
       NEKO_PG_PORT: "5432"
       NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: secret
+      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
       NEKO_PG_DATABASE: neko
+      XDG_CONFIG_HOME: /config
+    volumes:
+      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko:ro
 
   neko-graphjin:
     build:
@@ -75,10 +82,16 @@ services:
     # start, so password rotation works after a simple `docker compose restart
     # neko-graphjin`. NEKO_PG_PASSWORD here is the bootstrap fallback used the
     # very first time, before config.json exists.
+    #
+    # OPENNEKO_CONFIG_VOLUME selects the source of /openneko-config. Default is
+    # the named volume `openneko-config`, shared with web+worker when they too
+    # run in compose. In host-hybrid dev (`pnpm dev:up`), it's overridden to the
+    # operator's `$HOME/.config/openneko` so host web/worker and in-Docker
+    # graphjin share the same physical config.json without a manual sync.
     environment:
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
     volumes:
-      - openneko-config:/openneko-config:ro
+      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/openneko-config:ro
     ports:
       - "${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
     healthcheck:

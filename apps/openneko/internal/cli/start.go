@@ -12,6 +12,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
+	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
 )
@@ -120,16 +121,42 @@ func runMigrations(ctx context.Context, cmd *cobra.Command) error {
 	return err
 }
 
+// defaultConn resolves the metadata-DB connection. Precedence: the local
+// config.json (written by /setup after the operator rotates the bootstrap
+// password) wins over env vars, which win over hardcoded defaults. This
+// matches the TS reader in packages/db/src/local-config.ts so every consumer
+// — Go migrate, web, worker, graphjin — converges on the rotated password.
 func defaultConn() db.ConnConfig {
-	port := envInt("OPENNEKO_DB_PORT", 5432)
-	return db.ConnConfig{
+	conn := db.ConnConfig{
 		Host:     envOr("NEKO_PG_HOST", "127.0.0.1"),
-		Port:     port,
+		Port:     envInt("OPENNEKO_DB_PORT", 5432),
 		User:     envOr("NEKO_PG_USER", "neko"),
 		Password: envOr("NEKO_PG_PASSWORD", "secret"),
 		Database: envOr("NEKO_PG_DATABASE", "neko"),
 		SSLMode:  envOr("NEKO_PG_SSLMODE", "disable"),
 	}
+	local, _ := config.ReadLocal("")
+	if local.Pg != nil {
+		if local.Pg.Host != "" {
+			conn.Host = local.Pg.Host
+		}
+		if local.Pg.Port != 0 {
+			conn.Port = local.Pg.Port
+		}
+		if local.Pg.User != "" {
+			conn.User = local.Pg.User
+		}
+		if local.Pg.Password != "" {
+			conn.Password = local.Pg.Password
+		}
+		if local.Pg.Database != "" {
+			conn.Database = local.Pg.Database
+		}
+		if local.Pg.SSLMode != "" {
+			conn.SSLMode = local.Pg.SSLMode
+		}
+	}
+	return conn
 }
 
 func envOr(key, fallback string) string {

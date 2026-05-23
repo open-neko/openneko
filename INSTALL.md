@@ -233,8 +233,13 @@ For working on OpenNeko itself (Next.js UI, worker, packages), run the stack pie
 corepack enable
 pnpm bootstrap
 
-# DB + metadata GraphJin only — app runs from source
-docker compose up -d neko-db neko-graphjin
+# DB + metadata GraphJin only — app runs from source.
+# dev:up bind-mounts ~/.config/openneko into neko-graphjin so that host web/
+# worker (which write their config under ~/.config/openneko) and in-Docker
+# graphjin share the same config.json — including the DB password after
+# /setup rotates it. Demo/prod don't need this since web+worker also live
+# in compose and share the named volume.
+pnpm dev:up
 (cd apps/openneko && go run ./cmd/openneko migrate)
 
 pnpm dev
@@ -253,7 +258,9 @@ This installs the GraphJin CLI, Hermes, and the Claude Agent CLI.
 With sample data:
 
 ```bash
-docker compose -f compose.yml -f compose.adventureworks.yml up -d \
+mkdir -p "$HOME/.config/openneko"
+OPENNEKO_CONFIG_VOLUME="$HOME/.config/openneko" \
+  docker compose -f compose.yml -f compose.adventureworks.yml up -d \
   neko-db neko-graphjin adventureworks-db graphjin
 (cd apps/openneko && go run ./cmd/openneko migrate)
 pnpm dev

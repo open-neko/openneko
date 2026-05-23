@@ -17,6 +17,8 @@
     "dev": "concurrently -n web,worker -c blue,magenta \"pnpm dev:web\" \"pnpm dev:worker\"",
     "dev:web": "pnpm --filter @neko/web dev",
     "dev:worker": "pnpm --filter @neko/worker dev",
+    "dev:up": "mkdir -p \"$HOME/.config/openneko\" && OPENNEKO_CONFIG_VOLUME=\"$HOME/.config/openneko\" docker compose up -d neko-db neko-graphjin",
+    "dev:down": "docker compose down",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",

@@ -50,12 +50,19 @@ services:
     depends_on:
       neko-db:
         condition: service_healthy
+    # NEKO_PG_PASSWORD here is the bootstrap fallback only — once /setup
+    # rotates the password the openneko CLI's defaultConn reads it from
+    # /config/openneko/config.json on the shared volume. Without this volume
+    # mount, re-`compose up` after rotation would fail with stale creds.
     environment:
       NEKO_PG_HOST: neko-db
       NEKO_PG_PORT: "5432"
       NEKO_PG_USER: neko
       NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
       NEKO_PG_DATABASE: neko
+      XDG_CONFIG_HOME: /config
+    volumes:
+      - openneko-config:/config/openneko:ro
 
   neko-graphjin:
     image: ghcr.io/open-neko/neko-graphjin:${OPENNEKO_VERSION:-latest}
