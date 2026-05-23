@@ -72,18 +72,32 @@ jobs:
         working-directory: apps/openneko
         run: go build -o /usr/local/bin/openneko ./cmd/openneko
 
-      # Sanity: confirm the three images this version pinned actually
-      # exist on the registry before invoking the supervisor. A missing
-      # image surfaces as a clear `manifest unknown` line here rather
-      # than a mid-pull `docker compose up` failure later.
-      - name: Verify image manifests exist
+      # Pre-pull each image sequentially with retry+backoff. release-binaries
+      # publishes manifests via `docker buildx imagetools create` and GHCR's
+      # replicas are briefly inconsistent — a `docker manifest inspect` against
+      # one replica can succeed while a parallel `docker compose up` pull hits
+      # another replica that doesn't yet have the manifest list, surfacing as
+      # `<service> Error manifest unknown` for a random service every run.
+      # Pulling explicitly (one image at a time, retrying transient pulls)
+      # populates the local cache so compose's default pull_policy=missing
+      # skips the racy re-pull at `openneko start` time.
+      - name: Pre-pull images with retry
         run: |
           set -euxo pipefail
           tag="${{ steps.tag.outputs.tag }}"
-          for image in neko-web neko-worker neko-graphjin; do
+          for image in neko-web neko-worker neko-graphjin neko-cli; do
             ref="ghcr.io/open-neko/${image}:${tag}"
-            echo "checking ${ref}"
-            docker manifest inspect "${ref}" > /dev/null
+            for attempt in 1 2 3 4 5; do
+              if docker pull "${ref}"; then
+                break
+              fi
+              if [ "${attempt}" = "5" ]; then
+                echo "pull of ${ref} failed after 5 attempts" >&2
+                exit 1
+              fi
+              echo "pull attempt ${attempt} for ${ref} failed; sleeping 10s"
+              sleep 10
+            done
           done
 
       - name: openneko start (detached) against published images
