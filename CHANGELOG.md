@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.2](https://github.com/open-neko/neko/compare/v1.13.1...v1.13.2) (2026-05-23)
+
+
+### Bug Fixes
+
+* dedicate neko-migrate one-shot service; break worker/neko-graphjin startup cycle ([#54](https://github.com/open-neko/neko/issues/54)) ([7c1ce78](https://github.com/open-neko/neko/commit/7c1ce7802ba566399dbd6cacc1611b980e925b17))
+
 ## [1.13.1](https://github.com/open-neko/neko/compare/v1.13.0...v1.13.1) (2026-05-23)
 
 
