@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/open-neko/neko/compare/v1.12.1...v1.13.0) (2026-05-23)
+
+
+### Features
+
+* source_change subscriptions for IFTTT-style data-source row triggers ([#50](https://github.com/open-neko/neko/issues/50)) ([dc0e3df](https://github.com/open-neko/neko/commit/dc0e3dfc9f254d87bec1ed01b150c3261985d058))
+
 ## [1.12.1](https://github.com/open-neko/neko/compare/v1.12.0...v1.12.1) (2026-05-22)
 
 
