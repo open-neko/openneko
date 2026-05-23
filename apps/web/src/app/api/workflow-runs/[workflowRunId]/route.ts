@@ -207,7 +207,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
       createdAt: a.created_at.toISOString(),
     })),
     events: events.map((e) => ({
-      seq: e.seq,
+      id: e.id,
+      // Legacy alias — the runs UI still reads `seq` for grouping/keys.
+      // Will be removed once the UI migrates to `id`.
+      seq: e.id,
       type: e.event?.type ?? "unknown",
       event: e.event,
       createdAt: e.createdAt.toISOString(),

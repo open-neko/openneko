@@ -698,16 +698,19 @@ export default function WorkScreen() {
     setStreamError(null);
     setSending(true);
     updateActiveRunId(run.id);
-    const afterSeq = nextBundle.eventsByRun[run.id]?.length ?? 0;
-    void streamAndRefreshRun(threadId, run.id, afterSeq);
+    // We don't have a per-event id locally for unstreamed events. 0 means
+    // "give me everything from the start of the run"; the SSE server
+    // dedupes against what we've already applied locally.
+    const afterId = 0;
+    void streamAndRefreshRun(threadId, run.id, afterId);
   }
 
   async function streamAndRefreshRun(
     threadId: string,
     runId: string,
-    afterSeq: number,
+    afterId: number,
   ) {
-    const result = await followRunEvents(threadId, runId, afterSeq);
+    const result = await followRunEvents(threadId, runId, afterId);
     if (result !== "done" || !mountedRef.current) return;
     if (activeThreadIdRef.current !== threadId) return;
 
@@ -724,7 +727,7 @@ export default function WorkScreen() {
   async function followRunEvents(
     threadId: string,
     runId: string,
-    afterSeq: number,
+    afterId: number,
   ): Promise<StreamResult> {
     const current = activeRunStreamRef.current;
     if (current?.runId === runId && current.threadId === threadId) {
@@ -733,7 +736,7 @@ export default function WorkScreen() {
 
     current?.close();
 
-    const params = afterSeq > 0 ? `?afterSeq=${afterSeq}` : "";
+    const params = afterId > 0 ? `?afterId=${afterId}` : "";
     return new Promise<StreamResult>((resolve) => {
       let settled = false;
       const es = new EventSource(

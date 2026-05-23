@@ -19,17 +19,14 @@ export async function runWorkflowRunFire(
     triggeredByObservationId: payload.triggeredByObservationId,
   });
 
-  let seq = 0;
   // Scrubber snapshot per fire — see work-run.ts for the
   // mid-run-rotation caveat.
   const scrubber = getCurrentScrubber();
   const emit = async (event: AgentEvent): Promise<void> => {
-    seq += 1;
     await appendWorkRunEvent({
       orgId: payload.orgId,
       threadId: prepared.threadId,
       runId: prepared.workRunId,
-      seq,
       event: scrubAgentEvent(scrubber, event),
     });
   };

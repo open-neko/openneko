@@ -26,7 +26,7 @@ import {
   getActionRequest,
   rejectActionRequest,
 } from "@neko/llm/workflows";
-import { appendWorkRunEvent, getWorkRunEvents } from "@neko/llm/work";
+import { appendWorkRunEvent } from "@neko/llm/work";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrgId } from "@/lib/db";
 
@@ -115,12 +115,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     approverUserId,
     reason: rejectionReason ?? undefined,
   });
-  const events = await getWorkRunEvents(orgId, runId);
   await appendWorkRunEvent({
     orgId,
     threadId,
     runId,
-    seq: events.length + 1,
     event: {
       type: "action_request_result",
       action_request_id: req.id,

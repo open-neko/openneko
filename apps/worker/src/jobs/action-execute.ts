@@ -1,11 +1,7 @@
 import type { ActionExecutePayload } from "@neko/db/jobs";
 import { executeApprovedActionRequest } from "@neko/llm/workflows";
 import { getActionRequest } from "@neko/llm/workflows";
-import {
-  appendWorkRunEvent,
-  getWorkRunEvents,
-  getWorkThreadForRun,
-} from "@neko/llm/work";
+import { appendWorkRunEvent, getWorkThreadForRun } from "@neko/llm/work";
 
 export async function runActionExecute(
   payload: ActionExecutePayload,
@@ -28,12 +24,10 @@ export async function runActionExecute(
   if (!request?.workRunId) return;
   const thread = await getWorkThreadForRun(payload.orgId, request.workRunId);
   if (!thread) return;
-  const events = await getWorkRunEvents(payload.orgId, request.workRunId);
   await appendWorkRunEvent({
     orgId: payload.orgId,
     threadId: thread.id,
     runId: request.workRunId,
-    seq: events.length + 1,
     event: {
       type: "action_request_result",
       action_request_id: request.id,

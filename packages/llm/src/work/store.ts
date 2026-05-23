@@ -286,24 +286,35 @@ export async function saveAssistantWorkMessage(args: {
   });
 }
 
+/**
+ * Append an event to a run's event stream. Returns the Postgres-
+ * assigned `id` (bigserial, globally monotonic). Callers don't manage
+ * any seq — ordering is naturally preserved by insertion order, and
+ * the SSE cursor is just "id > $lastId".
+ */
 export async function appendWorkRunEvent(args: {
   orgId: string;
   threadId: string;
   runId: string;
-  seq: number;
   event: AgentEvent;
-}) {
-  await db().insert(work_run_event).values({
-    org_id: args.orgId,
-    thread_id: args.threadId,
-    run_id: args.runId,
-    seq: args.seq,
-    kind: args.event.type,
-    payload: args.event,
-  });
+}): Promise<number> {
+  const [row] = await db()
+    .insert(work_run_event)
+    .values({
+      org_id: args.orgId,
+      thread_id: args.threadId,
+      run_id: args.runId,
+      kind: args.event.type,
+      payload: args.event,
+    })
+    .returning({ id: work_run_event.id });
+  return row?.id ?? 0;
 }
 
-export async function getWorkRunEvents(orgId: string, runId: string): Promise<AgentEvent[]> {
+export async function getWorkRunEvents(
+  orgId: string,
+  runId: string,
+): Promise<AgentEvent[]> {
   const rows = await db()
     .select({
       payload: work_run_event.payload,
@@ -315,18 +326,18 @@ export async function getWorkRunEvents(orgId: string, runId: string): Promise<Ag
         eq(work_run_event.run_id, runId),
       ),
     )
-    .orderBy(asc(work_run_event.seq));
+    .orderBy(asc(work_run_event.id));
   return rows.map((row) => row.payload as AgentEvent);
 }
 
 export async function getWorkRunEventsAfter(
   orgId: string,
   runId: string,
-  afterSeq: number,
-): Promise<{ seq: number; event: AgentEvent; createdAt: Date }[]> {
+  afterId: number,
+): Promise<{ id: number; event: AgentEvent; createdAt: Date }[]> {
   const rows = await db()
     .select({
-      seq: work_run_event.seq,
+      id: work_run_event.id,
       payload: work_run_event.payload,
       created_at: work_run_event.created_at,
     })
@@ -337,11 +348,11 @@ export async function getWorkRunEventsAfter(
         eq(work_run_event.run_id, runId),
       ),
     )
-    .orderBy(asc(work_run_event.seq));
+    .orderBy(asc(work_run_event.id));
   return rows
-    .filter((r) => r.seq > afterSeq)
+    .filter((r) => r.id > afterId)
     .map((r) => ({
-      seq: r.seq,
+      id: r.id,
       event: r.payload as AgentEvent,
       createdAt: r.created_at,
     }));
@@ -406,7 +417,6 @@ export async function getWorkThreadBundle(
       .select({
         runId: work_run_event.run_id,
         payload: work_run_event.payload,
-        seq: work_run_event.seq,
       })
       .from(work_run_event)
       .where(
@@ -415,7 +425,7 @@ export async function getWorkThreadBundle(
           eq(work_run_event.thread_id, threadId),
         ),
       )
-      .orderBy(asc(work_run_event.seq)),
+      .orderBy(asc(work_run_event.id)),
   ]);
 
   const eventsByRun: Record<string, AgentEvent[]> = {};

@@ -2,7 +2,7 @@ import "server-only";
 import type { AgentEvent } from "@neko/llm";
 
 // globalThis-stashed so HMR doesn't drop in-flight runs in dev.
-export type RunSubscriber = (event: AgentEvent, seq: number) => void;
+export type RunSubscriber = (event: AgentEvent, id: number) => void;
 
 export type RunEntry = {
   runId: string;
@@ -54,13 +54,13 @@ export function subscribeToRun(
 export function notifyRunSubscribers(
   runId: string,
   event: AgentEvent,
-  seq: number,
+  id: number,
 ): void {
   const entry = runs.get(runId);
   if (!entry) return;
   for (const sub of entry.subscribers) {
     try {
-      sub(event, seq);
+      sub(event, id);
     } catch (err) {
       console.error(`[neko-run-registry] subscriber threw for ${runId}:`, err);
     }

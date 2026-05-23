@@ -37,8 +37,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { threadId, runId } = await context.params;
   const url = new URL(request.url);
   const lastEventIdHeader = request.headers.get("last-event-id");
-  const afterSeqParam = Number(url.searchParams.get("afterSeq") ?? "0") || 0;
-  const afterSeq = Number(lastEventIdHeader) || afterSeqParam;
+  // Accept both `afterId` (new) and `afterSeq` (legacy) to keep older
+  // clients streaming during the migration window.
+  const afterIdParam =
+    Number(url.searchParams.get("afterId") ?? url.searchParams.get("afterSeq") ?? "0") ||
+    0;
+  const afterId = Number(lastEventIdHeader) || afterIdParam;
 
   const orgId = await getOrgId();
 
@@ -51,8 +55,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     async start(controller) {
       const t0 = Date.now();
       let closed = false;
-      let lastSentSeq = afterSeq;
-      const sentSeqs = new Set<number>();
+      let lastSentId = afterId;
+      const sentIds = new Set<number>();
 
       const safeEnqueue = (chunk: Uint8Array): void => {
         if (closed) return;
@@ -63,12 +67,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
         }
       };
 
-      const sendIfNew = (event: AgentEvent, seq: number): void => {
-        if (seq <= afterSeq) return;
-        if (sentSeqs.has(seq)) return;
-        sentSeqs.add(seq);
-        safeEnqueue(frame(event, seq));
-        if (seq > lastSentSeq) lastSentSeq = seq;
+      const sendIfNew = (event: AgentEvent, id: number): void => {
+        if (id <= afterId) return;
+        if (sentIds.has(id)) return;
+        sentIds.add(id);
+        safeEnqueue(frame(event, id));
+        if (id > lastSentId) lastSentId = id;
       };
 
       request.signal.addEventListener(
@@ -121,10 +125,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
           const newEvents = await getWorkRunEventsAfter(
             orgId,
             runId,
-            lastSentSeq,
+            lastSentId,
           );
-          for (const { seq, event } of newEvents) {
-            sendIfNew(event, seq);
+          for (const { id, event } of newEvents) {
+            sendIfNew(event, id);
           }
 
           const current = await getWorkRun(orgId, runId);
@@ -134,9 +138,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
               current.status === "failed" ||
               current.status === "cancelled")
           ) {
-            const tail = await getWorkRunEventsAfter(orgId, runId, lastSentSeq);
-            for (const { seq, event } of tail) {
-              sendIfNew(event, seq);
+            const tail = await getWorkRunEventsAfter(orgId, runId, lastSentId);
+            for (const { id, event } of tail) {
+              sendIfNew(event, id);
             }
             break;
           }

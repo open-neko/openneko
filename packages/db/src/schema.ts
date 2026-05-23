@@ -473,6 +473,14 @@ export const work_message = pgTable(
 export const work_run_event = pgTable(
   "work_run_event",
   {
+    // `id` is a Postgres bigserial — globally monotonic, guaranteed
+    // unique. Use it as the canonical ordering key ("ORDER BY id ASC")
+    // and as the SSE tail cursor ("WHERE id > $lastId"). The old `seq`
+    // column was per-run, computed by app code, and racy when two
+    // writers (work-run + action-execute) emitted close in time —
+    // surfacing as "duplicate key value violates unique constraint
+    // work_run_event_run_seq_unique" errors in the chat. Migration
+    // 0022 dropped it.
     id: bigserial("id", { mode: "number" }).primaryKey(),
     org_id: text("org_id")
       .notNull()
@@ -483,20 +491,13 @@ export const work_run_event = pgTable(
     run_id: uuid("run_id")
       .notNull()
       .references(() => work_run.id, { onDelete: "cascade" }),
-    seq: integer("seq").notNull(),
     kind: text("kind").notNull(),
     payload: jsonb("payload").notNull(),
     created_at: ts("created_at").notNull().defaultNow(),
   },
   (t) => ({
-    run_seq_unique: uniqueIndex("work_run_event_run_seq_unique").on(
-      t.run_id,
-      t.seq,
-    ),
-    thread_seq_idx: index("work_run_event_thread_seq_idx").on(
-      t.thread_id,
-      t.seq.asc(),
-    ),
+    run_id_idx: index("work_run_event_run_id_idx").on(t.run_id, t.id),
+    thread_id_idx: index("work_run_event_thread_id_idx").on(t.thread_id, t.id),
   }),
 );
 
