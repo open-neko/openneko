@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/open-neko/neko/compare/v1.13.0...v1.13.1) (2026-05-23)
+
+
+### Miscellaneous Chores
+
+* cut 1.13.1 to ship the GraphJin 3.18.25 image bump ([a31bc1c](https://github.com/open-neko/neko/commit/a31bc1c447456501436a27d2568e7f14a9bc7ef7))
+
 ## [1.13.0](https://github.com/open-neko/neko/compare/v1.12.1...v1.13.0) (2026-05-23)
 
 
