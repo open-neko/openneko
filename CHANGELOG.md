@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.9](https://github.com/open-neko/neko/compare/v1.13.8...v1.13.9) (2026-05-23)
+
+
+### Bug Fixes
+
+* **openneko:** respect externally-set OPENNEKO_VERSION ([bbf0d7a](https://github.com/open-neko/neko/commit/bbf0d7af7f2c0e9ed4b92886a45a37f03f6d7547))
+
 ## [1.13.8](https://github.com/open-neko/neko/compare/v1.13.7...v1.13.8) (2026-05-23)
 
 
