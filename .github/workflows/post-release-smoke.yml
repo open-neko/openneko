@@ -100,12 +100,30 @@ jobs:
             done
           done
 
+      # Retry the start: even with images pre-pulled into the local cache,
+      # `docker compose up` still verifies each service's manifest against
+      # the registry in parallel, and GHCR's manifest-list propagation is
+      # still racy here — a random service hits a replica without the new
+      # manifest and surfaces as `<service> Error manifest unknown`. The
+      # exact service that loses is non-deterministic across runs, so
+      # retrying with `stop --volumes` between attempts clears the partial
+      # container state and gives compose another shot at all services.
       - name: openneko start (detached) against published images
         env:
           OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
         run: |
-          set -euxo pipefail
-          openneko start --mode prod --detach
+          set -uxo pipefail
+          for attempt in 1 2 3; do
+            if openneko start --mode prod --detach; then
+              echo "started on attempt ${attempt}"
+              exit 0
+            fi
+            echo "start attempt ${attempt} failed"
+            openneko stop --volumes || true
+            sleep 15
+          done
+          echo "start failed after 3 attempts"
+          exit 1
 
       - name: openneko status (poll until healthy)
         env:
