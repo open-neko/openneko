@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.6](https://github.com/open-neko/neko/compare/v1.13.5...v1.13.6) (2026-05-23)
+
+
+### Bug Fixes
+
+* **ci:** retry openneko start in smoke to absorb GHCR manifest race ([d742129](https://github.com/open-neko/neko/commit/d742129b303f63c0f3f4fca2fc745c9c2849d06d))
+
 ## [1.13.5](https://github.com/open-neko/neko/compare/v1.13.4...v1.13.5) (2026-05-23)
 
 
