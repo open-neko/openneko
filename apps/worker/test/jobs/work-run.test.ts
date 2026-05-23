@@ -5,7 +5,7 @@
 // tests don't have to deal with vitest module-mock indirection through
 // pnpm self-references. The worker adapter itself is a 25-line wrapper
 // around runChatTurn and is implicitly covered by virtue of using the
-// same emit/seq closure shape these tests build.
+// same emit shape these tests build.
 
 import {
   afterAll,
@@ -37,7 +37,6 @@ import {
 } from "@neko/db";
 import {
   appendWorkRunEvent,
-  getWorkRunEvents,
   runChatTurn,
   type RunChatTurnDeps,
 } from "@neko/llm/work";
@@ -74,18 +73,17 @@ const HERMES_CAPABILITIES = {
 
 type EmitFn = (event: AgentEvent) => Promise<void>;
 
-// Builds the seq-counter + DB-persist emit shape that both the worker's
-// runWorkRun and the web's API route use. Mirrors the production code
-// without coupling the test to either.
-async function buildEmit(args: {
+// Builds the DB-persist emit shape that both the worker's runWorkRun
+// and the web's API route use. Mirrors the production code without
+// coupling the test to either. Ordering is via the row's bigserial id;
+// no client-side counter is needed.
+function buildEmit(args: {
   orgId: string;
   threadId: string;
   runId: string;
-}): Promise<EmitFn> {
-  let seq = (await getWorkRunEvents(args.orgId, args.runId)).length;
+}): EmitFn {
   return async (event) => {
-    seq += 1;
-    await appendWorkRunEvent({ ...args, seq, event });
+    await appendWorkRunEvent({ ...args, event });
   };
 }
 
@@ -156,7 +154,7 @@ describeIfDb("runChatTurn", () => {
     await pool().end();
   });
 
-  it("happy path: writes events by seq, finalizes work_run completed, emits done", async () => {
+  it("happy path: writes events in id-monotonic order, finalizes work_run completed, emits done", async () => {
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
@@ -175,7 +173,7 @@ describeIfDb("runChatTurn", () => {
       };
     });
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await runChatTurn(
       {
         orgId,
@@ -188,7 +186,7 @@ describeIfDb("runChatTurn", () => {
     );
 
     const events = await db()
-      .select({ seq: work_run_event.seq, kind: work_run_event.kind })
+      .select({ id: work_run_event.id, kind: work_run_event.kind })
       .from(work_run_event)
       .where(
         and(
@@ -196,7 +194,7 @@ describeIfDb("runChatTurn", () => {
           eq(work_run_event.run_id, run.id),
         ),
       )
-      .orderBy(asc(work_run_event.seq));
+      .orderBy(asc(work_run_event.id));
 
     expect(events.map((e) => e.kind)).toEqual([
       "status",
@@ -204,7 +202,11 @@ describeIfDb("runChatTurn", () => {
       "message",
       "done",
     ]);
-    expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+    // Ids are a shared bigserial across all tests; what we care about is
+    // that the four events landed in insertion order, which orderBy(asc)
+    // already enforces. The sequence is just expected to be monotonic.
+    const ids = events.map((e) => e.id);
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
 
     const final = await db()
       .select({ status: work_run.status, error: work_run.error })
@@ -221,7 +223,7 @@ describeIfDb("runChatTurn", () => {
 
     mockBackendRun.mockRejectedValue(new Error("Hermes spawn failed"));
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await expect(
       runChatTurn(
         {
@@ -239,7 +241,7 @@ describeIfDb("runChatTurn", () => {
       .select({ kind: work_run_event.kind })
       .from(work_run_event)
       .where(eq(work_run_event.run_id, run.id))
-      .orderBy(asc(work_run_event.seq));
+      .orderBy(asc(work_run_event.id));
     const kinds = events.map((e) => e.kind);
     expect(kinds).toContain("error");
     expect(kinds).toContain("done");
@@ -264,7 +266,7 @@ describeIfDb("runChatTurn", () => {
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
 
     // Drop the thread → cascades to work_run via the on-delete-cascade FK.
     await db().delete(work_thread).where(eq(work_thread.id, thread.id));
@@ -298,7 +300,7 @@ describeIfDb("runChatTurn", () => {
     const run = await insertWorkRun({ orgId, threadId: thread.id });
     mockResolveBinary.mockResolvedValue(null);
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await expect(
       runChatTurn(
         {
@@ -351,7 +353,7 @@ describeIfDb("runChatTurn", () => {
       return { finalText, status: "completed", backendState: {} };
     });
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await runChatTurn(
       {
         orgId,
@@ -378,7 +380,7 @@ describeIfDb("runChatTurn", () => {
       .select({ kind: work_run_event.kind, payload: work_run_event.payload })
       .from(work_run_event)
       .where(eq(work_run_event.run_id, run.id))
-      .orderBy(asc(work_run_event.seq));
+      .orderBy(asc(work_run_event.id));
     const surfaceEvent = events.find((e) => e.kind === "surface");
     expect(surfaceEvent).toBeDefined();
     const payload = surfaceEvent?.payload as {
@@ -441,7 +443,7 @@ describeIfDb("runChatTurn", () => {
       return { finalText, status: "completed", backendState: {} };
     });
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await runChatTurn(
       {
         orgId,
@@ -467,7 +469,7 @@ describeIfDb("runChatTurn", () => {
       .select({ kind: work_run_event.kind, payload: work_run_event.payload })
       .from(work_run_event)
       .where(eq(work_run_event.run_id, run.id))
-      .orderBy(asc(work_run_event.seq));
+      .orderBy(asc(work_run_event.id));
     const surfaceEvent = events.find((e) => e.kind === "surface");
     expect(surfaceEvent).toBeDefined();
     const payload = surfaceEvent?.payload as {
@@ -491,16 +493,15 @@ describeIfDb("runChatTurn", () => {
     expect(body?.text).toContain("[Open detail](/settings/rules/");
   });
 
-  it("retry resumption: seq counter seeds from existing events", async () => {
+  it("retry resumption: new events land after existing ones in id order", async () => {
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
-    await db().insert(work_run_event).values([
+    const leftover = await db().insert(work_run_event).values([
       {
         org_id: orgId,
         thread_id: thread.id,
         run_id: run.id,
-        seq: 1,
         kind: "status",
         payload: { type: "status", message: "leftover 1" },
       },
@@ -508,11 +509,11 @@ describeIfDb("runChatTurn", () => {
         org_id: orgId,
         thread_id: thread.id,
         run_id: run.id,
-        seq: 2,
         kind: "status",
         payload: { type: "status", message: "leftover 2" },
       },
-    ]);
+    ]).returning({ id: work_run_event.id });
+    const leftoverMaxId = Math.max(...leftover.map((r) => r.id));
 
     mockBackendRun.mockImplementation(async () => ({
       finalText: "ok",
@@ -520,7 +521,7 @@ describeIfDb("runChatTurn", () => {
       backendState: {},
     }));
 
-    const emit = await buildEmit({ orgId, threadId: thread.id, runId: run.id });
+    const emit = buildEmit({ orgId, threadId: thread.id, runId: run.id });
     await runChatTurn(
       {
         orgId,
@@ -532,14 +533,16 @@ describeIfDb("runChatTurn", () => {
       makeDeps(),
     );
 
-    const seqs = (
-      await db()
-        .select({ seq: work_run_event.seq })
-        .from(work_run_event)
-        .where(eq(work_run_event.run_id, run.id))
-        .orderBy(asc(work_run_event.seq))
-    ).map((r) => r.seq);
+    const all = await db()
+      .select({ id: work_run_event.id, kind: work_run_event.kind })
+      .from(work_run_event)
+      .where(eq(work_run_event.run_id, run.id))
+      .orderBy(asc(work_run_event.id));
     // 2 leftover + 2 status (Starting/Loading) + 1 done = 5
-    expect(seqs).toEqual([1, 2, 3, 4, 5]);
+    expect(all).toHaveLength(5);
+    // The two leftover rows still come first; newly-written events have
+    // strictly higher bigserial ids.
+    const newIds = all.slice(2).map((r) => r.id);
+    expect(newIds.every((id) => id > leftoverMaxId)).toBe(true);
   });
 });
