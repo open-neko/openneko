@@ -85,8 +85,17 @@ jobs:
         run: |
           set -euxo pipefail
           tag="${{ steps.tag.outputs.tag }}"
-          for image in neko-web neko-worker neko-graphjin neko-cli; do
-            ref="ghcr.io/open-neko/${image}:${tag}"
+          # core.yml's neko-db service uses pgvector/pgvector:pg16. With
+          # `openneko start --pull never` below, compose can't fetch it
+          # on its own, so it has to be in the local cache too.
+          refs=(
+            "ghcr.io/open-neko/neko-web:${tag}"
+            "ghcr.io/open-neko/neko-worker:${tag}"
+            "ghcr.io/open-neko/neko-graphjin:${tag}"
+            "ghcr.io/open-neko/neko-cli:${tag}"
+            "pgvector/pgvector:pg16"
+          )
+          for ref in "${refs[@]}"; do
             for attempt in 1 2 3 4 5; do
               if docker pull "${ref}"; then
                 break
