@@ -694,6 +694,10 @@ export class PluginRegistry {
     this.refreshing = true;
     try {
       const manifest = await readManifestFromDisk(this.options.repoRoot);
+      await enrichExamplesFromPackages(
+        manifest,
+        this.options.pluginInstallDir ?? this.options.repoRoot,
+      );
       const full = await readFullSecretsFileSoft(
         this.options.secretsConfigDir,
         (line) => console.warn(`[plugin-registry] ${line}`),
@@ -1053,6 +1057,51 @@ export class PluginRegistry {
       sandboxFactory: factory,
       networkPolicy: policy,
     });
+  }
+}
+
+/**
+ * The marketplace schema doesn't carry action `example` payloads, and the Go
+ * install path drops them — so a marketplace-installed manifest has none. The
+ * agent prompt relies on examples to get payload shapes right (small models
+ * otherwise invent wrong shapes), so read them back from each installed
+ * package's own package.json (which always carries them) and fill any kind
+ * whose manifest entry is missing one. No-ops for the source-build dev
+ * manifest, which already carries examples.
+ */
+async function enrichExamplesFromPackages(
+  manifest: PluginManifest | null,
+  installDir: string,
+): Promise<void> {
+  if (!manifest) return;
+  for (const entry of manifest.plugins) {
+    const kinds = entry.capabilities.action?.kinds;
+    if (!kinds?.length || kinds.every((k) => k.example !== undefined)) continue;
+    let byKind: Map<string, Record<string, unknown>>;
+    try {
+      const pkgPath = path.join(installDir, "node_modules", entry.name, "package.json");
+      const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as {
+        openneko?: {
+          capabilities?: { action?: { kinds?: Array<{ kind?: string; example?: unknown }> } };
+        };
+      };
+      byKind = new Map(
+        (pkg.openneko?.capabilities?.action?.kinds ?? [])
+          .filter(
+            (k): k is { kind: string; example: Record<string, unknown> } =>
+              typeof k.kind === "string" && !!k.example && typeof k.example === "object",
+          )
+          .map((k) => [k.kind, k.example]),
+      );
+    } catch {
+      continue; // package unreadable → leave manifest examples untouched
+    }
+    for (const decl of kinds) {
+      if (decl.example === undefined) {
+        const ex = byKind.get(decl.kind);
+        if (ex) decl.example = ex;
+      }
+    }
   }
 }
 
