@@ -79,7 +79,8 @@ jobs:
               else
                 echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack install will be skipped"
               fi
-              if [ -n "${SLACK_BOT_TOKEN:-}" ] && ! openneko list 2>/dev/null | grep -q '@open-neko/plugin-slack'; then
+              # Re-install every deploy → upserts to marketplace-latest (upgrades in place, no-ops once current).
+              if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
                 openneko install @open-neko/plugin-slack --skip-host-check
               fi
               # Worker's poll fallback picks up manifest+secrets changes
