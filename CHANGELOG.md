@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/open-neko/neko/compare/v1.14.0...v1.14.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* **worker:** surface plugin action examples even on marketplace installs ([#66](https://github.com/open-neko/neko/issues/66)) ([a91f125](https://github.com/open-neko/neko/commit/a91f1250c20cc6dc10266fb3b3dc317eede7760b))
+
 ## [1.14.0](https://github.com/open-neko/neko/compare/v1.13.9...v1.14.0) (2026-05-24)
 
 
