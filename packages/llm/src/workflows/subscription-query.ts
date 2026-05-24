@@ -144,6 +144,28 @@ export function buildSourceChangeDryRunQuery(
   });
 }
 
+// Serialize a JSON value to a GraphQL literal: object keys unquoted, string
+// values quoted/escaped, scalars verbatim. GraphJin where-clauses key on
+// columns / operators / nested tables and use quoted strings for values,
+// including column references like `{ col: "product.reorderpoint" }`.
+function toGraphqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map(toGraphqlLiteral).join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).map(
+      ([k, v]) => `${k}: ${toGraphqlLiteral(v)}`,
+    );
+    return `{ ${entries.join(", ")} }`;
+  }
+  return "null";
+}
+
 function buildSourceChangeOperation(
   filter: Record<string, unknown>,
   opts: {
@@ -162,15 +184,26 @@ function buildSourceChangeOperation(
     ...(parsed.version_column ? [parsed.version_column] : []),
   ]);
 
-  const whereInputType = `${parsed.table}WhereInput`;
   const projection = selectCols.map((c) => `    ${c}`).join("\n");
-  const query = `${opts.kind} ${opts.operationName}($where: ${whereInputType}) {
-  ${parsed.table}(where: $where, order_by: { ${orderCol}: desc }, limit: ${opts.limit}) {
+
+  // GraphJin compiles `where` at parse time, so it must be inlined into the
+  // query literal — passing it as a `$where` variable is rejected ("value for
+  // argument 'where' must be null or an object") even for plain literals. The
+  // agent still authors a JSON filter; we serialize it to GraphQL here.
+  const args: string[] = [];
+  if (parsed.where && Object.keys(parsed.where).length > 0) {
+    args.push(`where: ${toGraphqlLiteral(parsed.where)}`);
+  }
+  args.push(`order_by: { ${orderCol}: desc }`);
+  args.push(`limit: ${opts.limit}`);
+
+  const query = `${opts.kind} ${opts.operationName} {
+  ${parsed.table}(${args.join(", ")}) {
 ${projection}
   }
 }`;
 
-  return { query, variables: { where: parsed.where ?? {} } };
+  return { query, variables: {} };
 }
 
 /** Validates a SourceChangeFilter's shape; returns null when invalid. */

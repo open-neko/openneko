@@ -283,6 +283,8 @@ export interface PluginActionDescriptor {
         external?: "auto" | "ask" | "deny";
         internal?: "auto" | "ask" | "deny";
       };
+  /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
+  example?: Record<string, unknown>;
 }
 
 function modeForScope(

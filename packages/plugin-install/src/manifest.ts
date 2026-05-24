@@ -48,6 +48,8 @@ export interface ManifestActionDeclaration {
     | "ask"
     | "deny"
     | { external?: "auto" | "ask" | "deny"; internal?: "auto" | "ask" | "deny" };
+  /** Example payload, surfaced verbatim to the agent so it shapes the call right the first time. */
+  example?: Record<string, unknown>;
 }
 
 /**

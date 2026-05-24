@@ -7,7 +7,7 @@ export {
 } from "./tool-defaults";
 export {
   extractActionRequestFences,
-  extractPolicySaveFence,
+  extractRuleSaveFence,
   extractWorkflowOutputFences,
   extractWorkflowSaveFence,
   type ActionRequestFenceResult,
@@ -23,10 +23,12 @@ export {
   POLICY_MODES,
   POLICY_SAVE_SCHEMA,
   RISK_LEVELS,
+  SOURCE_CHANGE_TRIGGER_SCHEMA,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
   type PolicySavePayload,
+  type SourceChangeTriggerPayload,
   type WorkflowOutputPayload,
   type WorkflowSavePayload,
 } from "./fence-schemas";
@@ -35,13 +37,14 @@ export {
   type WorkflowBuilderContext,
 } from "./builder-server";
 export {
-  buildSubscriptionBuilderServer,
-  type SubscriptionBuilderContext,
-} from "./subscription-builder-server";
+  saveWorkflowWithTrigger,
+  type SaveWorkflowWithTriggerResult,
+  type WorkflowTriggerError,
+} from "./save-workflow-with-trigger";
 export {
-  buildPolicyBuilderServer,
-  type PolicyBuilderContext,
-} from "./policy-builder-server";
+  buildRuleBuilderServer,
+  type RuleBuilderContext,
+} from "./rule-builder-server";
 export {
   policySavedCard,
   subscriptionSavedCard,

@@ -282,6 +282,7 @@ export class PluginRegistry {
           external?: "auto" | "ask" | "deny";
           internal?: "auto" | "ask" | "deny";
         };
+    example?: Record<string, unknown>;
   }> {
     const out: Array<{
       kind: string;
@@ -294,6 +295,7 @@ export class PluginRegistry {
             external?: "auto" | "ask" | "deny";
             internal?: "auto" | "ask" | "deny";
           };
+      example?: Record<string, unknown>;
     }> = [];
     for (const entry of this.state.entriesByPluginId.values()) {
       for (const decl of entry.capabilities.action?.kinds ?? []) {
@@ -301,6 +303,7 @@ export class PluginRegistry {
           kind: decl.kind,
           description: decl.description,
           default_mode: decl.default_mode,
+          example: decl.example,
         });
       }
     }

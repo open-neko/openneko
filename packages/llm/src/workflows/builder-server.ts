@@ -1,9 +1,10 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { AgentEvent } from "../agent-backend";
-import { workflowSavedCard } from "./builder-cards";
+import { subscriptionSavedCard, workflowSavedCard } from "./builder-cards";
 import { WORKFLOW_SAVE_SCHEMA } from "./fence-schemas";
-import { listWorkflows, saveWorkflow } from "./store";
+import { saveWorkflowWithTrigger } from "./save-workflow-with-trigger";
+import { listSubscriptionsByWorkflow, listWorkflows } from "./store";
 
 export type WorkflowBuilderContext = {
   orgId: string;
@@ -18,14 +19,18 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
     [
       "Create or update a workflow. Upserts by name within the org — if a",
       "workflow with the same name already exists, it is updated in place.",
-      "Use this when the operator asks to set up, modify, or rename a recurring",
-      "task or pipeline. After saving, narrate the change in a sentence; the",
-      "tool also emits a confirmation card the operator can click to open the",
-      "detail page.",
+      "Use this when the operator asks to set up, modify, or rename a task or",
+      "pipeline. Pass `triggers.cron` to run it on a schedule, or",
+      "`triggers.when` to fire it when a row in the operator's data source",
+      "matches a filter (e.g. 'when stock dips below reorder point') — for the",
+      "latter, introspect the schema first with the GraphJin MCP",
+      "(`list_tables`, `describe_table`) to confirm the table, columns, and",
+      "primary key. After saving, narrate the change in a sentence; the tool",
+      "also emits a confirmation card the operator can click.",
     ].join(" "),
     WORKFLOW_SAVE_SCHEMA.shape,
     async (args) => {
-      const result = await saveWorkflow({
+      const result = await saveWorkflowWithTrigger({
         orgId: ctx.orgId,
         name: args.name,
         description: args.description,
@@ -44,19 +49,38 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
             action: result.action,
           }),
         });
+        if (result.subscription) {
+          await ctx.emit({
+            type: "surface",
+            messages: subscriptionSavedCard({
+              subscription: result.subscription,
+              workflowName: result.workflow.name,
+            }),
+          });
+        }
       }
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify({
-              ok: true,
+              ok: !result.triggerError,
               action: result.action,
               workflowId: result.workflow.id,
               name: result.workflow.name,
+              ...(result.subscription
+                ? { triggerId: result.subscription.id }
+                : {}),
+              ...(result.triggerError
+                ? {
+                    triggerError: result.triggerError,
+                    hint: "The workflow was saved but the data trigger was not wired. Fix the trigger and call create_workflow again with the same name.",
+                  }
+                : {}),
             }),
           },
         ],
+        ...(result.triggerError ? { isError: true } : {}),
       };
     },
   );
@@ -67,8 +91,8 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
       "List the workflows defined in this org so you can answer questions",
       "like 'what was the workflow we set up last week to summarize sales' or",
       "look up the exact name/steps of a workflow before updating it via",
-      "`create_workflow`. Returns full bodies (steps, cron, description,",
-      "system prompt overlay), ordered by most recently updated.",
+      "`create_workflow`. Returns full bodies (steps, cron, data trigger,",
+      "description, system prompt overlay), ordered by most recently updated.",
     ].join(" "),
     {
       limit: z.number().int().min(1).max(200).optional(),
@@ -77,6 +101,9 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
       const all = await listWorkflows(ctx.orgId);
       const limit = args.limit ?? 50;
       const slice = all.slice(0, limit);
+      const triggers = await Promise.all(
+        slice.map((w) => listSubscriptionsByWorkflow(ctx.orgId, w.id)),
+      );
       return {
         content: [
           {
@@ -85,21 +112,27 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
               ok: true,
               total: all.length,
               returned: slice.length,
-              workflows: slice.map((w) => ({
-                id: w.id,
-                name: w.name,
-                description: w.description,
-                enabled: w.enabled,
-                status: w.status,
-                goal: w.goal,
-                systemPromptOverlay: w.systemPromptOverlay,
-                steps: w.steps,
-                cron: w.cron,
-                cronTimezone: w.cronTimezone,
-                cronEnabled: w.cronEnabled,
-                updatedAt: w.updatedAt.toISOString(),
-                createdAt: w.createdAt.toISOString(),
-              })),
+              workflows: slice.map((w, i) => {
+                const dataTrigger = triggers[i].find(
+                  (s) => s.sourceKind === "source_change" && s.enabled,
+                );
+                return {
+                  id: w.id,
+                  name: w.name,
+                  description: w.description,
+                  enabled: w.enabled,
+                  status: w.status,
+                  goal: w.goal,
+                  systemPromptOverlay: w.systemPromptOverlay,
+                  steps: w.steps,
+                  cron: w.cron,
+                  cronTimezone: w.cronTimezone,
+                  cronEnabled: w.cronEnabled,
+                  when: dataTrigger ? dataTrigger.filter : null,
+                  updatedAt: w.updatedAt.toISOString(),
+                  createdAt: w.createdAt.toISOString(),
+                };
+              }),
             }),
           },
         ],

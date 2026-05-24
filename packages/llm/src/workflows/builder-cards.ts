@@ -76,7 +76,7 @@ export function subscriptionSavedCard(args: {
       : "_(no filter)_";
   return briefingCard({
     surfaceId: `subscription-save-${args.subscription.id}`,
-    greeting: "Wired subscription",
+    greeting: "Trigger added",
     subtitle: args.workflowName,
     body: [
       `**${args.workflowName}** will fire on changes to \`${table}\` (pk: \`${pkList}\`).`,

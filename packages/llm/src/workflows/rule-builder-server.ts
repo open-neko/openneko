@@ -11,23 +11,23 @@ import {
 import { policySavedCard } from "./builder-cards";
 import { POLICY_SAVE_SCHEMA } from "./fence-schemas";
 
-export type PolicyBuilderContext = {
+export type RuleBuilderContext = {
   orgId: string;
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
   emit?: (event: AgentEvent) => Promise<void> | void;
 };
 
-export function buildPolicyBuilderServer(ctx: PolicyBuilderContext) {
-  const savePolicyTool = tool(
-    "save_policy",
+export function buildRuleBuilderServer(ctx: RuleBuilderContext) {
+  const saveRuleTool = tool(
+    "save_rule",
     [
-      "Create or update an approval rule (action_policy). Upserts by name",
-      "within the org — if a rule with the same name already exists, it is",
-      "updated in place. Use this when the operator asks to gate, allow, or",
-      "deny specific action kinds (e.g. 'auto-approve low-risk slack posts',",
-      "'always ask before sending email externally'). After saving, the tool",
-      "emits a confirmation card the operator can click to open the rule.",
+      "Create or update an approval rule. Upserts by name within the org —",
+      "if a rule with the same name already exists, it is updated in place.",
+      "Use this when the operator asks to gate, allow, or deny specific action",
+      "kinds (e.g. 'auto-approve low-risk slack posts', 'always ask before",
+      "sending email externally'). After saving, the tool emits a confirmation",
+      "card the operator can click to open the rule.",
     ].join(" "),
     POLICY_SAVE_SCHEMA.shape,
     async (args) => {
@@ -65,7 +65,7 @@ export function buildPolicyBuilderServer(ctx: PolicyBuilderContext) {
             text: JSON.stringify({
               ok: true,
               action: result.action,
-              policyId: result.policy.id,
+              ruleId: result.policy.id,
               name: result.policy.name,
             }),
           },
@@ -74,15 +74,14 @@ export function buildPolicyBuilderServer(ctx: PolicyBuilderContext) {
     },
   );
 
-  const listPoliciesTool = tool(
-    "list_policies",
+  const listRulesTool = tool(
+    "list_rules",
     [
-      "List the approval rules (action_policy) defined in this org so you",
-      "can answer questions like 'what was that rule we set last week to",
-      "auto-approve slack posts' or look up the exact name/config of a rule",
-      "before updating it via `save_policy`. Returns full bodies (mode,",
-      "scopes, kinds, limits), ordered by priority then name. Includes",
-      "disabled rules.",
+      "List the approval rules defined in this org so you can answer questions",
+      "like 'what was that rule we set last week to auto-approve slack posts'",
+      "or look up the exact name/config of a rule before updating it via",
+      "`save_rule`. Returns full bodies (mode, scopes, kinds, limits), ordered",
+      "by priority then name. Includes disabled rules.",
     ].join(" "),
     {
       limit: z.number().int().min(1).max(200).optional(),
@@ -99,7 +98,7 @@ export function buildPolicyBuilderServer(ctx: PolicyBuilderContext) {
               ok: true,
               total: all.length,
               returned: slice.length,
-              policies: slice.map((p) => ({
+              rules: slice.map((p) => ({
                 id: p.id,
                 name: p.name,
                 description: p.description,
@@ -124,8 +123,8 @@ export function buildPolicyBuilderServer(ctx: PolicyBuilderContext) {
   );
 
   return createSdkMcpServer({
-    name: "neko_policy_builder",
+    name: "neko_rule_builder",
     version: "1.0.0",
-    tools: [savePolicyTool, listPoliciesTool],
+    tools: [saveRuleTool, listRulesTool],
   });
 }
