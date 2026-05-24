@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/open-neko/neko/compare/v1.13.9...v1.14.0) (2026-05-24)
+
+
+### Features
+
+* **workflows:** source-change data triggers + rule surface across backends ([#63](https://github.com/open-neko/neko/issues/63)) ([ca6ed8e](https://github.com/open-neko/neko/commit/ca6ed8ebd20b5fe98e7dc1105231098f5285528a))
+
 ## [1.13.9](https://github.com/open-neko/neko/compare/v1.13.8...v1.13.9) (2026-05-23)
 
 
