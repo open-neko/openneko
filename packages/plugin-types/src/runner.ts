@@ -17,6 +17,14 @@ import {
   rpcErr,
   rpcOk,
 } from "./rpc.js";
+import {
+  DeliverParams,
+  DeliverResult,
+  ParseInboundParams,
+  ParseInboundResult,
+  VerifyInboundParams,
+  VerifyInboundResult,
+} from "./channel.js";
 import type { PluginDefinition } from "./define-plugin.js";
 
 export interface RunPluginOptions {
@@ -50,6 +58,12 @@ export async function dispatchPluginRpc(
         return rpcOk(await runCompleteConnect(plugin, options.paramsJson));
       case "refresh_connect":
         return rpcOk(await runRefreshConnect(plugin, options.paramsJson));
+      case "deliver":
+        return rpcOk(await runDeliver(plugin, options.paramsJson));
+      case "parse_inbound":
+        return rpcOk(await runParseInbound(plugin, options.paramsJson));
+      case "verify_inbound":
+        return rpcOk(await runVerifyInbound(plugin, options.paramsJson));
       default:
         return rpcErr("UNKNOWN_METHOD", `unknown RPC method: ${options.method}`);
     }
@@ -84,6 +98,14 @@ function buildRegisterResult(plugin: PluginDefinition): RegisterResult {
             providerLabel: caps.connect.providerLabel,
             scopes: caps.connect.scopes,
             flow: caps.connect.flow ?? "oauth2-pkce",
+          }
+        : undefined,
+      channel: caps.channel
+        ? {
+            providerLabel: caps.channel.providerLabel,
+            profile: caps.channel.profile,
+            directions: caps.channel.directions,
+            ingress: caps.channel.ingress ?? "none",
           }
         : undefined,
     },
@@ -175,6 +197,42 @@ async function runRefreshConnect(
   const parsed = RefreshConnectRpcParams.parse(JSON.parse(paramsJson));
   const result = await connect.refresh(parsed.params);
   return RefreshConnectRpcResult.parse({ result });
+}
+
+async function runDeliver(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<DeliverResult> {
+  const channel = plugin.capabilities.channel;
+  if (!channel) {
+    throw new Error("plugin does not implement a channel");
+  }
+  const parsed = DeliverParams.parse(JSON.parse(paramsJson));
+  return DeliverResult.parse(await channel.deliver(parsed));
+}
+
+async function runParseInbound(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<ParseInboundResult> {
+  const channel = plugin.capabilities.channel;
+  if (!channel?.parseInbound) {
+    throw new Error("plugin's channel does not implement parse_inbound");
+  }
+  const parsed = ParseInboundParams.parse(JSON.parse(paramsJson));
+  return ParseInboundResult.parse(await channel.parseInbound(parsed));
+}
+
+async function runVerifyInbound(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<VerifyInboundResult> {
+  const channel = plugin.capabilities.channel;
+  if (!channel?.verifyInbound) {
+    throw new Error("plugin's channel does not implement verify_inbound");
+  }
+  const parsed = VerifyInboundParams.parse(JSON.parse(paramsJson));
+  return VerifyInboundResult.parse(await channel.verifyInbound(parsed));
 }
 
 /**

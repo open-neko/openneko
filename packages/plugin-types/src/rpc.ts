@@ -22,6 +22,7 @@ import {
   AuthCapabilityDeclaration,
   ConnectCapabilityDeclaration,
 } from "./manifest.js";
+import { ChannelCapabilityDeclaration } from "./channel.js";
 
 /**
  * JSON-RPC over stdio between the OpenNeko worker (caller) and a plugin
@@ -40,6 +41,9 @@ export const RpcMethod = z.enum([
   "begin_connect",
   "complete_connect",
   "refresh_connect",
+  "deliver",
+  "parse_inbound",
+  "verify_inbound",
 ]);
 export type RpcMethod = z.infer<typeof RpcMethod>;
 
@@ -68,6 +72,7 @@ export const RegisterResult = z.object({
       .optional(),
     auth: AuthCapabilityDeclaration.optional(),
     connect: ConnectCapabilityDeclaration.optional(),
+    channel: ChannelCapabilityDeclaration.optional(),
   }),
 });
 export type RegisterResult = z.infer<typeof RegisterResult>;
