@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -216,6 +216,45 @@ describe("PluginRegistry", () => {
     expect(reg.status().vmsRunning).toBe(0);
     expect(runtime.starts).toEqual([]);
     expect(captured.size).toBe(4);
+    await reg.stop();
+  });
+
+  it("enriches action examples from the installed package.json when the manifest lacks them", async () => {
+    // A marketplace install drops `example` (schema forbids it), so the
+    // manifest entry has the kind but no example payload.
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(
+        manifestWithSlackEntry({
+          kinds: [{ kind: "send_slack_dm", description: "DM a user." }],
+        }),
+      ),
+      "utf8",
+    );
+    // The installed package's own package.json always carries the example.
+    const pkgDir = path.join(repoRoot, "node_modules", "@open-neko", "plugin-slack");
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({
+        name: "@open-neko/plugin-slack",
+        version: "0.2.0",
+        openneko: {
+          capabilities: {
+            action: {
+              kinds: [
+                { kind: "send_slack_dm", description: "DM a user.", example: { user: "amit", text: "hi" } },
+              ],
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    const dm = reg.getRegisteredActionDescriptors().find((d) => d.kind === "send_slack_dm");
+    expect(dm?.example).toEqual({ user: "amit", text: "hi" });
     await reg.stop();
   });
 
