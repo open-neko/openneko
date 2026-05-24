@@ -4,6 +4,8 @@
 // Distinct from the existing BriefingCard which is heavy/KPI-shaped.
 
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Card } from "@/components/ui/Card";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
@@ -112,7 +114,9 @@ export default function FindingCard({
       </div>
 
       {data.body && (
-        <p className="m-0 mb-2.5 text-sm leading-[1.55] text-text">{data.body}</p>
+        <div className="work-markdown mb-2.5 text-sm leading-[1.55] text-text">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.body}</ReactMarkdown>
+        </div>
       )}
 
       {isApproval && data.target && (
