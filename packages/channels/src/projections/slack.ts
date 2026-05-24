@@ -1,5 +1,5 @@
 import type { CapabilityProfile, InteractionEvent, Projection } from "@neko/interaction";
-import { summarizeBody } from "./degrade.js";
+import { summarizeBody } from "./degrade";
 
 export type SlackBlock = Record<string, unknown>;
 

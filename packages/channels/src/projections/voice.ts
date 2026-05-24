@@ -1,5 +1,5 @@
 import type { InteractionEvent, Projection } from "@neko/interaction";
-import { escapeXml, summarizeBody } from "./degrade.js";
+import { escapeXml, summarizeBody } from "./degrade";
 
 export interface VoiceProjectionResult {
   ssml: string;

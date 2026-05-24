@@ -1,5 +1,5 @@
-import type { CapabilityProfile } from "./capability-profile.js";
-import type { InteractionEvent } from "./interaction-event.js";
+import type { CapabilityProfile } from "./capability-profile";
+import type { InteractionEvent } from "./interaction-event";
 
 /**
  * Pure: (events, profile) → native payload. Built-in channels register one

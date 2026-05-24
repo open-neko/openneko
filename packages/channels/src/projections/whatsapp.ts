@@ -1,5 +1,5 @@
 import type { InteractionEvent, Projection } from "@neko/interaction";
-import { clampChars, summarizeBody } from "./degrade.js";
+import { clampChars, summarizeBody } from "./degrade";
 
 export interface WhatsappButton {
   id: string;

@@ -4,13 +4,13 @@ import {
   WEB_PROFILE,
   WHATSAPP_PROFILE,
 } from "@neko/interaction";
-import { defineChannel, type ChannelAdapter, type DeliverResult } from "./channel-adapter.js";
-import { parseSlackInbound } from "./inbound/slack.js";
-import { parseWhatsappInbound } from "./inbound/whatsapp.js";
-import { slackProjection } from "./projections/slack.js";
-import { voiceProjection } from "./projections/voice.js";
-import { webProjection } from "./projections/web.js";
-import { whatsappProjection } from "./projections/whatsapp.js";
+import { defineChannel, type ChannelAdapter, type DeliverResult } from "./channel-adapter";
+import { parseSlackInbound } from "./inbound/slack";
+import { parseWhatsappInbound } from "./inbound/whatsapp";
+import { slackProjection } from "./projections/slack";
+import { voiceProjection } from "./projections/voice";
+import { webProjection } from "./projections/web";
+import { whatsappProjection } from "./projections/whatsapp";
 
 const localSend = async (): Promise<DeliverResult> => ({ delivered: true, ref: "local" });
 

@@ -1,4 +1,4 @@
-import type { CapabilityProfile } from "./capability-profile.js";
+import type { CapabilityProfile } from "./capability-profile";
 
 export const WEB_PROFILE: CapabilityProfile = {
   modalities: ["text", "visual"],

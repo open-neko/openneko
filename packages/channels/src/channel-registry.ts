@@ -4,7 +4,7 @@ import type {
   ChannelProviderInfo,
   ChannelRecipient,
   DeliverResult,
-} from "./channel-adapter.js";
+} from "./channel-adapter";
 
 /** audience → channel routing. The web binding is implicit (see `builtIn`). */
 export interface DeliveryBinding {

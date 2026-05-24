@@ -12,7 +12,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@neko/channels": "workspace:*",
     "@neko/db": "workspace:*",
+    "@neko/interaction": "workspace:*",
     "@neko/llm": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
@@ -26,8 +28,6 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@neko/channels": "workspace:*",
-    "@neko/interaction": "workspace:*",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

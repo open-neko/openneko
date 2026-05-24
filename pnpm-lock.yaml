@@ -14,9 +14,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@neko/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@neko/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@neko/interaction':
+        specifier: workspace:*
+        version: link:../../packages/interaction
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -51,12 +57,6 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
     devDependencies:
-      '@neko/channels':
-        specifier: workspace:*
-        version: link:../../packages/channels
-      '@neko/interaction':
-        specifier: workspace:*
-        version: link:../../packages/interaction
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.4

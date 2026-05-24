@@ -11,7 +11,10 @@ import {
 } from "@neko/db";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { classifyQuestion } from "@neko/llm";
-import type { A2UIMessage } from "@/a2ui/types";
+import { webProjection } from "@neko/channels";
+import { WEB_PROFILE } from "@neko/interaction";
+import { outputRowToInteractionEvent } from "@neko/llm/interaction";
+import type { A2UIComponent, A2UIMessage } from "@/a2ui/types";
 import { CATALOG_ID } from "@/a2ui/catalog";
 import { getOrgId } from "@/lib/db";
 import { isDemoMode, mockChatResponse } from "@/lib/demo-mode";
@@ -85,6 +88,72 @@ function genChartData(chartType: string, metric: string) {
     default:
       return genTimeSeriesData();
   }
+}
+
+/**
+ * The metric cards the operator sees are produced by the built-in web channel:
+ * each loop output (a metric snapshot) becomes an InteractionEvent, which the
+ * web channel's projection turns into the BriefingCard the renderer consumes.
+ * The dashboard chrome (metricId/source/state — web-specific affordances, not
+ * modality-free intent) is stamped back on after projection.
+ */
+interface InsightLike {
+  id: string;
+  mood: string;
+  text: string;
+  metric: string;
+  label?: string;
+  detail?: string;
+  chartType: string;
+  metricId?: string;
+  source?: string;
+  state?: string;
+  error?: string;
+  chartDataOverride?: Array<{ d: string; v: number; t?: number }>;
+  fromDb?: boolean;
+}
+
+const SERIES_KINDS = ["kpi", "line", "bar", "area", "donut"] as const;
+type SeriesKind = (typeof SERIES_KINDS)[number];
+
+const toSeriesKind = (c: string): SeriesKind =>
+  (SERIES_KINDS as readonly string[]).includes(c) ? (c as SeriesKind) : "line";
+
+const toWaistMood = (m: string): "good" | "watch" | "act" =>
+  m === "bad" ? "act" : m === "good" ? "good" : "watch";
+
+const chartDataForInsight = (ins: InsightLike): Array<{ d: string; v: number; t?: number }> => {
+  if (ins.fromDb) return ins.chartDataOverride ?? [];
+  if (ins.chartDataOverride && ins.chartDataOverride.length > 0) return ins.chartDataOverride;
+  return genChartData(ins.chartType, ins.metric);
+};
+
+function briefingCardsViaChannel(insights: InsightLike[]): A2UIComponent[] {
+  return insights.map((ins) => {
+    const inform = outputRowToInteractionEvent({
+      id: ins.id,
+      mood: toWaistMood(ins.mood),
+      title: ins.text,
+      body: ins.detail ?? "",
+      metric: { label: ins.label ?? "", value: ins.metric },
+      series: { kind: toSeriesKind(ins.chartType), points: chartDataForInsight(ins) },
+    });
+    const update = webProjection([inform], WEB_PROFILE).surfaces.find(
+      (m) => "updateComponents" in m,
+    ) as { updateComponents: { components: Array<Record<string, unknown>> } } | undefined;
+    const card = update?.updateComponents.components.find((c) => c.component === "BriefingCard") ?? {};
+    // Restamp dashboard identity + render-state (web affordances, not waist concepts).
+    return {
+      ...card,
+      id: ins.id,
+      component: "BriefingCard",
+      metricId: ins.metricId ?? ins.id,
+      source: ins.source ?? "bootstrap",
+      state: ins.state ?? "ok",
+      error: ins.error,
+      mood: ins.mood,
+    } as A2UIComponent;
+  });
 }
 
 const ROLE_DATA: Record<string, {
@@ -261,21 +330,7 @@ export async function GET(request: NextRequest) {
       isExample: !hasRealCards,
       children: insightIds,
     },
-    ...roleData.insights.map((ins) => ({
-      id: ins.id,
-      component: "BriefingCard",
-      metricId: { path: `/insights/${ins.id}/metricId` },
-      source: { path: `/insights/${ins.id}/source` },
-      state: { path: `/insights/${ins.id}/state` },
-      error: { path: `/insights/${ins.id}/error` },
-      mood: { path: `/insights/${ins.id}/mood` },
-      text: { path: `/insights/${ins.id}/text` },
-      metric: { path: `/insights/${ins.id}/metric` },
-      label: { path: `/insights/${ins.id}/label` },
-      detail: { path: `/insights/${ins.id}/detail` },
-      chartType: { path: `/insights/${ins.id}/chartType` },
-      chartData: { path: `/insights/${ins.id}/chartData` },
-    })),
+    ...briefingCardsViaChannel(roleData.insights as InsightLike[]),
   ];
 
   messages.push({

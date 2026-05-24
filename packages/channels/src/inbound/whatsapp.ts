@@ -1,5 +1,5 @@
 import type { IntentEvent } from "@neko/interaction";
-import { intentFromButtonId } from "./button-id.js";
+import { intentFromButtonId } from "./button-id";
 
 type Obj = Record<string, unknown>;
 
