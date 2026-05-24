@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractActionRequestFences,
-  extractPolicySaveFence,
+  extractRuleSaveFence,
   extractWorkflowOutputFences,
   extractWorkflowSaveFence,
 } from "../src/workflows/fence-parsers";
@@ -40,6 +40,49 @@ describe("extractWorkflowSaveFence", () => {
     expect(r.text).toContain("Saved 'APAC revenue dip check'");
     expect(r.text).not.toContain("neko_workflow_save");
     expect(r.text).not.toContain("cron");
+  });
+
+  it("parses a triggers.when data-change trigger", () => {
+    const raw = [
+      "Saved 'low stock alert'.",
+      "```neko_workflow_save",
+      JSON.stringify({
+        name: "low stock alert",
+        steps: [{ id: "dm", description: "DM Amit on Slack with details" }],
+        triggers: {
+          when: {
+            table: "productinventory",
+            where: { quantity: { lt: { col: "product.reorderpoint" } } },
+            primary_key: ["productid", "locationid"],
+            version_column: "modifieddate",
+          },
+        },
+      }),
+      "```",
+    ].join("\n");
+    const r = extractWorkflowSaveFence(raw);
+    expect(r.payload).not.toBeNull();
+    expect(r.payload?.triggers?.when?.table).toBe("productinventory");
+    expect(r.payload?.triggers?.when?.primary_key).toEqual([
+      "productid",
+      "locationid",
+    ]);
+    expect(r.text).not.toContain("neko_workflow_save");
+  });
+
+  it("rejects a triggers.when missing primary_key", () => {
+    const raw = [
+      "```neko_workflow_save",
+      JSON.stringify({
+        name: "bad trigger",
+        steps: [{ id: "s", description: "do" }],
+        triggers: { when: { table: "productinventory" } },
+      }),
+      "```",
+    ].join("\n");
+    const r = extractWorkflowSaveFence(raw);
+    expect(r.payload).toBeNull();
+    expect(r.errors).toHaveLength(1);
   });
 
   it("reports parse errors for invalid JSON without throwing", () => {
@@ -211,9 +254,9 @@ describe("extractActionRequestFences", () => {
   });
 });
 
-describe("extractPolicySaveFence", () => {
+describe("extractRuleSaveFence", () => {
   it("returns null payload when no fence is present", () => {
-    const r = extractPolicySaveFence("just discussing policies with the operator");
+    const r = extractRuleSaveFence("just discussing policies with the operator");
     expect(r.payload).toBeNull();
     expect(r.errors).toEqual([]);
     expect(r.text).toBe("just discussing policies with the operator");
@@ -223,7 +266,7 @@ describe("extractPolicySaveFence", () => {
     const raw = [
       "Saved policy 'slack_low_risk_auto_approve'.",
       "",
-      "```neko_policy_save",
+      "```neko_rule_save",
       JSON.stringify({
         name: "slack_low_risk_auto_approve",
         description: "Auto-approve low-risk Slack alerts, capped at 20/day.",
@@ -235,7 +278,7 @@ describe("extractPolicySaveFence", () => {
       }),
       "```",
     ].join("\n");
-    const r = extractPolicySaveFence(raw);
+    const r = extractRuleSaveFence(raw);
     expect(r.payload).not.toBeNull();
     expect(r.payload?.name).toBe("slack_low_risk_auto_approve");
     expect(r.payload?.mode).toBe("auto_approve");
@@ -245,12 +288,12 @@ describe("extractPolicySaveFence", () => {
     expect(r.payload?.priority).toBe(100);
     expect(r.payload?.enabled).toBe(true);
     expect(r.text).toContain("Saved policy");
-    expect(r.text).not.toContain("neko_policy_save");
+    expect(r.text).not.toContain("neko_rule_save");
   });
 
   it("defaults applies_to_scopes to ['external'] when omitted", () => {
     const raw = [
-      "```neko_policy_save",
+      "```neko_rule_save",
       JSON.stringify({
         name: "external_default",
         applies_to_kinds: [],
@@ -258,13 +301,13 @@ describe("extractPolicySaveFence", () => {
       }),
       "```",
     ].join("\n");
-    const r = extractPolicySaveFence(raw);
+    const r = extractRuleSaveFence(raw);
     expect(r.payload?.applies_to_scopes).toEqual(["external"]);
   });
 
   it("rejects payloads with an unknown mode", () => {
     const raw = [
-      "```neko_policy_save",
+      "```neko_rule_save",
       JSON.stringify({
         name: "weird",
         applies_to_kinds: ["send_message"],
@@ -272,18 +315,18 @@ describe("extractPolicySaveFence", () => {
       }),
       "```",
     ].join("\n");
-    const r = extractPolicySaveFence(raw);
+    const r = extractRuleSaveFence(raw);
     expect(r.payload).toBeNull();
     expect(r.errors).toHaveLength(1);
   });
 
   it("rejects payloads missing required fields", () => {
     const raw = [
-      "```neko_policy_save",
+      "```neko_rule_save",
       JSON.stringify({ description: "no name or mode" }),
       "```",
     ].join("\n");
-    const r = extractPolicySaveFence(raw);
+    const r = extractRuleSaveFence(raw);
     expect(r.payload).toBeNull();
     expect(r.errors).toHaveLength(1);
   });
@@ -295,15 +338,15 @@ describe("extractPolicySaveFence", () => {
       mode: "auto_approve",
     });
     const raw = [
-      "```neko_policy_save",
+      "```neko_rule_save",
       valid,
       "```",
-      "```neko_policy_save",
+      "```neko_rule_save",
       valid.replace("first", "second"),
       "```",
     ].join("\n");
-    const r = extractPolicySaveFence(raw);
+    const r = extractRuleSaveFence(raw);
     expect(r.payload?.name).toBe("first");
-    expect(r.text).not.toContain("neko_policy_save");
+    expect(r.text).not.toContain("neko_rule_save");
   });
 });

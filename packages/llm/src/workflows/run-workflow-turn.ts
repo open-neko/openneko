@@ -30,7 +30,10 @@ import {
   buildWorkflowOutputServer,
   handleWorkflowOutput,
 } from "./output-server";
-import { buildWorkflowRunnerPrompt } from "./runner-prompt";
+import {
+  buildWorkflowRunnerPrompt,
+  type PluginActionPromptDescriptor,
+} from "./runner-prompt";
 import {
   createWorkflowRun,
   finishWorkflowRun,
@@ -118,6 +121,13 @@ export type RunWorkflowTurnOptions = {
   mode: "live" | "headless";
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
+  /**
+   * Installed plugin action kinds, so the runner agent proposes real kinds
+   * (e.g. send_slack_dm) that policy rules + adapters match — not a generic
+   * send_message that stalls at pending_approval. The fire job passes its
+   * registry snapshot; tests may omit it.
+   */
+  pluginActions?: readonly PluginActionPromptDescriptor[];
 };
 
 export type RunWorkflowTurnDeps = {
@@ -224,6 +234,7 @@ export async function runWorkflowTurn(
       backend: backend.id,
       workspace,
       knowledge,
+      pluginActions: opts.pluginActions ?? [],
     });
 
     const seedMessage = synthesizeSeedMessage(

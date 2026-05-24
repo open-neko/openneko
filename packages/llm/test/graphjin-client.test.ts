@@ -6,7 +6,7 @@ describe("graphjinQuery", () => {
     vi.restoreAllMocks();
   });
 
-  it("POSTs to /api/v1/graphql with role header and parses JSON response", async () => {
+  it("POSTs to the given GraphQL endpoint with role header and parses JSON response", async () => {
     const responseBody = { data: { workflow_definition: [{ id: "x1" }] } };
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(responseBody), {
@@ -18,7 +18,8 @@ describe("graphjinQuery", () => {
     const result = await graphjinQuery<{
       workflow_definition: Array<{ id: string }>;
     }>({
-      baseUrl: "http://127.0.0.1:8089",
+      // baseUrl is the full GraphQL endpoint — graphjinQuery does not append a path.
+      baseUrl: "http://127.0.0.1:8089/api/v1/graphql",
       query: "{ workflow_definition { id } }",
       role: "admin",
     });

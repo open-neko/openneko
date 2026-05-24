@@ -2,7 +2,10 @@ import type { WorkflowRunFirePayload } from "@neko/db/jobs";
 import type { AgentEvent } from "@neko/llm";
 import { appendWorkRunEvent, scrubAgentEvent } from "@neko/llm/work";
 import { prepareWorkflowRun, runWorkflowTurn } from "@neko/llm/workflows";
-import { getCurrentScrubber } from "../plugins/registry-instance.js";
+import {
+  getCurrentScrubber,
+  getPluginRegistryInstance,
+} from "../plugins/registry-instance.js";
 
 export async function runWorkflowRunFire(
   payload: WorkflowRunFirePayload,
@@ -31,10 +34,14 @@ export async function runWorkflowRunFire(
     });
   };
 
+  const pluginActions =
+    getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [];
+
   await runWorkflowTurn({
     prepared,
     userMessage: payload.userMessage,
     mode: "headless",
     emit,
+    pluginActions,
   });
 }

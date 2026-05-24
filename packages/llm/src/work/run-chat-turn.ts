@@ -4,16 +4,16 @@ import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-back
 import { extractMemoryFences } from "../agent-backends/memory-fence";
 import {
   extractActionRequestFences,
-  extractPolicySaveFence,
+  extractRuleSaveFence,
   extractWorkflowSaveFence,
 } from "../workflows/fence-parsers";
 import {
-  buildPolicyBuilderServer,
-  buildSubscriptionBuilderServer,
+  buildRuleBuilderServer,
   buildWorkflowBuilderServer,
   handleWorkActionRequest,
   policySavedCard,
-  saveWorkflow,
+  saveWorkflowWithTrigger,
+  subscriptionSavedCard,
   upsertActionPolicyByName,
   workflowSavedCard,
   type ActionPolicyMode,
@@ -250,15 +250,11 @@ export async function runChatTurn(
                   createdByRunId: runId,
                   emit: wrappedEmit,
                 }),
-                neko_subscription_builder: buildSubscriptionBuilderServer({
-                  orgId,
-                  emit: wrappedEmit,
-                }),
               }
             : {}),
           ...(supportsPolicyTool
             ? {
-                neko_policy_builder: buildPolicyBuilderServer({
+                neko_rule_builder: buildRuleBuilderServer({
                   orgId,
                   createdByThreadId: threadId,
                   createdByRunId: runId,
@@ -298,8 +294,15 @@ export async function runChatTurn(
     // each through the same policy + DB + emit path the MCP tools
     // use, so the agent's tool surface is identical across backends
     // from the user's perspective.
-    const rawTextForActions = result.finalText.trim() || assistantText.trim();
-    const actionFences = extractActionRequestFences(rawTextForActions);
+    // Side-effect fences are parsed from the RAW agent output, not finalText:
+    // Hermes hides builder fences from finalText (it collapses to the a2ui
+    // markdown) and from the message stream, so only rawText still carries
+    // them. claude-agent has no rawText and uses MCP tools, so this falls
+    // back to finalText harmlessly. Each fence type is parsed independently
+    // off the same source — they're distinct delimited blocks.
+    const fenceSource =
+      (result.rawText ?? result.finalText).trim() || assistantText.trim();
+    const actionFences = extractActionRequestFences(fenceSource);
     for (const payload of actionFences.payloads) {
       try {
         await handleWorkActionRequest(
@@ -323,10 +326,10 @@ export async function runChatTurn(
     // the workflow_builder / policy_builder MCP tools). Same chain
     // pattern as action fences above: persist, emit a confirmation
     // surface, strip the fence body from the displayed text.
-    const workflowFence = extractWorkflowSaveFence(actionFences.text);
+    const workflowFence = extractWorkflowSaveFence(fenceSource);
     if (workflowFence.payload) {
       try {
-        const saved = await saveWorkflow({
+        const saved = await saveWorkflowWithTrigger({
           orgId,
           name: workflowFence.payload.name,
           description: workflowFence.payload.description,
@@ -344,6 +347,20 @@ export async function runChatTurn(
             action: saved.action,
           }),
         });
+        if (saved.subscription) {
+          await wrappedEmit({
+            type: "surface",
+            messages: subscriptionSavedCard({
+              subscription: saved.subscription,
+              workflowName: saved.workflow.name,
+            }),
+          });
+        } else if (saved.triggerError) {
+          await wrappedEmit({
+            type: "error",
+            message: `workflow saved, but its data trigger was not wired (${saved.triggerError.code}): ${saved.triggerError.message}`,
+          });
+        }
       } catch (err) {
         await wrappedEmit({
           type: "error",
@@ -358,7 +375,7 @@ export async function runChatTurn(
       });
     }
 
-    const policyFence = extractPolicySaveFence(workflowFence.text);
+    const policyFence = extractRuleSaveFence(fenceSource);
     if (policyFence.payload) {
       try {
         const saved = await upsertActionPolicyByName({
@@ -402,13 +419,10 @@ export async function runChatTurn(
       });
     }
 
-    // Pull any neko_memory fences out of the agent response, persist
-    // them, and strip from the user-facing text. Backend-agnostic: works
-    // for Hermes (which has no MCP tool registry) and is harmless for
-    // claude-agent (which would have used the MCP save tool, but we
-    // accept either path).
-    const rawText = policyFence.text;
-    const { text: persistedText, ops: memoryOps } = extractMemoryFences(rawText);
+    // Pull any neko_memory fences out of the raw agent response and persist
+    // them. Backend-agnostic: works for Hermes (no MCP tool registry) and is
+    // harmless for claude-agent (which would have used the MCP save tool).
+    const { ops: memoryOps } = extractMemoryFences(fenceSource);
     for (const op of memoryOps) {
       try {
         await rememberWorkMemory({
@@ -427,6 +441,15 @@ export async function runChatTurn(
         );
       }
     }
+
+    // The persisted assistant message is the cleaned DISPLAY text (finalText),
+    // with any fence bodies that leaked into it stripped — never the raw
+    // source, which still holds the a2ui block + builder fences. The a2ui card
+    // and builder confirmation cards were already emitted as surfaces.
+    let persistedText = extractActionRequestFences(result.finalText.trim()).text;
+    persistedText = extractWorkflowSaveFence(persistedText).text;
+    persistedText = extractRuleSaveFence(persistedText).text;
+    persistedText = extractMemoryFences(persistedText).text;
     if (persistedText) {
       await saveAssistantWorkMessage({
         orgId,

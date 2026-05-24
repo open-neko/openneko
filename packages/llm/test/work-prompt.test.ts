@@ -94,16 +94,29 @@ describe("buildWorkPrompt workflow + policy management", () => {
     expect(prompt).not.toContain("mcp__neko_workflow_builder__");
   });
 
-  it("advertises policy tools when supportsPolicyTool is true", () => {
-    const prompt = build("claude-agent", { supportsPolicyTool: true });
-    expect(prompt).toContain("mcp__neko_policy_builder__list_policies");
-    expect(prompt).toContain("mcp__neko_policy_builder__save_policy");
+  it("teaches the data-change trigger in both workflow tool modes", () => {
+    const mcp = build("claude-agent", { supportsWorkflowTool: true });
+    expect(mcp).toContain("triggers.when");
+    expect(mcp).not.toContain("create_subscription");
+    expect(mcp).not.toContain("dry_run");
+
+    const fence = build("hermes", { supportsWorkflowTool: false });
+    expect(fence).toContain("triggers.when");
+    // The trigger must not surface as a separate "subscription" tool/fence.
+    expect(fence).not.toContain("neko_subscription");
+    expect(fence).not.toContain("create_subscription");
   });
 
-  it("falls back to the policy save fence when MCP tools unavailable", () => {
+  it("advertises rule tools when supportsPolicyTool is true", () => {
+    const prompt = build("claude-agent", { supportsPolicyTool: true });
+    expect(prompt).toContain("mcp__neko_rule_builder__list_rules");
+    expect(prompt).toContain("mcp__neko_rule_builder__save_rule");
+  });
+
+  it("falls back to the rule save fence when MCP tools unavailable", () => {
     const prompt = build("hermes", { supportsPolicyTool: false });
-    expect(prompt).toContain("neko_policy_save");
-    expect(prompt).not.toContain("mcp__neko_policy_builder__");
+    expect(prompt).toContain("neko_rule_save");
+    expect(prompt).not.toContain("mcp__neko_rule_builder__");
   });
 
   it("frames /work as the single chat surface for everything", () => {

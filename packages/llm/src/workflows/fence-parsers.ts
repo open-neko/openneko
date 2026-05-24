@@ -12,7 +12,7 @@ import {
 const SAVE_FENCE_RE = /```neko_workflow_save\s*([\s\S]*?)```/gi;
 const OUTPUT_FENCE_RE = /```neko_workflow_output\s*([\s\S]*?)```/gi;
 const ACTION_FENCE_RE = /```neko_action_request\s*([\s\S]*?)```/gi;
-const POLICY_FENCE_RE = /```neko_policy_save\s*([\s\S]*?)```/gi;
+const RULE_FENCE_RE = /```neko_rule_save\s*([\s\S]*?)```/gi;
 
 export type FenceParseError = {
   raw: string;
@@ -142,8 +142,8 @@ export function extractActionRequestFences(
   };
 }
 
-export function extractPolicySaveFence(raw: string): PolicySaveFenceResult {
-  const matches = [...raw.matchAll(POLICY_FENCE_RE)];
+export function extractRuleSaveFence(raw: string): PolicySaveFenceResult {
+  const matches = [...raw.matchAll(RULE_FENCE_RE)];
   const errors: FenceParseError[] = [];
   let payload: PolicySavePayload | null = null;
 
@@ -163,7 +163,7 @@ export function extractPolicySaveFence(raw: string): PolicySaveFenceResult {
   }
 
   return {
-    text: stripAllFences(raw, POLICY_FENCE_RE),
+    text: stripAllFences(raw, RULE_FENCE_RE),
     payload,
     errors,
   };

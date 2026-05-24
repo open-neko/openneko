@@ -49,6 +49,7 @@ const HIDDEN_FENCE_OPENERS = [
   "```neko_workflow_save",
   "```neko_workflow_output",
   "```neko_action_request",
+  "```neko_rule_save",
 ] as const;
 
 function extractMarkdownText(messages: Array<Record<string, unknown>>): string {
@@ -195,6 +196,7 @@ export class HermesBackend implements AgentBackend {
         }
         return {
           finalText: out.finalText,
+          rawText: out.rawText,
           status: signal?.aborted ? "cancelled" : "completed",
           backendState,
         };
@@ -232,6 +234,7 @@ type RunOnceArgs = {
 
 type RunOnceOutcome = {
   finalText: string;
+  rawText?: string;
   error?: string;
 };
 
@@ -455,7 +458,10 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       }
     }
 
-    return { finalText: finalText.trim() };
+    // rawText keeps every fence (a2ui + builder); finalText above dropped the
+    // builder fences when it collapsed to the a2ui markdown. run-chat-turn
+    // parses action/workflow/rule/memory fences out of rawText.
+    return { finalText: finalText.trim(), rawText: accumulatedText };
   } catch (e) {
     if (spawnError) throw spawnError;
     throw e;

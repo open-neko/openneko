@@ -77,7 +77,7 @@ describe("parseWorkflowOutputMatch", () => {
 });
 
 describe("buildSubscriptionQuery (source_change)", () => {
-  it("emits the where verbatim and projects pk + select + version", () => {
+  it("inlines the where and projects pk + select + version", () => {
     const payload = buildSubscriptionQuery({
       sourceKind: "source_change",
       orgId: "org-abc",
@@ -92,15 +92,15 @@ describe("buildSubscriptionQuery (source_change)", () => {
       },
     });
     expect(payload).not.toBeNull();
-    expect(payload!.variables).toEqual({
-      where: { quantity: { lt: { col: "product.reorderpoint" } } },
-    });
+    // GraphJin rejects `where` passed as a variable, so it's inlined and no
+    // GraphQL variables are emitted.
+    expect(payload!.variables).toEqual({});
+    expect(payload!.query).toContain("subscription SourceChangeMatch {");
+    expect(payload!.query).not.toContain("$where");
     expect(payload!.query).toContain(
-      "subscription SourceChangeMatch($where: productinventoryWhereInput)",
+      "where: { quantity: { lt: { col: \"product.reorderpoint\" } } }",
     );
-    expect(payload!.query).toContain(
-      "productinventory(where: $where, order_by: { modifieddate: desc }, limit: 1)",
-    );
+    expect(payload!.query).toContain("order_by: { modifieddate: desc }, limit: 1");
     // pk columns + select + version_column, deduped and ordered
     expect(payload!.query).toContain("productid");
     expect(payload!.query).toContain("locationid");
@@ -118,9 +118,8 @@ describe("buildSubscriptionQuery (source_change)", () => {
         primary_key: ["productid", "locationid"],
       },
     });
-    expect(payload!.variables.where).toEqual({ quantity: { lt: 50 } });
-    const where = payload!.variables.where as Record<string, unknown>;
-    expect(where).not.toHaveProperty("org_id");
+    expect(payload!.query).toContain("where: { quantity: { lt: 50 } }");
+    expect(payload!.query).not.toContain("org_id");
   });
 
   it("falls back to primary_key[0] for order_by when version_column omitted", () => {
@@ -134,6 +133,8 @@ describe("buildSubscriptionQuery (source_change)", () => {
       },
     });
     expect(payload!.query).toContain("order_by: { id: desc }");
+    // empty where → the argument is omitted entirely
+    expect(payload!.query).not.toContain("where:");
   });
 
   it("returns null for invalid filter shape (missing table)", () => {

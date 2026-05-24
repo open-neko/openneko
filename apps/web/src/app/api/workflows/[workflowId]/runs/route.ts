@@ -5,6 +5,7 @@ import {
   prepareWorkflowRun,
   runWorkflowTurn,
 } from "@neko/llm/workflows";
+import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
 import {
@@ -58,12 +59,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     runId: prepared.workRunId,
   });
 
+  const pluginActions = await getPluginActionDescriptors();
+
   void runWorkflowTurn({
     prepared,
     userMessage,
     mode: "live",
     emit,
     signal: abortController.signal,
+    pluginActions,
   })
     .catch(async (err) => {
       console.error(

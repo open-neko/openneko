@@ -20,6 +20,8 @@ export type BuildWorkflowRunnerPromptInput = {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
+  /** Installed plugin action kinds, so the runner uses real kinds (e.g. send_slack_dm) not generic ones. */
+  pluginActions?: readonly PluginActionPromptDescriptor[];
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -51,18 +53,73 @@ if it moves), \`kind: "observation"\` is the right shape: emit the
 observation and end. Let the work stop where the steps say it should.
 </outputs>`;
 
-const MCP_ACTIONS_BLOCK = `<actions>
+// Installed plugin action kinds, surfaced to the runner the same way the
+// chat path surfaces them (see work/prompt.ts). Without this the runner
+// agent invents a generic `send_message`, which no adapter handles and no
+// kind-scoped policy rule matches — so the action silently stalls at
+// pending_approval and never sends.
+export type PluginActionPromptDescriptor = {
+  kind: string;
+  description: string;
+  default_mode?:
+    | "auto"
+    | "ask"
+    | "deny"
+    | { external?: "auto" | "ask" | "deny"; internal?: "auto" | "ask" | "deny" };
+  example?: Record<string, unknown>;
+};
+
+function isDeniedEverywhere(
+  defaultMode: PluginActionPromptDescriptor["default_mode"],
+): boolean {
+  if (defaultMode === "deny") return true;
+  if (defaultMode && typeof defaultMode === "object") {
+    const keys = Object.keys(defaultMode) as Array<"external" | "internal">;
+    return keys.length > 0 && keys.every((k) => defaultMode[k] === "deny");
+  }
+  return false;
+}
+
+function activeKinds(
+  pluginActions: readonly PluginActionPromptDescriptor[],
+): PluginActionPromptDescriptor[] {
+  return pluginActions.filter((d) => !isDeniedEverywhere(d.default_mode));
+}
+
+function installedKindsBlock(
+  pluginActions: readonly PluginActionPromptDescriptor[],
+): string {
+  const active = activeKinds(pluginActions);
+  if (active.length === 0) return "";
+  const rows = active
+    .map((d) => {
+      const head = `  - \`${d.kind}\` — ${d.description.split("\n")[0]}`;
+      return d.example
+        ? `${head}\n    example payload: ${JSON.stringify(d.example)}`
+        : head;
+    })
+    .join("\n");
+  return `
+Installed action kinds — when a step calls for one of these, use the
+EXACT \`kind\` value below; do NOT substitute a generic kind like
+\`send_message\` (the policy rules and the executing adapter both match
+on the exact kind, so a generic name silently fails to route):
+${rows}
+`;
+}
+
+function buildMcpActionsBlock(
+  pluginActions: readonly PluginActionPromptDescriptor[],
+): string {
+  return `<actions>
 Workflows decide; actions mutate. When a step needs to change real-world
 or internal state, propose it through \`mcp__neko_action__request\` and
 let policy decide whether it auto-executes, queues for operator
 approval, or is denied.
-
-The action tool covers:
-
-- External mutations: \`send_message\`, \`mutate_record\`, \`open_pr\`,
-  \`run_command\`, and similar.
-- Internal state changes that need gating at scale: \`memory_write\`,
-  \`briefing_create\`, \`schedule_workflow\`, and similar.
+${installedKindsBlock(pluginActions)}
+For mutations with no installed kind, use a generic kind: \`mutate_record\`,
+\`open_pr\`, \`run_command\` (external) or \`memory_write\`,
+\`briefing_create\`, \`schedule_workflow\` (internal).
 
 Fill in \`risk_level\` honestly (\`low\`, \`medium\`, \`high\`,
 \`critical\`) — policy uses it to route — but never repeat that value
@@ -72,6 +129,7 @@ plain language; that's what the operator may read before approving.
 When a request returns \`decision: denied\`, surface the reason to the
 operator and stop; re-attempting after a denial is wasted effort.
 </actions>`;
+}
 
 const FENCE_OUTPUTS_BLOCK = `<outputs>
 Most workflow value is non-mutating. Emit outputs liberally as fenced
@@ -103,7 +161,11 @@ moves), \`kind: "observation"\` is the right shape — emit and end.
 Emit each fence exactly once. The fence body must be valid JSON.
 </outputs>`;
 
-const FENCE_ACTIONS_BLOCK = `<actions>
+function buildFenceActionsBlock(
+  pluginActions: readonly PluginActionPromptDescriptor[],
+): string {
+  const exampleKind = activeKinds(pluginActions)[0]?.kind ?? "send_message";
+  return `<actions>
 Workflows decide; actions mutate. When a step needs to change real-world
 or internal state, propose it as a fenced JSON block that the runtime
 will route through policy. Use exactly this format:
@@ -111,17 +173,16 @@ will route through policy. Use exactly this format:
 \`\`\`neko_action_request
 {
   "scope": "external",
-  "kind": "send_message",
-  "target": "slack:#growth",
-  "payload": { "text": "APAC revenue dipped 14% WoW — see daily briefing." },
+  "kind": "${exampleKind}",
+  "payload": { /* kind-specific fields */ },
   "risk_level": "low",
-  "summary": "Post APAC dip alert to #growth so the GTM lead sees it."
+  "summary": "One plain sentence naming WHAT will change and WHY."
 }
 \`\`\`
-
+${installedKindsBlock(pluginActions)}
 Allowed \`scope\`: \`internal\` (memory_write, briefing_create,
-schedule_workflow) or \`external\` (send_message, mutate_record,
-open_pr, run_command, …).
+schedule_workflow) or \`external\` (installed kinds above, plus generic
+mutate_record, open_pr, run_command, …).
 \`risk_level\` is an internal tag (\`low\`, \`medium\`, \`high\`,
 \`critical\`) policy uses to route — fill it in honestly, but never
 repeat the value back to the operator in prose. \`summary\` is what the
@@ -132,11 +193,13 @@ surface the reason to the operator and stop. If approved or
 auto-approved, the action is queued for execution. The fence body must
 be valid JSON.
 </actions>`;
+}
 
 export function buildWorkflowRunnerPrompt(
   input: BuildWorkflowRunnerPromptInput,
 ): string {
   const { workflow, mode, memoryContext, mcpTools, backend, workspace, knowledge } = input;
+  const pluginActions = input.pluginActions ?? [];
   const shellTool = shellToolName(backend);
   const dataAccessSection = buildDataAccessSection({
     shellTool,
@@ -174,7 +237,9 @@ ${overlay}
     : "";
 
   const outputsBlock = mcpTools ? MCP_OUTPUTS_BLOCK : FENCE_OUTPUTS_BLOCK;
-  const actionsBlock = mcpTools ? MCP_ACTIONS_BLOCK : FENCE_ACTIONS_BLOCK;
+  const actionsBlock = mcpTools
+    ? buildMcpActionsBlock(pluginActions)
+    : buildFenceActionsBlock(pluginActions);
 
   return `<role>
 You are running a saved OpenNeko workflow as part of an operational loop.

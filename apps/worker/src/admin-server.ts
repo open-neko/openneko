@@ -117,6 +117,7 @@ export interface PluginsHandlerSurface {
           external?: "auto" | "ask" | "deny";
           internal?: "auto" | "ask" | "deny";
         };
+    example?: Record<string, unknown>;
   }>;
 }
 

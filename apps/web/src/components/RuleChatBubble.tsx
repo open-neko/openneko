@@ -2,7 +2,7 @@
 
 import {
   extractActionRequestFences,
-  extractPolicySaveFence,
+  extractRuleSaveFence,
   extractWorkflowSaveFence,
 } from "@neko/llm/workflows/fences";
 import {
@@ -17,7 +17,7 @@ import type {
 } from "@neko/llm/workflows/fence-schemas";
 
 const NEKO_FENCE_STRIP_RE = /```neko_[a-z_]+\s*[\s\S]*?(?:```|$)/gi;
-const POLICY_TOLERANT_RE = /```neko_policy_save\s*([\s\S]*?)(?:```|$)/i;
+const RULE_TOLERANT_RE = /```neko_rule_save\s*([\s\S]*?)(?:```|$)/i;
 const WORKFLOW_TOLERANT_RE = /```neko_workflow_save\s*([\s\S]*?)(?:```|$)/i;
 const ACTION_TOLERANT_RE = /```neko_action_request\s*([\s\S]*?)(?:```|$)/gi;
 
@@ -42,8 +42,8 @@ function tolerantParse<T>(
 
 export function extractRuleSaveEvent(raw: string): PolicySavePayload | null {
   return (
-    extractPolicySaveFence(raw).payload ??
-    tolerantParse<PolicySavePayload>(raw, POLICY_TOLERANT_RE, POLICY_SAVE_SCHEMA)
+    extractRuleSaveFence(raw).payload ??
+    tolerantParse<PolicySavePayload>(raw, RULE_TOLERANT_RE, POLICY_SAVE_SCHEMA)
   );
 }
 

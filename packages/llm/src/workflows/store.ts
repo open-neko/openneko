@@ -24,6 +24,18 @@ export type WorkflowTriggers = {
   cron?: string;
   timezone?: string;
   enabled?: boolean;
+  // Data-change trigger ("fire when a row matches"). saveWorkflow ignores it;
+  // saveWorkflowWithTrigger persists it as a subscription row.
+  when?: {
+    table: string;
+    where?: Record<string, unknown>;
+    select?: string[];
+    primary_key: string[];
+    version_column?: string;
+    enabled?: boolean;
+    idempotency_key_template?: string;
+    acknowledge_mutation_loop?: boolean;
+  };
 };
 
 export type WorkflowRecord = {

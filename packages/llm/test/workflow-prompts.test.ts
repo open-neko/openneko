@@ -71,6 +71,38 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).not.toContain("mcp__neko_action__request");
   });
 
+  it.each([true, false])(
+    "surfaces installed plugin action kinds (mcpTools=%s) and uses one as the fence example",
+    (mcpTools) => {
+      const prompt = buildWorkflowRunnerPrompt({
+        ...base,
+        mcpTools,
+        pluginActions: [
+          {
+            kind: "send_slack_dm",
+            description: "Send a DM to a Slack user.",
+            example: { user: "amit", text: "Stock is low." },
+          },
+          {
+            kind: "lookup_slack_entity",
+            description: "Look up a Slack user.",
+            default_mode: "deny",
+          },
+        ],
+      });
+      expect(prompt).toContain("send_slack_dm");
+      // the example payload is surfaced verbatim so the agent copies the shape
+      expect(prompt).toContain('example payload: {"user":"amit","text":"Stock is low."}');
+      // denied-everywhere kinds are not advertised
+      expect(prompt).not.toContain("lookup_slack_entity");
+      if (!mcpTools) {
+        // the fence example uses a real installed kind, not the placeholder
+        expect(prompt).toContain('"kind": "send_slack_dm"');
+        expect(prompt).not.toContain('"kind": "send_message"');
+      }
+    },
+  );
+
   it("includes the workflow's overlay and steps in both branches", () => {
     for (const mcpTools of [true, false]) {
       const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools });

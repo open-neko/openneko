@@ -414,14 +414,14 @@ describeIfDb("runChatTurn", () => {
     expect(msgText).toContain("neko_workflow_save"); // streamed delta keeps it
   });
 
-  it("neko_policy_save fence → upserts action_policy, emits surface card, threads provenance", async () => {
+  it("neko_rule_save fence → upserts action_policy, emits surface card, threads provenance", async () => {
     const thread = await insertWorkThread(orgId);
     const run = await insertWorkRun({ orgId, threadId: thread.id });
 
     const finalText = [
       "Saved policy 'slack_revenue_alerts_autoapprove'.",
       "",
-      "```neko_policy_save",
+      "```neko_rule_save",
       JSON.stringify({
         name: "slack_revenue_alerts_autoapprove",
         description: "Auto-approve low-risk Slack alerts.",

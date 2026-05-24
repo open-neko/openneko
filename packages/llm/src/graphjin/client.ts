@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 export type GraphjinQueryOptions = {
+  /** Full GraphJin GraphQL endpoint URL, e.g. `http://host:8080/api/v1/graphql`. */
   baseUrl: string;
   query: string;
   variables?: Record<string, unknown>;
@@ -24,7 +25,7 @@ export async function graphjinQuery<T = unknown>(
     ...(opts.role ? { "X-Role": opts.role } : {}),
     ...(opts.headers ?? {}),
   };
-  const res = await fetch(`${opts.baseUrl}/api/v1/graphql`, {
+  const res = await fetch(opts.baseUrl, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -47,6 +48,7 @@ export type GraphjinSubscriptionMessage<T = unknown> = {
 };
 
 export type GraphjinSubscribeOptions<T = unknown> = {
+  /** Full GraphJin GraphQL endpoint URL, e.g. `http://host:8080/api/v1/graphql`. */
   baseUrl: string;
   query: string;
   variables?: Record<string, unknown>;
@@ -85,11 +87,15 @@ type WsMessage =
  * `graphql-transport-ws` protocol. Maintains a single connection per
  * call; the worker can fan out N subscriptions across N sockets, or
  * upgrade to a shared multiplexer later.
+ *
+ * GraphJin upgrades to WebSocket on its GraphQL endpoint, so baseUrl is
+ * the full `/api/v1/graphql` URL — we only swap the http(s) scheme for
+ * ws(s); we do NOT append a path (doing so 404s the upgrade).
  */
 export function graphjinSubscribe<T = unknown>(
   opts: GraphjinSubscribeOptions<T>,
 ): GraphjinSubscriptionHandle {
-  const wsUrl = opts.baseUrl.replace(/^http/, "ws") + "/api/v1/graphql";
+  const wsUrl = opts.baseUrl.replace(/^http/, "ws");
   const subId = randomUUID();
   const ws = new WebSocket(wsUrl, "graphql-transport-ws");
   let stopped = false;

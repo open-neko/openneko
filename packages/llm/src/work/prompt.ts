@@ -77,96 +77,112 @@ When the answer is purely prose with no metrics or cards, emit a single
 </rendering>`;
 }
 
-function buildWorkflowToolsSection(supportsWorkflowTool: boolean): string {
+function buildWorkflowToolsSection(
+  supportsWorkflowTool: boolean,
+  shellTool: string,
+): string {
   if (supportsWorkflowTool) {
     return `<workflows>
 The operator can ask you to set up, modify, or look up workflows directly
-in chat ("set up a workflow that summarizes APAC revenue every Monday at
-9am Mumbai time"; "what was that workflow we set up last week to flag
-slow accounts?"; "change the threshold on the revenue dip workflow to
+in chat ("summarize APAC revenue every Monday at 9am Mumbai time"; "tell
+me when stock drops below reorder point"; "what was that workflow we set
+up last week?"; "change the threshold on the revenue dip workflow to
 15%").
 
 Tools:
 - \`mcp__neko_workflow_builder__list_workflows\` — list all workflows in
-  the org with full bodies (steps, cron, description). Use this BEFORE
-  updating an existing workflow so you have its current shape, and when
-  the operator asks "what do we have?" or "find the workflow that…".
+  the org with full bodies (steps, cron, data trigger, description). Use
+  this BEFORE updating an existing workflow so you have its current shape,
+  and when the operator asks "what do we have?" or "find the workflow
+  that…".
 - \`mcp__neko_workflow_builder__create_workflow\` — create or update
   (upsert by name). Takes \`name\`, \`description\`, \`goal\`,
   \`systemPromptOverlay\`, ordered \`steps\` (plain-English actions), and
-  optional \`triggers: { cron, timezone, enabled }\`. Converts the
-  operator's "every Monday at 9am Mumbai" to the cron expression
-  yourself — operators are not developers, never show them cron syntax.
+  optional \`triggers\`.
+
+A workflow can run on a schedule, when the data changes, or both:
+- \`triggers.cron\` (+ \`timezone\`) — convert the operator's "every Monday
+  at 9am Mumbai" to the cron expression yourself; operators are not
+  developers, never show them cron syntax.
+- \`triggers.when\` — fire the workflow when a row in the operator's data
+  source matches a filter. This is the "tell me when X happens" request.
+  The workflow's \`steps\` are the response (e.g. "DM Amit on Slack with
+  the low-stock details"); \`triggers.when\` is the condition.
+
+  Before setting \`triggers.when\`, introspect the data source with the
+  GraphJin MCP — \`list_tables\` to find the table, \`describe_table\` to
+  confirm columns + the primary key, \`get_table_sample\` for real values.
+
+  \`triggers.when\` shape:
+  \`\`\`json
+  {
+    "table": "productinventory",
+    "where": { "quantity": { "lt": { "col": "product.reorderpoint" } } },
+    "primary_key": ["productid", "locationid"],
+    "version_column": "modifieddate",
+    "select": ["quantity"]
+  }
+  \`\`\`
+  \`primary_key\` is required and drives idempotency (the same row can't
+  re-trigger within an hour). \`where\` goes verbatim into the trigger —
+  use nested-table EXISTS (\`{ product: { … } }\`) and column-reference
+  operands (\`{ col: "…" }\`) freely.
+
+  If the workflow's own steps write back to the watched table,
+  create_workflow returns \`code: "mutation_loop"\`. Resolve it by adding
+  \`triggers.when.idempotency_key_template\` (e.g. \`"reorder-{primary_key}"\`)
+  — never blindly set \`acknowledge_mutation_loop\` without confirming
+  with the operator.
 
 When updating: list first, then call create_workflow with the SAME
 \`name\` and the modified fields. Narrate the change in plain language
 before calling the tool — the tool also emits a confirmation card with a
 link to the detail page.
-</workflows>
-
-<subscriptions>
-The operator can ask you to make a workflow fire when something changes
-in their data ("alert me when stock drops below reorder point"; "fire
-the renewal workflow when an account's status flips to at_risk"). This
-is the IFTTT pattern — the trigger is a row change in the data source,
-the action is one of your workflows.
-
-The flow:
-1. Create the responder workflow first via \`create_workflow\` (cronless;
-   it'll be subscription-triggered).
-2. Introspect the data source with the GraphJin MCP — \`list_tables\` to
-   find candidates, \`describe_table\` to confirm column names + the
-   primary key, \`get_table_sample\` if you need to see real values.
-3. Call \`mcp__neko_subscription_builder__dry_run_subscription\` with the
-   proposed \`filter\` to confirm the rows match the operator's intent.
-4. Call \`mcp__neko_subscription_builder__create_subscription\` to wire
-   the responder workflow to the trigger.
-
-Filter shape:
-\`\`\`json
-{
-  "table": "productinventory",
-  "where": { "quantity": { "lt": { "col": "product.reorderpoint" } } },
-  "primary_key": ["productid", "locationid"],
-  "version_column": "modifieddate",
-  "select": ["quantity"]
-}
-\`\`\`
-\`primary_key\` is required and drives idempotency (the same row can't
-re-trigger within an hour). \`where\` goes verbatim into the GraphJin
-subscription — use nested-table EXISTS (\`{ product: { … } }\`) and
-column-reference operands (\`{ col: "…" }\`) freely.
-
-If the responder workflow writes back to the watched table, the
-\`create_subscription\` tool will return \`code: "mutation_loop"\`.
-Resolve it by adding an \`idempotency_key_template\` (e.g.
-\`"reorder-{primary_key}"\`) — never blindly pass
-\`acknowledge_mutation_loop: true\` without confirming with the operator.
-</subscriptions>`;
+</workflows>`;
   }
   return `<workflows>
-The operator can ask you to set up or modify workflows directly in chat.
-End your final message with a single fenced block to save:
+The operator can ask you to set up or modify workflows directly in chat —
+including "tell me when <something changes in the data>". End your final
+message with a single fenced block to save:
 
 \`\`\`neko_workflow_save
 {
-  "name": "agreed name",
-  "description": "one or two sentences",
-  "goal": "one sentence stating the desired outcome",
-  "systemPromptOverlay": "author-specific rules the runner must respect",
+  "name": "low stock slack alert",
+  "description": "DM Amit when a product dips below its reorder point",
+  "goal": "Amit hears about low stock the moment it happens",
   "steps": [
-    { "id": "pull", "description": "Pull last 7 days of revenue by region" },
-    { "id": "compare", "description": "Compare against the prior 7 days" },
-    { "id": "flag", "description": "Flag drops greater than 12%" }
+    { "id": "dm", "description": "DM Amit on Slack with the low-stock product details" }
   ],
-  "triggers": { "cron": "0 9 * * *", "timezone": "Asia/Kolkata", "enabled": true }
+  "triggers": {
+    "when": {
+      "table": "productinventory",
+      "where": { "quantity": { "lt": { "col": "product.reorderpoint" } } },
+      "primary_key": ["productid", "locationid"],
+      "version_column": "modifieddate"
+    }
+  }
 }
 \`\`\`
 
+Triggers — a workflow can run on a schedule, when the data changes, or
+both:
+- \`triggers.cron\` (+ \`timezone\`): run on a schedule. Convert "every
+  Monday at 9am Mumbai" to the cron expression yourself — operators are
+  not developers.
+- \`triggers.when\`: fire when a row in the data source matches — the
+  "tell me when X happens" pattern. The \`steps\` are the response;
+  \`triggers.when\` is the condition. Omit \`triggers\` entirely for a
+  manual workflow.
+
+Before writing \`triggers.when\`, introspect the data source with your
+\`${shellTool}\` tool (graphjin CLI: \`list_tables\`, \`describe_table\`) to
+confirm the table, columns, and \`primary_key\`. \`primary_key\` is
+required and drives idempotency. If the workflow's steps write back to
+the watched table, add \`triggers.when.idempotency_key_template\` (e.g.
+\`"reorder-{primary_key}"\`).
+
 Rules: emit the fence at most once per turn; body must be valid JSON;
-omit \`triggers\` if no schedule; before the fence, write one sentence
-like "Saved 'NAME'." Convert "every Monday at 9am Mumbai" to the cron
-expression yourself — operators are not developers.
+before the fence, write one sentence like "Saved 'NAME'."
 </workflows>`;
 }
 
@@ -179,10 +195,10 @@ sending external email"; "what was that rule we set last week about
 slack alerts?").
 
 Tools:
-- \`mcp__neko_policy_builder__list_policies\` — list all rules
-  (action_policy) with full config. Use BEFORE updating, and when the
-  operator asks what's in place.
-- \`mcp__neko_policy_builder__save_policy\` — create or update (upsert
+- \`mcp__neko_rule_builder__list_rules\` — list all rules with full
+  config. Use BEFORE updating, and when the operator asks what's in
+  place.
+- \`mcp__neko_rule_builder__save_rule\` — create or update (upsert
   by name). Required: \`name\`, \`applies_to_kinds\` (action kinds like
   \`send_message\`, \`send_webhook\`; use \`[]\` for "any"),
   \`applies_to_scopes\` (usually \`["external"]\`), \`mode\` (one of
@@ -191,7 +207,7 @@ Tools:
   \`limits\` (\`daily_cap\`, \`hourly_cap\`, \`concurrency\`),
   \`priority\`, \`enabled\`.
 
-When updating: list first, then call save_policy with the SAME \`name\`
+When updating: list first, then call save_rule with the SAME \`name\`
 and modified fields. Narrate the change before calling — the tool also
 emits a confirmation card with a link to the rule.
 </rules>`;
@@ -200,7 +216,7 @@ emits a confirmation card with a link to the rule.
 The operator can ask you to set up or modify approval rules directly in
 chat. End your final message with a single fenced block to save:
 
-\`\`\`neko_policy_save
+\`\`\`neko_rule_save
 {
   "name": "agreed snake_case_name",
   "description": "one or two sentences",
@@ -216,7 +232,7 @@ chat. End your final message with a single fenced block to save:
 Rules: emit at most once per turn; valid JSON; \`mode\` is one of
 \`auto_approve\`, \`approval_required\`, \`observe_only\`, \`draft_only\`,
 \`never\`; before the fence, write a one-sentence summary like "Saved
-policy 'NAME'."
+rule 'NAME'."
 </rules>`;
 }
 
@@ -306,6 +322,7 @@ export interface PluginActionPromptDescriptor {
         external?: "auto" | "ask" | "deny";
         internal?: "auto" | "ask" | "deny";
       };
+  example?: Record<string, unknown>;
 }
 
 function summarizeMode(
@@ -344,10 +361,12 @@ function buildPluginActionsSection(
   const active = descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return "";
   const rows = active
-    .map(
-      (d) =>
-        `  - \`${d.kind}\` (${summarizeMode(d.default_mode)}) — ${d.description.split("\n")[0]}`,
-    )
+    .map((d) => {
+      const head = `  - \`${d.kind}\` (${summarizeMode(d.default_mode)}) — ${d.description.split("\n")[0]}`;
+      return d.example
+        ? `${head}\n    example payload: ${JSON.stringify(d.example)}`
+        : head;
+    })
     .join("\n");
   return `<action_tools>
 The following are tools you can call to take action in external systems
@@ -436,7 +455,7 @@ that flags churn risk every Monday."
       saveMode: supportsMemoryTool ? "tool" : "fence",
       memoryContext,
     }),
-    buildWorkflowToolsSection(supportsWorkflowTool),
+    buildWorkflowToolsSection(supportsWorkflowTool, shellTool),
     buildPoliciesSection(supportsPolicyTool),
     buildDataAccessSection({
       shellTool,

@@ -1,5 +1,24 @@
 import { z } from "zod";
 
+// A workflow trigger that fires when a row in the operator's data source
+// matches a filter (the "do Y when data X changes" half). Lives inside
+// `triggers.when`, alongside cron — so a single workflow save defines both
+// the response and its data-change trigger. Stored as a subscription row.
+export const SOURCE_CHANGE_TRIGGER_SCHEMA = z.object({
+  table: z.string().trim().min(1).max(120),
+  where: z.record(z.string(), z.unknown()).optional(),
+  select: z.array(z.string().trim().min(1).max(120)).optional(),
+  primary_key: z.array(z.string().trim().min(1).max(120)).min(1).max(8),
+  version_column: z.string().trim().min(1).max(120).optional(),
+  enabled: z.boolean().optional(),
+  idempotency_key_template: z.string().max(200).optional(),
+  acknowledge_mutation_loop: z.boolean().optional(),
+});
+
+export type SourceChangeTriggerPayload = z.infer<
+  typeof SOURCE_CHANGE_TRIGGER_SCHEMA
+>;
+
 export const WORKFLOW_SAVE_SCHEMA = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().max(2000).optional(),
@@ -19,6 +38,7 @@ export const WORKFLOW_SAVE_SCHEMA = z.object({
       cron: z.string().trim().min(1).max(120).optional(),
       timezone: z.string().trim().min(1).max(80).optional(),
       enabled: z.boolean().optional(),
+      when: SOURCE_CHANGE_TRIGGER_SCHEMA.optional(),
     })
     .optional(),
 });

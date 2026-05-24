@@ -336,8 +336,21 @@ console.log(
 // in compose.yml so service-DNS lookup wins there. Customer-data
 // graphjin (used by the agent CLI path) is a separate service on
 // port 8080.
-const GRAPHJIN_URL =
-  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089";
+// Normalize any GraphJin base (origin or full) to the full GraphQL endpoint.
+// The subscription/query clients treat baseUrl as the complete
+// `/api/v1/graphql` URL and never append a path, so both the env-configured
+// neko-graphjin URL (often just an origin) and the data_source URLs (already
+// full) must land on the same shape.
+function toGraphqlEndpoint(url: string): string {
+  const trimmed = url.replace(/\/+$/, "");
+  return trimmed.endsWith("/api/v1/graphql")
+    ? trimmed
+    : `${trimmed}/api/v1/graphql`;
+}
+
+const GRAPHJIN_URL = toGraphqlEndpoint(
+  process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089",
+);
 console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
 const b = await boss();
@@ -487,7 +500,13 @@ const subscriptionManager = startSubscriptionManager({
   resolveTransport: async (sub) => {
     if (sub.sourceKind === "source_change") {
       const ctx = await loadDataSourceContext(sub.orgId);
-      return { baseUrl: ctx.subscriptionUrl ?? ctx.graphqlUrl };
+      // GraphJin serves subscriptions on the same endpoint as queries, so
+      // drive off graphql_url (the URL that's kept reachable per deploy mode).
+      // subscription_url drifts — it isn't rewritten alongside graphql_url
+      // when the host is provisioned (e.g. compose service-DNS vs host
+      // localhost), which left source_change subs pointing at an
+      // unresolvable host.
+      return { baseUrl: toGraphqlEndpoint(ctx.graphqlUrl) };
     }
     return { baseUrl: GRAPHJIN_URL };
   },

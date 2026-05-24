@@ -157,6 +157,15 @@ export type AgentRunOptions = {
 
 export type AgentRunResult = {
   finalText: string;
+  /**
+   * Unprocessed agent output, for out-of-band fence parsing by the runtime
+   * (action/workflow/rule/memory fences). finalText is the cleaned display
+   * text — Hermes strips its hidden builder fences from it AND from the
+   * message stream, so neither carries the fence bodies. rawText preserves
+   * them. Omit when finalText already carries any fences (the runtime falls
+   * back to finalText).
+   */
+  rawText?: string;
   status: "completed" | "failed" | "cancelled";
   backendState?: Record<string, unknown>;
   error?: string;

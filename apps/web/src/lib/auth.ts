@@ -152,6 +152,7 @@ export interface PluginActionDescriptor {
         external?: "auto" | "ask" | "deny";
         internal?: "auto" | "ask" | "deny";
       };
+  example?: Record<string, unknown>;
 }
 
 export async function getPluginActionDescriptors(): Promise<
