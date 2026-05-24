@@ -26,6 +26,8 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@neko/channels": "workspace:*",
+    "@neko/interaction": "workspace:*",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
