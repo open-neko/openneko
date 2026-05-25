@@ -66,6 +66,35 @@ export function registerChannelOutputDelivery(): void {
   setWorkflowOutputDeliveryHook(onOutput);
 }
 
+/**
+ * Auto-bind delivery to a sender on first inbound contact: the operator DMs the
+ * bot once and starts receiving outputs there, never hand-writing a binding.
+ * Idempotent — only writes when no binding for (org, channel) exists yet.
+ */
+export async function ensureInboundBinding(
+  orgId: string,
+  channelPlugin: string,
+  recipient: Record<string, unknown>,
+): Promise<void> {
+  const existing = await db()
+    .select({ id: delivery_binding.id })
+    .from(delivery_binding)
+    .where(
+      and(
+        eq(delivery_binding.org_id, orgId),
+        eq(delivery_binding.channel_plugin, channelPlugin),
+      ),
+    )
+    .limit(1);
+  if (existing.length > 0) return;
+  await db()
+    .insert(delivery_binding)
+    .values({ org_id: orgId, channel_plugin: channelPlugin, recipient, enabled: true });
+  console.log(
+    `[channel-inbound] auto-bound ${channelPlugin} → ${JSON.stringify(recipient)} (first inbound from this sender)`,
+  );
+}
+
 /** Route one inbound IntentEvent to the same agent entry points the web uses. */
 export async function dispatchInboundIntent(
   orgId: string,
@@ -172,10 +201,11 @@ export async function ingestInboundWebhook(
   } catch {
     return { ok: false, dispatched: 0 };
   }
-  const intents = (await reg.parseInbound(pluginName, raw)) as IntentEvent[];
+  const { intents, recipient } = await reg.parseInbound(pluginName, raw);
+  if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
   for (const intent of intents) {
     try {
-      await dispatchInboundIntent(orgId, intent);
+      await dispatchInboundIntent(orgId, intent as IntentEvent);
     } catch (err) {
       console.warn(
         `[channel-inbound] dispatch error: ${err instanceof Error ? err.message : err}`,

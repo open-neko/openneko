@@ -49,7 +49,7 @@ import {
   ingestInboundWebhook,
   registerChannelOutputDelivery,
 } from "./channels/delivery.js";
-import { startTelegramInboundPoll } from "./channels/inbound-poll.js";
+import { startChannelInbound } from "./channels/inbound-poll.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -623,12 +623,12 @@ server.listen(PORT, () => {
   );
 });
 
-const telegramPoll = startTelegramInboundPoll(ADMIN_ORG_ID);
+const channelInbound = startChannelInbound(ADMIN_ORG_ID);
 
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
-  telegramPoll?.stop();
+  channelInbound.stop();
   server.close();
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {

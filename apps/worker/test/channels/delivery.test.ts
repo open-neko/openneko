@@ -12,14 +12,23 @@ vi.mock("@neko/db/jobs", () => ({
   enqueue: vi.fn(async () => "job-1"),
   QUEUE: { ACTION_EXECUTE: "action_execute", WORK_RUN: "work_run" },
 }));
+const h = vi.hoisted(() => ({
+  binds: [] as Array<Record<string, unknown>>,
+  existing: [] as unknown[],
+}));
 vi.mock("@neko/db", () => ({
   db: vi.fn(() => ({
-    insert: () => ({ values: () => ({ returning: async () => [{ id: "pj-1" }] }) }),
-    select: () => ({ from: () => ({ where: async () => [] }) }),
+    insert: () => ({
+      values: (v: Record<string, unknown>) => {
+        h.binds.push(v);
+        return { returning: async () => [{ id: "pj-1" }] };
+      },
+    }),
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => h.existing }) }) }),
   })),
   and: (...a: unknown[]) => a,
   eq: (...a: unknown[]) => a,
-  delivery_binding: { org_id: {}, enabled: {} },
+  delivery_binding: { org_id: {}, enabled: {}, channel_plugin: {}, id: {} },
   processing_job: { id: {} },
 }));
 vi.mock("@neko/llm", () => ({ resolveAgentBackend: vi.fn(async () => ({ id: "hermes" })) }));
@@ -41,7 +50,11 @@ import {
   rejectActionRequest,
 } from "@neko/llm/workflows";
 import { createWorkThread } from "@neko/llm/work";
-import { dispatchInboundIntent, ingestInboundWebhook } from "../../src/channels/delivery";
+import {
+  dispatchInboundIntent,
+  ensureInboundBinding,
+  ingestInboundWebhook,
+} from "../../src/channels/delivery";
 import { getPluginRegistryInstance } from "../../src/plugins/registry-instance.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -91,12 +104,16 @@ describe("dispatchInboundIntent — utterance", () => {
 describe("ingestInboundWebhook", () => {
   const fakeReg = {
     verifyInbound: vi.fn(async () => true),
-    parseInbound: vi.fn(async () => [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }]),
+    parseInbound: vi.fn(async () => ({
+      intents: [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }],
+    })),
   };
 
   beforeEach(() => {
     fakeReg.verifyInbound.mockResolvedValue(true);
-    fakeReg.parseInbound.mockResolvedValue([{ kind: "decision", decisionRef: "ar-1", choice: "approve" }]);
+    fakeReg.parseInbound.mockResolvedValue({
+      intents: [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }],
+    });
     vi.mocked(getPluginRegistryInstance).mockReturnValue(fakeReg as never);
     vi.mocked(getActionRequest).mockResolvedValue({ id: "ar-1", status: "pending_approval", kind: "k" } as never);
   });
@@ -121,5 +138,29 @@ describe("ingestInboundWebhook", () => {
     vi.mocked(getPluginRegistryInstance).mockReturnValue(null);
     const res = await ingestInboundWebhook("org-1", "@open-neko/channel-telegram", {}, "{}");
     expect(res).toEqual({ ok: false, dispatched: 0 });
+  });
+});
+
+describe("ensureInboundBinding (auto-bind on first inbound)", () => {
+  beforeEach(() => {
+    h.binds.length = 0;
+    h.existing = [];
+  });
+
+  it("writes a binding when none exists for (org, channel)", async () => {
+    await ensureInboundBinding("org-1", "@open-neko/channel-telegram", { kind: "telegram", chatId: 99 });
+    expect(h.binds).toHaveLength(1);
+    expect(h.binds[0]).toMatchObject({
+      org_id: "org-1",
+      channel_plugin: "@open-neko/channel-telegram",
+      recipient: { kind: "telegram", chatId: 99 },
+      enabled: true,
+    });
+  });
+
+  it("is idempotent — skips writing when a binding already exists", async () => {
+    h.existing = [{ id: "b1" }];
+    await ensureInboundBinding("org-1", "@open-neko/channel-telegram", { kind: "telegram", chatId: 99 });
+    expect(h.binds).toHaveLength(0);
   });
 });

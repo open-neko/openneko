@@ -22,6 +22,8 @@ import {
   DeliverResult,
   ParseInboundParams,
   ParseInboundResult,
+  PollInboundParams,
+  PollInboundResult,
   VerifyInboundParams,
   VerifyInboundResult,
 } from "./channel.js";
@@ -64,6 +66,8 @@ export async function dispatchPluginRpc(
         return rpcOk(await runParseInbound(plugin, options.paramsJson));
       case "verify_inbound":
         return rpcOk(await runVerifyInbound(plugin, options.paramsJson));
+      case "poll_inbound":
+        return rpcOk(await runPollInbound(plugin, options.paramsJson));
       default:
         return rpcErr("UNKNOWN_METHOD", `unknown RPC method: ${options.method}`);
     }
@@ -233,6 +237,18 @@ async function runVerifyInbound(
   }
   const parsed = VerifyInboundParams.parse(JSON.parse(paramsJson));
   return VerifyInboundResult.parse(await channel.verifyInbound(parsed));
+}
+
+async function runPollInbound(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<PollInboundResult> {
+  const channel = plugin.capabilities.channel;
+  if (!channel?.pollInbound) {
+    throw new Error("plugin's channel does not implement poll_inbound");
+  }
+  const parsed = PollInboundParams.parse(JSON.parse(paramsJson));
+  return PollInboundResult.parse(await channel.pollInbound(parsed));
 }
 
 /**
