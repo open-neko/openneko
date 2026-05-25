@@ -386,7 +386,11 @@ export default function RunPage() {
                       </span>
                     )}
                   </div>
-                  {o.body && <p className="text-text text-sm leading-[1.55] mb-2">{o.body}</p>}
+                  {o.body && (
+                    <div className="run-evt-message text-text text-sm leading-[1.55] mb-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{o.body}</ReactMarkdown>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 text-[11.5px] text-text3">
                     <span className="font-mono uppercase tracking-[0.08em]">{o.kind}</span>
                     {o.scope && (

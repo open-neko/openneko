@@ -45,6 +45,11 @@ import { ensureOrgWorkspace } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
 import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
+import {
+  ingestInboundWebhook,
+  registerChannelOutputDelivery,
+} from "./channels/delivery.js";
+import { startTelegramInboundPoll } from "./channels/inbound-poll.js";
 import type PgBossLib from "pg-boss";
 import { runBusinessProfileBuild } from "./jobs/business-profile-build.js";
 import { runIndustryInsightsBuild } from "./jobs/industry-insights-build.js";
@@ -222,6 +227,15 @@ const server = createServer(
         return pluginRegistry.disconnect(pluginName, operatorId);
       },
     },
+    channels: {
+      getChannelProviders: () => pluginRegistry?.getChannelProviders() ?? [],
+      deliver: (pluginName, recipient, events) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return pluginRegistry.deliverOnChannel(pluginName, recipient, events);
+      },
+      ingestInbound: (pluginName, headers, body) =>
+        ingestInboundWebhook(ADMIN_ORG_ID, pluginName, headers, body),
+    },
   }),
 );
 
@@ -277,6 +291,7 @@ pluginRegistry = new PluginRegistry({
 });
 await pluginRegistry.start();
 setPluginRegistryInstance(pluginRegistry);
+registerChannelOutputDelivery();
 {
   const s = pluginRegistry.status();
   if (s.loaded.length > 0) {
@@ -608,9 +623,12 @@ server.listen(PORT, () => {
   );
 });
 
+const telegramPoll = startTelegramInboundPoll(ADMIN_ORG_ID);
+
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
+  telegramPoll?.stop();
   server.close();
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {

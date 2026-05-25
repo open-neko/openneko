@@ -84,6 +84,31 @@ export interface ConnectHandlerSurface {
 }
 
 /**
+ * Channel (frontend) surface. The worker delegates `deliver` to the
+ * PluginRegistry's deliver RPC and `ingestInbound` to the channel delivery
+ * module (verify → parse in-VM → dispatch to the existing agent entry points).
+ */
+export interface ChannelHandlerSurface {
+  getChannelProviders(): Array<{
+    pluginId: string;
+    pluginName: string;
+    providerLabel: string;
+    directions: string[];
+    ingress: string;
+  }>;
+  deliver(
+    pluginName: string,
+    recipient: Record<string, unknown>,
+    events: unknown[],
+  ): Promise<{ delivered: boolean; ref?: string }>;
+  ingestInbound(
+    pluginName: string,
+    headers: Record<string, string>,
+    body: string,
+  ): Promise<{ ok: boolean; dispatched: number }>;
+}
+
+/**
  * Install-policy surface exposed to the CLI (via the worker admin
  * port) for the install-time enforcement check. The CLI calls
  * `GET /admin/install-policy` before running install and refuses to
@@ -151,6 +176,12 @@ export type AdminHandlerOptions = {
    */
   connect?: ConnectHandlerSurface | null;
   /**
+   * Channel surface — typically wired to the PluginRegistry + channel
+   * delivery module. Absent when the plugin subsystem is disabled, in which
+   * case channel routes return 503 / empty.
+   */
+  channels?: ChannelHandlerSurface | null;
+  /**
    * Install-policy reader. Absent when the plugin subsystem is
    * disabled — in that case /admin/install-policy returns a default
    * (most-restrictive) policy so the CLI errs on the side of
@@ -165,6 +196,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const auth = opts.auth ?? null;
   const plugins = opts.plugins ?? null;
   const connect = opts.connect ?? null;
+  const channels = opts.channels ?? null;
   const installPolicy = opts.installPolicy ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
@@ -227,6 +259,24 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     if (req.method === "GET" && req.url === "/admin/install-policy") {
       void handleInstallPolicy(res, installPolicy);
       return;
+    }
+    if (req.method === "GET" && req.url === "/admin/channels/providers") {
+      handleChannelProviders(res, channels);
+      return;
+    }
+    if (req.method === "POST" && req.url?.startsWith("/admin/channels/")) {
+      const m = /^\/admin\/channels\/([^/]+)\/deliver(?:[?#]|$)/.exec(req.url);
+      if (m) {
+        void handleChannelDeliver(req, res, decodeURIComponent(m[1]!), channels);
+        return;
+      }
+    }
+    if (req.method === "POST" && req.url?.startsWith("/channels/")) {
+      const m = /^\/channels\/([^/]+)\/inbound(?:[?#]|$)/.exec(req.url);
+      if (m) {
+        void handleChannelInbound(req, res, decodeURIComponent(m[1]!), channels);
+        return;
+      }
     }
     res.writeHead(404).end();
   };
@@ -522,6 +572,89 @@ async function handleConnectDisconnect(
   } catch (err) {
     json(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
+}
+
+// ─── Channel (frontend) ────────────────────────────────────────────────
+
+function handleChannelProviders(
+  res: ServerResponse,
+  channels: ChannelHandlerSurface | null,
+) {
+  json(res, 200, { providers: channels?.getChannelProviders() ?? [] });
+}
+
+async function handleChannelDeliver(
+  req: IncomingMessage,
+  res: ServerResponse,
+  pluginName: string,
+  channels: ChannelHandlerSurface | null,
+) {
+  if (!channels) {
+    json(res, 503, { error: "channel subsystem disabled" });
+    return;
+  }
+  const body = (await readJson(req).catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    json(res, 400, { error: "request body must be JSON" });
+    return;
+  }
+  if (!body.recipient || typeof body.recipient !== "object") {
+    json(res, 400, { error: "recipient (object) is required" });
+    return;
+  }
+  if (!Array.isArray(body.events)) {
+    json(res, 400, { error: "events (array) is required" });
+    return;
+  }
+  try {
+    const result = await channels.deliver(
+      pluginName,
+      body.recipient as Record<string, unknown>,
+      body.events,
+    );
+    json(res, 200, result);
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function handleChannelInbound(
+  req: IncomingMessage,
+  res: ServerResponse,
+  pluginName: string,
+  channels: ChannelHandlerSurface | null,
+) {
+  if (!channels) {
+    json(res, 503, { error: "channel subsystem disabled" });
+    return;
+  }
+  const rawBody = await readText(req).catch(() => null);
+  if (rawBody == null) {
+    json(res, 400, { error: "could not read request body" });
+    return;
+  }
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (typeof v === "string") headers[k] = v;
+    else if (Array.isArray(v) && v.length > 0) headers[k] = v[0]!;
+  }
+  try {
+    const result = await channels.ingestInbound(pluginName, headers, rawBody);
+    json(res, 200, result);
+  } catch (err) {
+    json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function readText(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+    if (Buffer.concat(chunks).length > 256 * 1024) {
+      throw new Error("body too large");
+    }
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function json(res: ServerResponse, status: number, body: unknown) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PluginActionDeclaration } from "./action.js";
+import { ChannelCapabilityDeclaration } from "./channel.js";
 import { ConnectScope } from "./connect.js";
 
 export const HostPattern = z
@@ -119,10 +120,15 @@ export const PluginCapabilitiesDeclaration = z
     action: ActionCapabilityDeclaration.optional(),
     auth: AuthCapabilityDeclaration.optional(),
     connect: ConnectCapabilityDeclaration.optional(),
+    channel: ChannelCapabilityDeclaration.optional(),
   })
-  .refine((c) => c.action != null || c.auth != null || c.connect != null, {
-    message: "capabilities must declare at least one surface (action, auth, connect)",
-  });
+  .refine(
+    (c) => c.action != null || c.auth != null || c.connect != null || c.channel != null,
+    {
+      message:
+        "capabilities must declare at least one surface (action, auth, connect, channel)",
+    },
+  );
 
 export type PluginCapabilitiesDeclaration = z.infer<
   typeof PluginCapabilitiesDeclaration

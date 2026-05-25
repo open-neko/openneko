@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "tsx watch src/index.ts 2>&1 | tee /tmp/neko-worker.log",
     "start": "tsx src/index.ts",
+    "demo:channels": "tsx scripts/multi-channel-demo.ts",
+    "demo:telegram": "tsx scripts/web-telegram-live.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@neko/channels": "workspace:*",
     "@neko/db": "workspace:*",
+    "@neko/interaction": "workspace:*",
     "@neko/llm": "workspace:*",
     "@open-neko/plugin-install": "workspace:*",
     "@open-neko/plugin-types": "workspace:*",

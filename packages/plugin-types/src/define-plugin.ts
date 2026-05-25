@@ -17,6 +17,17 @@ import {
   RefreshConnectParams,
   RefreshConnectResult,
 } from "./connect.js";
+import type {
+  CapabilityProfile,
+  ChannelDirection,
+  ChannelIngress,
+  DeliverParams,
+  DeliverResult,
+  ParseInboundParams,
+  ParseInboundResult,
+  VerifyInboundParams,
+  VerifyInboundResult,
+} from "./channel.js";
 
 export type PluginActionHandler = (
   request: PluginActionRequest,
@@ -45,6 +56,18 @@ export type CompleteConnectHandler = (
 export type RefreshConnectHandler = (
   params: RefreshConnectParams,
 ) => Promise<RefreshConnectResult> | RefreshConnectResult;
+
+export type DeliverHandler = (
+  params: DeliverParams,
+) => Promise<DeliverResult> | DeliverResult;
+
+export type ParseInboundHandler = (
+  params: ParseInboundParams,
+) => Promise<ParseInboundResult> | ParseInboundResult;
+
+export type VerifyInboundHandler = (
+  params: VerifyInboundParams,
+) => Promise<VerifyInboundResult> | VerifyInboundResult;
 
 /** Implementation shape for the action capability — kinds with handlers. */
 export interface ActionCapabilityImpl {
@@ -76,6 +99,24 @@ export interface ConnectCapabilityImpl {
 }
 
 /**
+ * Implementation shape for the channel capability — a frontend.
+ *
+ * `deliver` projects InteractionEvents into the substrate's native payload and
+ * sends them. `parseInbound` / `verifyInbound` are present only for channels
+ * whose `directions` include "inbound"; the webhook secret used by
+ * `verifyInbound` stays inside the VM.
+ */
+export interface ChannelCapabilityImpl {
+  providerLabel: string;
+  profile: CapabilityProfile;
+  directions: ChannelDirection[];
+  ingress?: ChannelIngress;
+  deliver: DeliverHandler;
+  parseInbound?: ParseInboundHandler;
+  verifyInbound?: VerifyInboundHandler;
+}
+
+/**
  * What the plugin author returns from definePlugin. Mirror of
  * PluginCapabilitiesDeclaration but each present surface carries
  * handlers in addition to its declared metadata.
@@ -84,6 +125,7 @@ export interface PluginCapabilitiesImpl {
   action?: ActionCapabilityImpl;
   auth?: AuthCapabilityImpl;
   connect?: ConnectCapabilityImpl;
+  channel?: ChannelCapabilityImpl;
 }
 
 export interface PluginDefinition {
@@ -124,9 +166,12 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
     throw new Error("definePlugin: version is required");
   }
   const caps = definition.capabilities;
-  if (!caps || (caps.action == null && caps.auth == null && caps.connect == null)) {
+  if (
+    !caps ||
+    (caps.action == null && caps.auth == null && caps.connect == null && caps.channel == null)
+  ) {
     throw new Error(
-      "definePlugin: capabilities must declare at least one surface (action, auth, connect)",
+      "definePlugin: capabilities must declare at least one surface (action, auth, connect, channel)",
     );
   }
   if (caps.action) {
@@ -174,6 +219,22 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
       throw new Error(
         "definePlugin: capabilities.connect.refresh must be a function when present",
       );
+    }
+  }
+  if (caps.channel) {
+    if (!caps.channel.providerLabel) {
+      throw new Error("definePlugin: capabilities.channel.providerLabel is required");
+    }
+    if (caps.channel.profile == null) {
+      throw new Error("definePlugin: capabilities.channel.profile is required");
+    }
+    if (!Array.isArray(caps.channel.directions) || caps.channel.directions.length === 0) {
+      throw new Error(
+        "definePlugin: capabilities.channel.directions must list at least one direction",
+      );
+    }
+    if (typeof caps.channel.deliver !== "function") {
+      throw new Error("definePlugin: capabilities.channel.deliver must be a function");
     }
   }
   return definition;

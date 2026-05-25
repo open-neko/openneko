@@ -193,6 +193,7 @@ describe("PluginRegistry", () => {
       kinds: [],
       vmsRunning: 0,
       authProvider: null,
+      channels: [],
     });
     await reg.stop();
   });

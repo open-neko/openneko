@@ -14,9 +14,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@neko/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@neko/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@neko/interaction':
+        specifier: workspace:*
+        version: link:../../packages/interaction
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -81,9 +87,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@neko/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@neko/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@neko/interaction':
+        specifier: workspace:*
+        version: link:../../packages/interaction
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -123,6 +135,22 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
+  packages/channels:
+    dependencies:
+      '@neko/interaction':
+        specifier: workspace:*
+        version: link:../interaction
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.39
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
+
   packages/db:
     dependencies:
       drizzle-orm:
@@ -142,6 +170,18 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
+  packages/interaction:
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.39
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
+
   packages/llm:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
@@ -156,6 +196,9 @@ importers:
       '@neko/db':
         specifier: workspace:*
         version: link:../db
+      '@neko/interaction':
+        specifier: workspace:*
+        version: link:../interaction
       cron-parser:
         specifier: ^4.9.0
         version: 4.9.0
