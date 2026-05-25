@@ -202,7 +202,7 @@ docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
 
-This is what powers the *Try it in 10 minutes* flow in [README.md](README.md) — the scenario-injector and live order trickle are only available through this path today.
+This is what powers the full demo trial referenced from the [README](README.md) Quickstart — the scenario-injector and live order trickle are only available through this path today.
 
 ### Live trial data (source-build only)
 
@@ -224,6 +224,26 @@ AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
 ```
 
 Disable the trickle with `AW_SIM_ENABLED=0`. Wire real webhooks past trial with `NEKO_ACTIONS_DRY_RUN=false`.
+
+### Watch the loop fire end-to-end
+
+The seed pre-loads three workflows on the AdventureWorks data so the trial isn't a blank page:
+
+- **Daily Revenue Health Check** (9am cron) — yesterday's revenue vs the trailing 7-day average; lands on the Briefing tagged good / watch / act.
+- **Revenue Drop Alert** (hourly cron) — per-territory current-hour revenue vs the same hour-of-week baseline averaged over the prior 4 weeks; if any territory falls below 50%, proposes a Slack alert to `#revenue-alerts` for your approval.
+- **Slow-Ship Operations** (8:30am cron) — orders stuck in *pending* for more than 5 days, with the oldest 3 order IDs.
+
+To see the loop without waiting for an organic dip, fire the Germany revenue-drop scenario. It tells the order trickle to stop generating new orders for territory 8 (Germany) for three hours:
+
+```bash
+docker compose -f compose.yml -f compose.adventureworks.yml \
+  exec adventureworks-scenario-injector \
+  /scripts/scenario-injector.sh fire germany-revenue-drop
+```
+
+Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the approvals queue for your approve / reject. Click approve; the receipt drops onto the Briefing under **Fired on your behalf** — the loop closing in front of you. (The trial defaults `NEKO_ACTIONS_DRY_RUN=true`, so external actions go to a mock adapter until you wire real webhooks.)
+
+That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [Use your own data](#use-your-own-data) for connecting GraphJin to your CRM, billing, or warehouse.
 
 ## Developer Setup
 
