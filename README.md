@@ -1,169 +1,61 @@
 # OpenNeko
 
-An always-on operating loop for CXOs and operators.
+[![License](https://img.shields.io/github/license/open-neko/neko)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/open-neko/neko)](https://github.com/open-neko/neko/releases/latest)
+[![Self-hosted · Docker](https://img.shields.io/badge/self--hosted-Docker-2496ED?logo=docker&logoColor=white)](INSTALL.md)
+[![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
+[![Stars](https://img.shields.io/github/stars/open-neko/neko?style=social)](https://github.com/open-neko/neko/stargazers)
 
-*Your business watches itself, surfaces findings on the Briefing, and proposes the next move — you approve or reject.*
+**OpenNeko learns your business from its own data and tells you where you're winning, where you're leaking, and what to do about it.** Self-hosted *executive intelligence for CXOs*: it reads your CRM, billing, and ops data through GraphJin, surfaces what matters on a daily Briefing, answers whatever you ask in plain English, and acts on rules you write the same way — *"if Germany revenue drops below its baseline, alert #revenue-alerts."* You stay in command.
+
+*Not a dashboard. Not a CRM. Not an autonomous agent — dashboards make you look; OpenNeko brings the findings to you.*
 
 ![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
 
-OpenNeko plugs into the systems where your business actually runs — your CRM, billing, ops databases — and sets watchers loose to sweat the small stuff for you. Findings land on the Briefing. When something needs to happen, OpenNeko drafts the action and waits for your **approve** or **reject**. Nothing fires on its own.
+## Quickstart
 
-Not a dashboard. Not a CRM. Not an autonomous agent. The operating loop is its own thing — *dashboards make you look; the operating loop brings the findings to you.*
-
-## Features
-
-- **Briefing** — what's awaiting you, what's worth a look, what was quiet, what you've pinned. One surface, always current.
-- **Workflows in chat** — describe a watcher in plain English. OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other's findings, so one workflow's output becomes the next's trigger.
-- **Approval queue** — every action that needs your call lands here. Approve, reject, or let your rules decide. The receipts of what fired (with you or without you) land on the Briefing.
-- **Rules** — decide what auto-fires, what queues for review, what's never allowed. Authored in chat, edited in the UI.
-- **Ask** — chat against your business data when a finding raises a question. Pull the thread without leaving the workspace.
-
-*Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
-
-## Plugins
-
-OpenNeko can be extended with sandboxed plugins that add new action kinds — web search via Parallel.ai, posting messages and DMs to Slack, sending Gmail / updating Shopify orders / appending Sheets rows on each operator's connected account, more on the way. Every plugin runs inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time, and any secrets it needs (Slack bot tokens, API keys, OAuth tokens) live in a per-user `~/.config/openneko/secrets.json` (0600 perms) that the worker injects into the VM at exec time — never in `openneko.plugins.json` (which is tracked) and never in `action_request.payload` (which is logged).
-
-Plugins can declare three capabilities (any combination):
-
-- **`action`** — typed action handlers the agent invokes (e.g. Slack's `send_slack_message`).
-- **`auth`** — singleton SSO provider for the whole deployment (e.g. Scalekit). Lights up "Sign in with X" on `/signin`.
-- **`connect`** — per-operator OAuth (e.g. Google Workspace). Non-singleton; each operator authorises their own account at `/integrations` and OpenNeko persists their refresh token in the per-operator slot of the secrets file. The worker injects the right operator's credential at action invocation time.
-
-Install from the official marketplace. The `openneko` CLI is a single Go binary — install via Homebrew (macOS) or download from the GitHub Releases page (Linux):
+You'll need Docker and one LLM provider API key.
 
 ```bash
 # macOS
-brew install open-neko/tap/openneko
-
-# Linux — download from https://github.com/open-neko/neko/releases
-# or, from a repo checkout while developing:
-pnpm openneko init
-pnpm openneko install @open-neko/plugin-parallel-search
-```
-
-`pnpm openneko …` runs the Go binary via `go run` for developers working from a repo checkout; everyone else uses the installed `openneko` binary directly.
-
-**No worker restart needed.** OpenNeko's plugin registry watches `openneko.plugins.json` and the per-user secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. Each plugin's microVM starts lazily on first use.
-
-Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). Run `openneko doctor` to check that your host can run microsandbox.
-
-### Federated marketplaces
-
-The official marketplace ships only first-party `@open-neko/*` plugins that the OpenNeko team writes and supports. Anyone else can publish their own `marketplace.json` at any stable URL and operators trust it explicitly:
-
-```bash
-openneko marketplace add https://example.com/marketplace.json
-openneko install @example/openneko-plugin-foo
-```
-
-OpenNeko makes no representation about non-official marketplaces — that trust is between the operator and the publisher. The sandbox enforces capability declarations regardless of where a plugin came from. See [open-neko/plugins/CONTRIBUTING.md](https://github.com/open-neko/plugins/blob/main/CONTRIBUTING.md) for the marketplace publish guide.
-
-### Bypass every marketplace (`--unverified`)
-
-To install a plugin directly from npm without going through any marketplace (plugin authoring, or an emergency hotfix before a marketplace entry exists):
-
-```bash
-openneko install <npm-package-name> --unverified
-```
-
-The CLI prints a loud warning. The integrity hash is taken on trust from npm rather than verified against a marketplace listing; everything else (sandboxing, manifest capability enforcement) still applies.
-
-### Install a community skill from a git URL
-
-For pure-procedural-knowledge skills (no network, no secrets) that ship as agentskills.io-spec SKILL.md bundles without an npm package — e.g. anything in the Hermes or Claude Code skill catalogs — install directly from a git URL:
-
-```bash
-# Whole-repo skill:
-openneko install https://github.com/owner/repo
-
-# Skill inside a monorepo:
-openneko install https://github.com/NousResearch/hermes-agent#optional-skills/finance/dcf-model
-```
-
-The CLI clones the URL (shallow), validates the `SKILL.md` against the agentskills.io spec, and drops the folder under `~/.openneko/skills/<skill-name>/`. The worker picks it up on the next agent turn; `pnpm skills:check` (or `openneko doctor` going forward) reports any missing binaries it declared in `prerequisites.commands`. URLs must be https against github / gitlab / codeberg — same allowlist the marketplace schema uses.
-
-### Install policy
-
-Every install path above is gated by a deployment-wide policy at `/settings/security`. Defaults are secure-by-default — `--unverified` and git-URL installs are both off out of the box; any signed-in operator opts in. (OpenNeko has no admin/member role separation today — every signed-in operator can change the install policy, same as every other `/settings` route. A real role gate is a future change.) The full switch list:
-
-| Switch | What it controls |
-|---|---|
-| `allowUnverified` | `openneko install <pkg> --unverified` |
-| `allowGitUrlInstalls` | `openneko install <git-url>` |
-| `allowedMarketplaces` | Which `marketplace.json` URLs the install path trusts (official is always on) |
-| `allowSandboxedSkillEscape` | When installing an untrusted community skill, wrap its shell blocks in a one-shot microVM |
-
-When you flip a switch off, pre-existing installs are **flagged, not yanked** — the registry's status surfaces them as needing operator attention so they can be removed via `openneko remove` manually. Every install entry records `installSource` + `installedAt` + `policySnapshot` for audit.
-
-### Per-operator integrations (`/integrations`)
-
-Plugins that declare a `connect` capability (Google Workspace today) authorise per-operator OAuth — each operator visits `/integrations` in the web UI, clicks **Connect**, runs the OAuth flow in their own browser, and their tokens land in their own slot in `secrets.json`. The worker injects the right operator's credential at action invocation time. Disconnect is one click; the credential is wiped from the file. Refresh-token rotation happens inside the plugin's sandbox VM and gets persisted by the worker — the plugin never writes to disk directly.
-
-### Host support
-
-| Host | Plugin system |
-|---|---|
-| macOS arm64 (Apple Silicon) | ✓ supported |
-| Linux x86_64 with `/dev/kvm` | ✓ supported |
-| Linux arm64 with `/dev/kvm` | ✓ supported |
-| macOS x86_64 (Intel) | ✗ not supported (microsandbox ships arm64 only on macOS) |
-| Linux without KVM | ✗ not supported |
-| Windows | ✗ WSL2 viability is being evaluated |
-
-On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs. The built-in `send_webhook` action adapter (no sandbox needed) remains as the extensibility escape hatch.
-
-## Try it in 10 minutes
-
-What you're about to do: install OpenNeko, start it, finish a setup wizard, and watch a *"Germany revenue dropped"* alert land on the Briefing within ~15 minutes.
-
-You'll need Docker and one LLM provider API key. macOS:
-
-```bash
 brew install open-neko/tap/openneko
 mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
 
-Linux: download the binary from the [latest release](https://github.com/open-neko/neko/releases/latest), then the same `openneko start --mode demo --detach`.
+Linux: download the binary from the [latest release](https://github.com/open-neko/neko/releases/latest), then run the same `openneko start --mode demo --detach`.
 
-Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
+Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three workflows against sample data — within ~15 minutes a *"Germany revenue dropped"* finding lands on your Briefing with a proposed Slack alert waiting for your approval.
 
-For the full live-trial flow — including the order-trickle simulator and the `germany-revenue-drop` scenario injector — use the source-build path documented in [INSTALL.md](INSTALL.md#build-from-source-advanced). Those continuous services aren't yet baked into the binary's embedded compose.
+Full trial flow (live order simulator + scenario injector) and connecting your own data: see **[INSTALL.md](INSTALL.md)**.
 
-### Watch the loop fire end-to-end
+## What it does
 
-The seed pre-loads three workflows on the AdventureWorks data so the trial isn't a blank page:
+OpenNeko plugs into the systems where your business actually runs — your CRM, billing, ops databases — and sets watchers loose to sweat the small stuff. Findings land on the Briefing; when something needs to happen, OpenNeko drafts the action and waits for your call.
 
-- **Daily Revenue Health Check** (9am cron) — yesterday's revenue vs the trailing 7-day average; lands on the Briefing tagged good / watch / act.
-- **Revenue Drop Alert** (hourly cron) — per-territory current-hour revenue vs the same hour-of-week baseline averaged over the prior 4 weeks; if any territory falls below 50%, proposes a Slack alert to `#revenue-alerts` for your approval.
-- **Slow-Ship Operations** (8:30am cron) — orders stuck in *pending* for more than 5 days, with the oldest 3 order IDs.
+- **Briefing** — what's awaiting you, what's worth a look, what was quiet, what you've pinned. One surface, always current.
+- **Ask** — chat against your business data when a finding raises a question. Pull the thread without leaving the workspace.
+- **Workflows in chat** — describe a watcher in plain English. OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other's findings, so one workflow's output triggers the next.
+- **Rules** — decide what auto-fires, what queues for review, what's never allowed. Authored in chat, edited in the UI.
+- **Approval queue** — every action that needs your call lands here. Approve, reject, or let your rules decide. Receipts of what fired land back on the Briefing.
 
-To see the loop without waiting for an organic dip, fire the Germany revenue-drop scenario. It tells the order trickle to stop generating new orders for territory 8 (Germany) for three hours. The scenario injector currently lives in the source-build path only — `git clone` and use `compose.adventureworks.yml`:
+*Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
+
+## Plugins
+
+Extend OpenNeko with sandboxed plugins that add new action kinds — web search, Slack, Gmail, Shopify, Sheets, and more. Each runs in an isolated microVM with outbound network limited to what its manifest declares. Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/), and see **[PLUGINS.md](PLUGINS.md)** for capabilities, the secrets/sandbox model, install policy, and host support.
 
 ```bash
-docker compose -f compose.yml -f compose.adventureworks.yml \
-  exec adventureworks-scenario-injector \
-  /scripts/scenario-injector.sh fire germany-revenue-drop
+openneko install @open-neko/plugin-parallel-search
 ```
-
-Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the approvals queue for your approve / reject. Click approve; the receipt drops onto the Briefing under **Fired on your behalf** — the loop closing in front of you. (The trial defaults `NEKO_ACTIONS_DRY_RUN=true`, so external actions go to a mock adapter until you wire real webhooks.)
-
-That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [INSTALL.md](INSTALL.md) for connecting GraphJin to your CRM, billing, or warehouse.
 
 ## Docs
 
-- **Getting started**
-  - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data
-- **How it works**
-  - [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
-- **Plugins**
-  - [open-neko.github.io/plugins](https://open-neko.github.io/plugins/) — the official marketplace; browse what's installable
-  - [open-neko/plugins](https://github.com/open-neko/plugins) — first-party plugin source + the publish-your-own-marketplace guide
-  - [apps/openneko/](apps/openneko/) — the operator CLI (Go binary), installable via Homebrew or GitHub Releases
-- **Project**
-  - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
-  - [CHANGELOG.md](CHANGELOG.md) — releases
+- [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
+- [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
+- [PLUGINS.md](PLUGINS.md) — plugin capabilities, sandbox/security model, marketplaces, install policy, host support
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
+- [CHANGELOG.md](CHANGELOG.md) — releases
 
 ## Issues
 
