@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/open-neko/neko/compare/v1.16.0...v1.17.0) (2026-05-25)
+
+
+### Features
+
+* channel CLI install + operator surface (auto-enable inbound + auto-bind) ([#72](https://github.com/open-neko/neko/issues/72)) ([c11230c](https://github.com/open-neko/neko/commit/c11230cc3037fb598a97d303ef44f86b5192f0d2))
+
 ## [1.16.0](https://github.com/open-neko/neko/compare/v1.15.0...v1.16.0) (2026-05-25)
 
 
