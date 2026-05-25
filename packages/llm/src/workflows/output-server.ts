@@ -66,7 +66,10 @@ export async function handleWorkflowOutput(
     kind: output.kind,
   });
   if (outputDeliveryHook) {
-    void Promise.resolve(outputDeliveryHook(ctx.orgId, output)).catch((err) => {
+    const hook = outputDeliveryHook;
+    // async IIFE so a *synchronous* throw in the hook is captured as a
+    // rejection too — delivery must never fail the run.
+    void (async () => hook(ctx.orgId, output))().catch((err) => {
       console.warn(
         `[workflow-output] delivery hook failed: ${err instanceof Error ? err.message : err}`,
       );
