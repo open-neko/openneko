@@ -24,6 +24,15 @@ export const WHATSAPP_PROFILE: CapabilityProfile = {
   fidelity: "summary",
 };
 
+/** Richer than WhatsApp (Markdown, 4096 chars, inline buttons), leaner than web (no cards/charts). */
+export const TELEGRAM_PROFILE: CapabilityProfile = {
+  modalities: ["text"],
+  richMedia: { markdown: true, cards: false, charts: false, images: true, interactiveControls: true },
+  interaction: { turnTaking: "async", canApproveInline: true, quickReplies: true },
+  constraints: { maxOutboundChars: 4096, latencyClass: "interactive", attentionModel: "push" },
+  fidelity: "summary",
+};
+
 export const VOICE_PROFILE: CapabilityProfile = {
   modalities: ["voice"],
   richMedia: { markdown: false, cards: false, charts: false, images: false, interactiveControls: false },
