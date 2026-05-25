@@ -760,6 +760,33 @@ export const workflow_output = pgTable(
   }),
 );
 
+// Routes a workflow output (for an audience) to a channel plugin's deliver RPC.
+// The web channel is implicit/always-on; rows here add extra membranes
+// (Telegram, Slack, …) per the V2 frontend-as-capability design. `recipient`
+// is the channel-native address minted at config time.
+export const delivery_binding = pgTable(
+  "delivery_binding",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    audience: text("audience").notNull().default("*"),
+    channel_plugin: text("channel_plugin").notNull(),
+    recipient: jsonb("recipient").notNull().default(sql`'{}'::jsonb`),
+    filter: jsonb("filter"),
+    enabled: boolean("enabled").notNull().default(true),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_enabled_idx: index("delivery_binding_org_enabled_idx").on(
+      t.org_id,
+      t.enabled,
+    ),
+  }),
+);
+
 export const subscription = pgTable(
   "subscription",
   {
