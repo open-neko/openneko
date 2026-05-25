@@ -155,6 +155,8 @@ export interface RegistryStatus {
   vmsRunning: number;
   /** Plugin id of the installed SSO provider (if any). */
   authProvider: string | null;
+  /** Installed channel plugins (frontends): pluginId + provider label. */
+  channels: Array<{ pluginId: string; providerLabel: string }>;
 }
 
 /** Snapshot of the auth provider for the web app to render the sign-in page. */
@@ -319,6 +321,10 @@ export class PluginRegistry {
       kinds: [...this.state.kindToPluginId.keys()].sort(),
       vmsRunning: countRunningVms(this.runtime, this.state),
       authProvider: this.state.authPluginId,
+      channels: this.getChannelProviders().map((c) => ({
+        pluginId: c.pluginId,
+        providerLabel: c.providerLabel,
+      })),
     };
   }
 
@@ -446,6 +452,144 @@ export class PluginRegistry {
       });
     }
     return out;
+  }
+
+  // ─── channel capability (frontends) ─────────────────────────────────
+
+  /**
+   * Installed plugins that declare a `channel` capability. Multi-cardinality
+   * like connect — an operator can run several frontends (web + Telegram + …)
+   * at once.
+   */
+  getChannelProviders(): Array<{
+    pluginId: string;
+    pluginName: string;
+    providerLabel: string;
+    directions: string[];
+    ingress: string;
+  }> {
+    const out: Array<{
+      pluginId: string;
+      pluginName: string;
+      providerLabel: string;
+      directions: string[];
+      ingress: string;
+    }> = [];
+    for (const [pluginId, entry] of this.state.entriesByPluginId) {
+      const decl = entry.capabilities.channel;
+      if (!decl) continue;
+      out.push({
+        pluginId,
+        pluginName: entry.name,
+        providerLabel: decl.providerLabel,
+        directions: decl.directions,
+        ingress: decl.ingress,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Merged env (manifest defaults + per-plugin secrets) for a plugin by name.
+   * Used by the worker-side inbound poller to read a channel's bot token for
+   * getUpdates — the doc's thin-worker-ingress path for poll/socket channels.
+   */
+  getPluginEnv(pluginName: string): Record<string, string> | null {
+    for (const [, entry] of this.state.entriesByPluginId) {
+      if (entry.name === pluginName) return mergeEnv(entry, this.secrets);
+    }
+    return null;
+  }
+
+  private requireChannelPluginEntry(pluginName: string): {
+    pluginId: string;
+    entry: PluginManifestEntry;
+  } {
+    for (const [pluginId, entry] of this.state.entriesByPluginId) {
+      if (entry.name === pluginName) {
+        if (!entry.capabilities.channel) {
+          throw new Error(
+            `${pluginName}: installed but does not declare a channel capability`,
+          );
+        }
+        return { pluginId, entry };
+      }
+    }
+    throw new Error(
+      `channel plugin ${pluginName} not installed — run \`openneko install ${pluginName}\``,
+    );
+  }
+
+  /** Project + send InteractionEvents to a recipient via the plugin's deliver RPC. */
+  async deliverOnChannel(
+    pluginName: string,
+    recipient: Record<string, unknown>,
+    events: unknown[],
+  ): Promise<{ delivered: boolean; ref?: string }> {
+    const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "deliver",
+      JSON.stringify({
+        recipient,
+        events,
+        profile: entry.capabilities.channel?.profile,
+      }),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `channel ${entry.name} deliver failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    return response.result as { delivered: boolean; ref?: string };
+  }
+
+  /** Normalize a raw inbound substrate payload to IntentEvents via parse_inbound. */
+  async parseInbound(pluginName: string, raw: unknown): Promise<unknown[]> {
+    const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "parse_inbound",
+      JSON.stringify({ raw }),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `channel ${entry.name} parse_inbound failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    return (response.result as { intents?: unknown[] }).intents ?? [];
+  }
+
+  /** Verify a webhook signature in-VM via verify_inbound (secret stays in the VM). */
+  async verifyInbound(
+    pluginName: string,
+    headers: Record<string, string>,
+    body: string,
+  ): Promise<boolean> {
+    const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "verify_inbound",
+      JSON.stringify({ headers, body }),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `channel ${entry.name} verify_inbound failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    return (response.result as { ok: boolean }).ok;
   }
 
   /**
@@ -1031,6 +1175,14 @@ export class PluginRegistry {
         await this.runtime.stop(pluginId).catch(() => {});
         throw new Error(
           `${entry.name}: manifest declares connect scopes [${[...declaredScopes].join(", ")}] but VM reports [${[...reportedScopes].join(", ")}]`,
+        );
+      }
+    }
+    if (entry.capabilities.channel) {
+      if (!registered.capabilities.channel) {
+        await this.runtime.stop(pluginId).catch(() => {});
+        throw new Error(
+          `${entry.name}: manifest declares the channel capability but VM register() reports none`,
         );
       }
     }
