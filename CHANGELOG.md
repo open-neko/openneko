@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/open-neko/neko/compare/v1.15.0...v1.16.0) (2026-05-25)
+
+
+### Features
+
+* **openneko:** channel capability in install path + telegram VM install ([#70](https://github.com/open-neko/neko/issues/70)) ([5958691](https://github.com/open-neko/neko/commit/59586916515d73701f3e6a31fc3035496e7da8a9))
+
 ## [1.15.0](https://github.com/open-neko/neko/compare/v1.14.1...v1.15.0) (2026-05-25)
 
 
