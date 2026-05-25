@@ -50,7 +50,11 @@ export {
   subscriptionSavedCard,
   workflowSavedCard,
 } from "./builder-cards";
-export { buildWorkflowOutputServer } from "./output-server";
+export {
+  buildWorkflowOutputServer,
+  setWorkflowOutputDeliveryHook,
+  type WorkflowOutputDeliveryHook,
+} from "./output-server";
 export { buildWorkflowRunnerPrompt } from "./runner-prompt";
 export {
   computeDueWorkflows,
