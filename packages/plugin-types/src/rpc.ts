@@ -44,6 +44,7 @@ export const RpcMethod = z.enum([
   "deliver",
   "parse_inbound",
   "verify_inbound",
+  "poll_inbound",
 ]);
 export type RpcMethod = z.infer<typeof RpcMethod>;
 

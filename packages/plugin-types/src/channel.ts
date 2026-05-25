@@ -88,8 +88,28 @@ export type DeliverResult = z.infer<typeof DeliverResult>;
 export const ParseInboundParams = z.object({ raw: z.unknown() });
 export type ParseInboundParams = z.infer<typeof ParseInboundParams>;
 
-export const ParseInboundResult = z.object({ intents: z.array(z.unknown()) });
+export const ParseInboundResult = z.object({
+  intents: z.array(z.unknown()),
+  // Sender's channel-native address (the chat that messaged us). Lets the worker
+  // auto-create a delivery binding on first contact, so operators never hand-write
+  // one. Optional: outbound-only or anonymous inbound omit it.
+  recipient: ChannelRecipient.optional(),
+});
 export type ParseInboundResult = z.infer<typeof ParseInboundResult>;
+
+// poll_inbound — the provider-agnostic pull transport. The worker loops this when
+// no public webhook URL is configured (local/dev, no-ingress hosts); the plugin
+// fetches its native update batch and returns the updates already split, each fed
+// back through parse_inbound. `cursor` is an opaque continuation token the worker
+// echoes on the next call.
+export const PollInboundParams = z.object({ cursor: z.string().optional() });
+export type PollInboundParams = z.infer<typeof PollInboundParams>;
+
+export const PollInboundResult = z.object({
+  updates: z.array(z.unknown()),
+  cursor: z.string().optional(),
+});
+export type PollInboundResult = z.infer<typeof PollInboundResult>;
 
 export const VerifyInboundParams = z.object({
   headers: z.record(z.string(), z.string()),

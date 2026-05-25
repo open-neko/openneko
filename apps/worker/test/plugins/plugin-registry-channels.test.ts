@@ -192,18 +192,36 @@ describe("PluginRegistry — channel capability", () => {
     await reg.stop();
   });
 
-  it("parseInbound returns the intents the VM parsed", async () => {
+  it("parseInbound returns the intents + sender recipient the VM parsed", async () => {
     await writeManifest();
     const runtime = new FakeRuntime({
       register: channelRegisterResponse(),
-      parse_inbound: rpcOk({ intents: [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }] }),
+      parse_inbound: rpcOk({
+        intents: [{ kind: "decision", decisionRef: "ar-1", choice: "approve" }],
+        recipient: { kind: "telegram", chatId: 42 },
+      }),
     });
     const reg = newRegistry(runtime);
     await reg.start();
-    const intents = await reg.parseInbound(CHANNEL_NAME, {
+    const { intents, recipient } = await reg.parseInbound(CHANNEL_NAME, {
       callback_query: { data: "approve:ar-1" },
     });
     expect(intents).toEqual([{ kind: "decision", decisionRef: "ar-1", choice: "approve" }]);
+    expect(recipient).toEqual({ kind: "telegram", chatId: 42 });
+    await reg.stop();
+  });
+
+  it("pollInbound returns the VM's update batch + advanced cursor", async () => {
+    await writeManifest();
+    const runtime = new FakeRuntime({
+      register: channelRegisterResponse(),
+      poll_inbound: rpcOk({ updates: [{ update_id: 5 }], cursor: "6" }),
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    const { updates, cursor } = await reg.pollInbound(CHANNEL_NAME, "3");
+    expect(updates).toEqual([{ update_id: 5 }]);
+    expect(cursor).toBe("6");
     await reg.stop();
   });
 

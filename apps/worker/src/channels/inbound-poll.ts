@@ -1,81 +1,80 @@
-// Local inbound for Telegram without a public URL. Telegram webhooks need a
-// public HTTPS endpoint; for `pnpm dev` we instead long-poll getUpdates. This
-// is the doc's sanctioned "thin worker-side ingress owns the socket/poll while
-// projection + parsing stay in the VM" path: the worker does the GET, but each
-// raw Update is normalized to IntentEvents by the plugin's parse_inbound RPC.
-// Opt-in via TELEGRAM_INBOUND_POLL=1.
+// Inbound transport for channels on hosts without a public webhook URL. For every
+// installed inbound-capable channel, the worker loops the plugin's poll_inbound
+// RPC (provider-agnostic — no Telegram-specific code here), normalizes each raw
+// update via parse_inbound, auto-binds delivery to the sender on first contact,
+// and dispatches the intents to the same agent entry points the web uses.
+//
+// No env flag: a channel that declares an inbound direction is polled
+// automatically. Channels reachable by a public webhook (OPENNEKO_PUBLIC_URL set
+// + ingress="webhook") receive inbound via POST /channels/:plugin/inbound instead
+// and are skipped here.
 import { getPluginRegistryInstance } from "../plugins/registry-instance.js";
-import { dispatchInboundIntent } from "./delivery.js";
-
-const TELEGRAM_PLUGIN = "@open-neko/channel-telegram";
+import { dispatchInboundIntent, ensureInboundBinding } from "./delivery.js";
 
 type IntentEvent = Parameters<typeof dispatchInboundIntent>[1];
 
-export function startTelegramInboundPoll(orgId: string): { stop: () => void } | null {
-  if (process.env.TELEGRAM_INBOUND_POLL !== "1") return null;
+const POLL_INTERVAL_MS = 3_000;
+const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Start inbound transports for all installed inbound channels. Returns a stop handle. */
+export function startChannelInbound(orgId: string): { stop: () => void } {
+  let stopped = false;
   const reg = getPluginRegistryInstance();
-  const token = reg?.getPluginEnv(TELEGRAM_PLUGIN)?.TELEGRAM_BOT_TOKEN;
-  if (!reg || !token) {
-    console.warn(
-      "[telegram-poll] TELEGRAM_INBOUND_POLL=1 but no bot token / registry; poller disabled",
-    );
-    return null;
+  if (!reg) return { stop: () => { stopped = true; } };
+
+  const hasPublicWebhook = Boolean(process.env.OPENNEKO_PUBLIC_URL);
+  const inboundProviders = reg
+    .getChannelProviders()
+    .filter((p) => p.directions.includes("inbound"));
+
+  for (const provider of inboundProviders) {
+    if (hasPublicWebhook && provider.ingress === "webhook") {
+      console.log(
+        `[channel-inbound] ${provider.pluginName}: webhook ingress at ${process.env.OPENNEKO_PUBLIC_URL}/channels/${encodeURIComponent(provider.pluginName)}/inbound`,
+      );
+      continue;
+    }
+    void pollLoop(provider.pluginName);
   }
 
-  let offset = 0;
-  let stopped = false;
-
-  const loop = async (): Promise<void> => {
-    console.log("[telegram-poll] inbound poller started (getUpdates long-poll)");
+  async function pollLoop(pluginName: string): Promise<void> {
+    let cursor: string | undefined;
+    let warnedUnsupported = false;
+    console.log(`[channel-inbound] ${pluginName}: polling for inbound (no public webhook URL)`);
     while (!stopped) {
       try {
-        const url = `https://api.telegram.org/bot${token}/getUpdates?timeout=25&offset=${offset}`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-        const data = (await res.json()) as {
-          ok: boolean;
-          result?: Array<{ update_id: number }>;
-        };
-        if (data.ok && data.result) {
-          for (const update of data.result) {
-            offset = update.update_id + 1;
-            const u = update as {
-              message?: { chat?: { id?: number | string } };
-              callback_query?: { message?: { chat?: { id?: number | string } } };
-            };
-            const chatId = u.message?.chat?.id ?? u.callback_query?.message?.chat?.id;
-            console.log(
-              `[telegram-poll] update ${update.update_id} from chat ${chatId ?? "?"}`,
-            );
-            try {
-              const intents = (await reg.parseInbound(
-                TELEGRAM_PLUGIN,
-                update,
-              )) as IntentEvent[];
-              for (const intent of intents) {
-                await dispatchInboundIntent(orgId, intent);
-              }
-            } catch (err) {
-              console.warn(
-                `[telegram-poll] dispatch error: ${err instanceof Error ? err.message : err}`,
-              );
+        const r = getPluginRegistryInstance();
+        if (!r) return;
+        const { updates, cursor: next } = await r.pollInbound(pluginName, cursor);
+        if (next) cursor = next;
+        for (const raw of updates) {
+          try {
+            const { intents, recipient } = await r.parseInbound(pluginName, raw);
+            if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
+            for (const intent of intents) {
+              await dispatchInboundIntent(orgId, intent as IntentEvent);
             }
+          } catch (err) {
+            console.warn(`[channel-inbound] ${pluginName} dispatch error: ${msg(err)}`);
           }
         }
       } catch (err) {
-        if (!stopped) {
-          console.warn(
-            `[telegram-poll] getUpdates error: ${err instanceof Error ? err.message : err}`,
-          );
-          await new Promise((r) => setTimeout(r, 3_000));
+        const m = msg(err);
+        if (m.includes("does not implement poll_inbound")) {
+          if (!warnedUnsupported) {
+            console.warn(
+              `[channel-inbound] ${pluginName}: no poll transport and no public webhook URL — inbound disabled. Set OPENNEKO_PUBLIC_URL to use webhook ingress.`,
+            );
+            warnedUnsupported = true;
+          }
+          return; // can't be polled; retrying won't help
         }
+        if (!stopped) console.warn(`[channel-inbound] ${pluginName} poll error: ${m}`);
       }
+      if (!stopped) await sleep(POLL_INTERVAL_MS);
     }
-  };
+  }
 
-  void loop();
-  return {
-    stop: () => {
-      stopped = true;
-    },
-  };
+  return { stop: () => { stopped = true; } };
 }

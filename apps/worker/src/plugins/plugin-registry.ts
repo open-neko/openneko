@@ -548,8 +548,15 @@ export class PluginRegistry {
     return response.result as { delivered: boolean; ref?: string };
   }
 
-  /** Normalize a raw inbound substrate payload to IntentEvents via parse_inbound. */
-  async parseInbound(pluginName: string, raw: unknown): Promise<unknown[]> {
+  /**
+   * Normalize a raw inbound substrate payload to IntentEvents via parse_inbound,
+   * plus the sender's channel-native recipient (so the worker can auto-bind
+   * delivery on first contact).
+   */
+  async parseInbound(
+    pluginName: string,
+    raw: unknown,
+  ): Promise<{ intents: unknown[]; recipient?: Record<string, unknown> }> {
     const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
     await this.ensureVm(pluginId, entry);
     const env = mergeEnv(entry, this.secrets);
@@ -565,7 +572,14 @@ export class PluginRegistry {
         `channel ${entry.name} parse_inbound failed: ${response.error.code} ${response.error.message}`,
       );
     }
-    return (response.result as { intents?: unknown[] }).intents ?? [];
+    const result = response.result as {
+      intents?: unknown[];
+      recipient?: Record<string, unknown>;
+    };
+    return {
+      intents: result.intents ?? [],
+      ...(result.recipient ? { recipient: result.recipient } : {}),
+    };
   }
 
   /** Verify a webhook signature in-VM via verify_inbound (secret stays in the VM). */
@@ -590,6 +604,33 @@ export class PluginRegistry {
       );
     }
     return (response.result as { ok: boolean }).ok;
+  }
+
+  /** Pull the next batch of inbound updates via poll_inbound — for hosts without a public webhook URL. */
+  async pollInbound(
+    pluginName: string,
+    cursor?: string,
+  ): Promise<{ updates: unknown[]; cursor?: string }> {
+    const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
+    await this.ensureVm(pluginId, entry);
+    const env = mergeEnv(entry, this.secrets);
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
+    const response = await this.runtime.callRpc(
+      pluginId,
+      "poll_inbound",
+      JSON.stringify(cursor ? { cursor } : {}),
+      { env },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `channel ${entry.name} poll_inbound failed: ${response.error.code} ${response.error.message}`,
+      );
+    }
+    const result = response.result as { updates?: unknown[]; cursor?: string };
+    return {
+      updates: result.updates ?? [],
+      ...(result.cursor ? { cursor: result.cursor } : {}),
+    };
   }
 
   /**

@@ -25,6 +25,8 @@ import type {
   DeliverResult,
   ParseInboundParams,
   ParseInboundResult,
+  PollInboundParams,
+  PollInboundResult,
   VerifyInboundParams,
   VerifyInboundResult,
 } from "./channel.js";
@@ -68,6 +70,10 @@ export type ParseInboundHandler = (
 export type VerifyInboundHandler = (
   params: VerifyInboundParams,
 ) => Promise<VerifyInboundResult> | VerifyInboundResult;
+
+export type PollInboundHandler = (
+  params: PollInboundParams,
+) => Promise<PollInboundResult> | PollInboundResult;
 
 /** Implementation shape for the action capability — kinds with handlers. */
 export interface ActionCapabilityImpl {
@@ -114,6 +120,9 @@ export interface ChannelCapabilityImpl {
   deliver: DeliverHandler;
   parseInbound?: ParseInboundHandler;
   verifyInbound?: VerifyInboundHandler;
+  // Pull transport for hosts without a public webhook URL. Optional: channels
+  // that only support webhook ingress omit it.
+  pollInbound?: PollInboundHandler;
 }
 
 /**
