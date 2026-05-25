@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/open-neko/neko/compare/v1.14.1...v1.15.0) (2026-05-25)
+
+
+### Features
+
+* **channels:** V2 interaction waist + channels + live Telegram channel ([#68](https://github.com/open-neko/neko/issues/68)) ([e71763c](https://github.com/open-neko/neko/commit/e71763cf01ed0eaf19ffb1a0c0a67fc7578afe02))
+
 ## [1.14.1](https://github.com/open-neko/neko/compare/v1.14.0...v1.14.1) (2026-05-24)
 
 
