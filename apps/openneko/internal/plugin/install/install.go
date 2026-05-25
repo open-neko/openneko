@@ -464,8 +464,9 @@ type pkgPermissions struct {
 }
 
 type pkgCapabilities struct {
-	Action *manifest.ActionCapability `json:"action,omitempty"`
-	Auth   *manifest.AuthCapability   `json:"auth,omitempty"`
+	Action  *manifest.ActionCapability  `json:"action,omitempty"`
+	Auth    *manifest.AuthCapability    `json:"auth,omitempty"`
+	Channel *manifest.ChannelCapability `json:"channel,omitempty"`
 }
 
 type pkgOpenneko struct {
@@ -542,6 +543,14 @@ func convertCapabilities(c marketplace.Capabilities) manifest.Capabilities {
 	if c.Auth != nil {
 		out.Auth = &manifest.AuthCapability{ProviderLabel: c.Auth.ProviderLabel}
 	}
+	if c.Channel != nil {
+		out.Channel = &manifest.ChannelCapability{
+			ProviderLabel: c.Channel.ProviderLabel,
+			Profile:       c.Channel.Profile,
+			Directions:    c.Channel.Directions,
+			Ingress:       c.Channel.Ingress,
+		}
+	}
 	return out
 }
 
@@ -555,6 +564,9 @@ func convertOpennekoCapabilities(c *pkgCapabilities) manifest.Capabilities {
 	}
 	if c.Auth != nil {
 		out.Auth = c.Auth
+	}
+	if c.Channel != nil {
+		out.Channel = c.Channel
 	}
 	return out
 }
