@@ -3,6 +3,7 @@ import {
   CORTEX_PROFILE,
   EMAIL_DIGEST_PROFILE,
   SLACK_PROFILE,
+  TELEGRAM_PROFILE,
   VOICE_PROFILE,
   WEB_PROFILE,
   WHATSAPP_PROFILE,
@@ -13,6 +14,7 @@ const ALL: Array<[string, CapabilityProfile]> = [
   ["web", WEB_PROFILE],
   ["slack", SLACK_PROFILE],
   ["whatsapp", WHATSAPP_PROFILE],
+  ["telegram", TELEGRAM_PROFILE],
   ["voice", VOICE_PROFILE],
   ["email", EMAIL_DIGEST_PROFILE],
   ["cortex", CORTEX_PROFILE],
@@ -36,6 +38,15 @@ describe("capability profiles", () => {
     expect(WHATSAPP_PROFILE.modalities).toEqual(["text"]);
     expect(WHATSAPP_PROFILE.richMedia.cards).toBe(false);
     expect(WHATSAPP_PROFILE.constraints.maxOutboundChars).toBe(1024);
+  });
+
+  it("telegram is text + markdown + inline buttons — richer than whatsapp, leaner than web", () => {
+    expect(TELEGRAM_PROFILE.modalities).toEqual(["text"]);
+    expect(TELEGRAM_PROFILE.richMedia.markdown).toBe(true);
+    expect(TELEGRAM_PROFILE.richMedia.cards).toBe(false);
+    expect(TELEGRAM_PROFILE.richMedia.interactiveControls).toBe(true);
+    expect(TELEGRAM_PROFILE.interaction.canApproveInline).toBe(true);
+    expect(TELEGRAM_PROFILE.constraints.maxOutboundChars).toBe(4096);
   });
 
   it("voice is eyes-free realtime with no visual media", () => {

@@ -593,3 +593,158 @@ describe("worker admin /admin/auth/*", () => {
     }
   });
 });
+
+describe("worker channel routes", () => {
+  function fakeChannel(
+    overrides: Partial<NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]>> = {},
+  ): NonNullable<Parameters<typeof createAdminHandler>[0]["channels"]> {
+    return {
+      getChannelProviders: overrides.getChannelProviders ?? (() => []),
+      deliver: overrides.deliver ?? (async () => ({ delivered: true, ref: "1" })),
+      ingestInbound: overrides.ingestInbound ?? (async () => ({ ok: true, dispatched: 0 })),
+    };
+  }
+
+  it("GET /admin/channels/providers returns the registry's channels", async () => {
+    const srv = await startServer(
+      createAdminHandler({
+        channels: fakeChannel({
+          getChannelProviders: () => [
+            {
+              pluginId: "open-neko-channel-telegram",
+              pluginName: "@open-neko/channel-telegram",
+              providerLabel: "Telegram",
+              directions: ["outbound", "inbound"],
+              ingress: "webhook",
+            },
+          ],
+        }),
+      }),
+    );
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/providers`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { providers: Array<{ providerLabel: string }> };
+      expect(body.providers[0]?.providerLabel).toBe("Telegram");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("GET /admin/channels/providers returns [] when the channel surface is absent", async () => {
+    const srv = await startServer(createAdminHandler());
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/providers`);
+      expect(((await res.json()) as { providers: unknown[] }).providers).toEqual([]);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /admin/channels/:p/deliver proxies recipient + events to the surface", async () => {
+    let captured: { plugin?: string; recipient?: unknown; events?: unknown[] } = {};
+    const srv = await startServer(
+      createAdminHandler({
+        channels: fakeChannel({
+          deliver: async (plugin, recipient, events) => {
+            captured = { plugin, recipient, events };
+            return { delivered: true, ref: "278" };
+          },
+        }),
+      }),
+    );
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${srv.port}/admin/channels/@open-neko%2Fchannel-telegram/deliver`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipient: { kind: "telegram", chatId: 5 }, events: [{ kind: "inform" }] }),
+        },
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ delivered: true, ref: "278" });
+      expect(captured.plugin).toBe("@open-neko/channel-telegram");
+      expect((captured.recipient as { chatId: number }).chatId).toBe(5);
+      expect(captured.events).toHaveLength(1);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /admin/channels/:p/deliver returns 400 on missing events", async () => {
+    const srv = await startServer(createAdminHandler({ channels: fakeChannel() }));
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/x/deliver`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: { kind: "x" } }),
+      });
+      expect(res.status).toBe(400);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /admin/channels/:p/deliver returns 503 when surface absent", async () => {
+    const srv = await startServer(createAdminHandler());
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/admin/channels/x/deliver`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: { kind: "x" }, events: [] }),
+      });
+      expect(res.status).toBe(503);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /channels/:p/inbound runs the surface's verify->parse->dispatch", async () => {
+    let captured: { plugin?: string; headers?: Record<string, string>; body?: string } = {};
+    const srv = await startServer(
+      createAdminHandler({
+        channels: fakeChannel({
+          ingestInbound: async (plugin, headers, body) => {
+            captured = { plugin, headers, body };
+            return { ok: true, dispatched: 1 };
+          },
+        }),
+      }),
+    );
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${srv.port}/channels/@open-neko%2Fchannel-telegram/inbound`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-Bot-Api-Secret-Token": "s3cret",
+          },
+          body: JSON.stringify({ callback_query: { data: "approve:ar-1" } }),
+        },
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, dispatched: 1 });
+      expect(captured.plugin).toBe("@open-neko/channel-telegram");
+      expect(captured.headers?.["x-telegram-bot-api-secret-token"]).toBe("s3cret");
+      expect(captured.body).toContain("approve:ar-1");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("POST /channels/:p/inbound returns 503 when surface absent", async () => {
+    const srv = await startServer(createAdminHandler());
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.port}/channels/x/inbound`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).toBe(503);
+    } finally {
+      await srv.close();
+    }
+  });
+});
