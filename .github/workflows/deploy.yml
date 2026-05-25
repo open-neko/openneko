@@ -30,6 +30,7 @@ jobs:
           # picks it up on the next manifest refresh. Empty string is
           # tolerated — the deploy still completes, slack just isn't wired.
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           # NOTE: privileged steps (systemd drop-in, openneko binary install,
           # systemd daemon-reload) live in scripts/neko-vm-setup.sh and are
@@ -37,7 +38,7 @@ jobs:
           # SSH_USER can do without prompting for a sudo password.
           ssh -i ~/.ssh/id_ed25519 \
               "$SSH_USER@$SSH_HOST" \
-              GIT_REF="$GIT_REF" SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
+              GIT_REF="$GIT_REF" SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
               bash -se <<'EOF'
             set -euo pipefail
             cd /opt/neko
@@ -82,6 +83,16 @@ jobs:
               # Re-install every deploy → upserts to marketplace-latest (upgrades in place, no-ops once current).
               if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
                 openneko install @open-neko/plugin-slack --skip-host-check
+              fi
+              # Telegram is a CHANNEL plugin. Once the VM's openneko binary is
+              # refreshed to a release with channel support (re-run
+              # scripts/neko-vm-setup.sh), this can become a plain
+              # `openneko install @open-neko/channel-telegram`; until then the
+              # helper installs the npm package + registers the channel
+              # manifest entry directly. Gated + non-fatal — never fails deploy.
+              if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f /opt/neko/scripts/install-telegram-channel.sh ]; then
+                bash /opt/neko/scripts/install-telegram-channel.sh \
+                  || echo "[deploy] telegram channel install non-fatal failure"
               fi
               # Worker's poll fallback picks up manifest+secrets changes
               # within 3s — no restart needed.
