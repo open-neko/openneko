@@ -28,7 +28,7 @@ pnpm openneko install @open-neko/plugin-parallel-search
 
 **No worker restart needed.** OpenNeko's plugin registry watches `openneko.plugins.json` and the per-user secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. Each plugin's microVM starts lazily on first use.
 
-When you run the brew/release binary, the host `openneko` CLI auto-detects the running `openneko-*-worker-1` container and proxies plugin-op commands into it via `docker exec`, so installs Just Work from your laptop. If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to the secrets file inside the container. Pass `--local` to bypass the proxy and install host-side instead (useful for source-build dev workflows where the worker runs via `pnpm dev`, not docker).
+When you run the brew/release binary, the host `openneko` CLI auto-detects the running `openneko-*-worker-1` container and proxies plugin-op commands into it via `docker exec`, so you can install from your laptop without extra setup. If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to the secrets file inside the container. Pass `--local` to bypass the proxy and install host-side instead (useful for source-build dev workflows where the worker runs via `pnpm dev`, not docker).
 
 Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). Run `openneko doctor` to check that your host can run microsandbox.
 
