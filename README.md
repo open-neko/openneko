@@ -6,9 +6,9 @@
 [![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
 [![Stars](https://img.shields.io/github/stars/open-neko/neko?style=social)](https://github.com/open-neko/neko/stargazers)
 
-**OpenNeko learns your business from its own data and tells you where you're winning, where you're leaking, and what to do about it.** Self-hosted *executive intelligence for CXOs*: it reads your CRM, billing, and ops data through GraphJin, surfaces what matters on a daily Briefing, answers whatever you ask in plain English, and acts on rules you write the same way — *"if Germany revenue drops below its baseline, alert #revenue-alerts."* You stay in command.
+**OpenNeko keeps an eye on your business data and points out things worth a look — then drafts what to do, for you to approve.** It's a self-hosted tool that connects to your CRM, billing, and ops databases through [GraphJin](https://graphjin.com). You describe checks in plain English; it runs them on a schedule and posts what it finds to a daily Briefing. You can ask follow-up questions about your data, and write simple rules like *"if Germany revenue drops below its baseline, alert #revenue-alerts"* — OpenNeko drafts the action and waits for your go-ahead.
 
-*Not a dashboard. Not a CRM. Not an autonomous agent — dashboards make you look; OpenNeko brings the findings to you.*
+It's not a dashboard, a CRM, or an autonomous agent. The idea is to bring findings to you, instead of you going to look for them.
 
 ![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
 
@@ -31,13 +31,13 @@ Full trial flow (live order simulator + scenario injector) and connecting your o
 
 ## What it does
 
-OpenNeko plugs into the systems where your business actually runs — your CRM, billing, ops databases — and sets watchers loose to sweat the small stuff. Findings land on the Briefing; when something needs to happen, OpenNeko drafts the action and waits for your call.
+OpenNeko connects to the systems your business runs on — CRM, billing, ops databases — and runs background checks (watchers) against them. Findings show up on the Briefing; when something needs action, OpenNeko drafts it and waits for you to approve.
 
-- **Briefing** — what's awaiting you, what's worth a look, what was quiet, what you've pinned. One surface, always current.
-- **Ask** — chat against your business data when a finding raises a question. Pull the thread without leaving the workspace.
-- **Workflows in chat** — describe a watcher in plain English. OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other's findings, so one workflow's output triggers the next.
-- **Rules** — decide what auto-fires, what queues for review, what's never allowed. Authored in chat, edited in the UI.
-- **Approval queue** — every action that needs your call lands here. Approve, reject, or let your rules decide. Receipts of what fired land back on the Briefing.
+- **Briefing** — what's waiting on you, what's worth a look, what was quiet, and anything you've pinned. Kept current.
+- **Ask** — ask follow-up questions about your business data without leaving the app.
+- **Workflows in chat** — describe a watcher in plain English; OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other, so one workflow's output can trigger the next.
+- **Rules** — decide what runs automatically, what queues for review, and what's never allowed. Written in chat, edited in the UI.
+- **Approval queue** — actions that need your sign-off land here. Approve, reject, or let your rules decide; a record of what ran goes back to the Briefing.
 
 *Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
 

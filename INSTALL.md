@@ -1,13 +1,15 @@
 # Install OpenNeko
 
-The recommended install is the single `openneko` Go binary. It supervises the whole stack via `docker compose` and supports three modes: `prod` (core only), `dev` (core + dev tooling), `demo` (core + AdventureWorks trial bundle).
+Setup is one binary and three commands — most people reach the app in about ten minutes. The first four sections get you running; everything from **Command reference** down is optional (upgrades, ports, building from source, troubleshooting) and you don't need it to start.
 
 ## Requirements
 
 - Docker Desktop on macOS, or Docker Engine + Docker Compose on Linux
 - An API key for at least one supported model provider
 
-## Quick install (Homebrew, macOS)
+## Install
+
+### macOS (Homebrew)
 
 ```bash
 brew install open-neko/tap/openneko
@@ -15,19 +17,9 @@ mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
 
-What the binary does:
+### Linux
 
-- materializes its embedded compose into `.openneko/runtime/` in the current dir
-- pulls the pinned image versions from `ghcr.io/open-neko/neko-*` (multi-arch — native arm64 on Apple Silicon, native amd64 on Linux)
-- brings `neko-db` up and runs all SQL migrations in-process (no separate migration container)
-- starts `neko-graphjin`, `web`, and `worker`
-- in `--mode demo`: also brings up the AdventureWorks Postgres, runs the data loader once (loads ~68 tables), and seeds three pre-installed workflows against the demo data
-
-Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
-
-## Quick install (Linux)
-
-Download the matching tarball from [the latest release](https://github.com/open-neko/neko/releases/latest) and drop `openneko` somewhere on your `PATH`:
+Download the binary from [the latest release](https://github.com/open-neko/neko/releases/latest), put it on your `PATH`, then start it:
 
 ```bash
 curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
@@ -37,7 +29,46 @@ mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
 
-## Operating the stack
+Then open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. That's the whole install.
+
+`--mode demo` pulls the pinned `ghcr.io/open-neko/neko-*` images, runs the database migrations in-process, and loads the AdventureWorks sample data with three example workflows — so you land in a populated workspace instead of a blank page. To run against your own data instead, use `--mode prod` (see [Use your own data](#use-your-own-data)).
+
+## Setup wizard
+
+1. Choose an admin database password.
+2. If you ran `--mode demo`, confirm the pre-filled GraphJin data source. If you started in `--mode prod` with your own data, enter your GraphJin URL.
+3. Pick an agent backend. Hermes works with Anthropic / OpenAI / Google / Ollama and others; Claude Agent runs Anthropic in-process.
+4. Add your primary model provider and API key.
+5. Add an industry research provider, or skip it.
+
+The AdventureWorks seed also pre-fills the business onboarding form (company `AdventureWorks Cycles`, fiscal year start `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). If you skipped the seed, enter those values later on `/onboarding`.
+
+## Use your own data
+
+Start the core stack only, no AdventureWorks:
+
+```bash
+mkdir -p ~/openneko && cd ~/openneko
+openneko start --mode prod --detach
+```
+
+In the setup wizard, enter your GraphJin base URL. If GraphJin runs on your host machine, use `http://host.docker.internal:8080`. OpenNeko appends the GraphQL and MCP endpoint paths automatically.
+
+## Plugins
+
+OpenNeko can be extended with sandboxed plugins that add new action kinds — Slack, web search, Gmail, and more. Install one with:
+
+```bash
+openneko install @open-neko/plugin-parallel-search
+```
+
+Run `openneko doctor` to confirm your host can run them. Capabilities, the secrets/sandbox model, marketplaces, install policy, and host support all live in **[PLUGINS.md](PLUGINS.md)**.
+
+---
+
+*Everything below is reference — you don't need it to get started.*
+
+## Command reference
 
 ```bash
 openneko start [--mode prod|dev|demo] [--detach]
@@ -55,75 +86,9 @@ Modes:
 
 - **`prod`** (default) — core services only: `neko-db`, `neko-graphjin`, `web`, `worker`.
 - **`dev`** — core + dev tooling. Empty overlay today; reserved for future dev-only services.
-- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init` (one-shot CSV loader), `neko-adventureworks-seed` (one-shot workflow seeder). The embedded demo bundle currently doesn't include the continuous order trickle or scenario-injector — those live in the repo-root `compose.adventureworks.yml` and need the *Build from source* path for the full live-trial flow.
+- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init` (one-shot CSV loader), `neko-adventureworks-seed` (one-shot workflow seeder). The embedded demo bundle doesn't include the continuous order trickle or scenario-injector — those live in the repo-root `compose.adventureworks.yml` and need the [Build from source](#build-from-source-advanced) path for the full live-trial flow.
 
 A user-level compose override at `~/.config/openneko/compose.override.yml` is auto-applied when present (last `-f` to docker compose).
-
-## Setup wizard
-
-1. Choose an admin database password.
-2. If you ran `--mode demo`, confirm the pre-filled GraphJin data source. If you started in `--mode prod` with your own data, enter your GraphJin URL.
-3. Pick an agent backend. Hermes works with Anthropic / OpenAI / Google / Ollama and others; Claude Agent runs Anthropic in-process.
-4. Add your primary model provider and API key.
-5. Add an industry research provider, or skip it.
-
-The AdventureWorks seed also pre-fills the business onboarding form:
-
-- Company: `AdventureWorks Cycles`
-- Fiscal year start: `July`
-- Seats: `CEO`, `CFO`, `COO`
-- Priorities: `Defend wholesale margins`, `Grow DTC in Europe`
-
-If you skipped the seed, you can enter those values manually later on `/onboarding`.
-
-## Use your own data
-
-Start the core stack only, no AdventureWorks:
-
-```bash
-mkdir -p ~/openneko && cd ~/openneko
-openneko start --mode prod --detach
-```
-
-In the setup wizard, enter your GraphJin base URL. If GraphJin runs on your host machine, use `http://host.docker.internal:8080`. OpenNeko appends the GraphQL and MCP endpoint paths automatically.
-
-## Plugins
-
-OpenNeko can be extended with sandboxed plugins that add new action kinds (web search via Parallel.ai, posting to Slack, etc.). Each plugin is pulled from npm, integrity-checked against a marketplace pin, and run inside a microsandbox microVM with outbound network limited to the hosts the plugin's manifest declared at install time.
-
-### Host support
-
-Plugins run inside a microVM with hardware-virtualization acceleration.
-
-- **macOS arm64 with the brew-installed binary + `openneko start --mode demo`**: plugin *installation* works (the host openneko CLI auto-proxies into the running worker container via `docker exec`, npm installs into the isolated `/var/lib/openneko/plugins/` dir, plugins.json hot-reloads); plugin *execution* still needs Hypervisor.framework which Docker Desktop hides from Linux containers, so the microVM spawn fails at action time. Result: installs land cleanly, the marketplace is browsable from the binary, but actions that need a plugin VM no-op. Full execution requires the source-build *Developer Setup* path below — `pnpm dev` runs the worker on the macOS host where microsandbox uses Hypervisor.framework directly.
-- **Linux with `/dev/kvm`** (amd64 or arm64): both install AND execution supported. The worker container needs `/dev/kvm` passed in; the embedded compose's `plugins.linux.yml` overlay does this automatically when the binary detects KVM at start time.
-
-On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs and the built-in `send_webhook` adapter remains as an unsandboxed extensibility path.
-
-`openneko doctor` reports host capability, docker version, and manifest state.
-
-### Installing a plugin
-
-The host `openneko` CLI auto-detects a running `openneko-*-worker-1` container and proxies plugin-op commands into it via `docker exec`, so installs Just Work from your laptop:
-
-```bash
-openneko install @open-neko/plugin-parallel-search
-```
-
-If a plugin declares required env values (Slack tokens, API keys), the CLI prompts at install time with hidden input and saves them to `/config/openneko/secrets.json` inside the container (mode 0600, on the `openneko-config` volume). Secrets never enter the tracked plugin manifest and never enter `action_request.payload`.
-
-Pass `--local` to bypass the proxy and install host-side instead (useful for source-build dev workflows where the worker runs via `pnpm dev`, not docker).
-
-The worker watches `openneko.plugins.json` and the secrets file; new plugins are usable on the next action_request, rotated secrets take effect on the next execute_action. No restart needed.
-
-### Adding a third-party marketplace
-
-```bash
-openneko marketplace add https://example.com/marketplace.json
-openneko install @example/openneko-plugin-foo
-```
-
-OpenNeko makes no representation about the safety of non-official marketplaces — that trust is between you and the publisher.
 
 ## Upgrade
 
@@ -193,6 +158,8 @@ OPENNEKO_PORT=3001 OPENNEKO_DB_PORT=55432 OPENNEKO_GRAPHJIN_PORT=8090 \
 
 ## Build from source (advanced)
 
+> Only needed if you're developing OpenNeko itself or want the full live trial (continuous order simulator + scenario injector). Skip this and everything below it to just use OpenNeko.
+
 The repo-root `compose.yml` builds images from source instead of pulling pre-built ones. Use this when you want to develop on the stack itself, run the full AdventureWorks trial including the live order simulator + scenario-injector, or work without an internet connection.
 
 ```bash
@@ -202,19 +169,11 @@ docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
 
-This is what powers the full demo trial referenced from the [README](README.md) Quickstart — the scenario-injector and live order trickle are only available through this path today.
+This is the only path with the scenario-injector and live order trickle today.
 
-### Live trial data (source-build only)
+### Live trial data
 
-The source-compose ships with a small order simulator that trickles realistic new sales orders into the sample database every 10 minutes by default. This is what makes the trial workspace *react* — briefing numbers drift, cron workflows fire, runs accumulate on `/runs`.
-
-If you ran `neko-adventureworks-seed`, three cron workflows are pre-installed against this live data:
-
-- **Daily Revenue Health Check** — runs each morning, posts to the Briefing
-- **Revenue Drop Alert** — hourly per-territory check; proposes a Slack notification when revenue tanks
-- **Slow-Ship Operations** — daily check for orders stuck pending past SLA
-
-External-action targets are auto-routed to a mock adapter during trial (`NEKO_ACTIONS_DRY_RUN=true`), so nothing real fires. Approvals still queue on `/approvals` so you can see the loop work end to end.
+The source-compose ships with a small order simulator that trickles realistic new sales orders into the sample database every 10 minutes by default. This is what makes the trial workspace *react* — briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External-action targets are auto-routed to a mock adapter during trial (`NEKO_ACTIONS_DRY_RUN=true`), so nothing real fires; approvals still queue on `/approvals` so you can see the loop work end to end.
 
 Tune the simulator via env vars:
 
@@ -241,9 +200,9 @@ docker compose -f compose.yml -f compose.adventureworks.yml \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
 
-Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the approvals queue for your approve / reject. Click approve; the receipt drops onto the Briefing under **Fired on your behalf** — the loop closing in front of you. (The trial defaults `NEKO_ACTIONS_DRY_RUN=true`, so external actions go to a mock adapter until you wire real webhooks.)
+Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the approvals queue for your approve / reject. Click approve; the receipt drops onto the Briefing under **Fired on your behalf** — the loop closing in front of you.
 
-That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [Use your own data](#use-your-own-data) for connecting GraphJin to your CRM, billing, or warehouse.
+That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [Use your own data](#use-your-own-data).
 
 ## Developer Setup
 
