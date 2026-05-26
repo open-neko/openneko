@@ -6,9 +6,9 @@
 [![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
 [![Stars](https://img.shields.io/github/stars/open-neko/neko?style=social)](https://github.com/open-neko/neko/stargazers)
 
-**OpenNeko keeps an eye on your business data and points out things worth a look — then drafts what to do, for you to approve.** It's a self-hosted tool that connects to your CRM, billing, and ops databases through [GraphJin](https://graphjin.com). You describe checks in plain English; it runs them on a schedule and posts what it finds to a daily Briefing. You can ask follow-up questions about your data, and write simple rules like *"if Germany revenue drops below its baseline, alert #revenue-alerts"* — OpenNeko drafts the action and waits for your go-ahead.
+**OpenNeko watches your business data, points out what's worth a look, and drafts the actions to take next — for you to approve.** Self-hosted on your infrastructure, with whichever LLM you prefer. The intelligence is rented; the findings, rules, and decisions are yours.
 
-It's not a dashboard, a CRM, or an autonomous agent. The idea is to bring findings to you, instead of you going to look for them.
+Models will keep changing — better one this quarter, cheaper one next. What shouldn't keep changing is the memory of how your business actually runs: the promises, exceptions, baselines, and decisions. That layer doesn't belong inside the same vendor that rents you intelligence. OpenNeko keeps the agent and the memory layer on your infrastructure, even when the model isn't.
 
 ![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
 
@@ -25,29 +25,49 @@ openneko start --mode demo --detach
 
 Linux: download the binary from the [latest release](https://github.com/open-neko/neko/releases/latest), then run the same `openneko start --mode demo --detach`.
 
-Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three workflows against sample data — within ~15 minutes a *"Germany revenue dropped"* finding lands on your Briefing with a proposed Slack alert waiting for your approval.
+Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three watchers against sample data — kick off the Slow-Ship Operations watcher from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing. The full propose-action-and-approve walkthrough is in **[INSTALL.md](INSTALL.md)**.
 
 Full trial flow (live order simulator + scenario injector) and connecting your own data: see **[INSTALL.md](INSTALL.md)**.
 
-## What it does
+## What you get
 
-OpenNeko connects to the systems your business runs on — CRM, billing, ops databases — and runs background checks (watchers) against them. Findings show up on the Briefing; when something needs action, OpenNeko drafts it and waits for you to approve.
+- **Operational findings on the Briefing.** A SKU below reorder, orders stuck in *pending* for days, payment retries piling up — checked on a schedule and posted as findings.
+- **Watchers you describe in plain English.** *"Alert me when any SKU's on-hand stock drops below its reorder point."* OpenNeko schedules it, runs it, and writes up what it found.
+- **Actions drafted, not auto-fired.** Slack alerts, Gmail follow-ups, Sheets updates, Shopify writes — proposed with the finding that triggered them, queued for your approval. Write a rule when you want a specific class of safe action to auto-fire.
+- **Follow-up questions about your data, in chat.** *"Which territories drove this week's revenue drop?"* — drill in on a finding without leaving the app or writing SQL.
+- **A complete record of what fired, when, and why.** Every proposal, decision, and execution stays against the finding that triggered it — auditable, searchable, yours.
 
-- **Briefing** — what's waiting on you, what's worth a look, what was quiet, and anything you've pinned. Kept current.
-- **Ask** — ask follow-up questions about your business data without leaving the app.
-- **Workflows in chat** — describe a watcher in plain English; OpenNeko schedules it, runs it, and writes up what it found. Watchers can subscribe to each other, so one workflow's output can trigger the next.
-- **Rules** — decide what runs automatically, what queues for review, and what's never allowed. Written in chat, edited in the UI.
-- **Approval queue** — actions that need your sign-off land here. Approve, reject, or let your rules decide; a record of what ran goes back to the Briefing.
+## How your data gets in
 
-*Self-hosted via Docker. Bring your own LLM provider — Hermes runs against Anthropic / OpenAI / Google and others; Claude Agent runs Anthropic in-process.*
+OpenNeko reads through **[GraphJin](https://graphjin.com)** — a GraphQL gateway you point at the data you already have. GraphJin auto-generates a query surface over your **databases** (Postgres, MySQL, SQL Server), and its script layer brings in **files, external APIs, and custom code** as first-class GraphQL fields. The agent queries one consistent surface no matter where the data actually lives — you don't write per-connector plumbing.
+
+## What stays yours
+
+OpenNeko separates the *intelligence* (the model) from the *memory* (your business's context) on purpose. Swap the model whenever something better ships; the rest doesn't move.
+
+The memory layer runs on your own Postgres, on your own infrastructure:
+
+- **Findings & briefings** — every watcher run and result, kept against the watcher that produced it.
+- **Pinned facts & learned rules** — what the agent figured out and you confirmed, kept separate from what the agent proposed and you haven't decided on yet.
+- **Action policies** — your rules for what auto-fires, what queues, what's blocked.
+- **Decision history** — every approval, rejection, and execution receipt.
+
+Apache 2.0, self-hosted, single Postgres. Take a backup, take it with you.
 
 ## Plugins
 
-Extend OpenNeko with sandboxed plugins that add new action kinds — web search, Slack, Gmail, Shopify, Sheets, and more. Each runs in an isolated microVM with outbound network limited to what its manifest declares. Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/), and see **[PLUGINS.md](PLUGINS.md)** for capabilities, the secrets/sandbox model, install policy, and host support.
+Extend OpenNeko with sandboxed plugins that add new action kinds — web search, Slack, Gmail, Shopify, Sheets, Telegram, and more. **Every plugin runs in an isolated microVM** with outbound network limited to what its manifest declares; secrets are scoped per plugin and never reach the model context. Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/), and see **[PLUGINS.md](PLUGINS.md)** for the capability model, install policy, and host support.
 
 ```bash
 openneko install @open-neko/plugin-parallel-search
 ```
+
+## Under the hood
+
+- **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
+- **Bring your own LLM.** Hermes runs against Anthropic, OpenAI, Google, Ollama, and others; Claude Agent runs Anthropic in-process. Pick per task, swap any time.
+- **Plugins in microVM sandboxes.** Outbound network is allowlisted per manifest, not blanket-open.
+- **Apache 2.0.** Inspect everything. Fork it. Take your data with you.
 
 ## Docs
 

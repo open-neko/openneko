@@ -1,6 +1,6 @@
 # Install OpenNeko
 
-Setup is one binary and three commands — most people reach the app in about ten minutes. The first four sections get you running; everything from **Command reference** down is optional (upgrades, ports, building from source, troubleshooting) and you don't need it to start.
+Sections below **Command reference** are reference — not needed to get started.
 
 ## Requirements
 
@@ -19,8 +19,6 @@ openneko start --mode demo --detach
 
 ### Linux
 
-Download the binary from [the latest release](https://github.com/open-neko/neko/releases/latest), put it on your `PATH`, then start it:
-
 ```bash
 curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
   | tar -xz openneko
@@ -29,51 +27,47 @@ mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
 
-Then open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. That's the whole install.
+Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
 
-`--mode demo` pulls the pinned `ghcr.io/open-neko/neko-*` images, runs the database migrations in-process, and loads the AdventureWorks sample data with three example workflows — so you land in a populated workspace instead of a blank page. To run against your own data instead, use `--mode prod` (see [Use your own data](#use-your-own-data)).
+`--mode demo` pulls pinned images and loads AdventureWorks sample data with three example watchers. For your own data, use `--mode prod` ([Use your own data](#use-your-own-data)).
 
 ## Setup wizard
 
 1. Choose an admin database password.
-2. If you ran `--mode demo`, confirm the pre-filled GraphJin data source. If you started in `--mode prod` with your own data, enter your GraphJin URL.
-3. Pick an agent backend. Hermes works with Anthropic / OpenAI / Google / Ollama and others; Claude Agent runs Anthropic in-process.
-4. Add your primary model provider and API key.
-5. Add an industry research provider, or skip it.
+2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
+3. Pick an agent backend — Hermes (Anthropic / OpenAI / Google / Ollama / others) or Claude Agent (Anthropic in-process).
+4. Add your provider API key.
+5. Add an industry research provider, or skip.
 
-The AdventureWorks seed also pre-fills the business onboarding form (company `AdventureWorks Cycles`, fiscal year start `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). If you skipped the seed, enter those values later on `/onboarding`.
+The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
 ## Use your own data
-
-Start the core stack only, no AdventureWorks:
 
 ```bash
 mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode prod --detach
 ```
 
-In the setup wizard, enter your GraphJin base URL. If GraphJin runs on your host machine, use `http://host.docker.internal:8080`. OpenNeko appends the GraphQL and MCP endpoint paths automatically.
+Enter your GraphJin base URL in the setup wizard. If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
 
 ## Plugins
-
-OpenNeko can be extended with sandboxed plugins that add new action kinds — Slack, web search, Gmail, and more. Install one with:
 
 ```bash
 openneko install @open-neko/plugin-parallel-search
 ```
 
-Run `openneko doctor` to confirm your host can run them. Capabilities, the secrets/sandbox model, marketplaces, install policy, and host support all live in **[PLUGINS.md](PLUGINS.md)**.
+Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). `openneko doctor` checks your host can run sandboxed plugins. Full sandbox model in **[PLUGINS.md](PLUGINS.md)**.
 
 ---
 
-*Everything below is reference — you don't need it to get started.*
+*Reference below — not needed to get started.*
 
 ## Command reference
 
 ```bash
 openneko start [--mode prod|dev|demo] [--detach]
 openneko status                    # docker compose ps proxy
-openneko logs [service…] [-f]      # tails logs
+openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations against running neko-db
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
@@ -84,15 +78,15 @@ openneko version
 
 Modes:
 
-- **`prod`** (default) — core services only: `neko-db`, `neko-graphjin`, `web`, `worker`.
-- **`dev`** — core + dev tooling. Empty overlay today; reserved for future dev-only services.
-- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init` (one-shot CSV loader), `neko-adventureworks-seed` (one-shot workflow seeder). The embedded demo bundle doesn't include the continuous order trickle or scenario-injector — those live in the repo-root `compose.adventureworks.yml` and need the [Build from source](#build-from-source-advanced) path for the full live-trial flow.
+- **`prod`** (default) — core services: `neko-db`, `neko-graphjin`, `web`, `worker`.
+- **`dev`** — core + dev tooling (empty overlay today).
+- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
-A user-level compose override at `~/.config/openneko/compose.override.yml` is auto-applied when present (last `-f` to docker compose).
+`~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
 
 ## Upgrade
 
-OpenNeko upgrades by replacing the `openneko` binary on your machine. The new binary embeds the bumped image pins (so `openneko start` pulls fresh `ghcr.io/open-neko/neko-*` images) and the new migrations (which apply in-process against the existing `neko-db` on next start). There's no `openneko upgrade` subcommand and no version nag — subscribe to [release notifications](https://github.com/open-neko/neko/releases) if you want a push.
+`openneko` upgrades by replacing the binary. The new binary embeds bumped image pins and new migrations; both apply on the next `openneko start`. No `openneko upgrade` subcommand — subscribe to [release notifications](https://github.com/open-neko/neko/releases) for pushes.
 
 ### macOS
 
@@ -100,13 +94,11 @@ OpenNeko upgrades by replacing the `openneko` binary on your machine. The new bi
 brew update
 brew upgrade openneko
 cd ~/openneko
-openneko stop                          # leaves volumes intact — preserves config, secrets, data
+openneko stop                          # leaves volumes intact
 openneko start --mode demo --detach    # use the same --mode you started with
 ```
 
 ### Linux
-
-Re-download the matching tarball, replace `/usr/local/bin/openneko`, and restart:
 
 ```bash
 curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
@@ -114,42 +106,35 @@ curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$
 sudo install -m 0755 openneko /usr/local/bin/
 rm openneko
 cd ~/openneko
-openneko stop                          # leaves volumes intact
-openneko start --mode demo --detach    # use the same --mode you started with
+openneko stop
+openneko start --mode demo --detach
 ```
 
-### What happens on `openneko start`
+### What `openneko start` does
 
-- **Stage 1 — migrate.** Connects to `neko-db`, acquires a Postgres advisory lock, applies any pending migrations from the binary's embedded `db/migrations/*.sql`, releases the lock. Idempotent — interrupted upgrades re-apply cleanly on the next start.
-- **Stage 2 — compose up.** Writes the new embedded compose files to `.openneko/runtime/` and runs `docker compose up`. Docker pulls the `ghcr.io/open-neko/neko-*` image tags pinned to this release.
+1. **Migrate.** Connects to `neko-db`, takes a Postgres advisory lock, applies pending embedded migrations, releases the lock. Idempotent.
+2. **Compose up.** Writes embedded compose files to `.openneko/runtime/` and runs `docker compose up`. Docker pulls the pinned image tags.
 
-Data is preserved because `openneko stop` doesn't touch volumes. Use `openneko stop --volumes` only when you want a clean slate — that wipes the metadata DB, the AdventureWorks demo state, and agent workspaces.
+`openneko stop` doesn't touch volumes. Use `--volumes` for a clean slate (wipes the metadata DB, demo state, agent workspaces).
 
 ## Reset
 
-Tear down + remove all volumes (wipes the metadata DB, the AdventureWorks DB, agent workspaces, etc.) but keep your `~/.config/openneko/secrets.json` and trusted marketplaces:
-
 ```bash
-openneko stop --volumes
-```
-
-Or wipe everything (including secrets, marketplaces, and the local plugin manifest):
-
-```bash
-openneko reset --all
+openneko stop --volumes   # wipes data; keeps secrets + marketplaces
+openneko reset --all      # wipes everything including secrets and marketplaces
 ```
 
 ## Ports
 
-Default host ports:
+Defaults:
 
-- OpenNeko app: `3000`
+- App: `3000`
 - Metadata Postgres: `5432`
-- OpenNeko metadata GraphJin (`neko-graphjin`): `8089`
+- Metadata GraphJin: `8089`
 
-In `--mode demo` the AdventureWorks Postgres listens internally only; no host port collision.
+In `--mode demo` the AdventureWorks Postgres is internal-only.
 
-Override common ports with env vars before `openneko start`:
+Override:
 
 ```bash
 OPENNEKO_PORT=3001 OPENNEKO_DB_PORT=55432 OPENNEKO_GRAPHJIN_PORT=8090 \
@@ -158,9 +143,7 @@ OPENNEKO_PORT=3001 OPENNEKO_DB_PORT=55432 OPENNEKO_GRAPHJIN_PORT=8090 \
 
 ## Build from source (advanced)
 
-> Only needed if you're developing OpenNeko itself or want the full live trial (continuous order simulator + scenario injector). Skip this and everything below it to just use OpenNeko.
-
-The repo-root `compose.yml` builds images from source instead of pulling pre-built ones. Use this when you want to develop on the stack itself, run the full AdventureWorks trial including the live order simulator + scenario-injector, or work without an internet connection.
+> Needed for developing OpenNeko itself or running the full live trial (continuous order trickle + scenario injector).
 
 ```bash
 git clone https://github.com/open-neko/neko.git
@@ -169,30 +152,26 @@ docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
 
-This is the only path with the scenario-injector and live order trickle today.
-
 ### Live trial data
 
-The source-compose ships with a small order simulator that trickles realistic new sales orders into the sample database every 10 minutes by default. This is what makes the trial workspace *react* — briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External-action targets are auto-routed to a mock adapter during trial (`NEKO_ACTIONS_DRY_RUN=true`), so nothing real fires; approvals still queue on `/approvals` so you can see the loop work end to end.
-
-Tune the simulator via env vars:
+The source compose trickles fresh sales orders into the sample DB every 10 minutes. Briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External-action targets route to a mock adapter during trial (`NEKO_ACTIONS_DRY_RUN=true`); approvals still queue.
 
 ```bash
 AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
   docker compose -f compose.yml -f compose.adventureworks.yml up -d
 ```
 
-Disable the trickle with `AW_SIM_ENABLED=0`. Wire real webhooks past trial with `NEKO_ACTIONS_DRY_RUN=false`.
+Disable the trickle: `AW_SIM_ENABLED=0`. Wire real webhooks past trial: `NEKO_ACTIONS_DRY_RUN=false`.
 
 ### Watch the loop fire end-to-end
 
-The seed pre-loads three workflows on the AdventureWorks data so the trial isn't a blank page:
+The seed pre-loads three watchers:
 
-- **Daily Revenue Health Check** (9am cron) — yesterday's revenue vs the trailing 7-day average; lands on the Briefing tagged good / watch / act.
-- **Revenue Drop Alert** (hourly cron) — per-territory current-hour revenue vs the same hour-of-week baseline averaged over the prior 4 weeks; if any territory falls below 50%, proposes a Slack alert to `#revenue-alerts` for your approval.
-- **Slow-Ship Operations** (8:30am cron) — orders stuck in *pending* for more than 5 days, with the oldest 3 order IDs.
+- **Daily Revenue Health Check** (9am cron) — yesterday's revenue vs trailing 7-day average.
+- **Revenue Drop Alert** (hourly) — per-territory current hour vs same-hour-of-week baseline over 4 weeks; proposes a Slack alert if any territory falls below 50%.
+- **Slow-Ship Operations** (8:30am cron) — orders stuck in *pending* > 5 days.
 
-To see the loop without waiting for an organic dip, fire the Germany revenue-drop scenario. It tells the order trickle to stop generating new orders for territory 8 (Germany) for three hours:
+To see the loop without waiting for an organic dip, fire the Germany scenario (stops new orders for territory 8 for three hours):
 
 ```bash
 docker compose -f compose.yml -f compose.adventureworks.yml \
@@ -200,39 +179,33 @@ docker compose -f compose.yml -f compose.adventureworks.yml \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
 
-Wait ~15 minutes for the trickle to skip a couple of Germany ticks, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. Within seconds a finding lands on the Briefing — Germany's hourly revenue well below its baseline — and a proposed Slack alert sits in the approvals queue for your approve / reject. Click approve; the receipt drops onto the Briefing under **Fired on your behalf** — the loop closing in front of you.
+Wait ~15 minutes, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. A finding lands on the Briefing; a proposed Slack alert queues for approval. Click approve; the receipt lands under **Fired on your behalf**.
 
-That's the loop: watcher runs → finding lands → action proposed → you approve → receipt on the Briefing. Once it clicks, write your own watcher in chat from `/work`, and when you're ready, swap AdventureWorks for your real data source — see [Use your own data](#use-your-own-data).
+Then write your own watcher from `/work`, and swap AdventureWorks for your data — see [Use your own data](#use-your-own-data).
 
-## Developer Setup
+## Developer setup
 
-For working on OpenNeko itself (Next.js UI, worker, packages), run the stack pieces in Docker but the app processes from source.
+Stack pieces in Docker, app processes from source:
 
 ```bash
 corepack enable
 pnpm bootstrap
-
-# DB + metadata GraphJin only — app runs from source.
-# dev:up bind-mounts ~/.config/openneko into neko-graphjin so that host web/
-# worker (which write their config under ~/.config/openneko) and in-Docker
-# graphjin share the same config.json — including the DB password after
-# /setup rotates it. Demo/prod don't need this since web+worker also live
-# in compose and share the named volume.
 pnpm dev:up
 (cd apps/openneko && go run ./cmd/openneko migrate)
-
 pnpm dev
 ```
 
-If you skip `neko-graphjin`, OpenNeko still runs but workflows that chain via subscriptions stay silent — the worker logs `subscription manager ready (0 active)` and matches never fire.
+`pnpm dev:up` bind-mounts `~/.config/openneko` into `neko-graphjin` so host web/worker and in-Docker GraphJin share `config.json` (including the DB password after `/setup` rotates it). Demo/prod don't need this — web+worker run in compose and share the named volume.
 
-Install external CLIs the worker shells out to (host-only — the Docker images already include them):
+Without `neko-graphjin`, subscription-chained workflows stay silent (`subscription manager ready (0 active)` in worker logs).
+
+Install host-only CLIs the worker shells out to (Docker images already include them):
 
 ```bash
 ./scripts/install-clis.sh
 ```
 
-This installs the GraphJin CLI, Hermes, and the Claude Agent CLI.
+Installs the GraphJin CLI, Hermes, and the Claude Agent CLI.
 
 With sample data:
 
@@ -245,18 +218,18 @@ OPENNEKO_CONFIG_VOLUME="$HOME/.config/openneko" \
 pnpm dev
 ```
 
-In the developer flow use `http://localhost:8080` for the customer-data GraphJin in the setup wizard. The metadata GraphJin (`neko-graphjin`) is reached automatically at `http://127.0.0.1:8089`.
+In the dev flow, use `http://localhost:8080` for customer-data GraphJin in the setup wizard. Metadata GraphJin reaches `http://127.0.0.1:8089` automatically.
 
-### Working on the openneko binary itself
+### Working on the openneko binary
 
 ```bash
 cd apps/openneko
 go test ./... -count=1
-go test -tags=integration -count=1 -timeout 10m ./internal/db/...  # spins up pgvector via testcontainers
+go test -tags=integration -count=1 -timeout 10m ./internal/db/...   # pgvector via testcontainers
 go build -o /tmp/openneko ./cmd/openneko
 ```
 
-When migrations change, sync the embedded copies before building:
+Sync embedded migrations after editing `db/migrations/`:
 
 ```bash
 apps/openneko/scripts/sync-migrations.sh
@@ -266,33 +239,32 @@ CI runs this with `--check` and fails on drift.
 
 ## Troubleshooting
 
-**Docker is not running.** Start Docker Desktop (or the daemon) and re-run `openneko start`.
+**Docker not running.** Start Docker Desktop or the daemon; re-run `openneko start`.
 
-**Port already in use.** Override with `OPENNEKO_PORT`, `OPENNEKO_DB_PORT`, or `OPENNEKO_GRAPHJIN_PORT` env vars.
+**Port in use.** Override via `OPENNEKO_PORT` / `OPENNEKO_DB_PORT` / `OPENNEKO_GRAPHJIN_PORT`.
 
-**Image pull fails with `unauthorized`.** The first time `ghcr.io/open-neko/neko-*` images are published they default to private — if `openneko start` fails on pull, confirm the packages are public at https://github.com/orgs/open-neko/packages.
+**Image pull `unauthorized`.** Confirm packages are public at https://github.com/orgs/open-neko/packages.
 
-**Worker crashes on boot.** `openneko logs worker` — if you see `ERR_MODULE_NOT_FOUND` for a workspace dep, you're likely on an old binary version that predates the workspace-node_modules fix. `brew upgrade openneko` (≥ 1.7.3).
+**Worker crashes on boot.** Check `openneko logs worker`. `ERR_MODULE_NOT_FOUND` for a workspace dep means an old binary — `brew upgrade openneko` (≥ 1.7.3).
 
-**GraphJin connection fails.** For the included sample data in `--mode demo`, OpenNeko points at the internal `http://graphjin:8080` over the compose network — the setup wizard pre-fills this. If you're running developer mode (`pnpm dev`) on your host, use `http://localhost:8080`.
+**GraphJin connection fails.** `--mode demo` uses internal `http://graphjin:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
 
-**Workflow subscriptions don't fire.** The subscription manager needs `neko-graphjin` running. `openneko status` should show it healthy. The worker logs `subscription manager ready (N active)` on boot — if `N` is `0` despite subscriptions existing in the database, `neko-graphjin` is either unreachable or its password has drifted (rotate via `/setup`, then `openneko stop && openneko start`).
+**Workflow subscriptions don't fire.** `neko-graphjin` must be healthy. The worker logs `subscription manager ready (N active)` on boot — if `N=0` despite subscriptions in the DB, GraphJin is unreachable or its password drifted. Rotate via `/setup`, then `openneko stop && openneko start`.
 
-**Provider key fails.** Confirm the provider key is active, has billing/quota available, and matches the provider selected in `/settings`.
+**Provider key fails.** Confirm it's active, has billing/quota, and matches the provider in `/settings`.
 
-**Stale `pnpm dev` processes hammering port 5432.** If you previously ran the worker from source via `pnpm dev`, those `tsx watch` processes survive `openneko stop` (the binary only manages docker containers, not host processes). They reconnect every ~10s with a stale password and surface as `password authentication failed for user "neko"` bursts in `openneko logs neko-db`. Fix:
+**Stale `pnpm dev` processes hammering port 5432.** `tsx watch` processes survive `openneko stop` and reconnect with a stale password (`password authentication failed for user "neko"` in logs):
 
 ```bash
 pkill -f "tsx.*apps/worker/src/index"
 pkill -f "tsx.*apps/web"
+openneko stop --volumes && openneko start --mode demo --detach
 ```
 
-Then `openneko stop --volumes && openneko start --mode demo --detach`.
-
-**Start from a clean slate.**
+**Clean slate.**
 
 ```bash
 openneko reset --all
-brew uninstall openneko && brew untap open-neko/tap  # if also reinstalling the binary
-pkill -f "tsx.*apps/(worker|web)"                    # if you ever ran pnpm dev
+brew uninstall openneko && brew untap open-neko/tap   # if also reinstalling
+pkill -f "tsx.*apps/(worker|web)"                     # if you ever ran pnpm dev
 ```
