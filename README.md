@@ -6,7 +6,7 @@
 [![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
 [![Stars](https://img.shields.io/github/stars/open-neko/neko?style=social)](https://github.com/open-neko/neko/stargazers)
 
-**OpenNeko keeps an eye on your business data and points out things worth a look — then drafts what to do, for you to approve.** It's a self-hosted tool that connects to your CRM, billing, and ops databases through GraphJin. You describe checks in plain English; it runs them on a schedule and posts what it finds to a daily Briefing. You can ask follow-up questions about your data, and write simple rules like *"if Germany revenue drops below its baseline, alert #revenue-alerts"* — OpenNeko drafts the action and waits for your go-ahead.
+**OpenNeko keeps an eye on your business data and points out things worth a look — then drafts what to do, for you to approve.** It's a self-hosted tool that connects to your CRM, billing, and ops databases through [GraphJin](https://graphjin.com). You describe checks in plain English; it runs them on a schedule and posts what it finds to a daily Briefing. You can ask follow-up questions about your data, and write simple rules like *"if Germany revenue drops below its baseline, alert #revenue-alerts"* — OpenNeko drafts the action and waits for your go-ahead.
 
 It's not a dashboard, a CRM, or an autonomous agent. The idea is to bring findings to you, instead of you going to look for them.
 
