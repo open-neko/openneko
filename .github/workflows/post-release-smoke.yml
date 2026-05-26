@@ -1,17 +1,5 @@
 name: post-release smoke
 
-# Smoke-test the assembled stack against the multi-arch images that
-# release-binaries.yml just pushed. This replaces the per-main-push
-# `integration-supervisor` job in go.yml — that version tried to use
-# locally-built `:ci-smoke` tags and lost the race with compose's
-# default pull-from-registry policy (`manifest unknown` flakes).
-#
-# Triggered after release-binaries.yml succeeds. The release version
-# is taken from the just-published tag. If the stack fails to come up
-# against the new images, this workflow's failure is the operator-
-# visible signal: a release is bad and the homebrew tap should be
-# yanked (or release-please should not advance).
-
 on:
   workflow_run:
     workflows: ["openneko release binaries"]
@@ -27,8 +15,6 @@ jobs:
   smoke:
     name: post-release supervisor smoke
     runs-on: ubuntu-22.04
-    # Only run when release-binaries actually succeeded (workflow_run
-    # fires for failure too) OR when manually dispatched.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' &&
@@ -36,9 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # For workflow_run, check out the SHA the release-binaries run
-          # was built from (so the openneko binary + compose match the
-          # images being tested).
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-go@v5
@@ -50,9 +33,6 @@ jobs:
         id: tag
         run: |
           set -euxo pipefail
-          # workflow_run carries head_branch/sha but not the release tag.
-          # Derive the tag from the head_sha via the GH API, falling back
-          # to `latest` for manual dispatches without a version input.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -72,22 +52,10 @@ jobs:
         working-directory: apps/openneko
         run: go build -o /usr/local/bin/openneko ./cmd/openneko
 
-      # Pre-pull each image sequentially with retry+backoff. release-binaries
-      # publishes manifests via `docker buildx imagetools create` and GHCR's
-      # replicas are briefly inconsistent — a `docker manifest inspect` against
-      # one replica can succeed while a parallel `docker compose up` pull hits
-      # another replica that doesn't yet have the manifest list, surfacing as
-      # `<service> Error manifest unknown` for a random service every run.
-      # Pulling explicitly (one image at a time, retrying transient pulls)
-      # populates the local cache so compose's default pull_policy=missing
-      # skips the racy re-pull at `openneko start` time.
       - name: Pre-pull images with retry
         run: |
           set -euxo pipefail
           tag="${{ steps.tag.outputs.tag }}"
-          # core.yml's neko-db service uses pgvector/pgvector:pg16. With
-          # `openneko start --pull never` below, compose can't fetch it
-          # on its own, so it has to be in the local cache too.
           refs=(
             "ghcr.io/open-neko/neko-web:${tag}"
             "ghcr.io/open-neko/neko-worker:${tag}"
@@ -109,13 +77,6 @@ jobs:
             done
           done
 
-      # `docker compose up` verifies each service's image manifest against
-      # the registry in parallel even when the image is already cached
-      # locally, so the pre-pull above isn't sufficient on its own — one
-      # random service still trips on `manifest unknown` when its verify
-      # hits a GHCR replica that hasn't seen the manifest list yet.
-      # `--pull never` tells compose to skip the registry check entirely
-      # and use only the cached images we just pulled.
       - name: openneko start (detached) against pre-pulled images
         env:
           OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}

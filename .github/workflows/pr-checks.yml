@@ -14,10 +14,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
 
-    # Postgres backs the integration tests in packages/db/test/integration and
-    # the Postgres-gated tests in apps/web|worker. Defaults (user=neko,
-    # password=secret, database=neko) match packages/db/src/connection.ts so
-    # the runtime config falls back to them without needing a config.json.
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -45,8 +41,6 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Needed for the "Run migrations" step below — single migrator path now,
-      # via `go run ./apps/openneko/cmd/openneko migrate` (embeds db/migrations).
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
@@ -55,10 +49,6 @@ jobs:
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile
 
-      # The agent runtime shells out to these binaries. Both backends check
-      # for `graphjin` on PATH; ClaudeAgentBackend's constructor checks for
-      # `claude`. Tests that build a real backend or call runChatTurn fail
-      # without them. Mirrors the Dockerfile cli layer.
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 
@@ -79,23 +69,12 @@ jobs:
           NEKO_PG_USER: neko
           NEKO_PG_PASSWORD: secret
           NEKO_PG_DATABASE: neko
-        # Single migrator path — same Go binary the container entrypoints run.
-        # Embedded migrations are pulled in at compile time from apps/openneko/
-        # assets/migrations (kept in sync with db/migrations by sync-migrations.sh).
         working-directory: apps/openneko
         run: go run ./cmd/openneko migrate
 
-      # Typecheck apps/web + apps/worker. Deploy runs `pnpm build`, which
-      # invokes next build → tsc; PR checks otherwise only run vitest, so a
-      # type error in workspace code (e.g. packages/llm) can slip through and
-      # break VM deploy on main. tsc --noEmit reproduces that gate cheaply.
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
-      # Mirror the deploy gate. tsc above catches type errors, but next build's
-      # prerender pass surfaces runtime errors that tsc can't see (e.g.
-      # useSearchParams without a Suspense boundary). Without this step, those
-      # only fail on the VM after push to main.
       - name: Build
         run: pnpm -r build
 
@@ -107,10 +86,5 @@ jobs:
           NEKO_PG_PASSWORD: secret
           NEKO_PG_DATABASE: neko
           AGENT_AUTO_MEMORY: "off"
-        # --workspace-concurrency=1 runs each package's test script
-        # sequentially. apps/web and apps/worker both touch the same
-        # Postgres; the worker's reconciler scans `processing_job` rows
-        # globally (no org filter), so when it ran in parallel with
-        # apps/web's onboarding tests it marked their newly-inserted
-        # business_profile_build rows as "lost from queue (failed)".
+        # apps/web and apps/worker share Postgres; worker's reconciler scans processing_job globally and races with web's onboarding tests.
         run: pnpm -r --workspace-concurrency=1 test

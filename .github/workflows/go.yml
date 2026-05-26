@@ -24,9 +24,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-22.04 has a smaller preinstalled toolchain than ubuntu-latest
-        # (currently 24.04), so the runner spins up faster. We pull our own Go
-        # via setup-go and don't need anything else from the image.
         os: [ubuntu-22.04, macos-14]
     defaults:
       run:
@@ -65,21 +62,6 @@ jobs:
 
       - name: go test (integration tag)
         run: go test -tags=integration -count=1 -timeout 10m ./internal/db/...
-
-  # NOTE: integration-supervisor (smoke that builds three Dockerfile
-  # targets locally + runs `openneko start`) moved to
-  # .github/workflows/post-release-smoke.yml. Reasons:
-  #   - It only catches "the assembled stack is healthy" drift — which
-  #     only matters for operators installing via the published image
-  #     tags (Homebrew / release binaries). Per-merge runs against
-  #     locally-built `:ci-smoke` tags collide with compose's default
-  #     pull-from-registry policy and race-fail on `manifest unknown`.
-  #   - Running the smoke against the just-published multi-arch images
-  #     instead (workflow_run: release-binaries.yml on success) catches
-  #     the right regression at the right time, with no race.
-  #   - The Dockerfile/compose drift PRs would otherwise smoke at PR
-  #     time is still caught by `integration-migrator` (migrations) and
-  #     `pr-checks` (TS/JS).
 
   goreleaser-check:
     name: goreleaser check

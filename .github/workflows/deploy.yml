@@ -25,17 +25,9 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           GIT_REF: ${{ github.sha }}
-          # Slack token piped in from a GitHub secret; the deploy script
-          # invokes `openneko secrets set` with it so the running worker
-          # picks it up on the next manifest refresh. Empty string is
-          # tolerated — the deploy still completes, slack just isn't wired.
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          # NOTE: privileged steps (systemd drop-in, openneko binary install,
-          # systemd daemon-reload) live in scripts/neko-vm-setup.sh and are
-          # run once manually on the VM. This deploy only does what the
-          # SSH_USER can do without prompting for a sudo password.
           ssh -i ~/.ssh/id_ed25519 \
               "$SSH_USER@$SSH_HOST" \
               GIT_REF="$GIT_REF" SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
@@ -51,51 +43,28 @@ jobs:
             set -a
             source .env
             set +a
-            # Single migrator path. neko-vm-setup.sh installs the openneko
-            # binary at /usr/local/bin/openneko; if it hasn't run on this VM
-            # yet, this step fails loudly with "command not found" — fix by
-            # running scripts/neko-vm-setup.sh on the host once.
             openneko migrate
 
             sudo /usr/bin/systemctl restart neko-web
             sudo /usr/bin/systemctl restart neko-worker
 
-            # ── plugin install + secret (only if neko-vm-setup.sh has run) ──
-            # The setup script provisions /opt/neko/.plugins, installs the
-            # openneko binary, and writes the systemd drop-in. If it hasn't
-            # run yet, skip this block — deploy still succeeds, slack just
-            # isn't wired until setup is done once.
             if command -v openneko >/dev/null 2>&1 && [ -d /opt/neko/.plugins ]; then
               export OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins
               export OPENNEKO_PLUGINS_MANIFEST_PATH=/opt/neko/.plugins/openneko.plugins.json
               [ -f "$OPENNEKO_PLUGINS_MANIFEST_PATH" ] || openneko init
-              # Set the SLACK_BOT_TOKEN BEFORE running install. The install
-              # path validates required env vars from the marketplace manifest
-              # and errors out non-interactively if they're missing. Saving
-              # to the secrets store first means install sees it as
-              # already-set and skips the prompt.
               if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
                 openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN"
                 echo "[deploy] SLACK_BOT_TOKEN saved"
               else
                 echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack install will be skipped"
               fi
-              # Re-install every deploy → upserts to marketplace-latest (upgrades in place, no-ops once current).
               if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
                 openneko install @open-neko/plugin-slack --skip-host-check
               fi
-              # Telegram is a CHANNEL plugin. Once the VM's openneko binary is
-              # refreshed to a release with channel support (re-run
-              # scripts/neko-vm-setup.sh), this can become a plain
-              # `openneko install @open-neko/channel-telegram`; until then the
-              # helper installs the npm package + registers the channel
-              # manifest entry directly. Gated + non-fatal — never fails deploy.
               if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f /opt/neko/scripts/install-telegram-channel.sh ]; then
                 bash /opt/neko/scripts/install-telegram-channel.sh \
                   || echo "[deploy] telegram channel install non-fatal failure"
               fi
-              # Worker's poll fallback picks up manifest+secrets changes
-              # within 3s — no restart needed.
             else
               echo "[deploy] skipping plugin install — run scripts/neko-vm-setup.sh on the VM once to enable"
             fi
