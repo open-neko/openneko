@@ -38,7 +38,7 @@ If you redistribute OpenNeko or the microsandbox bundle, you must include the fu
 - **License text:** https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 - **Kernel version:** the exact version shipped by libkrunfw is documented in libkrunfw's release notes. See https://github.com/containers/libkrunfw/releases for the corresponding tag.
 
-**Written offer for the kernel source.** OpenNeko relies on libkrunfw's upstream release; we do not modify the kernel. If you require the corresponding kernel source for the version shipped in your OpenNeko build, retrieve it from kernel.org at the version libkrunfw documents for the release you have installed, or open an issue at https://github.com/open-neko/neko/issues and we will direct you to the matching commit.
+**Written offer for the kernel source.** OpenNeko relies on libkrunfw's upstream release; we do not modify the kernel. If you require the corresponding kernel source for the version shipped in your OpenNeko build, retrieve it from kernel.org at the version libkrunfw documents for the release you have installed, or open an issue at https://github.com/open-neko/openneko/issues and we will direct you to the matching commit.
 
 ---
 
@@ -60,4 +60,4 @@ Run `pnpm licenses ls -P` from the repo root to see the full transitive list at 
 
 ## Reporting
 
-Discrepancies, missing attributions, or compliance questions: https://github.com/open-neko/neko/issues.
+Discrepancies, missing attributions, or compliance questions: https://github.com/open-neko/openneko/issues.

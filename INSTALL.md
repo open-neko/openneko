@@ -20,7 +20,7 @@ openneko start --mode demo --detach
 ### Linux
 
 ```bash
-curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
+curl -fsSL https://github.com/open-neko/openneko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
   | tar -xz openneko
 sudo install -m 0755 openneko /usr/local/bin/
 mkdir -p ~/openneko && cd ~/openneko
@@ -86,7 +86,7 @@ Modes:
 
 ## Upgrade
 
-`openneko` upgrades by replacing the binary. The new binary embeds bumped image pins and new migrations; both apply on the next `openneko start`. No `openneko upgrade` subcommand — subscribe to [release notifications](https://github.com/open-neko/neko/releases) for pushes.
+`openneko` upgrades by replacing the binary. The new binary embeds bumped image pins and new migrations; both apply on the next `openneko start`. No `openneko upgrade` subcommand — subscribe to [release notifications](https://github.com/open-neko/openneko/releases) for pushes.
 
 ### macOS
 
@@ -101,7 +101,7 @@ openneko start --mode demo --detach    # use the same --mode you started with
 ### Linux
 
 ```bash
-curl -fsSL https://github.com/open-neko/neko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
+curl -fsSL https://github.com/open-neko/openneko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
   | tar -xz openneko
 sudo install -m 0755 openneko /usr/local/bin/
 rm openneko
@@ -146,7 +146,7 @@ OPENNEKO_PORT=3001 OPENNEKO_DB_PORT=55432 OPENNEKO_GRAPHJIN_PORT=8090 \
 > Needed for developing OpenNeko itself or running the full live trial (continuous order trickle + scenario injector).
 
 ```bash
-git clone https://github.com/open-neko/neko.git
+git clone https://github.com/open-neko/openneko.git
 cd neko
 docker compose -f compose.yml -f compose.adventureworks.yml up -d --build
 docker compose -f compose.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed

@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/open-neko/neko.git",
+    "url": "git+https://github.com/open-neko/openneko.git",
     "directory": "packages/plugin-types"
   },
   "private": true,

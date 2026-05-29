@@ -7,10 +7,10 @@
   "homepage": "https://getneko.app",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/open-neko/neko.git"
+    "url": "git+https://github.com/open-neko/openneko.git"
   },
   "bugs": {
-    "url": "https://github.com/open-neko/neko/issues"
+    "url": "https://github.com/open-neko/openneko/issues"
   },
   "scripts": {
     "bootstrap": "AX_SKIP_SKILL_INSTALL=1 pnpm install && [ -f db/graphjin/dev.example.yml ] && [ ! -f db/graphjin/dev.yml ] && cp db/graphjin/dev.example.yml db/graphjin/dev.yml || true",

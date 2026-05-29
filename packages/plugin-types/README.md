@@ -1,6 +1,6 @@
 # @open-neko/plugin-types
 
-Public types + RPC schema for [OpenNeko](https://github.com/open-neko/neko) plugins.
+Public types + RPC schema for [OpenNeko](https://github.com/open-neko/openneko) plugins.
 
 Imported by:
 - every plugin (for `definePlugin`, `runPluginEntrypoint`)

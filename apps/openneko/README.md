@@ -13,7 +13,7 @@ brew install open-neko/tap/openneko
 ```
 
 **Linux (amd64 / arm64):** download the tarball for your platform from
-[github.com/open-neko/neko/releases](https://github.com/open-neko/neko/releases)
+[github.com/open-neko/openneko/releases](https://github.com/open-neko/openneko/releases)
 and put `openneko` somewhere on your `PATH`.
 
 You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).

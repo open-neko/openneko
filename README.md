@@ -1,10 +1,10 @@
 # OpenNeko
 
-[![License](https://img.shields.io/github/license/open-neko/neko)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/open-neko/neko)](https://github.com/open-neko/neko/releases/latest)
+[![License](https://img.shields.io/github/license/open-neko/openneko)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/open-neko/openneko)](https://github.com/open-neko/openneko/releases/latest)
 [![Self-hosted · Docker](https://img.shields.io/badge/self--hosted-Docker-2496ED?logo=docker&logoColor=white)](INSTALL.md)
 [![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
-[![Stars](https://img.shields.io/github/stars/open-neko/neko?style=social)](https://github.com/open-neko/neko/stargazers)
+[![Stars](https://img.shields.io/github/stars/open-neko/openneko?style=social)](https://github.com/open-neko/openneko/stargazers)
 
 **OpenNeko watches your business data, points out what's worth a look, and drafts the actions to take next — for you to approve.** Self-hosted on your infrastructure, with whichever LLM you prefer. The intelligence is rented; the findings, rules, and decisions are yours.
 
@@ -23,7 +23,7 @@ mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
 
-Linux: download the binary from the [latest release](https://github.com/open-neko/neko/releases/latest), then run the same `openneko start --mode demo --detach`.
+Linux: download the binary from the [latest release](https://github.com/open-neko/openneko/releases/latest), then run the same `openneko start --mode demo --detach`.
 
 Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three watchers against sample data — kick off the Slow-Ship Operations watcher from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing. The full propose-action-and-approve walkthrough is in **[INSTALL.md](INSTALL.md)**.
 
@@ -79,7 +79,7 @@ openneko install @open-neko/plugin-parallel-search
 
 ## Issues
 
-Please file bugs and feature requests at [github.com/open-neko/neko/issues](https://github.com/open-neko/neko/issues).
+Please file bugs and feature requests at [github.com/open-neko/openneko/issues](https://github.com/open-neko/openneko/issues).
 
 ## Contributing
 

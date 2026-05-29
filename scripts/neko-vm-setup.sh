@@ -42,14 +42,14 @@ case "$ARCH" in
   aarch64|arm64) GOARCH=arm64 ;;
   *) echo "[setup] unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
-LATEST=$(curl -fsSL https://api.github.com/repos/open-neko/neko/releases/latest \
+LATEST=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest \
   | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
 WANTED="${LATEST#v}"
 INSTALLED=$(/usr/local/bin/openneko version 2>/dev/null || echo none)
 if [ "$INSTALLED" != "$WANTED" ]; then
   TMP=$(mktemp -d)
   curl -fsSL -o "$TMP/openneko.tar.gz" \
-    "https://github.com/open-neko/neko/releases/download/$LATEST/openneko_${WANTED}_linux_${GOARCH}.tar.gz"
+    "https://github.com/open-neko/openneko/releases/download/$LATEST/openneko_${WANTED}_linux_${GOARCH}.tar.gz"
   tar -xzf "$TMP/openneko.tar.gz" -C "$TMP" openneko
   install -m 0755 "$TMP/openneko" /usr/local/bin/openneko
   rm -rf "$TMP"

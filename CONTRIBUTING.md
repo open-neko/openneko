@@ -4,7 +4,7 @@ Thanks for your interest in contributing. Issues and pull requests are welcome.
 
 ## Reporting bugs and requesting features
 
-File an issue at [github.com/open-neko/neko/issues](https://github.com/open-neko/neko/issues). Please include:
+File an issue at [github.com/open-neko/openneko/issues](https://github.com/open-neko/openneko/issues). Please include:
 
 - What you were doing
 - What you expected

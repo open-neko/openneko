@@ -40,7 +40,7 @@ snapshot:
 release:
   github:
     owner: open-neko
-    name: neko
+    name: openneko
   draft: false
   prerelease: auto
 

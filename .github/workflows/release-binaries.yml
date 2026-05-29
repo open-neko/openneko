@@ -166,7 +166,7 @@ jobs:
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           owner: open-neko
           repositories: |
-            neko
+            openneko
             homebrew-tap
 
       - uses: goreleaser/goreleaser-action@v6
