@@ -10,10 +10,10 @@
 // and are skipped here.
 import { getPluginRegistryInstance } from "../plugins/registry-instance.js";
 import { dispatchInboundIntent, ensureInboundBinding } from "./delivery.js";
+import { pollBackoffMs, shouldLogPollFailure } from "./poll-backoff.js";
 
 type IntentEvent = Parameters<typeof dispatchInboundIntent>[1];
 
-const POLL_INTERVAL_MS = 3_000;
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -41,6 +41,8 @@ export function startChannelInbound(orgId: string): { stop: () => void } {
   async function pollLoop(pluginName: string): Promise<void> {
     let cursor: string | undefined;
     let warnedUnsupported = false;
+    let failureStreak = 0;
+    let lastError: string | undefined;
     console.log(`[channel-inbound] ${pluginName}: polling for inbound (no public webhook URL)`);
     while (!stopped) {
       try {
@@ -59,6 +61,13 @@ export function startChannelInbound(orgId: string): { stop: () => void } {
             console.warn(`[channel-inbound] ${pluginName} dispatch error: ${msg(err)}`);
           }
         }
+        if (failureStreak > 0) {
+          console.log(
+            `[channel-inbound] ${pluginName}: poll recovered after ${failureStreak} failed attempt(s)`,
+          );
+          failureStreak = 0;
+          lastError = undefined;
+        }
       } catch (err) {
         const m = msg(err);
         if (m.includes("does not implement poll_inbound")) {
@@ -70,9 +79,16 @@ export function startChannelInbound(orgId: string): { stop: () => void } {
           }
           return; // can't be polled; retrying won't help
         }
-        if (!stopped) console.warn(`[channel-inbound] ${pluginName} poll error: ${m}`);
+        if (!stopped) {
+          failureStreak++;
+          if (shouldLogPollFailure(failureStreak, m !== lastError)) {
+            const attempt = failureStreak > 1 ? ` (attempt ${failureStreak})` : "";
+            console.warn(`[channel-inbound] ${pluginName} poll error${attempt}: ${m}`);
+          }
+          lastError = m;
+        }
       }
-      if (!stopped) await sleep(POLL_INTERVAL_MS);
+      if (!stopped) await sleep(pollBackoffMs(failureStreak));
     }
   }
 
