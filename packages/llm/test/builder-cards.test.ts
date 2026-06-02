@@ -92,10 +92,10 @@ describe("workflowSavedCard", () => {
   it("uses 'Created' vs 'Updated' verb based on the action", () => {
     const created = workflowSavedCard({ workflow: workflowFixture, action: "created" });
     const updated = workflowSavedCard({ workflow: workflowFixture, action: "updated" });
-    const createdRoot = (created[1].updateComponents as { components: Array<{ id: string; greeting?: string }> }).components.find((c) => c.id === "root");
-    const updatedRoot = (updated[1].updateComponents as { components: Array<{ id: string; greeting?: string }> }).components.find((c) => c.id === "root");
-    expect(createdRoot?.greeting).toBe("Created workflow");
-    expect(updatedRoot?.greeting).toBe("Updated workflow");
+    const createdRoot = (created[1].updateComponents as { components: Array<{ id: string; label?: string }> }).components.find((c) => c.id === "root");
+    const updatedRoot = (updated[1].updateComponents as { components: Array<{ id: string; label?: string }> }).components.find((c) => c.id === "root");
+    expect(createdRoot?.label).toBe("Created workflow");
+    expect(updatedRoot?.label).toBe("Updated workflow");
   });
 
   it("falls back to placeholder text when description is empty", () => {

@@ -79,8 +79,27 @@ type WsMessage =
       payload: { query: string; variables?: unknown; operationName?: string };
     }
   | { type: "next"; id: string; payload: GraphjinSubscriptionMessage }
-  | { type: "error"; id: string; payload: Array<{ message: string }> }
+  | { type: "error"; id: string; payload?: unknown }
   | { type: "complete"; id: string };
+
+function errorMessageFromPayload(payload: unknown): string {
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { errors?: unknown } | null)?.errors)
+      ? (payload as { errors: unknown[] }).errors
+      : null;
+  const joined = list
+    ?.map((e) =>
+      e && typeof e === "object" && "message" in e
+        ? String((e as { message: unknown }).message)
+        : String(e),
+    )
+    .filter(Boolean)
+    .join("; ");
+  if (joined) return joined;
+  if (typeof payload === "string" && payload) return payload;
+  return "subscription error";
+}
 
 /**
  * Subscribe to a GraphJin query via WebSocket using the
@@ -146,12 +165,7 @@ export function graphjinSubscribe<T = unknown>(
         return;
       case "error":
         if (parsed.id !== subId) return;
-        opts.onError?.(
-          new Error(
-            parsed.payload?.map((e) => e.message).join("; ") ||
-              "subscription error",
-          ),
-        );
+        opts.onError?.(new Error(errorMessageFromPayload(parsed.payload)));
         return;
       case "complete":
         if (parsed.id !== subId) return;

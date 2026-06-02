@@ -3,10 +3,10 @@ import type { ActionPolicyRecord } from "./action-store";
 import type { SubscriptionRecord, WorkflowRecord } from "./store";
 import type { SourceChangeFilter } from "./subscription-query";
 
-function briefingCard(args: {
+function confirmationCard(args: {
   surfaceId: string;
-  greeting: string;
-  subtitle: string;
+  label: string;
+  title: string;
   body: string;
 }): AgentSurfaceMessage[] {
   return [
@@ -24,10 +24,9 @@ function briefingCard(args: {
         components: [
           {
             id: "root",
-            component: "Briefing",
-            greeting: args.greeting,
-            subtitle: args.subtitle,
-            role: "operator",
+            component: "Confirmation",
+            label: args.label,
+            title: args.title,
             children: ["body"],
           },
           { id: "body", component: "Markdown", text: args.body },
@@ -45,10 +44,10 @@ export function workflowSavedCard(args: {
   const cron = args.workflow.cron
     ? ` (cron \`${args.workflow.cron}\` ${args.workflow.cronTimezone})`
     : "";
-  return briefingCard({
+  return confirmationCard({
     surfaceId: `workflow-save-${args.workflow.id}`,
-    greeting: `${verb} workflow`,
-    subtitle: args.workflow.name,
+    label: `${verb} workflow`,
+    title: args.workflow.name,
     body: [
       `**${args.workflow.name}** — ${args.workflow.steps.length} step(s)${cron}.`,
       "",
@@ -74,10 +73,10 @@ export function subscriptionSavedCard(args: {
         Object.keys(filter.where as Record<string, unknown>).join("`, `") +
         "`"
       : "_(no filter)_";
-  return briefingCard({
+  return confirmationCard({
     surfaceId: `subscription-save-${args.subscription.id}`,
-    greeting: "Trigger added",
-    subtitle: args.workflowName,
+    label: "Trigger added",
+    title: args.workflowName,
     body: [
       `**${args.workflowName}** will fire on changes to \`${table}\` (pk: \`${pkList}\`).`,
       "",
@@ -103,10 +102,10 @@ export function policySavedCard(args: {
     args.policy.appliesToKinds.length > 0
       ? args.policy.appliesToKinds.map((k) => `\`${k}\``).join(", ")
       : "_(all kinds)_";
-  return briefingCard({
+  return confirmationCard({
     surfaceId: `policy-save-${args.policy.id}`,
-    greeting: `${verb} rule`,
-    subtitle: args.policy.name,
+    label: `${verb} rule`,
+    title: args.policy.name,
     body: [
       `**Mode:** \`${args.policy.mode}\` • **Scopes:** ${scopes} • **Priority:** ${args.policy.priority}`,
       "",

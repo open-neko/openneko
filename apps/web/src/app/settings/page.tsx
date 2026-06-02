@@ -18,7 +18,6 @@ import {
   getAgentBackendSettings,
   getAgentSettingsPayload,
 } from "@/lib/agent-backend-settings";
-import { getInstallPolicy } from "@/lib/install-policy-settings";
 import SetupWizard from "./SetupWizard";
 
 /**
@@ -56,28 +55,20 @@ export default async function SettingsPage() {
   }
 
   // ── Ongoing-edits mode: card index linking to focused sub-pages. ──
-  const [dataReady, primaryReady, researchStatus, agent, installPolicy] = await Promise.all([
+  const [dataReady, primaryReady, researchStatus, agent] = await Promise.all([
     hasDataSourceSetup(orgId),
     hasPrimaryProviderSetup(orgId),
     resolveResearchStatus(orgId),
     getAgentBackendSettings(orgId),
-    getInstallPolicy(orgId),
   ]);
 
-  const wideningSwitches = [
-    installPolicy.allowUnverified,
-    installPolicy.allowGitUrlInstalls,
-    installPolicy.allowSandboxedSkillEscape,
-  ].filter(Boolean).length;
-  const communityMarketplaces = installPolicy.allowedMarketplaces.length - 1;
-  const securityStatus =
-    wideningSwitches === 0 && communityMarketplaces <= 0
-      ? "Secure defaults"
-      : `${wideningSwitches} widening switch${wideningSwitches === 1 ? "" : "es"}${
-          communityMarketplaces > 0 ? `, +${communityMarketplaces} marketplace${communityMarketplaces === 1 ? "" : "s"}` : ""
-        }`;
-
-  const cards = [
+  const cards: {
+    href: string;
+    title: string;
+    copy: string;
+    status?: string;
+    statusOk?: boolean;
+  }[] = [
     {
       href: "/settings/data",
       title: "Data source",
@@ -106,15 +97,11 @@ export default async function SettingsPage() {
       href: "/settings/rules",
       title: "Rules",
       copy: "Decide what OpenNeko can act on its own, what queues for review, and what's never allowed. Create and edit via Ask.",
-      status: "Editable via Ask",
-      statusOk: true,
     },
     {
       href: "/settings/security",
       title: "Security",
       copy: "Trust floor for plugin and skill installs — which marketplaces are allowed, whether unverified or community installs are permitted.",
-      status: securityStatus,
-      statusOk: true,
     },
   ];
 
@@ -136,9 +123,11 @@ export default async function SettingsPage() {
                 <h2 className="settings-card-title">{card.title}</h2>
                 <p className="settings-card-copy">{card.copy}</p>
               </div>
-              <div className="settings-source">
-                <strong className={card.statusOk ? "is-ok" : "is-warn"}>{card.status}</strong>
-              </div>
+              {card.status ? (
+                <div className="settings-source">
+                  <strong className={card.statusOk ? "is-ok" : "is-warn"}>{card.status}</strong>
+                </div>
+              ) : null}
             </div>
           </Link>
         ))}

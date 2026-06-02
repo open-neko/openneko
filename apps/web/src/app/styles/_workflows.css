@@ -23,36 +23,65 @@
   transform: translateY(-1px);
 }
 
-.workflows-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-.workflows-root:has(.workflow-drawer) .workflows-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
-}
-
 .workflows-row {
+  position: relative;
   width: 100%;
-  display: block;
-  text-align: left;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px 18px;
-  cursor: pointer;
   transition: border-color 0.18s, background 0.18s;
-  font: inherit;
-  color: inherit;
 }
 .workflows-row:hover {
   border-color: var(--text3);
 }
 .workflows-row.is-active {
   border-color: var(--accent);
-  background: var(--accent-soft);
 }
+
+.workflows-row-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 14px;
+  /* right padding leaves room for the hover delete button */
+  padding: 14px 44px 14px 18px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.workflows-row.is-active .workflows-row-main {
+  background: var(--accent-soft);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.workflows-row-delete {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--text3);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.workflows-row:hover .workflows-row-delete,
+.workflows-row:focus-within .workflows-row-delete {
+  display: inline-flex;
+}
+.workflows-row-delete:hover {
+  background: rgba(220, 53, 69, 0.1);
+  color: #c0392b;
+}
+
 .workflows-row-meta {
   margin-top: 10px;
   display: flex;
@@ -63,26 +92,15 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* ─── WORKFLOW DRAWER ─── */
-.workflow-drawer {
-  position: sticky;
-  top: 24px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: 16px;
-  padding: 20px;
-  min-width: 0;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
+/* ─── WORKFLOW DETAIL (inline, expands beneath its row) ─── */
+.workflow-detail {
+  border-top: 1px solid var(--border);
+  padding: 16px 18px 18px;
+  animation: workflow-detail-in 0.16s ease;
 }
-.workflow-drawer-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+@keyframes workflow-detail-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
 }
 
 .workflow-drawer-actions {
@@ -135,13 +153,6 @@
 }
 .workflow-drawer-run-link:hover .workflow-drawer-run-meta { color: var(--accent); }
 .workflow-drawer-run-link:hover .workflow-drawer-run-arrow { color: var(--accent); transform: translateX(2px); }
-
-@media (max-width: 900px) {
-  .workflows-root:has(.workflow-drawer) .workflows-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .workflow-drawer { position: static; }
-}
 
 /* ─── WORKFLOW BUILDER (authoring chat) ─── */
 .builder-root { --page-width: 1000px; }

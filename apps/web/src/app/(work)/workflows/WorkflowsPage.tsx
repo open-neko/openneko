@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Workflow } from "lucide-react";
+import { Workflow, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { confirmDialog } from "@/components/ConfirmModal";
 import { describeSchedule } from "@/lib/cron-english";
 
 type WorkflowListItem = {
@@ -198,6 +199,28 @@ export default function WorkflowsPage() {
     [router, searchParams],
   );
 
+  const deleteWorkflow = useCallback(
+    async (id: string, name: string) => {
+      const ok = await confirmDialog({
+        title: `Delete "${name}"?`,
+        description:
+          "This removes the workflow along with its triggers, run history, and proposed actions.",
+        confirmLabel: "Delete",
+        destructive: true,
+      });
+      if (!ok) return;
+      const res = await fetch(`/api/workflows/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setError(`Couldn't delete (HTTP ${res.status})`);
+        return;
+      }
+      if (selectedId === id) select(null);
+      setWorkflows((prev) => prev?.filter((w) => w.id !== id) ?? prev);
+      void fetchList();
+    },
+    [selectedId, select, fetchList],
+  );
+
   const grouped = useMemo(() => {
     const active: WorkflowListItem[] = [];
     const paused: WorkflowListItem[] = [];
@@ -240,7 +263,7 @@ export default function WorkflowsPage() {
         </div>
         <button
           type="button"
-          className="workflows-new-btn library-head-action"
+          className="workflows-new-btn library-head-action ml-auto"
           onClick={() =>
             router.push(
               `/work?seed=${encodeURIComponent("Set up a new workflow that ")}`,
@@ -268,54 +291,47 @@ export default function WorkflowsPage() {
             >+ New workflow</button> gets you started.
           </div>
         ) : (
-          <div className="workflows-layout">
-            <div className="min-w-0">
-              {grouped.active.length > 0 && (
-                <WorkflowGroup
-                  title="Active"
-                  count={grouped.active.length}
-                  items={grouped.active}
-                  selectedId={selectedId}
-                  onSelect={select}
-                  sparklines={sparklines}
-                  onSparkline={recordSparkline}
-                />
-              )}
-              {grouped.paused.length > 0 && (
-                <WorkflowGroup
-                  title="Paused"
-                  count={grouped.paused.length}
-                  items={grouped.paused}
-                  selectedId={selectedId}
-                  onSelect={select}
-                  sparklines={sparklines}
-                  onSparkline={recordSparkline}
-                />
-              )}
-              {grouped.broken.length > 0 && (
-                <WorkflowGroup
-                  title="Needs attention"
-                  count={grouped.broken.length}
-                  items={grouped.broken}
-                  selectedId={selectedId}
-                  onSelect={select}
-                  sparklines={sparklines}
-                  onSparkline={recordSparkline}
-                />
-              )}
-            </div>
-
-          {selectedId && (
-            <WorkflowDrawer
-              key={selectedId}
-              workflowId={selectedId}
-              onClose={() => select(null)}
-              onMutated={() => {
-                void fetchList();
-              }}
-            />
-          )}
-        </div>
+          <div className="workflows-list min-w-0">
+            {grouped.active.length > 0 && (
+              <WorkflowGroup
+                title="Active"
+                count={grouped.active.length}
+                items={grouped.active}
+                selectedId={selectedId}
+                onSelect={select}
+                onDelete={deleteWorkflow}
+                onMutated={fetchList}
+                sparklines={sparklines}
+                onSparkline={recordSparkline}
+              />
+            )}
+            {grouped.paused.length > 0 && (
+              <WorkflowGroup
+                title="Paused"
+                count={grouped.paused.length}
+                items={grouped.paused}
+                selectedId={selectedId}
+                onSelect={select}
+                onDelete={deleteWorkflow}
+                onMutated={fetchList}
+                sparklines={sparklines}
+                onSparkline={recordSparkline}
+              />
+            )}
+            {grouped.broken.length > 0 && (
+              <WorkflowGroup
+                title="Needs attention"
+                count={grouped.broken.length}
+                items={grouped.broken}
+                selectedId={selectedId}
+                onSelect={select}
+                onDelete={deleteWorkflow}
+                onMutated={fetchList}
+                sparklines={sparklines}
+                onSparkline={recordSparkline}
+              />
+            )}
+          </div>
       )}
     </>
   );
@@ -327,6 +343,8 @@ function WorkflowGroup({
   items,
   selectedId,
   onSelect,
+  onDelete,
+  onMutated,
   sparklines,
   onSparkline,
 }: {
@@ -334,7 +352,9 @@ function WorkflowGroup({
   count: number;
   items: WorkflowListItem[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
+  onDelete: (id: string, name: string) => void;
+  onMutated: () => void;
   sparklines: Record<string, number[]>;
   onSparkline: (id: string, values: number[]) => void;
 }) {
@@ -349,7 +369,9 @@ function WorkflowGroup({
             key={w.id}
             w={w}
             active={selectedId === w.id}
-            onSelect={() => onSelect(w.id)}
+            onSelect={() => onSelect(selectedId === w.id ? null : w.id)}
+            onDelete={() => onDelete(w.id, w.name)}
+            onMutated={onMutated}
             sparkline={sparklines[w.id]}
             onSparkline={(values) => onSparkline(w.id, values)}
           />
@@ -363,12 +385,16 @@ function WorkflowRow({
   w,
   active,
   onSelect,
+  onDelete,
+  onMutated,
   sparkline,
   onSparkline,
 }: {
   w: WorkflowListItem;
   active: boolean;
   onSelect: () => void;
+  onDelete: () => void;
+  onMutated: () => void;
   sparkline: number[] | undefined;
   onSparkline: (values: number[]) => void;
 }) {
@@ -397,38 +423,52 @@ function WorkflowRow({
 
   return (
     <li>
-      <button
-        type="button"
-        className={`workflows-row${active ? " is-active" : ""}`}
-        onClick={onSelect}
-      >
-        <div className="font-display text-base font-bold tracking-[-0.01em] text-text">{w.name}</div>
-        {w.description && (
-          <div className="text-[13px] text-text2 mt-1 leading-[1.45]">{w.description}</div>
-        )}
-        <div className="workflows-row-meta">
-          <span>
-            {describeSchedule(w.cron, w.cronTimezone, w.cronEnabled)}
-          </span>
-          {hasActivity && (
-            <>
-              <span className="opacity-60">·</span>
-              <Sparkline values={sparkline ?? []} />
-            </>
+      <div className={`workflows-row${active ? " is-active" : ""}`}>
+        <button
+          type="button"
+          className="workflows-row-main"
+          onClick={onSelect}
+          aria-expanded={active}
+        >
+          <div className="font-display text-base font-bold tracking-[-0.01em] text-text">{w.name}</div>
+          {w.description && (
+            <div className="text-[13px] text-text2 mt-1 leading-[1.45]">{w.description}</div>
           )}
-        </div>
-      </button>
+          <div className="workflows-row-meta">
+            <span>
+              {describeSchedule(w.cron, w.cronTimezone, w.cronEnabled)}
+            </span>
+            {hasActivity && (
+              <>
+                <span className="opacity-60">·</span>
+                <Sparkline values={sparkline ?? []} />
+              </>
+            )}
+          </div>
+        </button>
+        <button
+          type="button"
+          className="workflows-row-delete"
+          title="Delete workflow"
+          aria-label={`Delete ${w.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        >
+          <Trash2 size={14} strokeWidth={2} />
+        </button>
+        {active && <WorkflowDetail workflowId={w.id} onMutated={onMutated} />}
+      </div>
     </li>
   );
 }
 
-function WorkflowDrawer({
+function WorkflowDetail({
   workflowId,
-  onClose,
   onMutated,
 }: {
   workflowId: string;
-  onClose: () => void;
   onMutated: () => void;
 }) {
   const router = useRouter();
@@ -528,37 +568,17 @@ function WorkflowDrawer({
 
   if (error) {
     return (
-      <aside className="workflow-drawer">
-        <div className="workflow-drawer-head">
-          <button
-            type="button"
-            className="border-0 bg-transparent text-xl leading-none text-text3 cursor-pointer px-1 hover:text-text"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
+      <div className="workflow-detail">
         <div className="py-6 text-center text-[13px] text-danger">{error}</div>
-      </aside>
+      </div>
     );
   }
 
   if (!data) {
     return (
-      <aside className="workflow-drawer">
-        <div className="workflow-drawer-head">
-          <button
-            type="button"
-            className="border-0 bg-transparent text-xl leading-none text-text3 cursor-pointer px-1 hover:text-text"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
+      <div className="workflow-detail">
         <div className="py-6 text-center text-[13px] text-text3">Loading…</div>
-      </aside>
+      </div>
     );
   }
 
@@ -568,23 +588,10 @@ function WorkflowDrawer({
   const budgetPct = budgetCap ? Math.round((budgetUsed / budgetCap) * 100) : 0;
 
   return (
-    <aside className="workflow-drawer">
-      <div className="workflow-drawer-head">
-        <div>
-          <div className="font-display text-lg font-extrabold tracking-[-0.01em] leading-tight text-text">{workflow.name}</div>
-          <div className="text-xs text-text3 mt-1 font-mono">
-            {workflow.enabled ? "active" : "paused"}
-            {workflow.cron ? ` · ${workflow.cronEnabled ? "cron" : "cron paused"}` : ""}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="border-0 bg-transparent text-xl leading-none text-text3 cursor-pointer px-1 hover:text-text"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          ×
-        </button>
+    <div className="workflow-detail">
+      <div className="text-xs text-text3 mb-4 font-mono">
+        {workflow.enabled ? "active" : "paused"}
+        {workflow.cron ? ` · ${workflow.cronEnabled ? "cron" : "cron paused"}` : ""}
       </div>
 
       <div className="workflow-drawer-actions">
@@ -825,7 +832,7 @@ function WorkflowDrawer({
           edit in /work
         </button>
       </div>
-    </aside>
+    </div>
   );
 }
 

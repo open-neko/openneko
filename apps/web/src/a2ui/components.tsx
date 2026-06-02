@@ -17,7 +17,12 @@ import {
 import { registerComponent, renderChildren } from "./renderer";
 import type { RenderContext } from "./renderer";
 import type { A2UIComponent } from "./types";
-import type { BriefingCardProps, BriefingProps, MarkdownProps } from "./catalog";
+import type {
+  BriefingCardProps,
+  BriefingProps,
+  ConfirmationProps,
+  MarkdownProps,
+} from "./catalog";
 import BriefingCard from "@/components/BriefingCard";
 
 // ─── Briefing ───
@@ -32,6 +37,31 @@ registerComponent("Briefing", (comp: A2UIComponent, ctx: RenderContext) => {
         {props.subtitle}
       </div>
       {props.children && renderChildren(props.children, ctx)}
+    </div>
+  );
+});
+
+// ─── Confirmation ───
+registerComponent("Confirmation", (comp: A2UIComponent, ctx: RenderContext) => {
+  const props = comp as unknown as ConfirmationProps & { id: string };
+  return (
+    <div
+      key={props.id}
+      className="work-confirm"
+      style={{ animation: "fadeUp 0.4s ease both" }}
+    >
+      <div className="work-confirm-head">
+        <span className="work-confirm-check" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
+        <span className="work-confirm-label">{props.label}</span>
+      </div>
+      {props.title ? <div className="work-confirm-title">{props.title}</div> : null}
+      {props.children ? (
+        <div className="work-confirm-body">{renderChildren(props.children, ctx)}</div>
+      ) : null}
     </div>
   );
 });
