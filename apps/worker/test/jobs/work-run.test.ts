@@ -395,10 +395,10 @@ describeIfDb("runChatTurn", () => {
     const components =
       payload.messages[1]?.updateComponents?.components ?? [];
     const root = components.find((c) => c.id === "root") as
-      | { greeting?: string; subtitle?: string }
+      | { label?: string; title?: string }
       | undefined;
-    expect(root?.greeting).toBe("Created workflow");
-    expect(root?.subtitle).toBe("APAC revenue dip check");
+    expect(root?.label).toBe("Created workflow");
+    expect(root?.title).toBe("APAC revenue dip check");
     const body = components.find((c) => c.id === "body");
     expect(body?.text).toContain("[Open detail](/workflows?id=");
 
@@ -484,10 +484,10 @@ describeIfDb("runChatTurn", () => {
     const components =
       payload.messages[1]?.updateComponents?.components ?? [];
     const root = components.find((c) => c.id === "root") as
-      | { greeting?: string; subtitle?: string }
+      | { label?: string; title?: string }
       | undefined;
-    expect(root?.greeting).toBe("Created rule");
-    expect(root?.subtitle).toBe("slack_revenue_alerts_autoapprove");
+    expect(root?.label).toBe("Created rule");
+    expect(root?.title).toBe("slack_revenue_alerts_autoapprove");
     const body = components.find((c) => c.id === "body");
     expect(body?.text).toContain("auto_approve");
     expect(body?.text).toContain("[Open detail](/settings/rules/");

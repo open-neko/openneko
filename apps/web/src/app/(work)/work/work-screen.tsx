@@ -378,10 +378,8 @@ export default function WorkScreen() {
     void loadMemories();
   }, [gateChecked, gateError]);
 
-  // React to URL thread changes. The /work page (no threadId) picks the most
-  // recent thread and redirects to its URL — that navigation re-fires this
-  // effect with the resolved threadId, which then loads the bundle without
-  // remounting the screen.
+  // React to URL thread changes. The /work page (no threadId) is the new-thread
+  // state: clear the screen and let the composer create a thread on first send.
   useEffect(() => {
     if (!gateChecked || gateError) return;
     if (routeThreadId) {
@@ -410,15 +408,7 @@ export default function WorkScreen() {
     el.style.height = `${Math.min(el.scrollHeight, 222)}px`;
   }, [draft]);
 
-  async function resolveLandingThread() {
-    const res = await fetch("/api/work/threads");
-    if (!res.ok) return;
-    const data = (await res.json()) as { threads: { id: string }[] };
-    const nextId = data.threads?.[0]?.id ?? null;
-    if (nextId) {
-      router.replace(`/work/${nextId}`);
-      return;
-    }
+  function resolveLandingThread() {
     activeThreadIdRef.current = null;
     setActiveThreadId(null);
     activeRunStreamRef.current?.close();
@@ -426,6 +416,7 @@ export default function WorkScreen() {
     setSending(false);
     updateActiveRunId(null);
     setBundle(null);
+    setPendingMemories([]);
   }
 
   async function loadThread(threadId: string) {
@@ -698,11 +689,16 @@ export default function WorkScreen() {
     setStreamError(null);
     setSending(true);
     updateActiveRunId(run.id);
-    // We don't have a per-event id locally for unstreamed events. 0 means
-    // "give me everything from the start of the run"; the SSE server
-    // dedupes against what we've already applied locally.
-    const afterId = 0;
-    void streamAndRefreshRun(threadId, run.id, afterId);
+    // The loaded bundle already holds this in-flight run's persisted events.
+    // Resuming replays them from the start (afterId 0), so drop the local copy
+    // first — otherwise replayed events append as duplicates (doubled tool rows
+    // and assistant text).
+    setBundle((prev) =>
+      prev
+        ? { ...prev, eventsByRun: { ...prev.eventsByRun, [run.id]: [] } }
+        : prev,
+    );
+    void streamAndRefreshRun(threadId, run.id, 0);
   }
 
   async function streamAndRefreshRun(
@@ -1459,6 +1455,14 @@ function buildRunTimeline(events: WorkEvent[]): {
         break;
       }
       case "tool_start": {
+        // A tool_start can arrive twice (e.g. a replayed in-flight run);
+        // update the existing row in place rather than emitting a duplicate.
+        const existing = toolsById.get(event.id);
+        if (existing) {
+          existing.name = event.name;
+          existing.input = event.input;
+          break;
+        }
         flushTextSegment();
         const item: ToolItem = {
           id: event.id,
@@ -1995,10 +1999,45 @@ function toolSubtitle(tool: ToolItem): string {
   return "";
 }
 
+// Back-compat: confirmation cards (workflow/trigger/rule saves) used to be
+// emitted as the dashboard `Briefing` root, which renders the 52px display
+// greeting — jarring inside the chat timeline. They now emit a `Confirmation`
+// component. Run events persisted before that change are frozen as `Briefing`,
+// so normalize them here at render time. A real briefing (BriefingCard
+// children) is left untouched.
+function remapLegacyConfirmations(messages: A2UIMessage[]): A2UIMessage[] {
+  return messages.map((message) => {
+    if (!("updateComponents" in message)) return message;
+    const comps = message.updateComponents.components;
+    const isConfirmation =
+      comps.some((c) => c.component === "Briefing") &&
+      !comps.some((c) => c.component === "BriefingCard");
+    if (!isConfirmation) return message;
+    return {
+      ...message,
+      updateComponents: {
+        ...message.updateComponents,
+        components: comps.map((c) => {
+          if (c.component !== "Briefing") return c;
+          const { greeting, subtitle, role, isExample, ...rest } = c;
+          void role;
+          void isExample;
+          return {
+            ...rest,
+            component: "Confirmation",
+            label: typeof greeting === "string" ? greeting : "",
+            title: typeof subtitle === "string" ? subtitle : "",
+          };
+        }),
+      },
+    };
+  });
+}
+
 function SurfaceBlock({ messages }: { messages: A2UIMessage[] }) {
   const surfaces = useMemo(() => {
     let next = new Map<string, SurfaceState>();
-    for (const message of messages) {
+    for (const message of remapLegacyConfirmations(messages)) {
       next = applyMessage(next, message);
     }
     return next;

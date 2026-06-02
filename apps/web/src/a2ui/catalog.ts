@@ -18,6 +18,7 @@ export const CATALOG_ID = "urn:app:catalog:briefing:v1";
 export const ComponentTypes = {
   Briefing: "Briefing",
   BriefingCard: "BriefingCard",
+  Confirmation: "Confirmation",
   MetricCard: "MetricCard",
   ChatResponse: "ChatResponse",
   Markdown: "Markdown",
@@ -52,6 +53,13 @@ export interface MarkdownProps {
   text: string;
 }
 
+export interface ConfirmationProps {
+  component: "Confirmation";
+  label: string; // action eyebrow, e.g. "Created workflow"
+  title: string; // the saved entity's name
+  children: string[]; // IDs of body components (typically a Markdown)
+}
+
 export interface BriefingCardProps {
   component: "BriefingCard";
   metricId: string;   // DB UUID — needed for pin/dashboard API calls
@@ -71,4 +79,5 @@ export interface BriefingCardProps {
 export type ComponentProps =
   | BriefingProps
   | BriefingCardProps
+  | ConfirmationProps
   | MarkdownProps;
