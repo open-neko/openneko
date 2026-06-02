@@ -40,6 +40,33 @@ jobs:
             pnpm install --frozen-lockfile
             pnpm build
 
+            # Keep the openneko CLI in lockstep with releases. It ships
+            # separately from the app (GitHub Releases, installed by
+            # neko-vm-setup.sh), so without this the binary silently drifts
+            # behind the app — a stale CLI corrupts channel-plugin installs.
+            # Fully non-fatal: a missing release asset must never block a deploy.
+            {
+              ARCH=$(uname -m)
+              case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
+              LATEST=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest \
+                | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4 || true)
+              INSTALLED=$(openneko version 2>/dev/null || echo none)
+              if [ -n "${LATEST:-}" ] && [ "${LATEST#v}" != "$INSTALLED" ]; then
+                TMP=$(mktemp -d)
+                if curl -fsSL -o "$TMP/o.tgz" \
+                     "https://github.com/open-neko/openneko/releases/download/$LATEST/openneko_${LATEST#v}_linux_${GOARCH}.tar.gz" \
+                   && tar -xzf "$TMP/o.tgz" -C "$TMP" openneko; then
+                  sudo install -m 0755 "$TMP/openneko" /usr/local/bin/openneko
+                  echo "[deploy] openneko CLI updated to $LATEST (was $INSTALLED)"
+                else
+                  echo "[deploy] WARNING: openneko $LATEST release binary missing; CLI stays at $INSTALLED"
+                fi
+                rm -rf "$TMP"
+              else
+                echo "[deploy] openneko CLI already current ($INSTALLED)"
+              fi
+            } || echo "[deploy] openneko CLI refresh skipped (non-fatal)"
+
             set -a
             source .env
             set +a
