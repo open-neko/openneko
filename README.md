@@ -1,33 +1,43 @@
 # OpenNeko
 
-[![License](https://img.shields.io/github/license/open-neko/openneko)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/open-neko/openneko)](https://github.com/open-neko/openneko/releases/latest)
 [![Self-hosted · Docker](https://img.shields.io/badge/self--hosted-Docker-2496ED?logo=docker&logoColor=white)](INSTALL.md)
 [![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
 [![Stars](https://img.shields.io/github/stars/open-neko/openneko?style=social)](https://github.com/open-neko/openneko/stargazers)
 
-**OpenNeko watches your business data, points out what's worth a look, and drafts the actions to take next — for you to approve.** Self-hosted on your infrastructure, with whichever LLM you prefer. The intelligence is rented; the findings, rules, and decisions are yours.
+**OpenNeko watches your business data, flags what's worth a look, and drafts the next action — for you to approve.** Self-hosted, on your infrastructure, with whichever LLM you prefer.
 
-Models will keep changing — better one this quarter, cheaper one next. What shouldn't keep changing is the memory of how your business actually runs: the promises, exceptions, baselines, and decisions. That layer doesn't belong inside the same vendor that rents you intelligence. OpenNeko keeps the agent and the memory layer on your infrastructure, even when the model isn't.
+> The intelligence is rented; the findings, rules, and decisions are yours. Models keep changing — the memory of how your business actually runs (promises, exceptions, baselines, decisions) shouldn't live inside the vendor that rents you the model. OpenNeko keeps the agent **and** that memory on your infrastructure.
 
 ![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
 
 ## Quickstart
 
-You'll need Docker and one LLM provider API key.
+You'll need **Docker** and **one LLM provider API key**.
+
+**macOS** — Homebrew:
 
 ```bash
-# macOS
 brew install open-neko/tap/openneko
 mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
 
-Linux: download the binary from the [latest release](https://github.com/open-neko/openneko/releases/latest), then run the same `openneko start --mode demo --detach`.
+**Linux** — latest release binary:
 
-Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three watchers against sample data — kick off the Slow-Ship Operations watcher from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing. The full propose-action-and-approve walkthrough is in **[INSTALL.md](INSTALL.md)**.
+```bash
+TAG=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | grep -oE '"tag_name": *"[^"]+"' | head -1 | cut -d'"' -f4)
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL "https://github.com/open-neko/openneko/releases/download/$TAG/openneko_${TAG#v}_linux_$ARCH.tar.gz" | tar -xz openneko
+sudo install -m 0755 openneko /usr/local/bin/ && rm -f openneko
+mkdir -p ~/openneko && cd ~/openneko
+openneko start --mode demo --detach
+```
 
-Full trial flow (live order simulator + scenario injector) and connecting your own data: see **[INSTALL.md](INSTALL.md)**.
+Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three watchers against sample data — kick off **Slow-Ship Operations** from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing.
+
+Full propose-and-approve walkthrough, the live trial (order simulator + scenario injector), and connecting your own data → **[INSTALL.md](INSTALL.md)**.
 
 ## What you get
 
@@ -39,7 +49,12 @@ Full trial flow (live order simulator + scenario injector) and connecting your o
 
 ## How your data gets in
 
-OpenNeko reads through **[GraphJin](https://graphjin.com)** — a GraphQL gateway you point at the data you already have. GraphJin auto-generates a query surface over your **databases** (Postgres, MySQL, SQL Server), and its script layer brings in **files, external APIs, and custom code** as first-class GraphQL fields. The agent queries one consistent surface no matter where the data actually lives — you don't write per-connector plumbing.
+OpenNeko reads through **[GraphJin](https://graphjin.com)**, a GraphQL gateway you point at data you already have:
+
+- **Databases** — Postgres, MySQL, and [more](https://graphjin.com), with an auto-generated query surface.
+- **Files, external APIs, custom code** — first-class GraphQL fields via GraphJin's script layer.
+
+One consistent surface no matter where the data lives — you don't write per-connector plumbing.
 
 ## What stays yours
 
@@ -56,7 +71,12 @@ Apache 2.0, self-hosted, single Postgres. Take a backup, take it with you.
 
 ## Plugins
 
-Extend OpenNeko with sandboxed plugins that add new action kinds — web search, Slack, Gmail, Shopify, Sheets, Telegram, and more. **Every plugin runs in an isolated microVM** with outbound network limited to what its manifest declares; secrets are scoped per plugin and never reach the model context. Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/), and see **[PLUGINS.md](PLUGINS.md)** for the capability model, install policy, and host support.
+Add new action kinds with sandboxed plugins — web search, Slack, Gmail, Shopify, Sheets, Telegram, and more.
+
+- **Every plugin runs in an isolated microVM**, with outbound network limited to what its manifest declares.
+- **Secrets are scoped per plugin** and never reach the model context.
+
+Browse the [marketplace](https://open-neko.github.io/plugins/) · capability model, install policy, and host support in **[PLUGINS.md](PLUGINS.md)**.
 
 ```bash
 openneko install @open-neko/plugin-parallel-search
@@ -72,7 +92,6 @@ openneko install @open-neko/plugin-parallel-search
 ## Docs
 
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
-- [ARCHITECTURE.md](ARCHITECTURE.md) — services, databases, agent runtime, operating-loop wiring (diagrams)
 - [PLUGINS.md](PLUGINS.md) — plugin capabilities, sandbox/security model, marketplaces, install policy, host support
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
 - [CHANGELOG.md](CHANGELOG.md) — releases

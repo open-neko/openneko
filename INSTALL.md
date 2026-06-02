@@ -20,9 +20,10 @@ openneko start --mode demo --detach
 ### Linux
 
 ```bash
-curl -fsSL https://github.com/open-neko/openneko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
-  | tar -xz openneko
-sudo install -m 0755 openneko /usr/local/bin/
+TAG=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | grep -oE '"tag_name": *"[^"]+"' | head -1 | cut -d'"' -f4)
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL "https://github.com/open-neko/openneko/releases/download/$TAG/openneko_${TAG#v}_linux_$ARCH.tar.gz" | tar -xz openneko
+sudo install -m 0755 openneko /usr/local/bin/ && rm -f openneko
 mkdir -p ~/openneko && cd ~/openneko
 openneko start --mode demo --detach
 ```
@@ -98,13 +99,22 @@ openneko stop                          # leaves volumes intact
 openneko start --mode demo --detach    # use the same --mode you started with
 ```
 
+> **Installed before 1.17.2?** Those releases shipped a Homebrew *formula*; 1.17.2+ ships a *cask*, so `brew upgrade openneko` won't move you across. Switch once:
+>
+> ```bash
+> brew uninstall --formula openneko
+> brew install --cask open-neko/tap/openneko
+> ```
+>
+> After that, `brew upgrade openneko` keeps the cask current as normal.
+
 ### Linux
 
 ```bash
-curl -fsSL https://github.com/open-neko/openneko/releases/latest/download/openneko_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz \
-  | tar -xz openneko
-sudo install -m 0755 openneko /usr/local/bin/
-rm openneko
+TAG=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | grep -oE '"tag_name": *"[^"]+"' | head -1 | cut -d'"' -f4)
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL "https://github.com/open-neko/openneko/releases/download/$TAG/openneko_${TAG#v}_linux_$ARCH.tar.gz" | tar -xz openneko
+sudo install -m 0755 openneko /usr/local/bin/ && rm -f openneko
 cd ~/openneko
 openneko stop
 openneko start --mode demo --detach
