@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.2](https://github.com/open-neko/openneko/compare/v1.17.1...v1.17.2) (2026-06-02)
+
+
+### Miscellaneous Chores
+
+* release openneko 1.17.2 ([d738d0c](https://github.com/open-neko/openneko/commit/d738d0c487146f59c86606a44cafa79f28bed679))
+
 ## [1.17.1](https://github.com/open-neko/openneko/compare/v1.17.0...v1.17.1) (2026-06-02)
 
 
