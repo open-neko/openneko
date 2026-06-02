@@ -44,11 +44,12 @@ release:
   draft: false
   prerelease: auto
 
-brews:
+# Homebrew distribution. GoReleaser deprecated `brews` (formulae) in favor of
+# `homebrew_casks`; casks are now the supported way to ship a prebuilt binary.
+homebrew_casks:
   - name: openneko
-    # Don't overwrite the tap's pinned stable formula when releasing a
-    # prerelease (vX.Y.Z-rc1 etc). "auto" → skip when GoReleaser sees a
-    # prerelease tag; stable releases push as usual.
+    # Don't overwrite the tap's pinned stable cask when releasing a prerelease
+    # (vX.Y.Z-rc1 etc). "auto" → skip on prerelease tags; stable releases push.
     skip_upload: auto
     repository:
       owner: open-neko
@@ -56,11 +57,15 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://getneko.app"
     description: "OpenNeko operator CLI — supervises the stack and manages plugins"
-    license: "Apache-2.0"
-    install: |
-      bin.install "openneko"
-    test: |
-      system "#{bin}/openneko", "version"
+    # The binary isn't code-signed/notarized, so macOS quarantines it on
+    # download. Strip the attribute on install so `openneko` runs without a
+    # Gatekeeper "cannot be opened" prompt.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/openneko"]
+          end
     caveats: |
       OpenNeko needs Docker. Install Docker Desktop (macOS) or Docker Engine (Linux) first.
       `openneko start` materializes its compose file under .openneko/runtime/ in the
