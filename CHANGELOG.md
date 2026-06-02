@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.3](https://github.com/open-neko/openneko/compare/v1.17.2...v1.17.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* **worker:** back off and dedupe inbound channel poll failures ([#80](https://github.com/open-neko/openneko/issues/80)) ([15085fb](https://github.com/open-neko/openneko/commit/15085fb00381fb3d536b77ec95a74aadf1054afb))
+
 ## [1.17.2](https://github.com/open-neko/openneko/compare/v1.17.1...v1.17.2) (2026-06-02)
 
 
