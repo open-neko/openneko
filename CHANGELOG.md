@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/open-neko/openneko/compare/v1.17.0...v1.17.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **release:** copy interaction+channels package.json in Docker build; refresh CLI on deploy ([d946fc0](https://github.com/open-neko/openneko/commit/d946fc0497265d34d527eee48583261e9882a8be))
+
 ## [1.17.0](https://github.com/open-neko/neko/compare/v1.16.0...v1.17.0) (2026-05-25)
 
 
