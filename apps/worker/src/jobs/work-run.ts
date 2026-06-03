@@ -4,11 +4,39 @@ import {
   getWorkRun,
   runChatTurn,
   scrubAgentEvent,
+  type RunChatTurnDeps,
 } from "@neko/llm/work";
 import {
   getCurrentScrubber,
   getPluginRegistryInstance,
 } from "../plugins/registry-instance.js";
+import { makeSandboxRunCore } from "../agent-sandbox/launcher.js";
+
+/**
+ * Agent-in-sandbox wiring. OPENNEKO_AGENT_RUNTIME=openshell injects a
+ * sandbox-running runCore (the agent loop runs in an OpenShell sandbox);
+ * default `inprocess` is unchanged. The model provider + egress are env-wired
+ * for now (per-org auto-sync is a follow-up).
+ */
+function agentRuntimeDeps(): Partial<RunChatTurnDeps> {
+  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "inprocess").toLowerCase() !== "openshell") {
+    return {};
+  }
+  const host = process.env.OPENNEKO_AGENT_MODEL_HOST;
+  const binary = process.env.OPENNEKO_AGENT_MODEL_BINARY;
+  return {
+    runCore: makeSandboxRunCore({
+      agentImage: process.env.OPENNEKO_AGENT_IMAGE ?? "ghcr.io/open-neko/agent:node20",
+      gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
+      gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+      modelProvider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || undefined,
+      modelEgress: host && binary ? [{ host, binary }] : [],
+      env: process.env.OPENNEKO_AGENT_HERMES_HOME
+        ? { HERMES_HOME: process.env.OPENNEKO_AGENT_HERMES_HOME }
+        : undefined,
+    }),
+  };
+}
 
 export async function runWorkRun(
   _jobId: string,
@@ -42,12 +70,15 @@ export async function runWorkRun(
   const pluginActions =
     getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [];
 
-  await runChatTurn({
-    orgId,
-    threadId,
-    runId,
-    message,
-    emit,
-    pluginActions,
-  });
+  await runChatTurn(
+    {
+      orgId,
+      threadId,
+      runId,
+      message,
+      emit,
+      pluginActions,
+    },
+    agentRuntimeDeps(),
+  );
 }

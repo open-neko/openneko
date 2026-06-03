@@ -31,4 +31,8 @@ export { KNOWN_SKILL_DEPS, aggregateSkillDeps, type SkillDeps } from "./skill-de
 // keep it in the same final tier (see the run-chat-turn note above).
 export { runAgentBackend, type RunAgentBackendInput } from "./agent-core";
 export { runChatTurn } from "./run-chat-turn";
-export type { RunChatTurnOptions, RunChatTurnResult } from "./run-chat-turn";
+export type {
+  RunChatTurnDeps,
+  RunChatTurnOptions,
+  RunChatTurnResult,
+} from "./run-chat-turn";
