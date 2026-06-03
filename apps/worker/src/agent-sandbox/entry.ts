@@ -7,6 +7,7 @@ import {
 } from "@neko/llm";
 import { runAgentBackend, type RunAgentBackendInput } from "@neko/llm/work";
 import { BrokerControlPlane } from "./broker-client";
+import { EVENT_MARKER, RESULT_MARKER } from "./protocol";
 
 /**
  * Runs INSIDE the agent's OpenShell sandbox (Phase 3). The launcher (work-run)
@@ -34,10 +35,6 @@ interface SandboxJob {
   pluginActions?: RunAgentBackendInput["pluginActions"];
   workspace: AgentWorkspace;
 }
-
-/** Line markers the launcher greps for in the exec's stdout stream. */
-export const EVENT_MARKER = "__openneko_event__";
-export const RESULT_MARKER = "__openneko_agent_result__";
 
 function requireEnv(name: string): string {
   const value = process.env[name];

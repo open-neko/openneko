@@ -5,7 +5,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { AgentEvent, AgentRunResult } from "@neko/llm";
 import type { RunAgentBackendInput } from "@neko/llm/work";
-import { EVENT_MARKER, RESULT_MARKER } from "./entry";
+import { EVENT_MARKER, RESULT_MARKER } from "./protocol";
 
 /** Path of the agent entrypoint inside the agent image (the `agent` Docker stage). */
 const AGENT_ENTRY = "/app/apps/worker/src/agent-sandbox/entry.ts";
