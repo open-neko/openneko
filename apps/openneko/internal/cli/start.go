@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +24,7 @@ func newStartCmd() *cobra.Command {
 	var detach bool
 	var skipMigrate bool
 	var pullPolicy string
+	var agentRuntime string
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Bring up the OpenNeko stack",
@@ -46,7 +49,17 @@ Modes:
 				_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
 			}
 
+			if agentRuntime != "" && agentRuntime != "openshell" {
+				return fmt.Errorf("--runtime must be openshell (got %q)", agentRuntime)
+			}
+			if agentRuntime == "openshell" {
+				if err := configureOpenShellStateDir(); err != nil {
+					return err
+				}
+			}
+
 			sup := compose.New(assets.ComposeFS)
+			sup.AgentRuntime = agentRuntime
 			files, err := sup.Materialize(m)
 			if err != nil {
 				return err
@@ -102,7 +115,31 @@ Modes:
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in the background after services start")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
 	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
+	cmd.Flags().StringVar(&agentRuntime, "runtime", "", "Agent runtime: 'openshell' sandboxes the agent + plugins via a containerized OpenShell gateway (default: in-process)")
 	return cmd
+}
+
+// configureOpenShellStateDir sets OPENSHELL_STATE_DIR per platform when the
+// caller hasn't. The containerized gateway bind-mounts its PKI and the
+// per-sandbox JWT from this dir into sandboxes; the in-VM docker daemon must
+// resolve the SAME host path. On macOS, OrbStack only maps paths under the
+// user's home into its Linux VM — a /var/lib/... source comes back as an empty
+// mount and the sandbox crash-loops on a missing JWT — so the state dir must
+// live under $HOME. On Linux the compose default (/var/lib/openneko/openshell)
+// is correct and docker creates it.
+func configureOpenShellStateDir() error {
+	if runtime.GOOS != "darwin" || os.Getenv("OPENSHELL_STATE_DIR") != "" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(home, ".openneko", "openshell")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.Setenv("OPENSHELL_STATE_DIR", dir)
 }
 
 func waitDBHealthy(ctx context.Context, timeout time.Duration) error {

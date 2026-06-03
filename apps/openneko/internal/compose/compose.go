@@ -43,6 +43,9 @@ type Supervisor struct {
 	HasKVM func() bool
 	// GOOS lets tests stub the platform.
 	GOOS string
+	// AgentRuntime, when "openshell", overlays the containerized OpenShell
+	// gateway and runs the agent + plugins in sandboxes. Empty = in-process.
+	AgentRuntime string
 }
 
 func New(assets fs.FS) *Supervisor {
@@ -87,6 +90,9 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	}
 	if s.GOOS == "linux" && s.HasKVM() {
 		files = append(files, "compose/plugins.linux.yml")
+	}
+	if s.AgentRuntime == "openshell" {
+		files = append(files, "compose/openshell.yml")
 	}
 	var out []string
 	for _, name := range files {

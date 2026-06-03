@@ -13,6 +13,7 @@ func sampleFS() fstest.MapFS {
 		"compose/dev.yml":           {Data: []byte("services: { dev: {} }\n")},
 		"compose/demo.yml":          {Data: []byte("services: { demo: {} }\n")},
 		"compose/plugins.linux.yml": {Data: []byte("services: { sandbox: {} }\n")},
+		"compose/openshell.yml":     {Data: []byte("services: { openshell-gateway: {} }\n")},
 	}
 }
 
@@ -70,6 +71,54 @@ func TestMaterializeLinuxNoKVMSkipsPlugins(t *testing.T) {
 	for _, f := range files {
 		if strings.Contains(filepath.Base(f), "plugins") {
 			t.Fatalf("plugins overlay should not be included without KVM: %v", files)
+		}
+	}
+}
+
+func TestMaterializeOpenShellOverlay(t *testing.T) {
+	dir := t.TempDir()
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "darwin", AgentRuntime: "openshell"}
+	files, err := s.Materialize(ModeProd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, f := range files {
+		got = append(got, filepath.Base(f))
+	}
+	want := []string{"core.yml", "openshell.yml"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestMaterializeOpenShellComposesWithLinuxPlugins(t *testing.T) {
+	dir := t.TempDir()
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return true }, GOOS: "linux", AgentRuntime: "openshell"}
+	files, err := s.Materialize(ModeProd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, f := range files {
+		got = append(got, filepath.Base(f))
+	}
+	want := []string{"core.yml", "plugins.linux.yml", "openshell.yml"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestMaterializeNoOpenShellByDefault(t *testing.T) {
+	dir := t.TempDir()
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "darwin"}
+	files, err := s.Materialize(ModeProd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if strings.Contains(filepath.Base(f), "openshell") {
+			t.Fatalf("openshell overlay must be opt-in: %v", files)
 		}
 	}
 }
