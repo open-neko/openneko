@@ -49,6 +49,7 @@ import {
   buildWorkMemoryServer,
   type PluginActionDescriptor,
 } from "./tools";
+import type { AgentControlPlane } from "./control-plane";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
   listInstalledSkills as defaultListInstalledSkills,
@@ -68,6 +69,11 @@ export type RunChatTurnOptions = {
    * Only honored when the backend supports MCP tools (claude-agent).
    */
   pluginActions?: readonly PluginActionDescriptor[];
+  /**
+   * Control-plane impl for the DB-touching MCP tools. Default (undefined)
+   * uses the in-process plane; the agent sandbox injects a broker client.
+   */
+  controlPlane?: AgentControlPlane;
 };
 
 // Tests can substitute any of these without touching the call site. Production
@@ -222,6 +228,7 @@ export async function runChatTurn(
           runId,
           descriptors: pluginActions,
           emit: wrappedEmit,
+          controlPlane: opts.controlPlane,
         })
       : null;
 
@@ -235,11 +242,10 @@ export async function runChatTurn(
             : {}),
           ...(supportsMemoryTool
             ? {
-                neko_memory: buildWorkMemoryServer({
-                  orgId,
-                  threadId,
-                  runId,
-                }),
+                neko_memory: buildWorkMemoryServer(
+                  { orgId, threadId, runId },
+                  { controlPlane: opts.controlPlane },
+                ),
               }
             : {}),
           ...(supportsWorkflowTool
