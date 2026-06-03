@@ -256,6 +256,15 @@ async function provisionOpenShellRuntime(orgId: string, backend: string): Promis
   }
   process.env.OPENNEKO_AGENT_MODEL_BINARY ||= binary;
   process.env.OPENNEKO_AGENT_MODEL_KEY_ENV ||= keyEnv;
+  // hermes reads its model + provider from config.yaml under HERMES_HOME. In the
+  // sandbox that config must be MIRRORED in — the launcher does so when
+  // OPENNEKO_AGENT_HERMES_HOME points at the host home provisionHermes writes.
+  // Without it, in-box hermes finds no config and silently falls back to a
+  // default model that 404s. (claude takes the model via its backend args, so
+  // it needs no hermes home.)
+  if (backend !== "claude-agent") {
+    process.env.OPENNEKO_AGENT_HERMES_HOME ||= hermesHomeForOrg(orgId);
+  }
 
   const apiKey = decryptSecrets(row.secrets).apiKey;
   if (!apiKey) return;

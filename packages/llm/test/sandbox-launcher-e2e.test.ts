@@ -73,7 +73,15 @@ d("agent-in-sandbox e2e (opt-in)", () => {
       });
 
       expect(result.status).toBe("completed");
-      expect(result.finalText.trim().length).toBeGreaterThan(0);
+      // The prompt demands exactly "PONG", so a real model turn returns it.
+      // Assert the REAL content AND reject error-as-success: an egress / proxy /
+      // model failure surfaces as error text in finalText (e.g. "API call failed
+      // after 3 retries: HTTP 404"), which a bare non-empty check would let
+      // pass — that gap let a broken model call through a "green" run.
+      expect(result.finalText).toMatch(/PONG/i);
+      expect(result.finalText).not.toMatch(
+        /API call failed|HTTP \d{3}|\berror\b|denied|not found|placeholder/i,
+      );
     },
     300_000,
   );
