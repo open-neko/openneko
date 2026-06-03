@@ -8,8 +8,6 @@ import {
   extractWorkflowSaveFence,
 } from "../workflows/fence-parsers";
 import {
-  buildRuleBuilderServer,
-  buildWorkflowBuilderServer,
   handleWorkActionRequest,
   policySavedCard,
   saveWorkflowWithTrigger,
@@ -42,13 +40,8 @@ import {
   saveAssistantWorkMessage,
   setWorkThreadBackendState,
 } from "./store";
-import {
-  buildPluginActionServer,
-  buildRenderCardsServer,
-  buildSkillBuilderServer,
-  buildWorkMemoryServer,
-  type PluginActionDescriptor,
-} from "./tools";
+import type { PluginActionDescriptor } from "./tools";
+import { runAgentBackend } from "./agent-core";
 import type { AgentControlPlane } from "./control-plane";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
@@ -220,69 +213,18 @@ export async function runChatTurn(
       pluginActions: opts.pluginActions ?? [],
     });
 
-    const pluginActions = opts.pluginActions ?? [];
-    const pluginActionServer = backend.capabilities.mcpTools
-      ? buildPluginActionServer({
-          orgId,
-          threadId,
-          runId,
-          descriptors: pluginActions,
-          emit: wrappedEmit,
-          controlPlane: opts.controlPlane,
-        })
-      : null;
-
-    const mcpServers = backend.capabilities.mcpTools
-      ? {
-          ...(supportsCardTool
-            ? { neko_ui: buildRenderCardsServer(wrappedEmit) }
-            : {}),
-          ...(supportsSkillTool
-            ? { neko_skills: buildSkillBuilderServer(workspace.skillsRoot) }
-            : {}),
-          ...(supportsMemoryTool
-            ? {
-                neko_memory: buildWorkMemoryServer(
-                  { orgId, threadId, runId },
-                  { controlPlane: opts.controlPlane },
-                ),
-              }
-            : {}),
-          ...(supportsWorkflowTool
-            ? {
-                neko_workflow_builder: buildWorkflowBuilderServer({
-                  orgId,
-                  createdByThreadId: threadId,
-                  createdByRunId: runId,
-                  emit: wrappedEmit,
-                }),
-              }
-            : {}),
-          ...(supportsPolicyTool
-            ? {
-                neko_rule_builder: buildRuleBuilderServer({
-                  orgId,
-                  createdByThreadId: threadId,
-                  createdByRunId: runId,
-                  emit: wrappedEmit,
-                }),
-              }
-            : {}),
-          ...(pluginActionServer
-            ? { neko_plugin_actions: pluginActionServer }
-            : {}),
-        }
-      : undefined;
-
-    const result = await backend.run({
+    const result = await runAgentBackend({
+      backend,
       prompt,
       userMessage: message,
       orgId,
+      threadId,
+      runId,
       workspace,
       backendState: bundle.thread.backendState,
-      onEvent: wrappedEmit,
-      mcpServers,
-      tag: `work ${runId}`,
+      pluginActions: opts.pluginActions ?? [],
+      controlPlane: opts.controlPlane,
+      emit: wrappedEmit,
       signal,
     });
 
