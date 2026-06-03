@@ -133,7 +133,22 @@ a{color:inherit;text-decoration:none}
 .greet em{font-style:italic;font-weight:700;color:var(--accent)}
 .summary{font-size:15px;line-height:1.5;color:var(--text2);max-width:62ch;margin-bottom:6px}
 .summary b{color:var(--text);font-weight:600}
-.asof{font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic;margin-bottom:var(--d-section-gap)}
+.asof{font-family:var(--mono);font-size:11px;color:var(--text3);font-style:italic;margin-bottom:14px}
+
+/* hours-saved value-prop hero — the cumulative "look what we did" number */
+.valueprop{display:inline-flex;align-items:center;gap:13px;margin-bottom:var(--d-section-gap);
+  background:linear-gradient(135deg,var(--accent-soft),color-mix(in srgb,var(--success-soft) 55%,var(--accent-soft)));
+  border:1px solid color-mix(in srgb,var(--accent) 22%,var(--border));border-radius:14px;
+  padding:10px 16px 10px 13px;text-decoration:none;color:var(--text);
+  transition:transform .18s,box-shadow .18s,border-color .18s}
+.valueprop:hover{transform:translateY(-1px);box-shadow:var(--shadow-h);border-color:color-mix(in srgb,var(--accent) 42%,var(--border))}
+.vp-ic{width:32px;height:32px;border-radius:9px;background:var(--card);display:grid;place-items:center;font-size:16px;flex:0 0 auto;box-shadow:var(--shadow)}
+.vp-num{font-family:var(--display);font-weight:800;font-size:25px;letter-spacing:-.03em;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.vp-num .vp-u{font-size:13px;margin-left:2px;opacity:.7}
+.vp-txt{font-size:12.5px;color:var(--text2);line-height:1.38}
+.vp-txt b{color:var(--success-ink);font-weight:700}
+.vp-how{margin-left:4px;font-size:11px;font-weight:600;color:var(--accent);opacity:.75;white-space:nowrap;font-family:var(--mono)}
+.valueprop:hover .vp-how{opacity:1}
 
 /* ─── SECTION LABEL ─── */
 .label{display:flex;align-items:center;gap:10px;font-family:var(--display);
@@ -333,9 +348,16 @@ section{margin-bottom:var(--d-section-gap)}
   <p class="summary fu" style="animation-delay:.08s">Revenue is <b>up 6.2%</b> on the prior period and burn held flat. Support backlog crept past its threshold overnight — worth a glance. Everything else ran clean.</p>
   <div class="asof fu" style="animation-delay:.1s">as of 9:14 AM</div>
 
+  <a class="valueprop fu" style="animation-delay:.11s" href="#" title="How hours saved is estimated">
+    <span class="vp-ic">⏱</span>
+    <span class="vp-num">142<span class="vp-u">hrs</span></span>
+    <span class="vp-txt">saved since you installed OpenNeko<br><b>+9.2h this week</b> · 38 tasks handled for you</span>
+    <span class="vp-how">how?&nbsp;→</span>
+  </a>
+
   <!-- VITALS RAIL -->
   <section class="fu" style="animation-delay:.12s">
-    <div class="label">Vitals <span class="ct">6</span></div>
+    <div class="label">Vitals <span class="ct">7</span></div>
     <div class="vitals" id="vitals"></div>
   </section>
 
@@ -390,7 +412,7 @@ section{margin-bottom:var(--d-section-gap)}
   <!-- PROOF -->
   <section class="fu" style="animation-delay:.28s">
     <details class="proof">
-      <summary><span class="tick">↳</span><span class="ct">14</span><span>fired on your behalf in the last 24h</span><span class="caret">▸</span></summary>
+      <summary><span class="tick">↳</span><span class="ct">14</span><span>fired on your behalf in the last 24h · saved you ~3.2h</span><span class="caret">▸</span></summary>
       <div class="proof-body">
         <div class="crow good"><span class="tone"></span><div class="body"><div class="hl">Renewed 9 expiring API keys</div><div class="meta">auto · billing-watch · 2:02 AM</div></div></div>
         <div class="crow good"><span class="tone"></span><div class="body"><div class="hl">Tagged 41 inbound leads by ICP fit</div><div class="meta">rule "lead-triage" · 6:30 AM</div></div></div>
@@ -425,6 +447,7 @@ const C={good:'var(--success-mid)',watch:'var(--watch)',act:'var(--danger)',cool
 
 /* ── vitals data ── */
 const vitals=[
+  {k:'Hours saved · wk',mood:'cool',num:'37h',delta:'▲ 9.2h',dc:'up',pts:[18,22,20,26,28,31,37]},
   {k:'Net revenue',mood:'good',num:'$184.2k',delta:'▲ 6.2%',dc:'up',pts:[140,150,148,162,170,168,184]},
   {k:'Monthly burn',mood:'good',num:'$96.4k',delta:'▼ 0.4%',dc:'up',pts:[101,99,100,98,97,97,96]},
   {k:'Active orgs',mood:'good',num:'1,284',delta:'▲ 31',dc:'up',pts:[1180,1205,1220,1238,1251,1267,1284]},
