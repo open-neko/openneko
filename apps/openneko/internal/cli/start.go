@@ -99,10 +99,7 @@ Modes:
 			// first sandbox-create (the user's first chat) never blocks on a
 			// large pull. Best-effort: a failure just falls back to a lazy pull.
 			if agentRuntime == "openshell" {
-				agentImg := os.Getenv("OPENNEKO_AGENT_IMAGE")
-				if agentImg == "" {
-					agentImg = "ghcr.io/open-neko/agent:" + os.Getenv("OPENNEKO_VERSION")
-				}
+				agentImg := agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION"))
 				fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
 				if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
@@ -133,23 +130,40 @@ Modes:
 	return cmd
 }
 
-// configureOpenShellStateDir sets OPENSHELL_STATE_DIR per platform when the
-// caller hasn't. The containerized gateway bind-mounts its PKI and the
-// per-sandbox JWT from this dir into sandboxes; the in-VM docker daemon must
-// resolve the SAME host path. On macOS, OrbStack only maps paths under the
-// user's home into its Linux VM — a /var/lib/... source comes back as an empty
-// mount and the sandbox crash-loops on a missing JWT — so the state dir must
-// live under $HOME. On Linux the compose default (/var/lib/openneko/openshell)
-// is correct and docker creates it.
-func configureOpenShellStateDir() error {
-	if runtime.GOOS != "darwin" || os.Getenv("OPENSHELL_STATE_DIR") != "" {
-		return nil
+// agentImageRef resolves the agent sandbox image: an explicit override wins,
+// else the default repo at the running version.
+func agentImageRef(override, version string) string {
+	if override != "" {
+		return override
 	}
+	return "ghcr.io/open-neko/agent:" + version
+}
+
+// openShellStateDirOverride returns the OPENSHELL_STATE_DIR to set for goos, or
+// "" to keep the compose default. The containerized gateway bind-mounts its PKI
+// and the per-sandbox JWT from this dir into sandboxes; the in-VM docker daemon
+// must resolve the SAME host path. macOS/OrbStack only maps paths under the
+// user's home into its Linux VM — a /var/lib/... source comes back as an empty
+// mount and the sandbox crash-loops on a missing JWT — so on macOS the state
+// dir must live under $HOME. On Linux the compose default
+// (/var/lib/openneko/openshell) is correct and docker creates it. An
+// already-set value is always respected.
+func openShellStateDirOverride(goos, home, existing string) string {
+	if goos != "darwin" || existing != "" {
+		return ""
+	}
+	return filepath.Join(home, ".openneko", "openshell")
+}
+
+func configureOpenShellStateDir() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(home, ".openneko", "openshell")
+	dir := openShellStateDirOverride(runtime.GOOS, home, os.Getenv("OPENSHELL_STATE_DIR"))
+	if dir == "" {
+		return nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
