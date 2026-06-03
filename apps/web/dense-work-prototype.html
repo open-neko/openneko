@@ -102,9 +102,6 @@ a{color:inherit;text-decoration:none}
 .convo{background:transparent;border:0;box-shadow:none;min-height:60vh;display:flex;flex-direction:column}
 .thread-title{font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--text);
   padding:2px 4px 12px;border-bottom:1px solid var(--border);margin-bottom:18px;display:flex;align-items:center;gap:9px}
-.thread-title .src{margin-left:auto;font-family:var(--body);font-size:11px;font-weight:500;color:var(--text3);
-  display:inline-flex;align-items:center;gap:5px}
-.thread-title .src i{width:6px;height:6px;border-radius:50%;background:var(--success-mid)}
 .feed{display:flex;flex-direction:column;gap:var(--d-msg-gap);max-width:var(--d-bubble)}
 .umsg{align-self:flex-end;background:var(--neutral);border-radius:16px;padding:10px 14px;font-size:14px;max-width:80%}
 .amsg{display:flex;flex-direction:column;gap:11px}
@@ -279,7 +276,6 @@ table.data .bar{height:5px;border-radius:3px;background:var(--accent);opacity:.8
     <main class="convo">
       <div class="thread-title">
         <span>Top customers &amp; concentration</span>
-        <span class="src"><i></i>postgres · live</span>
       </div>
       <div class="feed">
         <div class="umsg">Who are our top 10 customers by revenue this year, and how concentrated is it?</div>

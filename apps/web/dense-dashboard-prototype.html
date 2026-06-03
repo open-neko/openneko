@@ -242,10 +242,17 @@ section{margin-bottom:var(--d-section-gap)}
 @keyframes reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .idetail .dtext{font-size:13.5px;line-height:1.55;color:var(--text2)}
 .idetail svg.spark{margin-top:12px;height:74px}
-.icard .expand{position:absolute;top:12px;right:13px;z-index:2;font-size:11px;color:var(--text3);
-  font-family:var(--mono);opacity:0;transition:opacity .2s}
-.icard:hover .expand{opacity:1}
-html[data-density="comfortable"] .icard .expand{display:none}
+/* Card actions — retained from today's .iactions: deep-dive, retry, copy,
+   dismiss. Hover-revealed (always-on for touch in the real app). */
+.iacts{position:absolute;top:10px;right:11px;z-index:3;display:flex;gap:3px;
+  opacity:0;transition:opacity .18s}
+.icard:hover .iacts,.icard:focus-within .iacts{opacity:1}
+.iacts button{width:26px;height:26px;border-radius:8px;border:1px solid transparent;background:transparent;
+  color:var(--text3);display:grid;place-items:center;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.iacts button:hover{background:var(--neutral);border-color:var(--border);color:var(--text)}
+.iacts button svg{width:13px;height:13px}
+.iacts button.deep:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,var(--border));background:var(--accent-soft)}
+.iacts button.kill:hover{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,var(--border));background:var(--danger-soft)}
 
 /* ─── FINDINGS — dense rows ─── */
 .finds{display:grid;gap:9px}
@@ -449,7 +456,12 @@ const briefing=[
 ];
 document.getElementById('briefing').innerHTML=briefing.map((b,i)=>`
   <article class="icard ${b.mood}" data-i="${i}" style="animation:fadeUp .5s ease ${(.2+i*0.05).toFixed(2)}s both">
-    <span class="expand">expand ↕</span>
+    <div class="iacts">
+      <button class="deep" title="Deep dive in Work" aria-label="Deep dive"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.2"/><line x1="10.3" y1="10.3" x2="14" y2="14" stroke-linecap="round"/></svg></button>
+      <button title="Re-run this metric" aria-label="Retry"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12.8 8a4.8 4.8 0 1 1-1.5-3.5"/><path d="M12.9 2.8v2.4h-2.4"/></svg></button>
+      <button title="Copy card text" aria-label="Copy"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55"><rect x="5.4" y="5.4" width="7.6" height="7.6" rx="1.7"/><path d="M10.4 5.4V4A1.5 1.5 0 0 0 8.9 2.5H4A1.5 1.5 0 0 0 2.5 4v4.9A1.5 1.5 0 0 0 4 10.4h1.4"/></svg></button>
+      <button class="kill" title="Dismiss" aria-label="Dismiss"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4.2" y1="4.2" x2="11.8" y2="11.8"/><line x1="11.8" y1="4.2" x2="4.2" y2="11.8"/></svg></button>
+    </div>
     <div class="itop">
       <span class="inum">${String(i+1).padStart(2,'0')}</span>
       <div class="icontent">
@@ -464,6 +476,7 @@ document.getElementById('briefing').innerHTML=briefing.map((b,i)=>`
     </div>
   </article>`).join('');
 document.querySelectorAll('.icard').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('open')));
+document.querySelectorAll('.iacts button').forEach(b=>b.addEventListener('click',e=>e.stopPropagation()));
 
 /* ── findings ── */
 const finds=[
