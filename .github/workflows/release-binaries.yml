@@ -16,6 +16,14 @@ permissions:
 
 jobs:
   build-image:
+    # Build on manual workflow_dispatch (preview/branch builds) OR on a real
+    # STABLE release. Skip release events for pre-release tags (e.g.
+    # v1.18.0-openshell.N): release-please auto-publishes a Release for every tag
+    # we push, which would otherwise (a) double-build alongside the manual run
+    # and (b) tag :latest from an unreleased preview, clobbering downloads. The
+    # manual run builds previews WITHOUT :latest; stable releases (tag has no
+    # '-') still build and tag :latest as before.
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
     name: ${{ matrix.image }} (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -123,6 +131,10 @@ jobs:
           retention-days: 1
 
   merge-manifests:
+    # Same guard as build-image (also auto-skips via needs): never merge/tag a
+    # pre-release tag on a release event — and crucially never tag :latest from
+    # one. Stable releases + manual runs proceed.
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
     name: merge manifest (${{ matrix.image }})
     runs-on: ubuntu-22.04
     needs: build-image
