@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM base AS cli
 ARG GRAPHJIN_VERSION=3.18.25
 ARG HERMES_AGENT_REF=a91a57fa5a13d516c38b07a141a9ce8a3daabeb0
+ARG OPENSHELL_VERSION=0.0.54
 # TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
 # graphjin download pick the right tarball when building multi-arch.
 ARG TARGETARCH
@@ -51,6 +52,14 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
     && rm -rf /tmp/uv-cache /root/.cache/uv \
     && hermes --version
 RUN npm install -g @anthropic-ai/claude-code
+# openshell: CLI driver for the OpenShell plugin runtime
+# (OPENNEKO_PLUGIN_RUNTIME=openshell). Static musl binary, no runtime deps.
+RUN OS_ARCH="$(case "${TARGETARCH}" in amd64) echo x86_64 ;; arm64) echo aarch64 ;; *) echo "${TARGETARCH}" ;; esac)" \
+    && curl -fsSL -o /tmp/openshell.tgz \
+      "https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_VERSION}/openshell-${OS_ARCH}-unknown-linux-musl.tar.gz" \
+    && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
+    && rm /tmp/openshell.tgz \
+    && openshell --version
 
 # Bundled skills (xlsx / pptx / docx / pdf / skill-creator) shell out to
 # Python + LibreOffice + Poppler / qpdf. Mirror packages/llm/src/work/skill-deps.ts

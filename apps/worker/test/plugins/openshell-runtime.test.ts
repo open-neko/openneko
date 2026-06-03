@@ -84,7 +84,7 @@ describe("OpenShellRuntime", () => {
     h.state.respond = () => ({ stdout: "", code: 0 });
   });
 
-  function make(opts?: { gatewayEndpoint?: string }) {
+  function make(opts?: { gatewayEndpoint?: string; gatewayName?: string }) {
     return new OpenShellRuntime({
       image: "ghcr.io/open-neko/plugin-base:node20",
       bundleDir: "/tmp/bundles",
@@ -278,6 +278,18 @@ describe("OpenShellRuntime", () => {
       "https://gw:17670",
     ]);
     expect(h.calls[0]?.args[2]).toBe("sandbox");
+  });
+
+  it("prefers --gateway <name> over --gateway-endpoint (mTLS path)", async () => {
+    const rt = make({ gatewayName: "openneko", gatewayEndpoint: "https://gw:18080" });
+    await rt.start({
+      id: "p1",
+      hostWorkspacePath: "/tmp/bundles/p1",
+      network: "none",
+      hosts: [],
+    });
+    expect(h.calls[0]?.args.slice(0, 2)).toEqual(["--gateway", "openneko"]);
+    expect(h.calls[0]?.args).not.toContain("--gateway-endpoint");
   });
 
   it("stop deletes the sandbox and clears hasPlugin; destroyAll clears all", async () => {

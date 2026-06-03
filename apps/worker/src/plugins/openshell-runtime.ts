@@ -32,9 +32,15 @@ export interface OpenShellRuntimeOptions {
   /** `openshell` binary; defaults to resolving from PATH. */
   cli?: string;
   /**
-   * Gateway endpoint. When set it's passed as the top-level
-   * --gateway-endpoint flag; otherwise the CLI's stored gateway (or the
-   * OPENSHELL_GATEWAY_ENDPOINT env) drives connection.
+   * Registered gateway name (`--gateway <name>`). Required for the mTLS
+   * path: the CLI loads the client cert from its gateway config dir. Takes
+   * precedence over gatewayEndpoint.
+   */
+  gatewayName?: string;
+  /**
+   * Direct gateway endpoint (`--gateway-endpoint <url>`). For https this is
+   * edge/OIDC auth, NOT mTLS client certs — use gatewayName for mTLS. When
+   * neither is set the CLI's active/OPENSHELL_GATEWAY gateway drives it.
    */
   gatewayEndpoint?: string;
   /** Host dir holding `<id>/run.js` to upload (PluginRegistry.workRoot). */
@@ -142,10 +148,14 @@ export class OpenShellRuntime implements PluginRuntime {
 
   private run(args: string[], timeoutMs: number): Promise<string> {
     const cli = this.options.cli ?? "openshell";
-    const endpoint = this.options.gatewayEndpoint
-      ? ["--gateway-endpoint", this.options.gatewayEndpoint]
-      : [];
-    return runProcessOnce(cli, [...endpoint, ...args], timeoutMs);
+    return runProcessOnce(cli, [...this.gatewayArgs(), ...args], timeoutMs);
+  }
+
+  private gatewayArgs(): string[] {
+    if (this.options.gatewayName) return ["--gateway", this.options.gatewayName];
+    if (this.options.gatewayEndpoint)
+      return ["--gateway-endpoint", this.options.gatewayEndpoint];
+    return [];
   }
 
   private log(line: string): void {

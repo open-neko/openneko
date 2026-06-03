@@ -1242,6 +1242,7 @@ export class PluginRegistry {
           process.env.OPENNEKO_PLUGIN_BASE_IMAGE ??
           "ghcr.io/open-neko/plugin-base:node20",
         cli: process.env.OPENSHELL_CLI || undefined,
+        gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
         gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
         bundleDir: this.options.workRoot,
       });

@@ -1,0 +1,95 @@
+# OpenShell plugin-sandbox overlay (opt-in). Runs the agent's plugins in
+# OpenShell sandboxes instead of microsandbox.
+#
+#   docker compose -f compose.yml -f compose.openshell.yml up
+#
+# STATUS: the OpenShellRuntime (worker code) is verified end-to-end against a
+# real gateway. This gateway-as-a-container wiring is verified up to mTLS auth;
+# full sandbox creation through a *containerised* gateway with the Docker driver
+# was characterised but not e2e-verified on macOS/OrbStack (host-path + host
+# port-advertising quirks). Validate on the Linux target before relying on it.
+# See docs/OPENSHELL_MIGRATION_PLAN.md "Containerised gateway deployment recipe".
+#
+# Hard requirements proven during bring-up:
+#  1. Docker sandboxes REQUIRE mTLS (JWT + client-cert auth); --disable-tls is a
+#     dead end. PKI is generated once by the certgen init below.
+#  2. Every path the gateway hands the host daemon as a bind-mount source (the
+#     supervisor binary cache AND the TLS dir) must exist at an IDENTICAL
+#     host:container path — hence the matched bind mounts + XDG_DATA_HOME /
+#     OPENSHELL_LOCAL_TLS_DIR pointing at them.
+#  3. Sandboxes dial the gateway at host.openshell.internal:<port> (= the host).
+#     So the gateway must publish that exact port on the host, and the server
+#     cert must carry a host.openshell.internal SAN (the certgen init adds it).
+
+services:
+  # One-shot: generate the mTLS PKI (CA + server + client + JWT signing key)
+  # into a host dir, and write the worker's gateway registration. Idempotent-ish:
+  # delete the host dir to rotate.
+  openshell-certgen:
+    image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        if [ ! -f /pki/server/tls.crt ]; then
+          openshell-gateway generate-certs --output-dir /pki \
+            --server-san host.openshell.internal --server-san openshell-gateway \
+            --server-san 127.0.0.1 --server-san localhost
+        fi
+        # Worker CLI registration: client cert + metadata pointing at the gateway.
+        mkdir -p /reg/openshell/gateways/openneko/mtls
+        cp /pki/ca.crt           /reg/openshell/gateways/openneko/mtls/ca.crt
+        cp /pki/client/tls.crt   /reg/openshell/gateways/openneko/mtls/tls.crt
+        cp /pki/client/tls.key   /reg/openshell/gateways/openneko/mtls/tls.key
+        printf '{"name":"openneko","gateway_endpoint":"https://openshell-gateway:%s","is_remote":false,"gateway_port":0,"auth_mode":"mtls"}\n' "${OPENSHELL_PORT:-18080}" \
+          > /reg/openshell/gateways/openneko/metadata.json
+        printf 'openneko' > /reg/openshell/active_gateway
+        chmod -R a+rX /pki /reg
+    volumes:
+      - ${OPENSHELL_PKI_DIR:-/var/lib/openneko/openshell/pki}:/pki
+      - openneko-config:/reg
+
+  openshell-gateway:
+    image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}
+    restart: unless-stopped
+    user: "0:0"                       # needs the host docker.sock (use a socket-proxy in prod)
+    # Listen + publish on the SAME port the sandboxes will dial via
+    # host.openshell.internal:<port>.
+    command:
+      - "--bind-address"
+      - "0.0.0.0"
+      - "--port"
+      - "${OPENSHELL_PORT:-18080}"
+    depends_on:
+      openshell-certgen:
+        condition: service_completed_successfully
+    environment:
+      OPENSHELL_DRIVERS: docker
+      OPENSHELL_DB_URL: postgres://neko:secret@neko-db:5432/neko
+      OPENSHELL_LOCAL_TLS_DIR: ${OPENSHELL_PKI_DIR:-/var/lib/openneko/openshell/pki}
+      XDG_DATA_HOME: ${OPENSHELL_CACHE_DIR:-/var/lib/openneko/openshell/cache}
+      HOME: /tmp
+    ports:
+      # host.openshell.internal resolves to the host inside sandboxes, so the
+      # published host port MUST equal the container/listen port above.
+      - "${OPENSHELL_PORT:-18080}:${OPENSHELL_PORT:-18080}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Matched host:container paths (requirement #2). The host daemon resolves
+      # these same paths when bind-mounting into sibling sandbox containers.
+      - ${OPENSHELL_PKI_DIR:-/var/lib/openneko/openshell/pki}:${OPENSHELL_PKI_DIR:-/var/lib/openneko/openshell/pki}:ro
+      - ${OPENSHELL_CACHE_DIR:-/var/lib/openneko/openshell/cache}:${OPENSHELL_CACHE_DIR:-/var/lib/openneko/openshell/cache}
+
+  worker:
+    environment:
+      OPENNEKO_PLUGIN_RUNTIME: openshell
+      OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:node20}
+      # The CLI reads gateway registrations from $XDG_CONFIG_HOME/openshell;
+      # XDG_CONFIG_HOME=/config in the base env, and certgen wrote the registration
+      # to the openneko-config volume. OPENSHELL_GATEWAY selects it (mTLS).
+      OPENSHELL_GATEWAY: openneko
+    depends_on:
+      openshell-gateway:
+        condition: service_started
