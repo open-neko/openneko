@@ -16,6 +16,11 @@ import ActCard, {
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
+import HoursSavedHero, {
+  type HoursSavedItem,
+  type HoursSavedValue,
+} from "@/components/HoursSavedHero";
+import { formatSavedShort } from "@/lib/hours-saved";
 import { cn } from "@/lib/cn";
 
 type FindingsPayload = {
@@ -43,6 +48,8 @@ type ReceiptRow = {
   status: string;
   executedAt: string | null;
   executionStatus: string;
+  minutesSaved: number | null;
+  minutesSavedBasis: string | null;
   approverKind: "operator" | "policy" | "auto";
   approverLabel: string | null;
   workflowRunId: string | null;
@@ -155,6 +162,7 @@ function groupReceipts(
       target: r.summary ? r.target : null, // headline already includes target when summary is absent
       approverPhrase: approverPhrase(r.approverKind, r.approverLabel),
       status: r.status,
+      minutesSaved: r.minutesSaved,
     };
     const existing = groups.get(key);
     if (existing) {
@@ -234,6 +242,7 @@ export default function Dashboard() {
   const [recentActions, setRecentActions] =
     useState<RecentActionsPayload | null>(null);
   const [awaiting, setAwaiting] = useState<AwaitingPayload | null>(null);
+  const [hoursSaved, setHoursSaved] = useState<HoursSavedValue | null>(null);
 
   // Tributaries: workflow_output findings + pending approvals + live summary.
   // Polled alongside the KPI briefing so newly-produced findings appear
@@ -275,18 +284,31 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchHoursSaved = useCallback(async () => {
+    try {
+      const res = await fetch("/api/briefing/value", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as HoursSavedValue;
+      setHoursSaved(data);
+    } catch {
+      // best-effort; the page still renders without the value hero
+    }
+  }, []);
+
   useEffect(() => {
     if (!gateChecked) return;
     void fetchFindings();
     void fetchRecentActions();
     void fetchAwaiting();
+    void fetchHoursSaved();
     const id = setInterval(() => {
       void fetchFindings();
       void fetchRecentActions();
       void fetchAwaiting();
+      void fetchHoursSaved();
     }, 30_000);
     return () => clearInterval(id);
-  }, [gateChecked, fetchFindings, fetchRecentActions, fetchAwaiting]);
+  }, [gateChecked, fetchFindings, fetchRecentActions, fetchAwaiting, fetchHoursSaved]);
 
   const surfaceId = `briefing-${role.toLowerCase()}`;
   const surface = surfaces.get(surfaceId);
@@ -570,6 +592,19 @@ export default function Dashboard() {
               </div>
             )}
 
+            {hoursSaved && hoursSaved.totalMinutes > 0 && (
+              <HoursSavedHero
+                value={hoursSaved}
+                items={(recentActions?.receipts ?? [])
+                  .filter((r) => (r.minutesSaved ?? 0) > 0)
+                  .map<HoursSavedItem>((r) => ({
+                    label: r.summary || r.kind,
+                    minutes: r.minutesSaved ?? 0,
+                    basis: r.minutesSavedBasis,
+                  }))}
+              />
+            )}
+
             {awaiting && awaiting.actions.length > 0 && (
               <section
                 className="dash-call"
@@ -699,6 +734,9 @@ export default function Dashboard() {
                   </span>
                   <span className="dash-proof-label">
                     fired on your behalf in the last {recentActions.windowHours}h
+                    {hoursSaved && hoursSaved.windowMinutes > 0 && (
+                      <> · saved you {formatSavedShort(hoursSaved.windowMinutes)}</>
+                    )}
                   </span>
                   <span className="dash-proof-caret" aria-hidden="true">▸</span>
                 </summary>

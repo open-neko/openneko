@@ -8,10 +8,12 @@ export {
 export {
   extractActionRequestFences,
   extractRuleSaveFence,
+  extractValueFence,
   extractWorkflowOutputFences,
   extractWorkflowSaveFence,
   type ActionRequestFenceResult,
   type PolicySaveFenceResult,
+  type ValueFenceResult,
   type WorkflowOutputFenceResult,
   type WorkflowSaveFenceResult,
 } from "./fence-parsers";
@@ -24,14 +26,21 @@ export {
   POLICY_SAVE_SCHEMA,
   RISK_LEVELS,
   SOURCE_CHANGE_TRIGGER_SCHEMA,
+  VALUE_ESTIMATE_SCHEMA,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
   type PolicySavePayload,
   type SourceChangeTriggerPayload,
+  type ValueEstimatePayload,
   type WorkflowOutputPayload,
   type WorkflowSavePayload,
 } from "./fence-schemas";
+export {
+  HOURS_SAVED,
+  clampActionMinutes,
+  clampAnalysisMinutes,
+} from "./value";
 export {
   buildWorkflowBuilderServer,
   type WorkflowBuilderContext,

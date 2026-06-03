@@ -435,6 +435,12 @@ export const work_run = pgTable(
     backend: text("backend").notNull(),
     status: text("status").notNull().default("running"),
     error: text("error"),
+    // Agent-estimated minutes of human effort the run's ANALYSIS saved
+    // (excludes per-action work, which is tracked on action_request). Null
+    // until the run emits a value estimate; server-clamped before write.
+    analysis_minutes_saved: integer("analysis_minutes_saved"),
+    analysis_minutes_basis: text("analysis_minutes_basis"),
+    estimate_version: integer("estimate_version").notNull().default(1),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     finished_at: ts("finished_at"),
@@ -443,6 +449,10 @@ export const work_run = pgTable(
     thread_created_idx: index("work_run_thread_created_idx").on(
       t.thread_id,
       t.created_at.asc(),
+    ),
+    org_finished_idx: index("work_run_org_finished_idx").on(
+      t.org_id,
+      t.finished_at,
     ),
   }),
 );
@@ -958,6 +968,12 @@ export const action_request = pgTable(
     status: text("status").notNull().default("pending_approval"),
     summary: text("summary"),
     intent: text("intent"),
+    // Agent-estimated minutes of human effort this action saved, counted
+    // toward rollups only once status reaches "executed". Server-clamped.
+    minutes_saved: integer("minutes_saved"),
+    minutes_saved_basis: text("minutes_saved_basis"),
+    estimate_source: text("estimate_source").notNull().default("agent"),
+    estimate_version: integer("estimate_version").notNull().default(1),
     work_run_id: uuid("work_run_id").references(() => work_run.id, {
       onDelete: "set null",
     }),

@@ -7,6 +7,7 @@ import {
   eq,
   gte,
   sql,
+  work_run,
   workflow_definition,
   workflow_run,
 } from "@neko/db";
@@ -116,6 +117,39 @@ export async function GET(_request: Request, context: RouteContext) {
       ),
     );
 
+  // Hours saved over the last 30 days: completed-run analysis + executed
+  // action minutes, scoped to this workflow's runs.
+  const since30d = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const [analysisAgg] = await db()
+    .select({
+      min: sql<number>`coalesce(sum(${work_run.analysis_minutes_saved}), 0)::int`,
+    })
+    .from(workflow_run)
+    .innerJoin(work_run, eq(workflow_run.work_run_id, work_run.id))
+    .where(
+      and(
+        eq(workflow_run.org_id, orgId),
+        eq(workflow_run.workflow_id, workflowId),
+        eq(work_run.status, "completed"),
+        gte(workflow_run.created_at, since30d),
+      ),
+    );
+  const [actionAgg] = await db()
+    .select({
+      min: sql<number>`coalesce(sum(${action_request.minutes_saved}), 0)::int`,
+    })
+    .from(action_request)
+    .innerJoin(workflow_run, eq(action_request.workflow_run_id, workflow_run.id))
+    .where(
+      and(
+        eq(workflow_run.org_id, orgId),
+        eq(workflow_run.workflow_id, workflowId),
+        eq(action_request.status, "executed"),
+        gte(action_request.created_at, since30d),
+      ),
+    );
+  const minutesSaved30d = (analysisAgg?.min ?? 0) + (actionAgg?.min ?? 0);
+
   return NextResponse.json({
     workflow: {
       id: workflow.id,
@@ -131,6 +165,7 @@ export async function GET(_request: Request, context: RouteContext) {
       cronEnabled: workflow.cronEnabled,
       dailyRunBudget: workflow.dailyRunBudget,
       runsToday: todayCount?.count ?? 0,
+      minutesSaved30d,
       createdByThreadId: workflow.createdByThreadId,
       createdByRunId: workflow.createdByRunId,
       createdAt: workflow.createdAt.toISOString(),

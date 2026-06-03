@@ -119,6 +119,31 @@ export const ACTION_REQUEST_SCHEMA = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   risk_level: z.enum(RISK_LEVELS).optional(),
   summary: z.string().trim().min(1).max(2000),
+  minutes_saved: z
+    .number()
+    .int()
+    .min(0)
+    .max(600)
+    .optional()
+    .describe(
+      "Conservative estimate of the minutes a competent human would spend doing this one action by hand (e.g. send email ~8, file refund ~15). Omit if unsure.",
+    ),
+  basis: z
+    .string()
+    .trim()
+    .max(160)
+    .optional()
+    .describe("One short line naming why minutes_saved is what it is."),
 });
 
 export type ActionRequestPayload = z.infer<typeof ACTION_REQUEST_SCHEMA>;
+
+// Per-run analysis value estimate. Emitted once at the end of every run via
+// a `neko_value` fence (excludes per-action work, which carries its own
+// estimate). Server-clamped before persisting. See docs/HOURS_SAVED_PLAN.md.
+export const VALUE_ESTIMATE_SCHEMA = z.object({
+  minutes_saved: z.number().int().min(0).max(600),
+  basis: z.string().trim().max(160).optional(),
+});
+
+export type ValueEstimatePayload = z.infer<typeof VALUE_ESTIMATE_SCHEMA>;

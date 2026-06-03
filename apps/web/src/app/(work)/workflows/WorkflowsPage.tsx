@@ -6,6 +6,7 @@ import { Workflow, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmModal";
 import { describeSchedule } from "@/lib/cron-english";
+import { formatSavedShort } from "@/lib/hours-saved";
 
 type WorkflowListItem = {
   id: string;
@@ -59,6 +60,7 @@ type DrawerPayload = {
     systemPromptOverlay: string;
     dailyRunBudget: number | null;
     runsToday: number;
+    minutesSaved30d: number;
     createdByThreadId: string | null;
     createdByRunId: string | null;
   };
@@ -617,6 +619,19 @@ function WorkflowDetail({
           + Run now
         </button>
       </div>
+
+      {workflow.minutesSaved30d > 0 && (
+        <Section title="Hours saved (30d)">
+          <p className="leading-[1.55]">
+            <span className="font-display font-bold text-accent">
+              {formatSavedShort(workflow.minutesSaved30d)}
+            </span>{" "}
+            <span className="text-text2">
+              of human time, estimated across this workflow&apos;s runs and actions.
+            </span>
+          </p>
+        </Section>
+      )}
 
       {workflow.description && (
         <Section title="Description">

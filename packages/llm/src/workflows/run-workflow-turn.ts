@@ -15,6 +15,7 @@ import {
   finishWorkRun,
   markWorkRunRunning,
   saveAssistantWorkMessage,
+  setWorkRunValue,
 } from "../work/store";
 import { buildWorkMemoryServer } from "../work/tools";
 import { ensureWorkWorkspace } from "../work/workspace";
@@ -24,8 +25,10 @@ import {
 } from "./action-server";
 import {
   extractActionRequestFences,
+  extractValueFence,
   extractWorkflowOutputFences,
 } from "./fence-parsers";
+import { clampAnalysisMinutes } from "./value";
 import {
   buildWorkflowOutputServer,
   handleWorkflowOutput,
@@ -313,7 +316,26 @@ export async function runWorkflowTurn(
       });
     }
 
+    // Per-run analysis value estimate (works for both backends — the
+    // `neko_value` fence rides in the agent's final text). Parse, clamp,
+    // strip from the persisted text so it never shows in the summary.
+    const valueFence = extractValueFence(persistedText);
+    persistedText = valueFence.text;
+    const analysisMinutes = clampAnalysisMinutes(valueFence.payload?.minutes_saved);
+
     await finishWorkRun(workRunId, result.status, result.error ?? null);
+    if (valueFence.payload) {
+      try {
+        await setWorkRunValue(workRunId, {
+          minutes: analysisMinutes,
+          basis: valueFence.payload.basis ?? null,
+        });
+      } catch (err) {
+        console.warn(
+          `[workflow-run] setWorkRunValue failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
     const summary =
       persistedText.slice(0, 4000) ||
       (result.status === "completed"
@@ -335,7 +357,10 @@ export async function runWorkflowTurn(
       });
     }
 
-    await wrappedEmit({ type: "done", result: { status: result.status } });
+    await wrappedEmit({
+      type: "done",
+      result: { status: result.status, minutesSaved: analysisMinutes ?? 0 },
+    });
 
     return {
       status: result.status,

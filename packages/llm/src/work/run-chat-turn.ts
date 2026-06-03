@@ -5,8 +5,10 @@ import { extractMemoryFences } from "../agent-backends/memory-fence";
 import {
   extractActionRequestFences,
   extractRuleSaveFence,
+  extractValueFence,
   extractWorkflowSaveFence,
 } from "../workflows/fence-parsers";
+import { clampAnalysisMinutes } from "../workflows/value";
 import {
   handleWorkActionRequest,
   policySavedCard,
@@ -38,6 +40,7 @@ import {
   getWorkThreadBundle,
   markWorkRunRunning,
   saveAssistantWorkMessage,
+  setWorkRunValue,
   setWorkThreadBackendState,
 } from "./store";
 import type { PluginActionDescriptor } from "./tools";
@@ -375,6 +378,25 @@ export async function runChatTurn(
       });
     }
 
+    // Per-run analysis value estimate (the human time the answer saved,
+    // excluding any actions which carry their own estimate). Parsed from the
+    // same raw source, server-clamped, persisted, and echoed in `done` so the
+    // UI can show it live. Best-effort: a missing/invalid fence leaves it null.
+    const valueFence = extractValueFence(fenceSource);
+    const analysisMinutes = clampAnalysisMinutes(valueFence.payload?.minutes_saved);
+    if (valueFence.payload) {
+      try {
+        await setWorkRunValue(runId, {
+          minutes: analysisMinutes,
+          basis: valueFence.payload.basis ?? null,
+        });
+      } catch (err) {
+        console.warn(
+          `[work-run] setWorkRunValue failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
     // Pull any neko_memory fences out of the raw agent response and persist
     // them. Backend-agnostic: works for Hermes (no MCP tool registry) and is
     // harmless for claude-agent (which would have used the MCP save tool).
@@ -405,6 +427,7 @@ export async function runChatTurn(
     let persistedText = extractActionRequestFences(result.finalText.trim()).text;
     persistedText = extractWorkflowSaveFence(persistedText).text;
     persistedText = extractRuleSaveFence(persistedText).text;
+    persistedText = extractValueFence(persistedText).text;
     persistedText = extractMemoryFences(persistedText).text;
     if (persistedText) {
       await saveAssistantWorkMessage({
@@ -415,7 +438,10 @@ export async function runChatTurn(
       });
     }
 
-    await wrappedEmit({ type: "done", result: { status: result.status } });
+    await wrappedEmit({
+      type: "done",
+      result: { status: result.status, minutesSaved: analysisMinutes ?? 0 },
+    });
 
     return {
       status: result.status,

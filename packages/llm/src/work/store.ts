@@ -227,6 +227,23 @@ export async function finishWorkRun(
     .where(eq(work_run.id, runId));
 }
 
+// Persist a run's agent-estimated analysis value (server-clamped minutes +
+// the one-line basis). Separate from finishWorkRun because the estimate is
+// parsed from the run's value fence after the run is marked finished.
+export async function setWorkRunValue(
+  runId: string,
+  args: { minutes: number | null; basis: string | null },
+) {
+  await db()
+    .update(work_run)
+    .set({
+      analysis_minutes_saved: args.minutes,
+      analysis_minutes_basis: args.basis,
+      updated_at: new Date(),
+    })
+    .where(eq(work_run.id, runId));
+}
+
 export async function createWorkMessage(args: {
   orgId: string;
   threadId: string;

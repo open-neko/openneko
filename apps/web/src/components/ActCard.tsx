@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
+import { formatSavedShort } from "@/lib/hours-saved";
 
 export type ActRowTone = "good" | "watch" | "action";
 
@@ -16,6 +17,8 @@ export type ActRowData = {
   rejectionReason?: string | null;
   approverPhrase?: string | null;
   status: string;
+  /** Realized minutes saved — shown on fired receipts that carry an estimate. */
+  minutesSaved?: number | null;
 };
 
 export type ActCardData = {
@@ -164,12 +167,24 @@ export default function ActCard({
                     {row.rejectionReason}
                   </p>
                 )}
-                {data.state === "live" && row.approverPhrase && (
-                  <p className="mt-1 text-[11.5px] text-text3">
-                    approved by{" "}
-                    <span className="text-text2 font-medium">
-                      {row.approverPhrase}
-                    </span>
+                {data.state === "live" && (row.approverPhrase || (row.minutesSaved ?? 0) > 0) && (
+                  <p className="mt-1 text-[11.5px] text-text3 flex items-center gap-2 flex-wrap">
+                    {row.approverPhrase && (
+                      <span>
+                        approved by{" "}
+                        <span className="text-text2 font-medium">
+                          {row.approverPhrase}
+                        </span>
+                      </span>
+                    )}
+                    {(row.minutesSaved ?? 0) > 0 && (
+                      <span
+                        className="font-mono text-success-ink bg-success-soft border border-success-mid/30 rounded-full px-1.5 py-px"
+                        title="Estimated human time saved"
+                      >
+                        {formatSavedShort(row.minutesSaved as number)} saved
+                      </span>
+                    )}
                   </p>
                 )}
 

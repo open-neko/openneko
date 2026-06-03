@@ -311,6 +311,31 @@ const RULES_SECTION = `<conduct>
 ${GRAPHJIN_DATE_RULE}
 </conduct>`;
 
+// Closing contract shared by both backends. The runtime parses this fence
+// from the final output, clamps it, and surfaces it to the operator as
+// "hours saved." See docs/HOURS_SAVED_PLAN.md.
+const VALUE_SECTION = `<value>
+At the very end of your turn, emit exactly one fenced block estimating the
+human time your ANALYSIS saved — the report, answer, or finding you
+delivered. Exclude any actions you proposed; those carry their own estimate.
+
+\`\`\`neko_value
+{ "minutes_saved": 18, "basis": "Pulled and cross-checked a 3-table revenue report" }
+\`\`\`
+
+- Estimate the minutes a competent person would spend producing THIS
+  deliverable by hand — not your runtime, not wall-clock.
+- Be conservative; round DOWN when unsure.
+- Emit \`0\` when nothing was delivered a person would otherwise have done
+  (a check that found nothing, a clarifying question, an error).
+- Anchors (minutes): routine email 5-8 · CRM update 3-6 · refund 12-18 ·
+  purchase order 20-30 · multi-table report 20-40 · doc/changelog summary
+  10-20 · single-table lookup 3-8 · found nothing 0.
+
+When you also propose an action, add \`minutes_saved\` (integer) and a short
+\`basis\` to that action too, estimated the same conservative way.
+</value>`;
+
 export interface PluginActionPromptDescriptor {
   kind: string;
   description: string;
@@ -466,6 +491,7 @@ that flags churn risk every Monday."
     buildWorkspaceSection(workspace, shellTool),
     buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
+    VALUE_SECTION,
   ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {

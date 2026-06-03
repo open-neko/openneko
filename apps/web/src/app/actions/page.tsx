@@ -26,6 +26,7 @@ type ActionRow = {
   summary: string;
   scope: string;
   status: string;
+  minutesSaved: number | null;
   approvedAt: string | null;
   approverKind: "operator" | "policy" | "auto" | null;
   approverLabel: string | null;
@@ -314,6 +315,7 @@ function ActionsPageInner() {
                     r.status === "rejected" ? r.rejectionReason : null,
                   approverPhrase: approverPhrase(r.approverKind, r.approverLabel),
                   status: r.status,
+                  minutesSaved: r.minutesSaved,
                 })),
               };
 
