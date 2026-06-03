@@ -36,3 +36,11 @@ export type {
   RunChatTurnOptions,
   RunChatTurnResult,
 } from "./run-chat-turn";
+// Shared OpenShell sandbox launcher (worker channel runs + web interactive chat).
+export {
+  agentRuntimeDepsFromEnv,
+  buildModelEgressArgs,
+  ensureOpenShellProvider,
+  makeSandboxRunCore,
+  type SandboxLauncherOptions,
+} from "./sandbox-launcher";

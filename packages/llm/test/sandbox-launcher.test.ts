@@ -1,7 +1,10 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentEvent } from "@neko/llm";
-import type { RunAgentBackendInput } from "@neko/llm/work";
+import type { AgentEvent } from "../src/agent-backend";
+import type { RunAgentBackendInput } from "../src/work/agent-core";
 
 /**
  * The launcher shells out to the `openshell` CLI. We mock spawn: non-exec calls
@@ -47,9 +50,8 @@ const h = vi.hoisted(() => {
 
 vi.mock("node:child_process", () => ({ spawn: h.spawn }));
 
-const { makeSandboxRunCore, buildModelEgressArgs } = await import(
-  "../../src/agent-sandbox/launcher"
-);
+const { makeSandboxRunCore, buildModelEgressArgs, ensureOpenShellProvider } =
+  await import("../src/work/sandbox-launcher");
 
 function fakeInput(emit: (e: AgentEvent) => Promise<void>): RunAgentBackendInput {
   return {
@@ -103,6 +105,7 @@ describe("makeSandboxRunCore", () => {
     const runCore = makeSandboxRunCore({
       agentImage: "ghcr.io/open-neko/agent:test",
       modelEgress: [{ host: "m.example.com", binary: "node" }],
+      keyAliases: [{ from: "api_key", to: "GEMINI_API_KEY" }],
       onLog: () => {},
     });
 
@@ -119,5 +122,49 @@ describe("makeSandboxRunCore", () => {
     expect(h.calls[0]?.args).toContain("ghcr.io/open-neko/agent:test");
     const execCall = h.calls.find((c) => c.args.includes("exec"));
     expect(execCall?.args.join(" ")).toContain("agent-sandbox/entry.ts");
+    // the credential alias references the OpenShell-injected var at runtime, never a value:
+    expect(execCall?.args.join(" ")).toContain('export GEMINI_API_KEY="$api_key"');
+  });
+
+  it("mirrors HERMES_HOME keyless and points the box at it", async () => {
+    const hostHome = await mkdtemp(join(tmpdir(), "hh-"));
+    await writeFile(join(hostHome, "config.yaml"), 'model:\n  provider: "gemini"\n');
+    await writeFile(join(hostHome, ".env"), "GEMINI_API_KEY=REAL_SECRET\n");
+
+    const runCore = makeSandboxRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      hermesHomeHostPath: hostHome,
+      keyAliases: [{ from: "api_key", to: "GEMINI_API_KEY" }],
+      onLog: () => {},
+    });
+    await runCore(fakeInput(async () => {}));
+
+    // three uploads now: workspace, keyless hermes-home, job descriptor
+    const uploads = h.calls.filter((c) => c.args.includes("upload"));
+    expect(uploads).toHaveLength(3);
+    const hermesUpload = uploads.find((u) => u.args.some((a) => a.endsWith("/hermes-home")));
+    expect(hermesUpload?.args).toContain("/sandbox");
+    // the box reads the mirror, not a host path:
+    const execCall = h.calls.find((c) => c.args.includes("exec"));
+    expect(execCall?.args.join(" ")).toContain("HERMES_HOME='/sandbox/hermes-home'");
+  });
+});
+
+describe("ensureOpenShellProvider", () => {
+  beforeEach(() => {
+    h.calls.length = 0;
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("registers the generic profile and creates the provider with the key", async () => {
+    await ensureOpenShellProvider({ providerName: "org-x", apiKey: "SECRET-KEY" });
+    const lines = h.calls.map((c) => c.args.join(" "));
+    // generic profile imported (idempotent):
+    expect(lines.some((l) => l.startsWith("provider profile import --file") && l.endsWith(".yaml"))).toBe(true);
+    // provider created from the generic type, holding the key:
+    const create = lines.find((l) => l.startsWith("provider create"));
+    expect(create).toContain("--name org-x");
+    expect(create).toContain("--type openneko-agent");
+    expect(create).toContain("--credential api_key=SECRET-KEY");
   });
 });

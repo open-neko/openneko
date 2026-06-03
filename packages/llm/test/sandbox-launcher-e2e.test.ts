@@ -1,0 +1,80 @@
+import { execSync } from "node:child_process";
+import { describe, expect, it } from "vitest";
+import { makeAgentBackend } from "../src/agent-backend-resolver";
+import { makeSandboxRunCore } from "../src/work/sandbox-launcher";
+import { ensureWorkWorkspace } from "../src/work/workspace";
+
+/**
+ * Live agent-in-sandbox e2e. OPT-IN — skipped unless OPENNEKO_OPENSHELL_E2E=1
+ * AND the `openshell` CLI is on PATH AND a gateway/provider/agent-image are set
+ * up (the same env the worker/web use). Drives the real launcher
+ * (makeSandboxRunCore → create → upload → entry.ts → runAgentBackend → hermes →
+ * model) and asserts a real, non-empty completion — the path proven by hand on
+ * 2026-06-03 (hermes/gemini → "PONG", key never in the box).
+ *
+ * Run: OPENNEKO_OPENSHELL_E2E=1 OPENNEKO_AGENT_IMAGE=… OPENNEKO_AGENT_MODEL_PROVIDER=… \
+ *      OPENNEKO_AGENT_MODEL_HOST=…,… OPENNEKO_AGENT_MODEL_BINARY=… \
+ *      OPENNEKO_AGENT_MODEL_KEY_ENV=… OPENNEKO_AGENT_HERMES_HOME=… \
+ *      pnpm --filter @neko/llm exec vitest run test/sandbox-launcher-e2e.test.ts
+ */
+function hasOpenshell(): boolean {
+  try {
+    execSync("which openshell", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const ENABLED =
+  process.env.OPENNEKO_OPENSHELL_E2E === "1" &&
+  Boolean(process.env.OPENNEKO_AGENT_IMAGE) &&
+  Boolean(process.env.OPENNEKO_AGENT_MODEL_PROVIDER) &&
+  hasOpenshell();
+
+const d = ENABLED ? describe : describe.skip;
+
+d("agent-in-sandbox e2e (opt-in)", () => {
+  it(
+    "runs a hermes turn in a fresh OpenShell sandbox and returns real text",
+    async () => {
+      const binary = process.env.OPENNEKO_AGENT_MODEL_BINARY ?? "";
+      const hosts = (process.env.OPENNEKO_AGENT_MODEL_HOST ?? "")
+        .split(",")
+        .map((h) => h.trim())
+        .filter(Boolean);
+      const keyEnv = process.env.OPENNEKO_AGENT_MODEL_KEY_ENV;
+      const runId = `e2e-${process.pid}-${process.hrtime.bigint()}`;
+      const orgId = "openshell-e2e-org";
+      const workspace = await ensureWorkWorkspace(orgId, "e2e-thread", runId);
+
+      const runCore = makeSandboxRunCore({
+        agentImage: process.env.OPENNEKO_AGENT_IMAGE!,
+        gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
+        gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+        modelProvider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER,
+        modelEgress: binary ? hosts.map((host) => ({ host, binary })) : [],
+        keyAliases: keyEnv ? [{ from: "api_key", to: keyEnv }] : undefined,
+        hermesHomeHostPath: process.env.OPENNEKO_AGENT_HERMES_HOME || undefined,
+        execTimeoutMs: 240_000,
+        onLog: () => {},
+      });
+
+      const result = await runCore({
+        backend: makeAgentBackend({ id: "hermes" }),
+        prompt: "You are a terse test assistant.",
+        userMessage: "Reply with the single word PONG and nothing else.",
+        orgId,
+        threadId: "e2e-thread",
+        runId,
+        workspace,
+        pluginActions: [],
+        emit: () => Promise.resolve(),
+      });
+
+      expect(result.status).toBe("completed");
+      expect(result.finalText.trim().length).toBeGreaterThan(0);
+    },
+    300_000,
+  );
+});

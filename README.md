@@ -87,12 +87,14 @@ openneko install @open-neko/plugin-parallel-search
 - **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
 - **Bring your own LLM.** Hermes runs against Anthropic, OpenAI, Google, Ollama, and others; Claude Agent runs Anthropic in-process. Pick per task, swap any time.
 - **Plugins in microVM sandboxes.** Outbound network is allowlisted per manifest, not blanket-open.
+- **Agent-in-sandbox (preview).** Opt in to run the agent loop itself inside a policy sandbox — default-deny egress, and the model API key never enters the box (the gateway proxy injects it on the wire). See [OPENSHELL.md](OPENSHELL.md).
 - **Apache 2.0.** Inspect everything. Fork it. Take your data with you.
 
 ## Docs
 
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
 - [PLUGINS.md](PLUGINS.md) — plugin capabilities, sandbox/security model, marketplaces, install policy, host support
+- [OPENSHELL.md](OPENSHELL.md) — preview: running the agent itself in an OpenShell policy sandbox (architecture, security, how to enable)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
 - [CHANGELOG.md](CHANGELOG.md) — releases
 

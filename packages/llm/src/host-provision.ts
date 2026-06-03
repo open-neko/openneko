@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { and, data_source, db, eq, llm_provider_config } from "@neko/db";
 import { isAgentBackendId } from "./agent-backend";
 import { maybeDecryptSecret } from "./secrets";
+import { ensureOpenShellProvider } from "./work/sandbox-launcher";
 
 const HERMES_DEFAULT_MAX_TURNS = 25;
 
@@ -190,12 +191,45 @@ function escapeYamlString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+/**
+ * When the agent runs in an OpenShell sandbox, sync the org's primary model key
+ * into a gateway-side provider so the egress proxy can inject it on the wire —
+ * the key never enters the sandbox. Replaces the manual `openshell provider
+ * create` step. Egress + the key-env alias stay env-wired in the launcher.
+ */
+async function provisionOpenShellProvider(orgId: string): Promise<void> {
+  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "").toLowerCase() !== "openshell") {
+    return;
+  }
+  const providerName = process.env.OPENNEKO_AGENT_MODEL_PROVIDER;
+  if (!providerName) return;
+  const row = await loadProviderRow(orgId, "primary");
+  if (!row || !row.enabled) return;
+  const apiKey = decryptSecrets(row.secrets).apiKey;
+  if (!apiKey) return;
+  await ensureOpenShellProvider({
+    providerName,
+    apiKey,
+    gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
+    gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+  });
+  console.log(`[host-provision] synced OpenShell model provider "${providerName}"`);
+}
+
 export async function provisionHostConfig(orgId: string): Promise<void> {
   try {
     await provisionGraphJin(orgId);
   } catch (e) {
     console.warn(
       `[host-provision] graphjin write failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+
+  try {
+    await provisionOpenShellProvider(orgId);
+  } catch (e) {
+    console.warn(
+      `[host-provision] OpenShell provider sync failed: ${e instanceof Error ? e.message : e}`,
     );
   }
 
