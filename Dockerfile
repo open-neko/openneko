@@ -239,18 +239,20 @@ CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
 # The worker runtime adapted to run as a child inside an OpenShell sandbox
 # (Phase 3, OPENNEKO_AGENT_RUNTIME=openshell). vs the worker stage: + the net
 # tools the supervisor needs, + a non-root `sandbox` user @ /sandbox (high UID,
-# OpenShell convention), + /app and the uv/hermes install made world-readable
-# so that user can exec them. hermes is under /usr/local (Landlock allows /usr,
-# blocks /opt). The launcher exec's agent-sandbox/entry.ts, which runs the
-# agent loop reaching the control plane only through the broker.
+# OpenShell convention). /app and the uv/hermes install are ALREADY world-rX
+# (COPY preserves the build's default 0644/0755), so the sandbox user reads +
+# execs them with no chmod. Do NOT add `chmod -R a+rX /app /usr/local/uv` here:
+# it's a no-op on permissions but forces an overlay copy-up of ~1.8GB into a new
+# layer (verified). hermes is under /usr/local (Landlock allows /usr, blocks
+# /opt). The launcher exec's agent-sandbox/entry.ts, which runs the agent loop
+# reaching the control plane only through the broker.
 FROM worker AS agent
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1000660000 sandbox \
     && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
-    && install -d -o sandbox -g sandbox /sandbox \
-    && chmod -R a+rX /app /usr/local/uv
+    && install -d -o sandbox -g sandbox /sandbox
 WORKDIR /sandbox
 # Supervisor-replaced; launcher runs:
 #   node --import tsx/esm /app/apps/worker/src/agent-sandbox/entry.ts
