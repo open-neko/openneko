@@ -6,6 +6,11 @@ export {
   buildSkillBuilderServer,
   buildWorkMemoryServer,
 } from "./tools";
+export {
+  InProcessControlPlane,
+  inProcessControlPlane,
+  type AgentControlPlane,
+} from "./control-plane";
 export * from "./memory";
 export * from "./store";
 export {
