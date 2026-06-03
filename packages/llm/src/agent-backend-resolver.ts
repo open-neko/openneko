@@ -107,10 +107,30 @@ export async function resolveAgentConcurrency(orgId: string): Promise<AgentConcu
   };
 }
 
+/**
+ * Construct a backend from already-resolved config — no DB. Used both by
+ * resolveAgentBackend (host, after the DB read) and by the agent sandbox's
+ * entry.ts (from the launcher-passed config, with a PLACEHOLDER apiKey — the
+ * real key is injected by the OpenShell egress proxy, never in the sandbox).
+ */
+export function makeAgentBackend(cfg: {
+  id: AgentBackendId;
+  model?: string;
+  apiKey?: string;
+}): AgentBackend {
+  if (cfg.id === "claude-agent") {
+    return new ClaudeAgentBackend({
+      apiKey: cfg.apiKey ?? "",
+      model: cfg.model ?? "",
+    });
+  }
+  return new HermesBackend();
+}
+
 export async function resolveAgentBackend(orgId: string): Promise<AgentBackend> {
   const id = await resolveAgentBackendId(orgId);
 
-  if (id === "hermes") return new HermesBackend();
+  if (id === "hermes") return makeAgentBackend({ id });
 
   // claude-agent: pull Anthropic key + model from the primary provider row.
   // We deliberately couple to the primary scope here so users have a single
@@ -137,5 +157,5 @@ export async function resolveAgentBackend(orgId: string): Promise<AgentBackend> 
   const apiKey = secrets.apiKey;
   const model = primary.model || "";
 
-  return new ClaudeAgentBackend({ apiKey, model });
+  return makeAgentBackend({ id, model, apiKey });
 }

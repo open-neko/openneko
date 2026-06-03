@@ -1,26 +1,36 @@
-import type { AgentEvent } from "@neko/llm";
-import { runChatTurn } from "@neko/llm/work";
+import {
+  makeAgentBackend,
+  type AgentBackendId,
+  type AgentEvent,
+  type AgentWorkspace,
+} from "@neko/llm";
+import { runAgentBackend, type RunAgentBackendInput } from "@neko/llm/work";
 import { BrokerControlPlane, postAgentEvents } from "./broker-client";
 
 /**
- * Entrypoint that runs INSIDE the agent's OpenShell sandbox (Phase 2c). It
- * reads its job + broker coordinates from env (injected by the launcher in
- * work-run.ts) and wires runChatTurn so the agent reaches the control plane
- * and emits events ONLY through the broker — never the DB directly.
- *
- * NOTE: runChatTurn still makes a few store calls in its own body
- * (markWorkRunRunning, getWorkThreadBundle, saveAssistantWorkMessage,
- * finishWorkRun, setWorkThreadBackendState). Those must be brokered too — or
- * split into a host-side prologue/epilogue — before this runs in a real
- * sandbox with no DB creds. See docs/OPENSHELL_MIGRATION_PLAN.md (Phase 2c).
+ * Runs INSIDE the agent's OpenShell sandbox (Phase 3). The launcher (work-run)
+ * does the DB-bound prologue on the host, then exec's this with the prompt +
+ * workspace + backend config (NO real key) and the broker coordinates. Here we
+ * reconstruct the backend, run the agent loop (runAgentBackend), and reach the
+ * control plane + stream events ONLY through the broker. The model key is a
+ * proxy-injected placeholder — never the real value. The host does the epilogue
+ * (fence handling, persistence) after this returns its result on stdout.
  */
 interface SandboxJob {
   orgId: string;
   threadId: string;
   runId: string;
   message: string;
-  pluginActions?: Parameters<typeof runChatTurn>[0]["pluginActions"];
+  prompt: string;
+  backendId: AgentBackendId;
+  model?: string;
+  backendState?: Record<string, unknown>;
+  pluginActions?: RunAgentBackendInput["pluginActions"];
+  workspace: AgentWorkspace;
 }
+
+/** Marker the launcher greps for on the last stdout line to recover the result. */
+export const AGENT_RESULT_MARKER = "__openneko_agent_result";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -33,21 +43,35 @@ export async function main(): Promise<void> {
   const token = requireEnv("OPENNEKO_BROKER_TOKEN");
   const job = JSON.parse(requireEnv("OPENNEKO_RUN_JOB")) as SandboxJob;
 
+  // claude reads its key from env (the OpenShell provider sets a placeholder;
+  // the egress proxy swaps the real key on the wire). hermes ignores apiKey
+  // and reads HERMES_HOME. Either way the real key never enters the sandbox.
+  const backend = makeAgentBackend({
+    id: job.backendId,
+    model: job.model,
+    apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_API_KEY,
+  });
+
   const controlPlane = new BrokerControlPlane(brokerUrl, token);
   const emit = (event: AgentEvent): Promise<void> =>
     postAgentEvents(brokerUrl, token, [event]);
 
-  const result = await runChatTurn({
+  const result = await runAgentBackend({
+    backend,
+    prompt: job.prompt,
+    userMessage: job.message,
     orgId: job.orgId,
     threadId: job.threadId,
     runId: job.runId,
-    message: job.message,
-    emit,
+    workspace: job.workspace,
+    backendState: job.backendState,
     pluginActions: job.pluginActions ?? [],
     controlPlane,
+    emit,
   });
 
-  if (result.status === "failed") process.exitCode = 1;
+  // Hand the AgentRunResult back to the host launcher as the last stdout line.
+  process.stdout.write(`\n${JSON.stringify({ [AGENT_RESULT_MARKER]: result })}\n`);
 }
 
 main().catch((err: unknown) => {
