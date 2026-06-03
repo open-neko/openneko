@@ -43,9 +43,9 @@ RUN curl -fsSL -o /tmp/graphjin.tgz \
     && graphjin version
 RUN curl -LsSf https://astral.sh/uv/install.sh \
       | env UV_INSTALL_DIR=/usr/local/bin sh -s -- --no-modify-path \
-    && UV_TOOL_DIR=/opt/uv-tools \
+    && UV_TOOL_DIR=/usr/local/uv/tools \
        UV_TOOL_BIN_DIR=/usr/local/bin \
-       UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+       UV_PYTHON_INSTALL_DIR=/usr/local/uv/python \
        UV_CACHE_DIR=/tmp/uv-cache \
        uv tool install --python 3.11 \
          "hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git@${HERMES_AGENT_REF}" \
@@ -230,6 +230,27 @@ USER neko
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
+
+# ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
+# The worker runtime adapted to run as a child inside an OpenShell sandbox
+# (Phase 3, OPENNEKO_AGENT_RUNTIME=openshell). vs the worker stage: + the net
+# tools the supervisor needs, + a non-root `sandbox` user @ /sandbox (high UID,
+# OpenShell convention), + /app and the uv/hermes install made world-readable
+# so that user can exec them. hermes is under /usr/local (Landlock allows /usr,
+# blocks /opt). The launcher exec's agent-sandbox/entry.ts, which runs the
+# agent loop reaching the control plane only through the broker.
+FROM worker AS agent
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 1000660000 sandbox \
+    && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
+    && install -d -o sandbox -g sandbox /sandbox \
+    && chmod -R a+rX /app /usr/local/uv
+WORKDIR /sandbox
+# Supervisor-replaced; launcher runs:
+#   node --import tsx/esm /app/apps/worker/src/agent-sandbox/entry.ts
+CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
 # Minimal image containing just the openneko Go binary. Used as the
