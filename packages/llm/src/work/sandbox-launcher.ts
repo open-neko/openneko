@@ -224,7 +224,7 @@ export function agentRuntimeDepsFromEnv(): Pick<Partial<RunChatTurnDeps>, "runCo
   const credName = process.env.OPENNEKO_AGENT_MODEL_CREDENTIAL || "api_key";
   return {
     runCore: makeSandboxRunCore({
-      agentImage: process.env.OPENNEKO_AGENT_IMAGE ?? "ghcr.io/open-neko/agent:node20",
+      agentImage: process.env.OPENNEKO_AGENT_IMAGE ?? "ghcr.io/open-neko/agent:latest",
       gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
       gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
       modelProvider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || undefined,
