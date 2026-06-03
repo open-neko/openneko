@@ -92,6 +92,26 @@ describe("buildModelEgressArgs", () => {
       "60",
     ]);
   });
+  it("honours an explicit non-443 port (the broker channel)", () => {
+    expect(
+      buildModelEgressArgs("s", [
+        { host: "host.openshell.internal", binary: "/usr/local/bin/node", port: 4199 },
+      ]),
+    ).toEqual([
+      "policy",
+      "update",
+      "s",
+      "--add-endpoint",
+      "host.openshell.internal:4199:read-write:rest:enforce",
+      "--binary",
+      "/usr/local/bin/node",
+      "--add-allow",
+      "host.openshell.internal:4199:*:/**",
+      "--wait",
+      "--timeout",
+      "60",
+    ]);
+  });
 });
 
 describe("makeSandboxRunCore", () => {
@@ -124,6 +144,45 @@ describe("makeSandboxRunCore", () => {
     expect(execCall?.args.join(" ")).toContain("agent-sandbox/entry.ts");
     // the credential alias references the OpenShell-injected var at runtime, never a value:
     expect(execCall?.args.join(" ")).toContain('export GEMINI_API_KEY="$api_key"');
+  });
+
+  it("scopes broker egress to node, injects url+token, and releases on finish", async () => {
+    const released: string[] = [];
+    const runCore = makeSandboxRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      brokerUrl: "http://host.openshell.internal:4199",
+      brokerTokenFor: ({ runId, orgId }) => `tok-${orgId}-${runId}`,
+      brokerRelease: (runId) => released.push(runId),
+      onLog: () => {},
+    });
+
+    await runCore(fakeInput(async () => {}));
+
+    // the policy update opens the broker host:port for the node binary only:
+    const update = h.calls.find((c) => c.args.includes("update"));
+    expect(update?.args.join(" ")).toContain(
+      "host.openshell.internal:4199:read-write:rest:enforce",
+    );
+    expect(update?.args).toContain("/usr/local/bin/node");
+    // the box gets the broker url + a run-bound bearer token — never a raw secret:
+    const execCall = h.calls.find((c) => c.args.includes("exec"));
+    expect(execCall?.args.join(" ")).toContain(
+      "OPENNEKO_BROKER_URL='http://host.openshell.internal:4199'",
+    );
+    expect(execCall?.args.join(" ")).toContain("OPENNEKO_BROKER_TOKEN='tok-org-1-run-1'");
+    // the token is dropped when the run ends:
+    expect(released).toEqual(["run-1"]);
+  });
+
+  it("omits broker env when no broker is wired (hermes-only path)", async () => {
+    const runCore = makeSandboxRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      onLog: () => {},
+    });
+    await runCore(fakeInput(async () => {}));
+    const execCall = h.calls.find((c) => c.args.includes("exec"));
+    expect(execCall?.args.join(" ")).not.toContain("OPENNEKO_BROKER_URL");
+    expect(execCall?.args.join(" ")).not.toContain("OPENNEKO_BROKER_TOKEN");
   });
 
   it("mirrors HERMES_HOME keyless and points the box at it", async () => {

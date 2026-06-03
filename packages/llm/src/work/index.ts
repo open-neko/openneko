@@ -11,6 +11,15 @@ export {
   inProcessControlPlane,
   type AgentControlPlane,
 } from "./control-plane";
+export {
+  createAgentBroker,
+  ensureAgentBroker,
+  startAgentBroker,
+  type AgentBrokerDeps,
+  type AgentBrokerHandle,
+  type RunBinding,
+  type StartAgentBrokerOptions,
+} from "./broker";
 export * from "./memory";
 export * from "./store";
 export {

@@ -54,7 +54,11 @@ export interface SandboxLauncherOptions {
   hermesHomeHostPath?: string;
   /** Broker coords for the claude MCP-tool path (omitted for hermes). */
   brokerUrl?: string;
-  brokerTokenFor?: (runId: string) => string;
+  /** Mint a per-run bearer token bound to {runId, orgId} (the broker forces
+   *  org/run from the binding, never the request body). */
+  brokerTokenFor?: (binding: { runId: string; orgId: string }) => string;
+  /** Release the run's token after it finishes (called in the run's finally). */
+  brokerRelease?: (runId: string) => void;
   execTimeoutMs?: number;
   onLog?: (line: string) => void;
 }
@@ -147,7 +151,25 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
         180_000,
       );
 
-      const policyArgs = buildModelEgressArgs(name, opts.modelEgress ?? []);
+      // claude's MCP tools reach the control plane via the broker — node's
+      // fetch, which routes through the egress proxy (the box sets
+      // NODE_USE_ENV_PROXY=1). Allow the broker host:port for the node binary.
+      const brokerEgress = opts.brokerUrl
+        ? (() => {
+            const u = new URL(opts.brokerUrl);
+            return [
+              {
+                host: u.hostname,
+                port: Number(u.port) || 80,
+                binary: "/usr/local/bin/node",
+              },
+            ];
+          })()
+        : [];
+      const policyArgs = buildModelEgressArgs(name, [
+        ...(opts.modelEgress ?? []),
+        ...brokerEgress,
+      ]);
       if (policyArgs) await run(policyArgs, 75_000);
 
       // Workspace lands at /sandbox/<orgRoot-basename> (= boxOrgRoot); `upload`
@@ -171,7 +193,12 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
             OPENNEKO_RUN_JOB_FILE: SANDBOX_JOB_PATH,
             ...(opts.brokerUrl ? { OPENNEKO_BROKER_URL: opts.brokerUrl } : {}),
             ...(opts.brokerUrl && opts.brokerTokenFor
-              ? { OPENNEKO_BROKER_TOKEN: opts.brokerTokenFor(input.runId) }
+              ? {
+                  OPENNEKO_BROKER_TOKEN: opts.brokerTokenFor({
+                    runId: input.runId,
+                    orgId: input.orgId,
+                  }),
+                }
               : {}),
             ...(opts.env ?? {}),
             ...(hermesStage ? { HERMES_HOME: SANDBOX_HERMES_HOME } : {}),
@@ -182,6 +209,7 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
         opts.execTimeoutMs ?? 600_000,
       );
     } finally {
+      opts.brokerRelease?.(input.runId);
       await run(["sandbox", "delete", name], 60_000).catch(() => {});
       await rm(stageDir, { recursive: true, force: true });
     }
@@ -191,15 +219,16 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
 /** `policy update` adding the model endpoint(s) scoped to the backend binary. */
 export function buildModelEgressArgs(
   name: string,
-  egress: ReadonlyArray<{ host: string; binary: string }>,
+  egress: ReadonlyArray<{ host: string; binary: string; port?: number }>,
 ): string[] | null {
   if (egress.length === 0) return null;
   const args = ["policy", "update", name];
-  for (const { host } of egress) {
-    args.push("--add-endpoint", `${host}:443:read-write:rest:enforce`);
+  for (const { host, port } of egress) {
+    args.push("--add-endpoint", `${host}:${port ?? 443}:read-write:rest:enforce`);
   }
   for (const { binary } of egress) args.push("--binary", binary);
-  for (const { host } of egress) args.push("--add-allow", `${host}:443:*:/**`);
+  for (const { host, port } of egress)
+    args.push("--add-allow", `${host}:${port ?? 443}:*:/**`);
   args.push("--wait", "--timeout", "60");
   return args;
 }
@@ -209,8 +238,17 @@ export function buildModelEgressArgs(
  * OPENNEKO_AGENT_RUNTIME=openshell, so the default in-process path is unchanged.
  * Shared by the worker (runWorkRun) and the web chat route. Env-wired for now;
  * per-org auto-sync (provider/egress/key-var from the org row) is a follow-up.
+ *
+ * `broker` (optional) wires the claude MCP-tool path: the caller starts a host
+ * broker (startAgentBroker) bound to its control plane and passes the handle so
+ * the sandbox can reach the control plane mid-turn. Omit for the hermes-only
+ * path (hermes emits fences parsed host-side; it needs no broker).
  */
-export function agentRuntimeDepsFromEnv(): Pick<Partial<RunChatTurnDeps>, "runCore"> {
+export function agentRuntimeDepsFromEnv(broker?: {
+  url: string;
+  tokenFor: (binding: { runId: string; orgId: string }) => string;
+  release?: (runId: string) => void;
+}): Pick<Partial<RunChatTurnDeps>, "runCore"> {
   if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "inprocess").toLowerCase() !== "openshell") {
     return {};
   }
@@ -236,6 +274,9 @@ export function agentRuntimeDepsFromEnv(): Pick<Partial<RunChatTurnDeps>, "runCo
       modelEgress: binary ? hosts.map((host) => ({ host, binary })) : [],
       keyAliases: keyEnv ? [{ from: credName, to: keyEnv }] : undefined,
       hermesHomeHostPath: process.env.OPENNEKO_AGENT_HERMES_HOME || undefined,
+      brokerUrl: broker?.url,
+      brokerTokenFor: broker?.tokenFor,
+      brokerRelease: broker?.release,
     }),
   };
 }

@@ -121,6 +121,13 @@ services:
       # provider / egress host / connecting binary / key-env are derived from the
       # org's model config by provisionHostConfig — no per-deploy egress wiring.
       OPENSHELL_GATEWAY: openneko
+      # claude tool-turns reach the control plane via this broker. It listens
+      # inside the container but the sandbox dials it at host.openshell.internal,
+      # so the port is published to the host (requirement #3). Worker + web run
+      # on the same host → distinct ports.
+      OPENNEKO_BROKER_PORT: ${OPENNEKO_WORKER_BROKER_PORT:-4199}
+    ports:
+      - "${OPENNEKO_WORKER_BROKER_PORT:-4199}:${OPENNEKO_WORKER_BROKER_PORT:-4199}"
     volumes:
       - openshell-config:/config/openshell
     depends_on:
@@ -135,6 +142,9 @@ services:
       OPENNEKO_AGENT_RUNTIME: openshell
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       OPENSHELL_GATEWAY: openneko
+      OPENNEKO_BROKER_PORT: ${OPENNEKO_WEB_BROKER_PORT:-4198}
+    ports:
+      - "${OPENNEKO_WEB_BROKER_PORT:-4198}:${OPENNEKO_WEB_BROKER_PORT:-4198}"
     volumes:
       - openshell-config:/config/openshell
     depends_on:

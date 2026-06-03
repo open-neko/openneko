@@ -2,6 +2,7 @@ import type { AgentEvent } from "@neko/llm";
 import {
   agentRuntimeDepsFromEnv,
   appendWorkRunEvent,
+  ensureAgentBroker,
   getWorkRun,
   runChatTurn,
   scrubAgentEvent,
@@ -43,6 +44,8 @@ export async function runWorkRun(
   const pluginActions =
     getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [];
 
+  const broker = await ensureAgentBroker();
+
   await runChatTurn(
     {
       orgId,
@@ -52,6 +55,6 @@ export async function runWorkRun(
       emit,
       pluginActions,
     },
-    agentRuntimeDepsFromEnv(),
+    agentRuntimeDepsFromEnv(broker),
   );
 }
