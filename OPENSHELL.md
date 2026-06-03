@@ -95,15 +95,33 @@ Plugins can run in OpenShell sandboxes instead of microsandbox with
 `PluginRuntime` interface, so it's a single flag — see
 [PLUGINS.md](PLUGINS.md).
 
+## One-command install
+
+```sh
+openneko start --runtime openshell
+```
+
+overlays the containerised gateway (`compose.openshell.yml`) onto the stack and
+runs the agent + plugins in sandboxes. On macOS the CLI points the gateway's
+state dir under `$HOME` automatically (see Deployment); on Linux it uses
+`/var/lib/openneko/openshell`. Egress, the gateway-side provider, and the
+connecting binary all self-derive from your `/settings` model config on first
+boot — the env table below is only for manual / advanced setups.
+
 ## Deployment
 
 - **Host-process gateway** (brew on macOS / binary + systemd on Linux) — the
-  verified path; the agent-in-sandbox web-UI e2e runs on this.
-- **Containerised gateway** (`compose.openshell.yml`) — for the one-command
-  installer. Requires the Docker socket, mTLS PKI, and matched host:container
-  bind paths; verified up to mTLS, **pending end-to-end validation on Linux**
-  (macOS/OrbStack has host-path + port-advertising quirks). Validate on the
-  Linux target before relying on it.
+  original verified path; the first agent-in-sandbox web-UI e2e ran on this.
+- **Containerised gateway** (`compose.openshell.yml`, what `--runtime openshell`
+  uses) — validated end-to-end on **both Linux** (neko-vm) **and macOS/OrbStack**:
+  gateway boots with mTLS, the Docker driver creates a sandbox, the per-sandbox
+  JWT delivers, `exec` runs, and the launcher drives a real hermes turn with the
+  key isolated. Requires the Docker socket, mTLS PKI, and **matched
+  host:container bind paths** for the state dir. The one macOS subtlety: OrbStack
+  only maps paths under `$HOME` into its Linux VM, so `OPENSHELL_STATE_DIR` must
+  live under `$HOME` (a `/var/lib/...` source yields an empty JWT bind-mount →
+  crash-loop). `openneko start --runtime openshell` sets this for you; if you run
+  compose directly on macOS, export `OPENSHELL_STATE_DIR=$HOME/.openneko/openshell`.
 
 ## Verifying key isolation
 
