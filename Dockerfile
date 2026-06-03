@@ -33,8 +33,12 @@ ARG TARGETARCH
 # unzip + postgresql-client are needed by db/load-adventureworks-baked.sh
 # (demo seeder, runs inside the worker container with no apt-get available
 # at runtime since the container runs as the `neko` user, not root).
+# openssh-client: `openshell sandbox exec` relays over ssh (unix:/run/openshell/
+# ssh.sock), so the worker/web — which shell out to it for the agent sandbox —
+# need an ssh client. Verified on Linux: without it the relay fails
+# "No such file or directory"; with it, exec returns the sandbox output.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git unzip postgresql-client \
+      git unzip postgresql-client openssh-client \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL -o /tmp/graphjin.tgz \
       "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \

@@ -67,17 +67,22 @@ services:
       - |
         set -e
         PKI=${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}/pki
-        mkdir -p /reg/openshell/gateways/openneko/mtls
-        cp "$$PKI/ca.crt"         /reg/openshell/gateways/openneko/mtls/ca.crt
-        cp "$$PKI/client/tls.crt" /reg/openshell/gateways/openneko/mtls/tls.crt
-        cp "$$PKI/client/tls.key" /reg/openshell/gateways/openneko/mtls/tls.key
+        # web + worker have XDG_CONFIG_HOME=/config and the CLI reads gateway
+        # registrations from $XDG_CONFIG_HOME/openshell — so write to
+        # /config/openshell (the shared openshell-config volume), NOT under the
+        # openneko-config volume (which mounts at /config/openneko).
+        REG=/config/openshell/gateways/openneko
+        mkdir -p "$$REG/mtls"
+        cp "$$PKI/ca.crt"         "$$REG/mtls/ca.crt"
+        cp "$$PKI/client/tls.crt" "$$REG/mtls/tls.crt"
+        cp "$$PKI/client/tls.key" "$$REG/mtls/tls.key"
         printf '{"name":"openneko","gateway_endpoint":"https://openshell-gateway:%s","is_remote":false,"gateway_port":0,"auth_mode":"mtls"}\n' "${OPENSHELL_PORT:-18080}" \
-          > /reg/openshell/gateways/openneko/metadata.json
-        printf 'openneko' > /reg/openshell/active_gateway
-        chmod -R a+rX /reg
+          > "$$REG/metadata.json"
+        printf 'openneko' > /config/openshell/active_gateway
+        chmod -R a+rX /config/openshell
     volumes:
-      - ${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}/pki:/pki:ro
-      - openneko-config:/reg
+      - ${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}/pki:${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}/pki:ro
+      - openshell-config:/config/openshell
 
   openshell-gateway:
     image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}
@@ -106,13 +111,37 @@ services:
       # path the gateway hands the daemon resolves identically on the host.
       - ${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}:${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}
 
+  # Worker: channel-triggered agent runs + plugins, both in OpenShell sandboxes.
   worker:
     environment:
       OPENNEKO_PLUGIN_RUNTIME: openshell
       OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:node20}
-      # The CLI reads gateway registrations from $XDG_CONFIG_HOME/openshell;
-      # certgen+reg wrote the registration to the openneko-config volume.
+      OPENNEKO_AGENT_RUNTIME: openshell
+      OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
+      # provider / egress host / connecting binary / key-env are derived from the
+      # org's model config by provisionHostConfig — no per-deploy egress wiring.
       OPENSHELL_GATEWAY: openneko
+    volumes:
+      - openshell-config:/config/openshell
     depends_on:
       openshell-gateway:
         condition: service_started
+
+  # Web: interactive chat launches the agent in a sandbox too (the Next.js server
+  # is the control plane; the agent never runs in-process). Same flags; egress
+  # self-derives on the first settings save (provisionHostConfig).
+  web:
+    environment:
+      OPENNEKO_AGENT_RUNTIME: openshell
+      OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
+      OPENSHELL_GATEWAY: openneko
+    volumes:
+      - openshell-config:/config/openshell
+    depends_on:
+      openshell-gateway:
+        condition: service_started
+
+volumes:
+  # Holds the worker/web CLI's gateway registration at /config/openshell (the
+  # certgen+reg step writes it; the gateway is reached by mTLS service name).
+  openshell-config:
