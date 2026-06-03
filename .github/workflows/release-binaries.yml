@@ -158,9 +158,14 @@ jobs:
           IMAGE=ghcr.io/open-neko/${{ matrix.image }}
           AMD64=$(cat /tmp/digests/${{ matrix.image }}-amd64)
           ARM64=$(cat /tmp/digests/${{ matrix.image }}-arm64)
+          # `:latest` only on real releases. A manual workflow_dispatch (e.g. a
+          # branch preview build) publishes ONLY its specific tag, so it can
+          # never clobber the `:latest` that live downloads pull.
+          LATEST=""
+          if [ "${{ github.event_name }}" = "release" ]; then LATEST="-t $IMAGE:latest"; fi
           docker buildx imagetools create \
             -t "$IMAGE:${{ steps.tag.outputs.value }}" \
-            -t "$IMAGE:latest" \
+            $LATEST \
             "$IMAGE@$AMD64" \
             "$IMAGE@$ARM64"
           docker buildx imagetools inspect "$IMAGE:${{ steps.tag.outputs.value }}"
