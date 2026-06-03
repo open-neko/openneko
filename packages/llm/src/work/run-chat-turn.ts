@@ -79,6 +79,13 @@ export type RunChatTurnDeps = {
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
   prefetchKnowledgePack: typeof defaultPrefetchKnowledgePack;
   listInstalledSkills: typeof defaultListInstalledSkills;
+  /**
+   * Runs the agent loop. Default = runAgentBackend in-process. The launcher
+   * injects a sandbox-running impl for OPENNEKO_AGENT_RUNTIME=openshell: it
+   * runs the core in an OpenShell sandbox, streaming events back through
+   * `emit`. The DB-bound prologue/epilogue around this stay host-side.
+   */
+  runCore: typeof runAgentBackend;
 };
 
 export type RunChatTurnResult = {
@@ -107,6 +114,7 @@ export async function runChatTurn(
     deps.prefetchKnowledgePack ?? defaultPrefetchKnowledgePack;
   const listInstalledSkills =
     deps.listInstalledSkills ?? defaultListInstalledSkills;
+  const runCore = deps.runCore ?? runAgentBackend;
 
   await markWorkRunRunning(runId);
 
@@ -213,7 +221,7 @@ export async function runChatTurn(
       pluginActions: opts.pluginActions ?? [],
     });
 
-    const result = await runAgentBackend({
+    const result = await runCore({
       backend,
       prompt,
       userMessage: message,
