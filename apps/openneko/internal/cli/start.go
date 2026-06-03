@@ -95,6 +95,20 @@ Modes:
 				}
 			}
 
+			// Pre-pull the agent sandbox image at install time so the gateway's
+			// first sandbox-create (the user's first chat) never blocks on a
+			// large pull. Best-effort: a failure just falls back to a lazy pull.
+			if agentRuntime == "openshell" {
+				agentImg := os.Getenv("OPENNEKO_AGENT_IMAGE")
+				if agentImg == "" {
+					agentImg = "ghcr.io/open-neko/agent:" + os.Getenv("OPENNEKO_VERSION")
+				}
+				fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
+				if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
+				}
+			}
+
 			// Stage 2: bring up the rest.
 			upArgs := []string{"up"}
 			if detach {

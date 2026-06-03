@@ -190,3 +190,16 @@ func defaultHasKVM() bool {
 	_, err := os.Stat("/dev/kvm")
 	return !errors.Is(err, fs.ErrNotExist)
 }
+
+// EnsureImage pulls image unless it's already present locally. Used to warm the
+// agent sandbox image at install time so the gateway's first sandbox-create
+// (i.e. the user's first chat) doesn't block on a multi-hundred-MB pull.
+func (s *Supervisor) EnsureImage(ctx context.Context, image string, stdout, stderr *os.File) error {
+	if exec.CommandContext(ctx, "docker", "image", "inspect", image).Run() == nil {
+		return nil // already local
+	}
+	cmd := exec.CommandContext(ctx, "docker", "pull", image)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
