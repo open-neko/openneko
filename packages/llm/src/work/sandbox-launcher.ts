@@ -14,8 +14,13 @@ import type { RunChatTurnDeps } from "./run-chat-turn";
 const EVENT_MARKER = "__openneko_event__";
 const RESULT_MARKER = "__openneko_agent_result__";
 
-/** Path of the agent entrypoint inside the agent image (the `agent` Docker stage). */
-const AGENT_ENTRY = "/app/apps/worker/src/agent-sandbox/entry.ts";
+/**
+ * Path of the agent entrypoint inside the agent image (the `agent` Docker
+ * stage). The agent image is a `pnpm deploy` of @neko/worker, so the worker
+ * package is rooted at /app (not /app/apps/worker) — entry.ts lives at
+ * /app/src/agent-sandbox/entry.ts and @neko/llm is bundled at /app/node_modules.
+ */
+const AGENT_ENTRY = "/app/src/agent-sandbox/entry.ts";
 const SANDBOX_JOB_PATH = "/sandbox/job.json";
 const SANDBOX_HERMES_HOME = "/sandbox/hermes-home";
 

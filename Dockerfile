@@ -236,26 +236,36 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
 
 # ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
-# The worker runtime adapted to run as a child inside an OpenShell sandbox
-# (Phase 3, OPENNEKO_AGENT_RUNTIME=openshell). vs the worker stage: + the net
-# tools the supervisor needs, + a non-root `sandbox` user @ /sandbox (high UID,
-# OpenShell convention). /app and the uv/hermes install are ALREADY world-rX
-# (COPY preserves the build's default 0644/0755), so the sandbox user reads +
-# execs them with no chmod. Do NOT add `chmod -R a+rX /app /usr/local/uv` here:
-# it's a no-op on permissions but forces an overlay copy-up of ~1.8GB into a new
-# layer (verified). hermes is under /usr/local (Landlock allows /usr, blocks
-# /opt). The launcher exec's agent-sandbox/entry.ts, which runs the agent loop
-# reaching the control plane only through the broker.
-FROM worker AS agent
+# The agent loop running as a child inside an OpenShell sandbox (Phase 3,
+# OPENNEKO_AGENT_RUNTIME=openshell), reaching the control plane only through the
+# broker. It is deliberately NOT `FROM worker`: that would pin the worker's full
+# ~1.3GB node_modules (incl. the web/Next.js deps the agent never runs) in an
+# immutable base layer the trim couldn't shrink. Instead we `pnpm deploy` the
+# worker's trimmed PROD closure and lay it onto the lean `cli` base — which
+# already provides node + hermes (/usr/local/uv) + claude + graphjin +
+# libreoffice. Net /app: ~774MB vs ~2.1GB. hermes is under /usr/local (Landlock
+# allows /usr, blocks /opt).
+
+# Trimmed prod closure of @neko/worker: drops web/Next.js + devDeps + other
+# apps' sources; keeps tsx, @neko/llm (with its assets), and the claude SDK.
+FROM build AS agent-deploy
+RUN pnpm --filter @neko/worker deploy --prod /out/agent-app
+
+FROM cli AS agent
 USER root
+# Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
+# convention). node/hermes/claude/graphjin/libreoffice already come from `cli`.
 RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1000660000 sandbox \
     && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
     && install -d -o sandbox -g sandbox /sandbox
+# The deploy roots the worker package at /app (entry.ts -> /app/src/...,
+# @neko/llm -> /app/node_modules), owned by the sandbox user so it can run it.
+COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
 WORKDIR /sandbox
 # Supervisor-replaced; launcher runs:
-#   node --import tsx/esm /app/apps/worker/src/agent-sandbox/entry.ts
+#   cd /app && node --import tsx/esm /app/src/agent-sandbox/entry.ts
 CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
