@@ -191,29 +191,83 @@ function escapeYamlString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+// API host per neko model-provider when there's no explicit base_url. A handful
+// of providers (NOT the 300 model variants) — derived from the org's config,
+// never hand-set per deployment.
+const PROVIDER_API_HOSTS: Record<string, string> = {
+  "google-gemini": "generativelanguage.googleapis.com",
+  anthropic: "api.anthropic.com",
+  openai: "api.openai.com",
+  openrouter: "openrouter.ai",
+  "x-grok": "openrouter.ai",
+};
+
 /**
- * When the agent runs in an OpenShell sandbox, sync the org's primary model key
- * into a gateway-side provider so the egress proxy can inject it on the wire —
- * the key never enters the sandbox. Replaces the manual `openshell provider
- * create` step. Egress + the key-env alias stay env-wired in the launcher.
+ * Derive the agent-sandbox egress from the org's model config: the API host
+ * (explicit base_url, else the provider default) + models.dev for hermes model
+ * resolution; the connecting binary (per backend + arch — egress matches the
+ * resolved path); the env var the backend reads. Binary paths track the agent
+ * image's pinned cpython.
  */
-async function provisionOpenShellProvider(orgId: string): Promise<void> {
+function deriveAgentEgress(
+  row: StoredRow,
+  backend: string,
+): { hosts: string[]; binary: string; keyEnv: string } {
+  const cfg = (row.config ?? {}) as { url?: string; baseUrl?: string };
+  const baseUrl = cfg.baseUrl || cfg.url;
+  let host: string | undefined;
+  if (baseUrl) {
+    try {
+      host = new URL(baseUrl).host;
+    } catch {
+      /* fall through to the provider default */
+    }
+  }
+  host ??= PROVIDER_API_HOSTS[row.provider];
+  const isClaude = backend === "claude-agent";
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  return {
+    hosts: [...(host ? [host] : []), ...(isClaude ? [] : ["models.dev"])],
+    binary: isClaude
+      ? "/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+      : `/usr/local/uv/python/cpython-3.11.15-linux-${arch}-gnu/bin/python3.11`,
+    keyEnv: isClaude ? "ANTHROPIC_API_KEY" : mapHermesProvider(row.provider).keyVar,
+  };
+}
+
+/**
+ * OPENNEKO_AGENT_RUNTIME=openshell: self-configure the agent sandbox from the
+ * org's model config — derive the egress (host/binary/key-env; explicit env
+ * overrides win) and sync the model key into a gateway-side provider so the
+ * proxy injects it on the wire (the key never enters the box). Replaces the
+ * manual `openshell provider create` + hand-set egress env.
+ */
+async function provisionOpenShellRuntime(orgId: string, backend: string): Promise<void> {
   if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "").toLowerCase() !== "openshell") {
     return;
   }
-  const providerName = process.env.OPENNEKO_AGENT_MODEL_PROVIDER;
-  if (!providerName) return;
   const row = await loadProviderRow(orgId, "primary");
   if (!row || !row.enabled) return;
+
+  const { hosts, binary, keyEnv } = deriveAgentEgress(row, backend);
+  process.env.OPENNEKO_AGENT_MODEL_PROVIDER ||= "openneko-agent";
+  if (!process.env.OPENNEKO_AGENT_MODEL_HOST && hosts.length > 0) {
+    process.env.OPENNEKO_AGENT_MODEL_HOST = hosts.join(",");
+  }
+  process.env.OPENNEKO_AGENT_MODEL_BINARY ||= binary;
+  process.env.OPENNEKO_AGENT_MODEL_KEY_ENV ||= keyEnv;
+
   const apiKey = decryptSecrets(row.secrets).apiKey;
   if (!apiKey) return;
   await ensureOpenShellProvider({
-    providerName,
+    providerName: process.env.OPENNEKO_AGENT_MODEL_PROVIDER,
     apiKey,
     gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
     gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
   });
-  console.log(`[host-provision] synced OpenShell model provider "${providerName}"`);
+  console.log(
+    `[host-provision] OpenShell agent runtime self-configured: provider="${process.env.OPENNEKO_AGENT_MODEL_PROVIDER}" egress="${hosts.join(",")}" keyEnv=${keyEnv}`,
+  );
 }
 
 export async function provisionHostConfig(orgId: string): Promise<void> {
@@ -225,20 +279,20 @@ export async function provisionHostConfig(orgId: string): Promise<void> {
     );
   }
 
-  try {
-    await provisionOpenShellProvider(orgId);
-  } catch (e) {
-    console.warn(
-      `[host-provision] OpenShell provider sync failed: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-
   const agentRow = await loadProviderRow(orgId, "agent");
   const backendCfg = (agentRow?.config ?? {}) as { backend?: unknown };
   const backend =
     typeof backendCfg.backend === "string" && isAgentBackendId(backendCfg.backend)
       ? backendCfg.backend
       : "hermes";
+
+  try {
+    await provisionOpenShellRuntime(orgId, backend);
+  } catch (e) {
+    console.warn(
+      `[host-provision] OpenShell runtime provision failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
 
   if (backend === "hermes") {
     try {
