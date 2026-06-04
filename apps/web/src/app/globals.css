@@ -118,3 +118,15 @@ html[data-density="compact"] .wf-grid {
 html[data-density="compact"] .wf-grid > li:has(.workflows-row.is-active) {
   grid-column: 1 / -1;
 }
+
+/* ── Actions: triage queue (list + reading pane) in Compact ── */
+html[data-density="compact"] .approvals-root { --page-width: 1120px; }
+.triage-pane { display: none; }
+html[data-density="compact"] .triage-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 16px;
+  align-items: start;
+}
+html[data-density="compact"] .triage-pane { display: block; position: sticky; top: 18px; }
+

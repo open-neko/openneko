@@ -11,6 +11,7 @@ import ActCard, {
   type ActRowTone,
 } from "@/components/ActCard";
 import { cn } from "@/lib/cn";
+import { formatSavedShort } from "@/lib/hours-saved";
 
 type Filter = "awaiting" | "fired" | "rejected" | "all";
 
@@ -297,7 +298,8 @@ function ActionsPageInner() {
         ) : data.actions.length === 0 ? (
           <EmptyState filter={filter} onBack={() => router.push("/")} />
         ) : (
-          <div className="act-list">
+          <div className="triage-layout">
+            <div className="act-list triage-queue">
             {groups.map((group, i) => {
               const cardData: ActCardData = {
                 runId: group.runId,
@@ -340,12 +342,124 @@ function ActionsPageInner() {
                 />
               );
             })}
+            </div>
+            {filter === "awaiting" && (
+              <ActionReadingPane
+                action={data.actions.find((a) => a.id === focusedId) ?? null}
+                busy={busyId !== null && busyId === focusedId}
+                onApprove={() => { if (focusedId) void act(focusedId, "approve"); }}
+                onReject={() => { if (focusedId) beginReject(focusedId); }}
+              />
+            )}
           </div>
         )}
       </div>
 
       <CreatorCredit />
     </>
+  );
+}
+
+const RISK_PILL: Record<string, string> = {
+  critical: "bg-danger text-white",
+  high: "bg-danger-soft text-danger border border-danger/30",
+  medium: "bg-watch-soft text-warn-ink border border-watch/30",
+  low: "bg-success-soft text-success-ink border border-success-mid/30",
+};
+
+// Reading pane for the triage queue (Compact). Shows the focused action's
+// full context — why, target, payload, value — beside the queue list.
+function ActionReadingPane({
+  action,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  action: ActionRow | null;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  if (!action) {
+    return (
+      <aside className="triage-pane">
+        <div className="bg-card border border-border rounded-2xl px-5 py-10 text-center text-[13px] text-text3 shadow-soft">
+          Select an action to review.
+        </div>
+      </aside>
+    );
+  }
+  const payloadEntries =
+    action.payload && typeof action.payload === "object" && !Array.isArray(action.payload)
+      ? Object.entries(action.payload as Record<string, unknown>).slice(0, 8)
+      : [];
+  const risk = action.riskLevel ?? "low";
+  return (
+    <aside className="triage-pane">
+      <div className="bg-card border border-border rounded-2xl px-5 py-[18px] shadow-soft">
+        <div className="flex items-center gap-2.5 mb-2.5">
+          <span className={cn("font-display text-[9.5px] font-extrabold tracking-[0.08em] uppercase px-2 py-0.5 rounded-full", RISK_PILL[risk] ?? RISK_PILL.low)}>
+            {risk} risk
+          </span>
+          <code className="ml-auto font-mono text-[11px] text-text3">{action.kind}</code>
+        </div>
+        <h2 className="font-display text-[19px] font-extrabold tracking-[-0.02em] leading-[1.2] text-text">
+          {action.summary || action.kind}
+        </h2>
+        <div className="text-[12.5px] text-text2 mt-2 leading-[1.5]">
+          Proposed by <span className="text-text font-semibold">{action.workflow.name}</span>
+          {action.triggeredByObservation ? <> · triggered by “{action.triggeredByObservation.title}”</> : null}
+        </div>
+
+        {action.target && (
+          <div className="mt-4">
+            <div className="text-[10px] font-bold tracking-[0.12em] uppercase text-text3 mb-1.5">Target</div>
+            <code className="font-mono text-[12px] text-text2 break-all">{action.target}</code>
+          </div>
+        )}
+
+        {payloadEntries.length > 0 && (
+          <div className="mt-4">
+            <div className="text-[10px] font-bold tracking-[0.12em] uppercase text-text3 mb-1.5">Payload</div>
+            <div className="bg-bg border border-border rounded-xl px-3 py-2.5 grid gap-1.5">
+              {payloadEntries.map(([k, v]) => (
+                <div key={k} className="flex gap-3 text-[12px]">
+                  <span className="text-text3 min-w-[88px] flex-none">{k}</span>
+                  <span className="font-mono text-text break-all">
+                    {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(action.minutesSaved ?? 0) > 0 && (
+          <div className="mt-4 text-[12.5px] text-text2">
+            Saves <span className="font-mono text-success-ink">{formatSavedShort(action.minutesSaved as number)}</span> of manual effort.
+          </div>
+        )}
+
+        <div className="flex items-center gap-2.5 mt-[18px] pt-4 border-t border-border">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onApprove}
+            className="px-[18px] py-2.5 rounded-[11px] bg-text text-bg font-display font-bold text-[13.5px] tracking-[-0.01em] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+          >
+            Approve <span className="font-mono text-[11px] opacity-70 ml-0.5">a</span>
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onReject}
+            className="px-[18px] py-2.5 rounded-[11px] border border-border text-text2 font-semibold text-[13.5px] hover:border-danger hover:text-danger disabled:opacity-50 cursor-pointer"
+          >
+            Reject <span className="font-mono text-[11px] opacity-70 ml-0.5">r</span>
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }
 
