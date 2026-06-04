@@ -336,28 +336,21 @@ When you also propose an action, add \`minutes_saved\` (integer) and a short
 \`basis\` to that action too, estimated the same conservative way.
 </value>`;
 
-// Right-rail context for the Ask page. Optional but encouraged when the answer
-// has structured substance — the runtime parses it and renders the rail.
-const ASK_CONTEXT_SECTION = `<rail_context>
-When your answer carries structured substance, also emit one fenced block so
-the side rail can surface it. All fields optional; include what fits.
+// Suggested follow-up questions. Channel-agnostic CONTENT — not UI: any
+// channel (the Ask rail, Telegram, Slack) can surface these as "ask next"
+// prompts. Parsed from a `neko_followups` fence.
+const FOLLOWUPS_SECTION = `<followups>
+After your answer, suggest up to 3 natural follow-up questions the operator is
+likely to ask next — the obvious next steps given what you just showed. Emit
+them as one fenced block at the very end:
 
-\`\`\`neko_ask_context
-{
-  "vitals": [{ "label": "Top-10 share", "value": "48%", "sub": "▼ from 53%" }],
-  "sources": [{ "name": "orders", "detail": "3.2M rows" }, { "name": "customers", "detail": "1,284" }],
-  "followups": ["Break this down by region", "Compare to last quarter"]
-}
+\`\`\`neko_followups
+{ "followups": ["Break this down by region", "Compare to last quarter", "Which products are declining?"] }
 \`\`\`
 
-- \`vitals\`: up to 4 headline numbers from your answer (label + value, optional
-  sub like a delta). These are the figures worth pinning beside the chat.
-- \`sources\`: the data sources/tables you actually queried, with an optional
-  size/detail. Only list what you touched.
-- \`followups\`: up to 3 natural next questions the operator might ask.
-
-Emit at most once, at the end. Omit the fence entirely for trivial answers.
-</rail_context>`;
+- Make each one specific to this answer and a genuinely useful next step.
+- Omit the fence for a pure clarifying question or an error with no findings.
+</followups>`;
 
 export interface PluginActionPromptDescriptor {
   kind: string;
@@ -515,7 +508,7 @@ that flags churn risk every Monday."
     buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
     VALUE_SECTION,
-    ASK_CONTEXT_SECTION,
+    FOLLOWUPS_SECTION,
   ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {

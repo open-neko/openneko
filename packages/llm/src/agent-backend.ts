@@ -92,15 +92,10 @@ export type AgentEvent =
       rejection_reason?: string;
     }
   | { type: "needs_input"; question: string; options?: string[] }
-  // Structured context for the Ask page's right rail — emitted once at the
-  // end of a /work run via a `neko_ask_context` fence. All fields optional;
-  // the rail shows whichever sections are present.
-  | {
-      type: "ask_context";
-      vitals?: { label: string; value: string; sub?: string }[];
-      sources?: { name: string; detail?: string }[];
-      followups?: string[];
-    };
+  // Suggested follow-up questions — channel-agnostic content emitted once at
+  // the end of a /work run via a `neko_followups` fence. Any channel (the Ask
+  // rail, Telegram, Slack) can surface these as "ask next" prompts.
+  | { type: "followups"; items: string[] };
 
 export type AgentChatMessage = {
   id?: string;

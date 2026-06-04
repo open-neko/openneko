@@ -1,12 +1,12 @@
 import {
   ACTION_REQUEST_SCHEMA,
-  ASK_CONTEXT_SCHEMA,
+  FOLLOWUPS_SCHEMA,
   POLICY_SAVE_SCHEMA,
   VALUE_ESTIMATE_SCHEMA,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
-  type AskContextPayload,
+  type FollowupsPayload,
   type PolicySavePayload,
   type ValueEstimatePayload,
   type WorkflowOutputPayload,
@@ -18,7 +18,7 @@ const OUTPUT_FENCE_RE = /```neko_workflow_output\s*([\s\S]*?)```/gi;
 const ACTION_FENCE_RE = /```neko_action_request\s*([\s\S]*?)```/gi;
 const RULE_FENCE_RE = /```neko_rule_save\s*([\s\S]*?)```/gi;
 const VALUE_FENCE_RE = /```neko_value\s*([\s\S]*?)```/gi;
-const ASK_CONTEXT_FENCE_RE = /```neko_ask_context\s*([\s\S]*?)```/gi;
+const FOLLOWUPS_FENCE_RE = /```neko_followups\s*([\s\S]*?)```/gi;
 
 export type FenceParseError = {
   raw: string;
@@ -55,9 +55,9 @@ export type ValueFenceResult = {
   errors: FenceParseError[];
 };
 
-export type AskContextFenceResult = {
+export type FollowupsFenceResult = {
   text: string;
-  payload: AskContextPayload | null;
+  payload: FollowupsPayload | null;
   errors: FenceParseError[];
 };
 
@@ -215,12 +215,12 @@ export function extractValueFence(raw: string): ValueFenceResult {
   };
 }
 
-// Ask-page right-rail context (vitals / sources / followups). Last valid
-// fence wins; everything optional.
-export function extractAskContextFence(raw: string): AskContextFenceResult {
-  const matches = [...raw.matchAll(ASK_CONTEXT_FENCE_RE)];
+// Suggested follow-up questions (channel-agnostic content). Last valid fence
+// wins.
+export function extractFollowupsFence(raw: string): FollowupsFenceResult {
+  const matches = [...raw.matchAll(FOLLOWUPS_FENCE_RE)];
   const errors: FenceParseError[] = [];
-  let payload: AskContextPayload | null = null;
+  let payload: FollowupsPayload | null = null;
 
   for (const m of matches) {
     const parsed = tryParse(m[1]);
@@ -228,7 +228,7 @@ export function extractAskContextFence(raw: string): AskContextFenceResult {
       errors.push({ raw: m[0], reason: parsed.reason });
       continue;
     }
-    const validated = ASK_CONTEXT_SCHEMA.safeParse(parsed.value);
+    const validated = FOLLOWUPS_SCHEMA.safeParse(parsed.value);
     if (!validated.success) {
       errors.push({ raw: m[0], reason: validated.error.message });
       continue;
@@ -237,7 +237,7 @@ export function extractAskContextFence(raw: string): AskContextFenceResult {
   }
 
   return {
-    text: stripAllFences(raw, ASK_CONTEXT_FENCE_RE),
+    text: stripAllFences(raw, FOLLOWUPS_FENCE_RE),
     payload,
     errors,
   };
