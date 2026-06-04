@@ -15,7 +15,7 @@ export function Card<T extends ElementType = "div">({
   return (
     <Component
       className={cn(
-        "bg-card border border-border rounded-2xl px-4 py-3.5",
+        "bg-card border border-border rounded-card shadow-soft px-4 py-3.5",
         className,
       )}
       {...props}

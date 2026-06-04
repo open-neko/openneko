@@ -100,7 +100,7 @@ export default function SkillsPage() {
                 onClick={() => void remove(skill.name)}
                 aria-label={`Delete skill ${skill.name}`}
                 title="Delete skill"
-                className="mt-1.5 mr-1.5 w-8 h-8 rounded-[9px] bg-transparent border-0 text-text3 inline-flex items-center justify-center transition opacity-0 pointer-events-none cursor-pointer hover:bg-[rgba(220,53,69,0.1)] hover:text-[#c0392b] disabled:opacity-50 disabled:cursor-not-allowed group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+                className="mt-1.5 mr-1.5 w-9 h-9 rounded-[9px] bg-transparent border-0 text-text3 inline-flex items-center justify-center transition opacity-0 pointer-events-none cursor-pointer hover:bg-[rgba(220,53,69,0.1)] hover:text-[var(--danger-hover)] disabled:opacity-50 disabled:cursor-not-allowed group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
               >
                 <Trash2 size={14} strokeWidth={2} />
               </button>

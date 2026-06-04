@@ -39,6 +39,9 @@
   --color-danger-soft: #FEECEC;
 
   --radius-card: 20px;
+  --radius-inner: 12px;
+  --radius-control: 10px;
+  --radius-2xl: 20px;
 
   --shadow-soft: 0 1px 3px rgba(20,18,12,0.04), 0 4px 16px rgba(20,18,12,0.03);
   --shadow-hover: 0 2px 8px rgba(20,18,12,0.06), 0 12px 36px -8px rgba(20,18,12,0.07);
@@ -111,7 +114,7 @@ html[data-density="comfortable"] {
 html[data-density="compact"] .workflows-root { --page-width: 1200px; }
 html[data-density="compact"] .wf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
   gap: 11px;
   align-items: start;
 }
@@ -128,7 +131,14 @@ html[data-density="compact"] .triage-layout {
   gap: 16px;
   align-items: start;
 }
-html[data-density="compact"] .triage-pane { display: block; position: sticky; top: 18px; }
+html[data-density="compact"] .triage-pane {
+  display: block; position: sticky; top: 18px;
+  max-height: calc(100vh - 36px); overflow-y: auto;
+}
+@media (max-width: 768px) {
+  html[data-density="compact"] .triage-layout { grid-template-columns: minmax(0, 1fr); }
+  html[data-density="compact"] .triage-pane { position: static; max-height: none; }
+}
 
 /* ── Ask: 3-pane (threads | conversation | context rail) in Compact ── */
 .work-rail { display: none; }

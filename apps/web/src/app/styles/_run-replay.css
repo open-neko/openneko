@@ -42,3 +42,35 @@
 .run-evt-message strong { font-weight: 700; }
 .run-evt-message em { font-style: italic; }
 .run-evt-message a { color: var(--accent); }
+.run-evt-message pre {
+  background: var(--neutral);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.run-evt-message pre code { background: transparent; padding: 0; }
+.run-evt-message table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+  margin: 4px 0 8px;
+}
+.run-evt-message thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 12px 5px 0;
+  white-space: nowrap;
+}
+.run-evt-message tbody td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.run-evt-message tbody tr:last-child td { border-bottom: none; }

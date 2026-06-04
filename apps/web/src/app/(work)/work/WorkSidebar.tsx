@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Plus, Sparkles, Trash2, Workflow } from "lucide-react";
+import { Brain, ChevronDown, Plus, Sparkles, Trash2, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -25,6 +25,12 @@ export default function WorkSidebar() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
+  // Collapsed on mobile while a thread is open so the conversation, not the
+  // thread list, is the first thing on screen. Desktop ignores this (CSS).
+  const [threadsExpanded, setThreadsExpanded] = useState(true);
+  useEffect(() => {
+    setThreadsExpanded(!activeThreadId);
+  }, [activeThreadId]);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/work/threads", { cache: "no-store" });
@@ -92,10 +98,20 @@ export default function WorkSidebar() {
   return (
     <aside className="work-sidebar">
       <div className="work-sidebar-head">
-        <div className="work-sidebar-eyebrow">
+        <button
+          type="button"
+          className="work-sidebar-eyebrow work-threads-toggle"
+          onClick={() => setThreadsExpanded((v) => !v)}
+          aria-expanded={threadsExpanded}
+        >
           <span>Threads</span>
           <span className="work-sidebar-count">{threads.length}</span>
-        </div>
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            className={`work-threads-chevron${threadsExpanded ? " is-open" : ""}`}
+          />
+        </button>
         <button
           className="work-icon-btn is-ghost"
           onClick={() => void createThread()}
@@ -106,7 +122,7 @@ export default function WorkSidebar() {
         </button>
       </div>
 
-      <div className="work-thread-list">
+      <div className={`work-thread-list${threadsExpanded ? "" : " is-collapsed"}`}>
         {loadingThreads ? (
           <div className="text-text3 text-[13px] py-3 px-1">Loading threads…</div>
         ) : threads.length === 0 ? (

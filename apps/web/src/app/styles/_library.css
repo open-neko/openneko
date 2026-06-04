@@ -28,12 +28,12 @@
 .library-markdown code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
-  background: rgba(0,0,0,0.04);
+  background: var(--hover-wash);
   padding: 1px 6px;
   border-radius: 4px;
 }
 .library-markdown pre {
-  background: rgba(0,0,0,0.04);
+  background: var(--hover-wash);
   border-radius: 10px;
   padding: 12px 14px;
   overflow-x: auto;
@@ -66,3 +66,26 @@
   margin: 0.8em 0;
   color: var(--text2);
 }
+.library-markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+  margin: 0.8em 0;
+}
+.library-markdown thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px 6px 0;
+  white-space: nowrap;
+}
+.library-markdown tbody td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.library-markdown tbody tr:last-child td { border-bottom: none; }

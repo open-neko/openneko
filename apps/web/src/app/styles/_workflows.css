@@ -273,7 +273,7 @@
 .rule-event-limits code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
-  background: rgba(0,0,0,0.04);
+  background: var(--hover-wash);
   border-radius: 4px;
   padding: 1px 5px;
 }
