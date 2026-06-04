@@ -112,6 +112,7 @@ import {
   useWorkShell,
   type RailArtifact,
   type RailSource,
+  type RailVital,
 } from "../work-shell-context";
 
 type MessageRecord = {
@@ -168,6 +169,7 @@ type WorkEvent =
       rejection_reason?: string;
     }
   | { type: "followups"; items: string[] }
+  | { type: "vitals"; items: RailVital[] }
   | { type: "done"; result?: unknown };
 
 type ThreadBundle = {
@@ -402,21 +404,22 @@ export default function WorkScreen() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
 
-  // Derive this thread's rail context from the run's own telemetry — never
-  // from model-authored UI hints. Sources touched are parsed from the data
-  // tools the agent actually called (a fact about the run); artifacts come
-  // from artifact events; follow-ups are LLM-generated channel-agnostic
-  // content lifted from `followups` events. Vitals are a Dashboard concept
-  // and intentionally absent here.
+  // Derive this thread's rail context from the run's own output. Vitals and
+  // follow-ups are channel-agnostic CONTENT the agent emits (the web channel
+  // renders them as a tile grid / chips — another channel could read them
+  // aloud). Sources touched are parsed from the data tools the agent actually
+  // called (a fact about the run); artifacts come from artifact events. The
+  // latest answer in the thread wins for vitals and follow-ups.
   useEffect(() => {
     if (!bundle) {
       setRailArtifacts([]);
-      setRailContext({ sources: [], followups: [] });
+      setRailContext({ vitals: [], sources: [], followups: [] });
       return;
     }
     const arts: RailArtifact[] = [];
     const seenArt = new Set<string>();
     const sourceMap = new Map<string, RailSource>();
+    let vitals: RailVital[] = [];
     let followups: string[] = [];
     const addSource = (raw: string) => {
       const name = raw.trim().toLowerCase();
@@ -450,11 +453,14 @@ export default function WorkScreen() {
           }
         } else if (ev.type === "followups" && Array.isArray(ev.items)) {
           followups = ev.items;
+        } else if (ev.type === "vitals" && Array.isArray(ev.items)) {
+          vitals = ev.items;
         }
       }
     }
     setRailArtifacts(arts);
     setRailContext({
+      vitals: vitals.slice(0, 4),
       sources: [...sourceMap.values()].slice(0, 6),
       followups,
     });
@@ -1909,18 +1915,11 @@ function ToolGroup({
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
-  // Auto-open once while work is in flight and the agent hasn't started
-  // talking yet — then leave the state alone. Re-deriving open from live
-  // inflight/text state caused the section to snap closed mid-stream as
-  // each tool finished or prose landed, which is visually jarring.
+  // Collapsed by default and left alone — the running/failed badges on the
+  // header carry live progress, so the body never expands on its own. An
+  // auto-open while in flight grew the transcript on every tool call and
+  // yanked the viewport down; the operator opens it only if they want detail.
   const [open, setOpen] = useState(false);
-  const autoOpenedRef = useRef(false);
-  useEffect(() => {
-    if (!autoOpenedRef.current && inflight > 0 && !followedByText) {
-      autoOpenedRef.current = true;
-      setOpen(true);
-    }
-  }, [inflight, followedByText]);
 
   if (!showHeader) {
     return (

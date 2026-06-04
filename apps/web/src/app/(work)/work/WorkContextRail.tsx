@@ -6,13 +6,24 @@ import { FileText, Image as ImageIcon, Sheet, File, ArrowRight } from "lucide-re
 import { useWorkShell } from "../work-shell-context";
 
 // Right-hand context rail for the Ask page (Compact only — CSS hides it in
-// Comfortable). Surfaces the data sources touched, generated artifacts,
-// follow-up prompts, and a relevant memory — all derived from the run or
-// fetched, never model-authored UI. Each panel renders only when it has data.
+// Comfortable). Surfaces the answer's headline vitals, generated artifacts, the
+// data sources touched, follow-up prompts, and a relevant memory. Vitals and
+// follow-ups are channel-agnostic CONTENT the agent emits — the web channel
+// renders them as pixels here; another channel could voice them. The rest is
+// derived from the run or fetched. Each panel renders only when it has data.
 
 function ext(name: string): string {
   const i = name.lastIndexOf(".");
   return i > 0 ? name.slice(i + 1).toLowerCase() : "";
+}
+
+// A terse, honest type label for an artifact — the file extension, or a short
+// form of its mime type. Never fabricates size/row counts we don't have.
+function artifactMeta(name: string, mime?: string): string {
+  const e = ext(name);
+  if (e) return e.toUpperCase();
+  if (mime) return mime.split("/").pop()?.toUpperCase() ?? mime;
+  return "file";
 }
 
 function ArtifactIcon({ name, mime }: { name: string; mime?: string }) {
@@ -31,7 +42,7 @@ function ArtifactIcon({ name, mime }: { name: string; mime?: string }) {
 
 export default function WorkContextRail() {
   const { railArtifacts, railContext } = useWorkShell();
-  const { sources, followups } = railContext;
+  const { vitals, sources, followups } = railContext;
   const [memory, setMemory] = useState<string | null>(null);
 
   // A relevant pinned memory, if any — real data from the work memory store.
@@ -52,6 +63,7 @@ export default function WorkContextRail() {
   }, []);
 
   const isEmpty =
+    vitals.length === 0 &&
     railArtifacts.length === 0 &&
     sources.length === 0 &&
     followups.length === 0 &&
@@ -69,15 +81,15 @@ export default function WorkContextRail() {
         </section>
       )}
 
-      {sources.length > 0 && (
+      {vitals.length > 0 && (
         <section className="wcr-sect">
-          <h4 className="wcr-h">Sources touched</h4>
-          <div className="grid gap-px">
-            {sources.map((s, i) => (
-              <div key={i} className="wcr-source">
-                <span className="wcr-source-dot" aria-hidden="true" />
-                <span className="truncate">{s.name}</span>
-                {s.detail && <span className="ml-auto font-mono text-[10.5px] text-text3">{s.detail}</span>}
+          <h4 className="wcr-h">Answer vitals</h4>
+          <div className="wcr-vitals">
+            {vitals.map((v, i) => (
+              <div key={i} className="wcr-vital">
+                <div className="wcr-vital-k">{v.label}</div>
+                <div className="wcr-vital-v">{v.value}</div>
+                {v.sub && <div className="wcr-vital-s">{v.sub}</div>}
               </div>
             ))}
           </div>
@@ -100,12 +112,27 @@ export default function WorkContextRail() {
                   <ArtifactIcon name={fileName} mime={a.mimeType} />
                   <span className="min-w-0">
                     <span className="block text-[12.5px] font-medium text-text truncate">{fileName}</span>
-                    {a.mimeType && <span className="block font-mono text-[10.5px] text-text3">{a.mimeType}</span>}
+                    <span className="block font-mono text-[10.5px] text-text3">{artifactMeta(fileName, a.mimeType)}</span>
                   </span>
                   <span className="ml-auto text-text3 text-sm">↓</span>
                 </a>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {sources.length > 0 && (
+        <section className="wcr-sect">
+          <h4 className="wcr-h">Sources touched</h4>
+          <div className="grid gap-px">
+            {sources.map((s, i) => (
+              <div key={i} className="wcr-source">
+                <span className="wcr-source-dot" aria-hidden="true" />
+                <span className="truncate">{s.name}</span>
+                {s.detail && <span className="ml-auto font-mono text-[10.5px] text-text3">{s.detail}</span>}
+              </div>
+            ))}
           </div>
         </section>
       )}

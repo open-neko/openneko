@@ -4,13 +4,15 @@ import { createContext, useContext, useMemo, useState } from "react";
 
 export type RailArtifact = { path: string; label: string; mimeType?: string };
 export type RailSource = { name: string; detail?: string };
+export type RailVital = { label: string; value: string; sub?: string };
 
 export type RailContext = {
+  vitals: RailVital[];
   sources: RailSource[];
   followups: string[];
 };
 
-const EMPTY_RAIL: RailContext = { sources: [], followups: [] };
+const EMPTY_RAIL: RailContext = { vitals: [], sources: [], followups: [] };
 
 type WorkShellContextValue = {
   activeRunId: string | null;
@@ -19,8 +21,9 @@ type WorkShellContextValue = {
   // the context rail (rendered up in the shell layout) can list them.
   railArtifacts: RailArtifact[];
   setRailArtifacts: (a: RailArtifact[]) => void;
-  // Right-rail context for the active thread: sources touched (derived from
-  // run telemetry) and LLM-generated follow-ups. Lifted from WorkScreen.
+  // Right-rail context for the active thread: the answer's headline vitals and
+  // follow-ups (channel-agnostic content the agent emits), plus sources touched
+  // (derived from run telemetry). Lifted from WorkScreen.
   railContext: RailContext;
   setRailContext: (c: RailContext) => void;
 };

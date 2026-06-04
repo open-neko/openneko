@@ -160,6 +160,14 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 .wcr-source-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: 0.7; flex: none; }
 .wcr-memo { background: var(--bg); border: 1px solid var(--border); border-left: 2px solid var(--accent); border-radius: 11px; padding: 9px 11px; font-size: 12px; line-height: 1.45; color: var(--text2); }
 .wcr-empty-text { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text3); }
+.wcr-vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wcr-vital { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 9px 10px; }
+.wcr-vital-k { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 5px; }
+.wcr-vital-v {
+  font-family: var(--font-display), 'Archivo', sans-serif; font-weight: 800; font-size: 18px;
+  line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text);
+}
+.wcr-vital-s { margin-top: 4px; font-size: 10.5px; font-weight: 600; color: var(--success-ink); }
 
 @media (min-width: 1100px) {
   html[data-density="compact"] .work-layout.has-rail {
@@ -225,6 +233,7 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
   .topbar-spacer { display: none; }
   .topbar-nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
 }
+
 
 
 
