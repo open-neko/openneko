@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/open-neko/openneko/compare/v1.17.3...v1.18.0) (2026-06-04)
+
+
+### Features
+
+* OpenShell sandboxed agent runtime + one-command install ([#82](https://github.com/open-neko/openneko/issues/82)) ([42fc357](https://github.com/open-neko/openneko/commit/42fc3570158e5956818f73c5d2e5b3fbd35db475))
+
 ## [1.17.3](https://github.com/open-neko/openneko/compare/v1.17.2...v1.17.3) (2026-06-02)
 
 
