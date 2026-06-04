@@ -410,7 +410,7 @@ function ActionReadingPane({
             type="button"
             disabled={busy}
             onClick={onApprove}
-            className="px-[18px] py-2.5 rounded-[11px] bg-success-ink text-white font-display font-bold text-[13.5px] tracking-[-0.01em] hover:bg-[#0b2912] disabled:opacity-50 cursor-pointer"
+            className="px-[18px] py-2.5 rounded-[11px] bg-accent text-white font-display font-bold text-[13.5px] tracking-[-0.01em] hover:bg-[#5a4cd1] disabled:opacity-50 cursor-pointer"
           >
             Approve
           </button>

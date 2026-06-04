@@ -1760,7 +1760,7 @@ function ActionApprovalCard({
             type="button"
             disabled={busy}
             onClick={() => decide("approve")}
-            className="px-3 py-1.5 rounded-[10px] bg-success-ink text-white font-display font-bold text-[12px] tracking-[-0.01em] hover:bg-[#0b2912] disabled:opacity-50 cursor-pointer"
+            className="px-3 py-1.5 rounded-[10px] bg-accent text-white font-display font-bold text-[12px] tracking-[-0.01em] hover:bg-[#5a4cd1] disabled:opacity-50 cursor-pointer"
           >
             {busy ? "Approving…" : "Approve"}
           </button>

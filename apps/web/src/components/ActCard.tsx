@@ -268,7 +268,7 @@ function RowButton({ tone, disabled, onClick, children }: RowButtonProps) {
         "disabled:opacity-55 disabled:cursor-not-allowed",
         !tone && "bg-card border-border text-text hover:not-disabled:border-text3",
         tone === "primary" &&
-          "bg-success-ink border-success-ink text-white hover:not-disabled:bg-[#0b2912] hover:not-disabled:border-[#0b2912]",
+          "bg-accent border-accent text-white hover:not-disabled:bg-[#5a4cd1] hover:not-disabled:border-[#5a4cd1]",
         tone === "destructive" &&
           "bg-danger border-danger text-white hover:not-disabled:bg-[#c84545] hover:not-disabled:border-[#c84545]",
       )}
