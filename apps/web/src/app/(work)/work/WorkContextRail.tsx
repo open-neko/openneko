@@ -1,18 +1,20 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, Image as ImageIcon, Sheet, File, ArrowRight } from "lucide-react";
 import { useWorkShell } from "../work-shell-context";
 
 // Right-hand context rail for the Ask page (Compact only — CSS hides it in
-// Comfortable). Surfaces the artifacts the agent produced this thread plus
-// quick follow-up prompts, so the answer's outputs stay reachable instead of
-// scrolling away. Hidden entirely when there's nothing to show.
+// Comfortable). Surfaces the answer's vitals, generated artifacts, the data
+// sources touched, follow-up prompts, and a relevant memory. The dynamic
+// panels (vitals / sources / followups) are agent-emitted via the
+// `neko_ask_context` fence and lifted through the shell context.
 
-const ASK_NEXT = [
-  "Break this down by region",
-  "Compare to last quarter",
-  "Which of these are at risk?",
+const FALLBACK_NEXT = [
+  "Break this down further",
+  "Compare to the prior period",
+  "What changed and why?",
 ];
 
 function ext(name: string): string {
@@ -35,12 +37,47 @@ function ArtifactIcon({ name, mime }: { name: string; mime?: string }) {
 }
 
 export default function WorkContextRail() {
-  const { railArtifacts } = useWorkShell();
-  const hasArtifacts = railArtifacts.length > 0;
+  const { railArtifacts, railContext } = useWorkShell();
+  const { vitals, sources, followups } = railContext;
+  const [memory, setMemory] = useState<string | null>(null);
+
+  // A relevant pinned memory, if any — real data from the work memory store.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/work/memories", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { memories: [] }))
+      .then((d: { memories?: { text: string; pinned?: boolean }[] }) => {
+        if (cancelled) return;
+        const list = d.memories ?? [];
+        const pick = list.find((m) => m.pinned) ?? list[0];
+        setMemory(pick?.text ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const nextQuestions = followups.length > 0 ? followups : FALLBACK_NEXT;
 
   return (
     <aside className="work-rail">
-      {hasArtifacts && (
+      {vitals.length > 0 && (
+        <section className="wcr-sect">
+          <h4 className="wcr-h">Answer vitals</h4>
+          <div className="wcr-vitals">
+            {vitals.map((v, i) => (
+              <div key={i} className="wcr-vital">
+                <div className="wcr-vital-k">{v.label}</div>
+                <div className="wcr-vital-v">{v.value}</div>
+                {v.sub && <div className="wcr-vital-s">{v.sub}</div>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {railArtifacts.length > 0 && (
         <section className="wcr-sect">
           <h4 className="wcr-h">Artifacts</h4>
           <div className="grid gap-1.5">
@@ -66,10 +103,25 @@ export default function WorkContextRail() {
         </section>
       )}
 
+      {sources.length > 0 && (
+        <section className="wcr-sect">
+          <h4 className="wcr-h">Sources touched</h4>
+          <div className="grid gap-px">
+            {sources.map((s, i) => (
+              <div key={i} className="wcr-source">
+                <span className="wcr-source-dot" aria-hidden="true" />
+                <span className="truncate">{s.name}</span>
+                {s.detail && <span className="ml-auto font-mono text-[10.5px] text-text3">{s.detail}</span>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="wcr-sect">
         <h4 className="wcr-h">Ask next</h4>
         <div className="grid gap-1.5">
-          {ASK_NEXT.map((q) => (
+          {nextQuestions.map((q) => (
             <Link key={q} href={`/work?seed=${encodeURIComponent(q)}`} className="wcr-chip">
               <span className="min-w-0 truncate">{q}</span>
               <ArrowRight size={13} strokeWidth={2} className="ml-auto flex-none opacity-60" />
@@ -77,6 +129,13 @@ export default function WorkContextRail() {
           ))}
         </div>
       </section>
+
+      {memory && (
+        <section className="wcr-sect">
+          <h4 className="wcr-h">Related memory</h4>
+          <div className="wcr-memo">{memory}</div>
+        </section>
+      )}
     </aside>
   );
 }

@@ -3,6 +3,16 @@
 import { createContext, useContext, useMemo, useState } from "react";
 
 export type RailArtifact = { path: string; label: string; mimeType?: string };
+export type RailVital = { label: string; value: string; sub?: string };
+export type RailSource = { name: string; detail?: string };
+
+export type RailContext = {
+  vitals: RailVital[];
+  sources: RailSource[];
+  followups: string[];
+};
+
+const EMPTY_RAIL: RailContext = { vitals: [], sources: [], followups: [] };
 
 type WorkShellContextValue = {
   activeRunId: string | null;
@@ -11,6 +21,10 @@ type WorkShellContextValue = {
   // the context rail (rendered up in the shell layout) can list them.
   railArtifacts: RailArtifact[];
   setRailArtifacts: (a: RailArtifact[]) => void;
+  // Agent-emitted right-rail context (vitals / sources / followups) for the
+  // active thread, lifted from the run's `ask_context` events.
+  railContext: RailContext;
+  setRailContext: (c: RailContext) => void;
 };
 
 const WorkShellContext = createContext<WorkShellContextValue>({
@@ -18,14 +32,24 @@ const WorkShellContext = createContext<WorkShellContextValue>({
   setActiveRunId: () => {},
   railArtifacts: [],
   setRailArtifacts: () => {},
+  railContext: EMPTY_RAIL,
+  setRailContext: () => {},
 });
 
 export function WorkShellProvider({ children }: { children: React.ReactNode }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [railArtifacts, setRailArtifacts] = useState<RailArtifact[]>([]);
+  const [railContext, setRailContext] = useState<RailContext>(EMPTY_RAIL);
   const value = useMemo(
-    () => ({ activeRunId, setActiveRunId, railArtifacts, setRailArtifacts }),
-    [activeRunId, railArtifacts],
+    () => ({
+      activeRunId,
+      setActiveRunId,
+      railArtifacts,
+      setRailArtifacts,
+      railContext,
+      setRailContext,
+    }),
+    [activeRunId, railArtifacts, railContext],
   );
   return (
     <WorkShellContext.Provider value={value}>

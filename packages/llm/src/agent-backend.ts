@@ -91,7 +91,16 @@ export type AgentEvent =
       /** Operator-supplied reason when the user rejected the request. */
       rejection_reason?: string;
     }
-  | { type: "needs_input"; question: string; options?: string[] };
+  | { type: "needs_input"; question: string; options?: string[] }
+  // Structured context for the Ask page's right rail — emitted once at the
+  // end of a /work run via a `neko_ask_context` fence. All fields optional;
+  // the rail shows whichever sections are present.
+  | {
+      type: "ask_context";
+      vitals?: { label: string; value: string; sub?: string }[];
+      sources?: { name: string; detail?: string }[];
+      followups?: string[];
+    };
 
 export type AgentChatMessage = {
   id?: string;

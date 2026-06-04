@@ -4,6 +4,7 @@ import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-back
 import { extractMemoryFences } from "../agent-backends/memory-fence";
 import {
   extractActionRequestFences,
+  extractAskContextFence,
   extractRuleSaveFence,
   extractValueFence,
   extractWorkflowSaveFence,
@@ -397,6 +398,18 @@ export async function runChatTurn(
       }
     }
 
+    // Ask-page right-rail context (vitals / sources / followups). Parsed from
+    // the same source and emitted as an event the Ask UI lifts into the rail.
+    const askContext = extractAskContextFence(fenceSource);
+    if (askContext.payload) {
+      await wrappedEmit({
+        type: "ask_context",
+        vitals: askContext.payload.vitals,
+        sources: askContext.payload.sources,
+        followups: askContext.payload.followups,
+      });
+    }
+
     // Pull any neko_memory fences out of the raw agent response and persist
     // them. Backend-agnostic: works for Hermes (no MCP tool registry) and is
     // harmless for claude-agent (which would have used the MCP save tool).
@@ -428,6 +441,7 @@ export async function runChatTurn(
     persistedText = extractWorkflowSaveFence(persistedText).text;
     persistedText = extractRuleSaveFence(persistedText).text;
     persistedText = extractValueFence(persistedText).text;
+    persistedText = extractAskContextFence(persistedText).text;
     persistedText = extractMemoryFences(persistedText).text;
     if (persistedText) {
       await saveAssistantWorkMessage({

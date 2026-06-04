@@ -108,7 +108,12 @@ import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
-import { useWorkShell, type RailArtifact } from "../work-shell-context";
+import {
+  useWorkShell,
+  type RailArtifact,
+  type RailVital,
+  type RailSource,
+} from "../work-shell-context";
 
 type MessageRecord = {
   id: string;
@@ -162,6 +167,12 @@ type WorkEvent =
       };
       error?: string;
       rejection_reason?: string;
+    }
+  | {
+      type: "ask_context";
+      vitals?: { label: string; value: string; sub?: string }[];
+      sources?: { name: string; detail?: string }[];
+      followups?: string[];
     }
   | { type: "done"; result?: unknown };
 
@@ -298,7 +309,7 @@ export default function WorkScreen() {
   const searchParams = useSearchParams();
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
-  const { setActiveRunId, setRailArtifacts } = useWorkShell();
+  const { setActiveRunId, setRailArtifacts, setRailContext } = useWorkShell();
   const [gateChecked, setGateChecked] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -406,6 +417,7 @@ export default function WorkScreen() {
     }
     const arts: RailArtifact[] = [];
     const seen = new Set<string>();
+    let latestCtx: { vitals?: RailVital[]; sources?: RailSource[]; followups?: string[] } | null = null;
     for (const events of Object.values(bundle.eventsByRun)) {
       for (const ev of events) {
         if (ev.type === "artifact" && ev.artifact && !seen.has(ev.artifact.path)) {
@@ -415,11 +427,19 @@ export default function WorkScreen() {
             label: ev.artifact.label,
             mimeType: ev.artifact.mimeType,
           });
+        } else if (ev.type === "ask_context") {
+          // Last context in the thread wins (the most recent answer's rail).
+          latestCtx = ev;
         }
       }
     }
     setRailArtifacts(arts);
-  }, [bundle, setRailArtifacts]);
+    setRailContext({
+      vitals: latestCtx?.vitals ?? [],
+      sources: latestCtx?.sources ?? [],
+      followups: latestCtx?.followups ?? [],
+    });
+  }, [bundle, setRailArtifacts, setRailContext]);
 
   // Auto-grow the textarea up to its max-height (~9 lines); past that the
   // textarea scrolls internally. CSS alone can't do this — `rows={1}` is

@@ -1,10 +1,12 @@
 import {
   ACTION_REQUEST_SCHEMA,
+  ASK_CONTEXT_SCHEMA,
   POLICY_SAVE_SCHEMA,
   VALUE_ESTIMATE_SCHEMA,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
+  type AskContextPayload,
   type PolicySavePayload,
   type ValueEstimatePayload,
   type WorkflowOutputPayload,
@@ -16,6 +18,7 @@ const OUTPUT_FENCE_RE = /```neko_workflow_output\s*([\s\S]*?)```/gi;
 const ACTION_FENCE_RE = /```neko_action_request\s*([\s\S]*?)```/gi;
 const RULE_FENCE_RE = /```neko_rule_save\s*([\s\S]*?)```/gi;
 const VALUE_FENCE_RE = /```neko_value\s*([\s\S]*?)```/gi;
+const ASK_CONTEXT_FENCE_RE = /```neko_ask_context\s*([\s\S]*?)```/gi;
 
 export type FenceParseError = {
   raw: string;
@@ -49,6 +52,12 @@ export type PolicySaveFenceResult = {
 export type ValueFenceResult = {
   text: string;
   payload: ValueEstimatePayload | null;
+  errors: FenceParseError[];
+};
+
+export type AskContextFenceResult = {
+  text: string;
+  payload: AskContextPayload | null;
   errors: FenceParseError[];
 };
 
@@ -201,6 +210,34 @@ export function extractValueFence(raw: string): ValueFenceResult {
 
   return {
     text: stripAllFences(raw, VALUE_FENCE_RE),
+    payload,
+    errors,
+  };
+}
+
+// Ask-page right-rail context (vitals / sources / followups). Last valid
+// fence wins; everything optional.
+export function extractAskContextFence(raw: string): AskContextFenceResult {
+  const matches = [...raw.matchAll(ASK_CONTEXT_FENCE_RE)];
+  const errors: FenceParseError[] = [];
+  let payload: AskContextPayload | null = null;
+
+  for (const m of matches) {
+    const parsed = tryParse(m[1]);
+    if (!parsed.ok) {
+      errors.push({ raw: m[0], reason: parsed.reason });
+      continue;
+    }
+    const validated = ASK_CONTEXT_SCHEMA.safeParse(parsed.value);
+    if (!validated.success) {
+      errors.push({ raw: m[0], reason: validated.error.message });
+      continue;
+    }
+    payload = validated.data;
+  }
+
+  return {
+    text: stripAllFences(raw, ASK_CONTEXT_FENCE_RE),
     payload,
     errors,
   };

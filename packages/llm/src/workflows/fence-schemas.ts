@@ -147,3 +147,31 @@ export const VALUE_ESTIMATE_SCHEMA = z.object({
 });
 
 export type ValueEstimatePayload = z.infer<typeof VALUE_ESTIMATE_SCHEMA>;
+
+// Structured context for the Ask page's right rail. Emitted once at the end of
+// a /work run via a `neko_ask_context` fence. Everything optional — the rail
+// renders whichever sections are present.
+export const ASK_CONTEXT_SCHEMA = z.object({
+  vitals: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(40),
+        value: z.string().trim().min(1).max(40),
+        sub: z.string().trim().max(40).optional(),
+      }),
+    )
+    .max(4)
+    .optional(),
+  sources: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(80),
+        detail: z.string().trim().max(40).optional(),
+      }),
+    )
+    .max(8)
+    .optional(),
+  followups: z.array(z.string().trim().min(1).max(120)).max(4).optional(),
+});
+
+export type AskContextPayload = z.infer<typeof ASK_CONTEXT_SCHEMA>;
