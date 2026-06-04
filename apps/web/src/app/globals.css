@@ -65,6 +65,10 @@ html[data-density="compact"] {
   --d-greet: 30px;
   --d-section-gap: 22px;
   --d-icard-pad: 15px 16px 15px 20px;
+  /* Sticky offset for the side panels — set to their resting top (sticky
+     header 62px + its 24px margin) so they pin from the first pixel of scroll
+     with zero travel: rock solid, never drifting with the page. */
+  --app-sticky-top: 86px;
 }
 html[data-density="comfortable"] {
   --d-dash-width: 760px;
@@ -150,9 +154,11 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 .wcr-ic.doc { background: var(--danger-soft); color: var(--danger); }
 .wcr-ic.file { background: var(--neutral); color: var(--text2); }
 .wcr-chip {
-  display: flex; align-items: center; gap: 8px; padding: 9px 11px;
+  display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px;
   border: 1px solid var(--border); border-radius: 11px; background: var(--bg);
-  text-decoration: none; color: var(--text2); font-size: 12.5px;
+  text-align: left; width: 100%; cursor: pointer;
+  font-family: var(--font-body), 'Manrope', sans-serif; font-size: 12.5px; line-height: 1.4;
+  color: var(--text2);
   transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
 }
 .wcr-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); transform: translateY(-1px); }
@@ -176,8 +182,8 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
   }
   html[data-density="compact"] .work-layout.has-rail .work-rail {
     display: flex; flex-direction: column; gap: 12px;
-    position: sticky; top: 24px; align-self: start;
-    max-height: calc(100vh - 48px); overflow-y: auto;
+    position: sticky; top: var(--app-sticky-top, 74px); align-self: start;
+    max-height: calc(100vh - var(--app-sticky-top, 74px) - 18px); overflow-y: auto;
   }
 }
 
@@ -233,6 +239,10 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
   .topbar-spacer { display: none; }
   .topbar-nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
 }
+
+
+
+
 
 
 

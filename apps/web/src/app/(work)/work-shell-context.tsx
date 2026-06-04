@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 
 export type RailArtifact = { path: string; label: string; mimeType?: string };
 export type RailSource = { name: string; detail?: string };
@@ -26,6 +33,10 @@ type WorkShellContextValue = {
   // (derived from run telemetry). Lifted from WorkScreen.
   railContext: RailContext;
   setRailContext: (c: RailContext) => void;
+  // Imperative handle WorkScreen registers so the rail can drop an "Ask next"
+  // question into the CURRENT thread's composer (for the operator to edit),
+  // without the rail reaching into WorkScreen's draft state.
+  insertComposerRef: MutableRefObject<((q: string) => void) | null>;
 };
 
 const WorkShellContext = createContext<WorkShellContextValue>({
@@ -35,12 +46,14 @@ const WorkShellContext = createContext<WorkShellContextValue>({
   setRailArtifacts: () => {},
   railContext: EMPTY_RAIL,
   setRailContext: () => {},
+  insertComposerRef: { current: null },
 });
 
 export function WorkShellProvider({ children }: { children: React.ReactNode }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [railArtifacts, setRailArtifacts] = useState<RailArtifact[]>([]);
   const [railContext, setRailContext] = useState<RailContext>(EMPTY_RAIL);
+  const insertComposerRef = useRef<((q: string) => void) | null>(null);
   const value = useMemo(
     () => ({
       activeRunId,
@@ -49,6 +62,7 @@ export function WorkShellProvider({ children }: { children: React.ReactNode }) {
       setRailArtifacts,
       railContext,
       setRailContext,
+      insertComposerRef,
     }),
     [activeRunId, railArtifacts, railContext],
   );

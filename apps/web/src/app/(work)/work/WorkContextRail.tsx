@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { FileText, Image as ImageIcon, Sheet, File, ArrowRight } from "lucide-react";
 import { useWorkShell } from "../work-shell-context";
 
@@ -41,7 +40,7 @@ function ArtifactIcon({ name, mime }: { name: string; mime?: string }) {
 }
 
 export default function WorkContextRail() {
-  const { railArtifacts, railContext } = useWorkShell();
+  const { railArtifacts, railContext, insertComposerRef } = useWorkShell();
   const { vitals, sources, followups } = railContext;
   const [memory, setMemory] = useState<string | null>(null);
 
@@ -142,10 +141,15 @@ export default function WorkContextRail() {
           <h4 className="wcr-h">Ask next</h4>
           <div className="grid gap-1.5">
             {followups.map((q) => (
-              <Link key={q} href={`/work?seed=${encodeURIComponent(q)}`} className="wcr-chip">
-                <span className="min-w-0 truncate">{q}</span>
-                <ArrowRight size={13} strokeWidth={2} className="ml-auto flex-none opacity-60" />
-              </Link>
+              <button
+                key={q}
+                type="button"
+                onClick={() => insertComposerRef.current?.(q)}
+                className="wcr-chip"
+              >
+                <span className="min-w-0">{q}</span>
+                <ArrowRight size={13} strokeWidth={2} className="ml-auto mt-px flex-none opacity-60" />
+              </button>
             ))}
           </div>
         </section>

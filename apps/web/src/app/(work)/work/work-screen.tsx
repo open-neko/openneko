@@ -305,7 +305,12 @@ export default function WorkScreen() {
   const searchParams = useSearchParams();
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
-  const { setActiveRunId, setRailArtifacts, setRailContext } = useWorkShell();
+  const {
+    setActiveRunId,
+    setRailArtifacts,
+    setRailContext,
+    insertComposerRef,
+  } = useWorkShell();
   const [gateChecked, setGateChecked] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -403,6 +408,26 @@ export default function WorkScreen() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
+
+  // Register the handle the rail's "Ask next" chips call to drop a question
+  // into the composer (focused, caret at end) so the operator can edit it
+  // before sending — it never fires on its own. setDraft runs from the click,
+  // not synchronously inside this effect.
+  useEffect(() => {
+    insertComposerRef.current = (q: string) => {
+      setDraft(q);
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+      });
+    };
+    return () => {
+      insertComposerRef.current = null;
+    };
+  }, [insertComposerRef]);
 
   // Derive this thread's rail context from the run's own output. Vitals and
   // follow-ups are channel-agnostic CONTENT the agent emits (the web channel
@@ -1472,7 +1497,7 @@ type ApprovalItem = {
 
 type TimelineItem =
   | { kind: "text"; content: string }
-  | { kind: "tools"; tools: ToolItem[]; followedByText: boolean }
+  | { kind: "tools"; tools: ToolItem[] }
   | { kind: "approval"; approval: ApprovalItem }
   | { kind: "error"; message: string };
 
@@ -1498,9 +1523,6 @@ function buildRunTimeline(events: WorkEvent[]): {
   const flushTextSegment = () => {
     if (pendingText.trim()) {
       items.push({ kind: "text", content: pendingText });
-      for (const it of items) {
-        if (it.kind === "tools") it.followedByText = true;
-      }
     }
     pendingText = "";
   };
@@ -1537,7 +1559,7 @@ function buildRunTimeline(events: WorkEvent[]): {
         if (last && last.kind === "tools") {
           last.tools.push(item);
         } else {
-          items.push({ kind: "tools", tools: [item], followedByText: false });
+          items.push({ kind: "tools", tools: [item] });
         }
         break;
       }
@@ -1692,11 +1714,8 @@ function RunTimeline({
         }
         if (item.kind === "tools") {
           return (
-            <ToolGroup
-              key={`tools-${index}`}
-              tools={item.tools}
-              followedByText={item.followedByText}
-            />
+            <ToolGroup key={`tools-${index}`} tools={item.tools} />
+
           );
         }
         if (item.kind === "approval") {
@@ -1905,13 +1924,7 @@ function ActionResultStrip({
   );
 }
 
-function ToolGroup({
-  tools,
-  followedByText,
-}: {
-  tools: ToolItem[];
-  followedByText: boolean;
-}) {
+function ToolGroup({ tools }: { tools: ToolItem[] }) {
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
