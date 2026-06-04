@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
 import WorkSidebar from "./work/WorkSidebar";
+import WorkContextRail from "./work/WorkContextRail";
 import { WorkShellProvider } from "./work-shell-context";
 
 export default function WorkShellLayout({
@@ -20,6 +22,11 @@ export default function WorkShellLayout({
     return () => document.body.classList.remove("work-shell");
   }, []);
 
+  // The context rail (3rd pane) belongs only to the Ask thread pages, not the
+  // other surfaces (workflows/skills/memory) that share this shell.
+  const pathname = usePathname();
+  const showRail = pathname === "/work" || pathname?.startsWith("/work/");
+
   return (
     <WorkShellProvider>
       <div className="root">
@@ -27,9 +34,10 @@ export default function WorkShellLayout({
           <SectionNav current="work" />
         </AppHeader>
 
-        <div className="work-layout">
+        <div className={`work-layout${showRail ? " has-rail" : ""}`}>
           <WorkSidebar />
           <section className="min-h-[72vh] flex flex-col gap-[18px]">{children}</section>
+          {showRail && <WorkContextRail />}
         </div>
       </div>
       <CreatorCredit />

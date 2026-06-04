@@ -108,7 +108,7 @@ import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
-import { useWorkShell } from "../work-shell-context";
+import { useWorkShell, type RailArtifact } from "../work-shell-context";
 
 type MessageRecord = {
   id: string;
@@ -298,7 +298,7 @@ export default function WorkScreen() {
   const searchParams = useSearchParams();
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
-  const { setActiveRunId } = useWorkShell();
+  const { setActiveRunId, setRailArtifacts } = useWorkShell();
   const [gateChecked, setGateChecked] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -396,6 +396,30 @@ export default function WorkScreen() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
+
+  // Lift this thread's generated artifacts into the shell context so the
+  // Compact context rail can list them.
+  useEffect(() => {
+    if (!bundle) {
+      setRailArtifacts([]);
+      return;
+    }
+    const arts: RailArtifact[] = [];
+    const seen = new Set<string>();
+    for (const events of Object.values(bundle.eventsByRun)) {
+      for (const ev of events) {
+        if (ev.type === "artifact" && ev.artifact && !seen.has(ev.artifact.path)) {
+          seen.add(ev.artifact.path);
+          arts.push({
+            path: ev.artifact.path,
+            label: ev.artifact.label,
+            mimeType: ev.artifact.mimeType,
+          });
+        }
+      }
+    }
+    setRailArtifacts(arts);
+  }, [bundle, setRailArtifacts]);
 
   // Auto-grow the textarea up to its max-height (~9 lines); past that the
   // textarea scrolls internally. CSS alone can't do this — `rows={1}` is

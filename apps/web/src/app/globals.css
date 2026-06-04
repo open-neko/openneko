@@ -130,3 +130,47 @@ html[data-density="compact"] .triage-layout {
 }
 html[data-density="compact"] .triage-pane { display: block; position: sticky; top: 18px; }
 
+/* ── Ask: 3-pane (threads | conversation | context rail) in Compact ── */
+.work-rail { display: none; }
+.wcr-sect {
+  background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+  padding: 13px 14px 14px; box-shadow: var(--shadow);
+}
+.wcr-h {
+  font-family: var(--font-display), 'Archivo', sans-serif; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.13em; color: var(--text3);
+  margin: 0 0 9px; display: flex; align-items: center; gap: 8px;
+}
+.wcr-h::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.wcr-artifact {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 11px; background: var(--bg);
+  text-decoration: none; color: inherit; transition: border-color 0.15s, transform 0.15s;
+}
+.wcr-artifact:hover { border-color: var(--text3); transform: translateY(-1px); }
+.wcr-ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; }
+.wcr-ic.sheet { background: var(--success-soft); color: var(--success-mid); }
+.wcr-ic.image { background: var(--accent-soft); color: var(--accent); }
+.wcr-ic.doc { background: var(--danger-soft); color: var(--danger); }
+.wcr-ic.file { background: var(--neutral); color: var(--text2); }
+.wcr-chip {
+  display: flex; align-items: center; gap: 8px; padding: 9px 11px;
+  border: 1px solid var(--border); border-radius: 11px; background: var(--bg);
+  text-decoration: none; color: var(--text2); font-size: 12.5px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+}
+.wcr-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); transform: translateY(-1px); }
+
+@media (min-width: 1100px) {
+  html[data-density="compact"] .work-layout.has-rail {
+    width: min(1340px, calc(100vw - 40px));
+    grid-template-columns: 248px minmax(0, 1fr) 312px;
+  }
+  html[data-density="compact"] .work-layout.has-rail .work-rail {
+    display: flex; flex-direction: column; gap: 12px;
+    position: sticky; top: 24px; align-self: start;
+    max-height: calc(100vh - 48px); overflow-y: auto;
+  }
+}
+
+
