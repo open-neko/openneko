@@ -311,46 +311,34 @@ const RULES_SECTION = `<conduct>
 ${GRAPHJIN_DATE_RULE}
 </conduct>`;
 
-// Closing contract shared by both backends. The runtime parses this fence
-// from the final output, clamps it, and surfaces it to the operator as
-// "hours saved." See docs/HOURS_SAVED_PLAN.md.
-const VALUE_SECTION = `<value>
-At the very end of your turn, emit exactly one fenced block estimating the
-human time your ANALYSIS saved — the report, answer, or finding you
-delivered. Exclude any actions you proposed; those carry their own estimate.
+// Closing contract shared by both backends: two JSON blocks the runtime parses
+// from the final output (hours-saved value + suggested follow-ups).
+const CLOSING_SECTION = `<closing>
+Always end your turn with these two JSON blocks, in this order.
+
+1. The time a data analyst or BI specialist would need to produce this answer
+   from scratch — finding the right data, writing and validating the queries,
+   and assembling the result. The operator got it from one plain-English
+   question instead of briefing a specialist and waiting on the report.
+   Estimate honestly in minutes, rounded down:
 
 \`\`\`neko_value
-{ "minutes_saved": 18, "basis": "Pulled and cross-checked a 3-table revenue report" }
+{ "minutes_saved": 90, "basis": "Joined orders to products, ranked by revenue, cross-checked against returns — a half-day BI request" }
 \`\`\`
 
-- Estimate the minutes a competent person would spend producing THIS
-  deliverable by hand — not your runtime, not wall-clock.
-- Be conservative; round DOWN when unsure.
-- Emit \`0\` when nothing was delivered a person would otherwise have done
-  (a check that found nothing, a clarifying question, an error).
-- Anchors (minutes): routine email 5-8 · CRM update 3-6 · refund 12-18 ·
-  purchase order 20-30 · multi-table report 20-40 · doc/changelog summary
-  10-20 · single-table lookup 3-8 · found nothing 0.
+   Anchors: a single metric lookup 15-30 · a multi-table breakdown or
+   drill-down 45-120 · a multi-step diagnostic like "why did revenue drop"
+   120-300. Use 0 for a clarifying question or a check that surfaced nothing.
+   An action you propose (an email, a purchase order) carries its own
+   \`minutes_saved\`.
 
-When you also propose an action, add \`minutes_saved\` (integer) and a short
-\`basis\` to that action too, estimated the same conservative way.
-</value>`;
-
-// Suggested follow-up questions. Channel-agnostic CONTENT — not UI: any
-// channel (the Ask rail, Telegram, Slack) can surface these as "ask next"
-// prompts. Parsed from a `neko_followups` fence.
-const FOLLOWUPS_SECTION = `<followups>
-After your answer, suggest up to 3 natural follow-up questions the operator is
-likely to ask next — the obvious next steps given what you just showed. Emit
-them as one fenced block at the very end:
+2. The three questions the operator is most likely to ask next, each specific
+   to the answer you just gave:
 
 \`\`\`neko_followups
 { "followups": ["Break this down by region", "Compare to last quarter", "Which products are declining?"] }
 \`\`\`
-
-- Make each one specific to this answer and a genuinely useful next step.
-- Omit the fence for a pure clarifying question or an error with no findings.
-</followups>`;
+</closing>`;
 
 export interface PluginActionPromptDescriptor {
   kind: string;
@@ -507,8 +495,7 @@ that flags churn risk every Monday."
     buildWorkspaceSection(workspace, shellTool),
     buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
-    VALUE_SECTION,
-    FOLLOWUPS_SECTION,
+    CLOSING_SECTION,
   ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {
