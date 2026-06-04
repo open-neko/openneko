@@ -84,20 +84,6 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
         >
           <img className="topbar-logo" src="/cat.png" alt="" width={22} height={22} />
           <span className="topbar-name">OpenNeko</span>
-          {updateAvailable ? (
-            <button
-              type="button"
-              className="topbar-ver is-update"
-              onClick={() => window.location.reload()}
-              aria-label={`Update available: v${latestVersion}. Reload to apply.`}
-              title={`v${latestVersion} available — reload`}
-            >
-              <span className="topbar-ver-dot" aria-hidden="true" />
-              v{latestVersion} · reload
-            </button>
-          ) : (
-            <span className="topbar-ver">{APP_VERSION}</span>
-          )}
         </a>
 
         {back && (
@@ -112,6 +98,30 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
         <span className="topbar-spacer" />
 
         <DensityToggle />
+
+        {updateAvailable ? (
+          <button
+            type="button"
+            className="topbar-ver is-update"
+            onClick={() => window.location.reload()}
+            aria-label={`Update available: v${latestVersion}. Reload to apply.`}
+            title={`v${latestVersion} available — reload`}
+          >
+            <span className="topbar-ver-dot" aria-hidden="true" />
+            v{latestVersion} · reload
+          </button>
+        ) : (
+          <span className="topbar-ver" title="OpenNeko version">{APP_VERSION}</span>
+        )}
+
+        <a
+          className="topbar-credit"
+          href="https://getneko.app/#about"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Built by Amit Deshmukh ↗
+        </a>
 
         {user && (
           <button

@@ -220,7 +220,7 @@ export default function ActCard({
                         onApproveRow?.(row.id);
                       }}
                     >
-                      [a] Approve
+                      Approve
                     </RowButton>
                     <RowButton
                       disabled={isBusy}
@@ -229,7 +229,7 @@ export default function ActCard({
                         onBeginRejectRow?.(row.id);
                       }}
                     >
-                      [r] Reject
+                      Reject
                     </RowButton>
                     <a
                       className="ml-auto self-center px-1.5 py-1 text-xs font-semibold text-text2 no-underline opacity-70 transition-opacity duration-150 hover:opacity-100 hover:text-text hover:underline underline-offset-2"

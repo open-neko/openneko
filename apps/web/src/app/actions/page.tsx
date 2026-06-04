@@ -209,33 +209,6 @@ function ActionsPageInner() {
   }, [rejectingId, rejectReason, act]);
 
   useEffect(() => {
-    if (filter !== "awaiting") return;
-    const handler = (e: KeyboardEvent) => {
-      if (!focusedId) return;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "a") {
-        e.preventDefault();
-        void act(focusedId, "approve");
-      } else if (e.key === "r") {
-        e.preventDefault();
-        beginReject(focusedId);
-      } else if (e.key === "j" || e.key === "ArrowDown") {
-        e.preventDefault();
-        const ids = data?.actions.map((a) => a.id) ?? [];
-        const idx = ids.indexOf(focusedId);
-        if (idx >= 0 && idx < ids.length - 1) setFocusedId(ids[idx + 1]);
-      } else if (e.key === "k" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const ids = data?.actions.map((a) => a.id) ?? [];
-        const idx = ids.indexOf(focusedId);
-        if (idx > 0) setFocusedId(ids[idx - 1]);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [filter, focusedId, data, act, beginReject]);
-
-  useEffect(() => {
     if (!focusedId) return;
     rowRefs.current[focusedId]?.scrollIntoView({
       behavior: "smooth",
@@ -247,8 +220,6 @@ function ActionsPageInner() {
     () => (data ? groupActions(data.actions) : []),
     [data],
   );
-
-  const kbd = "font-mono bg-neutral border border-border rounded-[4px] px-1.5 py-px text-[11px] text-text2";
 
   return (
     <>
@@ -284,12 +255,6 @@ function ActionsPageInner() {
             );
           })}
         </div>
-
-        {filter === "awaiting" && data && data.actions.length > 0 && (
-          <div className="font-mono text-[12px] text-text3 mb-6">
-            <kbd className={kbd}>a</kbd> approve · <kbd className={kbd}>r</kbd> reject · <kbd className={kbd}>j</kbd>/<kbd className={kbd}>k</kbd> navigate
-          </div>
-        )}
 
         {error ? (
           <div className="py-[60px] text-center text-danger text-[14px]">{error}</div>
@@ -445,9 +410,9 @@ function ActionReadingPane({
             type="button"
             disabled={busy}
             onClick={onApprove}
-            className="px-[18px] py-2.5 rounded-[11px] bg-text text-bg font-display font-bold text-[13.5px] tracking-[-0.01em] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            className="px-[18px] py-2.5 rounded-[11px] bg-success-ink text-white font-display font-bold text-[13.5px] tracking-[-0.01em] hover:bg-[#0b2912] disabled:opacity-50 cursor-pointer"
           >
-            Approve <span className="font-mono text-[11px] opacity-70 ml-0.5">a</span>
+            Approve
           </button>
           <button
             type="button"
@@ -455,7 +420,7 @@ function ActionReadingPane({
             onClick={onReject}
             className="px-[18px] py-2.5 rounded-[11px] border border-border text-text2 font-semibold text-[13.5px] hover:border-danger hover:text-danger disabled:opacity-50 cursor-pointer"
           >
-            Reject <span className="font-mono text-[11px] opacity-70 ml-0.5">r</span>
+            Reject
           </button>
         </div>
       </div>

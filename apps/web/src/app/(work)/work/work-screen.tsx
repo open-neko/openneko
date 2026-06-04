@@ -1104,18 +1104,8 @@ export default function WorkScreen() {
                 {sending ? (
                   <span className="work-composer-pulse">Working</span>
                 ) : files.length > 0 ? (
-                  <>
-                    {files.length} of {MAX_ATTACHMENTS} attached
-                    <span className="work-composer-hint-sep">·</span>
-                    Enter <kbd>↵</kbd> to send
-                  </>
-                ) : (
-                  <>
-                    Enter <kbd>↵</kbd> to send
-                    <span className="work-composer-hint-sep">·</span>
-                    Shift <kbd>↵</kbd> for newline
-                  </>
-                )}
+                  <>{files.length} of {MAX_ATTACHMENTS} attached</>
+                ) : null}
               </span>
             </div>
             {sending ? (
@@ -1349,7 +1339,6 @@ function MessageBubble({
           />
         </div>
         <div className="work-bubble-edit-hint">
-          <span>Enter to send · Esc to cancel</span>
           <button type="button" onClick={cancel}>
             Cancel
           </button>
@@ -1771,7 +1760,7 @@ function ActionApprovalCard({
             type="button"
             disabled={busy}
             onClick={() => decide("approve")}
-            className="px-3 py-1.5 rounded-[10px] bg-text text-bg font-display font-bold text-[12px] tracking-[-0.01em] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            className="px-3 py-1.5 rounded-[10px] bg-success-ink text-white font-display font-bold text-[12px] tracking-[-0.01em] hover:bg-[#0b2912] disabled:opacity-50 cursor-pointer"
           >
             {busy ? "Approving…" : "Approve"}
           </button>
