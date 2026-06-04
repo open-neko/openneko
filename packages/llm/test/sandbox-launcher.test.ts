@@ -50,12 +50,38 @@ const h = vi.hoisted(() => {
 
 vi.mock("node:child_process", () => ({ spawn: h.spawn }));
 
+// Capture the job descriptor the launcher writes (then uploads to the box), so
+// we can assert what crosses the host→sandbox boundary — e.g. the Claude model,
+// which the box needs to reconstruct the claude-agent backend.
+const jobCapture = vi.hoisted(() => ({ jobs: [] as Array<Record<string, unknown>> }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    writeFile: async (p: unknown, data: unknown, ...rest: unknown[]) => {
+      if (typeof p === "string" && p.endsWith("job.json")) {
+        try {
+          jobCapture.jobs.push(JSON.parse(String(data)));
+        } catch {
+          /* ignore non-JSON writes */
+        }
+      }
+      return (actual.writeFile as (...a: unknown[]) => Promise<void>)(p, data, ...rest);
+    },
+  };
+});
+
 const { makeSandboxRunCore, buildModelEgressArgs, ensureOpenShellProvider } =
   await import("../src/work/sandbox-launcher");
 
-function fakeInput(emit: (e: AgentEvent) => Promise<void>): RunAgentBackendInput {
+function fakeInput(
+  emit: (e: AgentEvent) => Promise<void>,
+  backend?: RunAgentBackendInput["backend"],
+): RunAgentBackendInput {
   return {
-    backend: { id: "hermes", capabilities: { mcpTools: false } } as RunAgentBackendInput["backend"],
+    backend:
+      backend ??
+      ({ id: "hermes", capabilities: { mcpTools: false } } as RunAgentBackendInput["backend"]),
     prompt: "PROMPT",
     userMessage: "hello",
     orgId: "org-1",
@@ -117,8 +143,34 @@ describe("buildModelEgressArgs", () => {
 describe("makeSandboxRunCore", () => {
   beforeEach(() => {
     h.calls.length = 0;
+    jobCapture.jobs.length = 0;
   });
   afterEach(() => vi.restoreAllMocks());
+
+  it("threads the claude model into the box job (box rebuilds the backend with it)", async () => {
+    const runCore = makeSandboxRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      onLog: () => {},
+    });
+    await runCore(
+      fakeInput(async () => {}, {
+        id: "claude-agent",
+        model: "claude-sonnet-4-6",
+        capabilities: { mcpTools: true },
+      } as RunAgentBackendInput["backend"]),
+    );
+    const job = jobCapture.jobs.at(-1);
+    expect(job?.backendId).toBe("claude-agent");
+    // Without this, the box builds claude-agent with model:undefined and throws
+    // "requires a Claude model" — the whole claude sandbox path is dead.
+    expect(job?.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("omits model for hermes (it reads config.yaml, not the job)", async () => {
+    const runCore = makeSandboxRunCore({ agentImage: "ghcr.io/open-neko/agent:test", onLog: () => {} });
+    await runCore(fakeInput(async () => {}));
+    expect(jobCapture.jobs.at(-1)?.model).toBeUndefined();
+  });
 
   it("creates, uploads, exec-streams, returns the result, and deletes", async () => {
     const events: AgentEvent[] = [];

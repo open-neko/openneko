@@ -120,6 +120,9 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
       message: input.userMessage,
       prompt: toBox(input.prompt),
       backendId: input.backend.id,
+      // claude-agent reconstructs in-box and validates it has a Claude model;
+      // hermes reads its model from config.yaml, so this is undefined there.
+      model: input.backend.model,
       backendState: input.backendState,
       pluginActions: input.pluginActions,
       workspace: boxWorkspace,

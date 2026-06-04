@@ -49,8 +49,10 @@ export class ClaudeAgentBackend implements AgentBackend {
     sessionResume: true,
     canUseToolGate: true,
   } as const;
+  readonly model: string;
 
   constructor(private readonly config: ClaudeAgentBackendConfig) {
+    this.model = config.model;
     if (!config.apiKey) {
       throw new AgentBackendConfigError(
         "claude-agent backend requires an Anthropic API key on the primary provider settings.",
