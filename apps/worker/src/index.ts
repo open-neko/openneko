@@ -62,7 +62,10 @@ import { runWorkflowCronSweep } from "./jobs/workflow-cron-sweep.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
-import { reconcileStaleProcessingJobs } from "./reconciler.js";
+import {
+  reconcileStaleProcessingJobs,
+  reconcileStaleRuns,
+} from "./reconciler.js";
 
 const PORT: number = 4100;
 const MAX_JOB_RETRIES: number = 2;
@@ -382,6 +385,14 @@ const b = await boss();
       `[worker] reconciled processing_job rows on boot: succeeded=${summary.succeeded} failed=${summary.failed} requeued=${summary.requeued} lost=${summary.lost}`,
     );
   }
+  // At boot nothing this worker tracks is running yet, so any "running" run is
+  // a zombie left by a hard restart — cancel it instead of stranding it.
+  const runs = await reconcileStaleRuns();
+  if (runs.cancelled > 0) {
+    console.log(
+      `[worker] cancelled ${runs.cancelled} stale running run(s) on boot`,
+    );
+  }
 }
 
 for (const name of Object.values(QUEUE)) {
@@ -634,6 +645,19 @@ const reconcileTimer = setInterval(() => {
     .catch((e) => {
       console.warn(
         `[worker] reconcile sweep failed: ${e instanceof Error ? e.message : e}`,
+      );
+    });
+  reconcileStaleRuns({ minAgeMs: RECONCILE_SWEEP_MIN_AGE_MS })
+    .then((s) => {
+      if (s.cancelled > 0) {
+        console.log(
+          `[worker] reconcile sweep: cancelled ${s.cancelled} stale running run(s)`,
+        );
+      }
+    })
+    .catch((e) => {
+      console.warn(
+        `[worker] stale-run sweep failed: ${e instanceof Error ? e.message : e}`,
       );
     });
 }, RECONCILE_SWEEP_INTERVAL_MS);

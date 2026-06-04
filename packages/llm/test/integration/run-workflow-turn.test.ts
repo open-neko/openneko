@@ -232,4 +232,51 @@ describeIfDb("runWorkflowTurn", () => {
       expect(webIds).not.toContain(orphan.id);
     });
   });
+
+  // The failure mode behind the "ACP client disposed" run failures: worker
+  // shutdown aborts the run mid-flight. With a signal wired in, that must land
+  // as "cancelled" (no error), not a hard failure.
+  it("records a shutdown-interrupted run as cancelled, not failed", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId,
+        name: "interruptible workflow",
+        steps: [{ id: "s1", description: "work" }],
+      });
+
+      // Aborting the signal mid-run simulates cancelAllAgents() on SIGTERM;
+      // hermes then surfaces the SIGKILLed child as a disposed-client reject.
+      const controller = new AbortController();
+      const backend = fakeBackend(async () => {
+        controller.abort();
+        throw new Error("ACP client disposed before response");
+      });
+
+      const prepared = await prepareWorkflowRun(
+        { orgId, workflowId: workflow.id, triggerKind: "subscription" },
+        { resolveAgentBackend: async () => backend },
+      );
+
+      const result = await runWorkflowTurn(
+        {
+          prepared,
+          mode: "live",
+          emit: async () => {},
+          signal: controller.signal,
+        },
+        {
+          resolveAgentBackend: async () => backend,
+          formatGlobalMemoryPromptContext: async () => "",
+        },
+      );
+
+      expect(result.status).toBe("cancelled");
+      const rows = await db()
+        .select()
+        .from(workflow_run)
+        .where(eq(workflow_run.id, prepared.workflowRun.id));
+      expect(rows[0]?.status).toBe("cancelled");
+      expect(rows[0]?.error).toBeNull();
+    });
+  });
 });

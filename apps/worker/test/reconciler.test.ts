@@ -21,9 +21,16 @@ import {
   pool,
   processing_job,
   sql,
+  work_run,
+  work_thread,
+  workflow_definition,
+  workflow_run,
 } from "@neko/db";
 import { boss, QUEUE } from "@neko/db/jobs";
-import { reconcileStaleProcessingJobs } from "../src/reconciler";
+import {
+  reconcileStaleProcessingJobs,
+  reconcileStaleRuns,
+} from "../src/reconciler";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -314,6 +321,87 @@ describeIfReady("reconcileStaleProcessingJobs", () => {
 
     const row = await readProcessingJob(jobId);
     expect(row.status).toBe("running");
+  });
+});
+
+describeIfDb("reconcileStaleRuns", () => {
+  let orgId: string;
+
+  beforeEach(async () => {
+    orgId = uniqueOrgId("stale-runs");
+    await createTestOrg(orgId);
+  });
+
+  afterEach(async () => {
+    await deleteTestOrg(orgId);
+  });
+
+  async function insertRunningRun(updatedAt: Date): Promise<{
+    threadId: string;
+    workRunId: string;
+  }> {
+    const [thread] = await db()
+      .insert(work_thread)
+      .values({ org_id: orgId, title: "t", channel: "workflow" })
+      .returning({ id: work_thread.id });
+    const [run] = await db()
+      .insert(work_run)
+      .values({
+        org_id: orgId,
+        thread_id: thread!.id,
+        backend: "hermes",
+        status: "running",
+        created_at: updatedAt,
+        updated_at: updatedAt,
+      })
+      .returning({ id: work_run.id });
+    return { threadId: thread!.id, workRunId: run!.id };
+  }
+
+  it("cancels a work_run + its workflow_run stranded in running past the age threshold", async () => {
+    const stale = new Date(Date.now() - 20 * 60_000);
+    const { threadId, workRunId } = await insertRunningRun(stale);
+    const [wf] = await db()
+      .insert(workflow_definition)
+      .values({ org_id: orgId, name: "zombie wf" })
+      .returning({ id: workflow_definition.id });
+    const [wfRun] = await db()
+      .insert(workflow_run)
+      .values({
+        org_id: orgId,
+        workflow_id: wf!.id,
+        thread_id: threadId,
+        work_run_id: workRunId,
+        trigger_kind: "subscription",
+        status: "running",
+      })
+      .returning({ id: workflow_run.id });
+
+    const res = await reconcileStaleRuns({ minAgeMs: 11 * 60_000 });
+    expect(res.cancelled).toBeGreaterThanOrEqual(1);
+
+    const wr = await db()
+      .select({ status: work_run.status, error: work_run.error })
+      .from(work_run)
+      .where(eq(work_run.id, workRunId));
+    expect(wr[0]?.status).toBe("cancelled");
+    expect(wr[0]?.error).toContain("Interrupted");
+
+    const wfr = await db()
+      .select({ status: workflow_run.status })
+      .from(workflow_run)
+      .where(eq(workflow_run.id, wfRun!.id));
+    expect(wfr[0]?.status).toBe("cancelled");
+  });
+
+  it("leaves a recently-updated running run alone (respects minAgeMs)", async () => {
+    const { workRunId } = await insertRunningRun(new Date());
+    await reconcileStaleRuns({ minAgeMs: 11 * 60_000 });
+    const wr = await db()
+      .select({ status: work_run.status })
+      .from(work_run)
+      .where(eq(work_run.id, workRunId));
+    expect(wr[0]?.status).toBe("running");
   });
 });
 
