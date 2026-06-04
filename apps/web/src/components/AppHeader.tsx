@@ -86,19 +86,6 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
           <span className="topbar-name">OpenNeko</span>
         </a>
 
-        {back && (
-          <Link className="settings-backlink" href={back.href}>
-            <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
-            <span>{back.label}</span>
-          </Link>
-        )}
-
-        {children}
-
-        <span className="topbar-spacer" />
-
-        <DensityToggle />
-
         {updateAvailable ? (
           <button
             type="button"
@@ -113,6 +100,19 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
         ) : (
           <span className="topbar-ver" title="OpenNeko version">{APP_VERSION}</span>
         )}
+
+        {back && (
+          <Link className="settings-backlink" href={back.href}>
+            <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
+            <span>{back.label}</span>
+          </Link>
+        )}
+
+        {children}
+
+        <span className="topbar-spacer" />
+
+        <DensityToggle />
 
         <a
           className="topbar-credit"

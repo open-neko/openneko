@@ -179,8 +179,8 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 
 /* ── TOP BAR (single-row chrome, matches the dense mockups) ── */
 .topbar-inner {
-  width: 100%; max-width: 1200px; padding: 0 20px;
-  display: flex; align-items: center; gap: 16px; min-height: 41px;
+  width: 100%; max-width: 1340px; padding: 0 20px;
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 41px;
 }
 .topbar-brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text); flex: 0 0 auto; transition: opacity 0.18s; }
 .topbar-brand:hover { opacity: 0.85; }
@@ -189,7 +189,7 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 .topbar-ver {
   font-family: var(--font-body), 'Manrope', sans-serif; font-weight: 600; font-size: 10.5px;
   color: var(--text2); background: var(--neutral); padding: 2px 6px; border-radius: 999px;
-  border: 0; line-height: 1.4; letter-spacing: 0;
+  border: 0; line-height: 1.4; letter-spacing: 0; white-space: nowrap; flex: 0 0 auto;
 }
 .topbar-ver.is-update {
   display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
@@ -198,7 +198,7 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 }
 .topbar-ver.is-update:hover { background: color-mix(in srgb, var(--success) 22%, var(--success-soft)); }
 .topbar-ver-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-mid); }
-.topbar-nav { display: flex; align-items: center; gap: 2px; margin-left: 6px; flex-wrap: wrap; }
+.topbar-nav { display: flex; align-items: center; gap: 2px; margin-left: 6px; flex-wrap: nowrap; }
 .topbar-nav-link {
   font-size: 13.5px; font-weight: 500; color: var(--text2); padding: 7px 12px; border-radius: 999px;
   border: 1px solid transparent; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center;
@@ -215,12 +215,12 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 .topbar-signout:hover { color: var(--text); }
 .topbar-credit {
   display: inline-flex; align-items: center; flex: 0 0 auto;
-  font-family: var(--font-body), 'Manrope', sans-serif; font-size: 11px; font-weight: 600;
-  color: #113719; background: #6cff7f; border: 1px solid #58f26c; border-radius: 999px;
-  padding: 5px 10px; text-decoration: none; line-height: 1; white-space: nowrap;
-  transition: background 0.18s, transform 0.18s;
+  font-family: var(--font-body), 'Manrope', sans-serif; font-size: 11.5px; font-weight: 500;
+  color: var(--text3); text-decoration: none; line-height: 1; white-space: nowrap;
+  padding-left: 14px; margin-left: 2px; border-left: 1px solid var(--border);
+  transition: color 0.18s;
 }
-.topbar-credit:hover { background: #58f26c; transform: translateY(-1px); }
+.topbar-credit:hover { color: var(--text2); }
 /* The floating creator credit is replaced by the in-header one. */
 .creator-credit { display: none; }
 
@@ -229,6 +229,8 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
   .topbar-spacer { display: none; }
   .topbar-nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
 }
+
+
 
 
 
