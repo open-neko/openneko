@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.19.0](https://github.com/open-neko/openneko/compare/v1.18.2...v1.19.0) (2026-06-04)
+
+
+### Features
+
+* **channels:** deliver chat replies back to the origin channel ([57e4840](https://github.com/open-neko/openneko/commit/57e48400db1d0fb9d4e3adbc386ffe834b8b92a9))
+* **channels:** isolate channels — web Ask lists only its own threads ([da9e0c5](https://github.com/open-neko/openneko/commit/da9e0c50ee32db0b1065b96f5485348400c56a28))
+* **channels:** per-channel rendering + reliable, deduped, dead-lettered delivery ([86e412e](https://github.com/open-neko/openneko/commit/86e412e09d166426c56b8c9bb3e076c08d5c708f))
+* **density:** Actions triage queue (list + reading pane) in Compact ([7dae7ec](https://github.com/open-neko/openneko/commit/7dae7ec12c9731e3e5d814ae528df6cafe6bf113))
+* **density:** Ask 3-pane with context rail in Compact ([8bb92b6](https://github.com/open-neko/openneko/commit/8bb92b6fb0567a433ddece807d8fd0bce0111334))
+* **density:** density toggle + dense dashboard in the real app ([d6dc92b](https://github.com/open-neko/openneko/commit/d6dc92b79e73e7b6a1a0f241f0eaf48051896d72))
+* **density:** full Ask context rail — agent-emitted vitals/sources/followups ([63e4d9d](https://github.com/open-neko/openneko/commit/63e4d9dedf9b03995baa5333cb364a7b52fec9d0))
+* **density:** mini sparkline on compact briefing tiles ([4cbce45](https://github.com/open-neko/openneko/commit/4cbce4587a5a2b6a0aad5d001a7898001bd70fd8))
+* **density:** rebuild header as the mockup's single top bar ([e5d2017](https://github.com/open-neko/openneko/commit/e5d2017275481ae8463483172c7ffdb57ba664f2))
+* **density:** Workflows tile grid in Compact ([bfc4019](https://github.com/open-neko/openneko/commit/bfc40191c3d56cfdb80fe18f28dd7a267741d350))
+* **hours-saved:** agent-estimated human hours saved, end to end ([cdf4f16](https://github.com/open-neko/openneko/commit/cdf4f16137059b223d8192f80c057c18b2669571))
+* **rendering:** Phase 1 — channel-gate a2ui rendering, neutral base prompt ([e624212](https://github.com/open-neko/openneko/commit/e624212bd87d75df41026e1341a3d8ef8c2ae0a2))
+* **rendering:** Phase 2 — hermes renders via a real render_cards MCP tool ([d93cd5a](https://github.com/open-neko/openneko/commit/d93cd5ab9f45f9ef4768cfb59cd2f2f73d777246))
+* **web:** harden the Ask page chrome — sticky header, solid rails, calmer scroll ([bcfb54a](https://github.com/open-neko/openneko/commit/bcfb54a2cf32fccde0d4a92e724a729070ae5a20))
+* **web:** render agent vitals in the work context rail ([fb553cb](https://github.com/open-neko/openneko/commit/fb553cb7f977c159057b3d4e28763d24ee2a84bd))
+
+
+### Bug Fixes
+
+* **db:** exact memory vector search; drop misconfigured IVFFlat index ([3fc7716](https://github.com/open-neko/openneko/commit/3fc77168fe35a21620ad7294229c159fe0bcd976))
+* **density:** approve button uses the purple accent (not dark green) ([549c115](https://github.com/open-neko/openneko/commit/549c1155c177406adef49cd7045259b764dae1cf))
+* **density:** expanded-always briefing, no kbd shortcuts, unified approve, header placement ([5afaac9](https://github.com/open-neko/openneko/commit/5afaac983373a3b8043eba5bdc103464a75effa7))
+* **llm:** make neko_ask_context fence mandatory for data answers ([2354ab8](https://github.com/open-neko/openneko/commit/2354ab8ebf89fc020ce39ed06734137c0886bd4f))
+* **rendering:** thread wantsCards through the OpenShell sandbox path ([a23c8ac](https://github.com/open-neko/openneko/commit/a23c8ac5fd80705a7835b8ad4b010afcf450b3d6))
+* **web:** drop FALLBACK_NEXT placeholders from Ask rail ([e1fda34](https://github.com/open-neko/openneko/commit/e1fda34d7e42d6fe569352ca35f2b33277e3e526))
+* **web:** pixel-align top bar with dense mockups ([d6d6cf7](https://github.com/open-neko/openneko/commit/d6d6cf7b321f653061a232634f406f6ceb885581))
+* **web:** show empty-state in Ask rail instead of a blank column ([b1b5b33](https://github.com/open-neko/openneko/commit/b1b5b335464f02d146562ebc4d6f6405e673510c))
+
 ## [1.18.2](https://github.com/open-neko/openneko/compare/v1.18.1...v1.18.2) (2026-06-04)
 
 
