@@ -82,14 +82,17 @@ describe("buildWorkPrompt attachments guidance", () => {
 });
 
 describe("per-channel rendering gate", () => {
-  it("includes the rendering section on web turns (wantsCards)", () => {
+  it("renders via the render_cards tool on web turns (wantsCards)", () => {
+    // claude → the neko_ui MCP tool; hermes → its stdio render server tool.
     const claudeWeb = build("claude-agent", { wantsCards: true, supportsCardTool: true });
     expect(claudeWeb).toContain("<rendering>");
-    expect(claudeWeb).toContain("render_cards");
+    expect(claudeWeb).toContain("mcp__neko_ui__render_cards");
 
     const hermesWeb = build("hermes", { wantsCards: true, supportsCardTool: false });
     expect(hermesWeb).toContain("<rendering>");
-    expect(hermesWeb).toContain("neko_a2ui");
+    expect(hermesWeb).toContain("render_cards");
+    // The web-UI-coupled fence is gone from the prompt entirely.
+    expect(hermesWeb).not.toContain("neko_a2ui");
   });
 
   it("omits all rendering vocabulary on non-web turns", () => {

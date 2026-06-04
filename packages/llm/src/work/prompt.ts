@@ -21,59 +21,44 @@ function formatTranscript(messages: AgentChatMessage[]): string {
     .join("\n\n");
 }
 
-const A2UI_FENCE_EXAMPLE = `\`\`\`neko_a2ui
-[
+const RENDER_CARDS_EXAMPLE = `[
   {"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"urn:app:catalog:briefing:v1"}},
   {"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[
     {"id":"intro","component":"Markdown","text":"Brief 1-2 sentence intro to the answer."},
     {"id":"card1","component":"BriefingCard","metricId":"top-product","source":"chat","mood":"good","text":"Mountain-200 leads","metric":"$674,216","label":"Total Profit","detail":"Across all sales channels.","chartType":"kpi","chartData":[]},
     {"id":"detail","component":"Markdown","text":"Optional follow-up prose with tables, lists, etc."}
   ]}}
-]
-\`\`\``;
+]`;
 
+// Web-only (callers gate this behind wantsCards). Both backends render via a
+// `render_cards` tool — claude through the neko_ui MCP server, hermes through a
+// per-turn stdio render server. See docs/PER_CHANNEL_RENDERING.md.
 function buildRenderingSection(supportsCardTool: boolean): string {
-  if (supportsCardTool) {
-    return `<rendering>
-Every response to the user goes through \`mcp__neko_ui__render_cards\`.
-Wrap your prose in a \`Markdown\` component, and add KPI/Table/Chart
-cards alongside it when structured data helps the answer. Anything
-written outside the tool call is invisible to the UI — the tool call is
-the response.
-</rendering>`;
-  }
-
+  const tool = supportsCardTool ? "mcp__neko_ui__render_cards" : "render_cards";
   return `<rendering>
-Every response to the user is a single fenced \`\`\`neko_a2ui block
-containing A2UI v0.9 JSON messages. Anything written outside the fence
-is invisible to the UI — the fence is the entire response.
+Render your answer by calling the \`${tool}\` tool. Its \`messages\` argument is
+a JSON array of A2UI v0.9 messages — a \`createSurface\`, then an
+\`updateComponents\` whose \`components\` array holds flat component objects.
 
-The fence body is a JSON array (not JSX, not HTML, not bare component
-objects). Components are emitted flat inside
-\`updateComponents.components\` — every component is at the top level of
-that array, never nested inside another component's \`children\`.
+Component catalog (each component sets a \`component\` field):
 
-Component catalog (every component has a \`component\` field set to one
-of these):
-
-- \`Markdown\` — narrative text. Props: \`{ text: string }\` (markdown).
-  Use this for any prose.
+- \`Markdown\` — narrative text. Props: \`{ text: string }\` (markdown). Use this
+  for your prose.
 - \`BriefingCard\` — KPI card. Props:
   \`{ metricId: string, source: 'chat', mood: 'good'|'watch'|'act',
      text: string, metric: string, label: string, detail: string,
      chartType: 'kpi'|'line'|'bar'|'area'|'donut',
      chartData: Array<{d:string,v:number,t?:number}> | [] }\`.
 
-Each message has \`version: "v0.9"\` plus exactly one of
-\`createSurface\` or \`updateComponents\`. Most responses need just one
-of each.
+Each message sets \`version: "v0.9"\` and exactly one of \`createSurface\` or
+\`updateComponents\`.
 
 <example>
-${A2UI_FENCE_EXAMPLE}
+${tool}({ "messages": ${RENDER_CARDS_EXAMPLE} })
 </example>
 
-When the answer is purely prose with no metrics or cards, emit a single
-\`Markdown\` component inside \`updateComponents\`.
+Put your prose in \`Markdown\` components and add \`BriefingCard\`s for the key
+numbers. For a pure-prose answer, send one \`Markdown\` component.
 </rendering>`;
 }
 

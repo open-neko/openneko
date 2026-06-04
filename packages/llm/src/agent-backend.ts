@@ -134,6 +134,10 @@ export type AgentRunOptions = {
   onEvent?: (event: AgentEvent) => Promise<void> | void;
   backendState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
+  /** Web turn ⇒ the agent renders a2ui cards. Backends that can't take the
+   *  in-process SDK card server (hermes) wire their own render tool when set.
+   *  See docs/PER_CHANNEL_RENDERING.md. */
+  wantsCards?: boolean;
   outputSchema?: Record<string, unknown>;
   forkSession?: boolean;
   agents?: Record<string, unknown>;

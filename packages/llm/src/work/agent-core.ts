@@ -106,6 +106,7 @@ export async function runAgentBackend(
     backendState,
     onEvent: emit,
     mcpServers,
+    wantsCards,
     tag: `work ${runId}`,
     signal,
   });

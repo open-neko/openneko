@@ -295,4 +295,71 @@ describe("HermesBackend ACP behavior", () => {
     expect(result.error).toContain("Provider gemini returned 503");
     expect(events.find((e) => e.type === "error")).toBeDefined();
   });
+
+  it("web turn: offers the render MCP server and turns a render_cards call into a surface", async () => {
+    const cap = captureRequests();
+    const sessionId = "sess-render";
+    const a2ui = [
+      { version: "v0.9", createSurface: { surfaceId: "s1", catalogId: "urn:app:catalog:briefing:v1" } },
+      { version: "v0.9", updateComponents: { surfaceId: "s1", components: [{ id: "k", component: "BriefingCard", metric: "42", label: "Test" }] } },
+    ];
+    controller.setScript({
+      responders: {
+        "session/new": (p) => { cap.record("session/new", p); return { sessionId }; },
+        "session/prompt": (_p, ctx) => {
+          ctx.emitNotification({
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: {
+              sessionId,
+              update: {
+                sessionUpdate: "tool_call",
+                toolCallId: "tc-render",
+                kind: "other",
+                title: "mcp_neko_render_render_cards",
+                rawInput: { messages: a2ui },
+              },
+            },
+          });
+          return { stopReason: "end_turn" };
+        },
+      },
+    });
+    const events: Array<{ type: string; messages?: unknown[] }> = [];
+    const backend = new HermesBackend();
+    await backend.run({
+      prompt: "p",
+      workspace: FAKE_WORKSPACE,
+      wantsCards: true,
+      onEvent: (e) => { events.push(e as { type: string; messages?: unknown[] }); },
+    });
+
+    // The render server is handed to hermes via session/new.mcpServers.
+    const sn = cap.seen.find((s) => s.method === "session/new");
+    expect(JSON.stringify(sn?.params)).toContain("neko_render");
+
+    // The render_cards call became the answer surface — not a tool pill.
+    const surfaces = events.filter((e) => e.type === "surface");
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0].messages).toHaveLength(2);
+    expect(events.some((e) => e.type === "tool_start")).toBe(false);
+  });
+
+  it("non-web turn: does not offer the render MCP server", async () => {
+    const cap = captureRequests();
+    controller.setScript({
+      responders: {
+        "session/new": (p) => { cap.record("session/new", p); return { sessionId: "s" }; },
+        "session/prompt": (_p, ctx) => {
+          ctx.emitNotification(chunkNotification("s", "hi"));
+          return { stopReason: "end_turn" };
+        },
+      },
+    });
+    const backend = new HermesBackend();
+    await backend.run({ prompt: "p", workspace: FAKE_WORKSPACE }); // wantsCards defaults false
+    const sn = cap.seen.find((s) => s.method === "session/new");
+    expect((sn?.params as { mcpServers?: unknown[] }).mcpServers).toEqual([]);
+    expect(JSON.stringify(sn?.params)).not.toContain("neko_render");
+  });
 });
