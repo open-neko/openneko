@@ -12,6 +12,7 @@
 package dockerproxy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,24 +50,33 @@ func FindRunningWorker() string {
 }
 
 // ProxyToWorker re-executes `openneko <args>` inside the named container,
-// forwarding stdin/stdout/stderr and propagating the exit code. The `-t`
-// docker flag is added only when stdin is a TTY (so non-interactive flows
-// — scripts, CI — don't fail).
+// forwarding stdout/stderr and propagating the exit code.
+//
+// Stdin is attached only when it can carry useful input: an interactive TTY,
+// or a pipe/regular file being redirected in (e.g. `echo val | openneko …`).
+// A terminal-less stdin — the common CI/script case where the value is passed
+// as an argument — is NOT attached, because `docker exec -i` draining such a
+// stream can surface a spurious non-zero exit even when the inner command
+// succeeded. `-t` is added only for an interactive TTY.
 func ProxyToWorker(container string, args []string) int {
-	dockerArgs := []string{"exec", "-i"}
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dockerArgs = append(dockerArgs, "-t")
+	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	attachStdin := isTTY
+	if !isTTY {
+		if fi, err := os.Stdin.Stat(); err == nil {
+			attachStdin = shouldAttachStdin(false, fi.Mode())
+		}
 	}
-	dockerArgs = append(dockerArgs, "-e", EnvMarker+"=1", container, "openneko")
-	dockerArgs = append(dockerArgs, args...)
+	dockerArgs := dockerExecArgs(container, args, attachStdin, isTTY)
 	fmt.Fprintf(os.Stderr, "[openneko] proxying into %s …\n", container)
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Stdin = os.Stdin
+	if attachStdin {
+		cmd.Stdin = os.Stdin
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
-		if ok := errAs(err, &exitErr); ok {
+		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()
 		}
 		fmt.Fprintf(os.Stderr, "[openneko] proxy failed: %v\n", err)
@@ -75,15 +85,24 @@ func ProxyToWorker(container string, args []string) int {
 	return 0
 }
 
-// errAs is a tiny errors.As wrapper that avoids the import cycle/double
-// import for the one place this package needs it.
-func errAs(err error, target **exec.ExitError) bool {
-	if err == nil {
-		return false
-	}
-	if e, ok := err.(*exec.ExitError); ok {
-		*target = e
+// shouldAttachStdin decides whether to forward stdin to `docker exec`: yes for
+// an interactive TTY or redirected pipe/regular-file input; no for a
+// terminal-less device (e.g. /dev/null, an inherited non-tty).
+func shouldAttachStdin(isTTY bool, mode os.FileMode) bool {
+	if isTTY {
 		return true
 	}
-	return false
+	return mode&os.ModeNamedPipe != 0 || mode.IsRegular()
+}
+
+func dockerExecArgs(container string, args []string, attachStdin, isTTY bool) []string {
+	out := []string{"exec"}
+	if attachStdin {
+		out = append(out, "-i")
+	}
+	if isTTY {
+		out = append(out, "-t")
+	}
+	out = append(out, "-e", EnvMarker+"=1", container, "openneko")
+	return append(out, args...)
 }

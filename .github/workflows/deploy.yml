@@ -79,14 +79,30 @@ jobs:
               export OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins
               export OPENNEKO_PLUGINS_MANIFEST_PATH=/opt/neko/.plugins/openneko.plugins.json
               [ -f "$OPENNEKO_PLUGINS_MANIFEST_PATH" ] || openneko init
+              # These CLI ops proxy into the worker container via `docker exec`,
+              # which can return a spurious non-zero even when the operation
+              # succeeded. So we tolerate the exit code and assert the OUTCOME
+              # instead — a deploy must go red only when something is actually
+              # wrong, not when a write that worked reported a noisy exit.
               if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
-                openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN"
-                echo "[deploy] SLACK_BOT_TOKEN saved"
+                openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN" || true
+                if printf '%s\n' "$(openneko secrets list 2>/dev/null || true)" | grep -q 'SLACK_BOT_TOKEN'; then
+                  echo "[deploy] SLACK_BOT_TOKEN saved"
+                else
+                  echo "[deploy] ERROR: SLACK_BOT_TOKEN not present after set" >&2
+                  exit 1
+                fi
               else
                 echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack install will be skipped"
               fi
               if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
-                openneko install @open-neko/plugin-slack --skip-host-check
+                openneko install @open-neko/plugin-slack --skip-host-check || true
+                if printf '%s\n' "$(openneko list 2>/dev/null || true)" | grep -q 'plugin-slack'; then
+                  echo "[deploy] plugin-slack installed"
+                else
+                  echo "[deploy] ERROR: plugin-slack not installed after install" >&2
+                  exit 1
+                fi
               fi
               if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f /opt/neko/scripts/install-telegram-channel.sh ]; then
                 bash /opt/neko/scripts/install-telegram-channel.sh \

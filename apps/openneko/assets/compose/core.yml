@@ -84,7 +84,9 @@ services:
     ports:
       - "${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/health"]
+      # graphjin serves no /health route (it 500s); the GraphQL endpoint
+      # answering is the honest readiness signal.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/api/v1/graphql"]
       interval: 10s
       timeout: 3s
       retries: 5
