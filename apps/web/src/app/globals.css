@@ -106,3 +106,15 @@ html[data-density="comfortable"] {
 .brief-grid .idetail { display: var(--d-icard-detail); }
 .brief-grid .icard.open .idetail { display: block; }
 .dash-root .icard { padding: var(--d-icard-pad); }
+
+/* ── Workflows: tile grid in Compact (expanded workflow spans full width) ── */
+html[data-density="compact"] .workflows-root { --page-width: 1200px; }
+html[data-density="compact"] .wf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 11px;
+  align-items: start;
+}
+html[data-density="compact"] .wf-grid > li:has(.workflows-row.is-active) {
+  grid-column: 1 / -1;
+}

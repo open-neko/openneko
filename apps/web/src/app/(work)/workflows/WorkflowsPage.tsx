@@ -365,7 +365,7 @@ function WorkflowGroup({
       <div className="text-[11px] font-bold tracking-[0.12em] uppercase text-text3 mb-2.5">
         {title} <span className="text-text3 font-semibold tracking-[0.06em] ml-0.5">({count})</span>
       </div>
-      <ul className="list-none flex flex-col gap-2">
+      <ul className="list-none flex flex-col gap-2 wf-grid">
         {items.map((w) => (
           <WorkflowRow
             key={w.id}
