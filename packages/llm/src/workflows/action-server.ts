@@ -19,6 +19,7 @@ import {
   evaluateActionPolicy,
   type PolicyDecision,
 } from "./policy-engine";
+import { clampActionMinutes } from "./value";
 
 export type WorkflowActionContext = {
   orgId: string;
@@ -135,6 +136,8 @@ export async function handleActionRequest(
     payload: args.payload ?? {},
     riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
     summary: args.summary,
+    minutesSaved: clampActionMinutes(args.minutes_saved),
+    minutesSavedBasis: args.basis ?? null,
     status,
   });
 
@@ -246,6 +249,8 @@ export async function handleWorkActionRequest(
     riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
     summary: args.summary,
     intent: intent ?? null,
+    minutesSaved: clampActionMinutes(args.minutes_saved),
+    minutesSavedBasis: args.basis ?? null,
     status,
   });
 

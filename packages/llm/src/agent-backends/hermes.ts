@@ -1,6 +1,7 @@
 // Always session/new per turn — Hermes session/load replays history that the prompt already carries (see packages/llm/src/work/prompt.ts), double-counting context.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,9 +18,37 @@ import {
   type AcpClient,
   type AcpNotification,
 } from "./hermes-acp-client";
-import { extractSurfaceMessages } from "./surface";
+import { coerceSurfaceMessages, extractSurfaceMessages } from "./surface";
 
 export { extractSurfaceMessages } from "./surface";
+
+// ── Per-channel rendering (web): hand hermes a tiny stdio MCP server that
+// advertises `render_cards`, so the model can render a2ui cards instead of a
+// fence. The server is a sink (returns ok); the HOST emits the surface from the
+// tool_call notification's rawInput. See docs/PER_CHANNEL_RENDERING.md.
+const RENDER_MCP_SERVER_NAME = "neko_render";
+// hermes surfaces MCP tool calls as `mcp_<server>_<tool>` (verified via spike).
+const RENDER_TOOL_TITLE = `mcp_${RENDER_MCP_SERVER_NAME}_render_cards`;
+const RENDER_MCP_STUB_SOURCE = `let b="";
+process.stdin.on("data",c=>{b+=c;let i;while((i=b.indexOf("\\n"))>=0){
+const l=b.slice(0,i).trim();b=b.slice(i+1);if(!l)continue;
+let r;try{r=JSON.parse(l)}catch{continue}const{id,method}=r;
+if(typeof id==="undefined")continue;
+const w=o=>process.stdout.write(JSON.stringify({jsonrpc:"2.0",id,result:o})+"\\n");
+if(method==="initialize")w({protocolVersion:"2024-11-05",capabilities:{tools:{}},serverInfo:{name:"neko_render",version:"1"}});
+else if(method==="tools/list")w({tools:[{name:"render_cards",description:"Render your answer as cards and charts. Pass messages: an array of A2UI v0.9 messages (a createSurface then an updateComponents).",inputSchema:{type:"object",properties:{messages:{type:"array",items:{type:"object"}}},required:["messages"]}}]});
+else if(method==="tools/call")w({content:[{type:"text",text:'{"ok":true}'}]});
+else w({})}});
+`;
+let renderStubPath: string | null = null;
+function ensureRenderStub(): string {
+  if (!renderStubPath) {
+    const p = join(tmpdir(), "neko-render-mcp-server.mjs");
+    writeFileSync(p, RENDER_MCP_STUB_SOURCE);
+    renderStubPath = p;
+  }
+  return renderStubPath;
+}
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
@@ -159,6 +188,7 @@ export class HermesBackend implements AgentBackend {
       skills: _skills,
       signal,
       onEvent,
+      wantsCards = false,
       backendState = {},
     } = opts;
 
@@ -184,6 +214,7 @@ export class HermesBackend implements AgentBackend {
           workspace,
           signal,
           onEvent,
+          wantsCards,
         });
         if (out.error) {
           lastErr = new Error(out.error);
@@ -230,6 +261,7 @@ type RunOnceArgs = {
   workspace: AgentRunOptions["workspace"];
   signal: AbortSignal | undefined;
   onEvent: AgentRunOptions["onEvent"];
+  wantsCards: boolean;
 };
 
 type RunOnceOutcome = {
@@ -248,6 +280,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     workspace,
     signal,
     onEvent,
+    wantsCards,
   } = args;
 
   let cwd: string;
@@ -342,9 +375,14 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
 
     // session/new per turn — see file header for the session/load double-count rationale.
     // TODO: verify whether Hermes ACP honors user-supplied mcpServers.
+    // session/new per turn — see file header for the session/load double-count rationale.
+    // Web turns get the render_cards MCP server so the model renders cards.
+    const mcpServers = wantsCards
+      ? [{ name: RENDER_MCP_SERVER_NAME, command: process.execPath, args: [ensureRenderStub()], env: [] }]
+      : [];
     const fresh = await client.request<{ sessionId: string }>("session/new", {
       cwd,
-      mcpServers: [],
+      mcpServers,
     });
     const sessionId = fresh.sessionId;
 
@@ -384,6 +422,18 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         }
         case "tool_call": {
           if (!onEvent) return;
+          // A render_cards call IS the answer surface, not a tool step: pull the
+          // a2ui messages from the call input and emit them, skipping the pill.
+          if (update.title === RENDER_TOOL_TITLE) {
+            const messages = coerceSurfaceMessages(
+              (update.rawInput as { messages?: unknown } | undefined)?.messages,
+            );
+            if (messages.length > 0) {
+              surfaceEmittedDuringStream = true;
+              void onEvent({ type: "surface", messages });
+            }
+            return;
+          }
           void onEvent({
             type: "tool_start",
             id: update.toolCallId,

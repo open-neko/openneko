@@ -20,6 +20,11 @@ const utterance = (event: InteractionEvent): string => {
     return event.prompt;
   }
   if (event.kind === "resolve") return event.summary;
+  if (event.kind === "highlight") {
+    return event.metrics
+      .map((m) => `${m.label} is ${m.value}${m.sub ? `, ${m.sub}` : ""}.`)
+      .join(" ");
+  }
   return "";
 };
 

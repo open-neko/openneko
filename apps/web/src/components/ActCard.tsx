@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
+import { formatSavedShort } from "@/lib/hours-saved";
 
 export type ActRowTone = "good" | "watch" | "action";
 
@@ -16,6 +17,8 @@ export type ActRowData = {
   rejectionReason?: string | null;
   approverPhrase?: string | null;
   status: string;
+  /** Realized minutes saved — shown on fired receipts that carry an estimate. */
+  minutesSaved?: number | null;
 };
 
 export type ActCardData = {
@@ -164,12 +167,24 @@ export default function ActCard({
                     {row.rejectionReason}
                   </p>
                 )}
-                {data.state === "live" && row.approverPhrase && (
-                  <p className="mt-1 text-[11.5px] text-text3">
-                    approved by{" "}
-                    <span className="text-text2 font-medium">
-                      {row.approverPhrase}
-                    </span>
+                {data.state === "live" && (row.approverPhrase || (row.minutesSaved ?? 0) > 0) && (
+                  <p className="mt-1 text-[11.5px] text-text3 flex items-center gap-2 flex-wrap">
+                    {row.approverPhrase && (
+                      <span>
+                        approved by{" "}
+                        <span className="text-text2 font-medium">
+                          {row.approverPhrase}
+                        </span>
+                      </span>
+                    )}
+                    {(row.minutesSaved ?? 0) > 0 && (
+                      <span
+                        className="font-mono text-success-ink bg-success-soft border border-success-mid/30 rounded-full px-1.5 py-px"
+                        title="Estimated human time saved"
+                      >
+                        {formatSavedShort(row.minutesSaved as number)} saved
+                      </span>
+                    )}
                   </p>
                 )}
 
@@ -205,7 +220,7 @@ export default function ActCard({
                         onApproveRow?.(row.id);
                       }}
                     >
-                      [a] Approve
+                      Approve
                     </RowButton>
                     <RowButton
                       disabled={isBusy}
@@ -214,7 +229,7 @@ export default function ActCard({
                         onBeginRejectRow?.(row.id);
                       }}
                     >
-                      [r] Reject
+                      Reject
                     </RowButton>
                     <a
                       className="ml-auto self-center px-1.5 py-1 text-xs font-semibold text-text2 no-underline opacity-70 transition-opacity duration-150 hover:opacity-100 hover:text-text hover:underline underline-offset-2"
@@ -253,7 +268,7 @@ function RowButton({ tone, disabled, onClick, children }: RowButtonProps) {
         "disabled:opacity-55 disabled:cursor-not-allowed",
         !tone && "bg-card border-border text-text hover:not-disabled:border-text3",
         tone === "primary" &&
-          "bg-success-ink border-success-ink text-white hover:not-disabled:bg-[#0b2912] hover:not-disabled:border-[#0b2912]",
+          "bg-accent border-accent text-white hover:not-disabled:bg-[#5a4cd1] hover:not-disabled:border-[#5a4cd1]",
         tone === "destructive" &&
           "bg-danger border-danger text-white hover:not-disabled:bg-[#c84545] hover:not-disabled:border-[#c84545]",
       )}

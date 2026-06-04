@@ -1,5 +1,5 @@
 #!/bin/bash
-# One-time setup for the neko-vm host (demo.getneko.app).
+# One-time setup for the neko-vm host (demo.openneko.app).
 # Run as root (or via sudo) on the VM. Idempotent — re-running is safe.
 #
 # Usage:  sudo bash scripts/neko-vm-setup.sh [DEPLOY_USER]

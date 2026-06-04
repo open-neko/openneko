@@ -99,6 +99,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       threadId,
       runId: run.id,
       message,
+      channel: "web",
       emit,
       signal: abortController.signal,
       pluginActions,

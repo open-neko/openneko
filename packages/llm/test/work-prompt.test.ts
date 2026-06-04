@@ -28,6 +28,7 @@ const knowledge: KnowledgePackContents = {
 function build(
   backend: "claude-agent" | "hermes",
   overrides: {
+    wantsCards?: boolean;
     supportsCardTool?: boolean;
     supportsSkillTool?: boolean;
     supportsMemoryTool?: boolean;
@@ -41,6 +42,7 @@ function build(
     knowledge,
     messages: [],
     currentUserMessage: "test",
+    wantsCards: overrides.wantsCards ?? true,
     supportsCardTool: overrides.supportsCardTool ?? false,
     supportsSkillTool: overrides.supportsSkillTool ?? false,
     supportsMemoryTool: overrides.supportsMemoryTool ?? false,
@@ -76,6 +78,30 @@ describe("buildWorkPrompt attachments guidance", () => {
     // explicitly say to read them.
     expect(prompt).not.toMatch(/Uploaded files are auxiliary/);
     expect(prompt).toMatch(/read the file/i);
+  });
+});
+
+describe("per-channel rendering gate", () => {
+  it("renders via the render_cards tool on web turns (wantsCards)", () => {
+    // claude → the neko_ui MCP tool; hermes → its stdio render server tool.
+    const claudeWeb = build("claude-agent", { wantsCards: true, supportsCardTool: true });
+    expect(claudeWeb).toContain("<rendering>");
+    expect(claudeWeb).toContain("mcp__neko_ui__render_cards");
+
+    const hermesWeb = build("hermes", { wantsCards: true, supportsCardTool: false });
+    expect(hermesWeb).toContain("<rendering>");
+    expect(hermesWeb).toContain("render_cards");
+    // The web-UI-coupled fence is gone from the prompt entirely.
+    expect(hermesWeb).not.toContain("neko_a2ui");
+  });
+
+  it("omits all rendering vocabulary on non-web turns", () => {
+    for (const backend of ["claude-agent", "hermes"] as const) {
+      const prompt = build(backend, { wantsCards: false, supportsCardTool: backend === "claude-agent" });
+      expect(prompt).not.toContain("<rendering>");
+      expect(prompt).not.toContain("neko_a2ui");
+      expect(prompt).not.toContain("render_cards");
+    }
   });
 });
 

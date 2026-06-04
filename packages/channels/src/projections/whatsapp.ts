@@ -46,6 +46,12 @@ export const whatsappProjection: Projection<WhatsappProjectionResult> = (events,
       parts.push(`${mark} ${event.summary}`);
     } else if (event.kind === "offer") {
       parts.push(`📎 ${event.label}`);
+    } else if (event.kind === "highlight") {
+      parts.push(
+        event.metrics
+          .map((m) => `${m.label}: ${m.value}${m.sub ? ` (${m.sub})` : ""}`)
+          .join("\n"),
+      );
     }
   }
   const body = clampChars(parts.join("\n\n"), profile.constraints.maxOutboundChars);

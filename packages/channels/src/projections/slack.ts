@@ -81,6 +81,13 @@ export const slackProjection: Projection<SlackProjectionResult> = (events, profi
       blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `${mark} ${event.summary}` }] });
     } else if (event.kind === "offer") {
       blocks.push(section(`📎 ${event.label}`));
+    } else if (event.kind === "highlight") {
+      const fields = event.metrics.map((m) => ({
+        type: "mrkdwn",
+        text: `*${m.label}*\n${m.value}${m.sub ? ` _(${m.sub})_` : ""}`,
+      }));
+      blocks.push(section("*Key figures*", fields));
+      lines.push(event.metrics.map((m) => `${m.label} ${m.value}`).join(" · "));
     }
   }
   return { blocks, text: lines.join(" · ") };

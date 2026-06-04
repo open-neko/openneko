@@ -284,7 +284,20 @@ ${memorySection}
 
 <finishing>
 After producing your output(s), send one short final assistant message
-summarising what you did, then end the run.
+summarising what you did. Then emit exactly one fenced block estimating the
+human time this run's ANALYSIS saved (exclude any actions you proposed —
+those carry their own estimate):
+
+\`\`\`neko_value
+{ "minutes_saved": 12, "basis": "Checked reorder thresholds across 40 SKUs" }
+\`\`\`
+
+Estimate the minutes a competent person would spend on this by hand; be
+conservative and round DOWN. Emit \`0\` when the run found nothing a person
+would otherwise have acted on. Anchors (minutes): routine email 5-8 · CRM
+update 3-6 · refund 12-18 · purchase order 20-30 · multi-table report 20-40 ·
+summary 10-20 · single-table lookup 3-8 · found nothing 0. When you propose an
+action, add \`minutes_saved\` + a short \`basis\` to it too.
 </finishing>
 
 ${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}`;

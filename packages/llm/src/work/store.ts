@@ -54,18 +54,25 @@ export type WorkThreadBundle = {
   eventsByRun: Record<string, AgentEvent[]>;
 };
 
-export async function listWorkThreads(orgId: string): Promise<WorkThreadSummary[]> {
+export async function listWorkThreads(
+  orgId: string,
+  channel = "web",
+): Promise<WorkThreadSummary[]> {
   // Workflow runs reuse the work_thread / work_run plumbing for their
   // transcripts (so they get the same surface, events, memory hooks).
   // But /work (Ask) is strictly human ↔ agent — its sidebar must not
   // surface threads created by a workflow trigger. Exclude any thread
   // that has a workflow_run pointing at it.
+  //
+  // Channels are isolated: a surface lists only its own threads (the web Ask
+  // UI passes "web"), so Telegram/Slack conversations never appear here.
   const rows = await db()
     .select()
     .from(work_thread)
     .where(
       and(
         eq(work_thread.org_id, orgId),
+        eq(work_thread.channel, channel),
         sql`NOT EXISTS (SELECT 1 FROM ${workflow_run} wr WHERE wr.thread_id = ${work_thread.id})`,
       ),
     )
@@ -79,12 +86,17 @@ export async function listWorkThreads(orgId: string): Promise<WorkThreadSummary[
   }));
 }
 
-export async function createWorkThread(orgId: string, title = "") {
+export async function createWorkThread(
+  orgId: string,
+  title = "",
+  channel = "web",
+) {
   const rows = await db()
     .insert(work_thread)
     .values({
       org_id: orgId,
       title,
+      channel,
     })
     .returning();
   return rows[0];
@@ -223,6 +235,23 @@ export async function finishWorkRun(
       error,
       updated_at: new Date(),
       finished_at: new Date(),
+    })
+    .where(eq(work_run.id, runId));
+}
+
+// Persist a run's agent-estimated analysis value (server-clamped minutes +
+// the one-line basis). Separate from finishWorkRun because the estimate is
+// parsed from the run's value fence after the run is marked finished.
+export async function setWorkRunValue(
+  runId: string,
+  args: { minutes: number | null; basis: string | null },
+) {
+  await db()
+    .update(work_run)
+    .set({
+      analysis_minutes_saved: args.minutes,
+      analysis_minutes_basis: args.basis,
+      updated_at: new Date(),
     })
     .where(eq(work_run.id, runId));
 }

@@ -108,7 +108,12 @@ import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
-import { useWorkShell } from "../work-shell-context";
+import {
+  useWorkShell,
+  type RailArtifact,
+  type RailSource,
+  type RailVital,
+} from "../work-shell-context";
 
 type MessageRecord = {
   id: string;
@@ -163,6 +168,8 @@ type WorkEvent =
       error?: string;
       rejection_reason?: string;
     }
+  | { type: "followups"; items: string[] }
+  | { type: "vitals"; items: RailVital[] }
   | { type: "done"; result?: unknown };
 
 type ThreadBundle = {
@@ -298,7 +305,12 @@ export default function WorkScreen() {
   const searchParams = useSearchParams();
   const routeThreadId =
     typeof params?.threadId === "string" ? params.threadId : null;
-  const { setActiveRunId } = useWorkShell();
+  const {
+    setActiveRunId,
+    setRailArtifacts,
+    setRailContext,
+    insertComposerRef,
+  } = useWorkShell();
   const [gateChecked, setGateChecked] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -396,6 +408,88 @@ export default function WorkScreen() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
+
+  // Register the handle the rail's "Ask next" chips call to drop a question
+  // into the composer (focused, caret at end) so the operator can edit it
+  // before sending — it never fires on its own. setDraft runs from the click,
+  // not synchronously inside this effect.
+  useEffect(() => {
+    insertComposerRef.current = (q: string) => {
+      setDraft(q);
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+      });
+    };
+    return () => {
+      insertComposerRef.current = null;
+    };
+  }, [insertComposerRef]);
+
+  // Derive this thread's rail context from the run's own output. Vitals and
+  // follow-ups are channel-agnostic CONTENT the agent emits (the web channel
+  // renders them as a tile grid / chips — another channel could read them
+  // aloud). Sources touched are parsed from the data tools the agent actually
+  // called (a fact about the run); artifacts come from artifact events. The
+  // latest answer in the thread wins for vitals and follow-ups.
+  useEffect(() => {
+    if (!bundle) {
+      setRailArtifacts([]);
+      setRailContext({ vitals: [], sources: [], followups: [] });
+      return;
+    }
+    const arts: RailArtifact[] = [];
+    const seenArt = new Set<string>();
+    const sourceMap = new Map<string, RailSource>();
+    let vitals: RailVital[] = [];
+    let followups: string[] = [];
+    const addSource = (raw: string) => {
+      const name = raw.trim().toLowerCase();
+      if (name.length < 2 || sourceMap.has(name)) return;
+      sourceMap.set(name, { name });
+    };
+    for (const events of Object.values(bundle.eventsByRun)) {
+      for (const ev of events) {
+        if (ev.type === "artifact" && ev.artifact && !seenArt.has(ev.artifact.path)) {
+          seenArt.add(ev.artifact.path);
+          arts.push({
+            path: ev.artifact.path,
+            label: ev.artifact.label,
+            mimeType: ev.artifact.mimeType,
+          });
+        } else if (ev.type === "tool_start") {
+          const title =
+            typeof (ev.input as { title?: unknown })?.title === "string"
+              ? (ev.input as { title: string }).title
+              : "";
+          if (title) {
+            // graphjin table args: {"table":"x"} / {"from_table":"x"} / {"to_table":"x"}
+            for (const m of title.matchAll(
+              /"(?:from_table|to_table|table)"\s*:\s*"([a-z0-9_]+)"/gi,
+            )) {
+              addSource(m[1]);
+            }
+            // execute_graphql root field: {"query":"{ <table>( …
+            const q = title.match(/"query"\s*:\s*"\{\s*([a-z_][a-z0-9_]*)/i);
+            if (q) addSource(q[1]);
+          }
+        } else if (ev.type === "followups" && Array.isArray(ev.items)) {
+          followups = ev.items;
+        } else if (ev.type === "vitals" && Array.isArray(ev.items)) {
+          vitals = ev.items;
+        }
+      }
+    }
+    setRailArtifacts(arts);
+    setRailContext({
+      vitals: vitals.slice(0, 4),
+      sources: [...sourceMap.values()].slice(0, 6),
+      followups,
+    });
+  }, [bundle, setRailArtifacts, setRailContext]);
 
   // Auto-grow the textarea up to its max-height (~9 lines); past that the
   // textarea scrolls internally. CSS alone can't do this — `rows={1}` is
@@ -1080,18 +1174,8 @@ export default function WorkScreen() {
                 {sending ? (
                   <span className="work-composer-pulse">Working</span>
                 ) : files.length > 0 ? (
-                  <>
-                    {files.length} of {MAX_ATTACHMENTS} attached
-                    <span className="work-composer-hint-sep">·</span>
-                    Enter <kbd>↵</kbd> to send
-                  </>
-                ) : (
-                  <>
-                    Enter <kbd>↵</kbd> to send
-                    <span className="work-composer-hint-sep">·</span>
-                    Shift <kbd>↵</kbd> for newline
-                  </>
-                )}
+                  <>{files.length} of {MAX_ATTACHMENTS} attached</>
+                ) : null}
               </span>
             </div>
             {sending ? (
@@ -1325,7 +1409,6 @@ function MessageBubble({
           />
         </div>
         <div className="work-bubble-edit-hint">
-          <span>Enter to send · Esc to cancel</span>
           <button type="button" onClick={cancel}>
             Cancel
           </button>
@@ -1414,7 +1497,7 @@ type ApprovalItem = {
 
 type TimelineItem =
   | { kind: "text"; content: string }
-  | { kind: "tools"; tools: ToolItem[]; followedByText: boolean }
+  | { kind: "tools"; tools: ToolItem[] }
   | { kind: "approval"; approval: ApprovalItem }
   | { kind: "error"; message: string };
 
@@ -1440,9 +1523,6 @@ function buildRunTimeline(events: WorkEvent[]): {
   const flushTextSegment = () => {
     if (pendingText.trim()) {
       items.push({ kind: "text", content: pendingText });
-      for (const it of items) {
-        if (it.kind === "tools") it.followedByText = true;
-      }
     }
     pendingText = "";
   };
@@ -1479,7 +1559,7 @@ function buildRunTimeline(events: WorkEvent[]): {
         if (last && last.kind === "tools") {
           last.tools.push(item);
         } else {
-          items.push({ kind: "tools", tools: [item], followedByText: false });
+          items.push({ kind: "tools", tools: [item] });
         }
         break;
       }
@@ -1634,11 +1714,8 @@ function RunTimeline({
         }
         if (item.kind === "tools") {
           return (
-            <ToolGroup
-              key={`tools-${index}`}
-              tools={item.tools}
-              followedByText={item.followedByText}
-            />
+            <ToolGroup key={`tools-${index}`} tools={item.tools} />
+
           );
         }
         if (item.kind === "approval") {
@@ -1747,7 +1824,7 @@ function ActionApprovalCard({
             type="button"
             disabled={busy}
             onClick={() => decide("approve")}
-            className="px-3 py-1.5 rounded-[10px] bg-text text-bg font-display font-bold text-[12px] tracking-[-0.01em] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            className="px-3 py-1.5 rounded-[10px] bg-accent text-white font-display font-bold text-[12px] tracking-[-0.01em] hover:bg-[#5a4cd1] disabled:opacity-50 cursor-pointer"
           >
             {busy ? "Approving…" : "Approve"}
           </button>
@@ -1847,28 +1924,15 @@ function ActionResultStrip({
   );
 }
 
-function ToolGroup({
-  tools,
-  followedByText,
-}: {
-  tools: ToolItem[];
-  followedByText: boolean;
-}) {
+function ToolGroup({ tools }: { tools: ToolItem[] }) {
   const inflight = tools.filter((t) => !t.end).length;
   const failed = tools.filter((t) => t.end?.error).length;
   const showHeader = tools.length > 1;
-  // Auto-open once while work is in flight and the agent hasn't started
-  // talking yet — then leave the state alone. Re-deriving open from live
-  // inflight/text state caused the section to snap closed mid-stream as
-  // each tool finished or prose landed, which is visually jarring.
+  // Collapsed by default and left alone — the running/failed badges on the
+  // header carry live progress, so the body never expands on its own. An
+  // auto-open while in flight grew the transcript on every tool call and
+  // yanked the viewport down; the operator opens it only if they want detail.
   const [open, setOpen] = useState(false);
-  const autoOpenedRef = useRef(false);
-  useEffect(() => {
-    if (!autoOpenedRef.current && inflight > 0 && !followedByText) {
-      autoOpenedRef.current = true;
-      setOpen(true);
-    }
-  }, [inflight, followedByText]);
 
   if (!showHeader) {
     return (

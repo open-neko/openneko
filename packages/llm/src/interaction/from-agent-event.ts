@@ -68,6 +68,10 @@ const mapOne = (event: AgentEvent, gen: IdGen): InteractionEvent[] => {
       return [informFromSurface(event.messages, gen())];
     case "artifact":
       return [{ kind: "offer", id: gen(), label: event.artifact.label, artifactRef: event.artifact.path, mime: event.artifact.mimeType ?? "application/octet-stream" }];
+    case "vitals":
+      return event.items.length
+        ? [{ kind: "highlight", id: gen(), metrics: event.items.map((m) => ({ label: m.label, value: m.value, ...(m.sub ? { sub: m.sub } : {}) })) }]
+        : [];
     case "action_request_emit":
       return event.decision === "pending_approval"
         ? [{ kind: "ask", id: event.action_request_id, ask: "approval", prompt: event.intent ?? event.summary ?? `Approve ${event.kind}?`, decisionRef: event.action_request_id, ...(isRisk(event.risk_level) ? { risk: event.risk_level } : {}) }]

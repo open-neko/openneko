@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
       summary: action_request.summary,
       scope: action_request.scope,
       status: action_request.status,
+      minutesSaved: action_request.minutes_saved,
       approvedAt: action_request.approved_at,
       approvedByUserId: action_request.approved_by_user_id,
       policyId: action_request.policy_id,
@@ -141,6 +142,7 @@ export async function GET(request: NextRequest) {
       summary: r.summary,
       scope: r.scope,
       status: r.status,
+      minutesSaved: r.minutesSaved ?? null,
       approvedAt: r.approvedAt?.toISOString() ?? null,
       approverKind: r.approvedByUserId
         ? ("operator" as const)

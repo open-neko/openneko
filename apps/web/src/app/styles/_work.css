@@ -15,12 +15,12 @@
   border-radius: 22px;
   box-shadow: var(--shadow);
   position: sticky;
-  top: 24px;
+  top: var(--app-sticky-top, 74px);
   padding: 14px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - var(--app-sticky-top, 74px) - 18px);
 }
 .work-sidebar-head {
   display: flex;

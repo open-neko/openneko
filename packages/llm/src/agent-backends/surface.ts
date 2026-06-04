@@ -17,6 +17,12 @@ function isValidA2UIMessage(m: unknown): m is AgentSurfaceMessage {
   );
 }
 
+// Validate an already-parsed messages value (e.g. a render_cards tool call's
+// `messages` argument) into surface messages. Returns [] when nothing valid.
+export function coerceSurfaceMessages(value: unknown): AgentSurfaceMessage[] {
+  return Array.isArray(value) ? value.filter(isValidA2UIMessage) : [];
+}
+
 export function extractSurfaceMessages(raw: string): {
   text: string;
   messages: AgentSurfaceMessage[];

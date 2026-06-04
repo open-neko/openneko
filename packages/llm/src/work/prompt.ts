@@ -21,59 +21,44 @@ function formatTranscript(messages: AgentChatMessage[]): string {
     .join("\n\n");
 }
 
-const A2UI_FENCE_EXAMPLE = `\`\`\`neko_a2ui
-[
+const RENDER_CARDS_EXAMPLE = `[
   {"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"urn:app:catalog:briefing:v1"}},
   {"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[
     {"id":"intro","component":"Markdown","text":"Brief 1-2 sentence intro to the answer."},
     {"id":"card1","component":"BriefingCard","metricId":"top-product","source":"chat","mood":"good","text":"Mountain-200 leads","metric":"$674,216","label":"Total Profit","detail":"Across all sales channels.","chartType":"kpi","chartData":[]},
     {"id":"detail","component":"Markdown","text":"Optional follow-up prose with tables, lists, etc."}
   ]}}
-]
-\`\`\``;
+]`;
 
+// Web-only (callers gate this behind wantsCards). Both backends render via a
+// `render_cards` tool — claude through the neko_ui MCP server, hermes through a
+// per-turn stdio render server. See docs/PER_CHANNEL_RENDERING.md.
 function buildRenderingSection(supportsCardTool: boolean): string {
-  if (supportsCardTool) {
-    return `<rendering>
-Every response to the user goes through \`mcp__neko_ui__render_cards\`.
-Wrap your prose in a \`Markdown\` component, and add KPI/Table/Chart
-cards alongside it when structured data helps the answer. Anything
-written outside the tool call is invisible to the UI — the tool call is
-the response.
-</rendering>`;
-  }
-
+  const tool = supportsCardTool ? "mcp__neko_ui__render_cards" : "render_cards";
   return `<rendering>
-Every response to the user is a single fenced \`\`\`neko_a2ui block
-containing A2UI v0.9 JSON messages. Anything written outside the fence
-is invisible to the UI — the fence is the entire response.
+Render your answer by calling the \`${tool}\` tool. Its \`messages\` argument is
+a JSON array of A2UI v0.9 messages — a \`createSurface\`, then an
+\`updateComponents\` whose \`components\` array holds flat component objects.
 
-The fence body is a JSON array (not JSX, not HTML, not bare component
-objects). Components are emitted flat inside
-\`updateComponents.components\` — every component is at the top level of
-that array, never nested inside another component's \`children\`.
+Component catalog (each component sets a \`component\` field):
 
-Component catalog (every component has a \`component\` field set to one
-of these):
-
-- \`Markdown\` — narrative text. Props: \`{ text: string }\` (markdown).
-  Use this for any prose.
+- \`Markdown\` — narrative text. Props: \`{ text: string }\` (markdown). Use this
+  for your prose.
 - \`BriefingCard\` — KPI card. Props:
   \`{ metricId: string, source: 'chat', mood: 'good'|'watch'|'act',
      text: string, metric: string, label: string, detail: string,
      chartType: 'kpi'|'line'|'bar'|'area'|'donut',
      chartData: Array<{d:string,v:number,t?:number}> | [] }\`.
 
-Each message has \`version: "v0.9"\` plus exactly one of
-\`createSurface\` or \`updateComponents\`. Most responses need just one
-of each.
+Each message sets \`version: "v0.9"\` and exactly one of \`createSurface\` or
+\`updateComponents\`.
 
 <example>
-${A2UI_FENCE_EXAMPLE}
+${tool}({ "messages": ${RENDER_CARDS_EXAMPLE} })
 </example>
 
-When the answer is purely prose with no metrics or cards, emit a single
-\`Markdown\` component inside \`updateComponents\`.
+Put your prose in \`Markdown\` components and add \`BriefingCard\`s for the key
+numbers. For a pure-prose answer, send one \`Markdown\` component.
 </rendering>`;
 }
 
@@ -311,6 +296,48 @@ const RULES_SECTION = `<conduct>
 ${GRAPHJIN_DATE_RULE}
 </conduct>`;
 
+// Closing contract shared by both backends: two JSON blocks the runtime parses
+// from the final output (hours-saved value + suggested follow-ups).
+const CLOSING_SECTION = `<closing>
+Always end your turn with these three JSON blocks, in this order.
+
+1. The time a data analyst or BI specialist would need to produce this answer
+   from scratch — finding the right data, writing and validating the queries,
+   and assembling the result. The operator got it from one plain-English
+   question instead of briefing a specialist and waiting on the report.
+   Estimate honestly in minutes, rounded down:
+
+\`\`\`neko_value
+{ "minutes_saved": 90, "basis": "Joined orders to products, ranked by revenue, cross-checked against returns — a half-day BI request" }
+\`\`\`
+
+   Anchors: a single metric lookup 15-30 · a multi-table breakdown or
+   drill-down 45-120 · a multi-step diagnostic like "why did revenue drop"
+   120-300. Use 0 for a clarifying question or a check that surfaced nothing.
+   An action you propose (an email, a purchase order) carries its own
+   \`minutes_saved\`.
+
+2. The two to four numbers that carry this answer — the figures the operator
+   would repeat to their team. Give each a short label, the value with its
+   unit, and a one-line comparison or context where it sharpens the figure.
+   When the answer turns on no specific numbers, send an empty list:
+
+\`\`\`neko_vitals
+{ "vitals": [
+  { "label": "Top-10 share", "value": "48%", "sub": "down from 53%" },
+  { "label": "#1 account", "value": "$1.2M", "sub": "Acme · 9.4%" },
+  { "label": "YoY revenue", "value": "+14%", "sub": "$12.8M YTD" }
+] }
+\`\`\`
+
+3. The three questions the operator is most likely to ask next, each specific
+   to the answer you just gave:
+
+\`\`\`neko_followups
+{ "followups": ["Break this down by region", "Compare to last quarter", "Which products are declining?"] }
+\`\`\`
+</closing>`;
+
 export interface PluginActionPromptDescriptor {
   kind: string;
   description: string;
@@ -410,6 +437,9 @@ export function buildWorkPrompt(args: {
   currentUserMessage: string;
   memoryContext?: string;
   installedSkills?: InstalledSkill[];
+  /** Whether this channel renders a2ui cards (web). Default true. When false,
+   *  the prompt carries no rendering section and the agent answers in markdown. */
+  wantsCards?: boolean;
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
@@ -429,6 +459,7 @@ export function buildWorkPrompt(args: {
     currentUserMessage,
     memoryContext,
     installedSkills,
+    wantsCards = true,
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
@@ -448,7 +479,7 @@ behalf. This is the only chat surface — operators come here to do
 everything, from "what was last week's revenue?" to "set up a workflow
 that flags churn risk every Monday."
 </role>`,
-    buildRenderingSection(supportsCardTool),
+    wantsCards ? buildRenderingSection(supportsCardTool) : "",
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection({
       searchTool: supportsMemoryTool,
@@ -466,6 +497,7 @@ that flags churn risk every Monday."
     buildWorkspaceSection(workspace, shellTool),
     buildPluginActionsSection(pluginActions ?? [], !supportsCardTool),
     RULES_SECTION,
+    CLOSING_SECTION,
   ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {

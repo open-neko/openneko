@@ -57,7 +57,8 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
   onRetry?: (metricId: string) => void;
   onDeepDive?: (metricId: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  // Briefing cards are always expanded — there is no collapse affordance.
+  const open = true;
   const [retrying, setRetrying] = useState(false);
   const state: BriefingCardState = ins.state ?? "ok";
   const moodKey = MOOD_LABELS[ins.mood] ? ins.mood : "good";
@@ -82,7 +83,6 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
       className={`icard${open ? " exp" : ""}${state === "failed" ? " icard-failed" : ""}${state === "pending" ? " icard-pending" : ""}`}
       data-mood={moodKey}
       style={{ animation: `fadeUp 0.5s ease ${index * 0.07}s both` }}
-      onClick={() => setOpen(!open)}
     >
       <div className="itop">
         <div className="inum">{numeral}</div>

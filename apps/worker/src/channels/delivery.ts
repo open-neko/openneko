@@ -4,9 +4,10 @@
 // RPC. Inbound: an IntentEvent (parsed in-VM) routes to the SAME agent entry
 // points the web uses — approve/reject an action_request, or start a chat run.
 import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
-import { enqueue, QUEUE } from "@neko/db/jobs";
+import { enqueue, QUEUE, type ChannelDeliverPayload } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
 import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
+import type { InteractionEvent } from "@neko/interaction";
 import {
   approveActionRequest,
   getActionRequest,
@@ -14,8 +15,25 @@ import {
   setWorkflowOutputDeliveryHook,
   type WorkflowOutputDeliveryHook,
 } from "@neko/llm/workflows";
-import { createWorkRun, createWorkThread } from "@neko/llm/work";
+import {
+  createWorkRun,
+  createWorkThread,
+  type RunChannel,
+} from "@neko/llm/work";
 import { getPluginRegistryInstance } from "../plugins/registry-instance.js";
+import {
+  beginInboundUpdate,
+  inboundUpdateKey,
+  markInboundDone,
+  recordInboundFailure,
+} from "./inbound-store.js";
+
+/** "@open-neko/channel-telegram" → "telegram". Channel-inbound runs are never
+ *  "web", so they get no a2ui rendering. See docs/PER_CHANNEL_RENDERING.md. */
+function channelFromPlugin(pluginName: string): RunChannel {
+  const m = pluginName.match(/channel-([a-z0-9-]+)$/i);
+  return (m ? m[1].toLowerCase() : pluginName) as RunChannel;
+}
 
 type IntentEvent =
   | { kind: "utterance"; threadRef?: string; text: string }
@@ -25,9 +43,50 @@ type IntentEvent =
 
 const MOODS = ["good", "watch", "act"] as const;
 
-const onOutput: WorkflowOutputDeliveryHook = async (orgId, output) => {
+// Outbound delivery retries: resilient to Telegram/Slack network blips and
+// worker restarts. The job is durable in pg-boss, so it survives a restart.
+const DELIVER_OPTS = { retryLimit: 8, retryDelay: 15, retryBackoff: true } as const;
+
+/**
+ * Enqueue a durable, retryable outbound delivery instead of sending inline.
+ * `idempotencyKey` is a pg-boss singletonKey — concurrent re-enqueues (e.g. a
+ * retried run job) collapse to one in-flight delivery.
+ */
+async function enqueueChannelDelivery(
+  orgId: string,
+  channelPlugin: string,
+  recipient: Record<string, unknown>,
+  events: unknown[],
+  idempotencyKey: string,
+): Promise<void> {
+  const payload: ChannelDeliverPayload = { orgId, channelPlugin, recipient, events };
+  await enqueue(QUEUE.CHANNEL_DELIVER, payload, {
+    ...DELIVER_OPTS,
+    singletonKey: idempotencyKey,
+  });
+}
+
+/**
+ * The CHANNEL_DELIVER job body: perform the actual send. Throwing makes
+ * pg-boss retry with backoff (network blips) and survives restarts.
+ */
+export async function runChannelDelivery(payload: ChannelDeliverPayload): Promise<void> {
   const reg = getPluginRegistryInstance();
-  if (!reg) return;
+  if (!reg) throw new Error("channel-delivery: plugin registry unavailable");
+  const res = await reg.deliverOnChannel(
+    payload.channelPlugin,
+    payload.recipient,
+    payload.events,
+  );
+  if (!res.delivered) {
+    throw new Error(`channel-delivery: ${payload.channelPlugin} reported delivered=false`);
+  }
+  console.log(
+    `[channel-delivery] ${payload.channelPlugin} delivered=true${res.ref ? ` ref=${res.ref}` : ""}`,
+  );
+}
+
+const onOutput: WorkflowOutputDeliveryHook = async (orgId, output) => {
   const bindings = await db()
     .select()
     .from(delivery_binding)
@@ -44,26 +103,44 @@ const onOutput: WorkflowOutputDeliveryHook = async (orgId, output) => {
   };
   const event = outputRowToInteractionEvent(row);
   for (const b of bindings) {
-    try {
-      const res = await reg.deliverOnChannel(
-        b.channel_plugin,
-        (b.recipient ?? {}) as Record<string, unknown>,
-        [event],
-      );
-      console.log(
-        `[channel-delivery] ${b.channel_plugin} output=${output.id} delivered=${res.delivered}${res.ref ? ` ref=${res.ref}` : ""}`,
-      );
-    } catch (err) {
-      console.warn(
-        `[channel-delivery] ${b.channel_plugin} output=${output.id} failed: ${err instanceof Error ? err.message : err}`,
-      );
-    }
+    await enqueueChannelDelivery(
+      orgId,
+      b.channel_plugin,
+      (b.recipient ?? {}) as Record<string, unknown>,
+      [event],
+      `output-${output.id}-${b.channel_plugin}`,
+    );
   }
 };
 
 /** Register the output→channel fan-out hook. Called once at worker startup. */
 export function registerChannelOutputDelivery(): void {
   setWorkflowOutputDeliveryHook(onOutput);
+}
+
+/**
+ * Send a chat run's reply back to the channel that asked. Channel-initiated
+ * runs (Telegram, …) have no other return path — the web UI streams its runs
+ * over SSE, but a Telegram sender only hears back if we deliver here. Enqueued
+ * as a durable job so the reply survives network blips and restarts.
+ */
+export async function deliverChatReply(
+  orgId: string,
+  channelPlugin: string,
+  recipient: Record<string, unknown>,
+  runId: string,
+  body: string,
+): Promise<void> {
+  if (!body.trim()) return;
+  // A chat reply is the assistant's message, not a workflow-output card — use
+  // `converse` so channels render the full text, not a summarized headline.
+  const event: InteractionEvent = {
+    kind: "converse",
+    id: runId,
+    role: "assistant",
+    text: body,
+  };
+  await enqueueChannelDelivery(orgId, channelPlugin, recipient, [event], `reply-${runId}`);
 }
 
 /**
@@ -99,6 +176,8 @@ export async function ensureInboundBinding(
 export async function dispatchInboundIntent(
   orgId: string,
   intent: IntentEvent,
+  channelPlugin: string,
+  recipient?: Record<string, unknown>,
 ): Promise<void> {
   if (intent.kind === "decision") {
     const req = await getActionRequest(orgId, intent.decisionRef);
@@ -140,6 +219,9 @@ export async function dispatchInboundIntent(
     await startChatRun(
       orgId,
       message,
+      channelFromPlugin(channelPlugin),
+      channelPlugin,
+      recipient,
       intent.kind === "utterance" ? intent.threadRef : undefined,
     );
     return;
@@ -152,11 +234,15 @@ export async function dispatchInboundIntent(
 async function startChatRun(
   orgId: string,
   message: string,
+  channel: RunChannel,
+  channelPlugin: string,
+  recipient: Record<string, unknown> | undefined,
   threadRef?: string,
 ): Promise<void> {
   const thread = await createWorkThread(
     orgId,
     threadRef ? `Telegram ${threadRef}` : "Telegram",
+    channel,
   );
   const backend = await resolveAgentBackend(orgId);
   const run = await createWorkRun(orgId, thread.id, backend.id);
@@ -178,13 +264,80 @@ async function startChatRun(
     runId: run.id,
     threadId: thread.id,
     message,
+    channel,
+    channelPlugin,
+    recipient,
   });
   console.log(
     `[channel-inbound] started chat run ${run.id} for "${message.slice(0, 40)}"`,
   );
 }
 
-/** Webhook ingest: verify (in-VM) → parse (in-VM) → dispatch. */
+// A persistently-failing update is retried up to this many times (with poll
+// backoff between attempts) before it's dead-lettered and the cursor advances
+// past it. The count is persisted, so the budget survives restarts.
+const MAX_INBOUND_ATTEMPTS = 30;
+
+/**
+ * Parse + dispatch one raw inbound update, exactly once. The update is claimed
+ * in the ledger first: a duplicate (restart re-poll, webhook retry) or a
+ * dead-lettered update is skipped. A transient failure is recorded and retried;
+ * after MAX_INBOUND_ATTEMPTS it's dead-lettered and consumed. Returns false
+ * ONLY while a failure is still retrying (caller holds the cursor); true once
+ * the update is done, duplicate, or dead-lettered. Shared by poll + webhook.
+ */
+export async function processInboundUpdate(
+  orgId: string,
+  pluginName: string,
+  raw: unknown,
+): Promise<boolean> {
+  const key = inboundUpdateKey(raw);
+  const begin = await beginInboundUpdate(orgId, pluginName, key);
+  if (!begin.proceed) {
+    console.log(
+      `[channel-inbound] ${pluginName}: skipping ${begin.dead ? "dead-lettered" : "duplicate"} inbound update`,
+    );
+    return true;
+  }
+  try {
+    const reg = getPluginRegistryInstance();
+    if (!reg) throw new Error("plugin registry unavailable");
+    const { intents, recipient } = await reg.parseInbound(pluginName, raw);
+    if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
+    for (const intent of intents) {
+      await dispatchInboundIntent(
+        orgId,
+        intent as IntentEvent,
+        pluginName,
+        recipient as Record<string, unknown> | undefined,
+      );
+    }
+    await markInboundDone(orgId, pluginName, key);
+    return true;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const { dead, attempts } = await recordInboundFailure(
+      orgId,
+      pluginName,
+      key,
+      MAX_INBOUND_ATTEMPTS,
+      raw,
+      errMsg,
+    );
+    if (dead) {
+      console.error(
+        `[channel-inbound] ${pluginName}: dead-lettered update after ${attempts} attempt(s): ${errMsg}`,
+      );
+      return true; // give up — advance past the poison update
+    }
+    console.warn(
+      `[channel-inbound] ${pluginName} dispatch error (attempt ${attempts}/${MAX_INBOUND_ATTEMPTS}): ${errMsg}`,
+    );
+    return false; // hold the cursor; retry next poll with backoff
+  }
+}
+
+/** Webhook ingest: verify (in-VM) → parse (in-VM) → dispatch, deduped. */
 export async function ingestInboundWebhook(
   orgId: string,
   pluginName: string,
@@ -201,16 +354,6 @@ export async function ingestInboundWebhook(
   } catch {
     return { ok: false, dispatched: 0 };
   }
-  const { intents, recipient } = await reg.parseInbound(pluginName, raw);
-  if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
-  for (const intent of intents) {
-    try {
-      await dispatchInboundIntent(orgId, intent as IntentEvent);
-    } catch (err) {
-      console.warn(
-        `[channel-inbound] dispatch error: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-  }
-  return { ok: true, dispatched: intents.length };
+  const ok = await processInboundUpdate(orgId, pluginName, raw);
+  return { ok, dispatched: ok ? 1 : 0 };
 }

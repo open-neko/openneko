@@ -36,6 +36,8 @@ export async function GET() {
       scope: action_request.scope,
       riskLevel: action_request.risk_level,
       status: action_request.status,
+      minutesSaved: action_request.minutes_saved,
+      minutesSavedBasis: action_request.minutes_saved_basis,
       approvedAt: action_request.approved_at,
       approvedByUserId: action_request.approved_by_user_id,
       policyId: action_request.policy_id,
@@ -90,6 +92,8 @@ export async function GET() {
       status: r.status,
       executedAt: r.executedAt?.toISOString() ?? null,
       executionStatus: r.executionStatus,
+      minutesSaved: r.minutesSaved ?? null,
+      minutesSavedBasis: r.minutesSavedBasis ?? null,
       approverKind: r.approvedByUserId
         ? ("operator" as const)
         : r.policyId

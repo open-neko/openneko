@@ -1,5 +1,5 @@
 /* ─── LAYOUT ─── */
-.root { --page-width: 740px; max-width: var(--page-width); margin: 0 auto; padding: 36px 20px 130px; min-height: 100vh; padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
+.root { --page-width: 740px; max-width: var(--page-width); margin: 0 auto; padding: 0 20px 130px; min-height: 100vh; padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
 
 /* Faint editorial paper texture — adds atmosphere without competing with content. */
 body::before {
@@ -20,13 +20,33 @@ body > * { position: relative; z-index: 1; }
    nav row sits at the same x-position regardless of which page you're on.
    Without this, the nav appears to "bounce" between pages with different
    .root widths (Briefing 740, Workflows 1000, Builder etc). */
+/* The page scrolls behind a sticky header (top) and a sticky composer
+   (bottom). scroll-padding keeps scrollIntoView (auto-follow during a run,
+   followup-chip jumps) clear of both, so the asked question and the live
+   "running" indicator never tuck behind the composer. */
+html {
+  scroll-padding-top: 78px;
+  scroll-padding-bottom: 152px;
+  /* Kill the elastic rubber-band past the top/bottom edge — it dragged the
+     sticky header down and made the page feel unanchored. */
+  overscroll-behavior-y: none;
+}
+
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
   margin-left: calc(-50vw + 50%);
   margin-right: calc(-50vw + 50%);
   width: 100vw;
   display: flex;
   justify-content: center;
   margin-bottom: 24px;
+  padding-block: 10px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
 }
 
 /* "Update available" chip beside the brand. Pulse animations would render

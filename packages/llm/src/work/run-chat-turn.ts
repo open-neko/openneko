@@ -4,9 +4,13 @@ import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-back
 import { extractMemoryFences } from "../agent-backends/memory-fence";
 import {
   extractActionRequestFences,
+  extractFollowupsFence,
   extractRuleSaveFence,
+  extractValueFence,
+  extractVitalsFence,
   extractWorkflowSaveFence,
 } from "../workflows/fence-parsers";
+import { clampAnalysisMinutes } from "../workflows/value";
 import {
   handleWorkActionRequest,
   policySavedCard,
@@ -38,6 +42,7 @@ import {
   getWorkThreadBundle,
   markWorkRunRunning,
   saveAssistantWorkMessage,
+  setWorkRunValue,
   setWorkThreadBackendState,
 } from "./store";
 import type { PluginActionDescriptor } from "./tools";
@@ -48,11 +53,20 @@ import {
   listInstalledSkills as defaultListInstalledSkills,
 } from "./workspace";
 
+/**
+ * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
+ * render capability); other channels answer in plain markdown and may inject
+ * their own render tool later. See docs/PER_CHANNEL_RENDERING.md.
+ */
+export type RunChannel = "web" | "telegram" | "slack" | (string & {});
+
 export type RunChatTurnOptions = {
   orgId: string;
   threadId: string;
   runId: string;
   message: string;
+  /** Delivery channel; defaults to "web". Gates output rendering. */
+  channel?: RunChannel;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   /**
@@ -176,6 +190,10 @@ export async function runChatTurn(
       message: `Starting ${backendLabel(backend.id)}…`,
     });
 
+    // Rendering is a per-channel capability: only web turns get a2ui cards
+    // (via the render tool for claude, the fence for hermes). Other channels
+    // answer in plain markdown — no rendering vocabulary in their prompt.
+    const wantsCards = (opts.channel ?? "web") === "web";
     const supportsCardTool = backend.capabilities.mcpTools;
     const supportsSkillTool = backend.capabilities.mcpTools;
     const supportsMemoryTool = backend.capabilities.mcpTools;
@@ -212,6 +230,7 @@ export async function runChatTurn(
       currentUserMessage: message,
       memoryContext,
       installedSkills,
+      wantsCards,
       supportsCardTool,
       supportsSkillTool,
       supportsMemoryTool,
@@ -232,6 +251,7 @@ export async function runChatTurn(
       backendState: bundle.thread.backendState,
       pluginActions: opts.pluginActions ?? [],
       controlPlane: opts.controlPlane,
+      wantsCards,
       emit: wrappedEmit,
       signal,
     });
@@ -375,6 +395,45 @@ export async function runChatTurn(
       });
     }
 
+    // Per-run analysis value estimate (the human time the answer saved,
+    // excluding any actions which carry their own estimate). Parsed from the
+    // same raw source, server-clamped, persisted, and echoed in `done` so the
+    // UI can show it live. Best-effort: a missing/invalid fence leaves it null.
+    const valueFence = extractValueFence(fenceSource);
+    const analysisMinutes = clampAnalysisMinutes(valueFence.payload?.minutes_saved);
+    if (valueFence.payload) {
+      try {
+        await setWorkRunValue(runId, {
+          minutes: analysisMinutes,
+          basis: valueFence.payload.basis ?? null,
+        });
+      } catch (err) {
+        console.warn(
+          `[work-run] setWorkRunValue failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    // Suggested follow-up questions — channel-agnostic content, emitted as an
+    // event any channel (Ask rail, Telegram, …) can surface as "ask next".
+    const followups = extractFollowupsFence(fenceSource);
+    if (followups.payload) {
+      await wrappedEmit({
+        type: "followups",
+        items: followups.payload.followups,
+      });
+    }
+
+    // The answer's headline numbers — channel-agnostic content, emitted as an
+    // event each channel renders its own way (the web rail as a tile grid).
+    const vitals = extractVitalsFence(fenceSource);
+    if (vitals.payload && vitals.payload.vitals.length > 0) {
+      await wrappedEmit({
+        type: "vitals",
+        items: vitals.payload.vitals,
+      });
+    }
+
     // Pull any neko_memory fences out of the raw agent response and persist
     // them. Backend-agnostic: works for Hermes (no MCP tool registry) and is
     // harmless for claude-agent (which would have used the MCP save tool).
@@ -405,6 +464,9 @@ export async function runChatTurn(
     let persistedText = extractActionRequestFences(result.finalText.trim()).text;
     persistedText = extractWorkflowSaveFence(persistedText).text;
     persistedText = extractRuleSaveFence(persistedText).text;
+    persistedText = extractValueFence(persistedText).text;
+    persistedText = extractFollowupsFence(persistedText).text;
+    persistedText = extractVitalsFence(persistedText).text;
     persistedText = extractMemoryFences(persistedText).text;
     if (persistedText) {
       await saveAssistantWorkMessage({
@@ -415,7 +477,10 @@ export async function runChatTurn(
       });
     }
 
-    await wrappedEmit({ type: "done", result: { status: result.status } });
+    await wrappedEmit({
+      type: "done",
+      result: { status: result.status, minutesSaved: analysisMinutes ?? 0 },
+    });
 
     return {
       status: result.status,

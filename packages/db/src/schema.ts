@@ -408,6 +408,9 @@ export const work_thread = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
+    // Origin channel ("web", "telegram", …). The web Ask UI lists only its own
+    // ("web") threads so channels stay isolated. See docs/PER_CHANNEL_RENDERING.md.
+    channel: text("channel").notNull().default("web"),
     backend_state: jsonb("backend_state").notNull().default(sql`'{}'::jsonb`),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
@@ -435,6 +438,12 @@ export const work_run = pgTable(
     backend: text("backend").notNull(),
     status: text("status").notNull().default("running"),
     error: text("error"),
+    // Agent-estimated minutes of human effort the run's ANALYSIS saved
+    // (excludes per-action work, which is tracked on action_request). Null
+    // until the run emits a value estimate; server-clamped before write.
+    analysis_minutes_saved: integer("analysis_minutes_saved"),
+    analysis_minutes_basis: text("analysis_minutes_basis"),
+    estimate_version: integer("estimate_version").notNull().default(1),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     finished_at: ts("finished_at"),
@@ -443,6 +452,10 @@ export const work_run = pgTable(
     thread_created_idx: index("work_run_thread_created_idx").on(
       t.thread_id,
       t.created_at.asc(),
+    ),
+    org_finished_idx: index("work_run_org_finished_idx").on(
+      t.org_id,
+      t.finished_at,
     ),
   }),
 );
@@ -787,6 +800,61 @@ export const delivery_binding = pgTable(
   }),
 );
 
+// Persisted poll offset per (org, channel). Inbound polling keeps an in-memory
+// cursor while running; persisting it means a restart resumes from the last
+// acknowledged offset instead of re-polling the provider from scratch.
+export const channel_poll_cursor = pgTable(
+  "channel_poll_cursor",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    cursor: text("cursor").notNull(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_plugin_unique: uniqueIndex("channel_poll_cursor_org_plugin_unique").on(
+      t.org_id,
+      t.channel_plugin,
+    ),
+  }),
+);
+
+// Per-update ledger for inbound dispatch. A poll restart (or webhook retry) can
+// re-deliver an update; claiming a stable per-update key here makes dispatch
+// exactly-once. `status` tracks the lifecycle: 'pending' (claimed, retrying),
+// 'done' (dispatched — the dedup marker), 'dead' (gave up after MAX attempts —
+// payload + last_error retained for inspection). 'done' rows are TTL-pruned;
+// 'dead' rows persist as a queryable dead-letter queue.
+export const inbound_dedup = pgTable(
+  "inbound_dedup",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    update_key: text("update_key").notNull(),
+    status: text("status").notNull().default("done"),
+    attempts: integer("attempts").notNull().default(0),
+    last_error: text("last_error"),
+    payload: jsonb("payload"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_plugin_key_unique: uniqueIndex("inbound_dedup_org_plugin_key_unique").on(
+      t.org_id,
+      t.channel_plugin,
+      t.update_key,
+    ),
+    created_idx: index("inbound_dedup_created_idx").on(t.created_at),
+    status_idx: index("inbound_dedup_status_idx").on(t.status),
+  }),
+);
+
 export const subscription = pgTable(
   "subscription",
   {
@@ -958,6 +1026,12 @@ export const action_request = pgTable(
     status: text("status").notNull().default("pending_approval"),
     summary: text("summary"),
     intent: text("intent"),
+    // Agent-estimated minutes of human effort this action saved, counted
+    // toward rollups only once status reaches "executed". Server-clamped.
+    minutes_saved: integer("minutes_saved"),
+    minutes_saved_basis: text("minutes_saved_basis"),
+    estimate_source: text("estimate_source").notNull().default("agent"),
+    estimate_version: integer("estimate_version").notNull().default(1),
     work_run_id: uuid("work_run_id").references(() => work_run.id, {
       onDelete: "set null",
     }),

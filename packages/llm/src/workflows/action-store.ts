@@ -261,6 +261,9 @@ export type ActionRequestRecord = {
    * for auto-mode and pre-intent legacy rows.
    */
   intent: string | null;
+  /** Agent-estimated, server-clamped minutes of human effort saved. */
+  minutesSaved: number | null;
+  minutesSavedBasis: string | null;
   /**
    * /work run id this request was emitted from. Lets the worker's
    * runActionExecute emit an action_request_result event into the
@@ -293,6 +296,8 @@ function toRequestRecord(
     status: row.status as ActionRequestStatus,
     summary: row.summary,
     intent: row.intent ?? null,
+    minutesSaved: row.minutes_saved ?? null,
+    minutesSavedBasis: row.minutes_saved_basis ?? null,
     workRunId: row.work_run_id ?? null,
     requestedByRunId: row.requested_by_run_id,
     approvedByUserId: row.approved_by_user_id,
@@ -320,6 +325,9 @@ export type CreateActionRequestInput = {
   /** /work run id this request was emitted from (omit for workflow paths). */
   workRunId?: string | null;
   requestedByRunId?: string | null;
+  /** Agent-estimated, server-clamped minutes of human effort this saves. */
+  minutesSaved?: number | null;
+  minutesSavedBasis?: string | null;
 };
 
 export async function createActionRequest(
@@ -340,6 +348,8 @@ export async function createActionRequest(
       status: input.status,
       summary: input.summary ?? null,
       intent: input.intent ?? null,
+      minutes_saved: input.minutesSaved ?? null,
+      minutes_saved_basis: input.minutesSavedBasis ?? null,
       work_run_id: input.workRunId ?? null,
       requested_by_run_id: input.requestedByRunId ?? null,
     })

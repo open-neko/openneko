@@ -50,6 +50,12 @@ const toComponent = (event: InteractionEvent): Component | null => {
   if (event.kind === "offer") {
     return { id: `o-${event.id}`, component: "Markdown", text: `[${event.label}](${event.artifactRef})` };
   }
+  if (event.kind === "highlight") {
+    const lines = event.metrics
+      .map((m) => `**${m.value}** ${m.label}${m.sub ? ` — ${m.sub}` : ""}`)
+      .join("  \n");
+    return { id: `h-${event.id}`, component: "Markdown", text: lines };
+  }
   return null;
 };
 

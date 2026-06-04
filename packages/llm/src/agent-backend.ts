@@ -91,7 +91,16 @@ export type AgentEvent =
       /** Operator-supplied reason when the user rejected the request. */
       rejection_reason?: string;
     }
-  | { type: "needs_input"; question: string; options?: string[] };
+  | { type: "needs_input"; question: string; options?: string[] }
+  // Suggested follow-up questions — channel-agnostic content emitted once at
+  // the end of a /work run via a `neko_followups` fence. Any channel (the Ask
+  // rail, Telegram, Slack) can surface these as "ask next" prompts.
+  | { type: "followups"; items: string[] }
+  // The headline numbers that carry the answer — channel-agnostic content
+  // emitted once at the end of a /work run via a `neko_vitals` fence. Each
+  // channel renders them its own way (the web rail as a tile grid, a chat
+  // channel as a one-line recap, a voice channel by reading them aloud).
+  | { type: "vitals"; items: { label: string; value: string; sub?: string }[] };
 
 export type AgentChatMessage = {
   id?: string;
@@ -130,6 +139,10 @@ export type AgentRunOptions = {
   onEvent?: (event: AgentEvent) => Promise<void> | void;
   backendState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
+  /** Web turn ⇒ the agent renders a2ui cards. Backends that can't take the
+   *  in-process SDK card server (hermes) wire their own render tool when set.
+   *  See docs/PER_CHANNEL_RENDERING.md. */
+  wantsCards?: boolean;
   outputSchema?: Record<string, unknown>;
   forkSession?: boolean;
   agents?: Record<string, unknown>;

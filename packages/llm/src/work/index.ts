@@ -41,6 +41,7 @@ export { KNOWN_SKILL_DEPS, aggregateSkillDeps, type SkillDeps } from "./skill-de
 export { runAgentBackend, type RunAgentBackendInput } from "./agent-core";
 export { runChatTurn } from "./run-chat-turn";
 export type {
+  RunChannel,
   RunChatTurnDeps,
   RunChatTurnOptions,
   RunChatTurnResult,

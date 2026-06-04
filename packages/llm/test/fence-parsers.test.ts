@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractActionRequestFences,
   extractRuleSaveFence,
+  extractVitalsFence,
   extractWorkflowOutputFences,
   extractWorkflowSaveFence,
 } from "../src/workflows/fence-parsers";
@@ -348,5 +349,78 @@ describe("extractRuleSaveFence", () => {
     const r = extractRuleSaveFence(raw);
     expect(r.payload?.name).toBe("first");
     expect(r.text).not.toContain("neko_rule_save");
+  });
+});
+
+describe("extractVitalsFence", () => {
+  it("returns null payload when no fence is present", () => {
+    const r = extractVitalsFence("just the prose answer, no numbers fenced");
+    expect(r.payload).toBeNull();
+    expect(r.errors).toEqual([]);
+    expect(r.text).toBe("just the prose answer, no numbers fenced");
+  });
+
+  it("parses headline vitals and strips the fence from text", () => {
+    const raw = [
+      "Your top 10 customers are 48% of YTD revenue.",
+      "```neko_vitals",
+      JSON.stringify({
+        vitals: [
+          { label: "Top-10 share", value: "48%", sub: "down from 53%" },
+          { label: "#1 account", value: "$1.2M", sub: "Acme · 9.4%" },
+          { label: "YoY revenue", value: "+14%" },
+        ],
+      }),
+      "```",
+    ].join("\n");
+    const r = extractVitalsFence(raw);
+    expect(r.payload?.vitals).toHaveLength(3);
+    expect(r.payload?.vitals[0]).toEqual({
+      label: "Top-10 share",
+      value: "48%",
+      sub: "down from 53%",
+    });
+    expect(r.payload?.vitals[2].sub).toBeUndefined();
+    expect(r.text).toContain("Your top 10 customers");
+    expect(r.text).not.toContain("neko_vitals");
+  });
+
+  it("rejects more than four vitals without throwing", () => {
+    const raw = [
+      "```neko_vitals",
+      JSON.stringify({
+        vitals: Array.from({ length: 5 }, (_, i) => ({
+          label: `m${i}`,
+          value: `${i}`,
+        })),
+      }),
+      "```",
+    ].join("\n");
+    const r = extractVitalsFence(raw);
+    expect(r.payload).toBeNull();
+    expect(r.errors).toHaveLength(1);
+  });
+
+  it("reports parse errors for invalid JSON without throwing", () => {
+    const raw = "Prose.\n```neko_vitals\n{not valid}\n```\nMore prose.";
+    const r = extractVitalsFence(raw);
+    expect(r.payload).toBeNull();
+    expect(r.errors).toHaveLength(1);
+    expect(r.text).toContain("Prose.");
+    expect(r.text).toContain("More prose.");
+  });
+
+  it("lets the last valid fence win when an agent emits two", () => {
+    const raw = [
+      "```neko_vitals",
+      JSON.stringify({ vitals: [{ label: "first", value: "1" }] }),
+      "```",
+      "```neko_vitals",
+      JSON.stringify({ vitals: [{ label: "second", value: "2" }] }),
+      "```",
+    ].join("\n");
+    const r = extractVitalsFence(raw);
+    expect(r.payload?.vitals[0].label).toBe("second");
+    expect(r.text).not.toContain("neko_vitals");
   });
 });

@@ -6,18 +6,28 @@ import {
   getWorkRun,
   runChatTurn,
   scrubAgentEvent,
+  type RunChannel,
 } from "@neko/llm/work";
 import {
   getCurrentScrubber,
   getPluginRegistryInstance,
 } from "../plugins/registry-instance.js";
+import { deliverChatReply } from "../channels/delivery.js";
 
 export async function runWorkRun(
   _jobId: string,
   orgId: string,
-  payload: { runId: string; threadId: string; message: string },
+  payload: {
+    runId: string;
+    threadId: string;
+    message: string;
+    channel?: RunChannel;
+    channelPlugin?: string;
+    recipient?: Record<string, unknown>;
+  },
 ): Promise<void> {
-  const { runId, threadId, message } = payload;
+  const { runId, threadId, message, channel, channelPlugin, recipient } =
+    payload;
 
   const run = await getWorkRun(orgId, runId);
   if (!run) {
@@ -46,15 +56,22 @@ export async function runWorkRun(
 
   const broker = await ensureAgentBroker();
 
-  await runChatTurn(
+  const result = await runChatTurn(
     {
       orgId,
       threadId,
       runId,
       message,
+      channel,
       emit,
       pluginActions,
     },
     agentRuntimeDepsFromEnv(broker),
   );
+
+  // Channel-initiated runs have no other return path — send the reply back to
+  // the sender. Web runs (no channelPlugin) stream over SSE instead.
+  if (channelPlugin && recipient && result.status === "completed") {
+    await deliverChatReply(orgId, channelPlugin, recipient, runId, result.finalText);
+  }
 }

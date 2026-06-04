@@ -125,6 +125,9 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
       model: input.backend.model,
       backendState: input.backendState,
       pluginActions: input.pluginActions,
+      // Channel render intent — gates the in-box render tool (see
+      // docs/PER_CHANNEL_RENDERING.md). Default true if absent.
+      wantsCards: input.wantsCards ?? true,
       workspace: boxWorkspace,
     };
 

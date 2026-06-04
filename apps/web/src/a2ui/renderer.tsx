@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import type { A2UIComponent, SurfaceState } from "./types";
 import type { BriefingCardProps, BriefingProps } from "./catalog";
 import { resolveComponent } from "./surface";
@@ -53,10 +54,13 @@ export function renderComponentsByType(
   context: RenderContext
 ): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  for (const [, comp] of surface.components) {
+  let i = 0;
+  for (const [id, comp] of surface.components) {
     if (comp.component === type) {
-      nodes.push(renderComponent(comp, context));
+      const node = renderComponent(comp, context);
+      if (node != null) nodes.push(<Fragment key={id || `c${i}`}>{node}</Fragment>);
     }
+    i += 1;
   }
   return nodes;
 }
@@ -67,10 +71,13 @@ export function renderChildren(
   context: RenderContext
 ): React.ReactNode[] {
   return childIds
-    .map((id) => {
+    .map((id, i) => {
       const comp = context.surface.components.get(id);
       if (!comp) return null;
-      return renderComponent(comp, context);
+      const node = renderComponent(comp, context);
+      // Components can arrive without an id; fall back to position so the list
+      // key is always present and unique.
+      return node == null ? null : <Fragment key={id || `c${i}`}>{node}</Fragment>;
     })
     .filter(Boolean);
 }
