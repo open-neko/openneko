@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAgentBackend, AgentBackendConfigError } from "@neko/llm";
 import {
+  agentRuntimeDepsFromEnv,
   createWorkRun,
+  ensureAgentBroker,
   finishWorkRun,
   getWorkRun,
   runChatTurn,
@@ -86,15 +88,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const pluginActions = await getPluginActionDescriptors();
 
-  void runChatTurn({
-    orgId,
-    threadId,
-    runId: run.id,
-    message,
-    emit,
-    signal: abortController.signal,
-    pluginActions,
-  })
+  // OPENNEKO_AGENT_RUNTIME=openshell → the agent loop runs in an OpenShell
+  // sandbox (the web server stays the control plane, launches the box, and
+  // relays events over the existing SSE); default `inprocess` is unchanged.
+  const broker = await ensureAgentBroker();
+
+  void runChatTurn(
+    {
+      orgId,
+      threadId,
+      runId: run.id,
+      message,
+      emit,
+      signal: abortController.signal,
+      pluginActions,
+    },
+    agentRuntimeDepsFromEnv(broker),
+  )
     .catch(async (err) => {
       console.error(`[work-run/inproc] run ${run.id} threw:`, err);
       try {

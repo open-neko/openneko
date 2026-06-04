@@ -8,8 +8,6 @@ import {
   extractWorkflowSaveFence,
 } from "../workflows/fence-parsers";
 import {
-  buildRuleBuilderServer,
-  buildWorkflowBuilderServer,
   handleWorkActionRequest,
   policySavedCard,
   saveWorkflowWithTrigger,
@@ -42,13 +40,9 @@ import {
   saveAssistantWorkMessage,
   setWorkThreadBackendState,
 } from "./store";
-import {
-  buildPluginActionServer,
-  buildRenderCardsServer,
-  buildSkillBuilderServer,
-  buildWorkMemoryServer,
-  type PluginActionDescriptor,
-} from "./tools";
+import type { PluginActionDescriptor } from "./tools";
+import { runAgentBackend } from "./agent-core";
+import type { AgentControlPlane } from "./control-plane";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
   listInstalledSkills as defaultListInstalledSkills,
@@ -68,6 +62,11 @@ export type RunChatTurnOptions = {
    * Only honored when the backend supports MCP tools (claude-agent).
    */
   pluginActions?: readonly PluginActionDescriptor[];
+  /**
+   * Control-plane impl for the DB-touching MCP tools. Default (undefined)
+   * uses the in-process plane; the agent sandbox injects a broker client.
+   */
+  controlPlane?: AgentControlPlane;
 };
 
 // Tests can substitute any of these without touching the call site. Production
@@ -80,6 +79,13 @@ export type RunChatTurnDeps = {
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
   prefetchKnowledgePack: typeof defaultPrefetchKnowledgePack;
   listInstalledSkills: typeof defaultListInstalledSkills;
+  /**
+   * Runs the agent loop. Default = runAgentBackend in-process. The launcher
+   * injects a sandbox-running impl for OPENNEKO_AGENT_RUNTIME=openshell: it
+   * runs the core in an OpenShell sandbox, streaming events back through
+   * `emit`. The DB-bound prologue/epilogue around this stay host-side.
+   */
+  runCore: typeof runAgentBackend;
 };
 
 export type RunChatTurnResult = {
@@ -108,6 +114,7 @@ export async function runChatTurn(
     deps.prefetchKnowledgePack ?? defaultPrefetchKnowledgePack;
   const listInstalledSkills =
     deps.listInstalledSkills ?? defaultListInstalledSkills;
+  const runCore = deps.runCore ?? runAgentBackend;
 
   await markWorkRunRunning(runId);
 
@@ -214,69 +221,18 @@ export async function runChatTurn(
       pluginActions: opts.pluginActions ?? [],
     });
 
-    const pluginActions = opts.pluginActions ?? [];
-    const pluginActionServer = backend.capabilities.mcpTools
-      ? buildPluginActionServer({
-          orgId,
-          threadId,
-          runId,
-          descriptors: pluginActions,
-          emit: wrappedEmit,
-        })
-      : null;
-
-    const mcpServers = backend.capabilities.mcpTools
-      ? {
-          ...(supportsCardTool
-            ? { neko_ui: buildRenderCardsServer(wrappedEmit) }
-            : {}),
-          ...(supportsSkillTool
-            ? { neko_skills: buildSkillBuilderServer(workspace.skillsRoot) }
-            : {}),
-          ...(supportsMemoryTool
-            ? {
-                neko_memory: buildWorkMemoryServer({
-                  orgId,
-                  threadId,
-                  runId,
-                }),
-              }
-            : {}),
-          ...(supportsWorkflowTool
-            ? {
-                neko_workflow_builder: buildWorkflowBuilderServer({
-                  orgId,
-                  createdByThreadId: threadId,
-                  createdByRunId: runId,
-                  emit: wrappedEmit,
-                }),
-              }
-            : {}),
-          ...(supportsPolicyTool
-            ? {
-                neko_rule_builder: buildRuleBuilderServer({
-                  orgId,
-                  createdByThreadId: threadId,
-                  createdByRunId: runId,
-                  emit: wrappedEmit,
-                }),
-              }
-            : {}),
-          ...(pluginActionServer
-            ? { neko_plugin_actions: pluginActionServer }
-            : {}),
-        }
-      : undefined;
-
-    const result = await backend.run({
+    const result = await runCore({
+      backend,
       prompt,
       userMessage: message,
       orgId,
+      threadId,
+      runId,
       workspace,
       backendState: bundle.thread.backendState,
-      onEvent: wrappedEmit,
-      mcpServers,
-      tag: `work ${runId}`,
+      pluginActions: opts.pluginActions ?? [],
+      controlPlane: opts.controlPlane,
+      emit: wrappedEmit,
       signal,
     });
 

@@ -18,6 +18,7 @@ export * from "./bootstrap-metrics-writer";
 export * from "./industry-researcher";
 export * from "./agent-backend";
 export {
+  makeAgentBackend,
   resolveAgentBackend,
   resolveAgentBackendId,
   resolveAgentConcurrency,

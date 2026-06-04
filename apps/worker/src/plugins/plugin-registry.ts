@@ -1141,6 +1141,7 @@ export class PluginRegistry {
       id: pluginId,
       hostWorkspacePath,
       network: networkModeFor(entry.permissions.network),
+      hosts: entry.permissions.network,
     });
 
     // Sanity-check: the VM's register() must match the manifest's
@@ -1230,6 +1231,22 @@ export class PluginRegistry {
   }
 
   private async createDefaultRuntime(): Promise<PluginRuntime | null> {
+    const kind = (
+      process.env.OPENNEKO_PLUGIN_RUNTIME ?? "microsandbox"
+    ).toLowerCase();
+    if (kind === "openshell") {
+      const { OpenShellRuntime } = await import("./openshell-runtime.js");
+      return new OpenShellRuntime({
+        image:
+          this.options.image ??
+          process.env.OPENNEKO_PLUGIN_BASE_IMAGE ??
+          "ghcr.io/open-neko/plugin-base:node20",
+        cli: process.env.OPENSHELL_CLI || undefined,
+        gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
+        gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+        bundleDir: this.options.workRoot,
+      });
+    }
     if (!isSupportedHost()) return null;
     let sdk: typeof import("microsandbox");
     try {

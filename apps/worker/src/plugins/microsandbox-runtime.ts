@@ -21,6 +21,11 @@ export interface PluginVmSpec {
   hostWorkspacePath: string;
   /** Network policy derived from the plugin manifest's `requires_network`. */
   network: PluginNetworkMode;
+  /**
+   * Raw declared hosts from the manifest. MicrosandboxRuntime collapses
+   * these into `network`; OpenShellRuntime uses them for per-host egress.
+   */
+  hosts?: readonly string[];
 }
 
 export interface MicrosandboxRuntimeOptions {
@@ -257,12 +262,13 @@ export function buildExecCommand(
   method: string,
   paramsJson: string,
   env: Record<string, string>,
+  runnerPath = "/workspace/run.js",
 ): { cmd: string; args: string[] } {
   const keys = Object.keys(env);
   if (keys.length === 0) {
     return {
       cmd: "node",
-      args: ["/workspace/run.js", method, paramsJson],
+      args: [runnerPath, method, paramsJson],
     };
   }
   for (const k of keys) {
@@ -276,7 +282,7 @@ export function buildExecCommand(
     .map((k) => `export ${k}=${shellQuote(env[k] ?? "")}`)
     .join("; ");
   const inner =
-    `${exports}; exec node /workspace/run.js ` +
+    `${exports}; exec node ${runnerPath} ` +
     `${shellQuote(method)} ${shellQuote(paramsJson)}`;
   return { cmd: "sh", args: ["-c", inner] };
 }

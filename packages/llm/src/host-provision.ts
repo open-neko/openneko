@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { and, data_source, db, eq, llm_provider_config } from "@neko/db";
 import { isAgentBackendId } from "./agent-backend";
 import { maybeDecryptSecret } from "./secrets";
+import { ensureOpenShellProvider } from "./work/sandbox-launcher";
 
 const HERMES_DEFAULT_MAX_TURNS = 25;
 
@@ -190,6 +191,94 @@ function escapeYamlString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+// API host per neko model-provider when there's no explicit base_url. A handful
+// of providers (NOT the 300 model variants) — derived from the org's config,
+// never hand-set per deployment.
+const PROVIDER_API_HOSTS: Record<string, string> = {
+  "google-gemini": "generativelanguage.googleapis.com",
+  anthropic: "api.anthropic.com",
+  openai: "api.openai.com",
+  openrouter: "openrouter.ai",
+  "x-grok": "openrouter.ai",
+};
+
+/**
+ * Derive the agent-sandbox egress from the org's model config: the API host
+ * (explicit base_url, else the provider default) + models.dev for hermes model
+ * resolution; the connecting binary (per backend + arch — egress matches the
+ * resolved path); the env var the backend reads. Binary paths track the agent
+ * image's pinned cpython.
+ */
+function deriveAgentEgress(
+  row: StoredRow,
+  backend: string,
+): { hosts: string[]; binary: string; keyEnv: string } {
+  const cfg = (row.config ?? {}) as { url?: string; baseUrl?: string };
+  const baseUrl = cfg.baseUrl || cfg.url;
+  let host: string | undefined;
+  if (baseUrl) {
+    try {
+      host = new URL(baseUrl).host;
+    } catch {
+      /* fall through to the provider default */
+    }
+  }
+  host ??= PROVIDER_API_HOSTS[row.provider];
+  const isClaude = backend === "claude-agent";
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  return {
+    hosts: [...(host ? [host] : []), ...(isClaude ? [] : ["models.dev"])],
+    binary: isClaude
+      ? "/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+      : `/usr/local/uv/python/cpython-3.11.15-linux-${arch}-gnu/bin/python3.11`,
+    keyEnv: isClaude ? "ANTHROPIC_API_KEY" : mapHermesProvider(row.provider).keyVar,
+  };
+}
+
+/**
+ * OPENNEKO_AGENT_RUNTIME=openshell: self-configure the agent sandbox from the
+ * org's model config — derive the egress (host/binary/key-env; explicit env
+ * overrides win) and sync the model key into a gateway-side provider so the
+ * proxy injects it on the wire (the key never enters the box). Replaces the
+ * manual `openshell provider create` + hand-set egress env.
+ */
+async function provisionOpenShellRuntime(orgId: string, backend: string): Promise<void> {
+  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "").toLowerCase() !== "openshell") {
+    return;
+  }
+  const row = await loadProviderRow(orgId, "primary");
+  if (!row || !row.enabled) return;
+
+  const { hosts, binary, keyEnv } = deriveAgentEgress(row, backend);
+  process.env.OPENNEKO_AGENT_MODEL_PROVIDER ||= "openneko-agent";
+  if (!process.env.OPENNEKO_AGENT_MODEL_HOST && hosts.length > 0) {
+    process.env.OPENNEKO_AGENT_MODEL_HOST = hosts.join(",");
+  }
+  process.env.OPENNEKO_AGENT_MODEL_BINARY ||= binary;
+  process.env.OPENNEKO_AGENT_MODEL_KEY_ENV ||= keyEnv;
+  // hermes reads its model + provider from config.yaml under HERMES_HOME. In the
+  // sandbox that config must be MIRRORED in — the launcher does so when
+  // OPENNEKO_AGENT_HERMES_HOME points at the host home provisionHermes writes.
+  // Without it, in-box hermes finds no config and silently falls back to a
+  // default model that 404s. (claude takes the model via its backend args, so
+  // it needs no hermes home.)
+  if (backend !== "claude-agent") {
+    process.env.OPENNEKO_AGENT_HERMES_HOME ||= hermesHomeForOrg(orgId);
+  }
+
+  const apiKey = decryptSecrets(row.secrets).apiKey;
+  if (!apiKey) return;
+  await ensureOpenShellProvider({
+    providerName: process.env.OPENNEKO_AGENT_MODEL_PROVIDER,
+    apiKey,
+    gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
+    gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+  });
+  console.log(
+    `[host-provision] OpenShell agent runtime self-configured: provider="${process.env.OPENNEKO_AGENT_MODEL_PROVIDER}" egress="${hosts.join(",")}" keyEnv=${keyEnv}`,
+  );
+}
+
 export async function provisionHostConfig(orgId: string): Promise<void> {
   try {
     await provisionGraphJin(orgId);
@@ -205,6 +294,14 @@ export async function provisionHostConfig(orgId: string): Promise<void> {
     typeof backendCfg.backend === "string" && isAgentBackendId(backendCfg.backend)
       ? backendCfg.backend
       : "hermes";
+
+  try {
+    await provisionOpenShellRuntime(orgId, backend);
+  } catch (e) {
+    console.warn(
+      `[host-provision] OpenShell runtime provision failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
 
   if (backend === "hermes") {
     try {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +24,7 @@ func newStartCmd() *cobra.Command {
 	var detach bool
 	var skipMigrate bool
 	var pullPolicy string
+	var agentRuntime string
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Bring up the OpenNeko stack",
@@ -46,7 +49,17 @@ Modes:
 				_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
 			}
 
+			if agentRuntime != "" && agentRuntime != "openshell" {
+				return fmt.Errorf("--runtime must be openshell (got %q)", agentRuntime)
+			}
+			if agentRuntime == "openshell" {
+				if err := configureOpenShellStateDir(); err != nil {
+					return err
+				}
+			}
+
 			sup := compose.New(assets.ComposeFS)
+			sup.AgentRuntime = agentRuntime
 			files, err := sup.Materialize(m)
 			if err != nil {
 				return err
@@ -82,6 +95,17 @@ Modes:
 				}
 			}
 
+			// Pre-pull the agent sandbox image at install time so the gateway's
+			// first sandbox-create (the user's first chat) never blocks on a
+			// large pull. Best-effort: a failure just falls back to a lazy pull.
+			if agentRuntime == "openshell" {
+				agentImg := agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION"))
+				fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
+				if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
+				}
+			}
+
 			// Stage 2: bring up the rest.
 			upArgs := []string{"up"}
 			if detach {
@@ -102,7 +126,48 @@ Modes:
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in the background after services start")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
 	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
+	cmd.Flags().StringVar(&agentRuntime, "runtime", "", "Agent runtime: 'openshell' sandboxes the agent + plugins via a containerized OpenShell gateway (default: in-process)")
 	return cmd
+}
+
+// agentImageRef resolves the agent sandbox image: an explicit override wins,
+// else the default repo at the running version.
+func agentImageRef(override, version string) string {
+	if override != "" {
+		return override
+	}
+	return "ghcr.io/open-neko/agent:" + version
+}
+
+// openShellStateDirOverride returns the OPENSHELL_STATE_DIR to set for goos, or
+// "" to keep the compose default. The containerized gateway bind-mounts its PKI
+// and the per-sandbox JWT from this dir into sandboxes; the in-VM docker daemon
+// must resolve the SAME host path. macOS/OrbStack only maps paths under the
+// user's home into its Linux VM — a /var/lib/... source comes back as an empty
+// mount and the sandbox crash-loops on a missing JWT — so on macOS the state
+// dir must live under $HOME. On Linux the compose default
+// (/var/lib/openneko/openshell) is correct and docker creates it. An
+// already-set value is always respected.
+func openShellStateDirOverride(goos, home, existing string) string {
+	if goos != "darwin" || existing != "" {
+		return ""
+	}
+	return filepath.Join(home, ".openneko", "openshell")
+}
+
+func configureOpenShellStateDir() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dir := openShellStateDirOverride(runtime.GOOS, home, os.Getenv("OPENSHELL_STATE_DIR"))
+	if dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.Setenv("OPENSHELL_STATE_DIR", dir)
 }
 
 func waitDBHealthy(ctx context.Context, timeout time.Duration) error {

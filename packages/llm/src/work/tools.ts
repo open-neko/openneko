@@ -2,19 +2,12 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { writeWorkSkill } from "./skills";
 import type { AgentEvent, AgentSurfaceMessage } from "../agent-backend";
+import { WORK_MEMORY_KINDS, type WorkMemoryContext } from "./memory";
+import type { RiskLevel } from "../workflows";
 import {
-  WORK_MEMORY_KINDS,
-  rememberWorkMemory,
-  searchWorkMemoryByContext,
-  type WorkMemoryContext,
-} from "./memory";
-import { enqueue, QUEUE } from "@neko/db/jobs";
-import {
-  createActionRequest,
-  evaluateActionPolicy,
-  listEnabledPolicies,
-  type RiskLevel,
-} from "../workflows";
+  inProcessControlPlane,
+  type AgentControlPlane,
+} from "./control-plane";
 
 const a2uiMessageSchema = z.object({ version: z.literal("v0.9") }).passthrough();
 
@@ -180,6 +173,8 @@ export type WorkMemoryServerOptions = {
    * remains the authority on what gets persisted.
    */
   exposeSave?: boolean;
+  /** Defaults to the in-process control plane; the agent sandbox injects an HTTP impl. */
+  controlPlane?: AgentControlPlane;
 };
 
 export function buildWorkMemoryServer(
@@ -187,6 +182,7 @@ export function buildWorkMemoryServer(
   options: WorkMemoryServerOptions = {},
 ) {
   const exposeSave = options.exposeSave ?? true;
+  const controlPlane = options.controlPlane ?? inProcessControlPlane;
   const search = tool(
     "search",
     [
@@ -200,7 +196,7 @@ export function buildWorkMemoryServer(
       limit: z.number().int().min(1).max(20).optional(),
     },
     async (args) => {
-      const results = await searchWorkMemoryByContext({
+      const results = await controlPlane.searchWorkMemoryByContext({
         orgId: ctx.orgId,
         query: args.query,
         limit: args.limit ?? 5,
@@ -232,7 +228,7 @@ export function buildWorkMemoryServer(
       pinned: z.boolean().optional(),
     },
     async (args) => {
-      const memory = await rememberWorkMemory({
+      const memory = await controlPlane.rememberWorkMemory({
         orgId: ctx.orgId,
         threadId: ctx.threadId ?? null,
         runId: ctx.runId ?? null,
@@ -328,6 +324,8 @@ export interface BuildPluginActionServerOptions {
   runId: string;
   descriptors: readonly PluginActionDescriptor[];
   emit: (event: AgentEvent) => Promise<void> | void;
+  /** Defaults to the in-process control plane; the agent sandbox injects an HTTP impl. */
+  controlPlane?: AgentControlPlane;
 }
 
 /**
@@ -367,6 +365,8 @@ export function buildPluginActionServer(
 ): ReturnType<typeof createSdkMcpServer> | null {
   const active = opts.descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return null;
+
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
 
   const tools = active.map((d) => {
     const needsIntent = needsIntentForKind(d.default_mode);
@@ -439,19 +439,16 @@ export function buildPluginActionServer(
       `${d.description}\n\n${modeHint}`,
       schema,
       async (args) => {
-        const policies = await listEnabledPolicies(opts.orgId);
-        const decision = evaluateActionPolicy(
-          {
-            scope: "external",
-            kind: d.kind,
-            target:
-              typeof args.target === "string" && args.target.length > 0
-                ? args.target
-                : null,
-            riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
-          },
-          policies,
-        );
+        const decision = await controlPlane.evaluateActionPolicy({
+          orgId: opts.orgId,
+          scope: "external",
+          kind: d.kind,
+          target:
+            typeof args.target === "string" && args.target.length > 0
+              ? args.target
+              : null,
+          riskLevel: (args.risk_level as RiskLevel | undefined) ?? null,
+        });
 
         if (decision.decision === "deny") {
           return {
@@ -505,7 +502,7 @@ export function buildPluginActionServer(
           // the two: any process can submit the job, only the worker
           // (which holds the plugin registry + microsandbox runtime)
           // runs it.
-          const request = await createActionRequest({
+          const request = await controlPlane.createActionRequest({
             orgId: opts.orgId,
             scope: "external",
             kind: d.kind,
@@ -519,7 +516,7 @@ export function buildPluginActionServer(
             workRunId: opts.runId,
             requestedByRunId: null,
           });
-          await enqueue(QUEUE.ACTION_EXECUTE, {
+          await controlPlane.enqueueActionExecute({
             orgId: opts.orgId,
             actionRequestId: request.id,
           });
@@ -553,7 +550,7 @@ export function buildPluginActionServer(
         // a "pending" status. Slice 5 wires the approval click + the
         // follow-up run that threads the outcome back into the
         // conversation.
-        const request = await createActionRequest({
+        const request = await controlPlane.createActionRequest({
           orgId: opts.orgId,
           scope: "external",
           kind: d.kind,

@@ -26,14 +26,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM base AS cli
 ARG GRAPHJIN_VERSION=3.18.25
 ARG HERMES_AGENT_REF=a91a57fa5a13d516c38b07a141a9ce8a3daabeb0
+ARG OPENSHELL_VERSION=0.0.54
 # TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
 # graphjin download pick the right tarball when building multi-arch.
 ARG TARGETARCH
 # unzip + postgresql-client are needed by db/load-adventureworks-baked.sh
 # (demo seeder, runs inside the worker container with no apt-get available
 # at runtime since the container runs as the `neko` user, not root).
+# openssh-client: `openshell sandbox exec` relays over ssh (unix:/run/openshell/
+# ssh.sock), so the worker/web — which shell out to it for the agent sandbox —
+# need an ssh client. Verified on Linux: without it the relay fails
+# "No such file or directory"; with it, exec returns the sandbox output.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git unzip postgresql-client \
+      git unzip postgresql-client openssh-client \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL -o /tmp/graphjin.tgz \
       "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
@@ -42,15 +47,23 @@ RUN curl -fsSL -o /tmp/graphjin.tgz \
     && graphjin version
 RUN curl -LsSf https://astral.sh/uv/install.sh \
       | env UV_INSTALL_DIR=/usr/local/bin sh -s -- --no-modify-path \
-    && UV_TOOL_DIR=/opt/uv-tools \
+    && UV_TOOL_DIR=/usr/local/uv/tools \
        UV_TOOL_BIN_DIR=/usr/local/bin \
-       UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+       UV_PYTHON_INSTALL_DIR=/usr/local/uv/python \
        UV_CACHE_DIR=/tmp/uv-cache \
        uv tool install --python 3.11 \
          "hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git@${HERMES_AGENT_REF}" \
     && rm -rf /tmp/uv-cache /root/.cache/uv \
     && hermes --version
 RUN npm install -g @anthropic-ai/claude-code
+# openshell: CLI driver for the OpenShell plugin runtime
+# (OPENNEKO_PLUGIN_RUNTIME=openshell). Static musl binary, no runtime deps.
+RUN OS_ARCH="$(case "${TARGETARCH}" in amd64) echo x86_64 ;; arm64) echo aarch64 ;; *) echo "${TARGETARCH}" ;; esac)" \
+    && curl -fsSL -o /tmp/openshell.tgz \
+      "https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_VERSION}/openshell-${OS_ARCH}-unknown-linux-musl.tar.gz" \
+    && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
+    && rm /tmp/openshell.tgz \
+    && openshell --version
 
 # Bundled skills (xlsx / pptx / docx / pdf / skill-creator) shell out to
 # Python + LibreOffice + Poppler / qpdf. Mirror packages/llm/src/work/skill-deps.ts
@@ -221,6 +234,39 @@ USER neko
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
+
+# ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
+# The agent loop running as a child inside an OpenShell sandbox (Phase 3,
+# OPENNEKO_AGENT_RUNTIME=openshell), reaching the control plane only through the
+# broker. It is deliberately NOT `FROM worker`: that would pin the worker's full
+# ~1.3GB node_modules (incl. the web/Next.js deps the agent never runs) in an
+# immutable base layer the trim couldn't shrink. Instead we `pnpm deploy` the
+# worker's trimmed PROD closure and lay it onto the lean `cli` base — which
+# already provides node + hermes (/usr/local/uv) + claude + graphjin +
+# libreoffice. Net /app: ~774MB vs ~2.1GB. hermes is under /usr/local (Landlock
+# allows /usr, blocks /opt).
+
+# Trimmed prod closure of @neko/worker: drops web/Next.js + devDeps + other
+# apps' sources; keeps tsx, @neko/llm (with its assets), and the claude SDK.
+FROM build AS agent-deploy
+RUN pnpm --filter @neko/worker deploy --prod /out/agent-app
+
+FROM cli AS agent
+USER root
+# Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
+# convention). node/hermes/claude/graphjin/libreoffice already come from `cli`.
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 1000660000 sandbox \
+    && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
+    && install -d -o sandbox -g sandbox /sandbox
+# The deploy roots the worker package at /app (entry.ts -> /app/src/...,
+# @neko/llm -> /app/node_modules), owned by the sandbox user so it can run it.
+COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
+WORKDIR /sandbox
+# Supervisor-replaced; launcher runs:
+#   cd /app && node --import tsx/esm /app/src/agent-sandbox/entry.ts
+CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
 # Minimal image containing just the openneko Go binary. Used as the

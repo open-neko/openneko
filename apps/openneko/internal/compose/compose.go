@@ -43,6 +43,9 @@ type Supervisor struct {
 	HasKVM func() bool
 	// GOOS lets tests stub the platform.
 	GOOS string
+	// AgentRuntime, when "openshell", overlays the containerized OpenShell
+	// gateway and runs the agent + plugins in sandboxes. Empty = in-process.
+	AgentRuntime string
 }
 
 func New(assets fs.FS) *Supervisor {
@@ -87,6 +90,9 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	}
 	if s.GOOS == "linux" && s.HasKVM() {
 		files = append(files, "compose/plugins.linux.yml")
+	}
+	if s.AgentRuntime == "openshell" {
+		files = append(files, "compose/openshell.yml")
 	}
 	var out []string
 	for _, name := range files {
@@ -183,4 +189,17 @@ func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []
 func defaultHasKVM() bool {
 	_, err := os.Stat("/dev/kvm")
 	return !errors.Is(err, fs.ErrNotExist)
+}
+
+// EnsureImage pulls image unless it's already present locally. Used to warm the
+// agent sandbox image at install time so the gateway's first sandbox-create
+// (i.e. the user's first chat) doesn't block on a multi-hundred-MB pull.
+func (s *Supervisor) EnsureImage(ctx context.Context, image string, stdout, stderr *os.File) error {
+	if exec.CommandContext(ctx, "docker", "image", "inspect", image).Run() == nil {
+		return nil // already local
+	}
+	cmd := exec.CommandContext(ctx, "docker", "pull", image)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
 }

@@ -189,6 +189,11 @@ export interface AgentBackendCapabilities {
 export interface AgentBackend {
   readonly id: AgentBackendId;
   readonly capabilities: AgentBackendCapabilities;
+  /** The resolved model id, when the backend is model-parameterized
+   *  (claude-agent). hermes resolves its model from config.yaml, not here. The
+   *  sandbox launcher threads this into the box's job so the box reconstructs
+   *  the backend with the right model. */
+  readonly model?: string;
   run(opts: AgentRunOptions): Promise<AgentRunResult>;
 }
 
