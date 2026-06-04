@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+@import "./styles/_tokens.css";
+@import "./styles/_chrome.css";
+@import "./styles/_dashboard.css";
+@import "./styles/_work.css";
+@import "./styles/_composer.css";
+@import "./styles/_profile-review.css";
+@import "./styles/_toasts.css";
+@import "./styles/_library.css";
+@import "./styles/_modal.css";
+@import "./styles/_workflows.css";
+@import "./styles/_run-replay.css";
+@import "./styles/_actions.css";
+@import "./styles/_act-card.css";
+@import "./styles/_responsive.css";
+
 @theme {
   --color-bg: #FAFAF7;
   --color-card: #FFFFFF;
@@ -39,21 +54,6 @@
 @utility font-body {
   font-family: var(--font-body), 'Manrope', sans-serif;
 }
-
-@import "./styles/_tokens.css";
-@import "./styles/_chrome.css";
-@import "./styles/_dashboard.css";
-@import "./styles/_work.css";
-@import "./styles/_composer.css";
-@import "./styles/_profile-review.css";
-@import "./styles/_toasts.css";
-@import "./styles/_library.css";
-@import "./styles/_modal.css";
-@import "./styles/_workflows.css";
-@import "./styles/_run-replay.css";
-@import "./styles/_actions.css";
-@import "./styles/_act-card.css";
-@import "./styles/_responsive.css";
 
 /* ─── DENSITY LAYER (Comfortable ⇄ Compact, [data-density] on <html>) ─── */
 /* default (no attribute) = compact */
