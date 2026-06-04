@@ -14,6 +14,8 @@
 FROM node:22-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# Retry transient apt mirror hiccups instead of hard-failing the image build.
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries
 RUN corepack enable && corepack prepare pnpm@9.14.1 --activate
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
@@ -40,12 +42,12 @@ ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git unzip postgresql-client openssh-client \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL -o /tmp/graphjin.tgz \
+RUN curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o /tmp/graphjin.tgz \
       "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
     && rm /tmp/graphjin.tgz \
     && graphjin version
-RUN curl -LsSf https://astral.sh/uv/install.sh \
+RUN curl -LsSf --retry 5 --retry-delay 5 --retry-all-errors https://astral.sh/uv/install.sh \
       | env UV_INSTALL_DIR=/usr/local/bin sh -s -- --no-modify-path \
     && UV_TOOL_DIR=/usr/local/uv/tools \
        UV_TOOL_BIN_DIR=/usr/local/bin \

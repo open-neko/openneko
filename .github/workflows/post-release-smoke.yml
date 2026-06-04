@@ -1,5 +1,11 @@
 name: post-release smoke
 
+# Gate, not spectator. After a release builds, this actually installs the just-
+# published artifacts and asks `openneko status` whether the stack serves. If
+# the build FAILED, or the smoke fails, it demotes that release off "Latest"
+# (gh release edit --prerelease) so `releases/latest` falls back to the last
+# good version — a broken release never becomes the one users download.
+
 on:
   workflow_run:
     workflows: ["openneko release binaries"]
@@ -11,51 +17,65 @@ on:
         required: false
         default: "latest"
 
+permissions:
+  contents: write # needed to demote a bad release off "Latest"
+
 jobs:
   smoke:
     name: post-release supervisor smoke
     runs-on: ubuntu-22.04
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success')
+    # Runs on BOTH success and failure of the release build: on failure we must
+    # still demote the half-published release.
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Resolve release tag + build outcome
+        id: ctx
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+            echo "build_ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag=$(gh api "repos/${{ github.repository }}/releases" \
+            --jq '.[] | select(.target_commitish=="main") | .tag_name' | head -1)
+          echo "tag=${tag:-}" >> "$GITHUB_OUTPUT"
+          # Only gate stable releases — a '-' marks a prerelease, which is never "Latest".
+          case "${tag:-}" in *-* | "") echo "stable=false" ;; *) echo "stable=true" ;; esac >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            echo "build_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail fast if the release build did not succeed
+        if: ${{ steps.ctx.outputs.build_ok != 'true' }}
+        run: |
+          echo "::error::release build did not succeed for ${{ steps.ctx.outputs.tag }} — its artifacts are incomplete"
+          exit 1
+
       - uses: actions/setup-go@v5
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         with:
           go-version: "1.24"
           cache-dependency-path: apps/openneko/go.sum
 
-      - name: Resolve image tag
-        id: tag
-        run: |
-          set -euxo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          tag=$(gh api "repos/${{ github.repository }}/releases" \
-            --jq '.[] | select(.target_commitish=="main") | .tag_name' \
-            | head -1)
-          if [ -z "$tag" ]; then
-            echo "no release tag found; defaulting to :latest"
-            tag="latest"
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build openneko binary
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         working-directory: apps/openneko
         run: go build -o /usr/local/bin/openneko ./cmd/openneko
 
       - name: Pre-pull images with retry
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         run: |
           set -euxo pipefail
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="${{ steps.ctx.outputs.tag }}"
           refs=(
             "ghcr.io/open-neko/neko-web:${tag}"
             "ghcr.io/open-neko/neko-worker:${tag}"
@@ -78,31 +98,45 @@ jobs:
           done
 
       - name: openneko start (detached) against pre-pulled images
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
-          OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: |
           set -euxo pipefail
           openneko start --mode prod --detach --pull never
 
-      - name: openneko status (poll until healthy)
+      - name: openneko status (poll until serving)
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
-          OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           for i in $(seq 1 60); do
-            if openneko status | grep -E "running|healthy"; then
-              echo "stack is up after ${i} polls"
+            if openneko status; then
+              echo "stack is serving after ${i} polls"
               exit 0
             fi
             sleep 2
           done
-          echo "stack did not come up within 120s — final state:"
-          openneko status || true
+          echo "stack did not reach 'serving' within 120s — final state:"
+          openneko status -v || true
           openneko logs || true
           exit 1
 
-      - name: openneko stop --volumes
-        if: always()
+      # Any failure above — build incomplete OR the stack never served — demotes
+      # the release so installers fall back to the last good version.
+      - name: Demote release off "Latest" on failure
+        if: ${{ failure() && steps.ctx.outputs.stable == 'true' && steps.ctx.outputs.tag != '' }}
         env:
-          OPENNEKO_VERSION: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "::error::${{ steps.ctx.outputs.tag }} failed post-release smoke — demoting off 'Latest' so installs fall back to the last good release"
+          gh release edit "${{ steps.ctx.outputs.tag }}" \
+            --prerelease --latest=false \
+            --repo "${{ github.repository }}" || true
+
+      - name: openneko stop --volumes
+        if: ${{ always() && steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: openneko stop --volumes || true
