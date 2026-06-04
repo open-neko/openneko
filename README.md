@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/open-neko/openneko)](https://github.com/open-neko/openneko/releases/latest)
 [![Self-hosted · Docker](https://img.shields.io/badge/self--hosted-Docker-2496ED?logo=docker&logoColor=white)](INSTALL.md)
-[![getneko.app](https://img.shields.io/badge/getneko.app-website-111111)](https://getneko.app)
+[![openneko.app](https://img.shields.io/badge/openneko.app-website-111111)](https://openneko.app)
 [![Stars](https://img.shields.io/github/stars/open-neko/openneko?style=social)](https://github.com/open-neko/openneko/stargazers)
 
 **OpenNeko watches your business data, flags what's worth a look, and drafts the next action — for you to approve.** Self-hosted, on your infrastructure, with whichever LLM you prefer.
@@ -112,4 +112,4 @@ OpenNeko is licensed under the [Apache License 2.0](LICENSE).
 
 ## Author
 
-Created by [Amit Deshmukh](https://getneko.app/#about).
+Created by [Amit Deshmukh](https://openneko.app/#about).

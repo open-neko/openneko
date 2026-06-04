@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
 
-const MARKETING_URL = "https://getneko.app";
+const MARKETING_URL = "https://openneko.app";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 const VERSION_POLL_MS = 60_000;
 
@@ -116,7 +116,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
 
         <a
           className="topbar-credit"
-          href="https://getneko.app/#about"
+          href="https://openneko.app/#about"
           target="_blank"
           rel="noreferrer"
         >

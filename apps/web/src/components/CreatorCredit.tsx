@@ -4,7 +4,7 @@
  * link and the creator link don't sit on top of each other.
  */
 
-const CREATOR_URL = "https://getneko.app/#about";
+const CREATOR_URL = "https://openneko.app/#about";
 const CREATOR_NAME = "Amit Deshmukh";
 
 export default function CreatorCredit() {

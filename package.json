@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "author": "Amit Deshmukh (https://github.com/amitdeshmukh)",
-  "homepage": "https://getneko.app",
+  "homepage": "https://openneko.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/open-neko/openneko.git"
