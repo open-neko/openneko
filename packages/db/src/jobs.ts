@@ -45,6 +45,10 @@ export type WorkRunPayload = ProcessingJobPayload & {
   /** Delivery channel ("web", "telegram", …). Omitted ⇒ "web". Gates a2ui
    *  rendering — see docs/PER_CHANNEL_RENDERING.md. */
   channel?: string;
+  /** For channel-initiated runs: the channel plugin + sender to deliver the
+   *  reply back to. Absent for web runs (the UI streams over SSE). */
+  channelPlugin?: string;
+  recipient?: Record<string, unknown>;
 };
 
 export type WorkflowRunFirePayload = {

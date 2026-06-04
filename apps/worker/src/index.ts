@@ -413,6 +413,9 @@ const workRunHandler = makeHandler<WorkRunPayload>(
       runId: payload.runId,
       threadId: payload.threadId,
       message: payload.message,
+      channel: payload.channel,
+      channelPlugin: payload.channelPlugin,
+      recipient: payload.recipient,
     });
   },
 );

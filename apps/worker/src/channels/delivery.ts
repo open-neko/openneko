@@ -7,6 +7,7 @@ import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
 import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
+import type { InteractionEvent } from "@neko/interaction";
 import {
   approveActionRequest,
   getActionRequest,
@@ -78,6 +79,39 @@ export function registerChannelOutputDelivery(): void {
 }
 
 /**
+ * Send a chat run's reply back to the channel that asked. Channel-initiated
+ * runs (Telegram, …) have no other return path — the web UI streams its runs
+ * over SSE, but a Telegram sender only hears back if we deliver here.
+ */
+export async function deliverChatReply(
+  channelPlugin: string,
+  recipient: Record<string, unknown>,
+  runId: string,
+  body: string,
+): Promise<void> {
+  const reg = getPluginRegistryInstance();
+  if (!reg || !body.trim()) return;
+  // A chat reply is the assistant's message, not a workflow-output card — use
+  // `converse` so channels render the full text, not a summarized headline.
+  const event: InteractionEvent = {
+    kind: "converse",
+    id: runId,
+    role: "assistant",
+    text: body,
+  };
+  try {
+    const res = await reg.deliverOnChannel(channelPlugin, recipient, [event]);
+    console.log(
+      `[channel-delivery] ${channelPlugin} chat-reply run=${runId} delivered=${res.delivered}${res.ref ? ` ref=${res.ref}` : ""}`,
+    );
+  } catch (err) {
+    console.warn(
+      `[channel-delivery] ${channelPlugin} chat-reply run=${runId} failed: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+/**
  * Auto-bind delivery to a sender on first inbound contact: the operator DMs the
  * bot once and starts receiving outputs there, never hand-writing a binding.
  * Idempotent — only writes when no binding for (org, channel) exists yet.
@@ -111,6 +145,7 @@ export async function dispatchInboundIntent(
   orgId: string,
   intent: IntentEvent,
   channelPlugin: string,
+  recipient?: Record<string, unknown>,
 ): Promise<void> {
   if (intent.kind === "decision") {
     const req = await getActionRequest(orgId, intent.decisionRef);
@@ -153,6 +188,8 @@ export async function dispatchInboundIntent(
       orgId,
       message,
       channelFromPlugin(channelPlugin),
+      channelPlugin,
+      recipient,
       intent.kind === "utterance" ? intent.threadRef : undefined,
     );
     return;
@@ -166,6 +203,8 @@ async function startChatRun(
   orgId: string,
   message: string,
   channel: RunChannel,
+  channelPlugin: string,
+  recipient: Record<string, unknown> | undefined,
   threadRef?: string,
 ): Promise<void> {
   const thread = await createWorkThread(
@@ -194,6 +233,8 @@ async function startChatRun(
     threadId: thread.id,
     message,
     channel,
+    channelPlugin,
+    recipient,
   });
   console.log(
     `[channel-inbound] started chat run ${run.id} for "${message.slice(0, 40)}"`,
@@ -221,7 +262,12 @@ export async function ingestInboundWebhook(
   if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
   for (const intent of intents) {
     try {
-      await dispatchInboundIntent(orgId, intent as IntentEvent, pluginName);
+      await dispatchInboundIntent(
+        orgId,
+        intent as IntentEvent,
+        pluginName,
+        recipient as Record<string, unknown> | undefined,
+      );
     } catch (err) {
       console.warn(
         `[channel-inbound] dispatch error: ${err instanceof Error ? err.message : err}`,
