@@ -53,8 +53,25 @@ export default function WorkContextRail() {
     };
   }, []);
 
+  const isEmpty =
+    vitals.length === 0 &&
+    railArtifacts.length === 0 &&
+    sources.length === 0 &&
+    followups.length === 0 &&
+    !memory;
+
   return (
     <aside className="work-rail">
+      {isEmpty && (
+        <section className="wcr-sect wcr-empty">
+          <h4 className="wcr-h">Context</h4>
+          <p className="wcr-empty-text">
+            Vitals, sources, and follow-ups surface here when the agent
+            highlights them for an answer.
+          </p>
+        </section>
+      )}
+
       {vitals.length > 0 && (
         <section className="wcr-sect">
           <h4 className="wcr-h">Answer vitals</h4>

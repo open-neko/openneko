@@ -164,6 +164,7 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
 .wcr-source { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 12.5px; color: var(--text2); }
 .wcr-source-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: 0.7; flex: none; }
 .wcr-memo { background: var(--bg); border: 1px solid var(--border); border-left: 2px solid var(--accent); border-radius: 11px; padding: 9px 11px; font-size: 12px; line-height: 1.45; color: var(--text2); }
+.wcr-empty-text { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text3); }
 
 @media (min-width: 1100px) {
   html[data-density="compact"] .work-layout.has-rail {
@@ -229,6 +230,7 @@ html[data-density="compact"] .triage-pane { display: block; position: sticky; to
   .topbar-spacer { display: none; }
   .topbar-nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
 }
+
 
 
 
