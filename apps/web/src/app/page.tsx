@@ -497,7 +497,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <div className="root">
+      <div className="root dash-root">
         <AppHeader>
           <SectionNav current="dashboard" />
         </AppHeader>
@@ -710,16 +710,18 @@ export default function Dashboard() {
 
             <div className="mb-6">
               <div className="label">Today&apos;s Briefing</div>
-              {briefingCards.map((ins, i) => (
-                <BriefingCard
-                  key={ins.id}
-                  ins={ins}
-                  index={i}
-                  onDismiss={() => dismissCard(ins.metricId)}
-                  onRetry={retryCard}
-                  onDeepDive={deepDiveCard}
-                />
-              ))}
+              <div className="brief-grid">
+                {briefingCards.map((ins, i) => (
+                  <BriefingCard
+                    key={ins.id}
+                    ins={ins}
+                    index={i}
+                    onDismiss={() => dismissCard(ins.metricId)}
+                    onRetry={retryCard}
+                    onDeepDive={deepDiveCard}
+                  />
+                ))}
+              </div>
             </div>
 
             {recentActions && recentActions.receipts.length > 0 && (

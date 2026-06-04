@@ -1,7 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
+import { DensityProvider } from "@/components/DensityProvider";
 import "./globals.css";
+
+// Set data-density before paint from the persisted choice (default compact),
+// so the dense layout never flashes the comfortable one on load.
+const DENSITY_INIT = `(function(){try{var d=localStorage.getItem('neko-density');document.documentElement.setAttribute('data-density',d==='comfortable'?'comfortable':'compact');}catch(e){document.documentElement.setAttribute('data-density','compact');}})();`;
 
 const display = Archivo({
   variable: "--font-display",
@@ -32,9 +37,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
+    <html lang="en" data-density="compact" className={`${display.variable} ${body.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: DENSITY_INIT }} />
+      </head>
       <body>
-        {children}
+        <DensityProvider>{children}</DensityProvider>
         <Toaster
           position="bottom-right"
           expand

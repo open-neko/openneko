@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import DensityToggle from "@/components/DensityToggle";
 
 const MARKETING_URL = "https://getneko.app";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
@@ -89,6 +90,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
         </div>
 
         <div className="inline-flex items-center gap-2.5 self-start">
+          <DensityToggle />
           <a
             href={MARKETING_URL}
             target="_blank"

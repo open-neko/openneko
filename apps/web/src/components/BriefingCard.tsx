@@ -5,6 +5,7 @@ import { Copy, RotateCw, Search, X } from "lucide-react";
 import Chart from "./Chart";
 import type { ChartDataPoint } from "./Chart";
 import KpiHeadline from "./KpiHeadline";
+import { useDensity } from "./DensityProvider";
 
 async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   const lines: string[] = [];
@@ -57,7 +58,10 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
   onRetry?: (metricId: string) => void;
   onDeepDive?: (metricId: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  // Comfortable keeps today's always-expanded card; Compact starts the tile
+  // collapsed (metric only) and expands the detail + chart on click.
+  const { density } = useDensity();
+  const [open, setOpen] = useState(density === "comfortable");
   const [retrying, setRetrying] = useState(false);
   const state: BriefingCardState = ins.state ?? "ok";
   const moodKey = MOOD_LABELS[ins.mood] ? ins.mood : "good";

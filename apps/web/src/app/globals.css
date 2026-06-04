@@ -54,3 +54,55 @@
 @import "./styles/_actions.css";
 @import "./styles/_act-card.css";
 @import "./styles/_responsive.css";
+
+/* ─── DENSITY LAYER (Comfortable ⇄ Compact, [data-density] on <html>) ─── */
+/* default (no attribute) = compact */
+:root,
+html[data-density="compact"] {
+  --d-dash-width: 1200px;
+  --d-brief-cols: repeat(auto-fill, minmax(300px, 1fr));
+  --d-brief-gap: 12px;
+  --d-greet: 30px;
+  --d-section-gap: 22px;
+  --d-icard-pad: 15px 16px 15px 20px;
+  --d-icard-detail: none;
+}
+html[data-density="comfortable"] {
+  --d-dash-width: 760px;
+  --d-brief-cols: 1fr;
+  --d-brief-gap: 12px;
+  --d-greet: 46px;
+  --d-section-gap: 32px;
+  --d-icard-pad: 22px 24px 22px 28px;
+  --d-icard-detail: block;
+}
+
+.density-seg {
+  display: inline-flex; background: var(--neutral); border: 1px solid var(--border);
+  border-radius: 999px; padding: 3px; gap: 2px; flex: 0 0 auto;
+}
+.density-seg button {
+  font-family: var(--font-body), 'Manrope', sans-serif; font-weight: 600; font-size: 12.5px;
+  color: var(--text2); border: 0; background: transparent; padding: 6px 13px; border-radius: 999px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px; line-height: 1; transition: color 0.18s;
+}
+.density-seg button svg { width: 13px; height: 13px; }
+.density-seg button[aria-pressed="true"] {
+  background: var(--card); color: var(--text);
+  box-shadow: 0 1px 2px rgba(20,18,12,0.08), 0 2px 8px -2px rgba(20,18,12,0.1);
+}
+@media (max-width: 680px) { .density-seg button span { display: none; } .density-seg button { padding: 7px 9px; } }
+
+.dash-root {
+  --page-width: var(--d-dash-width);
+  transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.dash-root .greet { font-size: var(--d-greet); }
+
+.brief-grid {
+  display: grid; grid-template-columns: var(--d-brief-cols); gap: var(--d-brief-gap); align-items: start;
+}
+.brief-grid .icard { margin-bottom: 0; }
+.brief-grid .idetail { display: var(--d-icard-detail); }
+.brief-grid .icard.open .idetail { display: block; }
+.dash-root .icard { padding: var(--d-icard-pad); }
