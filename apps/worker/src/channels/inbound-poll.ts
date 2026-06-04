@@ -55,7 +55,7 @@ export function startChannelInbound(orgId: string): { stop: () => void } {
             const { intents, recipient } = await r.parseInbound(pluginName, raw);
             if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
             for (const intent of intents) {
-              await dispatchInboundIntent(orgId, intent as IntentEvent);
+              await dispatchInboundIntent(orgId, intent as IntentEvent, pluginName);
             }
           } catch (err) {
             console.warn(`[channel-inbound] ${pluginName} dispatch error: ${msg(err)}`);

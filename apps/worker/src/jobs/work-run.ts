@@ -6,6 +6,7 @@ import {
   getWorkRun,
   runChatTurn,
   scrubAgentEvent,
+  type RunChannel,
 } from "@neko/llm/work";
 import {
   getCurrentScrubber,
@@ -15,9 +16,14 @@ import {
 export async function runWorkRun(
   _jobId: string,
   orgId: string,
-  payload: { runId: string; threadId: string; message: string },
+  payload: {
+    runId: string;
+    threadId: string;
+    message: string;
+    channel?: RunChannel;
+  },
 ): Promise<void> {
-  const { runId, threadId, message } = payload;
+  const { runId, threadId, message, channel } = payload;
 
   const run = await getWorkRun(orgId, runId);
   if (!run) {
@@ -52,6 +58,7 @@ export async function runWorkRun(
       threadId,
       runId,
       message,
+      channel,
       emit,
       pluginActions,
     },

@@ -42,6 +42,9 @@ export type WorkRunPayload = ProcessingJobPayload & {
   threadId: string;
   /** The user message that kicked off this run. */
   message: string;
+  /** Delivery channel ("web", "telegram", …). Omitted ⇒ "web". Gates a2ui
+   *  rendering — see docs/PER_CHANNEL_RENDERING.md. */
+  channel?: string;
 };
 
 export type WorkflowRunFirePayload = {

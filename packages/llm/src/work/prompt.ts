@@ -439,6 +439,9 @@ export function buildWorkPrompt(args: {
   currentUserMessage: string;
   memoryContext?: string;
   installedSkills?: InstalledSkill[];
+  /** Whether this channel renders a2ui cards (web). Default true. When false,
+   *  the prompt carries no rendering section and the agent answers in markdown. */
+  wantsCards?: boolean;
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
@@ -458,6 +461,7 @@ export function buildWorkPrompt(args: {
     currentUserMessage,
     memoryContext,
     installedSkills,
+    wantsCards = true,
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
@@ -477,7 +481,7 @@ behalf. This is the only chat surface — operators come here to do
 everything, from "what was last week's revenue?" to "set up a workflow
 that flags churn risk every Monday."
 </role>`,
-    buildRenderingSection(supportsCardTool),
+    wantsCards ? buildRenderingSection(supportsCardTool) : "",
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection({
       searchTool: supportsMemoryTool,

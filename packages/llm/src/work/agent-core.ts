@@ -27,6 +27,9 @@ export interface RunAgentBackendInput {
   pluginActions: readonly PluginActionDescriptor[];
   /** In-process on the host; broker-backed inside the agent sandbox. */
   controlPlane?: AgentControlPlane;
+  /** Whether this channel renders a2ui cards (web). Default true. Gates the
+   *  neko_ui render server. See docs/PER_CHANNEL_RENDERING.md. */
+  wantsCards?: boolean;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
 }
@@ -56,6 +59,7 @@ export async function runAgentBackend(
     backendState,
     pluginActions,
     controlPlane,
+    wantsCards = true,
     emit,
     signal,
   } = input;
@@ -74,7 +78,8 @@ export async function runAgentBackend(
 
   const mcpServers = mcp
     ? {
-        neko_ui: buildRenderCardsServer(emit),
+        // Rendering is per-channel: the card server only ships to web turns.
+        ...(wantsCards ? { neko_ui: buildRenderCardsServer(emit) } : {}),
         neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
         neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({

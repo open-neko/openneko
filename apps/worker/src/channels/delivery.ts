@@ -14,8 +14,19 @@ import {
   setWorkflowOutputDeliveryHook,
   type WorkflowOutputDeliveryHook,
 } from "@neko/llm/workflows";
-import { createWorkRun, createWorkThread } from "@neko/llm/work";
+import {
+  createWorkRun,
+  createWorkThread,
+  type RunChannel,
+} from "@neko/llm/work";
 import { getPluginRegistryInstance } from "../plugins/registry-instance.js";
+
+/** "@open-neko/channel-telegram" → "telegram". Channel-inbound runs are never
+ *  "web", so they get no a2ui rendering. See docs/PER_CHANNEL_RENDERING.md. */
+function channelFromPlugin(pluginName: string): RunChannel {
+  const m = pluginName.match(/channel-([a-z0-9-]+)$/i);
+  return (m ? m[1].toLowerCase() : pluginName) as RunChannel;
+}
 
 type IntentEvent =
   | { kind: "utterance"; threadRef?: string; text: string }
@@ -99,6 +110,7 @@ export async function ensureInboundBinding(
 export async function dispatchInboundIntent(
   orgId: string,
   intent: IntentEvent,
+  channelPlugin: string,
 ): Promise<void> {
   if (intent.kind === "decision") {
     const req = await getActionRequest(orgId, intent.decisionRef);
@@ -140,6 +152,7 @@ export async function dispatchInboundIntent(
     await startChatRun(
       orgId,
       message,
+      channelFromPlugin(channelPlugin),
       intent.kind === "utterance" ? intent.threadRef : undefined,
     );
     return;
@@ -152,6 +165,7 @@ export async function dispatchInboundIntent(
 async function startChatRun(
   orgId: string,
   message: string,
+  channel: RunChannel,
   threadRef?: string,
 ): Promise<void> {
   const thread = await createWorkThread(
@@ -178,6 +192,7 @@ async function startChatRun(
     runId: run.id,
     threadId: thread.id,
     message,
+    channel,
   });
   console.log(
     `[channel-inbound] started chat run ${run.id} for "${message.slice(0, 40)}"`,
@@ -205,7 +220,7 @@ export async function ingestInboundWebhook(
   if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
   for (const intent of intents) {
     try {
-      await dispatchInboundIntent(orgId, intent as IntentEvent);
+      await dispatchInboundIntent(orgId, intent as IntentEvent, pluginName);
     } catch (err) {
       console.warn(
         `[channel-inbound] dispatch error: ${err instanceof Error ? err.message : err}`,

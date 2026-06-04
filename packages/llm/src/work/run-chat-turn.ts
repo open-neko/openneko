@@ -52,11 +52,20 @@ import {
   listInstalledSkills as defaultListInstalledSkills,
 } from "./workspace";
 
+/**
+ * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
+ * render capability); other channels answer in plain markdown and may inject
+ * their own render tool later. See docs/PER_CHANNEL_RENDERING.md.
+ */
+export type RunChannel = "web" | "telegram" | "slack" | (string & {});
+
 export type RunChatTurnOptions = {
   orgId: string;
   threadId: string;
   runId: string;
   message: string;
+  /** Delivery channel; defaults to "web". Gates output rendering. */
+  channel?: RunChannel;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   /**
@@ -180,6 +189,10 @@ export async function runChatTurn(
       message: `Starting ${backendLabel(backend.id)}…`,
     });
 
+    // Rendering is a per-channel capability: only web turns get a2ui cards
+    // (via the render tool for claude, the fence for hermes). Other channels
+    // answer in plain markdown — no rendering vocabulary in their prompt.
+    const wantsCards = (opts.channel ?? "web") === "web";
     const supportsCardTool = backend.capabilities.mcpTools;
     const supportsSkillTool = backend.capabilities.mcpTools;
     const supportsMemoryTool = backend.capabilities.mcpTools;
@@ -216,6 +229,7 @@ export async function runChatTurn(
       currentUserMessage: message,
       memoryContext,
       installedSkills,
+      wantsCards,
       supportsCardTool,
       supportsSkillTool,
       supportsMemoryTool,
@@ -236,6 +250,7 @@ export async function runChatTurn(
       backendState: bundle.thread.backendState,
       pluginActions: opts.pluginActions ?? [],
       controlPlane: opts.controlPlane,
+      wantsCards,
       emit: wrappedEmit,
       signal,
     });
