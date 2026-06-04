@@ -79,7 +79,7 @@
 }
 .workflows-row-delete:hover {
   background: rgba(220, 53, 69, 0.1);
-  color: #c0392b;
+  color: var(--danger-hover);
 }
 
 .workflows-row-meta {
@@ -134,8 +134,8 @@
   color: #fff;
 }
 .workflow-drawer-btn.is-primary:hover:not(:disabled) {
-  background: #5a4cd1;
-  border-color: #5a4cd1;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .workflow-drawer-run-link {
@@ -254,7 +254,7 @@
 .rule-event-eyebrow {
   font-family: var(--font-display), 'Archivo', sans-serif;
   font-size: 10.5px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--success-ink);
@@ -293,7 +293,7 @@
 
 /* Action-request variant — amber accent (proposal awaiting policy/operator) */
 .action-event {
-  border-color: rgba(233, 162, 59, 0.45);
+  border-color: color-mix(in srgb, var(--watch) 45%, transparent);
   background: var(--watch-soft);
 }
 .action-event-tick {
@@ -312,7 +312,7 @@
   text-transform: uppercase;
 }
 .action-event-risk-low { background: var(--success-soft); color: var(--success-mid); }
-.action-event-risk-medium { background: var(--watch-soft); color: var(--warn-ink); border: 1px solid rgba(233,162,59,0.35); }
+.action-event-risk-medium { background: var(--watch-soft); color: var(--warn-ink); border: 1px solid color-mix(in srgb, var(--watch) 35%, transparent); }
 .action-event-risk-high { background: var(--danger-soft); color: var(--danger); }
 .action-event-risk-critical { background: var(--danger); color: #fff; }
 

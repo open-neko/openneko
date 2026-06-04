@@ -472,7 +472,7 @@ export default function RunPage() {
                       <div className="flex gap-2 mt-2.5">
                         <button
                           type="button"
-                          className="px-3.5 py-[7px] rounded-[10px] border border-danger bg-danger text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[#c84545] hover:enabled:border-[#c84545] disabled:opacity-55 disabled:cursor-not-allowed"
+                          className="px-3.5 py-[7px] rounded-control border border-danger bg-danger text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[var(--danger-hover)] hover:enabled:border-[var(--danger-hover)] disabled:opacity-55 disabled:cursor-not-allowed"
                           disabled={actionBusyId === a.id}
                           onClick={() => void submitReject()}
                         >
@@ -492,7 +492,7 @@ export default function RunPage() {
                     <div className="flex gap-2 mt-2.5">
                       <button
                         type="button"
-                        className="px-3.5 py-[7px] rounded-[10px] border border-accent bg-accent text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[#5a4cd1] hover:enabled:border-[#5a4cd1] disabled:opacity-55 disabled:cursor-not-allowed"
+                        className="px-3.5 py-[7px] rounded-control border border-accent bg-accent text-white font-body text-[13px] font-semibold cursor-pointer hover:enabled:bg-[var(--accent-hover)] hover:enabled:border-[var(--accent-hover)] disabled:opacity-55 disabled:cursor-not-allowed"
                         disabled={actionBusyId === a.id}
                         onClick={() => void actOnRequest(a.id, "approve")}
                       >

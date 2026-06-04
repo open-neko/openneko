@@ -125,7 +125,7 @@ function ConfirmDialog({
               !options.destructive &&
                 "bg-text border-text text-bg hover:bg-[#1a1814] hover:border-[#1a1814]",
               options.destructive &&
-                "bg-[#c0392b] border-[#c0392b] text-white hover:bg-[#a83224] hover:border-[#a83224]",
+                "bg-danger border-danger text-white hover:bg-[var(--danger-hover)] hover:border-[var(--danger-hover)]",
             )}
           >
             {options.confirmLabel ?? "Confirm"}
