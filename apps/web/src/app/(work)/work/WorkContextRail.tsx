@@ -6,11 +6,9 @@ import { FileText, Image as ImageIcon, Sheet, File, ArrowRight } from "lucide-re
 import { useWorkShell } from "../work-shell-context";
 
 // Right-hand context rail for the Ask page (Compact only — CSS hides it in
-// Comfortable). Surfaces the answer's vitals, generated artifacts, the data
-// sources touched, follow-up prompts, and a relevant memory. The dynamic
-// panels (vitals / sources / followups) are agent-emitted via the
-// `neko_ask_context` fence and lifted through the shell context; each panel
-// only renders when its data is present.
+// Comfortable). Surfaces the data sources touched, generated artifacts,
+// follow-up prompts, and a relevant memory — all derived from the run or
+// fetched, never model-authored UI. Each panel renders only when it has data.
 
 function ext(name: string): string {
   const i = name.lastIndexOf(".");
@@ -33,7 +31,7 @@ function ArtifactIcon({ name, mime }: { name: string; mime?: string }) {
 
 export default function WorkContextRail() {
   const { railArtifacts, railContext } = useWorkShell();
-  const { vitals, sources, followups } = railContext;
+  const { sources, followups } = railContext;
   const [memory, setMemory] = useState<string | null>(null);
 
   // A relevant pinned memory, if any — real data from the work memory store.
@@ -54,7 +52,6 @@ export default function WorkContextRail() {
   }, []);
 
   const isEmpty =
-    vitals.length === 0 &&
     railArtifacts.length === 0 &&
     sources.length === 0 &&
     followups.length === 0 &&
@@ -66,21 +63,21 @@ export default function WorkContextRail() {
         <section className="wcr-sect wcr-empty">
           <h4 className="wcr-h">Context</h4>
           <p className="wcr-empty-text">
-            Vitals, sources, and follow-ups surface here when the agent
-            highlights them for an answer.
+            Sources touched, artifacts, and follow-ups surface here once the
+            agent works through an answer.
           </p>
         </section>
       )}
 
-      {vitals.length > 0 && (
+      {sources.length > 0 && (
         <section className="wcr-sect">
-          <h4 className="wcr-h">Answer vitals</h4>
-          <div className="wcr-vitals">
-            {vitals.map((v, i) => (
-              <div key={i} className="wcr-vital">
-                <div className="wcr-vital-k">{v.label}</div>
-                <div className="wcr-vital-v">{v.value}</div>
-                {v.sub && <div className="wcr-vital-s">{v.sub}</div>}
+          <h4 className="wcr-h">Sources touched</h4>
+          <div className="grid gap-px">
+            {sources.map((s, i) => (
+              <div key={i} className="wcr-source">
+                <span className="wcr-source-dot" aria-hidden="true" />
+                <span className="truncate">{s.name}</span>
+                {s.detail && <span className="ml-auto font-mono text-[10.5px] text-text3">{s.detail}</span>}
               </div>
             ))}
           </div>
@@ -109,21 +106,6 @@ export default function WorkContextRail() {
                 </a>
               );
             })}
-          </div>
-        </section>
-      )}
-
-      {sources.length > 0 && (
-        <section className="wcr-sect">
-          <h4 className="wcr-h">Sources touched</h4>
-          <div className="grid gap-px">
-            {sources.map((s, i) => (
-              <div key={i} className="wcr-source">
-                <span className="wcr-source-dot" aria-hidden="true" />
-                <span className="truncate">{s.name}</span>
-                {s.detail && <span className="ml-auto font-mono text-[10.5px] text-text3">{s.detail}</span>}
-              </div>
-            ))}
           </div>
         </section>
       )}

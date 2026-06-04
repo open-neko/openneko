@@ -111,7 +111,6 @@ import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
 import {
   useWorkShell,
   type RailArtifact,
-  type RailVital,
   type RailSource,
 } from "../work-shell-context";
 
@@ -168,12 +167,7 @@ type WorkEvent =
       error?: string;
       rejection_reason?: string;
     }
-  | {
-      type: "ask_context";
-      vitals?: { label: string; value: string; sub?: string }[];
-      sources?: { name: string; detail?: string }[];
-      followups?: string[];
-    }
+  | { type: "followups"; items: string[] }
   | { type: "done"; result?: unknown };
 
 type ThreadBundle = {
@@ -408,36 +402,61 @@ export default function WorkScreen() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [bundle, sending, activeRunId]);
 
-  // Lift this thread's generated artifacts into the shell context so the
-  // Compact context rail can list them.
+  // Derive this thread's rail context from the run's own telemetry — never
+  // from model-authored UI hints. Sources touched are parsed from the data
+  // tools the agent actually called (a fact about the run); artifacts come
+  // from artifact events; follow-ups are LLM-generated channel-agnostic
+  // content lifted from `followups` events. Vitals are a Dashboard concept
+  // and intentionally absent here.
   useEffect(() => {
     if (!bundle) {
       setRailArtifacts([]);
+      setRailContext({ sources: [], followups: [] });
       return;
     }
     const arts: RailArtifact[] = [];
-    const seen = new Set<string>();
-    let latestCtx: { vitals?: RailVital[]; sources?: RailSource[]; followups?: string[] } | null = null;
+    const seenArt = new Set<string>();
+    const sourceMap = new Map<string, RailSource>();
+    let followups: string[] = [];
+    const addSource = (raw: string) => {
+      const name = raw.trim().toLowerCase();
+      if (name.length < 2 || sourceMap.has(name)) return;
+      sourceMap.set(name, { name });
+    };
     for (const events of Object.values(bundle.eventsByRun)) {
       for (const ev of events) {
-        if (ev.type === "artifact" && ev.artifact && !seen.has(ev.artifact.path)) {
-          seen.add(ev.artifact.path);
+        if (ev.type === "artifact" && ev.artifact && !seenArt.has(ev.artifact.path)) {
+          seenArt.add(ev.artifact.path);
           arts.push({
             path: ev.artifact.path,
             label: ev.artifact.label,
             mimeType: ev.artifact.mimeType,
           });
-        } else if (ev.type === "ask_context") {
-          // Last context in the thread wins (the most recent answer's rail).
-          latestCtx = ev;
+        } else if (ev.type === "tool_start") {
+          const title =
+            typeof (ev.input as { title?: unknown })?.title === "string"
+              ? (ev.input as { title: string }).title
+              : "";
+          if (title) {
+            // graphjin table args: {"table":"x"} / {"from_table":"x"} / {"to_table":"x"}
+            for (const m of title.matchAll(
+              /"(?:from_table|to_table|table)"\s*:\s*"([a-z0-9_]+)"/gi,
+            )) {
+              addSource(m[1]);
+            }
+            // execute_graphql root field: {"query":"{ <table>( …
+            const q = title.match(/"query"\s*:\s*"\{\s*([a-z_][a-z0-9_]*)/i);
+            if (q) addSource(q[1]);
+          }
+        } else if (ev.type === "followups" && Array.isArray(ev.items)) {
+          followups = ev.items;
         }
       }
     }
     setRailArtifacts(arts);
     setRailContext({
-      vitals: latestCtx?.vitals ?? [],
-      sources: latestCtx?.sources ?? [],
-      followups: latestCtx?.followups ?? [],
+      sources: [...sourceMap.values()].slice(0, 6),
+      followups,
     });
   }, [bundle, setRailArtifacts, setRailContext]);
 
