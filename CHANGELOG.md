@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/open-neko/openneko/compare/v1.18.0...v1.18.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **ci:** resilient embedding prewarm (retry + tolerate build-time network flakiness) ([#84](https://github.com/open-neko/openneko/issues/84)) ([0c0dcce](https://github.com/open-neko/openneko/commit/0c0dcceef26f9f9538675aa9296c9027dff2f288))
+
 ## [1.18.0](https://github.com/open-neko/openneko/compare/v1.17.3...v1.18.0) (2026-06-04)
 
 
