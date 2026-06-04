@@ -34,6 +34,36 @@ const MOOD_CHART_ACCENT: Record<string, string> = {
   bad: "#E05656",
 };
 
+// Compact tiles carry a mini sparkline (the mockup look); the full chart only
+// appears on expand. Plots the chart series' `v` values, mood-coloured.
+function MiniSpark({ data, color }: { data: ChartDataPoint[]; color: string }) {
+  const pts = data.map((d) => d.v).filter((n): n is number => typeof n === "number");
+  if (pts.length < 2) return null;
+  const w = 120;
+  const h = 30;
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const span = max - min || 1;
+  const step = w / (pts.length - 1);
+  const xy = pts.map((p, i) => [i * step, h - ((p - min) / span) * (h - 6) - 3] as const);
+  const line = xy.map((c, i) => `${i ? "L" : "M"}${c[0].toFixed(1)} ${c[1].toFixed(1)}`).join(" ");
+  const [ex, ey] = xy[xy.length - 1];
+  const gid = `ms${Math.round(min * 31 + max * 7 + pts.length)}`;
+  return (
+    <svg className="minispark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.18" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L ${w} ${h} L 0 ${h} Z`} fill={`url(#${gid})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={ex.toFixed(1)} cy={ey.toFixed(1)} r="2.4" fill={color} />
+    </svg>
+  );
+}
+
 export type BriefingCardState = "ok" | "pending" | "failed";
 
 export interface BriefingCardData {
@@ -110,6 +140,12 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
               mood={moodKey}
             />
           ) : null}
+          {density === "compact" && state === "ok" && ins.chartData?.length > 1 && (
+            <MiniSpark
+              data={ins.chartData}
+              color={MOOD_CHART_ACCENT[moodKey] ?? "var(--color-accent)"}
+            />
+          )}
         </div>
       </div>
       <div className="iactions">
