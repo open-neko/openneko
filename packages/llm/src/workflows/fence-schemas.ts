@@ -156,3 +156,21 @@ export const FOLLOWUPS_SCHEMA = z.object({
 });
 
 export type FollowupsPayload = z.infer<typeof FOLLOWUPS_SCHEMA>;
+
+// The few headline numbers that carry an answer — channel-agnostic CONTENT,
+// not UI. The model emits a `neko_vitals` fence at the end of a /work run; each
+// channel renders the figures its own way (the web rail as a tile grid, a chat
+// channel as a one-line recap, a voice channel by reading them aloud).
+export const VITALS_SCHEMA = z.object({
+  vitals: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(28),
+        value: z.string().trim().min(1).max(18),
+        sub: z.string().trim().max(36).optional(),
+      }),
+    )
+    .max(4),
+});
+
+export type VitalsPayload = z.infer<typeof VITALS_SCHEMA>;

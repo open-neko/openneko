@@ -800,6 +800,61 @@ export const delivery_binding = pgTable(
   }),
 );
 
+// Persisted poll offset per (org, channel). Inbound polling keeps an in-memory
+// cursor while running; persisting it means a restart resumes from the last
+// acknowledged offset instead of re-polling the provider from scratch.
+export const channel_poll_cursor = pgTable(
+  "channel_poll_cursor",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    cursor: text("cursor").notNull(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_plugin_unique: uniqueIndex("channel_poll_cursor_org_plugin_unique").on(
+      t.org_id,
+      t.channel_plugin,
+    ),
+  }),
+);
+
+// Per-update ledger for inbound dispatch. A poll restart (or webhook retry) can
+// re-deliver an update; claiming a stable per-update key here makes dispatch
+// exactly-once. `status` tracks the lifecycle: 'pending' (claimed, retrying),
+// 'done' (dispatched — the dedup marker), 'dead' (gave up after MAX attempts —
+// payload + last_error retained for inspection). 'done' rows are TTL-pruned;
+// 'dead' rows persist as a queryable dead-letter queue.
+export const inbound_dedup = pgTable(
+  "inbound_dedup",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    update_key: text("update_key").notNull(),
+    status: text("status").notNull().default("done"),
+    attempts: integer("attempts").notNull().default(0),
+    last_error: text("last_error"),
+    payload: jsonb("payload"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_plugin_key_unique: uniqueIndex("inbound_dedup_org_plugin_key_unique").on(
+      t.org_id,
+      t.channel_plugin,
+      t.update_key,
+    ),
+    created_idx: index("inbound_dedup_created_idx").on(t.created_at),
+    status_idx: index("inbound_dedup_status_idx").on(t.status),
+  }),
+);
+
 export const subscription = pgTable(
   "subscription",
   {

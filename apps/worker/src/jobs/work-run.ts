@@ -72,6 +72,6 @@ export async function runWorkRun(
   // Channel-initiated runs have no other return path — send the reply back to
   // the sender. Web runs (no channelPlugin) stream over SSE instead.
   if (channelPlugin && recipient && result.status === "completed") {
-    await deliverChatReply(channelPlugin, recipient, runId, result.finalText);
+    await deliverChatReply(orgId, channelPlugin, recipient, runId, result.finalText);
   }
 }

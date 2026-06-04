@@ -3,12 +3,14 @@ import {
   FOLLOWUPS_SCHEMA,
   POLICY_SAVE_SCHEMA,
   VALUE_ESTIMATE_SCHEMA,
+  VITALS_SCHEMA,
   WORKFLOW_OUTPUT_SCHEMA,
   WORKFLOW_SAVE_SCHEMA,
   type ActionRequestPayload,
   type FollowupsPayload,
   type PolicySavePayload,
   type ValueEstimatePayload,
+  type VitalsPayload,
   type WorkflowOutputPayload,
   type WorkflowSavePayload,
 } from "./fence-schemas";
@@ -19,6 +21,7 @@ const ACTION_FENCE_RE = /```neko_action_request\s*([\s\S]*?)```/gi;
 const RULE_FENCE_RE = /```neko_rule_save\s*([\s\S]*?)```/gi;
 const VALUE_FENCE_RE = /```neko_value\s*([\s\S]*?)```/gi;
 const FOLLOWUPS_FENCE_RE = /```neko_followups\s*([\s\S]*?)```/gi;
+const VITALS_FENCE_RE = /```neko_vitals\s*([\s\S]*?)```/gi;
 
 export type FenceParseError = {
   raw: string;
@@ -58,6 +61,12 @@ export type ValueFenceResult = {
 export type FollowupsFenceResult = {
   text: string;
   payload: FollowupsPayload | null;
+  errors: FenceParseError[];
+};
+
+export type VitalsFenceResult = {
+  text: string;
+  payload: VitalsPayload | null;
   errors: FenceParseError[];
 };
 
@@ -238,6 +247,34 @@ export function extractFollowupsFence(raw: string): FollowupsFenceResult {
 
   return {
     text: stripAllFences(raw, FOLLOWUPS_FENCE_RE),
+    payload,
+    errors,
+  };
+}
+
+// Headline numbers that carry the answer (channel-agnostic content). Last valid
+// fence wins.
+export function extractVitalsFence(raw: string): VitalsFenceResult {
+  const matches = [...raw.matchAll(VITALS_FENCE_RE)];
+  const errors: FenceParseError[] = [];
+  let payload: VitalsPayload | null = null;
+
+  for (const m of matches) {
+    const parsed = tryParse(m[1]);
+    if (!parsed.ok) {
+      errors.push({ raw: m[0], reason: parsed.reason });
+      continue;
+    }
+    const validated = VITALS_SCHEMA.safeParse(parsed.value);
+    if (!validated.success) {
+      errors.push({ raw: m[0], reason: validated.error.message });
+      continue;
+    }
+    payload = validated.data;
+  }
+
+  return {
+    text: stripAllFences(raw, VITALS_FENCE_RE),
     payload,
     errors,
   };

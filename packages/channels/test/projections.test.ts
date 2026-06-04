@@ -34,6 +34,15 @@ const ask: InteractionEvent = {
   risk: "medium",
 };
 
+const highlight: InteractionEvent = {
+  kind: "highlight",
+  id: "h1",
+  metrics: [
+    { label: "Top-10 share", value: "48%", sub: "down from 53%" },
+    { label: "YoY revenue", value: "+14%" },
+  ],
+};
+
 const blockTypes = (blocks: SlackBlock[]): string[] => blocks.map((b) => String(b.type));
 
 describe("one inform, every substrate (degradation by profile)", () => {
@@ -70,6 +79,37 @@ describe("one inform, every substrate (degradation by profile)", () => {
     expect(ssml).toContain("Q3 revenue landed");
     expect(ssml).toContain("Revenue MTD is $4.7M");
     expect(ssml).not.toContain("Tue");
+  });
+});
+
+describe("one highlight, every substrate renders the figures its own way", () => {
+  it("web renders the figures as a markdown component", () => {
+    const { surfaces } = webProjection([highlight], WEB_PROFILE);
+    const update = surfaces[1] as { updateComponents: { components: Array<Record<string, unknown>> } };
+    const comp = update.updateComponents.components[0]!;
+    expect(comp.component).toBe("Markdown");
+    expect(String(comp.text)).toContain("**48%** Top-10 share — down from 53%");
+    expect(String(comp.text)).toContain("**+14%** YoY revenue");
+  });
+
+  it("slack renders the figures as section fields", () => {
+    const { blocks } = slackProjection([highlight], SLACK_PROFILE);
+    const json = JSON.stringify(blocks);
+    expect(json).toContain("Key figures");
+    expect(json).toContain("Top-10 share");
+    expect(json).toContain("down from 53%");
+  });
+
+  it("whatsapp renders the figures as plain lines", () => {
+    const { body } = whatsappProjection([highlight], WHATSAPP_PROFILE);
+    expect(body).toContain("Top-10 share: 48% (down from 53%)");
+    expect(body).toContain("YoY revenue: +14%");
+  });
+
+  it("voice reads the figures aloud, no sub when absent", () => {
+    const { ssml } = voiceProjection([highlight], VOICE_PROFILE);
+    expect(ssml).toContain("Top-10 share is 48%, down from 53%.");
+    expect(ssml).toContain("YoY revenue is +14%.");
   });
 });
 

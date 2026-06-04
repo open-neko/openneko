@@ -299,7 +299,7 @@ ${GRAPHJIN_DATE_RULE}
 // Closing contract shared by both backends: two JSON blocks the runtime parses
 // from the final output (hours-saved value + suggested follow-ups).
 const CLOSING_SECTION = `<closing>
-Always end your turn with these two JSON blocks, in this order.
+Always end your turn with these three JSON blocks, in this order.
 
 1. The time a data analyst or BI specialist would need to produce this answer
    from scratch — finding the right data, writing and validating the queries,
@@ -317,7 +317,20 @@ Always end your turn with these two JSON blocks, in this order.
    An action you propose (an email, a purchase order) carries its own
    \`minutes_saved\`.
 
-2. The three questions the operator is most likely to ask next, each specific
+2. The two to four numbers that carry this answer — the figures the operator
+   would repeat to their team. Give each a short label, the value with its
+   unit, and a one-line comparison or context where it sharpens the figure.
+   When the answer turns on no specific numbers, send an empty list:
+
+\`\`\`neko_vitals
+{ "vitals": [
+  { "label": "Top-10 share", "value": "48%", "sub": "down from 53%" },
+  { "label": "#1 account", "value": "$1.2M", "sub": "Acme · 9.4%" },
+  { "label": "YoY revenue", "value": "+14%", "sub": "$12.8M YTD" }
+] }
+\`\`\`
+
+3. The three questions the operator is most likely to ask next, each specific
    to the answer you just gave:
 
 \`\`\`neko_followups

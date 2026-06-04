@@ -22,6 +22,7 @@ export const QUEUE = {
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
   ACTION_EXECUTE: "action_execute",
+  CHANNEL_DELIVER: "channel_deliver",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -49,6 +50,19 @@ export type WorkRunPayload = ProcessingJobPayload & {
    *  reply back to. Absent for web runs (the UI streams over SSE). */
   channelPlugin?: string;
   recipient?: Record<string, unknown>;
+};
+
+/**
+ * A durable, retryable outbound channel delivery. Enqueued (not delivered
+ * inline) so a transient network failure or a worker restart can't drop the
+ * message — pg-boss retries with backoff and the job survives restarts.
+ */
+export type ChannelDeliverPayload = {
+  orgId: string;
+  channelPlugin: string;
+  recipient: Record<string, unknown>;
+  /** InteractionEvent[] to deliver (serialized JSON). */
+  events: unknown[];
 };
 
 export type WorkflowRunFirePayload = {

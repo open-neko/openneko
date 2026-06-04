@@ -7,6 +7,7 @@ import {
   enqueue,
   QUEUE,
   type ActionExecutePayload,
+  type ChannelDeliverPayload,
   type ProcessingJobPayload,
   type WorkflowRunFirePayload,
   type WorkRunPayload,
@@ -48,6 +49,7 @@ import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
 import {
   ingestInboundWebhook,
   registerChannelOutputDelivery,
+  runChannelDelivery,
 } from "./channels/delivery.js";
 import { startChannelInbound } from "./channels/inbound-poll.js";
 import type PgBossLib from "pg-boss";
@@ -475,6 +477,23 @@ await b.work(
       } catch (e) {
         console.warn(
           `[action-execute] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
+        );
+        throw e;
+      }
+    }
+  },
+);
+
+await b.work(
+  QUEUE.CHANNEL_DELIVER,
+  { batchSize: 1, pollingIntervalSeconds: 0.5 },
+  async (jobs: PgBossLib.Job<ChannelDeliverPayload>[]) => {
+    for (const job of jobs) {
+      try {
+        await runChannelDelivery(job.data);
+      } catch (e) {
+        console.warn(
+          `[channel-deliver] job ${job.id} failed; pg-boss may retry: ${e instanceof Error ? e.message : e}`,
         );
         throw e;
       }

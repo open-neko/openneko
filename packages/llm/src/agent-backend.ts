@@ -95,7 +95,12 @@ export type AgentEvent =
   // Suggested follow-up questions — channel-agnostic content emitted once at
   // the end of a /work run via a `neko_followups` fence. Any channel (the Ask
   // rail, Telegram, Slack) can surface these as "ask next" prompts.
-  | { type: "followups"; items: string[] };
+  | { type: "followups"; items: string[] }
+  // The headline numbers that carry the answer — channel-agnostic content
+  // emitted once at the end of a /work run via a `neko_vitals` fence. Each
+  // channel renders them its own way (the web rail as a tile grid, a chat
+  // channel as a one-line recap, a voice channel by reading them aloud).
+  | { type: "vitals"; items: { label: string; value: string; sub?: string }[] };
 
 export type AgentChatMessage = {
   id?: string;

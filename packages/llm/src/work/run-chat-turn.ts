@@ -7,6 +7,7 @@ import {
   extractFollowupsFence,
   extractRuleSaveFence,
   extractValueFence,
+  extractVitalsFence,
   extractWorkflowSaveFence,
 } from "../workflows/fence-parsers";
 import { clampAnalysisMinutes } from "../workflows/value";
@@ -423,6 +424,16 @@ export async function runChatTurn(
       });
     }
 
+    // The answer's headline numbers — channel-agnostic content, emitted as an
+    // event each channel renders its own way (the web rail as a tile grid).
+    const vitals = extractVitalsFence(fenceSource);
+    if (vitals.payload && vitals.payload.vitals.length > 0) {
+      await wrappedEmit({
+        type: "vitals",
+        items: vitals.payload.vitals,
+      });
+    }
+
     // Pull any neko_memory fences out of the raw agent response and persist
     // them. Backend-agnostic: works for Hermes (no MCP tool registry) and is
     // harmless for claude-agent (which would have used the MCP save tool).
@@ -455,6 +466,7 @@ export async function runChatTurn(
     persistedText = extractRuleSaveFence(persistedText).text;
     persistedText = extractValueFence(persistedText).text;
     persistedText = extractFollowupsFence(persistedText).text;
+    persistedText = extractVitalsFence(persistedText).text;
     persistedText = extractMemoryFences(persistedText).text;
     if (persistedText) {
       await saveAssistantWorkMessage({

@@ -124,4 +124,28 @@ describe("toInteractionEvents", () => {
       { kind: "inform", id: "ie-1", mood: "act", title: "Something went wrong", body: "boom" },
     ]);
   });
+
+  it("maps vitals to a modality-free highlight, dropping a sub when absent", () => {
+    const vitals: AgentEvent = {
+      type: "vitals",
+      items: [
+        { label: "Top-10 share", value: "48%", sub: "down from 53%" },
+        { label: "YoY revenue", value: "+14%" },
+      ],
+    };
+    expect(toInteractionEvents([vitals])).toEqual([
+      {
+        kind: "highlight",
+        id: "ie-1",
+        metrics: [
+          { label: "Top-10 share", value: "48%", sub: "down from 53%" },
+          { label: "YoY revenue", value: "+14%" },
+        ],
+      },
+    ]);
+  });
+
+  it("drops an empty vitals event entirely", () => {
+    expect(toInteractionEvents([{ type: "vitals", items: [] }])).toEqual([]);
+  });
 });

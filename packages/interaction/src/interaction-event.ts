@@ -11,6 +11,8 @@ export type SeriesKind = "kpi" | "line" | "bar" | "area" | "donut";
 export interface Metric {
   label: string;
   value: string;
+  /** Optional one-line comparison or context, e.g. "down from 53%". */
+  sub?: string;
 }
 
 export interface SeriesPoint {
@@ -80,6 +82,10 @@ export type InteractionEvent =
       risk?: RiskLevel;
     }
   | { kind: "resolve"; id: string; ref: string; status: ResolveStatus; summary: string }
-  | { kind: "offer"; id: string; label: string; artifactRef: string; mime: string };
+  | { kind: "offer"; id: string; label: string; artifactRef: string; mime: string }
+  // The headline figures that carry an answer — modality-free content. Each
+  // channel renders them its own way: the web as metric tiles, an eyes-free
+  // channel by reading them aloud, a thin channel as plain lines.
+  | { kind: "highlight"; id: string; metrics: Metric[] };
 
 export type InteractionEventKind = InteractionEvent["kind"];
