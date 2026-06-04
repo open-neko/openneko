@@ -14,13 +14,13 @@ export type AppHeaderProps = {
   children?: React.ReactNode;
 };
 
+// Single top bar matching the dense mockups: brand + version pill (left),
+// section nav, then the density toggle (right). The "update available" state
+// folds into the version pill so the bar stays mockup-faithful.
 export default function AppHeader({ back, children }: AppHeaderProps) {
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [user, setUser] = useState<{ email: string } | null>(null);
 
-  // Quiet poll for the server's current version. When it diverges from the
-  // version baked into this client bundle at build time, a new deploy has
-  // landed — the brand chip turns into a reload button.
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
@@ -42,10 +42,6 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
     };
   }, []);
 
-  // Sign-out affordance is only meaningful when the user has a session
-  // (i.e. an SSO plugin is installed AND they've signed in). When no
-  // plugin is installed the proxy lets every request through and the
-  // session is always null, so nothing renders.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -78,63 +74,56 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
 
   return (
     <header className="app-header">
-      <div className="w-full max-w-[1000px] px-5 flex items-start justify-between gap-4 min-h-[41px]">
-        <div className="flex items-center gap-2.5 flex-1 min-w-0 flex-wrap">
-          {back && (
-            <Link className="settings-backlink" href={back.href}>
-              <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
-              <span>{back.label}</span>
-            </Link>
-          )}
-          {children}
-        </div>
-
-        <div className="inline-flex items-center gap-2.5 self-start">
-          <DensityToggle />
-          <a
-            href={MARKETING_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="hidden sm:inline-flex items-center gap-2 select-none text-text no-underline transition-opacity duration-200 hover:opacity-80 self-start h-[41px]"
-            aria-label="OpenNeko — open marketing site in a new tab"
-          >
-            <img className="w-6 h-6 object-contain block flex-none" src="/cat.png" alt="" width={24} height={24} />
-            <span className="font-display text-[17px] font-extrabold tracking-[-0.04em] leading-none">
-              OpenNeko
-            </span>
-            <span aria-hidden="true" className="text-text3 text-sm leading-none mx-0.5">·</span>
-            <span aria-hidden="true" className="font-mono text-[10.5px] font-semibold text-text3 tracking-wider lowercase bg-neutral px-1.5 py-0.5 rounded-full leading-none">
-              v{APP_VERSION}
-            </span>
-          </a>
-
-          {updateAvailable && (
+      <div className="topbar-inner">
+        <a
+          className="topbar-brand"
+          href={MARKETING_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="OpenNeko — open marketing site in a new tab"
+        >
+          <img className="topbar-logo" src="/cat.png" alt="" width={22} height={22} />
+          <span className="topbar-name">OpenNeko</span>
+          {updateAvailable ? (
             <button
               type="button"
-              className="brand-update"
+              className="topbar-ver is-update"
               onClick={() => window.location.reload()}
               aria-label={`Update available: v${latestVersion}. Reload to apply.`}
               title={`v${latestVersion} available — reload`}
             >
-              <span className="brand-update-dot" aria-hidden="true" />
-              <span className="brand-update-label">v{latestVersion} ready · reload</span>
+              <span className="topbar-ver-dot" aria-hidden="true" />
+              v{latestVersion} · reload
             </button>
+          ) : (
+            <span className="topbar-ver">{APP_VERSION}</span>
           )}
+        </a>
 
-          {user && (
-            <button
-              type="button"
-              onClick={handleSignOut}
-              aria-label={`Sign out ${user.email}`}
-              title={user.email}
-              className="inline-flex items-center gap-1.5 self-start h-[41px] bg-transparent border-0 p-0 cursor-pointer text-text2 hover:text-text text-[12px] font-medium leading-none"
-            >
-              <span className="hidden sm:inline truncate max-w-[160px]">{user.email}</span>
-              <span aria-hidden="true" className="text-text3 hidden sm:inline">·</span>
-              <span>Sign out</span>
-            </button>
-          )}
-        </div>
+        {back && (
+          <Link className="settings-backlink" href={back.href}>
+            <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
+            <span>{back.label}</span>
+          </Link>
+        )}
+
+        {children}
+
+        <span className="topbar-spacer" />
+
+        <DensityToggle />
+
+        {user && (
+          <button
+            type="button"
+            onClick={handleSignOut}
+            aria-label={`Sign out ${user.email}`}
+            title={user.email}
+            className="topbar-signout"
+          >
+            Sign out
+          </button>
+        )}
       </div>
     </header>
   );
