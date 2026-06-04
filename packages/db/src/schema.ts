@@ -408,6 +408,9 @@ export const work_thread = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
+    // Origin channel ("web", "telegram", …). The web Ask UI lists only its own
+    // ("web") threads so channels stay isolated. See docs/PER_CHANNEL_RENDERING.md.
+    channel: text("channel").notNull().default("web"),
     backend_state: jsonb("backend_state").notNull().default(sql`'{}'::jsonb`),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),

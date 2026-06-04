@@ -171,6 +171,7 @@ async function startChatRun(
   const thread = await createWorkThread(
     orgId,
     threadRef ? `Telegram ${threadRef}` : "Telegram",
+    channel,
   );
   const backend = await resolveAgentBackend(orgId);
   const run = await createWorkRun(orgId, thread.id, backend.id);
