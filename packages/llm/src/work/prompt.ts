@@ -336,12 +336,11 @@ When you also propose an action, add \`minutes_saved\` (integer) and a short
 \`basis\` to that action too, estimated the same conservative way.
 </value>`;
 
-// Right-rail context for the Ask page. Required whenever the answer touched
-// data or contains numbers — the runtime parses it and renders the rail.
+// Right-rail context for the Ask page. Optional but encouraged when the answer
+// has structured substance — the runtime parses it and renders the rail.
 const ASK_CONTEXT_SECTION = `<rail_context>
-Whenever your answer touched data or states any number, you MUST emit one
-fenced block at the very end so the side rail can surface its context. Only
-omit it for a pure clarifying question or an error that produced no findings.
+When your answer carries structured substance, also emit one fenced block so
+the side rail can surface it. All fields optional; include what fits.
 
 \`\`\`neko_ask_context
 {
@@ -352,13 +351,12 @@ omit it for a pure clarifying question or an error that produced no findings.
 \`\`\`
 
 - \`vitals\`: up to 4 headline numbers from your answer (label + value, optional
-  sub like a delta). Include at least one whenever your answer states a number
-  — these are the figures worth pinning beside the chat.
-- \`sources\`: every data source/table you actually queried this turn, with an
-  optional size/detail. List what you touched — never invent one.
+  sub like a delta). These are the figures worth pinning beside the chat.
+- \`sources\`: the data sources/tables you actually queried, with an optional
+  size/detail. Only list what you touched.
 - \`followups\`: up to 3 natural next questions the operator might ask.
 
-Emit exactly once, at the very end, after the \`neko_value\` block.
+Emit at most once, at the end. Omit the fence entirely for trivial answers.
 </rail_context>`;
 
 export interface PluginActionPromptDescriptor {
