@@ -9,13 +9,8 @@ import { useWorkShell } from "../work-shell-context";
 // Comfortable). Surfaces the answer's vitals, generated artifacts, the data
 // sources touched, follow-up prompts, and a relevant memory. The dynamic
 // panels (vitals / sources / followups) are agent-emitted via the
-// `neko_ask_context` fence and lifted through the shell context.
-
-const FALLBACK_NEXT = [
-  "Break this down further",
-  "Compare to the prior period",
-  "What changed and why?",
-];
+// `neko_ask_context` fence and lifted through the shell context; each panel
+// only renders when its data is present.
 
 function ext(name: string): string {
   const i = name.lastIndexOf(".");
@@ -57,8 +52,6 @@ export default function WorkContextRail() {
       cancelled = true;
     };
   }, []);
-
-  const nextQuestions = followups.length > 0 ? followups : FALLBACK_NEXT;
 
   return (
     <aside className="work-rail">
@@ -118,17 +111,19 @@ export default function WorkContextRail() {
         </section>
       )}
 
-      <section className="wcr-sect">
-        <h4 className="wcr-h">Ask next</h4>
-        <div className="grid gap-1.5">
-          {nextQuestions.map((q) => (
-            <Link key={q} href={`/work?seed=${encodeURIComponent(q)}`} className="wcr-chip">
-              <span className="min-w-0 truncate">{q}</span>
-              <ArrowRight size={13} strokeWidth={2} className="ml-auto flex-none opacity-60" />
-            </Link>
-          ))}
-        </div>
-      </section>
+      {followups.length > 0 && (
+        <section className="wcr-sect">
+          <h4 className="wcr-h">Ask next</h4>
+          <div className="grid gap-1.5">
+            {followups.map((q) => (
+              <Link key={q} href={`/work?seed=${encodeURIComponent(q)}`} className="wcr-chip">
+                <span className="min-w-0 truncate">{q}</span>
+                <ArrowRight size={13} strokeWidth={2} className="ml-auto flex-none opacity-60" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {memory && (
         <section className="wcr-sect">
