@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2](https://github.com/open-neko/openneko/compare/v1.18.1...v1.18.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* **operability:** make failures legible to a non-technical operator ([#86](https://github.com/open-neko/openneko/issues/86)) ([e30a0de](https://github.com/open-neko/openneko/commit/e30a0de84635af3018d8b7a99529d36999fea639))
+
 ## [1.18.1](https://github.com/open-neko/openneko/compare/v1.18.0...v1.18.1) (2026-06-04)
 
 
