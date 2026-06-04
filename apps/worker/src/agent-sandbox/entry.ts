@@ -33,6 +33,7 @@ interface SandboxJob {
   model?: string;
   backendState?: Record<string, unknown>;
   pluginActions?: RunAgentBackendInput["pluginActions"];
+  wantsCards?: boolean;
   workspace: AgentWorkspace;
 }
 
@@ -89,6 +90,7 @@ export async function main(): Promise<void> {
     workspace: job.workspace,
     backendState: job.backendState,
     pluginActions: job.pluginActions ?? [],
+    wantsCards: job.wantsCards ?? true,
     controlPlane,
     emit,
   });
