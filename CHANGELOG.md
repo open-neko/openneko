@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.19.1](https://github.com/open-neko/openneko/compare/v1.19.0...v1.19.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* header compile-drop, responsive/UX/styling consistency, and workflow-run reliability ([ed386b9](https://github.com/open-neko/openneko/commit/ed386b949330c0accaa08ef642eb8cfec550d114))
+* **web:** finish styling-consistency pass (eyebrows, colors, pills, card borders) ([f55e041](https://github.com/open-neko/openneko/commit/f55e041540ba2f7536e14d7d40e622a4f830abee))
+* **web:** hoist [@import](https://github.com/import) block so trailing globals.css rules aren't dropped ([ed89e67](https://github.com/open-neko/openneko/commit/ed89e677353b806aa5ce096cda1fa796c2b02757))
+* **web:** resolve cross-page responsive, UX, and styling-consistency issues ([32ec49f](https://github.com/open-neko/openneko/commit/32ec49f11478204260133b462c09b34d76225bcb))
+* **workflows:** mark restart-interrupted runs cancelled, retry, sweep zombies ([97eeef4](https://github.com/open-neko/openneko/commit/97eeef44b5400aef858d24778e6390bc40236e30))
+
 ## [1.19.0](https://github.com/open-neko/openneko/compare/v1.18.2...v1.19.0) (2026-06-04)
 
 
