@@ -27,7 +27,7 @@ jobs:
     # Runs on BOTH success and failure of the release build: on failure we must
     # still demote the half-published release.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -60,10 +60,10 @@ jobs:
           echo "::error::release build did not succeed for ${{ steps.ctx.outputs.tag }} — its artifacts are incomplete"
           exit 1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache-dependency-path: apps/openneko/go.sum
 
       - name: Build openneko binary
