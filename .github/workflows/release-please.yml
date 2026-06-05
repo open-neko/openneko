@@ -28,6 +28,7 @@ jobs:
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PRS_JSON: ${{ steps.release.outputs.prs }}
         run: |
-          PR_NUMBER=$(echo '${{ steps.release.outputs.prs }}' | jq -r '.[0].number')
+          PR_NUMBER=$(echo "$PRS_JSON" | jq -r '.[0].number')
           gh pr merge --auto --squash "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
