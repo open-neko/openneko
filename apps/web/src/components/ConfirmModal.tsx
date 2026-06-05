@@ -90,13 +90,13 @@ function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] bg-[rgba(20,18,12,0.45)] backdrop-blur-[4px] flex items-center justify-center p-4 animate-[modal-fade_0.15s_ease-out]"
+      className="fixed inset-0 z-[1000] bg-[var(--backdrop)] backdrop-blur-[4px] flex items-center justify-center p-4 animate-[modal-fade_0.15s_ease-out]"
       onClick={onBackdrop}
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
     >
-      <div className="w-full max-w-[420px] bg-card border border-border rounded-[18px] px-[22px] pt-[22px] pb-[18px] shadow-[0_8px_32px_rgba(20,18,12,0.18),0_24px_60px_rgba(20,18,12,0.10)] animate-[modal-rise_0.18s_cubic-bezier(0.16,1,0.3,1)]">
+      <div className="w-full max-w-[420px] bg-card border border-border rounded-card px-[22px] pt-[22px] pb-[18px] shadow-[0_8px_32px_rgba(20,18,12,0.18),0_24px_60px_rgba(20,18,12,0.10)] animate-[modal-rise_0.18s_cubic-bezier(0.16,1,0.3,1)]">
         <h2
           id="confirm-modal-title"
           className="font-display text-base font-bold leading-tight text-text m-0"
@@ -113,7 +113,7 @@ function ConfirmDialog({
             ref={cancelRef}
             type="button"
             onClick={() => onChoice(false)}
-            className="text-[13px] font-medium px-3.5 py-2 rounded-[10px] border border-border bg-card text-text cursor-pointer transition-all duration-150 hover:bg-black/5 hover:border-text3 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            className="text-[13px] font-medium px-3.5 py-2 rounded-control border border-border bg-card text-text cursor-pointer transition-all duration-150 hover:bg-black/5 hover:border-text3 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
           >
             {options.cancelLabel ?? "Cancel"}
           </button>
@@ -121,11 +121,11 @@ function ConfirmDialog({
             type="button"
             onClick={() => onChoice(true)}
             className={cn(
-              "text-[13px] font-medium px-3.5 py-2 rounded-[10px] border cursor-pointer transition-all duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+              "text-[13px] font-medium px-3.5 py-2 rounded-control border cursor-pointer transition-all duration-150 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
               !options.destructive &&
                 "bg-text border-text text-bg hover:bg-[#1a1814] hover:border-[#1a1814]",
               options.destructive &&
-                "bg-[#c0392b] border-[#c0392b] text-white hover:bg-[#a83224] hover:border-[#a83224]",
+                "bg-danger border-danger text-white hover:bg-[var(--danger-hover)] hover:border-[var(--danger-hover)]",
             )}
           >
             {options.confirmLabel ?? "Confirm"}

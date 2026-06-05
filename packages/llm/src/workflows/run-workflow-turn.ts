@@ -92,9 +92,12 @@ export async function prepareWorkflowRun(
     throw new Error(`Workflow ${workflow.name} is disabled.`);
   }
   const backend = await resolveAgentBackend(opts.orgId);
+  // Trigger threads live on the "workflow" channel, never "web", so they can't
+  // surface in the human Ask sidebar — even as an orphan whose work_run never
+  // persisted (the sidebar lists only "web" threads).
   const threadId =
     opts.threadId ??
-    (await createWorkThread(opts.orgId, workflow.name)).id;
+    (await createWorkThread(opts.orgId, workflow.name, "workflow")).id;
   const created = await createWorkRun(opts.orgId, threadId, backend.id);
   const workflowRun = await createWorkflowRun({
     orgId: opts.orgId,
