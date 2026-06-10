@@ -214,7 +214,7 @@ func runMigrations(ctx context.Context, cmd *cobra.Command) error {
 func defaultConn() db.ConnConfig {
 	conn := db.ConnConfig{
 		Host:     envOr("NEKO_PG_HOST", "127.0.0.1"),
-		Port:     envInt("OPENNEKO_DB_PORT", 5432),
+		Port:     envInt("NEKO_PG_PORT", envInt("OPENNEKO_DB_PORT", 5432)),
 		User:     envOr("NEKO_PG_USER", "neko"),
 		Password: envOr("NEKO_PG_PASSWORD", "secret"),
 		Database: envOr("NEKO_PG_DATABASE", "neko"),

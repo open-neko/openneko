@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # hermes:   required by the default Hermes backend.
 # claude:   required by the claude-agent backend (Anthropic SDK spawns it).
 FROM base AS cli
-ARG GRAPHJIN_VERSION=3.18.25
+ARG GRAPHJIN_VERSION=3.18.37
 ARG HERMES_AGENT_REF=a91a57fa5a13d516c38b07a141a9ce8a3daabeb0
 ARG OPENSHELL_VERSION=0.0.54
 # TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
@@ -303,7 +303,7 @@ CMD ["--help"]
 # node base so we have node + curl available for the templating script
 # and a real healthcheck.
 FROM node:22-bookworm-slim AS neko-graphjin
-ARG GRAPHJIN_VERSION=3.18.25
+ARG GRAPHJIN_VERSION=3.18.37
 ARG TARGETARCH
 ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends \
