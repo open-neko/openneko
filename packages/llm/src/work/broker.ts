@@ -259,7 +259,7 @@ let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
   if (
-    (process.env.OPENNEKO_AGENT_RUNTIME ?? "inprocess").toLowerCase() !== "openshell"
+    (process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell"
   ) {
     return Promise.resolve(undefined);
   }

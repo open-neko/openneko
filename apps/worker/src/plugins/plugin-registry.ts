@@ -1232,7 +1232,7 @@ export class PluginRegistry {
 
   private async createDefaultRuntime(): Promise<PluginRuntime | null> {
     const kind = (
-      process.env.OPENNEKO_PLUGIN_RUNTIME ?? "microsandbox"
+      process.env.OPENNEKO_PLUGIN_RUNTIME ?? "openshell"
     ).toLowerCase();
     if (kind === "openshell") {
       const { OpenShellRuntime } = await import("./openshell-runtime.js");

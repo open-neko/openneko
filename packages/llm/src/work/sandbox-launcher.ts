@@ -255,7 +255,7 @@ export function agentRuntimeDepsFromEnv(broker?: {
   tokenFor: (binding: { runId: string; orgId: string }) => string;
   release?: (runId: string) => void;
 }): Pick<Partial<RunChatTurnDeps>, "runCore"> {
-  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "inprocess").toLowerCase() !== "openshell") {
+  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell") {
     return {};
   }
   // Comma-separated: the model endpoint AND any resolution hosts (hermes needs

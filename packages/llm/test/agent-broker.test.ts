@@ -85,9 +85,7 @@ describe("ensureAgentBroker gating", () => {
     else process.env.OPENNEKO_AGENT_RUNTIME = prev;
   });
 
-  it("returns undefined unless OPENNEKO_AGENT_RUNTIME=openshell", async () => {
-    delete process.env.OPENNEKO_AGENT_RUNTIME;
-    await expect(ensureAgentBroker()).resolves.toBeUndefined();
+  it("returns undefined only when OPENNEKO_AGENT_RUNTIME=inprocess (openshell is the default)", async () => {
     process.env.OPENNEKO_AGENT_RUNTIME = "inprocess";
     await expect(ensureAgentBroker()).resolves.toBeUndefined();
   });

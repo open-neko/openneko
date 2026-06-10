@@ -243,7 +243,7 @@ function deriveAgentEgress(
  * manual `openshell provider create` + hand-set egress env.
  */
 async function provisionOpenShellRuntime(orgId: string, backend: string): Promise<void> {
-  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "").toLowerCase() !== "openshell") {
+  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell") {
     return;
   }
   const row = await loadProviderRow(orgId, "primary");

@@ -6,5 +6,11 @@ export default defineConfig({
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },
     testTimeout: 10_000,
+    // Production defaults to openshell (SEC11); tests exercise the
+    // in-process core. Openshell-path tests override per-test.
+    env: {
+      OPENNEKO_AGENT_RUNTIME: "inprocess",
+      OPENNEKO_PLUGIN_RUNTIME: "microsandbox",
+    },
   },
 });
