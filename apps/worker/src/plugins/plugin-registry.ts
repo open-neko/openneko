@@ -556,7 +556,11 @@ export class PluginRegistry {
   async parseInbound(
     pluginName: string,
     raw: unknown,
-  ): Promise<{ intents: unknown[]; recipient?: Record<string, unknown> }> {
+  ): Promise<{
+    intents: unknown[];
+    recipient?: Record<string, unknown>;
+    sender?: { id: string; displayName?: string; workspaceId?: string };
+  }> {
     const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
     await this.ensureVm(pluginId, entry);
     const env = mergeEnv(entry, this.secrets);
@@ -575,10 +579,24 @@ export class PluginRegistry {
     const result = response.result as {
       intents?: unknown[];
       recipient?: Record<string, unknown>;
+      sender?: { id?: unknown; displayName?: unknown; workspaceId?: unknown };
     };
+    const sender =
+      result.sender && typeof result.sender.id === "string" && result.sender.id
+        ? {
+            id: result.sender.id,
+            ...(typeof result.sender.displayName === "string"
+              ? { displayName: result.sender.displayName }
+              : {}),
+            ...(typeof result.sender.workspaceId === "string"
+              ? { workspaceId: result.sender.workspaceId }
+              : {}),
+          }
+        : undefined;
     return {
       intents: result.intents ?? [],
       ...(result.recipient ? { recipient: result.recipient } : {}),
+      ...(sender ? { sender } : {}),
     };
   }
 

@@ -178,6 +178,7 @@ export async function dispatchInboundIntent(
   intent: IntentEvent,
   channelPlugin: string,
   recipient?: Record<string, unknown>,
+  sender?: { id: string; displayName?: string; workspaceId?: string },
 ): Promise<void> {
   if (intent.kind === "decision") {
     const req = await getActionRequest(orgId, intent.decisionRef);
@@ -223,6 +224,7 @@ export async function dispatchInboundIntent(
       channelPlugin,
       recipient,
       intent.kind === "utterance" ? intent.threadRef : undefined,
+      sender,
     );
     return;
   }
@@ -238,6 +240,7 @@ async function startChatRun(
   channelPlugin: string,
   recipient: Record<string, unknown> | undefined,
   threadRef?: string,
+  sender?: { id: string; displayName?: string; workspaceId?: string },
 ): Promise<void> {
   const thread = await createWorkThread(
     orgId,
@@ -253,7 +256,8 @@ async function startChatRun(
       kind: "work_run",
       status: "queued",
       trigger: "channel_inbound",
-      trigger_payload: { message },
+      // CH1: persist who sent it; K1 resolves to an actor, CH3 links it.
+      trigger_payload: sender ? { message, sender } : { message },
     })
     .returning({ id: processing_job.id });
   const processingJobId = inserted[0]?.id;
@@ -267,6 +271,7 @@ async function startChatRun(
     channel,
     channelPlugin,
     recipient,
+    ...(sender ? { sender } : {}),
   });
   console.log(
     `[channel-inbound] started chat run ${run.id} for "${message.slice(0, 40)}"`,
@@ -302,7 +307,10 @@ export async function processInboundUpdate(
   try {
     const reg = getPluginRegistryInstance();
     if (!reg) throw new Error("plugin registry unavailable");
-    const { intents, recipient } = await reg.parseInbound(pluginName, raw);
+    const { intents, recipient, sender } = await reg.parseInbound(
+      pluginName,
+      raw,
+    );
     if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
     for (const intent of intents) {
       await dispatchInboundIntent(
@@ -310,6 +318,7 @@ export async function processInboundUpdate(
         intent as IntentEvent,
         pluginName,
         recipient as Record<string, unknown> | undefined,
+        sender,
       );
     }
     await markInboundDone(orgId, pluginName, key);
