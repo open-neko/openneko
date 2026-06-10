@@ -1,6 +1,48 @@
-import { data_source, db, eq } from "@neko/db";
+import { action_policy, and, data_source, db, eq } from "@neko/db";
 import { provisionGraphjinClientAuth } from "../graphjin/client-auth";
-import { ensureGraphjinGuard } from "./graphjin-guard";
+import {
+  ensureGraphjinGuard,
+  GRAPHJIN_WRITE_SUBCOMMANDS,
+} from "./graphjin-guard";
+
+/**
+ * GJ5 — the per-run write grants for the guard. Only an ADMIN actor can
+ * hold grants, and only when the org carries an enabled auto_approve
+ * policy for kind "graphjin_write" whose allowedTargets.patterns name
+ * the write subcommands to open up. Default (no policy): read-only,
+ * byte-for-byte today's guard.
+ */
+export async function resolveGraphjinWriteGrants(
+  orgId: string,
+  actor: { userId: string | null; role: string | null },
+): Promise<string[]> {
+  if (actor.role !== "admin") return [];
+  const rows = await db()
+    .select({
+      kinds: action_policy.applies_to_kinds,
+      mode: action_policy.mode,
+      allowedTargets: action_policy.allowed_targets,
+    })
+    .from(action_policy)
+    .where(and(eq(action_policy.org_id, orgId), eq(action_policy.enabled, true)));
+  const grants = new Set<string>();
+  for (const row of rows) {
+    if (row.mode !== "auto_approve") continue;
+    if (!row.kinds.includes("graphjin_write")) continue;
+    const patterns = (row.allowedTargets as { patterns?: unknown } | null)
+      ?.patterns;
+    if (!Array.isArray(patterns)) continue;
+    for (const p of patterns) {
+      if (
+        typeof p === "string" &&
+        (GRAPHJIN_WRITE_SUBCOMMANDS as readonly string[]).includes(p)
+      ) {
+        grants.add(p);
+      }
+    }
+  }
+  return Array.from(grants);
+}
 
 /**
  * GJ4 — the one call every agent path makes before shelling to the
@@ -33,7 +75,12 @@ export async function ensureGraphjinGuardWithActorAuth(opts: {
     });
     xdgConfigHome = auth.xdgConfigHome;
   }
+  const allowSubcommands = await resolveGraphjinWriteGrants(
+    opts.orgId,
+    opts.actor,
+  );
   return ensureGraphjinGuard(opts.binRoot, opts.graphjinBinary, {
     ...(xdgConfigHome ? { xdgConfigHome } : {}),
+    ...(allowSubcommands.length > 0 ? { allowSubcommands } : {}),
   });
 }

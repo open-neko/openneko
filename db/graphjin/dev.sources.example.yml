@@ -33,6 +33,10 @@ auth:
 roles_query: ""
 identity:
   query: ""
+  # K3 — multi-tenant isolation: the JWT's org_id claim becomes the
+  # namespace. Pair with `namespace_column` on any source whose tables
+  # carry org_id (single-tenant customer DBs like the demo leave it off).
+  # namespace_claim: org_id
 
 auth_fail_block: true
 
@@ -87,3 +91,8 @@ sources:
       read: account
       write: blocked
       delete: blocked
+      # K3 — uncomment on multi-tenant sources whose tables carry org_id:
+      # every query is automatically scoped to the JWT's org_id namespace
+      # and tables missing the column are blocked outright.
+      # namespace_column: org_id
+      # missing_namespace_column: block

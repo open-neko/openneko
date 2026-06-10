@@ -9,7 +9,7 @@ import { join } from "node:path";
  *
  * Mirrors Reckon's `inspectBashForGraphjinMutations` denylist.
  */
-const WRITE_SUBCOMMANDS = [
+export const GRAPHJIN_WRITE_SUBCOMMANDS = [
   "setup",
   "config",
   "write_query",
@@ -22,6 +22,16 @@ const WRITE_SUBCOMMANDS = [
   "preview_schema_changes",
 ] as const;
 
+const WRITE_SUBCOMMANDS = GRAPHJIN_WRITE_SUBCOMMANDS;
+
+/** GJ5: grants must name known write subcommands — anything else is ignored. */
+function sanitizeGrants(allow: string[] | undefined): string[] {
+  if (!allow || allow.length === 0) return [];
+  return allow.filter((s) =>
+    (WRITE_SUBCOMMANDS as readonly string[]).includes(s),
+  );
+}
+
 const EXECUTOR_SUBCOMMANDS = [
   "execute_graphql",
   "execute_saved_query",
@@ -32,15 +42,26 @@ const EXECUTOR_SUBCOMMANDS = [
  * Allowlist gate: the agent's contract is `graphjin cli <subcommand>` only.
  * Anything else (`serve`, `migrate`, `admin`, bare invocation, etc.) is
  * denied. Within `cli`, write subcommands and mutation/subscription ops
- * are denied; everything else passes.
+ * are denied; everything else passes. GJ5: a per-run policy may grant
+ * specific write subcommands (admin actors only, resolved upstream) —
+ * mutations/subscriptions in executor payloads stay blocked regardless.
  */
-export function isGraphjinCommandSafe(args: string[]): boolean {
+export function isGraphjinCommandSafe(
+  args: string[],
+  opts: { allowSubcommands?: string[] } = {},
+): boolean {
   if (args.length === 0) return false;
   if (args[0] !== "cli") return false;
 
+  const granted = sanitizeGrants(opts.allowSubcommands);
   const sub = args[1];
   if (!sub) return false;
-  if ((WRITE_SUBCOMMANDS as readonly string[]).includes(sub)) return false;
+  if (
+    (WRITE_SUBCOMMANDS as readonly string[]).includes(sub) &&
+    !granted.includes(sub)
+  ) {
+    return false;
+  }
 
   if ((EXECUTOR_SUBCOMMANDS as readonly string[]).includes(sub)) {
     const joined = args.slice(2).join(" ");
@@ -57,10 +78,14 @@ export async function ensureGraphjinGuard(
      *  client.json carries this run's actor token). Defaults to the
      *  process XDG so legacy runs are unchanged. */
     xdgConfigHome?: string;
+    /** GJ5: write subcommands this run's policy grants (admin actors only). */
+    allowSubcommands?: string[];
   } = {},
 ): Promise<string> {
   const wrapperPath = join(binRoot, "graphjin");
-  const writeAlt = WRITE_SUBCOMMANDS.join("|");
+  const granted = sanitizeGrants(opts.allowSubcommands);
+  const denied = WRITE_SUBCOMMANDS.filter((s) => !granted.includes(s));
+  const writeAlt = denied.join("|");
   const execAlt = EXECUTOR_SUBCOMMANDS.join("|");
   const pinnedXdgConfigHome =
     opts.xdgConfigHome?.trim() || process.env.XDG_CONFIG_HOME?.trim() || "";
@@ -78,13 +103,17 @@ export async function ensureGraphjinGuard(
     "fi",
     "",
     "sub=\"${2:-}\"",
-    "case \"$sub\" in",
-    `  ${writeAlt})`,
-    "    echo \"OpenNeko blocks GraphJin write subcommands. Read/query only.\" >&2",
-    "    exit 2",
-    "    ;;",
-    "esac",
-    "",
+    ...(denied.length > 0
+      ? [
+          "case \"$sub\" in",
+          `  ${writeAlt})`,
+          "    echo \"OpenNeko blocks GraphJin write subcommands. Read/query only.\" >&2",
+          "    exit 2",
+          "    ;;",
+          "esac",
+          "",
+        ]
+      : []),
     "case \"$sub\" in",
     `  ${execAlt})`,
     "    rest=\"${*:3}\"",

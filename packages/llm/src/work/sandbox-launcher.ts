@@ -52,6 +52,12 @@ export interface SandboxLauncherOptions {
    * keyAliases, process env) is what hermes uses. Set for the hermes backend.
    */
   hermesHomeHostPath?: string;
+  /**
+   * GJ6: path of the graphjin binary inside the agent image — the org's
+   * data-source host is allowed for this binary so `graphjin cli` can
+   * reach the GraphJin server from the box.
+   */
+  graphjinBinaryInBox?: string;
   /** Broker coords for the claude MCP-tool path (omitted for hermes). */
   brokerUrl?: string;
   /** Mint a per-run bearer token bound to {runId, orgId} (the broker forces
@@ -113,6 +119,14 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
       ]),
     ) as RunAgentBackendInput["workspace"];
 
+    // GJ5: the box rebuilds the graphjin guard (host paths don't exist
+    // there) — resolve this run's policy write grants host-side, where
+    // the DB lives, and ship them in the job.
+    const graphjinWriteGrants = await resolveRunGraphjinGrants(
+      input.orgId,
+      input.runId,
+    );
+
     const job = {
       orgId: input.orgId,
       threadId: input.threadId,
@@ -129,6 +143,7 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
       // docs/PER_CHANNEL_RENDERING.md). Default true if absent.
       wantsCards: input.wantsCards ?? true,
       workspace: boxWorkspace,
+      ...(graphjinWriteGrants.length > 0 ? { graphjinWriteGrants } : {}),
     };
 
     const stageDir = await mkdtemp(path.join(tmpdir(), "oss-agent-"));
@@ -172,9 +187,17 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
             ];
           })()
         : [];
+      // GJ6: the box must reach the org's GraphJin server — allow its
+      // host:port for the in-box graphjin CLI (and node, for claude's
+      // MCP fetch path).
+      const dataEgress = await resolveDataSourceEgress(
+        input.orgId,
+        opts.graphjinBinaryInBox ?? "/usr/local/bin/graphjin",
+      );
       const policyArgs = buildModelEgressArgs(name, [
         ...(opts.modelEgress ?? []),
         ...brokerEgress,
+        ...dataEgress,
       ]);
       if (policyArgs) await run(policyArgs, 75_000);
 
@@ -223,6 +246,47 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
 }
 
 /** `policy update` adding the model endpoint(s) scoped to the backend binary. */
+/** GJ6: the org's GraphJin host as a per-run egress allow entry. Best-effort. */
+async function resolveDataSourceEgress(
+  orgId: string,
+  graphjinBinary: string,
+): Promise<Array<{ host: string; binary: string; port?: number }>> {
+  try {
+    const { data_source, db, eq } = await import("@neko/db");
+    const [src] = await db()
+      .select({ mcpUrl: data_source.mcp_url })
+      .from(data_source)
+      .where(eq(data_source.org_id, orgId))
+      .limit(1);
+    if (!src?.mcpUrl) return [];
+    const u = new URL(src.mcpUrl);
+    const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+    return [{ host: u.hostname, port, binary: graphjinBinary }];
+  } catch (err) {
+    console.warn(
+      `[agent-sandbox] data-source egress lookup failed: ${err instanceof Error ? err.message : err}`,
+    );
+    return [];
+  }
+}
+
+/** GJ5 host-side grant resolution for the in-box guard rebuild. Best-effort. */
+async function resolveRunGraphjinGrants(
+  orgId: string,
+  runId: string,
+): Promise<string[]> {
+  try {
+    const { getWorkRunActor } = await import("./personas");
+    const { resolveGraphjinWriteGrants } = await import(
+      "./graphjin-actor-guard"
+    );
+    const actor = await getWorkRunActor(runId);
+    return await resolveGraphjinWriteGrants(orgId, actor);
+  } catch {
+    return [];
+  }
+}
+
 export function buildModelEgressArgs(
   name: string,
   egress: ReadonlyArray<{ host: string; binary: string; port?: number }>,
@@ -280,6 +344,8 @@ export function agentRuntimeDepsFromEnv(broker?: {
       modelEgress: binary ? hosts.map((host) => ({ host, binary })) : [],
       keyAliases: keyEnv ? [{ from: credName, to: keyEnv }] : undefined,
       hermesHomeHostPath: process.env.OPENNEKO_AGENT_HERMES_HOME || undefined,
+      graphjinBinaryInBox:
+        process.env.OPENNEKO_AGENT_GRAPHJIN_BINARY || undefined,
       brokerUrl: broker?.url,
       brokerTokenFor: broker?.tokenFor,
       brokerRelease: broker?.release,

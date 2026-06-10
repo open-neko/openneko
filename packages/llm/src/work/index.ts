@@ -1,5 +1,6 @@
 export * from "./workspace";
 export * from "./graphjin-guard";
+export * from "./graphjin-actor-guard";
 export { buildWorkPrompt } from "./prompt";
 export {
   buildRenderCardsServer,

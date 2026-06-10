@@ -188,6 +188,9 @@ export async function runChatTurn(
     await wrappedEmit({ type: "done", result: { status: "failed" } });
     throw new Error(errMsg);
   }
+  // K1 actor drives the guard (GJ4 token + GJ5 grants), the persona
+  // (CV3) and the memory layer (CV2).
+  const actor = await getWorkRunActor(runId);
   // GJ4: when the data source runs source mode (auth_mode='jwt'), the
   // run's CLI calls carry this run's actor token — a per-run client.json
   // the guard pins XDG_CONFIG_HOME at. Legacy mode is unchanged.
@@ -200,7 +203,6 @@ export async function runChatTurn(
       .where(eq(data_source.org_id, orgId))
       .limit(1);
     if (src?.authMode === "jwt" && src.mcpUrl) {
-      const runActor = await getWorkRunActor(runId);
       const { provisionGraphjinClientAuth } = await import(
         "../graphjin/client-auth"
       );
@@ -208,17 +210,22 @@ export async function runChatTurn(
         runRoot: workspace.runRoot,
         serverUrl: src.mcpUrl,
         orgId,
-        userId: runActor.userId,
+        userId: actor.userId,
         role:
-          runActor.role === "admin" || runActor.role === "member"
-            ? runActor.role
+          actor.role === "admin" || actor.role === "member"
+            ? actor.role
             : "service",
       });
       guardXdg = auth.xdgConfigHome;
     }
   }
+  // GJ5: an org policy may grant an admin actor specific write
+  // subcommands; everyone else keeps the read-only guard.
+  const { resolveGraphjinWriteGrants } = await import("./graphjin-actor-guard");
+  const writeGrants = await resolveGraphjinWriteGrants(orgId, actor);
   await ensureGraphjinGuard(workspace.binRoot, graphjinBinary, {
     ...(guardXdg ? { xdgConfigHome: guardXdg } : {}),
+    ...(writeGrants.length > 0 ? { allowSubcommands: writeGrants } : {}),
   });
 
   try {
@@ -250,8 +257,6 @@ export async function runChatTurn(
       message: "Loading shared skills and memory…",
     });
 
-    // K1 actor drives both the persona (CV3) and the memory layer (CV2).
-    const actor = await getWorkRunActor(runId);
     const memoryContext = await formatWorkMemoryPromptContext(
       { orgId, threadId, runId, userId: memoryLayerForActor(actor) },
       // Use the latest user message as the retrieval query so we pull
