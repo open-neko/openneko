@@ -413,9 +413,13 @@ export async function approveActionRequest(args: {
   id: string;
   orgId: string;
   approverUserId: string | null;
+  /** K2: when supplied, the matched policy's approver_role is enforced.
+   *  Legacy callers (no actor context yet) skip the check. */
+  approver?: { userId: string | null; role: "admin" | "member" | "service" };
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (args.approver) await assertMayDecide(args.orgId, existing, args.approver);
   assertTransition(existing.status, "approved", ["draft", "pending_approval"]);
   const [row] = await db()
     .update(action_request)
@@ -430,14 +434,39 @@ export async function approveActionRequest(args: {
   return toRequestRecord(row);
 }
 
+/**
+ * K2: enforce the matched policy's approver_role for a decision. Admin
+ * always may; member may unless the policy demands a different role;
+ * service principals never decide.
+ */
+async function assertMayDecide(
+  orgId: string,
+  request: ActionRequestRecord,
+  approver: { userId: string | null; role: "admin" | "member" | "service" },
+): Promise<void> {
+  const { assertCan } = await import("../work/authz");
+  const policy = request.policyId
+    ? await getActionPolicy(orgId, request.policyId)
+    : null;
+  assertCan(
+    { userId: approver.userId, role: approver.role },
+    "approve",
+    { kind: "action_approval", approverRole: policy?.approverRole ?? null },
+    `action_request ${request.id}`,
+  );
+}
+
 export async function rejectActionRequest(args: {
   id: string;
   orgId: string;
   approverUserId: string | null;
   reason?: string;
+  /** K2: same gate as approve — rejecting is a decision too. */
+  approver?: { userId: string | null; role: "admin" | "member" | "service" };
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (args.approver) await assertMayDecide(args.orgId, existing, args.approver);
   assertTransition(existing.status, "rejected", ["draft", "pending_approval"]);
   const [row] = await db()
     .update(action_request)

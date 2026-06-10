@@ -198,7 +198,14 @@ export async function dispatchInboundIntent(
       return;
     }
     if (intent.choice === "approve") {
-      await approveActionRequest({ id: req.id, orgId, approverUserId: null });
+      await approveActionRequest({
+        id: req.id,
+        orgId,
+        approverUserId: null,
+        // K2: channel taps are member-grade until CH3 links real users —
+        // an admin-gated policy blocks approval from a chat surface.
+        approver: { userId: null, role: "member" },
+      });
       await enqueue(QUEUE.ACTION_EXECUTE, { orgId, actionRequestId: req.id });
       console.log(`[channel-inbound] approved + queued action_request ${req.id}`);
     } else {
@@ -207,6 +214,7 @@ export async function dispatchInboundIntent(
         orgId,
         approverUserId: null,
         reason: intent.reason,
+        approver: { userId: null, role: "member" },
       });
       console.log(`[channel-inbound] rejected action_request ${req.id}`);
     }

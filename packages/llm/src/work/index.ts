@@ -22,6 +22,7 @@ export {
 } from "./broker";
 export * from "./memory";
 export * from "./store";
+export * from "./authz";
 export {
   createScrubber,
   escapeRegex,

@@ -28,6 +28,7 @@ import {
 } from "@neko/llm/workflows";
 import { appendWorkRunEvent } from "@neko/llm/work";
 import { getCurrentUser } from "@/lib/auth";
+import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 
 type RouteContext = {
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (decision === "approve") {
     await approveActionRequest({
+      approver: await getCurrentActor(),
       id: req.id,
       orgId,
       approverUserId,
@@ -110,6 +112,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // Reject: persist the rejection and emit a terminal result event so
   // the chat UI updates immediately — no worker round-trip needed.
   await rejectActionRequest({
+      approver: await getCurrentActor(),
     id: req.id,
     orgId,
     approverUserId,

@@ -97,7 +97,12 @@ describe("dispatchInboundIntent — decision", () => {
   it("approve on a pending request approves + enqueues ACTION_EXECUTE", async () => {
     vi.mocked(getActionRequest).mockResolvedValue({ id: "ar-1", status: "pending_approval", kind: "k" } as never);
     await dispatchInboundIntent("org-1", { kind: "decision", decisionRef: "ar-1", choice: "approve" });
-    expect(approveActionRequest).toHaveBeenCalledWith({ id: "ar-1", orgId: "org-1", approverUserId: null });
+    expect(approveActionRequest).toHaveBeenCalledWith({
+      id: "ar-1",
+      orgId: "org-1",
+      approverUserId: null,
+      approver: { userId: null, role: "member" },
+    });
     expect(enqueue).toHaveBeenCalledWith("action_execute", { orgId: "org-1", actionRequestId: "ar-1" });
   });
 
@@ -111,7 +116,13 @@ describe("dispatchInboundIntent — decision", () => {
   it("reject on a pending request rejects it", async () => {
     vi.mocked(getActionRequest).mockResolvedValue({ id: "ar-1", status: "pending_approval", kind: "k" } as never);
     await dispatchInboundIntent("org-1", { kind: "decision", decisionRef: "ar-1", choice: "reject", reason: "nope" });
-    expect(rejectActionRequest).toHaveBeenCalledWith({ id: "ar-1", orgId: "org-1", approverUserId: null, reason: "nope" });
+    expect(rejectActionRequest).toHaveBeenCalledWith({
+      id: "ar-1",
+      orgId: "org-1",
+      approverUserId: null,
+      reason: "nope",
+      approver: { userId: null, role: "member" },
+    });
     expect(enqueue).not.toHaveBeenCalled();
   });
 
