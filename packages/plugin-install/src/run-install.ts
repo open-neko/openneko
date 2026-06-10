@@ -22,7 +22,7 @@ import {
   upsertEntry,
   writeManifest,
   type ManifestEntry,
-} from "./manifest.js";
+} from "./manifest";
 import {
   createMarketplaceClient,
   findPlugin,
@@ -31,13 +31,13 @@ import {
   type MarketplaceClient,
   type MarketplaceEnvRequirement,
   type MarketplaceVersion,
-} from "./marketplace-client.js";
+} from "./marketplace-client";
 import {
   listKeysForPlugin,
   readSecretsStore,
   setSecret,
   writeSecretsStore,
-} from "./secrets-store.js";
+} from "./secrets-store";
 
 export interface TrustedMarketplace {
   name: string;

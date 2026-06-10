@@ -22,12 +22,12 @@ export {
   type ConnectorCredential,
   type FullSecretsFile,
   type SecretsStore,
-} from "./secrets-store.js";
+} from "./secrets-store";
 
 export {
   FileSecretsResolver,
   type SecretsResolver,
-} from "./secrets-resolver.js";
+} from "./secrets-resolver";
 
 export {
   createMarketplaceClient,
@@ -41,7 +41,7 @@ export {
   type MarketplaceEnvRequirement,
   type MarketplacePlugin,
   type MarketplaceVersion,
-} from "./marketplace-client.js";
+} from "./marketplace-client";
 
 export {
   emptyManifest,
@@ -55,7 +55,7 @@ export {
   writeManifest,
   type Manifest,
   type ManifestEntry,
-} from "./manifest.js";
+} from "./manifest";
 
 export {
   parseInstallSpec,
@@ -64,4 +64,4 @@ export {
   type InstallResult,
   type ParsedSpec,
   type TrustedMarketplace,
-} from "./run-install.js";
+} from "./run-install";

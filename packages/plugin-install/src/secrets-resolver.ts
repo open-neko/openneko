@@ -1,7 +1,7 @@
 import {
   readFullSecretsFileSoft,
   type FullSecretsFile,
-} from "./secrets-store.js";
+} from "./secrets-store";
 
 /**
  * SEC2 — the portability seam over secret residency. The worker consumes
