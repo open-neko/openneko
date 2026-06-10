@@ -147,6 +147,26 @@ export async function listWorkflows(orgId: string): Promise<WorkflowRecord[]> {
   return rows.map(toRecord);
 }
 
+/**
+ * OL7 "pause for today": re-enable workflows whose pause timer has
+ * passed. The cron sweep calls this every tick so a paused workflow
+ * resumes within ~a minute of its paused_until.
+ */
+export async function reEnablePausedWorkflows(): Promise<number> {
+  const rows = await db()
+    .update(workflow_definition)
+    .set({ enabled: true, paused_until: null, updated_at: new Date() })
+    .where(
+      and(
+        eq(workflow_definition.enabled, false),
+        sql`${workflow_definition.paused_until} is not null`,
+        sql`${workflow_definition.paused_until} <= now()`,
+      ),
+    )
+    .returning({ id: workflow_definition.id });
+  return rows.length;
+}
+
 export async function listCronWorkflows(): Promise<WorkflowRecord[]> {
   const rows = await db()
     .select()

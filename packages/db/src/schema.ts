@@ -263,6 +263,32 @@ export const dashboard_pin = pgTable(
   }),
 );
 
+// OL7 — a muted scope hides matching workflow_output cards from the
+// Briefing tributaries until muted_until passes.
+export const muted_scope = pgTable(
+  "muted_scope",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    muted_until: ts("muted_until").notNull(),
+    muted_by_user_id: text("muted_by_user_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_scope_unique: uniqueIndex("muted_scope_org_scope_unique").on(
+      t.org_id,
+      t.scope,
+    ),
+    org_until_idx: index("muted_scope_org_until_idx").on(
+      t.org_id,
+      t.muted_until.desc(),
+    ),
+  }),
+);
+
 // Operator-curated pin: links a workflow_output to the Briefing's pinned
 // section. See migration 0013_briefing_finding_pin.sql for the column
 // rationale. Forward-declared above workflow_output (which it references)
@@ -655,6 +681,9 @@ export const workflow_definition = pgTable(
     cron_timezone: text("cron_timezone").notNull().default("UTC"),
     cron_enabled: boolean("cron_enabled").notNull().default(true),
     daily_run_budget: integer("daily_run_budget"),
+    // OL7 "pause for today": enabled=false with a re-enable timer the
+    // cron sweep honors.
+    paused_until: ts("paused_until"),
     output_contract: jsonb("output_contract"),
     created_by_thread_id: uuid("created_by_thread_id").references(
       () => work_thread.id,
@@ -953,6 +982,40 @@ export const workflow_output_source_observation = pgTable(
       t.observation_id,
     ),
     obs_idx: index("workflow_output_source_obs_obs_idx").on(t.observation_id),
+  }),
+);
+
+// OL2 — observation-elevation: promote a consumer-side observation onto
+// the Briefing as a first-class card (it may have no producing output,
+// e.g. an external_event or source_change observation).
+export const briefing_card = pgTable(
+  "briefing_card",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    source_observation_id: uuid("source_observation_id")
+      .notNull()
+      .references(() => observation.id, { onDelete: "cascade" }),
+    title: text("title"),
+    body: text("body"),
+    mood: text("mood"),
+    status: text("status").notNull().default("active"),
+    elevated_by: text("elevated_by").notNull().default("system"),
+    elevated_by_user_id: text("elevated_by_user_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_observation_unique: uniqueIndex(
+      "briefing_card_org_observation_unique",
+    ).on(t.org_id, t.source_observation_id),
+    org_status_idx: index("briefing_card_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
   }),
 );
 

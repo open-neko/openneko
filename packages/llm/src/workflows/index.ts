@@ -103,6 +103,7 @@ export {
   linkOutputSourceObservations,
   listRecentOutputsByWorkflow,
   listCronWorkflows,
+  reEnablePausedWorkflows,
   listEnabledSubscriptions,
   listObservationsByConsumerWorkflow,
   listObservationsForOutput,

@@ -9,6 +9,7 @@ import type { BriefingCardProps } from "@/a2ui/catalog";
 import BriefingCard from "@/components/BriefingCard";
 import type { BriefingCardData } from "@/components/BriefingCard";
 import FindingCard, { type FindingCardData } from "@/components/FindingCard";
+import StatStrip from "@/components/StatStrip";
 import ActCard, {
   type ActCardData,
   type ActRowData,
@@ -23,6 +24,17 @@ import HoursSavedHero, {
 import { formatSavedShort } from "@/lib/hours-saved";
 import { cn } from "@/lib/cn";
 
+type ElevatedCard = {
+  id: string;
+  kind: "elevated";
+  observationId: string;
+  workflow: { id: string; name: string } | null;
+  title: string | null;
+  body: string | null;
+  mood: string | null;
+  createdAt: string;
+};
+
 type FindingsPayload = {
   summary: {
     id: string;
@@ -35,6 +47,8 @@ type FindingsPayload = {
   };
   pinned: FindingCardData[];
   worthKnowing: FindingCardData[];
+  elevated: ElevatedCard[];
+  mutedScopes: string[];
   quiet: { goodOutputs: number; windowHours: number };
 };
 
@@ -592,6 +606,8 @@ export default function Dashboard() {
               </div>
             )}
 
+            <StatStrip />
+
             {hoursSaved && hoursSaved.totalMinutes > 0 && (
               <HoursSavedHero
                 value={hoursSaved}
@@ -639,7 +655,12 @@ export default function Dashboard() {
                 </div>
                 <div className="flex flex-col gap-3">
                   {findings.awaitingYou.actFindings.map((f, i) => (
-                    <FindingCard key={f.id} data={f} index={i} />
+                    <FindingCard
+                      key={f.id}
+                      data={f}
+                      index={i}
+                      onMuted={fetchFindings}
+                    />
                   ))}
                 </div>
               </section>
@@ -681,7 +702,41 @@ export default function Dashboard() {
                 </div>
                 <div className="flex flex-col gap-3">
                   {findings.worthKnowing.map((f, i) => (
-                    <FindingCard key={f.id} data={f} index={i} />
+                    <FindingCard
+                      key={f.id}
+                      data={f}
+                      index={i}
+                      onMuted={fetchFindings}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {findings && findings.elevated.length > 0 && (
+              <section
+                className="mb-7"
+                style={{ animation: "fadeUp 0.5s ease 0.27s both" }}
+              >
+                <div className="text-[11px] font-bold tracking-[0.13em] uppercase text-text3 mb-3">
+                  Elevated
+                </div>
+                <div className="flex flex-col gap-3">
+                  {findings.elevated.map((c, i) => (
+                    <FindingCard
+                      key={c.id}
+                      data={{
+                        id: c.id,
+                        kind: "finding",
+                        workflowRunId: null,
+                        workflow: c.workflow ?? { id: "", name: "observation" },
+                        title: c.title ?? "Observation",
+                        body: c.body,
+                        mood: c.mood,
+                        createdAt: c.createdAt,
+                      }}
+                      index={i}
+                    />
                   ))}
                 </div>
               </section>
