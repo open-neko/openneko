@@ -20,9 +20,22 @@ import {
 import { buildWorkMemoryServer } from "./work/tools";
 import { ensureWorkWorkspace } from "./work/workspace";
 
+// Keep in sync with ROLE_FOCUS (bootstrap-metrics-writer.ts) and the
+// onboarding ALL_SEATS list — every seat the product offers must be here.
+export const EXEC_ROLES = [
+  "CEO",
+  "CFO",
+  "COO",
+  "CRO",
+  "CMO",
+  "CIO",
+  "CPO",
+] as const;
+export type ExecRole = (typeof EXEC_ROLES)[number];
+
 export type MetricAgentInput = {
   orgId: string;
-  role: "CEO" | "CFO" | "COO" | "CRO" | "CMO";
+  role: ExecRole;
   slug: string;
   title: string;
   why: string;
