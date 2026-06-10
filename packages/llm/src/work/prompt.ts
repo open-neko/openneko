@@ -21,44 +21,19 @@ function formatTranscript(messages: AgentChatMessage[]): string {
     .join("\n\n");
 }
 
-const RENDER_CARDS_EXAMPLE = `[
-  {"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"urn:app:catalog:briefing:v1"}},
-  {"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[
-    {"id":"intro","component":"Markdown","text":"Brief 1-2 sentence intro to the answer."},
-    {"id":"card1","component":"BriefingCard","metricId":"top-product","source":"chat","mood":"good","text":"Mountain-200 leads","metric":"$674,216","label":"Total Profit","detail":"Across all sales channels.","chartType":"kpi","chartData":[]},
-    {"id":"detail","component":"Markdown","text":"Optional follow-up prose with tables, lists, etc."}
-  ]}}
-]`;
-
 // Web-only (callers gate this behind wantsCards). Both backends render via a
 // `render_cards` tool — claude through the neko_ui MCP server, hermes through a
-// per-turn stdio render server. See docs/PER_CHANNEL_RENDERING.md.
+// per-turn stdio render server. The component catalog + message schema live on
+// the TOOL's description (ST1: the channel supplies its own rendering
+// vocabulary; the base prompt stays channel-neutral). See
+// docs/PER_CHANNEL_RENDERING.md.
 function buildRenderingSection(supportsCardTool: boolean): string {
   const tool = supportsCardTool ? "mcp__neko_ui__render_cards" : "render_cards";
   return `<rendering>
-Render your answer by calling the \`${tool}\` tool. Its \`messages\` argument is
-a JSON array of A2UI v0.9 messages — a \`createSurface\`, then an
-\`updateComponents\` whose \`components\` array holds flat component objects.
-
-Component catalog (each component sets a \`component\` field):
-
-- \`Markdown\` — narrative text. Props: \`{ text: string }\` (markdown). Use this
-  for your prose.
-- \`BriefingCard\` — KPI card. Props:
-  \`{ metricId: string, source: 'chat', mood: 'good'|'watch'|'act',
-     text: string, metric: string, label: string, detail: string,
-     chartType: 'kpi'|'line'|'bar'|'area'|'donut',
-     chartData: Array<{d:string,v:number,t?:number}> | [] }\`.
-
-Each message sets \`version: "v0.9"\` and exactly one of \`createSurface\` or
-\`updateComponents\`.
-
-<example>
-${tool}({ "messages": ${RENDER_CARDS_EXAMPLE} })
-</example>
-
-Put your prose in \`Markdown\` components and add \`BriefingCard\`s for the key
-numbers. For a pure-prose answer, send one \`Markdown\` component.
+Render your answer by calling the \`${tool}\` tool — its description carries
+the component catalog and message schema. Put your prose in \`Markdown\`
+components; add \`BriefingCard\`s for the key numbers. For a pure-prose
+answer, send one \`Markdown\` component.
 </rendering>`;
 }
 
