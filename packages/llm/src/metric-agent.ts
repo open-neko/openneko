@@ -1,4 +1,4 @@
-import { data_source, db, eq } from "@neko/db";
+import { data_source, db, desc, eq } from "@neko/db";
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
@@ -88,6 +88,7 @@ export async function runMetricAgent(
     .select({ mcp_url: data_source.mcp_url })
     .from(data_source)
     .where(eq(data_source.org_id, input.orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const mcpUrl = sources[0]?.mcp_url;
   if (!mcpUrl) {

@@ -100,6 +100,23 @@ export interface AgentControlPlane {
       lastLoginAt: string | null;
     }>;
   }>;
+  /**
+   * ADM2: the org's data-source registry. Connection URLs are reduced to
+   * hostnames — credentials never enter model context.
+   */
+  listDataSources(input: { orgId: string }): Promise<{
+    sources: Array<{
+      id: string;
+      name: string;
+      label: string | null;
+      kind: string;
+      authMode: string;
+      isDefault: boolean;
+      enabled: boolean;
+      host: string | null;
+      hasMcp: boolean;
+    }>;
+  }>;
   /** ADM5: channel workspaces (CH2) + identities (CH3) for chat-first channel management. */
   listChannels(input: { orgId: string }): Promise<{
     workspaces: Array<{
@@ -279,6 +296,27 @@ export class InProcessControlPlane implements AgentControlPlane {
     };
   }
 
+  async listDataSources(input: { orgId: string }) {
+    const { data_source, db, eq } = await import("@neko/db");
+    const rows = await db()
+      .select()
+      .from(data_source)
+      .where(eq(data_source.org_id, input.orgId));
+    return {
+      sources: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        label: r.label,
+        kind: r.kind,
+        authMode: r.auth_mode,
+        isDefault: r.is_default,
+        enabled: r.enabled,
+        host: hostnameOf(r.graphql_url),
+        hasMcp: Boolean(r.mcp_url),
+      })),
+    };
+  }
+
   async listChannels(input: { orgId: string }) {
     const { channel_identity, channel_workspace, db, eq } = await import(
       "@neko/db"
@@ -317,6 +355,15 @@ export class InProcessControlPlane implements AgentControlPlane {
         verifiedAt: i.verifiedAt?.toISOString() ?? null,
       })),
     };
+  }
+}
+
+function hostnameOf(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
   }
 }
 

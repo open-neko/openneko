@@ -223,3 +223,94 @@ export function registerChannelAdminAdapter(): void {
     throw new Error(`channel_admin: unknown action "${action}"`);
   });
 }
+
+/**
+ * ADM2 — executes approved data_source_admin action requests. register
+ * creates a DISABLED placeholder row (no connection details — the admin
+ * fills those in Settings; credentials never pass through chat);
+ * enable/disable/set_default/remove manage the registry.
+ */
+export function registerDataSourceAdminAdapter(): void {
+  registerActionAdapter("data_source_admin", async ({ request }) => {
+    const { and, data_source, db, eq, ne } = await import("@neko/db");
+    const payload = request.payload as Record<string, unknown>;
+    const action = String(payload.action ?? "");
+    const name = String(payload.name ?? "").trim();
+    const orgId = request.orgId;
+    if (!name) throw new Error(`data_source_admin ${action}: name required`);
+    const byName = and(eq(data_source.org_id, orgId), eq(data_source.name, name));
+    const now = new Date();
+
+    if (action === "register") {
+      const [existing] = await db()
+        .select({ id: data_source.id })
+        .from(data_source)
+        .where(byName)
+        .limit(1);
+      if (existing) {
+        return {
+          commandOrOperation: `register ${name}`,
+          result: { name, alreadyExisted: true },
+        };
+      }
+      const [row] = await db()
+        .insert(data_source)
+        .values({
+          org_id: orgId,
+          kind: "graphjin",
+          graphql_url: "",
+          name,
+          label: typeof payload.label === "string" ? payload.label : null,
+          enabled: false,
+        })
+        .returning({ id: data_source.id });
+      return {
+        commandOrOperation: `register ${name} (placeholder — complete in Settings)`,
+        result: { id: row.id, name, enabled: false },
+      };
+    }
+
+    if (action === "enable" || action === "disable") {
+      const rows = await db()
+        .update(data_source)
+        .set({ enabled: action === "enable", updated_at: now })
+        .where(byName)
+        .returning({ id: data_source.id });
+      if (rows.length === 0) throw new Error(`data source ${name} not found`);
+      return {
+        commandOrOperation: `${action} ${name}`,
+        result: { name, enabled: action === "enable" },
+      };
+    }
+
+    if (action === "set_default") {
+      const rows = await db()
+        .update(data_source)
+        .set({ is_default: true, updated_at: now })
+        .where(byName)
+        .returning({ id: data_source.id });
+      if (rows.length === 0) throw new Error(`data source ${name} not found`);
+      await db()
+        .update(data_source)
+        .set({ is_default: false, updated_at: now })
+        .where(and(eq(data_source.org_id, orgId), ne(data_source.name, name)));
+      return { commandOrOperation: `set_default ${name}`, result: { name } };
+    }
+
+    if (action === "remove") {
+      const [row] = await db()
+        .select({ id: data_source.id, isDefault: data_source.is_default })
+        .from(data_source)
+        .where(byName)
+        .limit(1);
+      if (!row) throw new Error(`data source ${name} not found`);
+      if (row.isDefault) {
+        throw new Error("cannot remove the default data source — set another default first");
+      }
+      await db().delete(data_source).where(byName);
+      return { commandOrOperation: `remove ${name}`, result: { name, removed: true } };
+    }
+
+    throw new Error(`data_source_admin: unknown action "${action}"`);
+  });
+}

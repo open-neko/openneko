@@ -1,6 +1,6 @@
 import "server-only";
 
-import { data_source, db, eq } from "@neko/db";
+import { data_source, db, desc, eq } from "@neko/db";
 
 export type DataSourceRow = {
   id: string;
@@ -39,6 +39,7 @@ async function loadRow(orgId: string): Promise<DataSourceRow | null> {
     })
     .from(data_source)
     .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   return (rows[0] as DataSourceRow | undefined) ?? null;
 }

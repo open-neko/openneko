@@ -252,6 +252,25 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // ADM2: data-source registry changes from chat need an ADMIN.
+  if (!names.has("data_source_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "data_source_management_default",
+      description:
+        "Registering, enabling/disabling or removing a data source proposed from chat requires an admin's approval.",
+      appliesToKinds: ["data_source_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 96,
+      enabled: true,
+    });
+  }
   // ADM5: linking/blocking channel identities from chat needs an ADMIN.
   if (!names.has("channel_management_default")) {
     await createActionPolicy({

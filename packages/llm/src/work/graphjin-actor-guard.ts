@@ -1,4 +1,4 @@
-import { action_policy, and, data_source, db, eq } from "@neko/db";
+import { action_policy, and, data_source, db, desc, eq } from "@neko/db";
 import { provisionGraphjinClientAuth } from "../graphjin/client-auth";
 import {
   ensureGraphjinGuard,
@@ -63,6 +63,7 @@ export async function ensureGraphjinGuardWithActorAuth(opts: {
     .select({ authMode: data_source.auth_mode, mcpUrl: data_source.mcp_url })
     .from(data_source)
     .where(eq(data_source.org_id, opts.orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   let xdgConfigHome: string | undefined;
   if (src?.authMode === "jwt" && src.mcpUrl) {

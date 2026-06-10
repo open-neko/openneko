@@ -10,6 +10,7 @@ import {
   buildPluginActionServer,
   buildPluginManagerServer,
   buildChannelManagerServer,
+  buildDataSourceManagerServer,
   buildUserManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -112,6 +113,12 @@ export async function runAgentBackend(
           controlPlane,
         }),
         neko_channel_manager: buildChannelManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_data_source_manager: buildDataSourceManagerServer({
           orgId,
           runId,
           emit,

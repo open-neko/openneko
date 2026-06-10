@@ -86,12 +86,21 @@ export const data_source = pgTable(
     label: text("label"),
     // GJ4: 'none' = anonymous legacy; 'jwt' = source mode w/ actor tokens.
     auth_mode: text("auth_mode").notNull().default("none"),
+    // ADM2 registry: stable per-org name; agents use the default source
+    // unless told otherwise; disabled sources are registry placeholders.
+    name: text("name").notNull().default("default"),
+    is_default: boolean("is_default").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     mcp_url: text("mcp_url"),
   },
   (t) => ({
     org_idx: index("data_source_org_idx").on(t.org_id),
+    org_name_unique: uniqueIndex("data_source_org_name_unique").on(
+      t.org_id,
+      t.name,
+    ),
   }),
 );
 

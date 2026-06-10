@@ -1,4 +1,4 @@
-import { data_source, db, eq } from "@neko/db";
+import { data_source, db, desc, eq } from "@neko/db";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import { extractMemoryFences } from "../agent-backends/memory-fence";
@@ -155,6 +155,7 @@ export async function runChatTurn(
     .select({ mcp_url: data_source.mcp_url })
     .from(data_source)
     .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const mcpUrl = sources[0]?.mcp_url;
   if (mcpUrl) {
@@ -196,11 +197,12 @@ export async function runChatTurn(
   // the guard pins XDG_CONFIG_HOME at. Legacy mode is unchanged.
   let guardXdg: string | undefined;
   {
-    const { data_source, db, eq } = await import("@neko/db");
+    const { data_source, db, desc, eq } = await import("@neko/db");
     const [src] = await db()
       .select({ authMode: data_source.auth_mode, mcpUrl: data_source.mcp_url })
       .from(data_source)
       .where(eq(data_source.org_id, orgId))
+      .orderBy(desc(data_source.is_default), data_source.created_at)
       .limit(1);
     if (src?.authMode === "jwt" && src.mcpUrl) {
       const { provisionGraphjinClientAuth } = await import(

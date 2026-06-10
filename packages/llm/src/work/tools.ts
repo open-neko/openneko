@@ -175,7 +175,12 @@ async function proposeAdminAction(opts: {
   orgId: string;
   runId?: string;
   emit: (event: AgentEvent) => Promise<void> | void;
-  kind: "plugin_install" | "plugin_uninstall" | "user_admin" | "channel_admin";
+  kind:
+    | "plugin_install"
+    | "plugin_uninstall"
+    | "user_admin"
+    | "channel_admin"
+    | "data_source_admin";
   target: string;
   intent: string;
   payload: Record<string, unknown>;
@@ -432,6 +437,91 @@ export function buildChannelManagerServer(opts: {
     name: "neko_channel_manager",
     version: "1.0.0",
     tools: [listChannels, requestChange],
+  });
+}
+
+/**
+ * ADM2 — chat-first data-source registry. Reads list the org's sources
+ * (hostnames only — connection strings and credentials never enter
+ * model context); changes file a data_source_admin action request an
+ * ADMIN must approve. Registration creates a disabled placeholder; the
+ * admin enters connection details + credentials in the settings form
+ * (forms are for credential entry only, never the model path). The
+ * GraphJin discovery itself (discover_databases / plan_database_setup /
+ * test_database_connection) runs through `graphjin cli` like every
+ * other read.
+ */
+export function buildDataSourceManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listSources = tool(
+    "list_data_sources",
+    [
+      "List the org's registered data sources: name, label, auth mode,",
+      "default flag, enabled state and server hostname. No connection",
+      "strings or credentials are ever returned. Use before proposing",
+      "any change.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            await controlPlane.listDataSources({ orgId: opts.orgId }),
+          ),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_data_source_change",
+    [
+      "Propose a data-source registry change: register (name + optional",
+      "label — creates a DISABLED placeholder; the admin completes the",
+      "connection in Settings, credentials never pass through chat),",
+      "enable, disable, set_default, or remove (name). NEVER applies",
+      "directly — files an action request that an ADMIN must approve.",
+      "Tell the operator what you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["register", "enable", "disable", "set_default", "remove"]),
+      name: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits, dashes"),
+      label: z.string().trim().max(120).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) =>
+      proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "data_source_admin",
+        target: args.name,
+        intent: args.intent,
+        payload: {
+          action: args.action,
+          name: args.name,
+          ...(args.label ? { label: args.label } : {}),
+        },
+      }),
+  );
+
+  return createSdkMcpServer({
+    name: "neko_data_source_manager",
+    version: "1.0.0",
+    tools: [listSources, requestChange],
   });
 }
 

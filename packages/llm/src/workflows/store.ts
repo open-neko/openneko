@@ -1019,6 +1019,7 @@ export async function getDataSourceForOrg(
     })
     .from(data_source)
     .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const row = rows[0];
   if (!row) return null;

@@ -252,11 +252,12 @@ async function resolveDataSourceEgress(
   graphjinBinary: string,
 ): Promise<Array<{ host: string; binary: string; port?: number }>> {
   try {
-    const { data_source, db, eq } = await import("@neko/db");
+    const { data_source, db, desc, eq } = await import("@neko/db");
     const [src] = await db()
       .select({ mcpUrl: data_source.mcp_url })
       .from(data_source)
       .where(eq(data_source.org_id, orgId))
+      .orderBy(desc(data_source.is_default), data_source.created_at)
       .limit(1);
     if (!src?.mcpUrl) return [];
     const u = new URL(src.mcpUrl);

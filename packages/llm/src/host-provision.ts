@@ -2,7 +2,7 @@ import { mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
-import { and, data_source, db, eq, llm_provider_config } from "@neko/db";
+import { and, data_source, db, desc, eq, llm_provider_config } from "@neko/db";
 import { isAgentBackendId } from "./agent-backend";
 import { maybeDecryptSecret } from "./secrets";
 import { ensureOpenShellProvider } from "./work/sandbox-launcher";
@@ -76,6 +76,7 @@ async function provisionGraphJin(orgId: string): Promise<void> {
     .select({ graphql_url: data_source.graphql_url })
     .from(data_source)
     .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const url = rows[0]?.graphql_url;
   if (!url) return;

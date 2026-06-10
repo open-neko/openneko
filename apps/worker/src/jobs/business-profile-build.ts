@@ -40,6 +40,7 @@ export async function runBusinessProfileBuild(jobId: string, orgId: string) {
       })
       .from(data_source)
       .where(eq(data_source.org_id, orgId))
+      .orderBy(desc(data_source.is_default), data_source.created_at)
       .limit(1),
     db()
       .select({ company_note: onboarding_wizard.company_note })

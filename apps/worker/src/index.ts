@@ -16,6 +16,7 @@ import { createAdminHandler } from "./admin-server.js";
 import {
   data_source,
   db,
+  desc,
   eq,
   getOrgId,
   metric,
@@ -280,11 +281,13 @@ registerBuiltinAdapters();
 {
   const {
     registerChannelAdminAdapter,
+    registerDataSourceAdminAdapter,
     registerPluginManagementAdapters,
     registerUserAdminAdapter,
   } = await import("./plugins/manage-adapters.js");
   registerUserAdminAdapter();
   registerChannelAdminAdapter();
+  registerDataSourceAdminAdapter();
   registerPluginManagementAdapters({
     repoRoot: process.cwd(),
     getInstallPolicy: async () => {
@@ -369,6 +372,7 @@ registerChannelOutputDelivery();
     .select({ mcp_url: data_source.mcp_url })
     .from(data_source)
     .where(eq(data_source.org_id, ADMIN_ORG_ID))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const mcpUrl = sources[0]?.mcp_url;
   if (mcpUrl) {
