@@ -137,15 +137,60 @@ export async function recordConfigChange(opts: {
   orgId?: string;
   paths: string[];
   message: string;
+  /** CV4: also write a config_change audit row (attribution lives in the DB, never in git). */
+  artifactKind?: string;
+  artifactRef?: string;
+  actorUserId?: string | null;
 }): Promise<void> {
   try {
     const sha = await commitConfigChange(opts);
     if (!sha) return;
     const orgId = opts.orgId ?? basename(resolve(opts.workspaceRoot));
     await upsertTeamRef(orgId, sha);
+    if (opts.artifactKind && opts.artifactRef) {
+      await insertConfigChangeRow({
+        orgId,
+        artifactKind: opts.artifactKind,
+        artifactRef: opts.artifactRef,
+        actorUserId: opts.actorUserId ?? null,
+        commitSha: sha,
+        summary: opts.message,
+      });
+    }
   } catch (err) {
     console.warn(
       `[config-vcs] versioning failed (write succeeded): ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+export async function insertConfigChangeRow(input: {
+  orgId: string;
+  artifactKind: string;
+  artifactRef: string;
+  actorUserId?: string | null;
+  commitSha?: string | null;
+  summary?: string;
+  scope?: "team" | "user";
+  userId?: string;
+  status?: string;
+}): Promise<void> {
+  try {
+    const { db, config_change } = await import("@neko/db");
+    await db().insert(config_change).values({
+      org_id: input.orgId,
+      artifact_kind: input.artifactKind,
+      artifact_ref: input.artifactRef,
+      scope: input.scope ?? "team",
+      user_id: input.userId ?? "",
+      actor_user_id: input.actorUserId ?? null,
+      commit_sha: input.commitSha ?? null,
+      summary: input.summary ?? "",
+      status: input.status ?? "recorded",
+    });
+  } catch (err) {
+    console.warn(
+      `[config-vcs] config_change insert failed: ${err instanceof Error ? err.message : err}`,
     );
   }
 }

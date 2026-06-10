@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  config_ref,
   db,
   desc,
   eq,
   isNull,
+  memory_fork,
   ne,
   sql,
   work_memory,
@@ -633,7 +635,9 @@ export async function overrideWorkMemoryForUser(input: {
     return memory;
   }
 
-  // Team row: upsert the member's override for this origin.
+  // Team row: upsert the member's override for this origin. The first
+  // override is the implicit fork — record the baseline for 3-way pulls.
+  await ensureMemoryFork(input.orgId, input.userId);
   const [existing] = await db()
     .select()
     .from(work_memory)
@@ -775,12 +779,180 @@ export async function promoteWorkMemoryToOrg(input: {
       originId,
     },
   });
+  // CV4: promote is an org-layer version bump — snapshot main and leave
+  // the attribution in config_change (the git commit stays anonymous).
+  try {
+    const { getOrgAgentRoot } = await import("./workspace");
+    const { snapshotDurableMemories } = await import("../config-vcs/snapshot");
+    const { insertConfigChangeRow } = await import("../config-vcs");
+    await snapshotDurableMemories(input.orgId, getOrgAgentRoot(input.orgId));
+    await insertConfigChangeRow({
+      orgId: input.orgId,
+      artifactKind: "memory",
+      artifactRef: memory.id,
+      actorUserId: input.promotedBy,
+      summary: "Promoted a personal memory to the team",
+      scope: "team",
+      userId: source.userId,
+      status: "promoted",
+    });
+  } catch (err) {
+    console.warn(
+      `[work-memory] promote snapshot failed (promote persisted): ${err instanceof Error ? err.message : err}`,
+    );
+  }
   return memory;
 }
 
 async function embeddingValue(text: string) {
   const literal = await tryEmbed(text);
   return literal ? sql`${literal}::vector` : null;
+}
+
+async function ensureMemoryFork(orgId: string, userId: string): Promise<void> {
+  // baseline_at must come from the same clock that stamps
+  // work_memory.updated_at (JS), not the DB's now() — staleness checks
+  // compare the two directly.
+  await db()
+    .insert(memory_fork)
+    .values({ org_id: orgId, user_id: userId, baseline_at: new Date() })
+    .onConflictDoNothing();
+}
+
+export type MemoryPullUpdate = {
+  originId: string;
+  /** The member's row that shadows/suppresses this origin. */
+  override: WorkMemory;
+  /** Current team version, or null when the team archived it. */
+  teamMemory: WorkMemory | null;
+  teamRemoved: boolean;
+};
+
+/**
+ * CV4 pull, step 1 — "Update my context with the team's latest". Lists
+ * the member's overridden origins whose team version changed since
+ * their fork baseline (net-new team memories already flow in live, so
+ * only overrides can go stale).
+ */
+export async function listMemoryPullUpdates(
+  orgId: string,
+  userId: string,
+): Promise<MemoryPullUpdate[]> {
+  const [fork] = await db()
+    .select()
+    .from(memory_fork)
+    .where(and(eq(memory_fork.org_id, orgId), eq(memory_fork.user_id, userId)))
+    .limit(1);
+  const baselineAt = fork?.baseline_at ?? new Date(0);
+
+  const overrides = await db()
+    .select()
+    .from(work_memory)
+    .where(
+      and(
+        eq(work_memory.org_id, orgId),
+        eq(work_memory.user_id, userId),
+        sql`${work_memory.overrides_origin_id} IS NOT NULL`,
+        isNull(work_memory.archived_at),
+      ),
+    );
+  const updates: MemoryPullUpdate[] = [];
+  for (const row of overrides) {
+    const override = rowToMemory(row);
+    if (!override.overridesOriginId) continue;
+    const [teamRow] = await db()
+      .select()
+      .from(work_memory)
+      .where(
+        and(
+          eq(work_memory.org_id, orgId),
+          eq(work_memory.origin_id, override.overridesOriginId),
+          isNull(work_memory.user_id),
+          isNull(work_memory.archived_at),
+        ),
+      )
+      .limit(1);
+    if (!teamRow) {
+      updates.push({
+        originId: override.overridesOriginId,
+        override,
+        teamMemory: null,
+        teamRemoved: true,
+      });
+      continue;
+    }
+    if (teamRow.updated_at > baselineAt) {
+      updates.push({
+        originId: override.overridesOriginId,
+        override,
+        teamMemory: rowToMemory(teamRow),
+        teamRemoved: false,
+      });
+    }
+  }
+  return updates;
+}
+
+/**
+ * CV4 pull, step 2 — apply the member's choices and advance their fork
+ * baseline. take_theirs archives the member's override so the live team
+ * version shows again; keep_mine leaves it shadowing.
+ */
+export async function applyMemoryPull(input: {
+  orgId: string;
+  userId: string;
+  decisions: Array<{ originId: string; choice: "take_theirs" | "keep_mine" }>;
+}): Promise<{ applied: number }> {
+  const now = new Date();
+  let applied = 0;
+  for (const decision of input.decisions) {
+    if (decision.choice !== "take_theirs") continue;
+    const rows = await db()
+      .update(work_memory)
+      .set({ archived_at: now, updated_at: now })
+      .where(
+        and(
+          eq(work_memory.org_id, input.orgId),
+          eq(work_memory.user_id, input.userId),
+          eq(work_memory.overrides_origin_id, decision.originId),
+          isNull(work_memory.archived_at),
+        ),
+      )
+      .returning({ id: work_memory.id });
+    for (const row of rows) {
+      applied += 1;
+      await insertWorkMemoryEvent({
+        orgId: input.orgId,
+        memoryId: row.id,
+        runId: null,
+        threadId: null,
+        action: "pull_take_theirs",
+        payload: { originId: decision.originId, userId: input.userId },
+      });
+    }
+  }
+  const [teamRef] = await db()
+    .select({ sha: config_ref.commit_sha })
+    .from(config_ref)
+    .where(and(eq(config_ref.org_id, input.orgId), eq(config_ref.scope, "team")))
+    .limit(1);
+  await db()
+    .insert(memory_fork)
+    .values({
+      org_id: input.orgId,
+      user_id: input.userId,
+      baseline_sha: teamRef?.sha ?? "",
+      baseline_at: now,
+    })
+    .onConflictDoUpdate({
+      target: [memory_fork.org_id, memory_fork.user_id],
+      set: {
+        baseline_sha: teamRef?.sha ?? "",
+        baseline_at: now,
+        updated_at: now,
+      },
+    });
+  return { applied };
 }
 
 export async function createPendingWorkMemory(input: {

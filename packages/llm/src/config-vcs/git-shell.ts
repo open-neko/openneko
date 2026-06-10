@@ -8,9 +8,10 @@ import { execFile } from "node:child_process";
 export async function git(
   cwd: string,
   args: string[],
+  opts: { env?: Record<string, string>; input?: string } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       "git",
       args,
       {
@@ -24,6 +25,7 @@ export async function git(
           // Never pick up the host user's git config.
           GIT_CONFIG_GLOBAL: "/dev/null",
           GIT_CONFIG_SYSTEM: "/dev/null",
+          ...(opts.env ?? {}),
         },
         maxBuffer: 8 * 1024 * 1024,
       },
@@ -39,5 +41,9 @@ export async function git(
         resolve({ stdout: String(stdout), stderr: String(stderr) });
       },
     );
+    if (opts.input !== undefined) {
+      child.stdin?.write(opts.input);
+      child.stdin?.end();
+    }
   });
 }

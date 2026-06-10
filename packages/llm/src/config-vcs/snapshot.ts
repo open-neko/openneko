@@ -37,6 +37,9 @@ export async function snapshotDurableMemories(
         and(
           eq(work_memory.org_id, orgId),
           inArray(work_memory.kind, [...DURABLE_KINDS]),
+          // CV2/CV4: team layer only — user-layer rows live exclusively
+          // on `user/<id>` refs so they are deletable whole (§3).
+          isNull(work_memory.user_id),
           isNull(work_memory.archived_at),
         ),
       );

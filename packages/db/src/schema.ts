@@ -9,6 +9,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   real,
   smallint,
   text,
@@ -337,6 +338,61 @@ export const config_ref = pgTable(
       t.org_id,
       t.scope,
       t.user_id,
+    ),
+  }),
+);
+
+// CV4 — per-member fork baseline for 3-way memory pulls.
+export const memory_fork = pgTable(
+  "memory_fork",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    baseline_sha: text("baseline_sha").notNull().default(""),
+    baseline_at: ts("baseline_at").notNull().defaultNow(),
+    frozen: boolean("frozen").notNull().default(false),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.org_id, t.user_id] }),
+  }),
+);
+
+// CV4 — config-artifact audit trail + admin adopt inbox. Attribution
+// lives here (DB-deletable), never in git commits (DATA_LIFECYCLE §3).
+export const config_change = pgTable(
+  "config_change",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    artifact_kind: text("artifact_kind").notNull(),
+    artifact_ref: text("artifact_ref").notNull(),
+    scope: text("scope").notNull().default("team"),
+    user_id: text("user_id").notNull().default(""),
+    actor_user_id: text("actor_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+    commit_sha: text("commit_sha"),
+    summary: text("summary").notNull().default(""),
+    semantic_diff: jsonb("semantic_diff"),
+    status: text("status").notNull().default("recorded"),
+    decided_by: text("decided_by"),
+    decided_at: ts("decided_at"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("config_change_org_idx").on(t.org_id, t.created_at.desc()),
+    org_status_idx: index("config_change_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
     ),
   }),
 );

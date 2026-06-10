@@ -268,40 +268,96 @@ export async function saveWorkflow(
  * never fails the save. Operational state (enabled, budgets, run history)
  * stays in the DB.
  */
+function workflowSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+}
+
+function workflowMarkdown(workflow: WorkflowRecord): string {
+  return [
+    "---",
+    `name: ${JSON.stringify(workflow.name)}`,
+    `goal: ${JSON.stringify(workflow.goal)}`,
+    `cron: ${workflow.cron ? JSON.stringify(workflow.cron) : "null"}`,
+    `cron_timezone: ${JSON.stringify(workflow.cronTimezone)}`,
+    "---",
+    "",
+    workflow.description,
+    "",
+    "## Steps",
+    ...workflow.steps.map(
+      (s, i) => `${i + 1}. ${typeof s === "object" && s && "description" in s ? String((s as { description: unknown }).description) : String(s)}`,
+    ),
+    ...(workflow.systemPromptOverlay
+      ? ["", "## System prompt overlay", "", workflow.systemPromptOverlay]
+      : []),
+    "",
+  ].join("\n");
+}
+
+/** CV4: a member's personal workflow files, for their `user/<id>` ref snapshot. */
+export async function personalWorkflowFiles(
+  orgId: string,
+  ownerUserId: string,
+): Promise<Array<{ path: string; content: string }>> {
+  const rows = await db()
+    .select()
+    .from(workflow_definition)
+    .where(
+      and(
+        eq(workflow_definition.org_id, orgId),
+        eq(workflow_definition.owner_user_id, ownerUserId),
+      ),
+    );
+  return rows.map(toRecord).map((workflow) => ({
+    path: `workflows/${workflowSlug(workflow.name)}.md`,
+    content: workflowMarkdown(workflow),
+  }));
+}
+
 async function versionWorkflowDefinition(
   workflow: WorkflowRecord,
   verb: "Added" | "Updated",
 ): Promise<void> {
   try {
     const { getOrgAgentRoot } = await import("../work/workspace");
+    const root = getOrgAgentRoot(workflow.orgId);
+    const slug = workflowSlug(workflow.name);
+    const body = workflowMarkdown(workflow);
+
+    // CV4 / DATA_LIFECYCLE §3: personal workflows never touch main's
+    // tree — they commit to the member's own ref, deletable whole.
+    if (workflow.ownerUserId) {
+      const { commitToUserRef } = await import("../config-vcs/forks");
+      const { insertConfigChangeRow } = await import("../config-vcs");
+      const sha = await commitToUserRef({
+        workspaceRoot: root,
+        userId: workflow.ownerUserId,
+        files: [{ path: `workflows/${slug}.md`, content: body }],
+        message: `${verb} workflow: ${workflow.name}`,
+        mode: "overlay",
+      });
+      if (sha) {
+        await insertConfigChangeRow({
+          orgId: workflow.orgId,
+          artifactKind: "workflow",
+          artifactRef: workflow.name,
+          actorUserId: workflow.ownerUserId,
+          commitSha: sha,
+          summary: `${verb} workflow: ${workflow.name}`,
+          scope: "user",
+          userId: workflow.ownerUserId,
+        });
+      }
+      return;
+    }
+
     const { recordConfigChange } = await import("../config-vcs");
     const { mkdir, writeFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
-    const root = getOrgAgentRoot(workflow.orgId);
-    const slug = workflow.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 80);
-    const body = [
-      "---",
-      `name: ${JSON.stringify(workflow.name)}`,
-      `goal: ${JSON.stringify(workflow.goal)}`,
-      `cron: ${workflow.cron ? JSON.stringify(workflow.cron) : "null"}`,
-      `cron_timezone: ${JSON.stringify(workflow.cronTimezone)}`,
-      "---",
-      "",
-      workflow.description,
-      "",
-      "## Steps",
-      ...workflow.steps.map(
-        (s, i) => `${i + 1}. ${typeof s === "object" && s && "description" in s ? String((s as { description: unknown }).description) : String(s)}`,
-      ),
-      ...(workflow.systemPromptOverlay
-        ? ["", "## System prompt overlay", "", workflow.systemPromptOverlay]
-        : []),
-      "",
-    ].join("\n");
     await mkdir(join(root, "workflows"), { recursive: true });
     await writeFile(join(root, "workflows", `${slug}.md`), body, "utf8");
     await recordConfigChange({
@@ -309,12 +365,67 @@ async function versionWorkflowDefinition(
       orgId: workflow.orgId,
       paths: [`workflows/${slug}.md`],
       message: `${verb} workflow: ${workflow.name}`,
+      artifactKind: "workflow",
+      artifactRef: workflow.name,
     });
   } catch (err) {
     console.warn(
       `[config-vcs] workflow versioning failed (save succeeded): ${err instanceof Error ? err.message : err}`,
     );
   }
+}
+
+/**
+ * CV4 "Adopt for the team": copy a member's personal workflow into the
+ * team layer as a new team-owned definition (content cherry-pick — the
+ * member's ref is never merged). The personal copy stays theirs.
+ */
+export async function adoptWorkflowForTeam(
+  orgId: string,
+  workflowId: string,
+  adoptedBy: string | null,
+): Promise<WorkflowRecord> {
+  const source = await getWorkflow(orgId, workflowId);
+  if (!source || !source.ownerUserId) {
+    throw new Error(`Personal workflow not found: ${workflowId}`);
+  }
+  const { workflow } = await saveWorkflow({
+    orgId,
+    name: source.name,
+    description: source.description,
+    systemPromptOverlay: source.systemPromptOverlay,
+    steps: source.steps,
+    goal: source.goal,
+    triggers: {
+      cron: source.cron ?? undefined,
+      timezone: source.cronTimezone,
+      enabled: source.cronEnabled,
+    },
+    dailyRunBudget: source.dailyRunBudget,
+    outputContract: source.outputContract,
+    ownerUserId: "",
+  });
+  const [row] = await db()
+    .update(workflow_definition)
+    .set({ parent_id: source.id, updated_at: new Date() })
+    .where(eq(workflow_definition.id, workflow.id))
+    .returning();
+  try {
+    const { insertConfigChangeRow } = await import("../config-vcs");
+    await insertConfigChangeRow({
+      orgId,
+      artifactKind: "workflow",
+      artifactRef: source.name,
+      actorUserId: adoptedBy,
+      summary: `Adopted workflow for the team: ${source.name}`,
+      scope: "team",
+      userId: source.ownerUserId,
+      status: "adopted",
+    });
+  } catch {
+    // audit row is best-effort
+  }
+  return toRecord(row);
 }
 
 export type WorkflowRunRecord = {
