@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/open-neko/openneko/compare/v1.19.1...v1.20.0) (2026-06-10)
+
+
+### Features
+
+* **web:** surface hours-saved on the Ask thread + live dashboard sparkline ([#94](https://github.com/open-neko/openneko/issues/94)) ([9092959](https://github.com/open-neko/openneko/commit/909295932d9ff72bb05b4622d92b49732241e8a0))
+
 ## [1.19.1](https://github.com/open-neko/openneko/compare/v1.19.0...v1.19.1) (2026-06-05)
 
 
