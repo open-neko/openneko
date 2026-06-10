@@ -291,10 +291,28 @@ registerBuiltinAdapters();
 }
 console.log("[worker] action policies seeded and built-in adapters registered");
 
+// SEC3: pick the secret residency from local config — Infisical-backed
+// env bags when configured, the enc:v1 local file otherwise.
+const secretsResolver = await (async () => {
+  const { readLocalConfig } = await import("@neko/db");
+  const cfg = readLocalConfig().secrets;
+  if (cfg?.backend === "infisical" && cfg.infisical) {
+    const { InfisicalSecretsResolver } = await import(
+      "@open-neko/plugin-install"
+    );
+    console.log(
+      `[worker] secrets backend: infisical (${cfg.infisical.siteUrl}, project ${cfg.infisical.projectId})`,
+    );
+    return new InfisicalSecretsResolver(cfg.infisical);
+  }
+  return undefined; // registry defaults to the file resolver
+})();
+
 pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
   pluginInstallDir: process.env.OPENNEKO_PLUGIN_INSTALL_DIR || undefined,
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
+  ...(secretsResolver ? { secretsResolver } : {}),
   loadInstallPolicy: async () => {
     const { getInstallPolicyForOrg } = await import("@neko/db");
     return getInstallPolicyForOrg(ADMIN_ORG_ID);

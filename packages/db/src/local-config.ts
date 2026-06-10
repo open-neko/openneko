@@ -37,8 +37,19 @@ export type LocalPgConfig = {
   sslmode?: string;
 };
 
+export type LocalSecretsConfig = {
+  /** SEC2/SEC3 residency: "file" (default) or "infisical". */
+  backend?: "file" | "infisical";
+  infisical?: {
+    siteUrl: string;
+    projectId: string;
+    environment?: string;
+  };
+};
+
 export type LocalConfig = {
   pg?: LocalPgConfig;
+  secrets?: LocalSecretsConfig;
 };
 
 function configBase(): string {

@@ -30,6 +30,13 @@ export {
 } from "./secrets-resolver";
 
 export {
+  InfisicalSecretsResolver,
+  folderToPluginName,
+  pluginNameToFolder,
+  type InfisicalConfig,
+} from "./infisical-resolver";
+
+export {
   createMarketplaceClient,
   findPlugin,
   OFFICIAL_MARKETPLACE_NAME,
