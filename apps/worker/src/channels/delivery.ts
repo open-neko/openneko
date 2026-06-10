@@ -31,7 +31,9 @@ import {
 /** "@open-neko/channel-telegram" → "telegram". Channel-inbound runs are never
  *  "web", so they get no a2ui rendering. See docs/PER_CHANNEL_RENDERING.md. */
 function channelFromPlugin(pluginName: string): RunChannel {
-  const m = pluginName.match(/channel-([a-z0-9-]+)$/i);
+  // channel-telegram → telegram; the Slack channel ships inside the
+  // action plugin (@open-neko/plugin-slack), so plugin- maps too.
+  const m = pluginName.match(/(?:channel|plugin)-([a-z0-9-]+)$/i);
   return (m ? m[1].toLowerCase() : pluginName) as RunChannel;
 }
 
@@ -304,9 +306,10 @@ async function startChatRun(
     role: "member",
   },
 ): Promise<void> {
+  const channelLabel = channel.charAt(0).toUpperCase() + channel.slice(1);
   const thread = await createWorkThread(
     orgId,
-    threadRef ? `Telegram ${threadRef}` : "Telegram",
+    threadRef ? `${channelLabel} ${threadRef}` : channelLabel,
     channel,
     actor.userId ?? undefined,
   );
