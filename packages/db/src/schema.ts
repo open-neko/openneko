@@ -771,6 +771,12 @@ export const workflow_definition = pgTable(
     // OL7 "pause for today": enabled=false with a re-enable timer the
     // cron sweep honors.
     paused_until: ts("paused_until"),
+    // CV1 ownership: '' = org layer; a member's personal workflow carries
+    // their user id. Unique is (org, owner, name). origin_id is the stable
+    // identity across copy/promote; parent_id the fork/promote source.
+    owner_user_id: text("owner_user_id").notNull().default(""),
+    origin_id: uuid("origin_id"),
+    parent_id: uuid("parent_id"),
     output_contract: jsonb("output_contract"),
     created_by_thread_id: uuid("created_by_thread_id").references(
       () => work_thread.id,
@@ -788,10 +794,9 @@ export const workflow_definition = pgTable(
       t.enabled,
       t.updated_at.desc(),
     ),
-    org_name_unique: uniqueIndex("workflow_definition_org_name_unique").on(
-      t.org_id,
-      t.name,
-    ),
+    org_owner_name_unique: uniqueIndex(
+      "workflow_definition_org_owner_name_unique",
+    ).on(t.org_id, t.owner_user_id, t.name),
     cron_active_idx: index("workflow_definition_cron_active_idx")
       .on(t.org_id, t.cron_enabled)
       .where(sql`${t.cron} is not null and ${t.enabled} = true`),

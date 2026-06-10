@@ -55,6 +55,12 @@ export type WorkflowRecord = {
   outputContract: Record<string, unknown> | null;
   createdByThreadId: string | null;
   createdByRunId: string | null;
+  /** CV1: '' = org layer; a member's personal workflow carries their id. */
+  ownerUserId: string;
+  /** Stable identity across copy/promote lineage (self for originals). */
+  originId: string | null;
+  /** The workflow this one was forked/promoted from. */
+  parentId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -71,6 +77,8 @@ export type SaveWorkflowInput = {
   outputContract?: Record<string, unknown> | null;
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
+  /** CV1: omit/'' = org layer. */
+  ownerUserId?: string;
 };
 
 export type SaveWorkflowResult = {
@@ -99,6 +107,9 @@ function toRecord(
       (row.output_contract as Record<string, unknown> | null) ?? null,
     createdByThreadId: row.created_by_thread_id,
     createdByRunId: row.created_by_run_id,
+    ownerUserId: row.owner_user_id,
+    originId: row.origin_id,
+    parentId: row.parent_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -107,6 +118,7 @@ function toRecord(
 export async function getWorkflowByOrgName(
   orgId: string,
   name: string,
+  ownerUserId = "",
 ): Promise<WorkflowRecord | null> {
   const rows = await db()
     .select()
@@ -114,6 +126,7 @@ export async function getWorkflowByOrgName(
     .where(
       and(
         eq(workflow_definition.org_id, orgId),
+        eq(workflow_definition.owner_user_id, ownerUserId),
         eq(workflow_definition.name, name),
       ),
     )
@@ -184,7 +197,8 @@ export async function listCronWorkflows(): Promise<WorkflowRecord[]> {
 export async function saveWorkflow(
   input: SaveWorkflowInput,
 ): Promise<SaveWorkflowResult> {
-  const existing = await getWorkflowByOrgName(input.orgId, input.name);
+  const ownerUserId = input.ownerUserId ?? "";
+  const existing = await getWorkflowByOrgName(input.orgId, input.name, ownerUserId);
   const cron = input.triggers?.cron ?? null;
   const cronTimezone = input.triggers?.timezone ?? "UTC";
   const cronEnabled = input.triggers?.enabled ?? true;
@@ -222,6 +236,7 @@ export async function saveWorkflow(
     .insert(workflow_definition)
     .values({
       org_id: input.orgId,
+      owner_user_id: ownerUserId,
       name: input.name,
       description: input.description ?? "",
       system_prompt_overlay: input.systemPromptOverlay ?? "",
@@ -236,7 +251,13 @@ export async function saveWorkflow(
       created_by_run_id: input.createdByRunId ?? null,
     })
     .returning();
-  const created = toRecord(row);
+  // origin_id = self for originals (lineage root).
+  const [withOrigin] = await db()
+    .update(workflow_definition)
+    .set({ origin_id: row.id })
+    .where(eq(workflow_definition.id, row.id))
+    .returning();
+  const created = toRecord(withOrigin);
   await versionWorkflowDefinition(created, "Added");
   return { action: "created", workflow: created };
 }
