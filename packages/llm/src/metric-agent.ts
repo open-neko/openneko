@@ -2,7 +2,7 @@ import { data_source, db, eq } from "@neko/db";
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
-import { detectUpstreamError } from "./agent-error";
+import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
@@ -157,44 +157,32 @@ export async function runMetricAgent(
     : undefined;
 
   const startedAt = Date.now();
-  const result_ = await backend.run({
-    prompt,
-    orgId: input.orgId,
-    tag: input.jobId,
-    workspace,
-    debug,
-    mcpServers,
+  // GJ2: iterative validation loop — a malformed reply is fed back to the
+  // agent for a corrective turn instead of failing the whole job.
+  const { value: parsed } = await runValidatedAgentTurn<
+    Partial<MetricAgentResult>
+  >({
+    backend,
+    run: {
+      prompt,
+      orgId: input.orgId,
+      tag: input.jobId,
+      workspace,
+      debug,
+      mcpServers,
+    },
+    label: `metric-agent org=${input.orgId} slug=${input.slug}`,
+    validate: (finalText) => {
+      const out = parseJsonFromOutput(finalText) as Partial<MetricAgentResult>;
+      if (!out.headlineMetric && !out.insightText) {
+        throw new Error(
+          "JSON parsed but headlineMetric and insightText are both empty",
+        );
+      }
+      return out;
+    },
   });
-  if (result_.status !== "completed") {
-    const message = result_.error ?? `${backend.id} returned status=${result_.status}`;
-    console.error(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} run failed after ${(
-        (Date.now() - startedAt) / 1000
-      ).toFixed(0)}s: ${message}`,
-    );
-    throw new Error(message);
-  }
-  const stdout = result_.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
-
-  const upstream = detectUpstreamError(stdout);
-  if (upstream) {
-    console.warn(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} upstream provider error: ${upstream.message}`,
-    );
-    throw upstream;
-  }
-
-  let parsed: Partial<MetricAgentResult>;
-  try {
-    parsed = parseJsonFromOutput(stdout) as Partial<MetricAgentResult>;
-  } catch (e) {
-    console.error(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} parse failed; full stdout follows (${stdout.length}B):`,
-    );
-    console.error(stdout);
-    throw e;
-  }
 
   const tw = (parsed.timeWindow ?? {}) as Partial<TimeWindow>;
   const result: MetricAgentResult = {

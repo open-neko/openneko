@@ -1,5 +1,6 @@
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
+import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
@@ -191,23 +192,25 @@ export async function runProfiler(args: {
 
   if (onProgress) onProgress("Running profiler agent (1–2 minutes)…");
   const startedAt = Date.now();
-  const result = await backend.run({
-    prompt,
-    orgId,
-    tag: jobId ?? orgId,
-    workspace,
-    debug: debug === true,
+  // GJ2: iterative validation loop — a profile missing required sections
+  // (or containing failure text) goes back to the agent for a corrective
+  // turn instead of failing the onboarding job.
+  const { value: businessProfile, finalText } = await runValidatedAgentTurn({
+    backend,
+    run: {
+      prompt,
+      orgId,
+      tag: jobId ?? orgId,
+      workspace,
+      debug: debug === true,
+    },
+    label: `profiler org=${orgId}`,
+    validate: (txt) => validateBusinessProfile(stripFences(txt), orgName),
   });
-  if (result.status !== "completed") {
-    throw new Error(result.error ?? `${backend.id} returned status=${result.status}`);
-  }
-  const stdout = result.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
   console.log(
-    `[profiler] org=${orgId} done in ${elapsedSec}s (${stdout.length} chars)`,
+    `[profiler] org=${orgId} done in ${elapsedSec}s (${finalText.length} chars)`,
   );
-
-  const businessProfile = validateBusinessProfile(stripFences(stdout), orgName);
   if (onProgress) onProgress("Profile drafted");
 
   return { businessProfile };
