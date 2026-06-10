@@ -2,6 +2,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   randomBytes,
 } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -79,6 +80,16 @@ export function maybeEncryptSecret(value: string): string {
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${PREFIX}${Buffer.concat([iv, tag, encrypted]).toString("base64")}`;
+}
+
+/**
+ * Derive a stable per-label signing secret from the deployment key
+ * (HMAC-SHA256 of the label) — no extra key storage, rotates with the
+ * secret-key file. GJ4 uses `graphjin:<orgId>` labels for per-org
+ * GraphJin JWT signing secrets.
+ */
+export function deriveSigningSecret(label: string): Buffer {
+  return createHmac("sha256", getKey()).update(label).digest();
 }
 
 export function maybeDecryptSecret(value: unknown): string {

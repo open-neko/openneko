@@ -52,11 +52,18 @@ export function isGraphjinCommandSafe(args: string[]): boolean {
 export async function ensureGraphjinGuard(
   binRoot: string,
   graphjinBinary: string,
+  opts: {
+    /** GJ4: pin the CLI at a per-run config dir (gj-auth/graphjin/
+     *  client.json carries this run's actor token). Defaults to the
+     *  process XDG so legacy runs are unchanged. */
+    xdgConfigHome?: string;
+  } = {},
 ): Promise<string> {
   const wrapperPath = join(binRoot, "graphjin");
   const writeAlt = WRITE_SUBCOMMANDS.join("|");
   const execAlt = EXECUTOR_SUBCOMMANDS.join("|");
-  const pinnedXdgConfigHome = process.env.XDG_CONFIG_HOME?.trim() || "";
+  const pinnedXdgConfigHome =
+    opts.xdgConfigHome?.trim() || process.env.XDG_CONFIG_HOME?.trim() || "";
   const script = [
     "#!/usr/bin/env bash",
     "set -euo pipefail",

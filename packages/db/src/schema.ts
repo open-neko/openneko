@@ -83,6 +83,8 @@ export const data_source = pgTable(
     graphql_url: text("graphql_url").notNull(),
     subscription_url: text("subscription_url"),
     label: text("label"),
+    // GJ4: 'none' = anonymous legacy; 'jwt' = source mode w/ actor tokens.
+    auth_mode: text("auth_mode").notNull().default("none"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     mcp_url: text("mcp_url"),

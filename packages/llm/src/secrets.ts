@@ -2,6 +2,7 @@
 // plugin-install secrets store and @neko/db local-config can share it
 // without depending on @neko/llm. Re-exported here for existing callers.
 export {
+  deriveSigningSecret,
   maybeEncryptSecret,
   maybeDecryptSecret,
   _resetSecretKeyCacheForTesting,

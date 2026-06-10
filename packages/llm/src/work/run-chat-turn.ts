@@ -187,7 +187,38 @@ export async function runChatTurn(
     await wrappedEmit({ type: "done", result: { status: "failed" } });
     throw new Error(errMsg);
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  // GJ4: when the data source runs source mode (auth_mode='jwt'), the
+  // run's CLI calls carry this run's actor token — a per-run client.json
+  // the guard pins XDG_CONFIG_HOME at. Legacy mode is unchanged.
+  let guardXdg: string | undefined;
+  {
+    const { data_source, db, eq } = await import("@neko/db");
+    const [src] = await db()
+      .select({ authMode: data_source.auth_mode, mcpUrl: data_source.mcp_url })
+      .from(data_source)
+      .where(eq(data_source.org_id, orgId))
+      .limit(1);
+    if (src?.authMode === "jwt" && src.mcpUrl) {
+      const runActor = await getWorkRunActor(runId);
+      const { provisionGraphjinClientAuth } = await import(
+        "../graphjin/client-auth"
+      );
+      const auth = await provisionGraphjinClientAuth({
+        runRoot: workspace.runRoot,
+        serverUrl: src.mcpUrl,
+        orgId,
+        userId: runActor.userId,
+        role:
+          runActor.role === "admin" || runActor.role === "member"
+            ? runActor.role
+            : "service",
+      });
+      guardXdg = auth.xdgConfigHome;
+    }
+  }
+  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary, {
+    ...(guardXdg ? { xdgConfigHome: guardXdg } : {}),
+  });
 
   try {
     await wrappedEmit({

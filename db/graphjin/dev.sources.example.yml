@@ -1,0 +1,89 @@
+# GJ4 — source/agentic-mode template for the CUSTOMER-data GraphJin
+# (compare dev.example.yml, the legacy anonymous config). Copy to dev.yml,
+# fill the secret, and set data_source.auth_mode='jwt' in neko-db to
+# activate per-run actor tokens.
+#
+# The JWT secret is per-org, derived from the deployment secret-key:
+#   graphjinSigningSecretB64(orgId)   (packages/llm/src/graphjin/token.ts)
+# Claims OpenNeko mints: { sub, role (admin|member|service), org_id,
+# iat, exp } — 5-minute TTL, re-minted per run.
+#
+# NOTE (3.18.32+): in sources mode, GJ_DATABASE_* env vars are a hard
+# boot error — connection details live HERE, not in compose env.
+
+app_name: ./Graphjin/Neko-AdventureWorks (source mode)
+host_port: 0.0.0.0:8080
+production: false
+debug: true
+log_format: plain
+log_level: debug
+http_compress: true
+reload_on_config_change: true
+server_timing: true
+
+auth:
+  type: jwt
+  jwt:
+    # base64 of graphjinSigningSecretB64(orgId)
+    secret: "REPLACE_WITH_PER_ORG_SECRET_B64"
+    audience: ""
+    issuer: ""
+
+# Role shaping: the JWT's `role` claim selects the GraphJin role.
+roles_query: ""
+identity:
+  query: ""
+
+auth_fail_block: true
+
+cors_allowed_origins:
+  - '*'
+
+default_limit: 20
+enable_tracing: true
+subs_poll_duration: 5s
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: false
+  allow_raw_queries: true
+  workflow_timeout: 300
+  allow_dev_tools: false
+  # Bridge: keep legacy /api/v1/discovery/* alive while the knowledge-pack
+  # prefetch migrates to query_catalog (removed at RBAC_WIRING §10 step 6).
+  legacy_discovery: true
+
+analytics_mode: true
+
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+sources:
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    access:
+      roots:
+        gj_catalog: public
+
+  - name: adventureworks
+    kind: database
+    default: true
+    read_only: true
+    type: postgres
+    host: adventureworks-db
+    port: 5432
+    dbname: adventureworks
+    user: postgres
+    password: postgres
+    access:
+      read: account
+      write: blocked
+      delete: blocked
