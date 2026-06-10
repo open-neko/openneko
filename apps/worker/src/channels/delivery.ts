@@ -172,6 +172,44 @@ export async function ensureInboundBinding(
   );
 }
 
+/**
+ * CH2: resolve the org an inbound update belongs to from the sender's
+ * workspace scope. Unknown workspace = first contact: auto-bind to the
+ * default org (single-tenant behavior preserved); a multi-tenant install
+ * remaps channel_workspace rows explicitly.
+ */
+export async function resolveInboundOrg(
+  channelPlugin: string,
+  workspaceId: string | undefined,
+  defaultOrgId: string,
+): Promise<string> {
+  if (!workspaceId) return defaultOrgId;
+  const { channel_workspace } = await import("@neko/db");
+  const [row] = await db()
+    .select({ orgId: channel_workspace.org_id })
+    .from(channel_workspace)
+    .where(
+      and(
+        eq(channel_workspace.channel_plugin, channelPlugin),
+        eq(channel_workspace.workspace_id, workspaceId),
+      ),
+    )
+    .limit(1);
+  if (row) return row.orgId;
+  await db()
+    .insert(channel_workspace)
+    .values({
+      org_id: defaultOrgId,
+      channel_plugin: channelPlugin,
+      workspace_id: workspaceId,
+    })
+    .onConflictDoNothing();
+  console.log(
+    `[channel-inbound] auto-bound workspace ${channelPlugin}/${workspaceId} → org ${defaultOrgId}`,
+  );
+  return defaultOrgId;
+}
+
 /** Route one inbound IntentEvent to the same agent entry points the web uses. */
 export async function dispatchInboundIntent(
   orgId: string,
@@ -322,10 +360,19 @@ export async function processInboundUpdate(
       pluginName,
       raw,
     );
-    if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
+    // CH2: the sender's workspace decides the org; first contact binds
+    // to the caller's default org.
+    const resolvedOrgId = await resolveInboundOrg(
+      pluginName,
+      sender?.workspaceId,
+      orgId,
+    );
+    if (recipient) {
+      await ensureInboundBinding(resolvedOrgId, pluginName, recipient);
+    }
     for (const intent of intents) {
       await dispatchInboundIntent(
-        orgId,
+        resolvedOrgId,
         intent as IntentEvent,
         pluginName,
         recipient as Record<string, unknown> | undefined,

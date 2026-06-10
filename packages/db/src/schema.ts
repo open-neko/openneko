@@ -265,6 +265,28 @@ export const dashboard_pin = pgTable(
   }),
 );
 
+// CH2 — channel workspace → org mapping. First inbound contact
+// auto-binds a workspace to the default org; multi-tenant remaps rows.
+export const channel_workspace = pgTable(
+  "channel_workspace",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    workspace_id: text("workspace_id").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    plugin_ws_unique: uniqueIndex("channel_workspace_plugin_ws_unique").on(
+      t.channel_plugin,
+      t.workspace_id,
+    ),
+    org_idx: index("channel_workspace_org_idx").on(t.org_id),
+  }),
+);
+
 // CV3 — personas: one profile per (org, user). user_id = '' is the
 // org-default persona (solo profile / unlinked channels). The compiled
 // brief_md is what the agent reads as <operator-profile>; raw answers
