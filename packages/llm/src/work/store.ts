@@ -38,6 +38,8 @@ export type WorkRunRecord = {
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
+  analysisMinutesSaved: number | null;
+  analysisMinutesBasis: string | null;
 };
 
 export type WorkThreadBundle = {
@@ -479,6 +481,8 @@ export async function getWorkThreadBundle(
       error: row.error,
       createdAt: row.created_at.toISOString(),
       finishedAt: row.finished_at ? row.finished_at.toISOString() : null,
+      analysisMinutesSaved: row.analysis_minutes_saved,
+      analysisMinutesBasis: row.analysis_minutes_basis,
     })),
     messages: messages.map((row) => ({
       id: row.id,

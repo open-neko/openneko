@@ -28,3 +28,22 @@ export function sinceLabel(iso: string | null): string {
   if (Number.isNaN(d.getTime())) return "since you installed OpenNeko";
   return `since ${d.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}`;
 }
+
+/**
+ * Fill a fixed-length daily series (oldest → newest) from a "YYYY-MM-DD" → value
+ * map. `since` is the UTC-midnight start day; produces `days` entries, 0 where a
+ * day has no data.
+ */
+export function fillDailySeries(
+  byDay: Map<string, number>,
+  since: Date,
+  days: number,
+): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < days; i += 1) {
+    const d = new Date(since);
+    d.setUTCDate(since.getUTCDate() + i);
+    out.push(byDay.get(d.toISOString().slice(0, 10)) ?? 0);
+  }
+  return out;
+}

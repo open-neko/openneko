@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Clock } from "lucide-react";
 import { formatHours, formatSavedShort, sinceLabel } from "@/lib/hours-saved";
+import { Sparkline } from "@/components/Sparkline";
 
 export type HoursSavedValue = {
   windowHours: number;
   windowMinutes: number;
   totalMinutes: number;
   windowTasks: number;
+  dailyMinutes?: number[];
   sinceISO: string | null;
 };
 
@@ -33,6 +35,8 @@ export default function HoursSavedHero({
   const hero = formatHours(value.totalMinutes);
   const windowLabel = formatSavedShort(value.windowMinutes);
   const detailed = items.filter((i) => i.minutes > 0).slice(0, 6);
+  const daily = value.dailyMinutes ?? [];
+  const hasTrend = daily.some((d) => d > 0);
 
   return (
     <div className="mb-7" style={{ animation: "fadeUp 0.5s ease 0.12s both" }}>
@@ -61,6 +65,14 @@ export default function HoursSavedHero({
             </>
           ) : null}
         </span>
+        {hasTrend && (
+          <span
+            className="ml-1 flex-none self-center text-accent/70"
+            title="Time saved per day, last 7 days"
+          >
+            <Sparkline values={daily} width={64} height={18} />
+          </span>
+        )}
         <span className="ml-1 font-mono text-[11px] font-semibold text-accent opacity-70 group-hover:opacity-100 whitespace-nowrap">
           how? {open ? "▾" : "→"}
         </span>
