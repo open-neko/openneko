@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmModal";
 import { describeSchedule } from "@/lib/cron-english";
 import { formatSavedShort } from "@/lib/hours-saved";
+import { Sparkline } from "@/components/Sparkline";
 
 type WorkflowListItem = {
   id: string;
@@ -127,44 +128,6 @@ function describeSubscription(s: Subscription): string {
   return `External events${f.provider ? ` from ${f.provider}` : ""}${
     f.topic ? ` on '${f.topic}'` : ""
   }.`;
-}
-
-function Sparkline({
-  values,
-  width = 88,
-  height = 16,
-}: {
-  values: number[];
-  width?: number;
-  height?: number;
-}) {
-  if (values.length === 0) return null;
-  const max = Math.max(1, ...values);
-  const barW = width / values.length;
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      aria-hidden="true"
-      style={{ display: "block" }}
-    >
-      {values.map((v, i) => {
-        const h = (v / max) * height;
-        return (
-          <rect
-            key={i}
-            x={i * barW + 0.5}
-            y={height - h}
-            width={Math.max(1, barW - 1)}
-            height={h}
-            fill="var(--text3)"
-            opacity={v === 0 ? 0.35 : 1}
-          />
-        );
-      })}
-    </svg>
-  );
 }
 
 export default function WorkflowsPage() {

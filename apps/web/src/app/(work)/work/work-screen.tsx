@@ -114,6 +114,7 @@ import {
   type RailSource,
   type RailVital,
 } from "../work-shell-context";
+import { formatSavedShort } from "@/lib/hours-saved";
 
 type MessageRecord = {
   id: string;
@@ -130,6 +131,7 @@ type RunRecord = {
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
+  analysisMinutesSaved?: number | null;
 };
 
 type WorkEvent =
@@ -484,8 +486,21 @@ export default function WorkScreen() {
       }
     }
     setRailArtifacts(arts);
+    // The run's self-estimated time saved (latest run wins) — surfaced as a
+    // rail vital so the value-prop is visible on the Ask surface, not only the
+    // dashboard. Prepended so it survives the 4-vital cap.
+    let savedMinutes: number | null = null;
+    for (const run of bundle.runs) {
+      if (typeof run.analysisMinutesSaved === "number") {
+        savedMinutes = run.analysisMinutesSaved;
+      }
+    }
+    const savedVital: RailVital | null =
+      savedMinutes && savedMinutes > 0
+        ? { label: "Time saved", value: formatSavedShort(savedMinutes) }
+        : null;
     setRailContext({
-      vitals: vitals.slice(0, 4),
+      vitals: (savedVital ? [savedVital, ...vitals] : vitals).slice(0, 4),
       sources: [...sourceMap.values()].slice(0, 6),
       followups,
     });

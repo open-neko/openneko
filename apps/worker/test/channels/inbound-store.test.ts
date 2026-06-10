@@ -6,14 +6,13 @@
 // Self-skips when no DB is reachable (e.g. CI without the compose stack), so
 // the suite stays green everywhere. inboundUpdateKey is pure and always runs.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { db, eq, inbound_dedup, reconnectPool } from "@neko/db";
 import {
-  channel_poll_cursor,
-  db,
-  eq,
-  inbound_dedup,
-  reconnectPool,
-  sql,
-} from "@neko/db";
+  createTestOrg,
+  dbReachable,
+  deleteTestOrg,
+  uniqueOrgId,
+} from "@neko/db/test-helpers";
 import {
   beginInboundUpdate,
   inboundUpdateKey,
@@ -49,29 +48,22 @@ describe("inboundUpdateKey (pure)", () => {
 describe("inbound ledger + cursor (real Postgres)", () => {
   let dbUp = false;
   let orgId = "";
-  // Unique per run so parallel/repeat runs don't collide; rows are cleaned up.
+  // Own a unique org per run. Borrowing the first existing row races a
+  // concurrent test file that creates+deletes its own org, FK-breaking our
+  // inserts; cascade FKs clean up our child rows on teardown.
   const plugin = `@test/inbound-store-${Math.random().toString(36).slice(2)}`;
   const keyOf = (id: number) => inboundUpdateKey({ update_id: id, plugin });
 
   beforeAll(async () => {
-    try {
-      const rows = await db().execute<{ id: string }>(
-        sql`select id from organization limit 1`,
-      );
-      orgId = rows.rows[0]?.id ?? "";
-      dbUp = orgId !== "";
-    } catch {
-      dbUp = false;
+    dbUp = await dbReachable();
+    if (dbUp) {
+      orgId = uniqueOrgId("inbound-store");
+      await createTestOrg(orgId);
     }
   });
 
   afterAll(async () => {
-    if (dbUp) {
-      await db().delete(inbound_dedup).where(eq(inbound_dedup.channel_plugin, plugin));
-      await db()
-        .delete(channel_poll_cursor)
-        .where(eq(channel_poll_cursor.channel_plugin, plugin));
-    }
+    if (dbUp) await deleteTestOrg(orgId);
     await reconnectPool();
   });
 
