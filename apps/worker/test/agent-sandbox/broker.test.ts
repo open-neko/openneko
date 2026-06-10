@@ -64,6 +64,10 @@ function makeFakeControlPlane() {
       calls.push({ method: "plugins-list", input: input as Record<string, unknown> });
       return { installed: [], available: [] };
     },
+    async listUsers(input) {
+      calls.push({ method: "users-list", input: input as Record<string, unknown> });
+      return { users: [] };
+    },
   };
   return { cp, calls };
 }

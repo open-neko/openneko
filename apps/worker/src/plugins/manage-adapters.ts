@@ -7,6 +7,7 @@ import {
   runInstall,
   writeManifest,
 } from "@open-neko/plugin-install";
+import { randomUUID } from "node:crypto";
 import { registerActionAdapter } from "@neko/llm/workflows";
 
 /**
@@ -77,5 +78,73 @@ export function registerPluginManagementAdapters(opts: {
       commandOrOperation: `uninstall ${name}`,
       result: { name, removed: true },
     };
+  });
+}
+
+/**
+ * ADM1 — executes approved user_admin action requests (admin-approved
+ * per the user_management_default policy; K2 enforces the approver).
+ * invite pre-creates the app_user row so SSO links by email on first
+ * sign-in; deactivate sets disabled_at — sign-in and live sessions both
+ * die on it.
+ */
+export function registerUserAdminAdapter(): void {
+  registerActionAdapter("user_admin", async ({ request }) => {
+    const { app_user, and, db, eq } = await import("@neko/db");
+    const payload = request.payload as Record<string, unknown>;
+    const action = String(payload.action ?? "");
+    const orgId = request.orgId;
+
+    if (action === "invite") {
+      const email = String(payload.email ?? "").trim().toLowerCase();
+      const role = payload.role === "admin" ? "admin" : "member";
+      if (!email) throw new Error("user_admin invite: email required");
+      const [existing] = await db()
+        .select({ id: app_user.id })
+        .from(app_user)
+        .where(and(eq(app_user.org_id, orgId), eq(app_user.email, email)))
+        .limit(1);
+      if (existing) {
+        return {
+          commandOrOperation: `invite ${email}`,
+          result: { userId: existing.id, alreadyExisted: true },
+        };
+      }
+      const id = randomUUID();
+      await db().insert(app_user).values({ id, email, org_id: orgId, role });
+      return {
+        commandOrOperation: `invite ${email} as ${role}`,
+        result: { userId: id, role },
+      };
+    }
+
+    const userId = String(payload.userId ?? "");
+    if (!userId) throw new Error(`user_admin ${action}: userId required`);
+    const where = and(eq(app_user.org_id, orgId), eq(app_user.id, userId));
+
+    if (action === "set_role") {
+      const role = payload.role === "admin" ? "admin" : "member";
+      const rows = await db()
+        .update(app_user)
+        .set({ role, updated_at: new Date() })
+        .where(where)
+        .returning({ id: app_user.id });
+      if (rows.length === 0) throw new Error(`user ${userId} not found`);
+      return { commandOrOperation: `set_role ${userId} ${role}`, result: { userId, role } };
+    }
+    if (action === "deactivate" || action === "reactivate") {
+      const disabled_at = action === "deactivate" ? new Date() : null;
+      const rows = await db()
+        .update(app_user)
+        .set({ disabled_at, updated_at: new Date() })
+        .where(where)
+        .returning({ id: app_user.id });
+      if (rows.length === 0) throw new Error(`user ${userId} not found`);
+      return {
+        commandOrOperation: `${action} ${userId}`,
+        result: { userId, disabled: action === "deactivate" },
+      };
+    }
+    throw new Error(`user_admin: unknown action "${action}"`);
   });
 }

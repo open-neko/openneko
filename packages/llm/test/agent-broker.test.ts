@@ -24,6 +24,7 @@ function stubControlPlane(): AgentControlPlane {
       unused as AgentControlPlane["upsertActionPolicyByName"],
     listActionPolicies: unused as AgentControlPlane["listActionPolicies"],
     listPlugins: unused as AgentControlPlane["listPlugins"],
+    listUsers: unused as AgentControlPlane["listUsers"],
   };
 }
 

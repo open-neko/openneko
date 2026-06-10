@@ -61,6 +61,8 @@ export const app_user = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    // ADM1: a deactivated user can't sign in and their sessions are dead.
+    disabled_at: ts("disabled_at"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     last_login_at: ts("last_login_at"),

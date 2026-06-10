@@ -214,6 +214,25 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // ADM1: user management from chat needs an ADMIN approval (K2 enforces).
+  if (!names.has("user_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "user_management_default",
+      description:
+        "Inviting, role changes, and deactivation proposed from chat require an admin's approval.",
+      appliesToKinds: ["user_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 90,
+      enabled: true,
+    });
+  }
   // ADM3: chat-driven plugin management is always an explicit approval.
   if (!names.has("plugin_management_default")) {
     await createActionPolicy({

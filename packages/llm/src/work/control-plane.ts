@@ -89,6 +89,17 @@ export interface AgentControlPlane {
   }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord>> }>;
   /** ADM3: installed plugins (manifest) + marketplace catalog. */
   listPlugins(input: { orgId: string }): Promise<PluginCatalog>;
+  /** ADM1: the org's users (id, email, role, disabled). */
+  listUsers(input: { orgId: string }): Promise<{
+    users: Array<{
+      id: string;
+      email: string;
+      name: string | null;
+      role: string;
+      disabledAt: string | null;
+      lastLoginAt: string | null;
+    }>;
+  }>;
 }
 
 export type PluginCatalog = {
@@ -223,6 +234,28 @@ export class InProcessControlPlane implements AgentControlPlane {
       installed,
       available,
       ...(marketplaceError ? { marketplaceError } : {}),
+    };
+  }
+
+  async listUsers(input: { orgId: string }) {
+    const { app_user, db, eq } = await import("@neko/db");
+    const rows = await db()
+      .select({
+        id: app_user.id,
+        email: app_user.email,
+        name: app_user.name,
+        role: app_user.role,
+        disabledAt: app_user.disabled_at,
+        lastLoginAt: app_user.last_login_at,
+      })
+      .from(app_user)
+      .where(eq(app_user.org_id, input.orgId));
+    return {
+      users: rows.map((r) => ({
+        ...r,
+        disabledAt: r.disabledAt?.toISOString() ?? null,
+        lastLoginAt: r.lastLoginAt?.toISOString() ?? null,
+      })),
     };
   }
 }

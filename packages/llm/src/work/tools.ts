@@ -115,7 +115,7 @@ export function buildPluginManagerServer(opts: {
     intent: string,
     payload: Record<string, unknown>,
   ) =>
-    proposePluginManagementAction({
+    proposeAdminAction({
       controlPlane,
       orgId: opts.orgId,
       runId: opts.runId,
@@ -170,12 +170,12 @@ export function buildPluginManagerServer(opts: {
   });
 }
 
-async function proposePluginManagementAction(opts: {
+async function proposeAdminAction(opts: {
   controlPlane: AgentControlPlane;
   orgId: string;
   runId?: string;
   emit: (event: AgentEvent) => Promise<void> | void;
-  kind: "plugin_install" | "plugin_uninstall";
+  kind: "plugin_install" | "plugin_uninstall" | "user_admin";
   target: string;
   intent: string;
   payload: Record<string, unknown>;
@@ -256,6 +256,98 @@ async function proposePluginManagementAction(opts: {
       },
     ],
   };
+}
+
+/**
+ * ADM1 — chat-first user management. list_users reads through the
+ * control plane; every change is an approval-gated action request whose
+ * policy demands an ADMIN approver (user_management_default, K2-enforced).
+ */
+export function buildUserManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listUsers = tool(
+    "list_users",
+    [
+      "List the org's users (email, role, disabled state, last login).",
+      "Use before proposing any change, and to answer 'who has access?'.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(await controlPlane.listUsers({ orgId: opts.orgId })),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_user_change",
+    [
+      "Propose a user-management change: invite (email + role),",
+      "set_role (userId + role admin|member), deactivate or reactivate",
+      "(userId). NEVER applies directly — files an action request that an",
+      "ADMIN must approve on the approvals surface. Tell the operator what",
+      "you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["invite", "set_role", "deactivate", "reactivate"]),
+      email: z.string().trim().email().optional(),
+      userId: z.string().trim().min(1).optional(),
+      role: z.enum(["admin", "member"]).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) => {
+      if (args.action === "invite" && (!args.email || !args.role)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: "invite needs email + role" }),
+            },
+          ],
+        };
+      }
+      if (args.action !== "invite" && !args.userId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: `${args.action} needs userId` }),
+            },
+          ],
+        };
+      }
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "user_admin",
+        target: args.email ?? args.userId ?? args.action,
+        intent: args.intent,
+        payload: {
+          action: args.action,
+          ...(args.email ? { email: args.email } : {}),
+          ...(args.userId ? { userId: args.userId } : {}),
+          ...(args.role ? { role: args.role } : {}),
+        },
+      });
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_user_manager",
+    version: "1.0.0",
+    tools: [listUsers, requestChange],
+  });
 }
 
 export function buildSkillBuilderServer(skillsRoot: string) {
