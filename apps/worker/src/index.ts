@@ -470,6 +470,16 @@ for (let i = 0; i < concurrency.globalCap; i++) {
 
 await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();
+  // CV0: nightly memory checkpoint into the org config repo.
+  try {
+    const { getOrgAgentRoot } = await import("@neko/llm/work");
+    const { snapshotDurableMemories } = await import("@neko/llm/config-vcs");
+    await snapshotDurableMemories(ADMIN_ORG_ID, getOrgAgentRoot(ADMIN_ORG_ID));
+  } catch (e) {
+    console.warn(
+      `[worker] memory checkpoint failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
 });
 
 await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {

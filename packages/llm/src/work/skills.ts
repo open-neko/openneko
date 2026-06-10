@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { recordConfigChange } from "../config-vcs";
 
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -78,6 +79,13 @@ export async function writeWorkSkill(
     await mkdir(dirname(full), { recursive: true });
     await writeFile(full, file.content, "utf8");
   }
+
+  // CV0: auto-version the write. Best-effort — never fails the save.
+  await recordConfigChange({
+    workspaceRoot: dirname(resolve(skillsRoot)),
+    paths: [`skills/${name}`],
+    message: `Updated skill: ${name}`,
+  });
 
   return { name, skillPath };
 }

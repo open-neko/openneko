@@ -213,7 +213,9 @@ export async function saveWorkflow(
       })
       .where(eq(workflow_definition.id, existing.id))
       .returning();
-    return { action: "updated", workflow: toRecord(row) };
+    const updated = toRecord(row);
+    await versionWorkflowDefinition(updated, "Updated");
+    return { action: "updated", workflow: updated };
   }
 
   const [row] = await db()
@@ -234,7 +236,64 @@ export async function saveWorkflow(
       created_by_run_id: input.createdByRunId ?? null,
     })
     .returning();
-  return { action: "created", workflow: toRecord(row) };
+  const created = toRecord(row);
+  await versionWorkflowDefinition(created, "Added");
+  return { action: "created", workflow: created };
+}
+
+/**
+ * CV0: serialize the definitional half of a workflow to
+ * workflows/<name>.md in the org config repo and commit. Best-effort —
+ * never fails the save. Operational state (enabled, budgets, run history)
+ * stays in the DB.
+ */
+async function versionWorkflowDefinition(
+  workflow: WorkflowRecord,
+  verb: "Added" | "Updated",
+): Promise<void> {
+  try {
+    const { getOrgAgentRoot } = await import("../work/workspace");
+    const { recordConfigChange } = await import("../config-vcs");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const root = getOrgAgentRoot(workflow.orgId);
+    const slug = workflow.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 80);
+    const body = [
+      "---",
+      `name: ${JSON.stringify(workflow.name)}`,
+      `goal: ${JSON.stringify(workflow.goal)}`,
+      `cron: ${workflow.cron ? JSON.stringify(workflow.cron) : "null"}`,
+      `cron_timezone: ${JSON.stringify(workflow.cronTimezone)}`,
+      "---",
+      "",
+      workflow.description,
+      "",
+      "## Steps",
+      ...workflow.steps.map(
+        (s, i) => `${i + 1}. ${typeof s === "object" && s && "description" in s ? String((s as { description: unknown }).description) : String(s)}`,
+      ),
+      ...(workflow.systemPromptOverlay
+        ? ["", "## System prompt overlay", "", workflow.systemPromptOverlay]
+        : []),
+      "",
+    ].join("\n");
+    await mkdir(join(root, "workflows"), { recursive: true });
+    await writeFile(join(root, "workflows", `${slug}.md`), body, "utf8");
+    await recordConfigChange({
+      workspaceRoot: root,
+      orgId: workflow.orgId,
+      paths: [`workflows/${slug}.md`],
+      message: `${verb} workflow: ${workflow.name}`,
+    });
+  } catch (err) {
+    console.warn(
+      `[config-vcs] workflow versioning failed (save succeeded): ${err instanceof Error ? err.message : err}`,
+    );
+  }
 }
 
 export type WorkflowRunRecord = {

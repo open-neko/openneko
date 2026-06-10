@@ -263,6 +263,28 @@ export const dashboard_pin = pgTable(
   }),
 );
 
+// CV0 — config-vcs ref pointers: the DB knows each org layer's current
+// commit; git holds the content. Team layer = (scope='team', user_id='').
+export const config_ref = pgTable(
+  "config_ref",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull().default("team"),
+    user_id: text("user_id").notNull().default(""),
+    commit_sha: text("commit_sha").notNull(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_scope_user_unique: uniqueIndex("config_ref_org_scope_user_unique").on(
+      t.org_id,
+      t.scope,
+      t.user_id,
+    ),
+  }),
+);
+
 // OL7 — a muted scope hides matching workflow_output cards from the
 // Briefing tributaries until muted_until passes.
 export const muted_scope = pgTable(
