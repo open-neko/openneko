@@ -432,6 +432,7 @@ export function buildWorkMemoryServer(
         orgId: ctx.orgId,
         query: args.query,
         limit: args.limit ?? 5,
+        runId: ctx.runId ?? null,
       });
       return {
         content: [

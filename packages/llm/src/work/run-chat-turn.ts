@@ -34,6 +34,7 @@ import {
 } from "./graphjin-guard";
 import {
   formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext,
+  memoryLayerForActor,
   rememberWorkMemory,
 } from "./memory";
 import {
@@ -249,17 +250,16 @@ export async function runChatTurn(
       message: "Loading shared skills and memory…",
     });
 
+    // K1 actor drives both the persona (CV3) and the memory layer (CV2).
+    const actor = await getWorkRunActor(runId);
     const memoryContext = await formatWorkMemoryPromptContext(
-      { orgId, threadId, runId },
+      { orgId, threadId, runId, userId: memoryLayerForActor(actor) },
       // Use the latest user message as the retrieval query so we pull
       // memories semantically close to what the operator just asked.
       { contextQuery: message, contextLimit: 5 },
     );
 
     const installedSkills = await listInstalledSkills(workspace.skillsRoot);
-
-    // CV3: persona-shape the prompt for the run's acting principal (K1).
-    const actor = await getWorkRunActor(runId);
     const operatorProfile = buildOperatorProfileSection(
       await getOperatorProfile(orgId, actor.userId),
     );

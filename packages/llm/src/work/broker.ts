@@ -80,21 +80,27 @@ async function handle(
       });
       return send(res, 200, { ok: true });
     case "/v1/memory/remember":
+      // CV2: the memory layer is derived server-side from the bound run's
+      // actor — an agent-supplied userId is never trusted.
+      delete body.userId;
       return send(
         res,
         200,
         await cp.rememberWorkMemory({
           ...body,
           orgId: binding.orgId,
+          runId: binding.runId,
         } as Parameters<AgentControlPlane["rememberWorkMemory"]>[0]),
       );
     case "/v1/memory/search":
+      delete body.userId;
       return send(
         res,
         200,
         await cp.searchWorkMemoryByContext({
           ...body,
           orgId: binding.orgId,
+          runId: binding.runId,
         } as Parameters<AgentControlPlane["searchWorkMemoryByContext"]>[0]),
       );
     case "/v1/workflow/save":

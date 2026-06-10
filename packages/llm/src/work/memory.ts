@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
@@ -11,6 +12,7 @@ import {
   work_memory_event,
   work_message,
   work_pending_memory,
+  work_run,
 } from "@neko/db";
 import { embedText, vectorLiteral } from "../embedding";
 
@@ -39,6 +41,13 @@ export type WorkMemoryContext = {
   orgId: string;
   threadId?: string | null;
   runId?: string | null;
+  /**
+   * CV2 memory layer of the acting principal. null/absent = team layer
+   * (admin, service, solo). A member's id = their personal overlay:
+   * own live rows plus team rows they haven't shadowed or suppressed.
+   * When undefined, write paths fall back to the runId's K1 actor.
+   */
+  userId?: string | null;
 };
 
 export type WorkMemory = {
@@ -55,6 +64,13 @@ export type WorkMemory = {
   sourceThreadId: string | null;
   useCount: number;
   lastUsedAt: string | null;
+  userId: string | null;
+  originId: string | null;
+  overridesOriginId: string | null;
+  suppressed: boolean;
+  promotedFromId: string | null;
+  promotedBy: string | null;
+  promotedAt: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -143,6 +159,54 @@ const CORE_THREAD_KINDS = new Set<WorkMemoryKind>([
   "correction",
 ]);
 
+/** CV2: a member's writes land in their personal layer; everyone else's in the team layer. */
+export function memoryLayerForActor(actor: {
+  userId: string | null;
+  role: string | null;
+}): string | null {
+  return actor.role === "member" && actor.userId ? actor.userId : null;
+}
+
+async function resolveRunMemoryLayer(runId: string | null): Promise<string | null> {
+  if (!runId) return null;
+  const [run] = await db()
+    .select({ userId: work_run.actor_user_id, role: work_run.actor_role })
+    .from(work_run)
+    .where(eq(work_run.id, runId))
+    .limit(1);
+  return run ? memoryLayerForActor(run) : null;
+}
+
+// Layered visibility (CV2). Team context sees only team rows. A member
+// sees their own live personal rows plus team rows whose origin they
+// haven't overridden — a personal row pointing overrides_origin_id at a
+// team row's origin replaces it (edit) or hides it (suppressed).
+function layerVisibilityFilter(userId: string | null | undefined) {
+  if (!userId) return isNull(work_memory.user_id);
+  return sql`((${work_memory.user_id} = ${userId} and ${work_memory.suppressed} = false)
+    or (${work_memory.user_id} is null and not exists (
+      select 1 from work_memory p
+      where p.org_id = ${work_memory.org_id}
+        and p.user_id = ${userId}
+        and p.overrides_origin_id = ${work_memory.origin_id}
+        and p.archived_at is null
+    )))`;
+}
+
+async function tryEmbed(text: string): Promise<string | null> {
+  // Embed up front so search-by-context can find it on the very next query.
+  // Failure here is not fatal — we'd rather store the memory than lose it.
+  try {
+    return vectorLiteral(await embedText(text));
+  } catch (err) {
+    console.error(
+      "[work-memory] embedding failed; storing memory without vector:",
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
 export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promise<WorkMemory> {
   assertKind(input.kind);
   const scope = normalizeNewWorkMemoryScope(input.scope, {
@@ -152,21 +216,16 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
   const scopeId = resolveScopeId(scope, input);
   const pinned = input.pinned ?? shouldPinByDefault(input.kind, scope);
   const text = input.text.trim();
-  // Embed up front so search-by-context can find it on the very next query.
-  // Failure here is not fatal — we'd rather store the memory than lose it.
-  let embedding: string | null = null;
-  try {
-    const vec = await embedText(text);
-    embedding = vectorLiteral(vec);
-  } catch (err) {
-    console.error(
-      "[work-memory] embedding failed; storing memory without vector:",
-      err instanceof Error ? err.message : err,
-    );
-  }
+  const layerUserId =
+    input.userId !== undefined
+      ? input.userId
+      : await resolveRunMemoryLayer(input.runId ?? null);
+  const embedding = await tryEmbed(text);
+  const id = randomUUID();
   const rows = await db()
     .insert(work_memory)
     .values({
+      id,
       org_id: input.orgId,
       kind: input.kind,
       scope,
@@ -177,6 +236,8 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
       metadata: input.metadata ?? {},
       source_run_id: input.runId ?? null,
       source_thread_id: input.threadId ?? null,
+      user_id: layerUserId,
+      origin_id: id,
       ...(embedding ? { embedding: sql`${embedding}::vector` } : {}),
       created_at: now,
       updated_at: now,
@@ -189,7 +250,14 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
     runId: input.runId ?? null,
     threadId: input.threadId ?? null,
     action: "remember",
-    payload: { kind: input.kind, scope, scopeId, pinned, text: input.text.trim() },
+    payload: {
+      kind: input.kind,
+      scope,
+      scopeId,
+      pinned,
+      userId: layerUserId,
+      text: input.text.trim(),
+    },
   });
   return memory;
 }
@@ -200,10 +268,20 @@ export async function archiveWorkMemory(
   ctx: Omit<WorkMemoryContext, "orgId"> & { reason?: string } = {},
 ): Promise<boolean> {
   const now = new Date();
+  // A member (ctx.userId set) can only archive rows in their own layer;
+  // team rows are hidden for them via suppression instead.
+  const layerGuard = ctx.userId ? eq(work_memory.user_id, ctx.userId) : undefined;
   const rows = await db()
     .update(work_memory)
     .set({ archived_at: now, updated_at: now })
-    .where(and(eq(work_memory.org_id, orgId), eq(work_memory.id, id), isNull(work_memory.archived_at)))
+    .where(
+      and(
+        eq(work_memory.org_id, orgId),
+        eq(work_memory.id, id),
+        isNull(work_memory.archived_at),
+        ...(layerGuard ? [layerGuard] : []),
+      ),
+    )
     .returning({ id: work_memory.id });
   if (!rows[0]) return false;
   await insertWorkMemoryEvent({
@@ -228,13 +306,23 @@ export async function getWorkMemory(orgId: string, id: string): Promise<WorkMemo
 
 export async function listWorkMemories(
   orgId: string,
-  options: { includeArchived?: boolean; limit?: number } = {},
+  options: {
+    includeArchived?: boolean;
+    limit?: number;
+    userId?: string | null;
+  } = {},
 ): Promise<WorkMemory[]> {
   const activeFilter = options.includeArchived ? undefined : isNull(work_memory.archived_at);
   const rows = await db()
     .select()
     .from(work_memory)
-    .where(activeFilter ? and(eq(work_memory.org_id, orgId), activeFilter) : eq(work_memory.org_id, orgId))
+    .where(
+      and(
+        eq(work_memory.org_id, orgId),
+        layerVisibilityFilter(options.userId),
+        ...(activeFilter ? [activeFilter] : []),
+      ),
+    )
     .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
     .limit(options.limit ?? 200);
   return rows.map(rowToMemory);
@@ -247,7 +335,13 @@ export async function getCoreWorkMemories(
   const rows = await db()
     .select()
     .from(work_memory)
-    .where(and(eq(work_memory.org_id, ctx.orgId), isNull(work_memory.archived_at)))
+    .where(
+      and(
+        eq(work_memory.org_id, ctx.orgId),
+        layerVisibilityFilter(ctx.userId),
+        isNull(work_memory.archived_at),
+      ),
+    )
     .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
     .limit(500);
 
@@ -284,6 +378,8 @@ export async function formatWorkMemoryPromptContext(
           orgId: ctx.orgId,
           query: options.contextQuery,
           limit: options.contextLimit ?? 5,
+          userId: ctx.userId ?? null,
+          runId: ctx.runId ?? null,
         })
       )
         .map((r) => r.memory)
@@ -318,6 +414,7 @@ export async function formatGlobalMemoryPromptContext(
       and(
         eq(work_memory.org_id, orgId),
         eq(work_memory.scope, "global"),
+        isNull(work_memory.user_id),
         isNull(work_memory.archived_at),
       ),
     )
@@ -364,10 +461,16 @@ export async function searchWorkMemoryByContext(args: {
   orgId: string;
   query: string;
   limit?: number;
+  userId?: string | null;
+  runId?: string | null;
 }): Promise<WorkMemorySearchResult[]> {
   const limit = clamp(Math.floor(args.limit ?? 5), 1, 20);
   const trimmed = args.query.trim();
   if (!trimmed) return [];
+  const layerUserId =
+    args.userId !== undefined
+      ? args.userId
+      : await resolveRunMemoryLayer(args.runId ?? null);
   let queryVec: string;
   try {
     queryVec = vectorLiteral(await embedText(trimmed));
@@ -398,6 +501,13 @@ export async function searchWorkMemoryByContext(args: {
       source_thread_id: work_memory.source_thread_id,
       use_count: work_memory.use_count,
       last_used_at: work_memory.last_used_at,
+      user_id: work_memory.user_id,
+      origin_id: work_memory.origin_id,
+      overrides_origin_id: work_memory.overrides_origin_id,
+      suppressed: work_memory.suppressed,
+      promoted_from_id: work_memory.promoted_from_id,
+      promoted_by: work_memory.promoted_by,
+      promoted_at: work_memory.promoted_at,
       archived_at: work_memory.archived_at,
       embedding: work_memory.embedding,
       created_at: work_memory.created_at,
@@ -408,6 +518,7 @@ export async function searchWorkMemoryByContext(args: {
     .where(
       and(
         eq(work_memory.org_id, args.orgId),
+        layerVisibilityFilter(layerUserId),
         isNull(work_memory.archived_at),
         sql`work_memory.embedding IS NOT NULL`,
       ),
@@ -416,7 +527,7 @@ export async function searchWorkMemoryByContext(args: {
     .limit(limit);
   if (rows.length === 0) return [];
   await touchWorkMemories(
-    { orgId: args.orgId },
+    { orgId: args.orgId, runId: args.runId ?? null },
     rows.map((r) => r.id),
   );
   return rows.map((r) => ({
@@ -433,6 +544,7 @@ export async function findConflictingWorkMemories(
     kind: WorkMemoryKind;
     scope: WorkMemoryScope;
     scopeId?: string | null;
+    userId?: string | null;
   },
   threshold = 0.3,
 ): Promise<Array<{ memory: WorkMemory; similarity: number }>> {
@@ -443,20 +555,14 @@ export async function findConflictingWorkMemories(
     .select()
     .from(work_memory)
     .where(
-      scopedById
-        ? and(
-            eq(work_memory.org_id, draft.orgId),
-            eq(work_memory.kind, draft.kind),
-            eq(work_memory.scope, draft.scope),
-            eq(work_memory.scope_id, draft.scopeId ?? ""),
-            isNull(work_memory.archived_at),
-          )
-        : and(
-            eq(work_memory.org_id, draft.orgId),
-            eq(work_memory.kind, draft.kind),
-            eq(work_memory.scope, draft.scope),
-            isNull(work_memory.archived_at),
-          ),
+      and(
+        eq(work_memory.org_id, draft.orgId),
+        eq(work_memory.kind, draft.kind),
+        eq(work_memory.scope, draft.scope),
+        layerVisibilityFilter(draft.userId),
+        isNull(work_memory.archived_at),
+        ...(scopedById ? [eq(work_memory.scope_id, draft.scopeId ?? "")] : []),
+      ),
     );
 
   const draftTokens = new Set(tokenize(draft.text));
@@ -470,6 +576,211 @@ export async function findConflictingWorkMemories(
     })
     .filter((result) => result.similarity >= threshold)
     .sort((a, b) => b.similarity - a.similarity);
+}
+
+/**
+ * CV2 copy-on-write personalization. Editing a team memory copies it
+ * into the member's personal layer (overrides_origin_id shadows the
+ * team row for them); suppress=true hides it for them instead. Editing
+ * their own personal row updates it in place. The team row is never
+ * touched.
+ */
+export async function overrideWorkMemoryForUser(input: {
+  orgId: string;
+  userId: string;
+  memoryId: string;
+  text?: string;
+  suppress?: boolean;
+  runId?: string | null;
+  threadId?: string | null;
+}): Promise<WorkMemory> {
+  const target = await getWorkMemory(input.orgId, input.memoryId);
+  if (!target || target.archivedAt) {
+    throw new Error(`Memory not found: ${input.memoryId}`);
+  }
+  if (target.userId && target.userId !== input.userId) {
+    throw new Error(`Memory not found: ${input.memoryId}`);
+  }
+  const suppress = input.suppress === true;
+  const text = input.text?.trim() || target.text;
+  const now = new Date();
+  const eventCtx = {
+    orgId: input.orgId,
+    runId: input.runId ?? null,
+    threadId: input.threadId ?? null,
+  };
+
+  if (target.userId === input.userId) {
+    const rows = await db()
+      .update(work_memory)
+      .set({
+        text,
+        suppressed: suppress,
+        ...(input.text && !suppress
+          ? { embedding: await embeddingValue(text) }
+          : {}),
+        updated_at: now,
+      })
+      .where(and(eq(work_memory.org_id, input.orgId), eq(work_memory.id, target.id)))
+      .returning();
+    const memory = rowToMemory(rows[0]);
+    await insertWorkMemoryEvent({
+      ...eventCtx,
+      memoryId: memory.id,
+      action: suppress ? "suppress" : "override",
+      payload: { userId: input.userId, originId: memory.originId },
+    });
+    return memory;
+  }
+
+  // Team row: upsert the member's override for this origin.
+  const [existing] = await db()
+    .select()
+    .from(work_memory)
+    .where(
+      and(
+        eq(work_memory.org_id, input.orgId),
+        eq(work_memory.user_id, input.userId),
+        eq(work_memory.overrides_origin_id, target.originId ?? target.id),
+        isNull(work_memory.archived_at),
+      ),
+    )
+    .limit(1);
+  let memory: WorkMemory;
+  if (existing) {
+    const rows = await db()
+      .update(work_memory)
+      .set({
+        text,
+        suppressed: suppress,
+        ...(input.text && !suppress
+          ? { embedding: await embeddingValue(text) }
+          : {}),
+        updated_at: now,
+      })
+      .where(eq(work_memory.id, existing.id))
+      .returning();
+    memory = rowToMemory(rows[0]);
+  } else {
+    const id = randomUUID();
+    const rows = await db()
+      .insert(work_memory)
+      .values({
+        id,
+        org_id: input.orgId,
+        kind: target.kind,
+        scope: target.scope,
+        scope_id: target.scopeId,
+        text,
+        pinned: target.pinned,
+        confidence: target.confidence,
+        metadata: { ...target.metadata, origin: "user_override" },
+        source_run_id: input.runId ?? null,
+        source_thread_id: input.threadId ?? null,
+        user_id: input.userId,
+        origin_id: id,
+        overrides_origin_id: target.originId ?? target.id,
+        suppressed: suppress,
+        ...(suppress ? {} : { embedding: await embeddingValue(text) }),
+        created_at: now,
+        updated_at: now,
+      })
+      .returning();
+    memory = rowToMemory(rows[0]);
+  }
+  await insertWorkMemoryEvent({
+    ...eventCtx,
+    memoryId: memory.id,
+    action: suppress ? "suppress" : "override",
+    payload: {
+      userId: input.userId,
+      overridesOriginId: memory.overridesOriginId,
+    },
+  });
+  return memory;
+}
+
+/**
+ * CV2 promote: an admin pulls a member's personal memory into the team
+ * layer. The new team row keeps the origin lineage; the personal source
+ * (and, for an override, the team row it replaced) is archived. Other
+ * members' overrides of the same origin keep shadowing the new row.
+ */
+export async function promoteWorkMemoryToOrg(input: {
+  orgId: string;
+  memoryId: string;
+  promotedBy: string;
+  runId?: string | null;
+  threadId?: string | null;
+}): Promise<WorkMemory> {
+  const source = await getWorkMemory(input.orgId, input.memoryId);
+  if (!source || source.archivedAt || !source.userId) {
+    throw new Error(`Personal memory not found: ${input.memoryId}`);
+  }
+  if (source.suppressed) {
+    throw new Error(`Cannot promote a suppressed memory: ${input.memoryId}`);
+  }
+  const now = new Date();
+  const originId = source.overridesOriginId ?? source.originId ?? source.id;
+  if (source.overridesOriginId) {
+    await db()
+      .update(work_memory)
+      .set({ archived_at: now, updated_at: now })
+      .where(
+        and(
+          eq(work_memory.org_id, input.orgId),
+          eq(work_memory.origin_id, source.overridesOriginId),
+          isNull(work_memory.user_id),
+          isNull(work_memory.archived_at),
+        ),
+      );
+  }
+  const rows = await db()
+    .insert(work_memory)
+    .values({
+      org_id: input.orgId,
+      kind: source.kind,
+      scope: source.scope,
+      scope_id: source.scopeId,
+      text: source.text,
+      pinned: source.pinned,
+      confidence: source.confidence,
+      metadata: { ...source.metadata, origin: "promoted" },
+      source_run_id: input.runId ?? null,
+      source_thread_id: input.threadId ?? null,
+      user_id: null,
+      origin_id: originId,
+      promoted_from_id: source.id,
+      promoted_by: input.promotedBy,
+      promoted_at: now,
+      embedding: await embeddingValue(source.text),
+      created_at: now,
+      updated_at: now,
+    })
+    .returning();
+  await db()
+    .update(work_memory)
+    .set({ archived_at: now, updated_at: now })
+    .where(and(eq(work_memory.org_id, input.orgId), eq(work_memory.id, source.id)));
+  const memory = rowToMemory(rows[0]);
+  await insertWorkMemoryEvent({
+    orgId: input.orgId,
+    memoryId: memory.id,
+    runId: input.runId ?? null,
+    threadId: input.threadId ?? null,
+    action: "promote",
+    payload: {
+      promotedFromId: source.id,
+      promotedBy: input.promotedBy,
+      originId,
+    },
+  });
+  return memory;
+}
+
+async function embeddingValue(text: string) {
+  const literal = await tryEmbed(text);
+  return literal ? sql`${literal}::vector` : null;
 }
 
 export async function createPendingWorkMemory(input: {
@@ -618,7 +929,13 @@ async function searchSavedWorkMemories(
   const rows = await db()
     .select()
     .from(work_memory)
-    .where(and(eq(work_memory.org_id, input.orgId), isNull(work_memory.archived_at)))
+    .where(
+      and(
+        eq(work_memory.org_id, input.orgId),
+        layerVisibilityFilter(input.userId),
+        isNull(work_memory.archived_at),
+      ),
+    )
     .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
     .limit(1000);
   const query = input.query.trim();
@@ -730,6 +1047,13 @@ function rowToMemory(row: WorkMemoryRow): WorkMemory {
     sourceThreadId: row.source_thread_id,
     useCount: row.use_count,
     lastUsedAt: row.last_used_at ? row.last_used_at.toISOString() : null,
+    userId: row.user_id,
+    originId: row.origin_id,
+    overridesOriginId: row.overrides_origin_id,
+    suppressed: row.suppressed,
+    promotedFromId: row.promoted_from_id,
+    promotedBy: row.promoted_by,
+    promotedAt: row.promoted_at ? row.promoted_at.toISOString() : null,
     archivedAt: row.archived_at ? row.archived_at.toISOString() : null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

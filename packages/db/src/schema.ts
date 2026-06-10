@@ -653,6 +653,18 @@ export const work_memory = pgTable(
     }),
     use_count: integer("use_count").notNull().default(0),
     last_used_at: ts("last_used_at"),
+    // CV2 overlay: NULL user_id = team layer; personal rows shadow
+    // (overrides_origin_id) or hide (suppressed) the team row of that
+    // origin for their owner. promoted_* = promote lineage.
+    user_id: text("user_id").references(() => app_user.id, {
+      onDelete: "cascade",
+    }),
+    origin_id: uuid("origin_id"),
+    overrides_origin_id: uuid("overrides_origin_id"),
+    suppressed: boolean("suppressed").notNull().default(false),
+    promoted_from_id: uuid("promoted_from_id"),
+    promoted_by: text("promoted_by"),
+    promoted_at: ts("promoted_at"),
     archived_at: ts("archived_at"),
     embedding: vector("embedding", 384),
     created_at: ts("created_at").notNull().defaultNow(),
