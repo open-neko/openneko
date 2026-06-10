@@ -16,6 +16,13 @@ function stubControlPlane(): AgentControlPlane {
     rememberWorkMemory: unused as AgentControlPlane["rememberWorkMemory"],
     searchWorkMemoryByContext:
       unused as AgentControlPlane["searchWorkMemoryByContext"],
+    saveWorkflowWithTrigger:
+      unused as AgentControlPlane["saveWorkflowWithTrigger"],
+    listWorkflowsWithTriggers:
+      unused as AgentControlPlane["listWorkflowsWithTriggers"],
+    upsertActionPolicyByName:
+      unused as AgentControlPlane["upsertActionPolicyByName"],
+    listActionPolicies: unused as AgentControlPlane["listActionPolicies"],
   };
 }
 

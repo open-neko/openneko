@@ -40,6 +40,26 @@ function makeFakeControlPlane() {
         ReturnType<AgentControlPlane["searchWorkMemoryByContext"]>
       >;
     },
+    async saveWorkflowWithTrigger(input) {
+      calls.push({ method: "wf-save", input: input as Record<string, unknown> });
+      return { action: "created", workflow: { id: "w1", name: "W" } } as Awaited<
+        ReturnType<AgentControlPlane["saveWorkflowWithTrigger"]>
+      >;
+    },
+    async listWorkflowsWithTriggers(input) {
+      calls.push({ method: "wf-list", input: input as Record<string, unknown> });
+      return { total: 0, workflows: [] };
+    },
+    async upsertActionPolicyByName(input) {
+      calls.push({ method: "rule-save", input: input as Record<string, unknown> });
+      return { action: "created", policy: { id: "p1", name: "R" } } as Awaited<
+        ReturnType<AgentControlPlane["upsertActionPolicyByName"]>
+      >;
+    },
+    async listActionPolicies(input) {
+      calls.push({ method: "rule-list", input: input as Record<string, unknown> });
+      return { total: 0, policies: [] };
+    },
   };
   return { cp, calls };
 }
@@ -109,6 +129,38 @@ describe("agent broker", () => {
       orgId: "o1",
       actionRequestId: "ar1",
     });
+  });
+
+  it("forces builder save/list org + run provenance from the binding", async () => {
+    const cp = new BrokerControlPlane(baseUrl, "good");
+    await cp.saveWorkflowWithTrigger({
+      orgId: "SPOOF",
+      createdByRunId: "SPOOF",
+      name: "n",
+      steps: [],
+    } as unknown as Parameters<AgentControlPlane["saveWorkflowWithTrigger"]>[0]);
+    await cp.upsertActionPolicyByName({
+      orgId: "SPOOF",
+      createdByRunId: "SPOOF",
+      name: "r",
+      description: "",
+      appliesToKinds: [],
+      appliesToScopes: [],
+      mode: "approval_required",
+      priority: 0,
+      enabled: true,
+    } as unknown as Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0]);
+    await cp.listWorkflowsWithTriggers({ orgId: "SPOOF" });
+    await cp.listActionPolicies({ orgId: "SPOOF" });
+
+    const wfSave = fake.calls.find((c) => c.method === "wf-save")?.input;
+    expect(wfSave?.orgId).toBe("o1");
+    expect(wfSave?.createdByRunId).toBe("r1");
+    const ruleSave = fake.calls.find((c) => c.method === "rule-save")?.input;
+    expect(ruleSave?.orgId).toBe("o1");
+    expect(ruleSave?.createdByRunId).toBe("r1");
+    expect(fake.calls.find((c) => c.method === "wf-list")?.input.orgId).toBe("o1");
+    expect(fake.calls.find((c) => c.method === "rule-list")?.input.orgId).toBe("o1");
   });
 
   it("rejects an invalid token (401)", async () => {

@@ -97,6 +97,44 @@ async function handle(
           orgId: binding.orgId,
         } as Parameters<AgentControlPlane["searchWorkMemoryByContext"]>[0]),
       );
+    case "/v1/workflow/save":
+      return send(
+        res,
+        200,
+        await cp.saveWorkflowWithTrigger({
+          ...body,
+          orgId: binding.orgId,
+          createdByRunId: binding.runId,
+        } as Parameters<AgentControlPlane["saveWorkflowWithTrigger"]>[0]),
+      );
+    case "/v1/workflow/list":
+      return send(
+        res,
+        200,
+        await cp.listWorkflowsWithTriggers({
+          orgId: binding.orgId,
+          limit: typeof body.limit === "number" ? body.limit : undefined,
+        }),
+      );
+    case "/v1/rule/save":
+      return send(
+        res,
+        200,
+        await cp.upsertActionPolicyByName({
+          ...body,
+          orgId: binding.orgId,
+          createdByRunId: binding.runId,
+        } as Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0]),
+      );
+    case "/v1/rule/list":
+      return send(
+        res,
+        200,
+        await cp.listActionPolicies({
+          orgId: binding.orgId,
+          limit: typeof body.limit === "number" ? body.limit : undefined,
+        }),
+      );
     case "/v1/events":
       await deps.onEvents(binding, (body.events as AgentEvent[]) ?? []);
       return send(res, 200, { ok: true });

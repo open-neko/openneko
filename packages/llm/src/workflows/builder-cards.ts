@@ -37,7 +37,10 @@ function confirmationCard(args: {
 }
 
 export function workflowSavedCard(args: {
-  workflow: WorkflowRecord;
+  workflow: Pick<
+    WorkflowRecord,
+    "id" | "name" | "description" | "cron" | "cronTimezone" | "steps"
+  >;
   action: "created" | "updated";
 }): AgentSurfaceMessage[] {
   const verb = args.action === "created" ? "Created" : "Updated";
@@ -59,7 +62,10 @@ export function workflowSavedCard(args: {
 }
 
 export function subscriptionSavedCard(args: {
-  subscription: SubscriptionRecord;
+  subscription: Pick<
+    SubscriptionRecord,
+    "id" | "workflowId" | "filter" | "idempotencyKeyTemplate"
+  >;
   workflowName: string;
 }): AgentSurfaceMessage[] {
   const filter = args.subscription.filter as Partial<SourceChangeFilter>;
@@ -93,7 +99,16 @@ export function subscriptionSavedCard(args: {
 }
 
 export function policySavedCard(args: {
-  policy: ActionPolicyRecord;
+  policy: Pick<
+    ActionPolicyRecord,
+    | "id"
+    | "name"
+    | "description"
+    | "mode"
+    | "appliesToKinds"
+    | "appliesToScopes"
+    | "priority"
+  >;
   action: "created" | "updated";
 }): AgentSurfaceMessage[] {
   const verb = args.action === "created" ? "Created" : "Updated";

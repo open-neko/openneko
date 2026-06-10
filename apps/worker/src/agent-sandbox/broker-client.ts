@@ -59,6 +59,30 @@ export class BrokerControlPlane implements AgentControlPlane {
   ): ReturnType<AgentControlPlane["searchWorkMemoryByContext"]> {
     return this.post("/v1/memory/search", args);
   }
+
+  saveWorkflowWithTrigger(
+    input: Parameters<AgentControlPlane["saveWorkflowWithTrigger"]>[0],
+  ): ReturnType<AgentControlPlane["saveWorkflowWithTrigger"]> {
+    return this.post("/v1/workflow/save", input);
+  }
+
+  listWorkflowsWithTriggers(
+    input: Parameters<AgentControlPlane["listWorkflowsWithTriggers"]>[0],
+  ): ReturnType<AgentControlPlane["listWorkflowsWithTriggers"]> {
+    return this.post("/v1/workflow/list", input);
+  }
+
+  upsertActionPolicyByName(
+    input: Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0],
+  ): ReturnType<AgentControlPlane["upsertActionPolicyByName"]> {
+    return this.post("/v1/rule/save", input);
+  }
+
+  listActionPolicies(
+    input: Parameters<AgentControlPlane["listActionPolicies"]>[0],
+  ): ReturnType<AgentControlPlane["listActionPolicies"]> {
+    return this.post("/v1/rule/list", input);
+  }
 }
 
 /** Emit agent events back to the host through the broker (one-way sink). */

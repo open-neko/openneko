@@ -1,19 +1,27 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { AgentEvent } from "../agent-backend";
+import {
+  inProcessControlPlane,
+  type AgentControlPlane,
+} from "../work/control-plane";
 import { subscriptionSavedCard, workflowSavedCard } from "./builder-cards";
 import { WORKFLOW_SAVE_SCHEMA } from "./fence-schemas";
-import { saveWorkflowWithTrigger } from "./save-workflow-with-trigger";
-import { listSubscriptionsByWorkflow, listWorkflows } from "./store";
 
 export type WorkflowBuilderContext = {
   orgId: string;
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
   emit?: (event: AgentEvent) => Promise<void> | void;
+  /** In-process on the host; broker-backed inside the agent sandbox. The
+   *  tool handlers run wherever the backend SDK runs, so they must never
+   *  touch the DB directly. */
+  controlPlane?: AgentControlPlane;
 };
 
 export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
+  const controlPlane = ctx.controlPlane ?? inProcessControlPlane;
+
   const createWorkflowTool = tool(
     "create_workflow",
     [
@@ -30,7 +38,7 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
     ].join(" "),
     WORKFLOW_SAVE_SCHEMA.shape,
     async (args) => {
-      const result = await saveWorkflowWithTrigger({
+      const result = await controlPlane.saveWorkflowWithTrigger({
         orgId: ctx.orgId,
         name: args.name,
         description: args.description,
@@ -98,11 +106,11 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
       limit: z.number().int().min(1).max(200).optional(),
     },
     async (args) => {
-      const all = await listWorkflows(ctx.orgId);
-      const limit = args.limit ?? 50;
-      const slice = all.slice(0, limit);
-      const triggers = await Promise.all(
-        slice.map((w) => listSubscriptionsByWorkflow(ctx.orgId, w.id)),
+      const { total, workflows } = await controlPlane.listWorkflowsWithTriggers(
+        {
+          orgId: ctx.orgId,
+          limit: args.limit ?? 50,
+        },
       );
       return {
         content: [
@@ -110,29 +118,24 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
             type: "text" as const,
             text: JSON.stringify({
               ok: true,
-              total: all.length,
-              returned: slice.length,
-              workflows: slice.map((w, i) => {
-                const dataTrigger = triggers[i].find(
-                  (s) => s.sourceKind === "source_change" && s.enabled,
-                );
-                return {
-                  id: w.id,
-                  name: w.name,
-                  description: w.description,
-                  enabled: w.enabled,
-                  status: w.status,
-                  goal: w.goal,
-                  systemPromptOverlay: w.systemPromptOverlay,
-                  steps: w.steps,
-                  cron: w.cron,
-                  cronTimezone: w.cronTimezone,
-                  cronEnabled: w.cronEnabled,
-                  when: dataTrigger ? dataTrigger.filter : null,
-                  updatedAt: w.updatedAt.toISOString(),
-                  createdAt: w.createdAt.toISOString(),
-                };
-              }),
+              total,
+              returned: workflows.length,
+              workflows: workflows.map((w) => ({
+                id: w.id,
+                name: w.name,
+                description: w.description,
+                enabled: w.enabled,
+                status: w.status,
+                goal: w.goal,
+                systemPromptOverlay: w.systemPromptOverlay,
+                steps: w.steps,
+                cron: w.cron,
+                cronTimezone: w.cronTimezone,
+                cronEnabled: w.cronEnabled,
+                when: w.when,
+                updatedAt: w.updatedAt,
+                createdAt: w.createdAt,
+              })),
             }),
           },
         ],

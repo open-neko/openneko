@@ -87,12 +87,14 @@ export async function runAgentBackend(
           createdByThreadId: threadId,
           createdByRunId: runId,
           emit,
+          controlPlane,
         }),
         neko_rule_builder: buildRuleBuilderServer({
           orgId,
           createdByThreadId: threadId,
           createdByRunId: runId,
           emit,
+          controlPlane,
         }),
         ...(pluginActionServer ? { neko_plugin_actions: pluginActionServer } : {}),
       }

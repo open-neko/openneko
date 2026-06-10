@@ -2,11 +2,13 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { AgentEvent } from "../agent-backend";
 import {
-  listAllPolicies,
-  upsertActionPolicyByName,
-  type ActionPolicyMode,
-  type ActionScope,
-  type RiskLevel,
+  inProcessControlPlane,
+  type AgentControlPlane,
+} from "../work/control-plane";
+import type {
+  ActionPolicyMode,
+  ActionScope,
+  RiskLevel,
 } from "./action-store";
 import { policySavedCard } from "./builder-cards";
 import { POLICY_SAVE_SCHEMA } from "./fence-schemas";
@@ -16,9 +18,15 @@ export type RuleBuilderContext = {
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
   emit?: (event: AgentEvent) => Promise<void> | void;
+  /** In-process on the host; broker-backed inside the agent sandbox. The
+   *  tool handlers run wherever the backend SDK runs, so they must never
+   *  touch the DB directly. */
+  controlPlane?: AgentControlPlane;
 };
 
 export function buildRuleBuilderServer(ctx: RuleBuilderContext) {
+  const controlPlane = ctx.controlPlane ?? inProcessControlPlane;
+
   const saveRuleTool = tool(
     "save_rule",
     [
@@ -31,7 +39,7 @@ export function buildRuleBuilderServer(ctx: RuleBuilderContext) {
     ].join(" "),
     POLICY_SAVE_SCHEMA.shape,
     async (args) => {
-      const result = await upsertActionPolicyByName({
+      const result = await controlPlane.upsertActionPolicyByName({
         orgId: ctx.orgId,
         name: args.name,
         description: args.description ?? "",
@@ -87,18 +95,19 @@ export function buildRuleBuilderServer(ctx: RuleBuilderContext) {
       limit: z.number().int().min(1).max(200).optional(),
     },
     async (args) => {
-      const all = await listAllPolicies(ctx.orgId);
-      const limit = args.limit ?? 50;
-      const slice = all.slice(0, limit);
+      const { total, policies } = await controlPlane.listActionPolicies({
+        orgId: ctx.orgId,
+        limit: args.limit ?? 50,
+      });
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify({
               ok: true,
-              total: all.length,
-              returned: slice.length,
-              rules: slice.map((p) => ({
+              total,
+              returned: policies.length,
+              rules: policies.map((p) => ({
                 id: p.id,
                 name: p.name,
                 description: p.description,
@@ -112,8 +121,8 @@ export function buildRuleBuilderServer(ctx: RuleBuilderContext) {
                 approverRole: p.approverRole,
                 priority: p.priority,
                 enabled: p.enabled,
-                updatedAt: p.updatedAt.toISOString(),
-                createdAt: p.createdAt.toISOString(),
+                updatedAt: p.updatedAt,
+                createdAt: p.createdAt,
               })),
             }),
           },
