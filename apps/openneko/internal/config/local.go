@@ -50,6 +50,13 @@ func ReadLocal(override string) (Local, string) {
 		if err := json.Unmarshal(data, &lc); err != nil {
 			continue
 		}
+		// pg.password is encrypted at rest (enc:v1) by the web /setup
+		// writer; legacy plaintext passes through unchanged.
+		if lc.Pg != nil && lc.Pg.Password != "" {
+			if plain, err := MaybeDecryptValue(override, lc.Pg.Password); err == nil {
+				lc.Pg.Password = plain
+			}
+		}
 		return lc, path
 	}
 	return Local{}, ""

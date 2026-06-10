@@ -14,6 +14,7 @@ import {
   type MarketplaceVersion,
 } from "../src/marketplace-client";
 import { PLUGIN_MANIFEST_FILE, PLUGIN_MANIFEST_SCHEMA_URL } from "../src/manifest";
+import { readSecretsStore } from "../src/secrets-store";
 
 const INTEGRITY = "sha512-" + "a".repeat(86) + "==";
 
@@ -171,10 +172,15 @@ describe("runInstall", () => {
     expect(prompted).toEqual(["SLACK_BOT_TOKEN"]);
     expect(result.envSaved).toEqual(["SLACK_BOT_TOKEN"]);
     expect(result.envAlreadySet).toEqual([]);
+    // At rest the value is encrypted (SEC1); the reader returns plaintext.
     const stored = JSON.parse(
       await readFile(path.join(configDir, "secrets.json"), "utf8"),
     );
-    expect(stored["@open-neko/plugin-slack"].SLACK_BOT_TOKEN).toBe(
+    expect(stored["@open-neko/plugin-slack"].SLACK_BOT_TOKEN).toMatch(
+      /^enc:v1:/,
+    );
+    const readBack = await readSecretsStore(configDir);
+    expect(readBack["@open-neko/plugin-slack"].SLACK_BOT_TOKEN).toBe(
       "value-for-SLACK_BOT_TOKEN",
     );
   });

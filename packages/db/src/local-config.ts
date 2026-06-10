@@ -26,6 +26,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { maybeDecryptSecret, maybeEncryptSecret } from "@neko/secret-crypt";
 
 export type LocalPgConfig = {
   host?: string;
@@ -67,7 +68,15 @@ export function readLocalConfig(): LocalConfig {
     try {
       const raw = readFileSync(path, "utf8");
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") return parsed as LocalConfig;
+      if (parsed && typeof parsed === "object") {
+        const cfg = parsed as LocalConfig;
+        // pg.password is encrypted at rest (enc:v1); legacy plaintext
+        // passes through unchanged.
+        if (typeof cfg.pg?.password === "string" && cfg.pg.password) {
+          cfg.pg = { ...cfg.pg, password: maybeDecryptSecret(cfg.pg.password) };
+        }
+        return cfg;
+      }
     } catch {
       // missing / malformed → try next, fall through to {}
     }
@@ -87,6 +96,9 @@ export function writeLocalConfig(partial: LocalConfig): void {
     ...current,
     pg: { ...(current.pg ?? {}), ...(partial.pg ?? {}) },
   };
+  if (typeof next.pg?.password === "string" && next.pg.password) {
+    next.pg = { ...next.pg, password: maybeEncryptSecret(next.pg.password) };
+  }
   mkdirSync(configDir(), { recursive: true });
   writeFileSync(localConfigPath(), JSON.stringify(next, null, 2), "utf8");
 }

@@ -27,6 +27,7 @@
     "@huggingface/transformers": "^4.2.0",
     "@neko/db": "workspace:*",
     "@neko/interaction": "workspace:*",
+    "@neko/secret-crypt": "workspace:*",
     "cron-parser": "^4.9.0",
     "google-auth-library": "^10.6.2",
     "pg": "^8.20.0",

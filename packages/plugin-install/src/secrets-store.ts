@@ -22,6 +22,7 @@
 import { chmodSync, existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { maybeDecryptSecret, maybeEncryptSecret } from "@neko/secret-crypt";
 
 /**
  * Top-level shape of the secrets file:
@@ -136,7 +137,7 @@ function parseFullSecretsFile(
     if (typeof value !== "object" || value === null) continue;
     const map: Record<string, string> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof v === "string") map[k] = v;
+      if (typeof v === "string") map[k] = maybeDecryptSecret(v);
     }
     env[key] = map;
   }
@@ -144,6 +145,15 @@ function parseFullSecretsFile(
 }
 
 function parseCredential(value: unknown): ConnectorCredential | null {
+  // SEC1 at-rest form: the whole blob serialized + encrypted into one
+  // enc:v1 string. Legacy plaintext-object form still parses below.
+  if (typeof value === "string") {
+    try {
+      return parseCredential(JSON.parse(maybeDecryptSecret(value)));
+    } catch {
+      return null;
+    }
+  }
   if (typeof value !== "object" || value === null) return null;
   const obj = value as Record<string, unknown>;
   const tokens = obj.tokens;
@@ -216,20 +226,26 @@ export async function writeFullSecretsFile(
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const out: Record<string, unknown> = {};
   // Sort plugins + keys deterministically so diffs are stable across runs.
+  // Values are encrypted at rest (enc:v1); keys stay plaintext so
+  // `secrets list` and diffs remain readable.
   for (const pkg of Object.keys(full.env).sort()) {
     const inner = full.env[pkg] ?? {};
     const sorted: Record<string, string> = {};
-    for (const k of Object.keys(inner).sort()) sorted[k] = inner[k]!;
+    for (const k of Object.keys(inner).sort()) {
+      sorted[k] = maybeEncryptSecret(inner[k]!);
+    }
     out[pkg] = sorted;
   }
   const opIds = Object.keys(full.operators).sort();
   if (opIds.length > 0) {
-    const operators: Record<string, Record<string, ConnectorCredential>> = {};
+    const operators: Record<string, Record<string, string>> = {};
     for (const id of opIds) {
       const byPlugin = full.operators[id] ?? {};
-      const sortedPlugins: Record<string, ConnectorCredential> = {};
+      const sortedPlugins: Record<string, string> = {};
       for (const pluginName of Object.keys(byPlugin).sort()) {
-        sortedPlugins[pluginName] = byPlugin[pluginName]!;
+        sortedPlugins[pluginName] = maybeEncryptSecret(
+          JSON.stringify(byPlugin[pluginName]!),
+        );
       }
       operators[id] = sortedPlugins;
     }

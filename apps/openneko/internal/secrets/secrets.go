@@ -17,6 +17,11 @@ import (
 
 const StoreFilename = "secrets.json"
 
+// OperatorsKey is the worker-owned per-operator credential section. The
+// CLI never parses it; Write preserves it (and any other section it
+// doesn't own) byte-for-byte to avoid the dual-writer clobber.
+const OperatorsKey = "_operators"
+
 type Store map[string]map[string]string
 
 func Path(overrideDir string) string {
@@ -38,10 +43,17 @@ func Read(overrideDir string) (Store, error) {
 	}
 	out := Store{}
 	for pkg, env := range parsed {
+		if pkg == OperatorsKey {
+			continue
+		}
 		m := map[string]string{}
 		for k, v := range env {
 			if s, ok := v.(string); ok {
-				m[k] = s
+				plain, err := config.MaybeDecryptValue(overrideDir, s)
+				if err != nil {
+					return nil, fmt.Errorf("secrets store %s/%s: %w", pkg, k, err)
+				}
+				m[k] = plain
 			}
 		}
 		out[pkg] = m
@@ -65,18 +77,45 @@ func Write(store Store, overrideDir string) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
+
+	// Sections this CLI doesn't own (the worker's _operators blobs, or
+	// anything a future writer adds) are carried over verbatim.
+	preserved := map[string]json.RawMessage{}
+	if raw, err := os.ReadFile(file); err == nil {
+		var full map[string]json.RawMessage
+		if jsonErr := json.Unmarshal(raw, &full); jsonErr == nil {
+			for k, v := range full {
+				if k == OperatorsKey || !isAllStringObject(v) {
+					preserved[k] = v
+				}
+			}
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
 	pkgs := make([]string, 0, len(store))
 	for k := range store {
+		if _, taken := preserved[k]; taken {
+			return fmt.Errorf("secrets store section %q is not CLI-owned", k)
+		}
 		pkgs = append(pkgs, k)
 	}
 	sort.Strings(pkgs)
+	preservedKeys := make([]string, 0, len(preserved))
+	for k := range preserved {
+		preservedKeys = append(preservedKeys, k)
+	}
+	sort.Strings(preservedKeys)
 
 	var buf bytes.Buffer
 	buf.WriteString("{")
-	for i, pkg := range pkgs {
-		if i > 0 {
+	wrote := 0
+	for _, pkg := range pkgs {
+		if wrote > 0 {
 			buf.WriteString(",")
 		}
+		wrote++
 		buf.WriteString("\n  ")
 		writeQuoted(&buf, pkg)
 		buf.WriteString(": {")
@@ -93,14 +132,33 @@ func Write(store Store, overrideDir string) error {
 			buf.WriteString("\n    ")
 			writeQuoted(&buf, k)
 			buf.WriteString(": ")
-			writeQuoted(&buf, inner[k])
+			enc, err := config.EncryptValue(overrideDir, inner[k])
+			if err != nil {
+				return fmt.Errorf("encrypt %s/%s: %w", pkg, k, err)
+			}
+			writeQuoted(&buf, enc)
 		}
 		if len(keys) > 0 {
 			buf.WriteString("\n  ")
 		}
 		buf.WriteString("}")
 	}
-	if len(pkgs) > 0 {
+	for _, k := range preservedKeys {
+		if wrote > 0 {
+			buf.WriteString(",")
+		}
+		wrote++
+		buf.WriteString("\n  ")
+		writeQuoted(&buf, k)
+		buf.WriteString(": ")
+		var indented bytes.Buffer
+		if err := json.Indent(&indented, preserved[k], "  ", "  "); err == nil {
+			buf.Write(indented.Bytes())
+		} else {
+			buf.Write(preserved[k])
+		}
+	}
+	if wrote > 0 {
 		buf.WriteString("\n")
 	}
 	buf.WriteString("}\n")
@@ -110,6 +168,21 @@ func Write(store Store, overrideDir string) error {
 	}
 	_ = os.Chmod(file, 0o600)
 	return nil
+}
+
+// isAllStringObject reports whether a raw JSON value is an object whose
+// values are all strings — the shape of a CLI-owned env section.
+func isAllStringObject(raw json.RawMessage) bool {
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return false
+	}
+	for _, v := range obj {
+		if _, ok := v.(string); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func writeQuoted(buf *bytes.Buffer, s string) {

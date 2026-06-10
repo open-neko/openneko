@@ -18,6 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@neko/secret-crypt": "workspace:*",
     "drizzle-orm": "^0.36.4",
     "pg": "^8.13.1",
     "pg-boss": "^10.1.5"
