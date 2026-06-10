@@ -184,6 +184,8 @@ export const metric = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    // CV3: per-persona cards. NULL = org-shared card.
+    user_id: text("user_id"),
     slug: text("slug").notNull(),
     source: text("source").notNull(),
     title: text("title").notNull(),
@@ -260,6 +262,34 @@ export const dashboard_pin = pgTable(
     org_role_metric_unique: uniqueIndex(
       "dashboard_pin_org_role_metric_unique",
     ).on(t.org_id, t.role, t.metric_id),
+  }),
+);
+
+// CV3 — personas: one profile per (org, user). user_id = '' is the
+// org-default persona (solo profile / unlinked channels). The compiled
+// brief_md is what the agent reads as <operator-profile>; raw answers
+// stay out of prompts.
+export const operator_profile = pgTable(
+  "operator_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().default(""),
+    display_name: text("display_name"),
+    role_template: text("role_template").notNull().default(""),
+    focus_areas: text("focus_areas").array().notNull().default(sql`'{}'::text[]`),
+    answers: jsonb("answers").notNull().default(sql`'{}'::jsonb`),
+    brief_md: text("brief_md").notNull().default(""),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_user_unique: uniqueIndex("operator_profile_org_user_unique").on(
+      t.org_id,
+      t.user_id,
+    ),
   }),
 );
 

@@ -411,6 +411,8 @@ export function buildWorkPrompt(args: {
   messages: AgentChatMessage[];
   currentUserMessage: string;
   memoryContext?: string;
+  /** CV3: compiled <operator-profile> block (already wrapped). */
+  operatorProfile?: string;
   installedSkills?: InstalledSkill[];
   /** Whether this channel renders a2ui cards (web). Default true. When false,
    *  the prompt carries no rendering section and the agent answers in markdown. */
@@ -433,6 +435,7 @@ export function buildWorkPrompt(args: {
     messages,
     currentUserMessage,
     memoryContext,
+    operatorProfile,
     installedSkills,
     wantsCards = true,
     supportsCardTool,
@@ -454,6 +457,7 @@ behalf. This is the only chat surface — operators come here to do
 everything, from "what was last week's revenue?" to "set up a workflow
 that flags churn risk every Monday."
 </role>`,
+    operatorProfile ?? "",
     wantsCards ? buildRenderingSection(supportsCardTool) : "",
     buildSkillsSection(supportsSkillTool, workspace, installedSkills),
     buildMemorySection({

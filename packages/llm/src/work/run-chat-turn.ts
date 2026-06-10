@@ -36,6 +36,11 @@ import {
   formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext,
   rememberWorkMemory,
 } from "./memory";
+import {
+  buildOperatorProfileSection,
+  getOperatorProfile,
+  getWorkRunActor,
+} from "./personas";
 import { buildWorkPrompt } from "./prompt";
 import {
   finishWorkRun,
@@ -222,6 +227,12 @@ export async function runChatTurn(
 
     const installedSkills = await listInstalledSkills(workspace.skillsRoot);
 
+    // CV3: persona-shape the prompt for the run's acting principal (K1).
+    const actor = await getWorkRunActor(runId);
+    const operatorProfile = buildOperatorProfileSection(
+      await getOperatorProfile(orgId, actor.userId),
+    );
+
     const prompt = buildWorkPrompt({
       backend: backend.id,
       workspace,
@@ -229,6 +240,7 @@ export async function runChatTurn(
       messages,
       currentUserMessage: message,
       memoryContext,
+      operatorProfile,
       installedSkills,
       wantsCards,
       supportsCardTool,

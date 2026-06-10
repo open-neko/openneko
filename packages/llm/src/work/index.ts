@@ -23,6 +23,7 @@ export {
 export * from "./memory";
 export * from "./store";
 export * from "./authz";
+export * from "./personas";
 export {
   createScrubber,
   escapeRegex,
