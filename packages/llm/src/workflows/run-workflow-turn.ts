@@ -98,7 +98,10 @@ export async function prepareWorkflowRun(
   const threadId =
     opts.threadId ??
     (await createWorkThread(opts.orgId, workflow.name, "workflow")).id;
-  const created = await createWorkRun(opts.orgId, threadId, backend.id);
+  const created = await createWorkRun(opts.orgId, threadId, backend.id, {
+    userId: null,
+    role: "service",
+  });
   const workflowRun = await createWorkflowRun({
     orgId: opts.orgId,
     workflowId: opts.workflowId,

@@ -248,7 +248,10 @@ async function startChatRun(
     channel,
   );
   const backend = await resolveAgentBackend(orgId);
-  const run = await createWorkRun(orgId, thread.id, backend.id);
+  const run = await createWorkRun(orgId, thread.id, backend.id, {
+    userId: null,
+    role: "member",
+  });
   const inserted = await db()
     .insert(processing_job)
     .values({

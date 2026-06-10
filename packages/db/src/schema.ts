@@ -459,6 +459,12 @@ export const work_thread = pgTable(
     // Origin channel ("web", "telegram", …). The web Ask UI lists only its own
     // ("web") threads so channels stay isolated. See docs/PER_CHANNEL_RENDERING.md.
     channel: text("channel").notNull().default("web"),
+    // K1: who opened this thread (web session user). Null for channel /
+    // service threads until CH3 links channel senders.
+    created_by_user_id: text("created_by_user_id").references(
+      () => app_user.id,
+      { onDelete: "set null" },
+    ),
     backend_state: jsonb("backend_state").notNull().default(sql`'{}'::jsonb`),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
@@ -486,6 +492,13 @@ export const work_run = pgTable(
     backend: text("backend").notNull(),
     status: text("status").notNull().default("running"),
     error: text("error"),
+    // K1: the acting principal, snapshotted at run start. Web runs carry
+    // (app_user.id, role); channel runs (NULL, 'member') until CH3;
+    // cron/workflow runs (NULL, 'service').
+    actor_user_id: text("actor_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+    actor_role: text("actor_role"),
     // Agent-estimated minutes of human effort the run's ANALYSIS saved
     // (excludes per-action work, which is tracked on action_request). Null
     // until the run emits a value estimate; server-clamped before write.
