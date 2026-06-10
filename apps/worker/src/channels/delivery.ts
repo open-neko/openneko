@@ -216,8 +216,18 @@ export async function dispatchInboundIntent(
   intent: IntentEvent,
   channelPlugin: string,
   recipient?: Record<string, unknown>,
-  sender?: { id: string; displayName?: string; workspaceId?: string },
+  sender?: { id: string; displayName?: string; workspaceId?: string; email?: string },
 ): Promise<void> {
+  // CH3: a linked sender acts as their app_user; unlinked stays
+  // anonymous member-grade; blocked identities are dropped outright.
+  const { resolveChannelActor } = await import("./identity.js");
+  const actor = await resolveChannelActor(orgId, channelPlugin, sender);
+  if (actor.blocked) {
+    console.warn(
+      `[channel-inbound] dropped inbound from blocked identity ${channelPlugin}/${sender?.id}`,
+    );
+    return;
+  }
   if (intent.kind === "decision") {
     const req = await getActionRequest(orgId, intent.decisionRef);
     if (!req) {
@@ -239,10 +249,11 @@ export async function dispatchInboundIntent(
       await approveActionRequest({
         id: req.id,
         orgId,
-        approverUserId: null,
-        // K2: channel taps are member-grade until CH3 links real users —
-        // an admin-gated policy blocks approval from a chat surface.
-        approver: { userId: null, role: "member" },
+        approverUserId: actor.userId,
+        // K2: the resolved CH3 actor decides the approval grade — an
+        // unlinked sender stays member-grade, so admin-gated policies
+        // still block approval from an anonymous chat surface.
+        approver: { userId: actor.userId, role: actor.role },
       });
       await enqueue(QUEUE.ACTION_EXECUTE, { orgId, actionRequestId: req.id });
       console.log(`[channel-inbound] approved + queued action_request ${req.id}`);
@@ -250,9 +261,9 @@ export async function dispatchInboundIntent(
       await rejectActionRequest({
         id: req.id,
         orgId,
-        approverUserId: null,
+        approverUserId: actor.userId,
         reason: intent.reason,
-        approver: { userId: null, role: "member" },
+        approver: { userId: actor.userId, role: actor.role },
       });
       console.log(`[channel-inbound] rejected action_request ${req.id}`);
     }
@@ -271,6 +282,7 @@ export async function dispatchInboundIntent(
       recipient,
       intent.kind === "utterance" ? intent.threadRef : undefined,
       sender,
+      actor,
     );
     return;
   }
@@ -286,18 +298,22 @@ async function startChatRun(
   channelPlugin: string,
   recipient: Record<string, unknown> | undefined,
   threadRef?: string,
-  sender?: { id: string; displayName?: string; workspaceId?: string },
+  sender?: { id: string; displayName?: string; workspaceId?: string; email?: string },
+  actor: { userId: string | null; role: "admin" | "member" } = {
+    userId: null,
+    role: "member",
+  },
 ): Promise<void> {
   const thread = await createWorkThread(
     orgId,
     threadRef ? `Telegram ${threadRef}` : "Telegram",
     channel,
+    actor.userId ?? undefined,
   );
   const backend = await resolveAgentBackend(orgId);
-  const run = await createWorkRun(orgId, thread.id, backend.id, {
-    userId: null,
-    role: "member",
-  });
+  // K1: the CH3-resolved actor is the run's acting principal — a linked
+  // sender gets their personal layer and role, unlinked stays anonymous.
+  const run = await createWorkRun(orgId, thread.id, backend.id, actor);
   const inserted = await db()
     .insert(processing_job)
     .values({

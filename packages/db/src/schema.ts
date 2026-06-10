@@ -342,6 +342,44 @@ export const config_ref = pgTable(
   }),
 );
 
+// CH3 — channel→app_user mapping. One row per channel-native identity
+// an org has seen; linking (SSO email match or admin-map) binds it to
+// an app_user. Unlinked identities act as anonymous members.
+export const channel_identity = pgTable(
+  "channel_identity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    workspace_id: text("workspace_id").notNull().default(""),
+    channel_user_id: text("channel_user_id").notNull(),
+    app_user_id: text("app_user_id").references(() => app_user.id, {
+      onDelete: "cascade",
+    }),
+    display_name: text("display_name"),
+    email: text("email"),
+    status: text("status").notNull().default("unverified"),
+    first_seen_at: ts("first_seen_at").notNull().defaultNow(),
+    verified_at: ts("verified_at"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    tuple_unique: uniqueIndex("channel_identity_tuple_unique").on(
+      t.org_id,
+      t.channel_plugin,
+      t.workspace_id,
+      t.channel_user_id,
+    ),
+    org_user_idx: index("channel_identity_org_user_idx").on(
+      t.org_id,
+      t.app_user_id,
+    ),
+  }),
+);
+
 // CV4 — per-member fork baseline for 3-way memory pulls.
 export const memory_fork = pgTable(
   "memory_fork",
