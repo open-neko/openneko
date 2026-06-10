@@ -18,6 +18,7 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "./work/graphjin-guard";
+import { ensureGraphjinGuardWithActorAuth } from "./work/graphjin-actor-guard";
 import {
   formatGlobalMemoryPromptContext,
 } from "./work/memory";
@@ -126,7 +127,13 @@ export async function runMetricAgent(
   if (!graphjinBinary) {
     throw new Error("graphjin CLI is not installed on PATH.");
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  await ensureGraphjinGuardWithActorAuth({
+    orgId: input.orgId,
+    graphjinBinary,
+    binRoot: workspace.binRoot,
+    runRoot: workspace.runRoot,
+    actor: { userId: null, role: "service" },
+  });
 
   // Preload the top-5 global memories so pinned operator rules show up
   // verbatim. Anything narrower (per-card semantic match) is reachable

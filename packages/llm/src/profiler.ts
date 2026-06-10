@@ -12,6 +12,7 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "./work/graphjin-guard";
+import { ensureGraphjinGuardWithActorAuth } from "./work/graphjin-actor-guard";
 import { ensureWorkWorkspace } from "./work/workspace";
 
 function buildPrompt(args: {
@@ -180,7 +181,13 @@ export async function runProfiler(args: {
   if (!graphjinBinary) {
     throw new Error("graphjin CLI is not installed on PATH.");
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  await ensureGraphjinGuardWithActorAuth({
+    orgId: orgId,
+    graphjinBinary,
+    binRoot: workspace.binRoot,
+    runRoot: workspace.runRoot,
+    actor: { userId: null, role: "service" },
+  });
   console.log(`[profiler] org=${orgId} backend=${backend.id}`);
 
   const prompt = buildPrompt({

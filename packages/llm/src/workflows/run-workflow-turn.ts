@@ -8,6 +8,7 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "../work/graphjin-guard";
+import { ensureGraphjinGuardWithActorAuth } from "../work/graphjin-actor-guard";
 import { formatGlobalMemoryPromptContext as defaultFormatGlobalMemoryPromptContext } from "../work/memory";
 import {
   createWorkRun,
@@ -221,7 +222,13 @@ export async function runWorkflowTurn(
     await emit({ type: "done", result: { status: "failed" } });
     throw new Error(errMsg);
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  await ensureGraphjinGuardWithActorAuth({
+    orgId,
+    graphjinBinary,
+    binRoot: workspace.binRoot,
+    runRoot: workspace.runRoot,
+    actor: { userId: null, role: "service" },
+  });
 
   try {
     await wrappedEmit({
