@@ -9,6 +9,7 @@ import type { AgentControlPlane } from "./control-plane";
 import {
   buildPluginActionServer,
   buildPluginManagerServer,
+  buildChannelManagerServer,
   buildUserManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -105,6 +106,12 @@ export async function runAgentBackend(
           controlPlane,
         }),
         neko_user_manager: buildUserManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_channel_manager: buildChannelManagerServer({
           orgId,
           runId,
           emit,

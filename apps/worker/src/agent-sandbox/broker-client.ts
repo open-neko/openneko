@@ -95,6 +95,12 @@ export class BrokerControlPlane implements AgentControlPlane {
   ): ReturnType<AgentControlPlane["listUsers"]> {
     return this.post("/v1/users/list", input);
   }
+
+  listChannels(
+    input: Parameters<AgentControlPlane["listChannels"]>[0],
+  ): ReturnType<AgentControlPlane["listChannels"]> {
+    return this.post("/v1/channels/list", input);
+  }
 }
 
 /** Emit agent events back to the host through the broker (one-way sink). */

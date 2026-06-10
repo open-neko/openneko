@@ -278,9 +278,13 @@ await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 // ADM3: execute approved chat-proposed plugin installs/uninstalls.
 {
-  const { registerPluginManagementAdapters, registerUserAdminAdapter } =
-    await import("./plugins/manage-adapters.js");
+  const {
+    registerChannelAdminAdapter,
+    registerPluginManagementAdapters,
+    registerUserAdminAdapter,
+  } = await import("./plugins/manage-adapters.js");
   registerUserAdminAdapter();
+  registerChannelAdminAdapter();
   registerPluginManagementAdapters({
     repoRoot: process.cwd(),
     getInstallPolicy: async () => {

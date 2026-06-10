@@ -148,3 +148,78 @@ export function registerUserAdminAdapter(): void {
     throw new Error(`user_admin: unknown action "${action}"`);
   });
 }
+
+/**
+ * ADM5 — executes approved channel_admin action requests (admin-approved
+ * per the channel_management_default policy). Same verbs as the
+ * admin-map API: link an identity to an app_user, unlink it back to
+ * anonymous, block/unblock it.
+ */
+export function registerChannelAdminAdapter(): void {
+  registerActionAdapter("channel_admin", async ({ request }) => {
+    const { and, app_user, channel_identity, db, eq, isNull } = await import(
+      "@neko/db"
+    );
+    const payload = request.payload as Record<string, unknown>;
+    const action = String(payload.action ?? "");
+    const identityId = String(payload.identityId ?? "");
+    const orgId = request.orgId;
+    if (!identityId) throw new Error(`channel_admin ${action}: identityId required`);
+    const where = and(
+      eq(channel_identity.org_id, orgId),
+      eq(channel_identity.id, identityId),
+    );
+    const now = new Date();
+
+    if (action === "link") {
+      const appUserId = String(payload.appUserId ?? "");
+      const [user] = await db()
+        .select({ id: app_user.id })
+        .from(app_user)
+        .where(
+          and(
+            eq(app_user.org_id, orgId),
+            eq(app_user.id, appUserId),
+            isNull(app_user.disabled_at),
+          ),
+        )
+        .limit(1);
+      if (!user) throw new Error(`channel_admin link: unknown or disabled user ${appUserId}`);
+      const rows = await db()
+        .update(channel_identity)
+        .set({
+          app_user_id: user.id,
+          status: "linked",
+          verified_at: now,
+          updated_at: now,
+        })
+        .where(where)
+        .returning({ id: channel_identity.id });
+      if (rows.length === 0) throw new Error(`channel identity ${identityId} not found`);
+      return {
+        commandOrOperation: `link ${identityId} → ${appUserId}`,
+        result: { identityId, appUserId, status: "linked" },
+      };
+    }
+
+    if (action === "unlink" || action === "block" || action === "unblock") {
+      const rows = await db()
+        .update(channel_identity)
+        .set({
+          ...(action === "block"
+            ? { status: "blocked" }
+            : { app_user_id: null, status: "unverified", verified_at: null }),
+          updated_at: now,
+        })
+        .where(where)
+        .returning({ id: channel_identity.id, status: channel_identity.status });
+      if (rows.length === 0) throw new Error(`channel identity ${identityId} not found`);
+      return {
+        commandOrOperation: `${action} ${identityId}`,
+        result: { identityId, status: rows[0].status },
+      };
+    }
+
+    throw new Error(`channel_admin: unknown action "${action}"`);
+  });
+}

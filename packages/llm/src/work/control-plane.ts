@@ -100,6 +100,26 @@ export interface AgentControlPlane {
       lastLoginAt: string | null;
     }>;
   }>;
+  /** ADM5: channel workspaces (CH2) + identities (CH3) for chat-first channel management. */
+  listChannels(input: { orgId: string }): Promise<{
+    workspaces: Array<{
+      channelPlugin: string;
+      workspaceId: string;
+      createdAt: string | null;
+    }>;
+    identities: Array<{
+      id: string;
+      channelPlugin: string;
+      workspaceId: string;
+      channelUserId: string;
+      displayName: string | null;
+      email: string | null;
+      status: string;
+      appUserId: string | null;
+      firstSeenAt: string | null;
+      verifiedAt: string | null;
+    }>;
+  }>;
 }
 
 export type PluginCatalog = {
@@ -255,6 +275,46 @@ export class InProcessControlPlane implements AgentControlPlane {
         ...r,
         disabledAt: r.disabledAt?.toISOString() ?? null,
         lastLoginAt: r.lastLoginAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  async listChannels(input: { orgId: string }) {
+    const { channel_identity, channel_workspace, db, eq } = await import(
+      "@neko/db"
+    );
+    const workspaces = await db()
+      .select({
+        channelPlugin: channel_workspace.channel_plugin,
+        workspaceId: channel_workspace.workspace_id,
+        createdAt: channel_workspace.created_at,
+      })
+      .from(channel_workspace)
+      .where(eq(channel_workspace.org_id, input.orgId));
+    const identities = await db()
+      .select({
+        id: channel_identity.id,
+        channelPlugin: channel_identity.channel_plugin,
+        workspaceId: channel_identity.workspace_id,
+        channelUserId: channel_identity.channel_user_id,
+        displayName: channel_identity.display_name,
+        email: channel_identity.email,
+        status: channel_identity.status,
+        appUserId: channel_identity.app_user_id,
+        firstSeenAt: channel_identity.first_seen_at,
+        verifiedAt: channel_identity.verified_at,
+      })
+      .from(channel_identity)
+      .where(eq(channel_identity.org_id, input.orgId));
+    return {
+      workspaces: workspaces.map((w) => ({
+        ...w,
+        createdAt: w.createdAt?.toISOString() ?? null,
+      })),
+      identities: identities.map((i) => ({
+        ...i,
+        firstSeenAt: i.firstSeenAt?.toISOString() ?? null,
+        verifiedAt: i.verifiedAt?.toISOString() ?? null,
       })),
     };
   }

@@ -252,6 +252,25 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // ADM5: linking/blocking channel identities from chat needs an ADMIN.
+  if (!names.has("channel_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "channel_management_default",
+      description:
+        "Linking, unlinking or blocking a channel identity proposed from chat requires an admin's approval.",
+      appliesToKinds: ["channel_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 95,
+      enabled: true,
+    });
+  }
 }
 
 /**

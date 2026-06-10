@@ -175,7 +175,7 @@ async function proposeAdminAction(opts: {
   orgId: string;
   runId?: string;
   emit: (event: AgentEvent) => Promise<void> | void;
-  kind: "plugin_install" | "plugin_uninstall" | "user_admin";
+  kind: "plugin_install" | "plugin_uninstall" | "user_admin" | "channel_admin";
   target: string;
   intent: string;
   payload: Record<string, unknown>;
@@ -347,6 +347,91 @@ export function buildUserManagerServer(opts: {
     name: "neko_user_manager",
     version: "1.0.0",
     tools: [listUsers, requestChange],
+  });
+}
+
+/**
+ * ADM5 — chat-first channel management. Reads (workspaces + identities)
+ * answer "who's talking to the bot and as whom?"; changes (link/unlink/
+ * block/unblock an identity) file an action request an ADMIN must
+ * approve (channel_management_default, K2-enforced).
+ */
+export function buildChannelManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listChannels = tool(
+    "list_channels",
+    [
+      "List the org's channel workspaces (Slack team / WhatsApp account /",
+      "Telegram bot bindings) and every channel identity seen, with link",
+      "status (linked|unverified|blocked) and the app_user it acts as.",
+      "Use before proposing any change, and to answer 'who can reach the",
+      "agent from chat?'.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            await controlPlane.listChannels({ orgId: opts.orgId }),
+          ),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_channel_change",
+    [
+      "Propose a channel-identity change: link (identityId + appUserId),",
+      "unlink, block or unblock (identityId). NEVER applies directly —",
+      "files an action request that an ADMIN must approve on the approvals",
+      "surface. Tell the operator what you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["link", "unlink", "block", "unblock"]),
+      identityId: z.string().trim().min(1),
+      appUserId: z.string().trim().min(1).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) => {
+      if (args.action === "link" && !args.appUserId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: "link needs appUserId" }),
+            },
+          ],
+        };
+      }
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "channel_admin",
+        target: args.identityId,
+        intent: args.intent,
+        payload: {
+          action: args.action,
+          identityId: args.identityId,
+          ...(args.appUserId ? { appUserId: args.appUserId } : {}),
+        },
+      });
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_channel_manager",
+    version: "1.0.0",
+    tools: [listChannels, requestChange],
   });
 }
 
