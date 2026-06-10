@@ -188,7 +188,22 @@ export type AdminHandlerOptions = {
    * refusing privileged install paths.
    */
   installPolicy?: InstallPolicyHandlerSurface | null;
+  /**
+   * External-event ingress (OL3): watchers and integrations POST
+   * /admin/events/external to fire external_event subscriptions.
+   */
+  events?: ExternalEventHandlerSurface | null;
 };
+
+export interface ExternalEventHandlerSurface {
+  dispatchExternal(input: {
+    orgId: string;
+    name: string;
+    source: string | null;
+    payload: Record<string, unknown>;
+    dedupeKey?: string;
+  }): Promise<{ matched: number; enqueued: number }>;
+}
 
 export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const exit = opts.exit ?? ((code = 0) => process.exit(code));
@@ -198,6 +213,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const connect = opts.connect ?? null;
   const channels = opts.channels ?? null;
   const installPolicy = opts.installPolicy ?? null;
+  const events = opts.events ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -254,6 +270,10 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/connect/disconnect") {
       void handleConnectDisconnect(req, res, connect);
+      return;
+    }
+    if (req.method === "POST" && req.url === "/admin/events/external") {
+      void handleExternalEvent(req, res, events);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/install-policy") {
@@ -332,6 +352,51 @@ function handleAuthStatus(res: ServerResponse, auth: AuthHandlerSurface | null) 
         }
       : null,
   });
+}
+
+async function handleExternalEvent(
+  req: IncomingMessage,
+  res: ServerResponse,
+  events: ExternalEventHandlerSurface | null,
+) {
+  if (!events) {
+    json(res, 503, { error: "external-event ingress unavailable" });
+    return;
+  }
+  const body = await readJson(req).catch(() => null);
+  if (!body || typeof body !== "object") {
+    json(res, 400, { error: "request body must be JSON" });
+    return;
+  }
+  const { orgId, name, source, payload, dedupeKey } = body as Record<
+    string,
+    unknown
+  >;
+  if (typeof orgId !== "string" || !orgId) {
+    json(res, 400, { error: "orgId (string) is required" });
+    return;
+  }
+  if (typeof name !== "string" || !name) {
+    json(res, 400, { error: "name (string) is required" });
+    return;
+  }
+  try {
+    const result = await events.dispatchExternal({
+      orgId,
+      name,
+      source: typeof source === "string" && source ? source : null,
+      payload:
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>)
+          : {},
+      ...(typeof dedupeKey === "string" && dedupeKey ? { dedupeKey } : {}),
+    });
+    json(res, 200, result);
+  } catch (err) {
+    json(res, 500, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 async function handleAuthBegin(

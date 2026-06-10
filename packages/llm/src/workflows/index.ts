@@ -151,12 +151,21 @@ export {
   type ResolveTransport,
 } from "./subscription-manager";
 export {
+  handleExternalEventMatch,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
+  type ExternalEventMatch,
+  type HandleExternalEventMatchOptions,
   type HandleSourceChangeMatchOptions,
   type HandleSubscriptionMatchOptions,
   type MatchHandlerDecision,
 } from "./match-handler";
+export {
+  dispatchExternalEvent,
+  externalEventFilterMatches,
+  type DispatchExternalEventInput,
+  type DispatchExternalEventResult,
+} from "./external-events";
 export {
   checkSubscriptionWouldLoop,
   detectMutationLoop,

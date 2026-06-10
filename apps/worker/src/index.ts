@@ -33,6 +33,7 @@ import {
 import {
   getDataSourceForOrg,
   getWorkflowRunChainDepth,
+  dispatchExternalEvent,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
   registerBuiltinAdapters,
@@ -204,6 +205,20 @@ const server = createServer(
     plugins: {
       getRegisteredActionDescriptors: () =>
         pluginRegistry?.getRegisteredActionDescriptors() ?? [],
+    },
+    events: {
+      dispatchExternal: async (input) => {
+        const result = await dispatchExternalEvent({
+          orgId: input.orgId,
+          event: {
+            name: input.name,
+            source: input.source,
+            payload: input.payload,
+            ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
+          },
+        });
+        return { matched: result.matched, enqueued: result.enqueued };
+      },
     },
     installPolicy: {
       getInstallPolicy: async () => {
