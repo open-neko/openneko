@@ -25,6 +25,11 @@ export {
 } from "./secrets-store.js";
 
 export {
+  FileSecretsResolver,
+  type SecretsResolver,
+} from "./secrets-resolver.js";
+
+export {
   createMarketplaceClient,
   findPlugin,
   OFFICIAL_MARKETPLACE_NAME,

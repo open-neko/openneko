@@ -60,7 +60,9 @@ import {
   defaultSecretsPath,
   getOperatorCredential,
   manifestPathFor,
+  FileSecretsResolver,
   readFullSecretsFileSoft,
+  type SecretsResolver,
   setOperatorCredential,
   unsetOperatorCredential,
   writeFullSecretsFile,
@@ -105,6 +107,8 @@ export interface PluginRegistryOptions {
   workRoot: string;
   /** Optional secrets config dir; defaults to XDG/$HOME-derived path. */
   secretsConfigDir?: string;
+  /** SEC2: override secret residency (default: FileSecretsResolver). */
+  secretsResolver?: SecretsResolver;
   image?: string;
   cpus?: number;
   memoryMb?: number;
@@ -901,9 +905,13 @@ export class PluginRegistry {
         manifest,
         this.options.pluginInstallDir ?? this.options.repoRoot,
       );
-      const full = await readFullSecretsFileSoft(
-        this.options.secretsConfigDir,
-        (line) => console.warn(`[plugin-registry] ${line}`),
+      // SEC2: secrets come through the resolver seam (file today;
+      // Infisical-backed env bags via SEC3 without touching this path).
+      const resolver =
+        this.options.secretsResolver ??
+        new FileSecretsResolver(this.options.secretsConfigDir);
+      const full = await resolver.resolveFullSecrets((line) =>
+        console.warn(`[plugin-registry] ${line}`),
       );
       this.secrets = full.env;
       this.operators = full.operators;

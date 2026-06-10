@@ -4,6 +4,10 @@ import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
 import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
+  buildDiscoveryPathwaysSection,
+  getDiscoveryPathways,
+} from "./discovery-pathways";
+import {
   discoveryUrlFromMcpUrl,
   knowledgePackPaths,
   prefetchKnowledgePack,
@@ -131,7 +135,7 @@ export async function runMetricAgent(
 
   const supportsMemorySearch = backend.capabilities.mcpTools;
 
-  const prompt = buildMetricPrompt({
+  const basePrompt = buildMetricPrompt({
     input,
     knowledge,
     workspace,
@@ -139,6 +143,16 @@ export async function runMetricAgent(
     memoryContext,
     supportsMemorySearch,
   });
+  // GJ3: role-shaped warm-start for discovery (cached per org/role/intent).
+  const pathwaysSection = buildDiscoveryPathwaysSection(
+    getDiscoveryPathways({
+      orgId: input.orgId,
+      role: input.role,
+      intent: input.title,
+      insightsJson: knowledge.insights,
+    }),
+  );
+  const prompt = pathwaysSection ? `${basePrompt}\n\n${pathwaysSection}` : basePrompt;
 
   console.log(
     `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id}`,
