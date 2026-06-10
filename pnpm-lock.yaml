@@ -205,6 +205,9 @@ importers:
       '@neko/secret-crypt':
         specifier: workspace:*
         version: link:../secret-crypt
+      '@open-neko/plugin-install':
+        specifier: workspace:*
+        version: link:../plugin-install
       cron-parser:
         specifier: ^4.9.0
         version: 4.9.0

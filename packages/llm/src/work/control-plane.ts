@@ -87,7 +87,26 @@ export interface AgentControlPlane {
     orgId: string;
     limit?: number;
   }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord>> }>;
+  /** ADM3: installed plugins (manifest) + marketplace catalog. */
+  listPlugins(input: { orgId: string }): Promise<PluginCatalog>;
 }
+
+export type PluginCatalog = {
+  installed: Array<{
+    name: string;
+    version: string;
+    source: string;
+    network: string[];
+    installedAt: string | null;
+  }>;
+  available: Array<{
+    name: string;
+    title: string;
+    description: string;
+    version: string;
+  }>;
+  marketplaceError?: string;
+};
 
 export class InProcessControlPlane implements AgentControlPlane {
   async evaluateActionPolicy(
@@ -165,6 +184,45 @@ export class InProcessControlPlane implements AgentControlPlane {
     return {
       total: all.length,
       policies: all.slice(0, input.limit ?? 50).map((p) => toWire(p)),
+    };
+  }
+
+  async listPlugins(_input: { orgId: string }): Promise<PluginCatalog> {
+    const {
+      readManifest,
+      createMarketplaceClient,
+      OFFICIAL_MARKETPLACE_URL,
+    } = await import("@open-neko/plugin-install");
+    const manifest = await readManifest(process.cwd()).catch(() => null);
+    const installed = (manifest?.plugins ?? []).map((p) => ({
+      name: p.name,
+      version: p.version,
+      source: p.installSource ?? "marketplace",
+      network: p.permissions?.network ?? [],
+      installedAt: p.installedAt ?? null,
+    }));
+    let available: PluginCatalog["available"] = [];
+    let marketplaceError: string | undefined;
+    try {
+      const marketplace = await createMarketplaceClient().fetch(
+        OFFICIAL_MARKETPLACE_URL,
+      );
+      available = (marketplace.plugins ?? []).map((p) => {
+        const latest = p.versions.find((v) => !v.yanked) ?? p.versions[0];
+        return {
+          name: p.name,
+          title: p.title || p.name,
+          description: p.description ?? "",
+          version: latest?.version ?? "unknown",
+        };
+      });
+    } catch (err) {
+      marketplaceError = err instanceof Error ? err.message : String(err);
+    }
+    return {
+      installed,
+      available,
+      ...(marketplaceError ? { marketplaceError } : {}),
     };
   }
 }

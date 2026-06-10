@@ -214,6 +214,25 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // ADM3: chat-driven plugin management is always an explicit approval.
+  if (!names.has("plugin_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "plugin_management_default",
+      description:
+        "Installing or removing a plugin from chat always requires operator approval.",
+      appliesToKinds: ["plugin_install", "plugin_uninstall"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: null,
+      priority: 100,
+      enabled: true,
+    });
+  }
 }
 
 /**

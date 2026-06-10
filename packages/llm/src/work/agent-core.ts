@@ -8,6 +8,7 @@ import { buildRuleBuilderServer, buildWorkflowBuilderServer } from "../workflows
 import type { AgentControlPlane } from "./control-plane";
 import {
   buildPluginActionServer,
+  buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
@@ -93,6 +94,12 @@ export async function runAgentBackend(
           orgId,
           createdByThreadId: threadId,
           createdByRunId: runId,
+          emit,
+          controlPlane,
+        }),
+        neko_plugin_manager: buildPluginManagerServer({
+          orgId,
+          runId,
           emit,
           controlPlane,
         }),

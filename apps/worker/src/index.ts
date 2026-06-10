@@ -276,6 +276,19 @@ console.log(
 
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
+// ADM3: execute approved chat-proposed plugin installs/uninstalls.
+{
+  const { registerPluginManagementAdapters } = await import(
+    "./plugins/manage-adapters.js"
+  );
+  registerPluginManagementAdapters({
+    repoRoot: process.cwd(),
+    getInstallPolicy: async () => {
+      const { getInstallPolicyForOrg } = await import("@neko/db");
+      return getInstallPolicyForOrg(ADMIN_ORG_ID);
+    },
+  });
+}
 console.log("[worker] action policies seeded and built-in adapters registered");
 
 pluginRegistry = new PluginRegistry({

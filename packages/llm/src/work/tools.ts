@@ -74,6 +74,190 @@ export function buildRenderCardsServer(
   });
 }
 
+/**
+ * ADM3 — chat-first plugin management. The agent can list installed +
+ * marketplace plugins and PROPOSE installs/uninstalls; the commit step is
+ * always an action_request through the control plane (policy-gated;
+ * plugin_management_default seeds approval_required), never a direct
+ * mutation. Credentials never transit this path — installs that need env
+ * keys fail with a pointer to the secrets flow.
+ */
+export function buildPluginManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listPlugins = tool(
+    "list_plugins",
+    [
+      "List installed plugins (with version, source, declared network",
+      "egress) and the official marketplace catalog. Use this before",
+      "proposing an install or uninstall, and to answer 'what plugins do",
+      "we have?'.",
+    ].join(" "),
+    {},
+    async () => {
+      const catalog = await controlPlane.listPlugins({ orgId: opts.orgId });
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(catalog) },
+        ],
+      };
+    },
+  );
+
+  const requestChange = (
+    kind: "plugin_install" | "plugin_uninstall",
+    target: string,
+    intent: string,
+    payload: Record<string, unknown>,
+  ) =>
+    proposePluginManagementAction({
+      controlPlane,
+      orgId: opts.orgId,
+      runId: opts.runId,
+      emit: opts.emit,
+      kind,
+      target,
+      intent,
+      payload,
+    });
+
+  const installTool = tool(
+    "request_plugin_install",
+    [
+      "Propose installing a plugin from the marketplace. This NEVER",
+      "installs directly — it files an approval-gated action request; the",
+      "operator approves it on the approvals surface. Tell the operator",
+      "what you proposed and end your turn. If the plugin requires env",
+      "keys, the install will report them — the operator sets those via",
+      "`openneko secrets set` or the integrations page, never through",
+      "chat.",
+    ].join(" "),
+    {
+      spec: z.string().trim().min(1).describe("npm package name, e.g. @open-neko/plugin-slack"),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) =>
+      requestChange("plugin_install", args.spec, args.intent, {
+        spec: args.spec,
+      }),
+  );
+
+  const uninstallTool = tool(
+    "request_plugin_uninstall",
+    [
+      "Propose removing an installed plugin. Approval-gated like installs;",
+      "the operator confirms on the approvals surface.",
+    ].join(" "),
+    {
+      name: z.string().trim().min(1),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) =>
+      requestChange("plugin_uninstall", args.name, args.intent, {
+        name: args.name,
+      }),
+  );
+
+  return createSdkMcpServer({
+    name: "neko_plugin_manager",
+    version: "1.0.0",
+    tools: [listPlugins, installTool, uninstallTool],
+  });
+}
+
+async function proposePluginManagementAction(opts: {
+  controlPlane: AgentControlPlane;
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  kind: "plugin_install" | "plugin_uninstall";
+  target: string;
+  intent: string;
+  payload: Record<string, unknown>;
+}) {
+  const decision = await opts.controlPlane.evaluateActionPolicy({
+    orgId: opts.orgId,
+    scope: "internal",
+    kind: opts.kind,
+    target: opts.target,
+    riskLevel: "high",
+  } as Parameters<AgentControlPlane["evaluateActionPolicy"]>[0]);
+
+  if (decision.decision !== "allow" && decision.decision !== "needs_approval") {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            ok: false,
+            decision: "denied",
+            reason:
+              "reason" in decision && decision.reason
+                ? String(decision.reason)
+                : "policy denies plugin management from chat",
+          }),
+        },
+      ],
+    };
+  }
+
+  const status =
+    decision.decision === "allow" ? "approved" : "pending_approval";
+  const request = await opts.controlPlane.createActionRequest({
+    orgId: opts.orgId,
+    scope: "internal",
+    kind: opts.kind,
+    target: opts.target,
+    payload: opts.payload,
+    riskLevel: "high",
+    status,
+    policyId: "policy" in decision && decision.policy ? decision.policy.id : null,
+    summary: opts.intent,
+    intent: opts.intent,
+    workRunId: opts.runId ?? null,
+    requestedByRunId: null,
+  } as Parameters<AgentControlPlane["createActionRequest"]>[0]);
+
+  if (status === "approved") {
+    await opts.controlPlane.enqueueActionExecute({
+      orgId: opts.orgId,
+      actionRequestId: request.id,
+    });
+  }
+
+  await opts.emit({
+    type: "action_request_emit",
+    action_request_id: request.id,
+    kind: opts.kind,
+    scope: "internal",
+    decision: status === "approved" ? "auto_approved" : "pending_approval",
+    summary: opts.intent,
+    risk_level: "high",
+  } as AgentEvent);
+
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          ok: true,
+          decision: status,
+          action_request_id: request.id,
+          note:
+            status === "approved"
+              ? "Queued for execution; the result lands in this run."
+              : "Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.",
+        }),
+      },
+    ],
+  };
+}
+
 export function buildSkillBuilderServer(skillsRoot: string) {
   const createSkill = tool(
     "create_skill",

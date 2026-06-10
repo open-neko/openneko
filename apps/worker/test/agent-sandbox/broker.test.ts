@@ -60,6 +60,10 @@ function makeFakeControlPlane() {
       calls.push({ method: "rule-list", input: input as Record<string, unknown> });
       return { total: 0, policies: [] };
     },
+    async listPlugins(input) {
+      calls.push({ method: "plugins-list", input: input as Record<string, unknown> });
+      return { installed: [], available: [] };
+    },
   };
   return { cp, calls };
 }
