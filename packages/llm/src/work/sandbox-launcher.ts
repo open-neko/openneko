@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import type { AgentEvent, AgentRunResult } from "../agent-backend";
 import type { RunAgentBackendInput } from "./agent-core";
 import type { RunChatTurnDeps } from "./run-chat-turn";
+import { isLoopbackHost, SANDBOX_HOST_ALIAS } from "./sandbox-net";
 
 // Wire protocol shared with the in-image entrypoint. The agent runs in a
 // separate container, so these can't share a module at runtime — they MUST
@@ -127,6 +128,14 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
       input.runId,
     );
 
+    // GJ6: the box must reach the org's GraphJin server — resolved here
+    // (host-side, where the DB lives) both for the egress rule and for the
+    // in-box client.json (entry.ts rewrites loopback to the host alias).
+    const dataEgress = await resolveDataSourceEgress(
+      input.orgId,
+      opts.graphjinBinaryInBox ?? "/usr/local/bin/graphjin",
+    );
+
     const job = {
       orgId: input.orgId,
       threadId: input.threadId,
@@ -144,6 +153,7 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
       wantsCards: input.wantsCards ?? true,
       workspace: boxWorkspace,
       ...(graphjinWriteGrants.length > 0 ? { graphjinWriteGrants } : {}),
+      ...(dataEgress.serverUrl ? { graphjinServerUrl: dataEgress.serverUrl } : {}),
     };
 
     const stageDir = await mkdtemp(path.join(tmpdir(), "oss-agent-"));
@@ -187,17 +197,10 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
             ];
           })()
         : [];
-      // GJ6: the box must reach the org's GraphJin server — allow its
-      // host:port for the in-box graphjin CLI (and node, for claude's
-      // MCP fetch path).
-      const dataEgress = await resolveDataSourceEgress(
-        input.orgId,
-        opts.graphjinBinaryInBox ?? "/usr/local/bin/graphjin",
-      );
       const policyArgs = buildModelEgressArgs(name, [
         ...(opts.modelEgress ?? []),
         ...brokerEgress,
-        ...dataEgress,
+        ...dataEgress.rules,
       ]);
       if (policyArgs) await run(policyArgs, 75_000);
 
@@ -250,7 +253,10 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
 async function resolveDataSourceEgress(
   orgId: string,
   graphjinBinary: string,
-): Promise<Array<{ host: string; binary: string; port?: number }>> {
+): Promise<{
+  rules: Array<{ host: string; binary: string; port?: number }>;
+  serverUrl?: string;
+}> {
   try {
     const { data_source, db, desc, eq } = await import("@neko/db");
     const [src] = await db()
@@ -259,15 +265,22 @@ async function resolveDataSourceEgress(
       .where(eq(data_source.org_id, orgId))
       .orderBy(desc(data_source.is_default), data_source.created_at)
       .limit(1);
-    if (!src?.mcpUrl) return [];
+    if (!src?.mcpUrl) return { rules: [] };
     const u = new URL(src.mcpUrl);
     const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
-    return [{ host: u.hostname, port, binary: graphjinBinary }];
+    // A host-local server (localhost data source) is only reachable from
+    // the box via the gateway's host alias — and the proxy refuses loopback
+    // endpoint rules outright, which would kill the whole policy update.
+    const host = isLoopbackHost(u.hostname) ? SANDBOX_HOST_ALIAS : u.hostname;
+    return {
+      rules: [{ host, port, binary: graphjinBinary }],
+      serverUrl: src.mcpUrl,
+    };
   } catch (err) {
     console.warn(
       `[agent-sandbox] data-source egress lookup failed: ${err instanceof Error ? err.message : err}`,
     );
-    return [];
+    return { rules: [] };
   }
 }
 
