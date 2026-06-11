@@ -16,6 +16,15 @@ function stubControlPlane(): AgentControlPlane {
     rememberWorkMemory: unused as AgentControlPlane["rememberWorkMemory"],
     searchWorkMemoryByContext:
       unused as AgentControlPlane["searchWorkMemoryByContext"],
+    saveWorkflowWithTrigger:
+      unused as AgentControlPlane["saveWorkflowWithTrigger"],
+    listWorkflowsWithTriggers:
+      unused as AgentControlPlane["listWorkflowsWithTriggers"],
+    upsertActionPolicyByName:
+      unused as AgentControlPlane["upsertActionPolicyByName"],
+    listActionPolicies: unused as AgentControlPlane["listActionPolicies"],
+    listPlugins: unused as AgentControlPlane["listPlugins"],
+    listUsers: unused as AgentControlPlane["listUsers"],
   };
 }
 
@@ -78,9 +87,7 @@ describe("ensureAgentBroker gating", () => {
     else process.env.OPENNEKO_AGENT_RUNTIME = prev;
   });
 
-  it("returns undefined unless OPENNEKO_AGENT_RUNTIME=openshell", async () => {
-    delete process.env.OPENNEKO_AGENT_RUNTIME;
-    await expect(ensureAgentBroker()).resolves.toBeUndefined();
+  it("returns undefined only when OPENNEKO_AGENT_RUNTIME=inprocess (openshell is the default)", async () => {
     process.env.OPENNEKO_AGENT_RUNTIME = "inprocess";
     await expect(ensureAgentBroker()).resolves.toBeUndefined();
   });

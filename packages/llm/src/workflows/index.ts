@@ -50,6 +50,8 @@ export {
   type SaveWorkflowWithTriggerResult,
   type WorkflowTriggerError,
 } from "./save-workflow-with-trigger";
+export * from "./watchers";
+export * from "./audit-chain";
 export {
   buildRuleBuilderServer,
   type RuleBuilderContext,
@@ -103,11 +105,14 @@ export {
   linkOutputSourceObservations,
   listRecentOutputsByWorkflow,
   listCronWorkflows,
+  reEnablePausedWorkflows,
   listEnabledSubscriptions,
   listObservationsByConsumerWorkflow,
   listObservationsForOutput,
   listSubscriptionsByWorkflow,
   listWorkflows,
+  adoptWorkflowForTeam,
+  personalWorkflowFiles,
   saveWorkflow,
   setSubscriptionEnabled,
   startOfTodayUtc,
@@ -151,12 +156,21 @@ export {
   type ResolveTransport,
 } from "./subscription-manager";
 export {
+  handleExternalEventMatch,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
+  type ExternalEventMatch,
+  type HandleExternalEventMatchOptions,
   type HandleSourceChangeMatchOptions,
   type HandleSubscriptionMatchOptions,
   type MatchHandlerDecision,
 } from "./match-handler";
+export {
+  dispatchExternalEvent,
+  externalEventFilterMatches,
+  type DispatchExternalEventInput,
+  type DispatchExternalEventResult,
+} from "./external-events";
 export {
   checkSubscriptionWouldLoop,
   detectMutationLoop,

@@ -53,6 +53,11 @@ async function handle(
   const path = (req.url ?? "").split("?")[0];
   const cp = deps.controlPlane;
 
+  // SEC5: every authenticated gateway call is audited with the dual
+  // identity (human principal + agent backend). Best-effort — auditing
+  // must never fail the call itself.
+  void auditControlPlaneCall(binding, path);
+
   switch (path) {
     case "/v1/policy/evaluate":
       return send(
@@ -80,28 +85,138 @@ async function handle(
       });
       return send(res, 200, { ok: true });
     case "/v1/memory/remember":
+      // CV2: the memory layer is derived server-side from the bound run's
+      // actor — an agent-supplied userId is never trusted.
+      delete body.userId;
       return send(
         res,
         200,
         await cp.rememberWorkMemory({
           ...body,
           orgId: binding.orgId,
+          runId: binding.runId,
         } as Parameters<AgentControlPlane["rememberWorkMemory"]>[0]),
       );
     case "/v1/memory/search":
+      delete body.userId;
       return send(
         res,
         200,
         await cp.searchWorkMemoryByContext({
           ...body,
           orgId: binding.orgId,
+          runId: binding.runId,
         } as Parameters<AgentControlPlane["searchWorkMemoryByContext"]>[0]),
+      );
+    case "/v1/workflow/save":
+      return send(
+        res,
+        200,
+        await cp.saveWorkflowWithTrigger({
+          ...body,
+          orgId: binding.orgId,
+          createdByRunId: binding.runId,
+        } as Parameters<AgentControlPlane["saveWorkflowWithTrigger"]>[0]),
+      );
+    case "/v1/workflow/list":
+      return send(
+        res,
+        200,
+        await cp.listWorkflowsWithTriggers({
+          orgId: binding.orgId,
+          limit: typeof body.limit === "number" ? body.limit : undefined,
+        }),
+      );
+    case "/v1/rule/save":
+      return send(
+        res,
+        200,
+        await cp.upsertActionPolicyByName({
+          ...body,
+          orgId: binding.orgId,
+          createdByRunId: binding.runId,
+        } as Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0]),
+      );
+    case "/v1/rule/list":
+      return send(
+        res,
+        200,
+        await cp.listActionPolicies({
+          orgId: binding.orgId,
+          limit: typeof body.limit === "number" ? body.limit : undefined,
+        }),
+      );
+    case "/v1/plugins/list":
+      return send(res, 200, await cp.listPlugins({ orgId: binding.orgId }));
+    case "/v1/users/list":
+      return send(res, 200, await cp.listUsers({ orgId: binding.orgId }));
+    case "/v1/channels/list":
+      return send(res, 200, await cp.listChannels({ orgId: binding.orgId }));
+    case "/v1/datasources/list":
+      return send(res, 200, await cp.listDataSources({ orgId: binding.orgId }));
+    case "/v1/audit/list":
+      // ADM4: the admin gate runs on the BOUND run's actor — the
+      // sandbox can't claim someone else's run.
+      return send(
+        res,
+        200,
+        await cp.listAuditTrail({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          limit: typeof body.limit === "number" ? body.limit : undefined,
+        }),
       );
     case "/v1/events":
       await deps.onEvents(binding, (body.events as AgentEvent[]) ?? []);
       return send(res, 200, { ok: true });
     default:
       return send(res, 404, { error: "not_found" });
+  }
+}
+
+// Per-run dual-identity cache so auditing costs one DB lookup per run,
+// not per call. Bounded; runs are short-lived.
+const runIdentityCache = new Map<
+  string,
+  { userId: string | null; role: string | null; backend: string | null }
+>();
+const RUN_IDENTITY_CACHE_MAX = 500;
+
+async function auditControlPlaneCall(
+  binding: RunBinding,
+  path: string,
+): Promise<void> {
+  try {
+    const { control_plane_audit, db, eq, work_run } = await import("@neko/db");
+    let identity = runIdentityCache.get(binding.runId);
+    if (!identity) {
+      const [run] = await db()
+        .select({
+          userId: work_run.actor_user_id,
+          role: work_run.actor_role,
+          backend: work_run.backend,
+        })
+        .from(work_run)
+        .where(eq(work_run.id, binding.runId))
+        .limit(1);
+      identity = run ?? { userId: null, role: null, backend: null };
+      if (runIdentityCache.size >= RUN_IDENTITY_CACHE_MAX) {
+        runIdentityCache.clear();
+      }
+      runIdentityCache.set(binding.runId, identity);
+    }
+    await db().insert(control_plane_audit).values({
+      org_id: binding.orgId,
+      run_id: binding.runId,
+      path,
+      actor_user_id: identity.userId,
+      actor_role: identity.role,
+      backend: identity.backend,
+    });
+  } catch (err) {
+    console.warn(
+      `[agent-broker] audit insert failed (call proceeded): ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 
@@ -221,7 +336,7 @@ let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
   if (
-    (process.env.OPENNEKO_AGENT_RUNTIME ?? "inprocess").toLowerCase() !== "openshell"
+    (process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell"
   ) {
     return Promise.resolve(undefined);
   }

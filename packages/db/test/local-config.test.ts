@@ -61,11 +61,12 @@ describe("local-config (~/.config/openneko/config.json)", () => {
     expect(cfg.pg).toEqual({ password: "second", host: "h1" });
   });
 
-  it("writeLocalConfig produces a JSON file at the expected path", async () => {
+  it("writeLocalConfig produces a JSON file with the password encrypted at rest", async () => {
     writeLocalConfig({ pg: { password: "p" } });
     const raw = await readFile(localConfigPath(), "utf8");
     const parsed = JSON.parse(raw);
-    expect(parsed.pg.password).toBe("p");
+    expect(parsed.pg.password).toMatch(/^enc:v1:/);
+    expect(readLocalConfig().pg?.password).toBe("p");
   });
 
   it("readLocalConfig tolerates malformed JSON (returns empty)", async () => {

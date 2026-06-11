@@ -12,6 +12,7 @@ import {
 } from "../agent-backend";
 import { registerAgentCanceller } from "../agent-shutdown";
 import { hermesHomeForOrg } from "../host-provision";
+import { RENDER_CARDS_DESCRIPTION } from "../work/render-catalog";
 import {
   AcpProtocolError,
   createAcpClient,
@@ -36,7 +37,15 @@ let r;try{r=JSON.parse(l)}catch{continue}const{id,method}=r;
 if(typeof id==="undefined")continue;
 const w=o=>process.stdout.write(JSON.stringify({jsonrpc:"2.0",id,result:o})+"\\n");
 if(method==="initialize")w({protocolVersion:"2024-11-05",capabilities:{tools:{}},serverInfo:{name:"neko_render",version:"1"}});
-else if(method==="tools/list")w({tools:[{name:"render_cards",description:"Render your answer as cards and charts. Pass messages: an array of A2UI v0.9 messages (a createSurface then an updateComponents).",inputSchema:{type:"object",properties:{messages:{type:"array",items:{type:"object"}}},required:["messages"]}}]});
+else if(method==="tools/list")w({tools:[${JSON.stringify({
+  name: "render_cards",
+  description: RENDER_CARDS_DESCRIPTION,
+  inputSchema: {
+    type: "object",
+    properties: { messages: { type: "array", items: { type: "object" } } },
+    required: ["messages"],
+  },
+})}]});
 else if(method==="tools/call")w({content:[{type:"text",text:'{"ok":true}'}]});
 else w({})}});
 `;

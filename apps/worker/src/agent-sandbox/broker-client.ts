@@ -59,6 +59,60 @@ export class BrokerControlPlane implements AgentControlPlane {
   ): ReturnType<AgentControlPlane["searchWorkMemoryByContext"]> {
     return this.post("/v1/memory/search", args);
   }
+
+  saveWorkflowWithTrigger(
+    input: Parameters<AgentControlPlane["saveWorkflowWithTrigger"]>[0],
+  ): ReturnType<AgentControlPlane["saveWorkflowWithTrigger"]> {
+    return this.post("/v1/workflow/save", input);
+  }
+
+  listWorkflowsWithTriggers(
+    input: Parameters<AgentControlPlane["listWorkflowsWithTriggers"]>[0],
+  ): ReturnType<AgentControlPlane["listWorkflowsWithTriggers"]> {
+    return this.post("/v1/workflow/list", input);
+  }
+
+  upsertActionPolicyByName(
+    input: Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0],
+  ): ReturnType<AgentControlPlane["upsertActionPolicyByName"]> {
+    return this.post("/v1/rule/save", input);
+  }
+
+  listActionPolicies(
+    input: Parameters<AgentControlPlane["listActionPolicies"]>[0],
+  ): ReturnType<AgentControlPlane["listActionPolicies"]> {
+    return this.post("/v1/rule/list", input);
+  }
+
+  listPlugins(
+    input: Parameters<AgentControlPlane["listPlugins"]>[0],
+  ): ReturnType<AgentControlPlane["listPlugins"]> {
+    return this.post("/v1/plugins/list", input);
+  }
+
+  listUsers(
+    input: Parameters<AgentControlPlane["listUsers"]>[0],
+  ): ReturnType<AgentControlPlane["listUsers"]> {
+    return this.post("/v1/users/list", input);
+  }
+
+  listChannels(
+    input: Parameters<AgentControlPlane["listChannels"]>[0],
+  ): ReturnType<AgentControlPlane["listChannels"]> {
+    return this.post("/v1/channels/list", input);
+  }
+
+  listDataSources(
+    input: Parameters<AgentControlPlane["listDataSources"]>[0],
+  ): ReturnType<AgentControlPlane["listDataSources"]> {
+    return this.post("/v1/datasources/list", input);
+  }
+
+  listAuditTrail(
+    input: Parameters<AgentControlPlane["listAuditTrail"]>[0],
+  ): ReturnType<AgentControlPlane["listAuditTrail"]> {
+    return this.post("/v1/audit/list", input);
+  }
 }
 
 /** Emit agent events back to the host through the broker (one-way sink). */

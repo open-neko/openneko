@@ -490,6 +490,23 @@ function WorkflowDetail({
     }
   }, [data, workflowId, load, onMutated]);
 
+  // OL7: park until next UTC midnight; the worker's cron sweep re-enables.
+  const pauseForToday = useCallback(async () => {
+    if (!data) return;
+    setBusy(true);
+    try {
+      await fetch(`/api/workflows/${workflowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pauseForToday: true }),
+      });
+      await load();
+      onMutated();
+    } finally {
+      setBusy(false);
+    }
+  }, [data, workflowId, load, onMutated]);
+
   const toggleCron = useCallback(async () => {
     if (!data) return;
     setBusy(true);
@@ -568,6 +585,17 @@ function WorkflowDetail({
         >
           {workflow.enabled ? "Pause" : "Resume"}
         </button>
+        {workflow.enabled && (
+          <button
+            type="button"
+            className="workflow-drawer-btn"
+            onClick={pauseForToday}
+            disabled={busy}
+            title="Pause until midnight UTC; resumes automatically"
+          >
+            Pause for today
+          </button>
+        )}
         <button
           type="button"
           className="workflow-drawer-btn is-primary"

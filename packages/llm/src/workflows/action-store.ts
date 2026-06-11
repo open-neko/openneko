@@ -7,6 +7,7 @@ import {
   db,
   desc,
   eq,
+  work_run,
 } from "@neko/db";
 
 export type ActionScope = "internal" | "external";
@@ -244,6 +245,10 @@ export async function updateActionPolicy(
 export type ActionRequestRecord = {
   id: string;
   orgId: string;
+  /** SEC5: the human principal + agent backend, snapshotted at creation. */
+  actorUserId: string | null;
+  actorRole: string | null;
+  actorBackend: string | null;
   workflowRunId: string | null;
   triggeredByObservationId: string | null;
   policyId: string | null;
@@ -285,6 +290,9 @@ function toRequestRecord(
   return {
     id: row.id,
     orgId: row.org_id,
+    actorUserId: row.actor_user_id,
+    actorRole: row.actor_role,
+    actorBackend: row.actor_backend,
     workflowRunId: row.workflow_run_id,
     triggeredByObservationId: row.triggered_by_observation_id,
     policyId: row.policy_id,
@@ -328,15 +336,48 @@ export type CreateActionRequestInput = {
   /** Agent-estimated, server-clamped minutes of human effort this saves. */
   minutesSaved?: number | null;
   minutesSavedBasis?: string | null;
+  /** SEC5: dual identity. Omit to snapshot from workRunId's K1 actor + backend. */
+  actorUserId?: string | null;
+  actorRole?: string | null;
+  actorBackend?: string | null;
 };
 
 export async function createActionRequest(
   input: CreateActionRequestInput,
 ): Promise<ActionRequestRecord> {
+  // SEC5: snapshot the dual identity at creation. When the caller did
+  // not resolve it, derive it from the originating work run (K1 actor
+  // + agent backend) so every request carries who-via-which-agent.
+  let actor = {
+    userId: input.actorUserId ?? null,
+    role: input.actorRole ?? null,
+    backend: input.actorBackend ?? null,
+  };
+  if (input.workRunId && (!actor.role || !actor.backend)) {
+    const [run] = await db()
+      .select({
+        userId: work_run.actor_user_id,
+        role: work_run.actor_role,
+        backend: work_run.backend,
+      })
+      .from(work_run)
+      .where(eq(work_run.id, input.workRunId))
+      .limit(1);
+    if (run) {
+      actor = {
+        userId: actor.userId ?? run.userId,
+        role: actor.role ?? run.role,
+        backend: actor.backend ?? run.backend,
+      };
+    }
+  }
   const [row] = await db()
     .insert(action_request)
     .values({
       org_id: input.orgId,
+      actor_user_id: actor.userId,
+      actor_role: actor.role,
+      actor_backend: actor.backend,
       workflow_run_id: input.workflowRunId ?? null,
       triggered_by_observation_id: input.triggeredByObservationId ?? null,
       policy_id: input.policyId ?? null,
@@ -354,7 +395,25 @@ export async function createActionRequest(
       requested_by_run_id: input.requestedByRunId ?? null,
     })
     .returning();
-  return toRequestRecord(row);
+  const record = toRequestRecord(row);
+  // SEC10: governance events ride the tamper-evident chain.
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: input.orgId,
+    entityKind: "action_request",
+    entityId: record.id,
+    event: `created:${record.status}`,
+    payload: {
+      kind: record.kind,
+      scope: record.scope,
+      target: record.target,
+      status: record.status,
+      actorUserId: record.actorUserId,
+      actorRole: record.actorRole,
+      actorBackend: record.actorBackend,
+    },
+  });
+  return record;
 }
 
 export async function getActionRequest(
@@ -413,9 +472,13 @@ export async function approveActionRequest(args: {
   id: string;
   orgId: string;
   approverUserId: string | null;
+  /** K2: when supplied, the matched policy's approver_role is enforced.
+   *  Legacy callers (no actor context yet) skip the check. */
+  approver?: { userId: string | null; role: "admin" | "member" | "service" };
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (args.approver) await assertMayDecide(args.orgId, existing, args.approver);
   assertTransition(existing.status, "approved", ["draft", "pending_approval"]);
   const [row] = await db()
     .update(action_request)
@@ -427,7 +490,38 @@ export async function approveActionRequest(args: {
     })
     .where(eq(action_request.id, args.id))
     .returning();
-  return toRequestRecord(row);
+  const record = toRequestRecord(row);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: args.orgId,
+    entityKind: "action_request",
+    entityId: record.id,
+    event: "approved",
+    payload: { approvedBy: args.approverUserId, kind: record.kind },
+  });
+  return record;
+}
+
+/**
+ * K2: enforce the matched policy's approver_role for a decision. Admin
+ * always may; member may unless the policy demands a different role;
+ * service principals never decide.
+ */
+async function assertMayDecide(
+  orgId: string,
+  request: ActionRequestRecord,
+  approver: { userId: string | null; role: "admin" | "member" | "service" },
+): Promise<void> {
+  const { assertCan } = await import("../work/authz");
+  const policy = request.policyId
+    ? await getActionPolicy(orgId, request.policyId)
+    : null;
+  assertCan(
+    { userId: approver.userId, role: approver.role },
+    "approve",
+    { kind: "action_approval", approverRole: policy?.approverRole ?? null },
+    `action_request ${request.id}`,
+  );
 }
 
 export async function rejectActionRequest(args: {
@@ -435,9 +529,12 @@ export async function rejectActionRequest(args: {
   orgId: string;
   approverUserId: string | null;
   reason?: string;
+  /** K2: same gate as approve — rejecting is a decision too. */
+  approver?: { userId: string | null; role: "admin" | "member" | "service" };
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (args.approver) await assertMayDecide(args.orgId, existing, args.approver);
   assertTransition(existing.status, "rejected", ["draft", "pending_approval"]);
   const [row] = await db()
     .update(action_request)
@@ -450,7 +547,20 @@ export async function rejectActionRequest(args: {
     })
     .where(eq(action_request.id, args.id))
     .returning();
-  return toRequestRecord(row);
+  const record = toRequestRecord(row);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: args.orgId,
+    entityKind: "action_request",
+    entityId: record.id,
+    event: "rejected",
+    payload: {
+      rejectedBy: args.approverUserId,
+      reason: args.reason ?? null,
+      kind: record.kind,
+    },
+  });
+  return record;
 }
 
 export async function markActionRequestExecuted(
@@ -552,7 +662,22 @@ export async function finishActionExecution(args: {
     })
     .where(eq(action_execution.id, args.id))
     .returning();
-  return toExecutionRecord(row);
+  const record = toExecutionRecord(row);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: record.orgId,
+    entityKind: "action_execution",
+    entityId: record.id,
+    event: `execution:${record.status}`,
+    payload: {
+      actionRequestId: record.actionRequestId,
+      executor: record.executor,
+      status: record.status,
+      externalRef: record.externalRef,
+      error: record.error,
+    },
+  });
+  return record;
 }
 
 export async function listActionExecutions(

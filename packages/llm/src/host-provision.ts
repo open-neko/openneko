@@ -2,7 +2,7 @@ import { mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
-import { and, data_source, db, eq, llm_provider_config } from "@neko/db";
+import { and, data_source, db, desc, eq, llm_provider_config } from "@neko/db";
 import { isAgentBackendId } from "./agent-backend";
 import { maybeDecryptSecret } from "./secrets";
 import { ensureOpenShellProvider } from "./work/sandbox-launcher";
@@ -76,6 +76,7 @@ async function provisionGraphJin(orgId: string): Promise<void> {
     .select({ graphql_url: data_source.graphql_url })
     .from(data_source)
     .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const url = rows[0]?.graphql_url;
   if (!url) return;
@@ -94,6 +95,102 @@ async function provisionGraphJin(orgId: string): Promise<void> {
     ),
     "utf8",
   );
+}
+
+const SOURCES_SECRET_PLACEHOLDER = "REPLACE_WITH_PER_ORG_SECRET_B64";
+
+/**
+ * Sources-mode (agentic) bootstrap. Two halves, both idempotent:
+ *
+ * 1. When the deployment mounts the GraphJin config into the worker
+ *    (OPENNEKO_GRAPHJIN_CONFIG, the demo compose does), substitute the
+ *    per-org JWT secret into the seeded template — the org id only
+ *    exists after first boot, so compose can't bake it. GraphJin's
+ *    reload_on_config_change picks the write up live.
+ *
+ * 2. Probe the default data source with a minted service token: if the
+ *    server answers a gj_catalog query, it runs agentic sources mode —
+ *    flip data_source.auth_mode to 'jwt' so GJ4 actor tokens and the
+ *    slim catalog knowledge layering switch on automatically. Legacy
+ *    servers fail the probe (no gj_catalog root) and stay 'none'.
+ */
+async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
+  const cfgPath = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
+  if (cfgPath) {
+    const { readFile } = await import("node:fs/promises");
+    try {
+      const raw = await readFile(cfgPath, "utf8");
+      if (raw.includes(SOURCES_SECRET_PLACEHOLDER)) {
+        const { graphjinSigningSecretB64 } = await import("./graphjin/token");
+        await writeFile(
+          cfgPath,
+          raw.replaceAll(SOURCES_SECRET_PLACEHOLDER, graphjinSigningSecretB64(orgId)),
+          "utf8",
+        );
+        console.log(
+          `[host-provision] wrote per-org JWT secret into ${cfgPath} (sources mode)`,
+        );
+      }
+    } catch (e) {
+      console.warn(
+        `[host-provision] graphjin config secret write failed: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+  }
+
+  const [src] = await db()
+    .select({
+      id: data_source.id,
+      authMode: data_source.auth_mode,
+      graphqlUrl: data_source.graphql_url,
+    })
+    .from(data_source)
+    .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
+    .limit(1);
+  if (!src?.graphqlUrl || src.authMode === "jwt") return;
+
+  const { mintGraphjinToken } = await import("./graphjin/token");
+  const token = mintGraphjinToken({ orgId, userId: null, role: "service" });
+  // The secret write above may still be reloading server-side — give
+  // reload_on_config_change a generous window (observed ~10s on 3.18.37).
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const res = await fetch(src.graphqlUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          query: `query { gj_catalog(id: "help:discovery") { id } }`,
+        }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as {
+          data?: { gj_catalog?: unknown };
+          errors?: unknown[];
+        };
+        // gj_catalog(id:) returns one object; list queries an array.
+        const rows = body.data?.gj_catalog;
+        const answered = Array.isArray(rows) ? rows.length > 0 : Boolean(rows);
+        if (answered && !body.errors?.length) {
+          await db()
+            .update(data_source)
+            .set({ auth_mode: "jwt", updated_at: new Date() })
+            .where(eq(data_source.id, src.id));
+          console.log(
+            `[host-provision] data source answers gj_catalog with an actor token — auth_mode=jwt (agentic mode on)`,
+          );
+          return;
+        }
+      }
+    } catch {
+      // unreachable / not reloaded yet — retry below.
+    }
+    if (attempt < 6) await new Promise((r) => setTimeout(r, 3000));
+  }
 }
 
 function mapHermesProvider(neko: string): {
@@ -243,7 +340,7 @@ function deriveAgentEgress(
  * manual `openshell provider create` + hand-set egress env.
  */
 async function provisionOpenShellRuntime(orgId: string, backend: string): Promise<void> {
-  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "").toLowerCase() !== "openshell") {
+  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell") {
     return;
   }
   const row = await loadProviderRow(orgId, "primary");
@@ -285,6 +382,14 @@ export async function provisionHostConfig(orgId: string): Promise<void> {
   } catch (e) {
     console.warn(
       `[host-provision] graphjin write failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+
+  try {
+    await provisionGraphjinSourcesMode(orgId);
+  } catch (e) {
+    console.warn(
+      `[host-provision] sources-mode provision failed: ${e instanceof Error ? e.message : e}`,
     );
   }
 

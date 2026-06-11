@@ -39,6 +39,19 @@ export const WORKFLOW_SAVE_SCHEMA = z.object({
       timezone: z.string().trim().min(1).max(80).optional(),
       enabled: z.boolean().optional(),
       when: SOURCE_CHANGE_TRIGGER_SCHEMA.optional(),
+      // OL4 condition trigger: run `query`, read `value_path` from the
+      // result, fire the workflow when the condition holds.
+      watch: z
+        .object({
+          query: z.string().trim().min(3).max(8000),
+          value_path: z.string().trim().min(1).max(400),
+          op: z.enum(["gt", "gte", "lt", "lte", "eq", "ne", "changed"]),
+          threshold: z.union([z.number(), z.string()]).optional(),
+          cadence_seconds: z.number().int().min(60).max(86_400).optional(),
+          debounce_seconds: z.number().int().min(0).max(604_800).optional(),
+          severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+        })
+        .optional(),
     })
     .optional(),
 });

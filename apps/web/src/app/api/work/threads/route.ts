@@ -15,6 +15,7 @@ import {
 } from "@neko/db";
 import { BRIEFING_CARD_SENTINEL } from "@/lib/briefing-card-context";
 import { getOrgId } from "@/lib/db";
+import { getCurrentUserSafe } from "@/lib/actor";
 import {
   createWorkMessage,
   createWorkThread,
@@ -72,7 +73,8 @@ export async function POST(request: NextRequest) {
     if (seedCard && !resolvedTitle) resolvedTitle = seedCard.title;
   }
 
-  const thread = await createWorkThread(orgId, resolvedTitle);
+  const creator = await getCurrentUserSafe();
+  const thread = await createWorkThread(orgId, resolvedTitle, "web", creator?.id ?? null);
 
   // When the dashboard's "Deep dive" action opens a new thread, the briefing
   // card travels into the thread as the opening user message — that way the

@@ -1,12 +1,15 @@
-import { data_source, db, eq } from "@neko/db";
+import { data_source, db, desc, eq } from "@neko/db";
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
-import { detectUpstreamError } from "./agent-error";
+import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
-  discoveryUrlFromMcpUrl,
+  buildDiscoveryPathwaysSection,
+  getDiscoveryPathways,
+} from "./discovery-pathways";
+import {
   knowledgePackPaths,
-  prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
   readKnowledgePack,
 } from "./knowledge-pack";
 import { buildMetricPrompt } from "./metric-prompt";
@@ -14,15 +17,29 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "./work/graphjin-guard";
+import { ensureGraphjinGuardWithActorAuth } from "./work/graphjin-actor-guard";
 import {
   formatGlobalMemoryPromptContext,
 } from "./work/memory";
 import { buildWorkMemoryServer } from "./work/tools";
 import { ensureWorkWorkspace } from "./work/workspace";
 
+// Keep in sync with ROLE_FOCUS (bootstrap-metrics-writer.ts) and the
+// onboarding ALL_SEATS list — every seat the product offers must be here.
+export const EXEC_ROLES = [
+  "CEO",
+  "CFO",
+  "COO",
+  "CRO",
+  "CMO",
+  "CIO",
+  "CPO",
+] as const;
+export type ExecRole = (typeof EXEC_ROLES)[number];
+
 export type MetricAgentInput = {
   orgId: string;
-  role: "CEO" | "CFO" | "COO" | "CRO" | "CMO";
+  role: ExecRole;
   slug: string;
   title: string;
   why: string;
@@ -70,6 +87,7 @@ export async function runMetricAgent(
     .select({ mcp_url: data_source.mcp_url })
     .from(data_source)
     .where(eq(data_source.org_id, input.orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const mcpUrl = sources[0]?.mcp_url;
   if (!mcpUrl) {
@@ -87,10 +105,10 @@ export async function runMetricAgent(
     "metric-agent",
     input.jobId ?? input.slug,
   );
-  const refreshResult = await prefetchKnowledgePack({
-    discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-    destDir: workspace.knowledgeRoot,
-  });
+  const refreshResult = await prefetchKnowledgeForOrg(
+    input.orgId,
+    workspace.knowledgeRoot,
+  );
   if (refreshResult.ok) {
     const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
     console.log(
@@ -109,7 +127,13 @@ export async function runMetricAgent(
   if (!graphjinBinary) {
     throw new Error("graphjin CLI is not installed on PATH.");
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  await ensureGraphjinGuardWithActorAuth({
+    orgId: input.orgId,
+    graphjinBinary,
+    binRoot: workspace.binRoot,
+    runRoot: workspace.runRoot,
+    actor: { userId: null, role: "service" },
+  });
 
   // Preload the top-5 global memories so pinned operator rules show up
   // verbatim. Anything narrower (per-card semantic match) is reachable
@@ -118,7 +142,7 @@ export async function runMetricAgent(
 
   const supportsMemorySearch = backend.capabilities.mcpTools;
 
-  const prompt = buildMetricPrompt({
+  const basePrompt = buildMetricPrompt({
     input,
     knowledge,
     workspace,
@@ -126,6 +150,16 @@ export async function runMetricAgent(
     memoryContext,
     supportsMemorySearch,
   });
+  // GJ3: role-shaped warm-start for discovery (cached per org/role/intent).
+  const pathwaysSection = buildDiscoveryPathwaysSection(
+    getDiscoveryPathways({
+      orgId: input.orgId,
+      role: input.role,
+      intent: input.title,
+      insightsJson: knowledge.insights,
+    }),
+  );
+  const prompt = pathwaysSection ? `${basePrompt}\n\n${pathwaysSection}` : basePrompt;
 
   console.log(
     `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id}`,
@@ -144,44 +178,32 @@ export async function runMetricAgent(
     : undefined;
 
   const startedAt = Date.now();
-  const result_ = await backend.run({
-    prompt,
-    orgId: input.orgId,
-    tag: input.jobId,
-    workspace,
-    debug,
-    mcpServers,
+  // GJ2: iterative validation loop — a malformed reply is fed back to the
+  // agent for a corrective turn instead of failing the whole job.
+  const { value: parsed } = await runValidatedAgentTurn<
+    Partial<MetricAgentResult>
+  >({
+    backend,
+    run: {
+      prompt,
+      orgId: input.orgId,
+      tag: input.jobId,
+      workspace,
+      debug,
+      mcpServers,
+    },
+    label: `metric-agent org=${input.orgId} slug=${input.slug}`,
+    validate: (finalText) => {
+      const out = parseJsonFromOutput(finalText) as Partial<MetricAgentResult>;
+      if (!out.headlineMetric && !out.insightText) {
+        throw new Error(
+          "JSON parsed but headlineMetric and insightText are both empty",
+        );
+      }
+      return out;
+    },
   });
-  if (result_.status !== "completed") {
-    const message = result_.error ?? `${backend.id} returned status=${result_.status}`;
-    console.error(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} backend=${backend.id} run failed after ${(
-        (Date.now() - startedAt) / 1000
-      ).toFixed(0)}s: ${message}`,
-    );
-    throw new Error(message);
-  }
-  const stdout = result_.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
-
-  const upstream = detectUpstreamError(stdout);
-  if (upstream) {
-    console.warn(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} upstream provider error: ${upstream.message}`,
-    );
-    throw upstream;
-  }
-
-  let parsed: Partial<MetricAgentResult>;
-  try {
-    parsed = parseJsonFromOutput(stdout) as Partial<MetricAgentResult>;
-  } catch (e) {
-    console.error(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} parse failed; full stdout follows (${stdout.length}B):`,
-    );
-    console.error(stdout);
-    throw e;
-  }
 
   const tw = (parsed.timeWindow ?? {}) as Partial<TimeWindow>;
   const result: MetricAgentResult = {

@@ -106,6 +106,14 @@ export function buildDataAccessSection(opts: DataAccessOptions): string {
   const { shellTool, workspace, knowledge, inlineKnowledge } = opts;
   const paths = knowledgePackPaths(workspace.knowledgeRoot);
 
+  // Agentic deployments (GraphJin sources mode, GJ4 actor tokens) layer
+  // knowledge differently: a slim role-aware bootstrap is inlined and
+  // everything deeper is discovered ON DEMAND through gj_catalog queries
+  // that run under the caller's own token.
+  if (knowledge.mode === "agentic") {
+    return buildAgenticDataAccessSection(opts, paths);
+  }
+
   const knowledgeBlock =
     inlineKnowledge === "all"
       ? `================================================================================
@@ -214,5 +222,105 @@ Never invent or interpolate. If a query returned no rows, the answer
 is "no data", not a guess.
 
 ${knowledgeBlock}
+</data_access>`;
+}
+
+function buildAgenticDataAccessSection(
+  opts: DataAccessOptions,
+  paths: ReturnType<typeof knowledgePackPaths>,
+): string {
+  const { shellTool, knowledge, inlineKnowledge } = opts;
+
+  const tablesBlock =
+    inlineKnowledge === "all"
+      ? `================================================================================
+Tables visible to your role (catalog id, name, one-line summary):
+================================================================================
+
+${knowledge.tables}
+
+================================================================================
+Databases / sources:
+================================================================================
+
+${knowledge.namespaces}
+
+`
+      : `The table list for your role is on disk at ${paths.files.tables}
+(catalog id + name + one-line summary per table; databases/sources at
+${paths.files.namespaces}). Read it with your \`${shellTool}\` tool when
+you need to know what exists.
+
+`;
+
+  return `<data_access>
+The configured GraphJin database is the authoritative source for any
+operational question (revenue, customers, orders, inventory, employees,
+sales, products, etc.). When the user attaches a file or explicitly
+references uploaded data, read the file and use it — it's the source of
+truth for that turn. Otherwise default to the database.
+
+This deployment runs GraphJin in agentic (sources) mode: schema
+knowledge is DISCOVERED ON DEMAND through the \`gj_catalog\` root, and
+every query — including catalog queries — runs under YOUR access token,
+so you only ever see what your role allows. A slim bootstrap is
+provided; do not assume it is the whole schema.
+
+Discovery pattern (all via the \`${shellTool}\` tool):
+
+  graphjin cli execute_graphql --args '{"query":"query { gj_catalog(search: \\"<what you need>\\", limit: 10) { id kind name summary } }"}'
+  graphjin cli execute_graphql --args '{"query":"query { gj_catalog(id: \\"table:<db>:<schema>.<table>\\") { id name summary details_json examples_json edges_json } }"}'
+  graphjin cli execute_graphql --args '{"query":"query { gj_catalog(where: { kind: { eq: \\"column\\" } }, search: \\"<table>\\", limit: 30) { id name summary } }"}'
+
+Catalog row kinds: help, database, table, column, relationship,
+function, capability. \`gj_catalog(id: "...")\` returns one detailed
+card — details_json carries columns/types/keys, examples_json carries
+ready-to-adapt queries, edges_json carries join paths. When unsure
+where to look, pull \`gj_catalog(id: "help:discovery")\`.
+
+Discover before you query: pull the table card (and column rows for
+filter literals) before writing a non-trivial query — guessing column
+names or string literals returns zero rows silently. For join planning,
+\`find_path\` and \`explore_relationships\` remain available:
+
+  graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'
+  graphjin cli explore_relationships --args '{"table":"<name>"}'
+
+Run data queries the same way:
+
+  graphjin cli execute_graphql --args '{"query":"<your read-only graphql>"}'
+
+If a response contains an \`errors\` array, check
+\`errors[].extensions.graphjin_repair\` first (it often contains the
+corrected query), else run:
+
+  graphjin cli fix_query_error --args '{"query":"<failing>","error":"<msg>"}'
+
+Talk to GraphJin only through \`${shellTool}\` running \`graphjin cli\`.
+\`execute_code\`, Python, raw HTTP, or any other path bypasses the tool
+gate that blocks mutations and subscriptions, and produces results the
+rest of the system can't trace. Mutations and subscriptions are blocked
+at the tool gate regardless.
+
+For date/range filters: ${GRAPHJIN_DATE_RULE.replace(/^- /, "")}
+
+${GRAPHJIN_FANOUT_RULE.replace(/^- /, "")}
+
+Never invent or interpolate. If a query returned no rows, the answer
+is "no data", not a guess.
+
+${tablesBlock}================================================================================
+Help-card index — what the catalog can teach you (pull any card's full
+guidance on demand with gj_catalog(id: "help:<topic>")):
+================================================================================
+
+${knowledge.insights}
+
+================================================================================
+Query-DSL essentials (filters + query shape, from the catalog's help
+cards). Pull other help cards for mutations, fragments, errors:
+================================================================================
+
+${knowledge.syntax}
 </data_access>`;
 }

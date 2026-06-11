@@ -1,9 +1,9 @@
 import { shellToolName } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
+import { runValidatedAgentTurn } from "./agent-validate-loop";
 import {
-  discoveryUrlFromMcpUrl,
   knowledgePackPaths,
-  prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
   readKnowledgePack,
   type KnowledgePackContents,
 } from "./knowledge-pack";
@@ -11,6 +11,7 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "./work/graphjin-guard";
+import { ensureGraphjinGuardWithActorAuth } from "./work/graphjin-actor-guard";
 import { ensureWorkWorkspace } from "./work/workspace";
 
 function buildPrompt(args: {
@@ -20,10 +21,16 @@ function buildPrompt(args: {
   shellTool: string;
 }): string {
   const { orgName, companyNote, knowledge, shellTool } = args;
+  const agentic = knowledge.mode === "agentic";
+  const discoveryRule = agentic
+    ? `1. The knowledge sections below are a SLIM role-aware bootstrap (table summaries, help-card index, DSL essentials) — not the whole schema. Discover deeper detail ON DEMAND with catalog queries through \`${shellTool}\`:
+     graphjin cli execute_graphql --args '{"query":"query { gj_catalog(id: \\"table:<db>:<schema>.<table>\\") { details_json examples_json edges_json } }"}'
+   Pull the table card (and column rows) before writing a non-trivial query.`
+    : `1. Read the prefetched GraphJin knowledge sections below before writing any query. They are the authoritative DSL + schema/relationship context for this database. Don't run schema-discovery commands; that context is already prefetched here.`;
   return `You build a short markdown business profile about a customer company by querying its database via GraphJin.
 
 EXECUTION PATTERN:
-1. Read the prefetched GraphJin knowledge sections below before writing any query. They are the authoritative DSL + schema/relationship context for this database. Don't run schema-discovery commands; that context is already prefetched here.
+${discoveryRule}
 2. Skim the tables + insights sections to identify what this business actually does (industry, offering, business model). Pick the handful of tables that matter.
 3. Run a small set of GraphQL queries to gather facts: main business event (date range, recent volume + value), top categories / products / services, geography, who is served, who does the work.
 4. Run queries via the \`${shellTool}\` tool:
@@ -38,7 +45,11 @@ DATA ACCESS — READ-ONLY:
 The database is queried exclusively via \`graphjin cli\` run through the \`${shellTool}\` tool. GraphJin speaks GraphQL (not raw SQL). Mutations and subscriptions are forbidden and will be denied at the tool gate. DO NOT use \`execute_code\`, Python, raw HTTP requests, or any other tool to talk to GraphJin — only \`${shellTool}\` running \`graphjin cli\`.
 
 - Every database read goes through \`graphjin cli execute_graphql\` via \`${shellTool}\`.
-- DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` — those broad discovery dumps are already prefetched in the knowledge sections below.
+- ${
+    agentic
+      ? "Discover schema detail with gj_catalog queries (kinds: table, column, relationship, function; gj_catalog(id:) returns one detailed card). DO NOT call the legacy broad-dump tools (list_tables / describe_table / get_query_syntax / get_schema_insights / get_discovery_schema)."
+      : "DO NOT call \`graphjin cli list_tables\` / \`describe_table\` / \`get_query_syntax\` / \`get_schema_insights\` / \`get_discovery_schema\` — those broad discovery dumps are already prefetched in the knowledge sections below."
+  }
 - DO NOT run \`graphjin cli setup\`, \`graphjin cli config\`, \`graphjin cli write_query\`, or any config/write command. The CLI is already configured by OpenNeko and those commands are blocked.
 - DO use these targeted read-only relationship tools whenever they help you plan or verify joins:
   - \`graphjin cli find_path --args '{"from_table":"<table>","to_table":"<table>"}'\` — exact relationship path between two specific tables.
@@ -158,10 +169,7 @@ export async function runProfiler(args: {
     "profiler",
     jobId ?? orgId,
   );
-  const refresh = await prefetchKnowledgePack({
-    discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-    destDir: workspace.knowledgeRoot,
-  });
+  const refresh = await prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot);
   if (refresh.ok) {
     const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
     console.log(
@@ -179,7 +187,13 @@ export async function runProfiler(args: {
   if (!graphjinBinary) {
     throw new Error("graphjin CLI is not installed on PATH.");
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  await ensureGraphjinGuardWithActorAuth({
+    orgId: orgId,
+    graphjinBinary,
+    binRoot: workspace.binRoot,
+    runRoot: workspace.runRoot,
+    actor: { userId: null, role: "service" },
+  });
   console.log(`[profiler] org=${orgId} backend=${backend.id}`);
 
   const prompt = buildPrompt({
@@ -191,23 +205,25 @@ export async function runProfiler(args: {
 
   if (onProgress) onProgress("Running profiler agent (1–2 minutes)…");
   const startedAt = Date.now();
-  const result = await backend.run({
-    prompt,
-    orgId,
-    tag: jobId ?? orgId,
-    workspace,
-    debug: debug === true,
+  // GJ2: iterative validation loop — a profile missing required sections
+  // (or containing failure text) goes back to the agent for a corrective
+  // turn instead of failing the onboarding job.
+  const { value: businessProfile, finalText } = await runValidatedAgentTurn({
+    backend,
+    run: {
+      prompt,
+      orgId,
+      tag: jobId ?? orgId,
+      workspace,
+      debug: debug === true,
+    },
+    label: `profiler org=${orgId}`,
+    validate: (txt) => validateBusinessProfile(stripFences(txt), orgName),
   });
-  if (result.status !== "completed") {
-    throw new Error(result.error ?? `${backend.id} returned status=${result.status}`);
-  }
-  const stdout = result.finalText;
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
   console.log(
-    `[profiler] org=${orgId} done in ${elapsedSec}s (${stdout.length} chars)`,
+    `[profiler] org=${orgId} done in ${elapsedSec}s (${finalText.length} chars)`,
   );
-
-  const businessProfile = validateBusinessProfile(stripFences(stdout), orgName);
   if (onProgress) onProgress("Profile drafted");
 
   return { businessProfile };

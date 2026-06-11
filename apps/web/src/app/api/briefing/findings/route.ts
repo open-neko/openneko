@@ -3,11 +3,16 @@ import {
   action_request,
   and,
   briefing,
+  briefing_card,
   briefing_finding_pin,
   db,
   desc,
   eq,
+  gt,
   gte,
+  muted_scope,
+  notInArray,
+  observation,
   sql,
   workflow_definition,
   workflow_output,
@@ -94,6 +99,19 @@ const APPROVAL_LIMIT = 8;
 export async function GET() {
   const orgId = await getOrgId();
 
+  // 0. Active scope mutes (OL7) — matching finding cards are filtered
+  // out of every tributary below until muted_until passes.
+  const muteRows = await db()
+    .select({ scope: muted_scope.scope, mutedUntil: muted_scope.muted_until })
+    .from(muted_scope)
+    .where(
+      and(eq(muted_scope.org_id, orgId), gt(muted_scope.muted_until, new Date())),
+    );
+  const mutedScopes = muteRows.map((m) => m.scope);
+  const notMuted = mutedScopes.length
+    ? notInArray(workflow_output.scope, mutedScopes)
+    : undefined;
+
   // 1. Pending approvals — sorted risk desc, time desc.
   const approvalsRaw = await db()
     .select({
@@ -140,6 +158,8 @@ export async function GET() {
       body: workflow_output.body,
       scope: workflow_output.scope,
       mood: workflow_output.mood,
+      seenCount: workflow_output.seen_count,
+      lastSeenAt: workflow_output.last_seen_at,
       createdAt: workflow_output.created_at,
       workflowId: workflow_definition.id,
       workflowName: workflow_definition.name,
@@ -155,6 +175,7 @@ export async function GET() {
         eq(workflow_output.org_id, orgId),
         eq(workflow_output.mood, "act"),
         gte(workflow_output.created_at, since),
+        notMuted,
       ),
     )
     .orderBy(desc(workflow_output.created_at))
@@ -170,6 +191,8 @@ export async function GET() {
       body: workflow_output.body,
       scope: workflow_output.scope,
       mood: workflow_output.mood,
+      seenCount: workflow_output.seen_count,
+      lastSeenAt: workflow_output.last_seen_at,
       createdAt: workflow_output.created_at,
       workflowId: workflow_definition.id,
       workflowName: workflow_definition.name,
@@ -185,6 +208,7 @@ export async function GET() {
         eq(workflow_output.org_id, orgId),
         eq(workflow_output.mood, "watch"),
         gte(workflow_output.created_at, since),
+        notMuted,
       ),
     )
     .orderBy(desc(workflow_output.created_at))
@@ -228,6 +252,31 @@ export async function GET() {
       briefing_finding_pin.sort_order,
       desc(briefing_finding_pin.pinned_at),
     );
+
+  // 4b. Elevated observations (OL2) — first-class briefing cards keyed
+  // on source_observation_id; they may have no producing output at all.
+  const elevatedRows = await db()
+    .select({
+      cardId: briefing_card.id,
+      observationId: briefing_card.source_observation_id,
+      title: briefing_card.title,
+      body: briefing_card.body,
+      mood: briefing_card.mood,
+      createdAt: briefing_card.created_at,
+      consumerWorkflowId: observation.consumer_workflow_id,
+      workflowName: workflow_definition.name,
+    })
+    .from(briefing_card)
+    .innerJoin(observation, eq(briefing_card.source_observation_id, observation.id))
+    .leftJoin(
+      workflow_definition,
+      eq(observation.consumer_workflow_id, workflow_definition.id),
+    )
+    .where(
+      and(eq(briefing_card.org_id, orgId), eq(briefing_card.status, "active")),
+    )
+    .orderBy(desc(briefing_card.created_at))
+    .limit(ACT_LIMIT);
 
   // 5. Roll-up count for quiet section (mood=good in window).
   const [goodCountRow] = await db()
@@ -351,6 +400,8 @@ export async function GET() {
         scope: o.scope,
         mood: o.mood,
         outputKind: o.kind,
+        seenCount: o.seenCount,
+        lastSeenAt: o.lastSeenAt.toISOString(),
         createdAt: o.createdAt.toISOString(),
       })),
     },
@@ -378,8 +429,23 @@ export async function GET() {
       scope: o.scope,
       mood: o.mood,
       outputKind: o.kind,
+      seenCount: o.seenCount,
+      lastSeenAt: o.lastSeenAt.toISOString(),
       createdAt: o.createdAt.toISOString(),
     })),
+    elevated: elevatedRows.map((c) => ({
+      id: c.cardId,
+      kind: "elevated" as const,
+      observationId: c.observationId,
+      workflow: c.consumerWorkflowId
+        ? { id: c.consumerWorkflowId, name: c.workflowName ?? "workflow" }
+        : null,
+      title: c.title,
+      body: c.body,
+      mood: c.mood,
+      createdAt: c.createdAt.toISOString(),
+    })),
+    mutedScopes,
     quiet: {
       goodOutputs: goodCountRow?.count ?? 0,
       windowHours: RECENT_FINDING_WINDOW_HOURS,

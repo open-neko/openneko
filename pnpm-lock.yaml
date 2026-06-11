@@ -153,6 +153,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@neko/secret-crypt':
+        specifier: workspace:*
+        version: link:../secret-crypt
       drizzle-orm:
         specifier: ^0.36.4
         version: 0.36.4(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(@types/react@19.2.14)(pg@8.20.0)(react@19.2.4)
@@ -199,6 +202,12 @@ importers:
       '@neko/interaction':
         specifier: workspace:*
         version: link:../interaction
+      '@neko/secret-crypt':
+        specifier: workspace:*
+        version: link:../secret-crypt
+      '@open-neko/plugin-install':
+        specifier: workspace:*
+        version: link:../plugin-install
       cron-parser:
         specifier: ^4.9.0
         version: 4.9.0
@@ -220,6 +229,10 @@ importers:
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
 
   packages/plugin-install:
+    dependencies:
+      '@neko/secret-crypt':
+        specifier: workspace:*
+        version: link:../secret-crypt
     devDependencies:
       '@types/node':
         specifier: ^20
@@ -236,6 +249,18 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.39
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
+
+  packages/secret-crypt:
     devDependencies:
       '@types/node':
         specifier: ^20

@@ -13,6 +13,7 @@ export * from "./llm";
 export * from "./classifier";
 export * from "./summarize-briefing";
 export * from "./metric-agent";
+export * from "./discovery-pathways";
 export * from "./profiler";
 export * from "./bootstrap-metrics-writer";
 export * from "./industry-researcher";
@@ -32,6 +33,8 @@ export {
 export { provisionHostConfig } from "./host-provision";
 export {
   prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
+  prefetchAgenticKnowledgePack,
   knowledgePackPaths,
   discoveryUrlFromMcpUrl,
   type PrefetchKnowledgeResult,

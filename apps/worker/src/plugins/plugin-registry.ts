@@ -60,7 +60,9 @@ import {
   defaultSecretsPath,
   getOperatorCredential,
   manifestPathFor,
+  FileSecretsResolver,
   readFullSecretsFileSoft,
+  type SecretsResolver,
   setOperatorCredential,
   unsetOperatorCredential,
   writeFullSecretsFile,
@@ -105,6 +107,8 @@ export interface PluginRegistryOptions {
   workRoot: string;
   /** Optional secrets config dir; defaults to XDG/$HOME-derived path. */
   secretsConfigDir?: string;
+  /** SEC2: override secret residency (default: FileSecretsResolver). */
+  secretsResolver?: SecretsResolver;
   image?: string;
   cpus?: number;
   memoryMb?: number;
@@ -556,7 +560,11 @@ export class PluginRegistry {
   async parseInbound(
     pluginName: string,
     raw: unknown,
-  ): Promise<{ intents: unknown[]; recipient?: Record<string, unknown> }> {
+  ): Promise<{
+    intents: unknown[];
+    recipient?: Record<string, unknown>;
+    sender?: { id: string; displayName?: string; workspaceId?: string };
+  }> {
     const { pluginId, entry } = this.requireChannelPluginEntry(pluginName);
     await this.ensureVm(pluginId, entry);
     const env = mergeEnv(entry, this.secrets);
@@ -575,10 +583,24 @@ export class PluginRegistry {
     const result = response.result as {
       intents?: unknown[];
       recipient?: Record<string, unknown>;
+      sender?: { id?: unknown; displayName?: unknown; workspaceId?: unknown };
     };
+    const sender =
+      result.sender && typeof result.sender.id === "string" && result.sender.id
+        ? {
+            id: result.sender.id,
+            ...(typeof result.sender.displayName === "string"
+              ? { displayName: result.sender.displayName }
+              : {}),
+            ...(typeof result.sender.workspaceId === "string"
+              ? { workspaceId: result.sender.workspaceId }
+              : {}),
+          }
+        : undefined;
     return {
       intents: result.intents ?? [],
       ...(result.recipient ? { recipient: result.recipient } : {}),
+      ...(sender ? { sender } : {}),
     };
   }
 
@@ -883,9 +905,13 @@ export class PluginRegistry {
         manifest,
         this.options.pluginInstallDir ?? this.options.repoRoot,
       );
-      const full = await readFullSecretsFileSoft(
-        this.options.secretsConfigDir,
-        (line) => console.warn(`[plugin-registry] ${line}`),
+      // SEC2: secrets come through the resolver seam (file today;
+      // Infisical-backed env bags via SEC3 without touching this path).
+      const resolver =
+        this.options.secretsResolver ??
+        new FileSecretsResolver(this.options.secretsConfigDir);
+      const full = await resolver.resolveFullSecrets((line) =>
+        console.warn(`[plugin-registry] ${line}`),
       );
       this.secrets = full.env;
       this.operators = full.operators;
@@ -1232,7 +1258,7 @@ export class PluginRegistry {
 
   private async createDefaultRuntime(): Promise<PluginRuntime | null> {
     const kind = (
-      process.env.OPENNEKO_PLUGIN_RUNTIME ?? "microsandbox"
+      process.env.OPENNEKO_PLUGIN_RUNTIME ?? "openshell"
     ).toLowerCase();
     if (kind === "openshell") {
       const { OpenShellRuntime } = await import("./openshell-runtime.js");

@@ -215,9 +215,22 @@ export async function PATCH(request: Request, context: RouteContext) {
   const patch: {
     enabled?: boolean;
     cron_enabled?: boolean;
+    paused_until?: Date | null;
   } = {};
-  if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+  if (typeof body.enabled === "boolean") {
+    patch.enabled = body.enabled;
+    // Re-enabling clears any pause-for-today timer.
+    if (body.enabled) patch.paused_until = null;
+  }
   if (typeof body.cronEnabled === "boolean") patch.cron_enabled = body.cronEnabled;
+  // OL7 "pause for today": park until the next UTC midnight; the cron
+  // sweep re-enables it.
+  if (body.pauseForToday === true) {
+    const until = new Date();
+    until.setUTCHours(24, 0, 0, 0);
+    patch.enabled = false;
+    patch.paused_until = until;
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "no recognized fields" }, { status: 400 });
   }

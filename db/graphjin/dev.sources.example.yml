@@ -1,0 +1,110 @@
+# GJ4 — source/agentic-mode template for the CUSTOMER-data GraphJin
+# (compare dev.example.yml, the legacy anonymous config). Copy to dev.yml,
+# fill the secret, and set data_source.auth_mode='jwt' in neko-db to
+# activate per-run actor tokens.
+#
+# The JWT secret is per-org, derived from the deployment secret-key:
+#   graphjinSigningSecretB64(orgId)   (packages/llm/src/graphjin/token.ts)
+# Claims OpenNeko mints: { sub, role (admin|member|service), org_id,
+# iat, exp } — 5-minute TTL, re-minted per run.
+#
+# NOTE (3.18.32+): in sources mode, GJ_DATABASE_* env vars are a hard
+# boot error — connection details live HERE, not in compose env.
+
+app_name: ./Graphjin/Neko-AdventureWorks (source mode)
+host_port: 0.0.0.0:8080
+production: false
+debug: true
+log_format: plain
+log_level: debug
+http_compress: true
+reload_on_config_change: true
+server_timing: true
+
+auth:
+  type: jwt
+  jwt:
+    # base64 of graphjinSigningSecretB64(orgId)
+    secret: "REPLACE_WITH_PER_ORG_SECRET_B64"
+    audience: ""
+    issuer: ""
+
+# Role shaping (verified live on 3.18.37): JWT roles only take effect
+# when they match a configured role or admin_roles; everything else
+# falls back to the built-in authenticated role "user".
+roles_query: ""
+identity:
+  user_id_claim: sub
+  role_claims:
+    - role
+  # K3 — multi-tenant isolation: the JWT's org_id claim becomes the
+  # namespace ($account_id). Required for `read: account` sources.
+  namespace_claim: org_id
+  admin_roles:
+    - admin
+
+auth_fail_block: true
+
+cors_allowed_origins:
+  - '*'
+
+default_limit: 20
+enable_tracing: true
+subs_poll_duration: 5s
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: false
+  allow_raw_queries: true
+  workflow_timeout: 300
+  allow_dev_tools: false
+  # The legacy /api/v1/discovery/* bridge is OFF: it serves broad schema
+  # dumps anonymously. Agentic deployments discover via gj_catalog under
+  # the caller's token; the knowledge prefetch does the same.
+  legacy_discovery: false
+
+analytics_mode: true
+
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+sources:
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    access:
+      roots:
+        # authenticated, NOT public — verified live: public leaks the
+        # whole schema catalog to anonymous callers.
+        gj_catalog: authenticated
+
+  - name: adventureworks
+    kind: database
+    default: true
+    read_only: true
+    type: postgres
+    host: adventureworks-db
+    port: 5432
+    dbname: adventureworks
+    user: postgres
+    password: postgres
+    access:
+      # `authenticated` = any valid token, no row scoping — right for a
+      # single-tenant customer DB like the demo. `account` (K3) is the
+      # multi-tenant mode: it auto-filters every query to the JWT's
+      # org_id namespace AND blocks tables missing namespace_column
+      # (verified live: account mode on a column-less table blocks).
+      read: authenticated
+      write: blocked
+      delete: blocked
+      # K3 — switch to multi-tenant isolation:
+      # read: account
+      # namespace_column: org_id
+      # missing_namespace_column: block

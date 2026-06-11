@@ -24,7 +24,7 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { and, app_user, db, eq } from "@neko/db";
+import { and, app_user, db, eq, isNull } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 
 export const SESSION_COOKIE_NAME = "openneko_session";
@@ -441,7 +441,8 @@ export async function getCurrentUser(): Promise<{
       name: app_user.name,
     })
     .from(app_user)
-    .where(eq(app_user.id, session.userId))
+    // ADM1: a deactivated user's cookie is dead, not just their sign-in.
+    .where(and(eq(app_user.id, session.userId), isNull(app_user.disabled_at)))
     .limit(1);
   if (!rows[0]) return null;
   return rows[0];

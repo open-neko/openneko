@@ -9,6 +9,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   real,
   smallint,
   text,
@@ -61,6 +62,8 @@ export const app_user = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    // ADM1: a deactivated user can't sign in and their sessions are dead.
+    disabled_at: ts("disabled_at"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     last_login_at: ts("last_login_at"),
@@ -81,12 +84,23 @@ export const data_source = pgTable(
     graphql_url: text("graphql_url").notNull(),
     subscription_url: text("subscription_url"),
     label: text("label"),
+    // GJ4: 'none' = anonymous legacy; 'jwt' = source mode w/ actor tokens.
+    auth_mode: text("auth_mode").notNull().default("none"),
+    // ADM2 registry: stable per-org name; agents use the default source
+    // unless told otherwise; disabled sources are registry placeholders.
+    name: text("name").notNull().default("default"),
+    is_default: boolean("is_default").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
     mcp_url: text("mcp_url"),
   },
   (t) => ({
     org_idx: index("data_source_org_idx").on(t.org_id),
+    org_name_unique: uniqueIndex("data_source_org_name_unique").on(
+      t.org_id,
+      t.name,
+    ),
   }),
 );
 
@@ -184,6 +198,8 @@ export const metric = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    // CV3: per-persona cards. NULL = org-shared card.
+    user_id: text("user_id"),
     slug: text("slug").notNull(),
     source: text("source").notNull(),
     title: text("title").notNull(),
@@ -260,6 +276,321 @@ export const dashboard_pin = pgTable(
     org_role_metric_unique: uniqueIndex(
       "dashboard_pin_org_role_metric_unique",
     ).on(t.org_id, t.role, t.metric_id),
+  }),
+);
+
+// CH2 — channel workspace → org mapping. First inbound contact
+// auto-binds a workspace to the default org; multi-tenant remaps rows.
+export const channel_workspace = pgTable(
+  "channel_workspace",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    workspace_id: text("workspace_id").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    plugin_ws_unique: uniqueIndex("channel_workspace_plugin_ws_unique").on(
+      t.channel_plugin,
+      t.workspace_id,
+    ),
+    org_idx: index("channel_workspace_org_idx").on(t.org_id),
+  }),
+);
+
+// CV3 — personas: one profile per (org, user). user_id = '' is the
+// org-default persona (solo profile / unlinked channels). The compiled
+// brief_md is what the agent reads as <operator-profile>; raw answers
+// stay out of prompts.
+export const operator_profile = pgTable(
+  "operator_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id").notNull().default(""),
+    display_name: text("display_name"),
+    role_template: text("role_template").notNull().default(""),
+    focus_areas: text("focus_areas").array().notNull().default(sql`'{}'::text[]`),
+    answers: jsonb("answers").notNull().default(sql`'{}'::jsonb`),
+    brief_md: text("brief_md").notNull().default(""),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_user_unique: uniqueIndex("operator_profile_org_user_unique").on(
+      t.org_id,
+      t.user_id,
+    ),
+  }),
+);
+
+// CV0 — config-vcs ref pointers: the DB knows each org layer's current
+// commit; git holds the content. Team layer = (scope='team', user_id='').
+export const config_ref = pgTable(
+  "config_ref",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull().default("team"),
+    user_id: text("user_id").notNull().default(""),
+    commit_sha: text("commit_sha").notNull(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_scope_user_unique: uniqueIndex("config_ref_org_scope_user_unique").on(
+      t.org_id,
+      t.scope,
+      t.user_id,
+    ),
+  }),
+);
+
+// CH3 — channel→app_user mapping. One row per channel-native identity
+// an org has seen; linking (SSO email match or admin-map) binds it to
+// an app_user. Unlinked identities act as anonymous members.
+export const channel_identity = pgTable(
+  "channel_identity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channel_plugin: text("channel_plugin").notNull(),
+    workspace_id: text("workspace_id").notNull().default(""),
+    channel_user_id: text("channel_user_id").notNull(),
+    app_user_id: text("app_user_id").references(() => app_user.id, {
+      onDelete: "cascade",
+    }),
+    display_name: text("display_name"),
+    email: text("email"),
+    status: text("status").notNull().default("unverified"),
+    first_seen_at: ts("first_seen_at").notNull().defaultNow(),
+    verified_at: ts("verified_at"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    tuple_unique: uniqueIndex("channel_identity_tuple_unique").on(
+      t.org_id,
+      t.channel_plugin,
+      t.workspace_id,
+      t.channel_user_id,
+    ),
+    org_user_idx: index("channel_identity_org_user_idx").on(
+      t.org_id,
+      t.app_user_id,
+    ),
+  }),
+);
+
+// SEC5 — every authenticated gateway (broker) call a sandboxed agent
+// makes, stamped with the dual identity (human principal + agent
+// backend). SEC7 reads this for behavioral thresholds.
+export const control_plane_audit = pgTable(
+  "control_plane_audit",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id"),
+    path: text("path").notNull(),
+    actor_user_id: text("actor_user_id"),
+    actor_role: text("actor_role"),
+    backend: text("backend"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("control_plane_audit_org_idx").on(
+      t.org_id,
+      t.created_at.desc(),
+    ),
+    run_idx: index("control_plane_audit_run_idx").on(t.run_id),
+  }),
+);
+
+// SEC10 — append-only per-org hash chain over the governance entities.
+// Any retroactive edit/deletion breaks every later link.
+export const audit_chain = pgTable(
+  "audit_chain",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    entity_kind: text("entity_kind").notNull(),
+    entity_id: text("entity_id").notNull(),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+    payload_hash: text("payload_hash").notNull(),
+    prev_hash: text("prev_hash").notNull(),
+    chain_hash: text("chain_hash").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_seq_unique: uniqueIndex("audit_chain_org_seq_unique").on(t.org_id, t.seq),
+    org_entity_idx: index("audit_chain_org_entity_idx").on(
+      t.org_id,
+      t.entity_kind,
+      t.entity_id,
+    ),
+  }),
+);
+
+// OL4 — watchers: condition monitors over GraphJin queries that fire
+// their linked workflow when the condition holds (polling v1).
+export const watcher = pgTable(
+  "watcher",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflow_id: uuid("workflow_id")
+      .notNull()
+      .references(() => workflow_definition.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    query: text("query").notNull(),
+    value_path: text("value_path").notNull(),
+    op: text("op").notNull(),
+    threshold: jsonb("threshold"),
+    cadence_seconds: integer("cadence_seconds").notNull().default(300),
+    debounce_seconds: integer("debounce_seconds").notNull().default(3600),
+    severity: text("severity").notNull().default("medium"),
+    last_checked_at: ts("last_checked_at"),
+    last_fired_at: ts("last_fired_at"),
+    last_value: jsonb("last_value"),
+    last_error: text("last_error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_name_unique: uniqueIndex("watcher_org_name_unique").on(t.org_id, t.name),
+    org_enabled_idx: index("watcher_org_enabled_idx").on(
+      t.org_id,
+      t.enabled,
+      t.last_checked_at,
+    ),
+  }),
+);
+
+// SEC7 — behavioral threshold alerts raised by the worker sweep over
+// the SEC5 audit stream and action/memory write rates.
+export const behavior_alert = pgTable(
+  "behavior_alert",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    subject: text("subject").notNull().default(""),
+    observed: integer("observed").notNull(),
+    threshold: integer("threshold").notNull(),
+    window_seconds: integer("window_seconds").notNull(),
+    details: jsonb("details"),
+    acknowledged_at: ts("acknowledged_at"),
+    acknowledged_by: text("acknowledged_by"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("behavior_alert_org_idx").on(t.org_id, t.created_at.desc()),
+    org_kind_subject_idx: index("behavior_alert_org_kind_subject_idx").on(
+      t.org_id,
+      t.kind,
+      t.subject,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+// CV4 — per-member fork baseline for 3-way memory pulls.
+export const memory_fork = pgTable(
+  "memory_fork",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    baseline_sha: text("baseline_sha").notNull().default(""),
+    baseline_at: ts("baseline_at").notNull().defaultNow(),
+    frozen: boolean("frozen").notNull().default(false),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.org_id, t.user_id] }),
+  }),
+);
+
+// CV4 — config-artifact audit trail + admin adopt inbox. Attribution
+// lives here (DB-deletable), never in git commits (DATA_LIFECYCLE §3).
+export const config_change = pgTable(
+  "config_change",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    artifact_kind: text("artifact_kind").notNull(),
+    artifact_ref: text("artifact_ref").notNull(),
+    scope: text("scope").notNull().default("team"),
+    user_id: text("user_id").notNull().default(""),
+    actor_user_id: text("actor_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+    commit_sha: text("commit_sha"),
+    summary: text("summary").notNull().default(""),
+    semantic_diff: jsonb("semantic_diff"),
+    status: text("status").notNull().default("recorded"),
+    decided_by: text("decided_by"),
+    decided_at: ts("decided_at"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("config_change_org_idx").on(t.org_id, t.created_at.desc()),
+    org_status_idx: index("config_change_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
+// OL7 — a muted scope hides matching workflow_output cards from the
+// Briefing tributaries until muted_until passes.
+export const muted_scope = pgTable(
+  "muted_scope",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    muted_until: ts("muted_until").notNull(),
+    muted_by_user_id: text("muted_by_user_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_scope_unique: uniqueIndex("muted_scope_org_scope_unique").on(
+      t.org_id,
+      t.scope,
+    ),
+    org_until_idx: index("muted_scope_org_until_idx").on(
+      t.org_id,
+      t.muted_until.desc(),
+    ),
   }),
 );
 
@@ -411,6 +742,12 @@ export const work_thread = pgTable(
     // Origin channel ("web", "telegram", …). The web Ask UI lists only its own
     // ("web") threads so channels stay isolated. See docs/PER_CHANNEL_RENDERING.md.
     channel: text("channel").notNull().default("web"),
+    // K1: who opened this thread (web session user). Null for channel /
+    // service threads until CH3 links channel senders.
+    created_by_user_id: text("created_by_user_id").references(
+      () => app_user.id,
+      { onDelete: "set null" },
+    ),
     backend_state: jsonb("backend_state").notNull().default(sql`'{}'::jsonb`),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
@@ -438,6 +775,13 @@ export const work_run = pgTable(
     backend: text("backend").notNull(),
     status: text("status").notNull().default("running"),
     error: text("error"),
+    // K1: the acting principal, snapshotted at run start. Web runs carry
+    // (app_user.id, role); channel runs (NULL, 'member') until CH3;
+    // cron/workflow runs (NULL, 'service').
+    actor_user_id: text("actor_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+    actor_role: text("actor_role"),
     // Agent-estimated minutes of human effort the run's ANALYSIS saved
     // (excludes per-action work, which is tracked on action_request). Null
     // until the run emits a value estimate; server-clamped before write.
@@ -536,6 +880,22 @@ export const work_memory = pgTable(
     }),
     use_count: integer("use_count").notNull().default(0),
     last_used_at: ts("last_used_at"),
+    // CV2 overlay: NULL user_id = team layer; personal rows shadow
+    // (overrides_origin_id) or hide (suppressed) the team row of that
+    // origin for their owner. promoted_* = promote lineage.
+    user_id: text("user_id").references(() => app_user.id, {
+      onDelete: "cascade",
+    }),
+    origin_id: uuid("origin_id"),
+    overrides_origin_id: uuid("overrides_origin_id"),
+    suppressed: boolean("suppressed").notNull().default(false),
+    promoted_from_id: uuid("promoted_from_id"),
+    promoted_by: text("promoted_by"),
+    promoted_at: ts("promoted_at"),
+    // SEC6: per-org HMAC over identity-bearing fields (NULL = pre-SEC6
+    // row); expires_at archives short-lived kinds via the nightly sweep.
+    integrity_hmac: text("integrity_hmac"),
+    expires_at: ts("expires_at"),
     archived_at: ts("archived_at"),
     embedding: vector("embedding", 384),
     created_at: ts("created_at").notNull().defaultNow(),
@@ -655,6 +1015,15 @@ export const workflow_definition = pgTable(
     cron_timezone: text("cron_timezone").notNull().default("UTC"),
     cron_enabled: boolean("cron_enabled").notNull().default(true),
     daily_run_budget: integer("daily_run_budget"),
+    // OL7 "pause for today": enabled=false with a re-enable timer the
+    // cron sweep honors.
+    paused_until: ts("paused_until"),
+    // CV1 ownership: '' = org layer; a member's personal workflow carries
+    // their user id. Unique is (org, owner, name). origin_id is the stable
+    // identity across copy/promote; parent_id the fork/promote source.
+    owner_user_id: text("owner_user_id").notNull().default(""),
+    origin_id: uuid("origin_id"),
+    parent_id: uuid("parent_id"),
     output_contract: jsonb("output_contract"),
     created_by_thread_id: uuid("created_by_thread_id").references(
       () => work_thread.id,
@@ -672,10 +1041,9 @@ export const workflow_definition = pgTable(
       t.enabled,
       t.updated_at.desc(),
     ),
-    org_name_unique: uniqueIndex("workflow_definition_org_name_unique").on(
-      t.org_id,
-      t.name,
-    ),
+    org_owner_name_unique: uniqueIndex(
+      "workflow_definition_org_owner_name_unique",
+    ).on(t.org_id, t.owner_user_id, t.name),
     cron_active_idx: index("workflow_definition_cron_active_idx")
       .on(t.org_id, t.cron_enabled)
       .where(sql`${t.cron} is not null and ${t.enabled} = true`),
@@ -757,6 +1125,11 @@ export const workflow_output = pgTable(
     time_window_start: ts("time_window_start"),
     time_window_end: ts("time_window_end"),
     freshness_ttl_seconds: integer("freshness_ttl_seconds"),
+    // OL8 card-level dedupe: an identical finding within 24h bumps
+    // seen_count on the original card instead of creating a new one.
+    seen_count: integer("seen_count").notNull().default(1),
+    last_seen_at: ts("last_seen_at").notNull().defaultNow(),
+    dedupe_key: text("dedupe_key"),
     created_at: ts("created_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -956,6 +1329,40 @@ export const workflow_output_source_observation = pgTable(
   }),
 );
 
+// OL2 — observation-elevation: promote a consumer-side observation onto
+// the Briefing as a first-class card (it may have no producing output,
+// e.g. an external_event or source_change observation).
+export const briefing_card = pgTable(
+  "briefing_card",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    source_observation_id: uuid("source_observation_id")
+      .notNull()
+      .references(() => observation.id, { onDelete: "cascade" }),
+    title: text("title"),
+    body: text("body"),
+    mood: text("mood"),
+    status: text("status").notNull().default("active"),
+    elevated_by: text("elevated_by").notNull().default("system"),
+    elevated_by_user_id: text("elevated_by_user_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_observation_unique: uniqueIndex(
+      "briefing_card_org_observation_unique",
+    ).on(t.org_id, t.source_observation_id),
+    org_status_idx: index("briefing_card_org_status_idx").on(
+      t.org_id,
+      t.status,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
 export const action_policy = pgTable(
   "action_policy",
   {
@@ -1032,6 +1439,11 @@ export const action_request = pgTable(
     minutes_saved_basis: text("minutes_saved_basis"),
     estimate_source: text("estimate_source").notNull().default("agent"),
     estimate_version: integer("estimate_version").notNull().default(1),
+    // SEC5: dual identity snapshotted at creation — the human principal
+    // (K1) and the agent backend that proposed the action.
+    actor_user_id: text("actor_user_id"),
+    actor_role: text("actor_role"),
+    actor_backend: text("actor_backend"),
     work_run_id: uuid("work_run_id").references(() => work_run.id, {
       onDelete: "set null",
     }),

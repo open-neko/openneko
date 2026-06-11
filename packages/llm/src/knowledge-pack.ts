@@ -80,6 +80,17 @@ export type PrefetchKnowledgeResult = {
   error?: string;
 };
 
+/**
+ * How schema knowledge reaches the agent.
+ *  - "legacy": broad discovery dumps prefetched from `/api/v1/discovery/*`
+ *    and inlined wholesale into the prompt (anonymous GraphJin).
+ *  - "agentic": a SLIM bootstrap prefetched from the role-aware
+ *    `gj_catalog` root (table/database summaries + the help-card index +
+ *    DSL essentials); everything deeper the agent pulls on demand with
+ *    `gj_catalog` queries through its own actor token (GJ4).
+ */
+export type KnowledgeMode = "legacy" | "agentic";
+
 export type KnowledgePackPaths = {
   knowledgeRoot: string;
   files: {
@@ -88,10 +99,12 @@ export type KnowledgePackPaths = {
     insights: string;
     syntax: string;
     index: string;
+    mode: string;
   };
 };
 
 export type KnowledgePackContents = {
+  mode: KnowledgeMode;
   tables: string;
   namespaces: string;
   insights: string;
@@ -107,6 +120,7 @@ export function knowledgePackPaths(knowledgeRoot: string): KnowledgePackPaths {
       insights: join(knowledgeRoot, "insights.json"),
       syntax: join(knowledgeRoot, "syntax.json"),
       index: join(knowledgeRoot, KNOWLEDGE_INDEX_FILE),
+      mode: join(knowledgeRoot, "mode.json"),
     },
   };
 }
@@ -122,13 +136,20 @@ async function readOrEmpty(path: string): Promise<string> {
 export async function readKnowledgePack(
   knowledge: KnowledgePackPaths,
 ): Promise<KnowledgePackContents> {
-  const [tables, namespaces, insights, syntax] = await Promise.all([
+  const [tables, namespaces, insights, syntax, modeRaw] = await Promise.all([
     readOrEmpty(knowledge.files.tables),
     readOrEmpty(knowledge.files.namespaces),
     readOrEmpty(knowledge.files.insights),
     readOrEmpty(knowledge.files.syntax),
+    readOrEmpty(knowledge.files.mode),
   ]);
-  return { tables, namespaces, insights, syntax };
+  let mode: KnowledgeMode = "legacy";
+  try {
+    if (JSON.parse(modeRaw).mode === "agentic") mode = "agentic";
+  } catch {
+    // pre-agentic packs have no mode file — legacy.
+  }
+  return { mode, tables, namespaces, insights, syntax };
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -198,4 +219,214 @@ export async function prefetchKnowledgePack(args: {
 
 export function discoveryUrlFromMcpUrl(mcpUrl: string): string {
   return mcpUrl.replace(/\/mcp\/?$/, "/discovery");
+}
+
+export function graphqlUrlFromMcpUrl(mcpUrl: string): string {
+  return mcpUrl.replace(/\/mcp\/?$/, "/graphql");
+}
+
+const AGENTIC_INDEX_BODY = `# GraphJin knowledge pack (agentic mode)
+
+This directory holds a SLIM bootstrap prefetched from the role-aware
+\`gj_catalog\` root: table and database summaries, the help-card index,
+and the query-DSL essentials. It is deliberately not the whole schema.
+
+Everything deeper you discover ON DEMAND with catalog queries through
+your shell tool — they run under YOUR access token, so you only ever
+see what your role allows:
+
+\`\`\`
+graphjin cli execute_graphql --args '{"query":"query { gj_catalog(search: \\"orders customers join\\", limit: 10) { id kind name summary } }"}'
+graphjin cli execute_graphql --args '{"query":"query { gj_catalog(id: \\"table:<db>:<schema>.<table>\\") { id name summary details_json examples_json edges_json } }"}'
+graphjin cli execute_graphql --args '{"query":"query { gj_catalog(where: { kind: { eq: \\"column\\" } }, search: \\"<table name>\\", limit: 30) { id name summary } }"}'
+\`\`\`
+
+Catalog row kinds: help, database, table, column, relationship,
+function, capability. \`gj_catalog(id: "...")\` returns one detailed
+card (details_json, examples_json, edges_json, safety_json). Start from
+\`help:discovery\` when unsure.
+
+For join planning, \`find_path\` and \`explore_relationships\` remain
+available and are often quicker than raw relationship rows.
+
+## Files
+
+- **\`tables.json\`** — every table visible to the service role
+  (catalog id, name, one-line summary). Use the catalog id with
+  \`gj_catalog(id:)\` for column-level detail.
+- **\`namespaces.json\`** — the configured databases/sources.
+- **\`insights.json\`** — the help-card index: what the catalog can
+  teach you and which card to pull for each topic.
+- **\`syntax.json\`** — query-DSL essentials (filters + query shape)
+  pulled from the catalog's help cards. Pull other help cards on
+  demand for mutations, fragments, workflows, errors.
+
+## Running queries
+
+\`\`\`
+graphjin cli execute_graphql --args '{"query":"<read-only graphql>"}'
+\`\`\`
+
+If a query returns errors, use \`errors[].extensions.graphjin_repair\`
+when present, or \`graphjin cli fix_query_error\`. Mutations and
+subscriptions are denied at the tool gate.
+`;
+
+const HELP_DETAIL_IDS = ["help:query", "help:filters"] as const;
+
+type CatalogQueryFn = (
+  query: string,
+) => Promise<{ data: unknown; errors?: Array<{ message: string }> }>;
+
+async function catalogRows(
+  query: CatalogQueryFn,
+  gql: string,
+): Promise<unknown[]> {
+  const result = await query(gql);
+  if (result.errors?.length) {
+    throw new Error(
+      `gj_catalog query failed: ${result.errors.map((e) => e.message).join("; ")}`,
+    );
+  }
+  const rows = (result.data as { gj_catalog?: unknown } | null)?.gj_catalog;
+  // List queries return an array; gj_catalog(id:) returns one object.
+  if (Array.isArray(rows)) return rows;
+  if (rows && typeof rows === "object") return [rows];
+  throw new Error("gj_catalog returned no rows");
+}
+
+/**
+ * Agentic-mode prefetch: build the slim bootstrap pack from the
+ * `gj_catalog` root using a minted service token, instead of the
+ * legacy anonymous `/api/v1/discovery/*` dumps. Same four files, far
+ * smaller content — the agent pulls detail on demand, role-scoped.
+ */
+export async function prefetchAgenticKnowledgePack(args: {
+  graphqlUrl: string;
+  token: string;
+  destDir: string;
+  fetchImpl?: typeof fetch;
+}): Promise<PrefetchKnowledgeResult> {
+  const doFetch = args.fetchImpl ?? fetch;
+  const query: CatalogQueryFn = async (q) => {
+    const res = await doFetch(args.graphqlUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${args.token}`,
+      },
+      body: JSON.stringify({ query: q }),
+    });
+    if (!res.ok) throw new Error(`gj_catalog HTTP ${res.status}`);
+    return (await res.json()) as {
+      data: unknown;
+      errors?: Array<{ message: string }>;
+    };
+  };
+
+  await mkdir(args.destDir, { recursive: true });
+  try {
+    const [tables, databases, helpIndex, helpDetails] = await Promise.all([
+      catalogRows(
+        query,
+        `query { gj_catalog(where: { kind: { eq: "table" } }, limit: 500) { id name summary } }`,
+      ),
+      catalogRows(
+        query,
+        `query { gj_catalog(where: { kind: { eq: "database" } }, limit: 50) { id name summary } }`,
+      ),
+      catalogRows(
+        query,
+        `query { gj_catalog(where: { kind: { eq: "help" } }, limit: 50) { id name summary } }`,
+      ),
+      Promise.all(
+        HELP_DETAIL_IDS.map((id) =>
+          catalogRows(
+            query,
+            `query { gj_catalog(id: "${id}") { id name summary details_json examples_json } }`,
+          ),
+        ),
+      ),
+    ]);
+
+    const sections: Array<{ file: string; json: string }> = [
+      { file: "tables.json", json: JSON.stringify({ tables }, null, 2) },
+      { file: "namespaces.json", json: JSON.stringify({ databases }, null, 2) },
+      {
+        file: "insights.json",
+        json: JSON.stringify(
+          {
+            help_cards: helpIndex,
+            note:
+              "Pull any card's full guidance on demand: gj_catalog(id: \"help:<topic>\") { details_json examples_json }",
+          },
+          null,
+          2,
+        ),
+      },
+      {
+        file: "syntax.json",
+        json: JSON.stringify({ essentials: helpDetails.flat() }, null, 2),
+      },
+    ];
+    const written: { file: string; bytes: number }[] = [];
+    for (const { file, json } of sections) {
+      await writeFile(join(args.destDir, file), json, "utf8");
+      written.push({ file, bytes: json.length });
+    }
+    await writeFile(join(args.destDir, KNOWLEDGE_INDEX_FILE), AGENTIC_INDEX_BODY, "utf8");
+    await writeFile(
+      join(args.destDir, "mode.json"),
+      JSON.stringify({ mode: "agentic" }),
+      "utf8",
+    );
+    return { ok: true, files: written };
+  } catch (e) {
+    return {
+      ok: false,
+      files: [],
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * The one prefetch entry point callers use: reads the org's default
+ * data source and picks the mode — auth_mode 'jwt' (sources/agentic
+ * deployment) prefetches the slim catalog pack with a minted service
+ * token; anything else keeps today's legacy discovery dumps.
+ */
+export async function prefetchKnowledgeForOrg(
+  orgId: string,
+  destDir: string,
+): Promise<PrefetchKnowledgeResult & { mode: KnowledgeMode }> {
+  const { data_source, db, desc, eq } = await import("@neko/db");
+  const [src] = await db()
+    .select({
+      authMode: data_source.auth_mode,
+      mcpUrl: data_source.mcp_url,
+      graphqlUrl: data_source.graphql_url,
+    })
+    .from(data_source)
+    .where(eq(data_source.org_id, orgId))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
+    .limit(1);
+  if (!src?.mcpUrl && !src?.graphqlUrl) {
+    return { ok: false, files: [], error: "no data source configured", mode: "legacy" };
+  }
+  if (src.authMode === "jwt") {
+    const { mintGraphjinToken } = await import("./graphjin/token");
+    const result = await prefetchAgenticKnowledgePack({
+      graphqlUrl:
+        src.graphqlUrl || graphqlUrlFromMcpUrl(src.mcpUrl as string),
+      token: mintGraphjinToken({ orgId, userId: null, role: "service" }),
+      destDir,
+    });
+    return { ...result, mode: "agentic" };
+  }
+  const result = await prefetchKnowledgePack({
+    discoveryUrl: discoveryUrlFromMcpUrl((src.mcpUrl ?? src.graphqlUrl) as string),
+    destDir,
+  });
+  return { ...result, mode: "legacy" };
 }

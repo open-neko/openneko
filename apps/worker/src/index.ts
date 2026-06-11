@@ -16,6 +16,7 @@ import { createAdminHandler } from "./admin-server.js";
 import {
   data_source,
   db,
+  desc,
   eq,
   getOrgId,
   metric,
@@ -23,8 +24,7 @@ import {
 } from "@neko/db";
 import {
   cancelAllAgents,
-  discoveryUrlFromMcpUrl,
-  prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
   provisionHostConfig,
   resolveAgentConcurrency,
   UpstreamProviderError,
@@ -33,6 +33,7 @@ import {
 import {
   getDataSourceForOrg,
   getWorkflowRunChainDepth,
+  dispatchExternalEvent,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
   registerBuiltinAdapters,
@@ -42,7 +43,7 @@ import {
   type DataSourceContext,
   type PluginActionSeed,
 } from "@neko/llm/workflows";
-import { ensureOrgWorkspace } from "@neko/llm/work";
+import { ensureOrgWorkspace, reportDeploymentProfile } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
 import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
@@ -75,6 +76,10 @@ const RECONCILE_SWEEP_MIN_AGE_MS: number = 660_000;
 const SCHEDULED_REFRESH_HOURS: number = 24;
 
 const ADMIN_ORG_ID = await getOrgId();
+
+// SEC8: state the security posture once at boot; hardened warns when
+// the model host is a public cloud API (on-prem LLM is client-provided).
+reportDeploymentProfile();
 
 async function markRunning(processingJobId: string) {
   await db()
@@ -205,6 +210,20 @@ const server = createServer(
       getRegisteredActionDescriptors: () =>
         pluginRegistry?.getRegisteredActionDescriptors() ?? [],
     },
+    events: {
+      dispatchExternal: async (input) => {
+        const result = await dispatchExternalEvent({
+          orgId: input.orgId,
+          event: {
+            name: input.name,
+            source: input.source,
+            payload: input.payload,
+            ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
+          },
+        });
+        return { matched: result.matched, enqueued: result.enqueued };
+      },
+    },
     installPolicy: {
       getInstallPolicy: async () => {
         const { getInstallPolicyForOrg } = await import("@neko/db");
@@ -261,12 +280,49 @@ console.log(
 
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
+// ADM3: execute approved chat-proposed plugin installs/uninstalls.
+{
+  const {
+    registerChannelAdminAdapter,
+    registerDataSourceAdminAdapter,
+    registerPluginManagementAdapters,
+    registerUserAdminAdapter,
+  } = await import("./plugins/manage-adapters.js");
+  registerUserAdminAdapter();
+  registerChannelAdminAdapter();
+  registerDataSourceAdminAdapter();
+  registerPluginManagementAdapters({
+    repoRoot: process.cwd(),
+    getInstallPolicy: async () => {
+      const { getInstallPolicyForOrg } = await import("@neko/db");
+      return getInstallPolicyForOrg(ADMIN_ORG_ID);
+    },
+  });
+}
 console.log("[worker] action policies seeded and built-in adapters registered");
+
+// SEC3: pick the secret residency from local config — Infisical-backed
+// env bags when configured, the enc:v1 local file otherwise.
+const secretsResolver = await (async () => {
+  const { readLocalConfig } = await import("@neko/db");
+  const cfg = readLocalConfig().secrets;
+  if (cfg?.backend === "infisical" && cfg.infisical) {
+    const { InfisicalSecretsResolver } = await import(
+      "@open-neko/plugin-install"
+    );
+    console.log(
+      `[worker] secrets backend: infisical (${cfg.infisical.siteUrl}, project ${cfg.infisical.projectId})`,
+    );
+    return new InfisicalSecretsResolver(cfg.infisical);
+  }
+  return undefined; // registry defaults to the file resolver
+})();
 
 pluginRegistry = new PluginRegistry({
   repoRoot: process.cwd(),
   pluginInstallDir: process.env.OPENNEKO_PLUGIN_INSTALL_DIR || undefined,
   workRoot: `${process.env.HOME ?? "/tmp"}/.openneko/plugins`,
+  ...(secretsResolver ? { secretsResolver } : {}),
   loadInstallPolicy: async () => {
     const { getInstallPolicyForOrg } = await import("@neko/db");
     return getInstallPolicyForOrg(ADMIN_ORG_ID);
@@ -319,14 +375,15 @@ registerChannelOutputDelivery();
     .select({ mcp_url: data_source.mcp_url })
     .from(data_source)
     .where(eq(data_source.org_id, ADMIN_ORG_ID))
+    .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   const mcpUrl = sources[0]?.mcp_url;
   if (mcpUrl) {
     const workspace = await ensureOrgWorkspace(ADMIN_ORG_ID);
-    const refresh = await prefetchKnowledgePack({
-      discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-      destDir: workspace.knowledgeRoot,
-    });
+    const refresh = await prefetchKnowledgeForOrg(
+      ADMIN_ORG_ID,
+      workspace.knowledgeRoot,
+    );
     if (refresh.ok) {
       const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
       console.log(
@@ -455,10 +512,60 @@ for (let i = 0; i < concurrency.globalCap; i++) {
 
 await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();
+  // SEC6: archive expired memories + stale pending proposals first so
+  // the checkpoint below snapshots the post-TTL state.
+  try {
+    const { sweepExpiredWorkMemories } = await import("@neko/llm/work");
+    const swept = await sweepExpiredWorkMemories();
+    if (swept.archived || swept.expiredPending) {
+      console.log(
+        `[worker] memory TTL sweep: archived ${swept.archived}, expired ${swept.expiredPending} pending`,
+      );
+    }
+  } catch (e) {
+    console.warn(
+      `[worker] memory TTL sweep failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+  // CV0: nightly memory checkpoint into the org config repo; CV4 also
+  // checkpoints each member's personal layer onto their user/<id> ref.
+  try {
+    const { getOrgAgentRoot } = await import("@neko/llm/work");
+    const { snapshotDurableMemories, snapshotUserConfigsForOrg } =
+      await import("@neko/llm/config-vcs");
+    await snapshotDurableMemories(ADMIN_ORG_ID, getOrgAgentRoot(ADMIN_ORG_ID));
+    await snapshotUserConfigsForOrg(ADMIN_ORG_ID, getOrgAgentRoot(ADMIN_ORG_ID));
+  } catch (e) {
+    console.warn(
+      `[worker] memory checkpoint failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
 });
 
 await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
+  // SEC7: behavioral thresholds ride the minute tick so a runaway agent
+  // alerts within its window, not at the nightly sweep.
+  try {
+    const { profileBehaviorThresholds, runBehaviorSweep } = await import(
+      "@neko/llm/work"
+    );
+    await runBehaviorSweep(ADMIN_ORG_ID, profileBehaviorThresholds());
+  } catch (e) {
+    console.warn(
+      `[worker] behavior sweep failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
   await runWorkflowCronSweep();
+  // OL4: condition watchers poll on the same tick (each watcher's own
+  // cadence gates how often its query actually runs).
+  try {
+    const { sweepWatchers } = await import("@neko/llm/workflows");
+    await sweepWatchers(ADMIN_ORG_ID);
+  } catch (e) {
+    console.warn(
+      `[worker] watcher sweep failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
 });
 
 await b.work(

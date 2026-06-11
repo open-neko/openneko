@@ -17,6 +17,7 @@ import {
   rejectActionRequest,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
+import { getCurrentActor } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -162,6 +163,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     if (decision === "approve") {
       const approved = await approveActionRequest({
+      approver: await getCurrentActor(),
         id: actionRequestId,
         orgId,
         approverUserId,
@@ -173,6 +175,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       return NextResponse.json({ actionRequest: { id: approved.id, status: approved.status } });
     } else {
       const rejected = await rejectActionRequest({
+      approver: await getCurrentActor(),
         id: actionRequestId,
         orgId,
         approverUserId,

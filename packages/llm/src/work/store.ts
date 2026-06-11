@@ -92,6 +92,7 @@ export async function createWorkThread(
   orgId: string,
   title = "",
   channel = "web",
+  createdByUserId: string | null = null,
 ) {
   const rows = await db()
     .insert(work_thread)
@@ -99,6 +100,7 @@ export async function createWorkThread(
       org_id: orgId,
       title,
       channel,
+      created_by_user_id: createdByUserId,
     })
     .returning();
   return rows[0];
@@ -201,10 +203,22 @@ export async function touchWorkThread(
   await db().update(work_thread).set(patch).where(eq(work_thread.id, threadId));
 }
 
+/**
+ * K1: the acting principal a run executes as, snapshotted at run start.
+ *   web run            → { userId: app_user.id, role: app_user.role }
+ *   channel run        → { userId: null, role: "member" }  (until CH3 links)
+ *   cron/workflow run  → { userId: null, role: "service" }
+ */
+export type RunActor = {
+  userId: string | null;
+  role: "admin" | "member" | "service";
+};
+
 export async function createWorkRun(
   orgId: string,
   threadId: string,
   backend: AgentBackendId,
+  actor?: RunActor,
 ) {
   const rows = await db()
     .insert(work_run)
@@ -213,8 +227,23 @@ export async function createWorkRun(
       thread_id: threadId,
       backend,
       status: "queued",
+      actor_user_id: actor?.userId ?? null,
+      actor_role: actor?.role ?? null,
     })
     .returning();
+  // SEC10: run lifecycle rides the tamper-evident chain.
+  const { recordAuditEvent } = await import("../workflows/audit-chain");
+  await recordAuditEvent({
+    orgId,
+    entityKind: "work_run",
+    entityId: rows[0].id,
+    event: "run:created",
+    payload: {
+      backend,
+      actorUserId: actor?.userId ?? null,
+      actorRole: actor?.role ?? null,
+    },
+  });
   return rows[0];
 }
 
@@ -230,7 +259,7 @@ export async function finishWorkRun(
   status: "completed" | "failed" | "cancelled",
   error: string | null,
 ) {
-  await db()
+  const rows = await db()
     .update(work_run)
     .set({
       status,
@@ -238,7 +267,18 @@ export async function finishWorkRun(
       updated_at: new Date(),
       finished_at: new Date(),
     })
-    .where(eq(work_run.id, runId));
+    .where(eq(work_run.id, runId))
+    .returning({ orgId: work_run.org_id });
+  if (rows[0]) {
+    const { recordAuditEvent } = await import("../workflows/audit-chain");
+    await recordAuditEvent({
+      orgId: rows[0].orgId,
+      entityKind: "work_run",
+      entityId: runId,
+      event: `run:${status}`,
+      payload: { status, error },
+    });
+  }
 }
 
 // Persist a run's agent-estimated analysis value (server-clamped minutes +

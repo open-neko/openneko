@@ -1,6 +1,7 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { writeWorkSkill } from "./skills";
+import { RENDER_CARDS_DESCRIPTION } from "./render-catalog";
 import type { AgentEvent, AgentSurfaceMessage } from "../agent-backend";
 import { WORK_MEMORY_KINDS, type WorkMemoryContext } from "./memory";
 import type { RiskLevel } from "../workflows";
@@ -22,51 +23,6 @@ function isValidA2UIMessage(m: unknown): m is AgentSurfaceMessage {
     "deleteSurface" in o
   );
 }
-
-const RENDER_CARDS_DESCRIPTION = [
-  "Render structured Neko cards inline in the chat using the A2UI v0.9 protocol.",
-  "Prefer this over markdown when you have numeric findings, KPIs, or trends.",
-  "",
-  "Pass an ARRAY of A2UI v0.9 protocol messages — each must have",
-  '`version: "v0.9"` plus exactly one of: `createSurface`, `updateComponents`,',
-  "`updateDataModel`, `deleteSurface`. Bare component objects (e.g.",
-  '`{ "type": "kpi_group", ... }`) are rejected — they MUST be wrapped in',
-  "an `updateComponents` envelope.",
-  "",
-  "Catalog (catalogId `urn:app:catalog:briefing:v1`):",
-  "  - `Markdown` — prose block. Use for ANY narrative text — your response",
-  "    prose lives here, never outside the tool call. Props: text (markdown",
-  "    string; supports headings, lists, tables, code blocks).",
-  "  - `Briefing` — root container. Props: greeting, subtitle, role, children[].",
-  "  - `BriefingCard` — KPI card with optional chart. Required props:",
-  "    metricId (any string for ad-hoc cards, e.g. 'chat-1'),",
-  '    source ("chat" for ad-hoc rendering),',
-  '    mood ("good" | "watch" | "act"),',
-  "    text (1-sentence headline), metric (e.g. '$498,376'),",
-  "    label (e.g. 'Total Profit'), detail (1-3 sentences),",
-  '    chartType ("kpi" | "line" | "bar" | "area" | "donut"),',
-  "    chartData (array of `{ d: string, v: number, t?: number }`,",
-  '    or `[]` when chartType="kpi").',
-  "",
-  "Typical message sequence:",
-  "  1. createSurface (once)",
-  "  2. updateComponents with a `Briefing` root + 1-N `BriefingCard` children",
-  "",
-  "Example (one KPI card, no chart):",
-  "[",
-  '  { "version":"v0.9", "createSurface":{ "surfaceId":"s1",',
-  '    "catalogId":"urn:app:catalog:briefing:v1" } },',
-  '  { "version":"v0.9", "updateComponents":{ "surfaceId":"s1", "components":[',
-  '    { "id":"root", "component":"Briefing", "greeting":"Top product",',
-  '      "subtitle":"All stores", "role":"CEO", "children":["c1"] },',
-  '    { "id":"c1", "component":"BriefingCard", "metricId":"chat-1",',
-  '      "source":"chat", "mood":"good", "text":"Mountain-200 Silver leads",',
-  '      "metric":"$498,376", "label":"Total Profit",',
-  '      "detail":"$3.19M revenue − $2.70M cost on 2,130 units sold.",',
-  '      "chartType":"kpi", "chartData":[] }',
-  "  ]}}",
-  "]",
-].join("\n");
 
 export function buildRenderCardsServer(
   emit: (event: AgentEvent) => Promise<void> | void,
@@ -115,6 +71,514 @@ export function buildRenderCardsServer(
     name: "neko_ui",
     version: "1.0.0",
     tools: [renderCards],
+  });
+}
+
+/**
+ * ADM3 — chat-first plugin management. The agent can list installed +
+ * marketplace plugins and PROPOSE installs/uninstalls; the commit step is
+ * always an action_request through the control plane (policy-gated;
+ * plugin_management_default seeds approval_required), never a direct
+ * mutation. Credentials never transit this path — installs that need env
+ * keys fail with a pointer to the secrets flow.
+ */
+export function buildPluginManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listPlugins = tool(
+    "list_plugins",
+    [
+      "List installed plugins (with version, source, declared network",
+      "egress) and the official marketplace catalog. Use this before",
+      "proposing an install or uninstall, and to answer 'what plugins do",
+      "we have?'.",
+    ].join(" "),
+    {},
+    async () => {
+      const catalog = await controlPlane.listPlugins({ orgId: opts.orgId });
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(catalog) },
+        ],
+      };
+    },
+  );
+
+  const requestChange = (
+    kind: "plugin_install" | "plugin_uninstall",
+    target: string,
+    intent: string,
+    payload: Record<string, unknown>,
+  ) =>
+    proposeAdminAction({
+      controlPlane,
+      orgId: opts.orgId,
+      runId: opts.runId,
+      emit: opts.emit,
+      kind,
+      target,
+      intent,
+      payload,
+    });
+
+  const installTool = tool(
+    "request_plugin_install",
+    [
+      "Propose installing a plugin from the marketplace. This NEVER",
+      "installs directly — it files an approval-gated action request; the",
+      "operator approves it on the approvals surface. Tell the operator",
+      "what you proposed and end your turn. If the plugin requires env",
+      "keys, the install will report them — the operator sets those via",
+      "`openneko secrets set` or the integrations page, never through",
+      "chat.",
+    ].join(" "),
+    {
+      spec: z.string().trim().min(1).describe("npm package name, e.g. @open-neko/plugin-slack"),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) =>
+      requestChange("plugin_install", args.spec, args.intent, {
+        spec: args.spec,
+      }),
+  );
+
+  const uninstallTool = tool(
+    "request_plugin_uninstall",
+    [
+      "Propose removing an installed plugin. Approval-gated like installs;",
+      "the operator confirms on the approvals surface.",
+    ].join(" "),
+    {
+      name: z.string().trim().min(1),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) =>
+      requestChange("plugin_uninstall", args.name, args.intent, {
+        name: args.name,
+      }),
+  );
+
+  return createSdkMcpServer({
+    name: "neko_plugin_manager",
+    version: "1.0.0",
+    tools: [listPlugins, installTool, uninstallTool],
+  });
+}
+
+async function proposeAdminAction(opts: {
+  controlPlane: AgentControlPlane;
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  kind:
+    | "plugin_install"
+    | "plugin_uninstall"
+    | "user_admin"
+    | "channel_admin"
+    | "data_source_admin";
+  target: string;
+  intent: string;
+  payload: Record<string, unknown>;
+}) {
+  const decision = await opts.controlPlane.evaluateActionPolicy({
+    orgId: opts.orgId,
+    scope: "internal",
+    kind: opts.kind,
+    target: opts.target,
+    riskLevel: "high",
+  } as Parameters<AgentControlPlane["evaluateActionPolicy"]>[0]);
+
+  if (decision.decision !== "allow" && decision.decision !== "needs_approval") {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            ok: false,
+            decision: "denied",
+            reason:
+              "reason" in decision && decision.reason
+                ? String(decision.reason)
+                : "policy denies plugin management from chat",
+          }),
+        },
+      ],
+    };
+  }
+
+  const status =
+    decision.decision === "allow" ? "approved" : "pending_approval";
+  const request = await opts.controlPlane.createActionRequest({
+    orgId: opts.orgId,
+    scope: "internal",
+    kind: opts.kind,
+    target: opts.target,
+    payload: opts.payload,
+    riskLevel: "high",
+    status,
+    policyId: "policy" in decision && decision.policy ? decision.policy.id : null,
+    summary: opts.intent,
+    intent: opts.intent,
+    workRunId: opts.runId ?? null,
+    requestedByRunId: null,
+  } as Parameters<AgentControlPlane["createActionRequest"]>[0]);
+
+  if (status === "approved") {
+    await opts.controlPlane.enqueueActionExecute({
+      orgId: opts.orgId,
+      actionRequestId: request.id,
+    });
+  }
+
+  await opts.emit({
+    type: "action_request_emit",
+    action_request_id: request.id,
+    kind: opts.kind,
+    scope: "internal",
+    decision: status === "approved" ? "auto_approved" : "pending_approval",
+    summary: opts.intent,
+    risk_level: "high",
+  } as AgentEvent);
+
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          ok: true,
+          decision: status,
+          action_request_id: request.id,
+          note:
+            status === "approved"
+              ? "Queued for execution; the result lands in this run."
+              : "Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline.",
+        }),
+      },
+    ],
+  };
+}
+
+/**
+ * ADM1 — chat-first user management. list_users reads through the
+ * control plane; every change is an approval-gated action request whose
+ * policy demands an ADMIN approver (user_management_default, K2-enforced).
+ */
+export function buildUserManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listUsers = tool(
+    "list_users",
+    [
+      "List the org's users (email, role, disabled state, last login).",
+      "Use before proposing any change, and to answer 'who has access?'.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(await controlPlane.listUsers({ orgId: opts.orgId })),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_user_change",
+    [
+      "Propose a user-management change: invite (email + role),",
+      "set_role (userId + role admin|member), deactivate or reactivate",
+      "(userId). NEVER applies directly — files an action request that an",
+      "ADMIN must approve on the approvals surface. Tell the operator what",
+      "you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["invite", "set_role", "deactivate", "reactivate"]),
+      email: z.string().trim().email().optional(),
+      userId: z.string().trim().min(1).optional(),
+      role: z.enum(["admin", "member"]).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) => {
+      if (args.action === "invite" && (!args.email || !args.role)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: "invite needs email + role" }),
+            },
+          ],
+        };
+      }
+      if (args.action !== "invite" && !args.userId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: `${args.action} needs userId` }),
+            },
+          ],
+        };
+      }
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "user_admin",
+        target: args.email ?? args.userId ?? args.action,
+        intent: args.intent,
+        payload: {
+          action: args.action,
+          ...(args.email ? { email: args.email } : {}),
+          ...(args.userId ? { userId: args.userId } : {}),
+          ...(args.role ? { role: args.role } : {}),
+        },
+      });
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_user_manager",
+    version: "1.0.0",
+    tools: [listUsers, requestChange],
+  });
+}
+
+/**
+ * ADM5 — chat-first channel management. Reads (workspaces + identities)
+ * answer "who's talking to the bot and as whom?"; changes (link/unlink/
+ * block/unblock an identity) file an action request an ADMIN must
+ * approve (channel_management_default, K2-enforced).
+ */
+export function buildChannelManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listChannels = tool(
+    "list_channels",
+    [
+      "List the org's channel workspaces (Slack team / WhatsApp account /",
+      "Telegram bot bindings) and every channel identity seen, with link",
+      "status (linked|unverified|blocked) and the app_user it acts as.",
+      "Use before proposing any change, and to answer 'who can reach the",
+      "agent from chat?'.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            await controlPlane.listChannels({ orgId: opts.orgId }),
+          ),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_channel_change",
+    [
+      "Propose a channel-identity change: link (identityId + appUserId),",
+      "unlink, block or unblock (identityId). NEVER applies directly —",
+      "files an action request that an ADMIN must approve on the approvals",
+      "surface. Tell the operator what you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["link", "unlink", "block", "unblock"]),
+      identityId: z.string().trim().min(1),
+      appUserId: z.string().trim().min(1).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) => {
+      if (args.action === "link" && !args.appUserId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: "link needs appUserId" }),
+            },
+          ],
+        };
+      }
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "channel_admin",
+        target: args.identityId,
+        intent: args.intent,
+        payload: {
+          action: args.action,
+          identityId: args.identityId,
+          ...(args.appUserId ? { appUserId: args.appUserId } : {}),
+        },
+      });
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_channel_manager",
+    version: "1.0.0",
+    tools: [listChannels, requestChange],
+  });
+}
+
+/**
+ * ADM2 — chat-first data-source registry. Reads list the org's sources
+ * (hostnames only — connection strings and credentials never enter
+ * model context); changes file a data_source_admin action request an
+ * ADMIN must approve. Registration creates a disabled placeholder; the
+ * admin enters connection details + credentials in the settings form
+ * (forms are for credential entry only, never the model path). The
+ * GraphJin discovery itself (discover_databases / plan_database_setup /
+ * test_database_connection) runs through `graphjin cli` like every
+ * other read.
+ */
+export function buildDataSourceManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const listSources = tool(
+    "list_data_sources",
+    [
+      "List the org's registered data sources: name, label, auth mode,",
+      "default flag, enabled state and server hostname. No connection",
+      "strings or credentials are ever returned. Use before proposing",
+      "any change.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            await controlPlane.listDataSources({ orgId: opts.orgId }),
+          ),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_data_source_change",
+    [
+      "Propose a data-source registry change: register (name + optional",
+      "label — creates a DISABLED placeholder; the admin completes the",
+      "connection in Settings, credentials never pass through chat),",
+      "enable, disable, set_default, or remove (name). NEVER applies",
+      "directly — files an action request that an ADMIN must approve.",
+      "Tell the operator what you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["register", "enable", "disable", "set_default", "remove"]),
+      name: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits, dashes"),
+      label: z.string().trim().max(120).optional(),
+      // OL5 source graph: what kind of system this source fronts.
+      sourceKind: z.enum(["graphjin", "database", "api", "files", "code"]).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) =>
+      proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "data_source_admin",
+        target: args.name,
+        intent: args.intent,
+        payload: {
+          action: args.action,
+          name: args.name,
+          ...(args.label ? { label: args.label } : {}),
+          ...(args.sourceKind ? { sourceKind: args.sourceKind } : {}),
+        },
+      }),
+  );
+
+  return createSdkMcpServer({
+    name: "neko_data_source_manager",
+    version: "1.0.0",
+    tools: [listSources, requestChange],
+  });
+}
+
+/**
+ * ADM4 — chat-first audit viewer. One read-only tool returning the
+ * action-request trail (with SEC5 dual identity), SEC7 behavior alerts,
+ * and a 24h gateway-call summary. The control plane enforces the admin
+ * gate on the requesting run's actor — a member or service run gets a
+ * denial, never data.
+ */
+export function buildAuditViewerServer(opts: {
+  orgId: string;
+  runId?: string;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const auditTrail = tool(
+    "audit_trail",
+    [
+      "ADMIN ONLY. The org's audit trail: recent action requests (who",
+      "proposed what via which agent backend, and what happened),",
+      "behavioral alerts (SEC7 thresholds), and a 24h summary of",
+      "control-plane gateway calls per run. Use to answer 'what has the",
+      "agent been doing?' and 'who approved that?'.",
+    ].join(" "),
+    {
+      limit: z.number().int().min(1).max(200).optional(),
+    },
+    async (args) => {
+      const result = await controlPlane.listAuditTrail({
+        orgId: opts.orgId,
+        runId: opts.runId ?? null,
+        limit: args.limit,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              result.denied
+                ? { ok: false, error: "audit trail is admin-only" }
+                : { ok: true, ...result },
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_audit",
+    version: "1.0.0",
+    tools: [auditTrail],
   });
 }
 
@@ -200,6 +664,7 @@ export function buildWorkMemoryServer(
         orgId: ctx.orgId,
         query: args.query,
         limit: args.limit ?? 5,
+        runId: ctx.runId ?? null,
       });
       return {
         content: [

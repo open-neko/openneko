@@ -114,7 +114,7 @@ import {
   type RailSource,
   type RailVital,
 } from "../work-shell-context";
-import { formatSavedShort } from "@/lib/hours-saved";
+import { ANALYSIS_FLOOR_MIN, formatSavedShort } from "@/lib/hours-saved";
 
 type MessageRecord = {
   id: string;
@@ -486,21 +486,33 @@ export default function WorkScreen() {
       }
     }
     setRailArtifacts(arts);
-    // The run's self-estimated time saved (latest run wins) — surfaced as a
-    // rail vital so the value-prop is visible on the Ask surface, not only the
-    // dashboard. Prepended so it survives the 4-vital cap.
+    // Hours saved is the product's signature tile: it ALWAYS holds the last
+    // vital slot. The run's self-estimate is preferred (latest run wins); when
+    // a substantive answer completed but the agent skipped its estimate (the
+    // closing value block occasionally gets dropped on long turns), fall back
+    // to a conservative display floor so the slot is never blank. Content
+    // vitals fill the first three slots before it.
     let savedMinutes: number | null = null;
+    let hasCompletedRun = false;
     for (const run of bundle.runs) {
+      if (run.status === "completed") hasCompletedRun = true;
       if (typeof run.analysisMinutesSaved === "number") {
         savedMinutes = run.analysisMinutesSaved;
       }
     }
-    const savedVital: RailVital | null =
+    const contentVitals = vitals.slice(0, 3);
+    const substantive = contentVitals.length > 0 || sourceMap.size > 0;
+    const savedValue =
       savedMinutes && savedMinutes > 0
-        ? { label: "Time saved", value: formatSavedShort(savedMinutes) }
-        : null;
+        ? savedMinutes
+        : hasCompletedRun && substantive
+          ? ANALYSIS_FLOOR_MIN
+          : null;
+    const savedVital: RailVital | null = savedValue
+      ? { label: "Hours saved", value: formatSavedShort(savedValue) }
+      : null;
     setRailContext({
-      vitals: (savedVital ? [savedVital, ...vitals] : vitals).slice(0, 4),
+      vitals: savedVital ? [...contentVitals, savedVital] : contentVitals,
       sources: [...sourceMap.values()].slice(0, 6),
       followups,
     });

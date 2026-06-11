@@ -1,4 +1,4 @@
-import { data_source, db, eq } from "@neko/db";
+import { data_source, db, desc, eq } from "@neko/db";
 import type { AgentChatMessage, AgentEvent } from "../agent-backend";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
 import { extractMemoryFences } from "../agent-backends/memory-fence";
@@ -23,9 +23,8 @@ import {
   type RiskLevel,
 } from "../workflows";
 import {
-  discoveryUrlFromMcpUrl,
   knowledgePackPaths,
-  prefetchKnowledgePack as defaultPrefetchKnowledgePack,
+  prefetchKnowledgeForOrg as defaultPrefetchKnowledgeForOrg,
   readKnowledgePack,
 } from "../knowledge-pack";
 import {
@@ -34,8 +33,14 @@ import {
 } from "./graphjin-guard";
 import {
   formatWorkMemoryPromptContext as defaultFormatWorkMemoryPromptContext,
+  memoryLayerForActor,
   rememberWorkMemory,
 } from "./memory";
+import {
+  buildOperatorProfileSection,
+  getOperatorProfile,
+  getWorkRunActor,
+} from "./personas";
 import { buildWorkPrompt } from "./prompt";
 import {
   finishWorkRun,
@@ -91,7 +96,7 @@ export type RunChatTurnDeps = {
   resolveBinaryOnPath: typeof defaultResolveBinaryOnPath;
   ensureGraphjinGuard: typeof defaultEnsureGraphjinGuard;
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
-  prefetchKnowledgePack: typeof defaultPrefetchKnowledgePack;
+  prefetchKnowledgeForOrg: typeof defaultPrefetchKnowledgeForOrg;
   listInstalledSkills: typeof defaultListInstalledSkills;
   /**
    * Runs the agent loop. Default = runAgentBackend in-process. The launcher
@@ -124,8 +129,8 @@ export async function runChatTurn(
   const ensureGraphjinGuard = deps.ensureGraphjinGuard ?? defaultEnsureGraphjinGuard;
   const formatWorkMemoryPromptContext =
     deps.formatWorkMemoryPromptContext ?? defaultFormatWorkMemoryPromptContext;
-  const prefetchKnowledgePack =
-    deps.prefetchKnowledgePack ?? defaultPrefetchKnowledgePack;
+  const prefetchKnowledgeForOrg =
+    deps.prefetchKnowledgeForOrg ?? defaultPrefetchKnowledgeForOrg;
   const listInstalledSkills =
     deps.listInstalledSkills ?? defaultListInstalledSkills;
   const runCore = deps.runCore ?? runAgentBackend;
@@ -145,22 +150,13 @@ export async function runChatTurn(
   const backend = await resolveAgentBackend(orgId);
   const workspace = await ensureWorkWorkspace(orgId, threadId, runId);
 
-  const sources = await db()
-    .select({ mcp_url: data_source.mcp_url })
-    .from(data_source)
-    .where(eq(data_source.org_id, orgId))
-    .limit(1);
-  const mcpUrl = sources[0]?.mcp_url;
-  if (mcpUrl) {
-    const refresh = await prefetchKnowledgePack({
-      discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-      destDir: workspace.knowledgeRoot,
-    });
-    if (!refresh.ok) {
-      console.warn(
-        `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
-      );
-    }
+  // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
+  // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
+  const refresh = await prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot);
+  if (!refresh.ok) {
+    console.warn(
+      `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
+    );
   }
   const knowledge = await readKnowledgePack(
     knowledgePackPaths(workspace.knowledgeRoot),
@@ -182,7 +178,46 @@ export async function runChatTurn(
     await wrappedEmit({ type: "done", result: { status: "failed" } });
     throw new Error(errMsg);
   }
-  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary);
+  // K1 actor drives the guard (GJ4 token + GJ5 grants), the persona
+  // (CV3) and the memory layer (CV2).
+  const actor = await getWorkRunActor(runId);
+  // GJ4: when the data source runs source mode (auth_mode='jwt'), the
+  // run's CLI calls carry this run's actor token — a per-run client.json
+  // the guard pins XDG_CONFIG_HOME at. Legacy mode is unchanged.
+  let guardXdg: string | undefined;
+  {
+    const { data_source, db, desc, eq } = await import("@neko/db");
+    const [src] = await db()
+      .select({ authMode: data_source.auth_mode, mcpUrl: data_source.mcp_url })
+      .from(data_source)
+      .where(eq(data_source.org_id, orgId))
+      .orderBy(desc(data_source.is_default), data_source.created_at)
+      .limit(1);
+    if (src?.authMode === "jwt" && src.mcpUrl) {
+      const { provisionGraphjinClientAuth } = await import(
+        "../graphjin/client-auth"
+      );
+      const auth = await provisionGraphjinClientAuth({
+        runRoot: workspace.runRoot,
+        serverUrl: src.mcpUrl,
+        orgId,
+        userId: actor.userId,
+        role:
+          actor.role === "admin" || actor.role === "member"
+            ? actor.role
+            : "service",
+      });
+      guardXdg = auth.xdgConfigHome;
+    }
+  }
+  // GJ5: an org policy may grant an admin actor specific write
+  // subcommands; everyone else keeps the read-only guard.
+  const { resolveGraphjinWriteGrants } = await import("./graphjin-actor-guard");
+  const writeGrants = await resolveGraphjinWriteGrants(orgId, actor);
+  await ensureGraphjinGuard(workspace.binRoot, graphjinBinary, {
+    ...(guardXdg ? { xdgConfigHome: guardXdg } : {}),
+    ...(writeGrants.length > 0 ? { allowSubcommands: writeGrants } : {}),
+  });
 
   try {
     await wrappedEmit({
@@ -214,13 +249,16 @@ export async function runChatTurn(
     });
 
     const memoryContext = await formatWorkMemoryPromptContext(
-      { orgId, threadId, runId },
+      { orgId, threadId, runId, userId: memoryLayerForActor(actor) },
       // Use the latest user message as the retrieval query so we pull
       // memories semantically close to what the operator just asked.
       { contextQuery: message, contextLimit: 5 },
     );
 
     const installedSkills = await listInstalledSkills(workspace.skillsRoot);
+    const operatorProfile = buildOperatorProfileSection(
+      await getOperatorProfile(orgId, actor.userId),
+    );
 
     const prompt = buildWorkPrompt({
       backend: backend.id,
@@ -229,6 +267,7 @@ export async function runChatTurn(
       messages,
       currentUserMessage: message,
       memoryContext,
+      operatorProfile,
       installedSkills,
       wantsCards,
       supportsCardTool,

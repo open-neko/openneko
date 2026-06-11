@@ -1,5 +1,8 @@
 export * from "./workspace";
 export * from "./graphjin-guard";
+export * from "./graphjin-actor-guard";
+export * from "./behavior-monitor";
+export * from "./deployment-profile";
 export { buildWorkPrompt } from "./prompt";
 export {
   buildRenderCardsServer,
@@ -22,6 +25,8 @@ export {
 } from "./broker";
 export * from "./memory";
 export * from "./store";
+export * from "./authz";
+export * from "./personas";
 export {
   createScrubber,
   escapeRegex,

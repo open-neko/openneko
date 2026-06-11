@@ -8,3 +8,6 @@ export {
   type GraphjinSubscriptionHandle,
   type GraphjinSubscriptionMessage,
 } from "./client";
+
+export * from "./token";
+export * from "./client-auth";

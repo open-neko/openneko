@@ -1,9 +1,23 @@
 import { enqueue, QUEUE } from "@neko/db/jobs";
-import { computeDueWorkflows, singletonKeyForFiring } from "@neko/llm/workflows";
+import {
+  computeDueWorkflows,
+  reEnablePausedWorkflows,
+  singletonKeyForFiring,
+} from "@neko/llm/workflows";
 
 const SWEEP_WINDOW_MS = 90_000;
 
 export async function runWorkflowCronSweep(): Promise<void> {
+  const resumed = await reEnablePausedWorkflows().catch((e) => {
+    console.warn(
+      `[workflow-cron-sweep] pause-timer re-enable failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return 0;
+  });
+  if (resumed > 0) {
+    console.log(`[workflow-cron-sweep] re-enabled ${resumed} paused workflow(s)`);
+  }
+
   const now = new Date();
   const windowStart = new Date(now.getTime() - SWEEP_WINDOW_MS);
   const due = await computeDueWorkflows({ windowStart, windowEnd: now });

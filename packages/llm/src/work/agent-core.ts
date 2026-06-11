@@ -8,6 +8,11 @@ import { buildRuleBuilderServer, buildWorkflowBuilderServer } from "../workflows
 import type { AgentControlPlane } from "./control-plane";
 import {
   buildPluginActionServer,
+  buildPluginManagerServer,
+  buildAuditViewerServer,
+  buildChannelManagerServer,
+  buildDataSourceManagerServer,
+  buildUserManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
@@ -87,13 +92,40 @@ export async function runAgentBackend(
           createdByThreadId: threadId,
           createdByRunId: runId,
           emit,
+          controlPlane,
         }),
         neko_rule_builder: buildRuleBuilderServer({
           orgId,
           createdByThreadId: threadId,
           createdByRunId: runId,
           emit,
+          controlPlane,
         }),
+        neko_plugin_manager: buildPluginManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_user_manager: buildUserManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_channel_manager: buildChannelManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_data_source_manager: buildDataSourceManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_audit: buildAuditViewerServer({ orgId, runId, controlPlane }),
         ...(pluginActionServer ? { neko_plugin_actions: pluginActionServer } : {}),
       }
     : undefined;

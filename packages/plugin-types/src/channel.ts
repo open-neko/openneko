@@ -88,12 +88,32 @@ export type DeliverResult = z.infer<typeof DeliverResult>;
 export const ParseInboundParams = z.object({ raw: z.unknown() });
 export type ParseInboundParams = z.infer<typeof ParseInboundParams>;
 
+/**
+ * CH1: the human who sent the inbound message — the channel-native user
+ * identity (Telegram `from.id`, Slack `event.user` + `team_id`, WhatsApp
+ * `from`). Distinct from `recipient`, which is the chat to reply to.
+ * Gates channel→app_user linking (CH3) and per-user actor runs (K1).
+ */
+export const ChannelSender = z.object({
+  /** Channel-native user id, stringified. */
+  id: z.string().min(1),
+  /** Display name when the substrate provides one. */
+  displayName: z.string().optional(),
+  /** Workspace/team scope (Slack team_id, WhatsApp business number). */
+  workspaceId: z.string().optional(),
+  /** Email when the substrate provides one (Slack users.info) — enables CH3 SSO auto-link. */
+  email: z.string().optional(),
+});
+export type ChannelSender = z.infer<typeof ChannelSender>;
+
 export const ParseInboundResult = z.object({
   intents: z.array(z.unknown()),
   // Sender's channel-native address (the chat that messaged us). Lets the worker
   // auto-create a delivery binding on first contact, so operators never hand-write
   // one. Optional: outbound-only or anonymous inbound omit it.
   recipient: ChannelRecipient.optional(),
+  // The sending user (CH1). Optional: anonymous/system updates omit it.
+  sender: ChannelSender.optional(),
 });
 export type ParseInboundResult = z.infer<typeof ParseInboundResult>;
 

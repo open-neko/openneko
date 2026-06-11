@@ -8,11 +8,13 @@ import {
   type SubscriptionRecord,
 } from "./store";
 import { parseSourceChangeFilter } from "./subscription-query";
+import { upsertWatcher, type WatcherRecord } from "./watchers";
 
 export type WorkflowTriggerError = { code: string; message: string };
 
 export type SaveWorkflowWithTriggerResult = SaveWorkflowResult & {
   subscription?: SubscriptionRecord;
+  watcher?: WatcherRecord;
   triggerError?: WorkflowTriggerError;
 };
 
@@ -26,8 +28,39 @@ export async function saveWorkflowWithTrigger(
   input: SaveWorkflowInput,
 ): Promise<SaveWorkflowWithTriggerResult> {
   const saved = await saveWorkflow(input);
+
+  // OL4: a `watch` condition trigger persists a watcher tied to the
+  // workflow (the sweep fires it when the condition holds).
+  const watch = input.triggers?.watch;
+  let watcherRecord: WatcherRecord | undefined;
+  if (watch) {
+    try {
+      watcherRecord = await upsertWatcher({
+        orgId: input.orgId,
+        workflowId: saved.workflow.id,
+        name: saved.workflow.name,
+        description: `Watcher for workflow "${saved.workflow.name}"`,
+        query: watch.query,
+        valuePath: watch.value_path,
+        op: watch.op,
+        threshold: watch.threshold,
+        cadenceSeconds: watch.cadence_seconds,
+        debounceSeconds: watch.debounce_seconds,
+        severity: watch.severity,
+      });
+    } catch (err) {
+      return {
+        ...saved,
+        triggerError: {
+          code: "invalid_watcher",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      };
+    }
+  }
+
   const when = input.triggers?.when;
-  if (!when) return saved;
+  if (!when) return watcherRecord ? { ...saved, watcher: watcherRecord } : saved;
 
   const filter = {
     table: when.table,
@@ -83,5 +116,9 @@ export async function saveWorkflowWithTrigger(
     idempotencyKeyTemplate: when.idempotency_key_template ?? null,
   });
 
-  return { ...saved, subscription };
+  return {
+    ...saved,
+    subscription,
+    ...(watcherRecord ? { watcher: watcherRecord } : {}),
+  };
 }

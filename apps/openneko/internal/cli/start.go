@@ -49,13 +49,16 @@ Modes:
 				_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
 			}
 
-			if agentRuntime != "" && agentRuntime != "openshell" {
-				return fmt.Errorf("--runtime must be openshell (got %q)", agentRuntime)
-			}
-			if agentRuntime == "openshell" {
+			switch agentRuntime {
+			case "openshell":
 				if err := configureOpenShellStateDir(); err != nil {
 					return err
 				}
+			case "inprocess":
+				// Dev escape hatch: unsandboxed agent, microsandbox plugins.
+				// Goes away with SEC9 (OpenShell-only).
+			default:
+				return fmt.Errorf("--runtime must be openshell or inprocess (got %q)", agentRuntime)
 			}
 
 			sup := compose.New(assets.ComposeFS)
@@ -126,7 +129,7 @@ Modes:
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in the background after services start")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
 	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
-	cmd.Flags().StringVar(&agentRuntime, "runtime", "", "Agent runtime: 'openshell' sandboxes the agent + plugins via a containerized OpenShell gateway (default: in-process)")
+	cmd.Flags().StringVar(&agentRuntime, "runtime", "openshell", "Agent runtime: 'openshell' (default) sandboxes the agent + plugins via a containerized OpenShell gateway; 'inprocess' runs the agent unsandboxed in the worker (dev only)")
 	return cmd
 }
 
@@ -214,7 +217,7 @@ func runMigrations(ctx context.Context, cmd *cobra.Command) error {
 func defaultConn() db.ConnConfig {
 	conn := db.ConnConfig{
 		Host:     envOr("NEKO_PG_HOST", "127.0.0.1"),
-		Port:     envInt("OPENNEKO_DB_PORT", 5432),
+		Port:     envInt("NEKO_PG_PORT", envInt("OPENNEKO_DB_PORT", 5432)),
 		User:     envOr("NEKO_PG_USER", "neko"),
 		Password: envOr("NEKO_PG_PASSWORD", "secret"),
 		Database: envOr("NEKO_PG_DATABASE", "neko"),

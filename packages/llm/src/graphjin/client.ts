@@ -159,10 +159,21 @@ export function graphjinSubscribe<T = unknown>(
       case "ping":
         send({ type: "pong" });
         return;
-      case "next":
+      case "next": {
         if (parsed.id !== subId) return;
-        void opts.onNext(parsed.payload as GraphjinSubscriptionMessage<T>);
+        // One bad handler must not take down the process (the worker
+        // crash-looped on exactly this in 2026-06); route to onError.
+        const fail = (err: unknown) =>
+          opts.onError?.(err instanceof Error ? err : new Error(String(err)));
+        try {
+          void Promise.resolve(
+            opts.onNext(parsed.payload as GraphjinSubscriptionMessage<T>),
+          ).catch(fail);
+        } catch (err) {
+          fail(err);
+        }
         return;
+      }
       case "error":
         if (parsed.id !== subId) return;
         opts.onError?.(new Error(errorMessageFromPayload(parsed.payload)));

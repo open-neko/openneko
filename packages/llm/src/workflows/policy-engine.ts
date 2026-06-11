@@ -214,6 +214,104 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // ADM1: user management from chat needs an ADMIN approval (K2 enforces).
+  if (!names.has("user_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "user_management_default",
+      description:
+        "Inviting, role changes, and deactivation proposed from chat require an admin's approval.",
+      appliesToKinds: ["user_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 90,
+      enabled: true,
+    });
+  }
+  // ADM3: chat-driven plugin management is always an explicit approval.
+  // SEC8: org/hardened postures require that approval to come from an ADMIN.
+  if (!names.has("plugin_management_default")) {
+    const { profilePolicyDefaults } = await import("../work/deployment-profile");
+    await createActionPolicy({
+      orgId,
+      name: "plugin_management_default",
+      description:
+        "Installing or removing a plugin from chat always requires operator approval.",
+      appliesToKinds: ["plugin_install", "plugin_uninstall"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: profilePolicyDefaults().pluginApproverRole,
+      priority: 100,
+      enabled: true,
+    });
+  }
+  // OL6: code actions require explicit approval unless an org policy
+  // says otherwise — never autonomous.
+  if (!names.has("code_action_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "code_action_default",
+      description:
+        "Filing issues and drafting patches always require operator approval; OpenNeko never applies code changes itself.",
+      appliesToKinds: ["code_create_issue", "code_draft_patch"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: null,
+      priority: 94,
+      enabled: true,
+    });
+  }
+  // ADM2: data-source registry changes from chat need an ADMIN.
+  if (!names.has("data_source_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "data_source_management_default",
+      description:
+        "Registering, enabling/disabling or removing a data source proposed from chat requires an admin's approval.",
+      appliesToKinds: ["data_source_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 96,
+      enabled: true,
+    });
+  }
+  // ADM5: linking/blocking channel identities from chat needs an ADMIN.
+  if (!names.has("channel_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "channel_management_default",
+      description:
+        "Linking, unlinking or blocking a channel identity proposed from chat requires an admin's approval.",
+      appliesToKinds: ["channel_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 95,
+      enabled: true,
+    });
+  }
 }
 
 /**

@@ -94,6 +94,9 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	if s.AgentRuntime == "openshell" {
 		files = append(files, "compose/openshell.yml")
 	}
+	if s.AgentRuntime == "inprocess" {
+		files = append(files, "compose/inprocess.yml")
+	}
 	var out []string
 	for _, name := range files {
 		raw, err := fs.ReadFile(s.AssetsFS, name)

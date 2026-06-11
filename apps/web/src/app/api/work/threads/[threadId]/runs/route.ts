@@ -8,6 +8,7 @@ import {
   getWorkRun,
   runChatTurn,
 } from "@neko/llm/work";
+import { getCurrentActor } from "@/lib/actor";
 import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
@@ -58,7 +59,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     throw e;
   }
 
-  const run = await createWorkRun(orgId, threadId, backend.id);
+  const actor = await getCurrentActor();
+  const run = await createWorkRun(orgId, threadId, backend.id, actor);
 
   if (!thread.title) {
     await touchWorkThread(threadId, { title: suggestWorkThreadTitle(message) });

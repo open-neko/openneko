@@ -31,7 +31,9 @@ import {
 /** "@open-neko/channel-telegram" → "telegram". Channel-inbound runs are never
  *  "web", so they get no a2ui rendering. See docs/PER_CHANNEL_RENDERING.md. */
 function channelFromPlugin(pluginName: string): RunChannel {
-  const m = pluginName.match(/channel-([a-z0-9-]+)$/i);
+  // channel-telegram → telegram; the Slack channel ships inside the
+  // action plugin (@open-neko/plugin-slack), so plugin- maps too.
+  const m = pluginName.match(/(?:channel|plugin)-([a-z0-9-]+)$/i);
   return (m ? m[1].toLowerCase() : pluginName) as RunChannel;
 }
 
@@ -172,13 +174,62 @@ export async function ensureInboundBinding(
   );
 }
 
+/**
+ * CH2: resolve the org an inbound update belongs to from the sender's
+ * workspace scope. Unknown workspace = first contact: auto-bind to the
+ * default org (single-tenant behavior preserved); a multi-tenant install
+ * remaps channel_workspace rows explicitly.
+ */
+export async function resolveInboundOrg(
+  channelPlugin: string,
+  workspaceId: string | undefined,
+  defaultOrgId: string,
+): Promise<string> {
+  if (!workspaceId) return defaultOrgId;
+  const { channel_workspace } = await import("@neko/db");
+  const [row] = await db()
+    .select({ orgId: channel_workspace.org_id })
+    .from(channel_workspace)
+    .where(
+      and(
+        eq(channel_workspace.channel_plugin, channelPlugin),
+        eq(channel_workspace.workspace_id, workspaceId),
+      ),
+    )
+    .limit(1);
+  if (row) return row.orgId;
+  await db()
+    .insert(channel_workspace)
+    .values({
+      org_id: defaultOrgId,
+      channel_plugin: channelPlugin,
+      workspace_id: workspaceId,
+    })
+    .onConflictDoNothing();
+  console.log(
+    `[channel-inbound] auto-bound workspace ${channelPlugin}/${workspaceId} → org ${defaultOrgId}`,
+  );
+  return defaultOrgId;
+}
+
 /** Route one inbound IntentEvent to the same agent entry points the web uses. */
 export async function dispatchInboundIntent(
   orgId: string,
   intent: IntentEvent,
   channelPlugin: string,
   recipient?: Record<string, unknown>,
+  sender?: { id: string; displayName?: string; workspaceId?: string; email?: string },
 ): Promise<void> {
+  // CH3: a linked sender acts as their app_user; unlinked stays
+  // anonymous member-grade; blocked identities are dropped outright.
+  const { resolveChannelActor } = await import("./identity.js");
+  const actor = await resolveChannelActor(orgId, channelPlugin, sender);
+  if (actor.blocked) {
+    console.warn(
+      `[channel-inbound] dropped inbound from blocked identity ${channelPlugin}/${sender?.id}`,
+    );
+    return;
+  }
   if (intent.kind === "decision") {
     const req = await getActionRequest(orgId, intent.decisionRef);
     if (!req) {
@@ -197,15 +248,24 @@ export async function dispatchInboundIntent(
       return;
     }
     if (intent.choice === "approve") {
-      await approveActionRequest({ id: req.id, orgId, approverUserId: null });
+      await approveActionRequest({
+        id: req.id,
+        orgId,
+        approverUserId: actor.userId,
+        // K2: the resolved CH3 actor decides the approval grade — an
+        // unlinked sender stays member-grade, so admin-gated policies
+        // still block approval from an anonymous chat surface.
+        approver: { userId: actor.userId, role: actor.role },
+      });
       await enqueue(QUEUE.ACTION_EXECUTE, { orgId, actionRequestId: req.id });
       console.log(`[channel-inbound] approved + queued action_request ${req.id}`);
     } else {
       await rejectActionRequest({
         id: req.id,
         orgId,
-        approverUserId: null,
+        approverUserId: actor.userId,
         reason: intent.reason,
+        approver: { userId: actor.userId, role: actor.role },
       });
       console.log(`[channel-inbound] rejected action_request ${req.id}`);
     }
@@ -223,6 +283,8 @@ export async function dispatchInboundIntent(
       channelPlugin,
       recipient,
       intent.kind === "utterance" ? intent.threadRef : undefined,
+      sender,
+      actor,
     );
     return;
   }
@@ -238,14 +300,23 @@ async function startChatRun(
   channelPlugin: string,
   recipient: Record<string, unknown> | undefined,
   threadRef?: string,
+  sender?: { id: string; displayName?: string; workspaceId?: string; email?: string },
+  actor: { userId: string | null; role: "admin" | "member" } = {
+    userId: null,
+    role: "member",
+  },
 ): Promise<void> {
+  const channelLabel = channel.charAt(0).toUpperCase() + channel.slice(1);
   const thread = await createWorkThread(
     orgId,
-    threadRef ? `Telegram ${threadRef}` : "Telegram",
+    threadRef ? `${channelLabel} ${threadRef}` : channelLabel,
     channel,
+    actor.userId ?? undefined,
   );
   const backend = await resolveAgentBackend(orgId);
-  const run = await createWorkRun(orgId, thread.id, backend.id);
+  // K1: the CH3-resolved actor is the run's acting principal — a linked
+  // sender gets their personal layer and role, unlinked stays anonymous.
+  const run = await createWorkRun(orgId, thread.id, backend.id, actor);
   const inserted = await db()
     .insert(processing_job)
     .values({
@@ -253,7 +324,8 @@ async function startChatRun(
       kind: "work_run",
       status: "queued",
       trigger: "channel_inbound",
-      trigger_payload: { message },
+      // CH1: persist who sent it; K1 resolves to an actor, CH3 links it.
+      trigger_payload: sender ? { message, sender } : { message },
     })
     .returning({ id: processing_job.id });
   const processingJobId = inserted[0]?.id;
@@ -267,6 +339,7 @@ async function startChatRun(
     channel,
     channelPlugin,
     recipient,
+    ...(sender ? { sender } : {}),
   });
   console.log(
     `[channel-inbound] started chat run ${run.id} for "${message.slice(0, 40)}"`,
@@ -302,14 +375,27 @@ export async function processInboundUpdate(
   try {
     const reg = getPluginRegistryInstance();
     if (!reg) throw new Error("plugin registry unavailable");
-    const { intents, recipient } = await reg.parseInbound(pluginName, raw);
-    if (recipient) await ensureInboundBinding(orgId, pluginName, recipient);
+    const { intents, recipient, sender } = await reg.parseInbound(
+      pluginName,
+      raw,
+    );
+    // CH2: the sender's workspace decides the org; first contact binds
+    // to the caller's default org.
+    const resolvedOrgId = await resolveInboundOrg(
+      pluginName,
+      sender?.workspaceId,
+      orgId,
+    );
+    if (recipient) {
+      await ensureInboundBinding(resolvedOrgId, pluginName, recipient);
+    }
     for (const intent of intents) {
       await dispatchInboundIntent(
-        orgId,
+        resolvedOrgId,
         intent as IntentEvent,
         pluginName,
         recipient as Record<string, unknown> | undefined,
+        sender,
       );
     }
     await markInboundDone(orgId, pluginName, key);

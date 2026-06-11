@@ -81,6 +81,24 @@ describe("isGraphjinCommandSafe", () => {
       ]),
     ).toBe(true);
   });
+
+  it("GJ5: a policy grant opens exactly the granted write subcommand", () => {
+    const grants = { allowSubcommands: ["write_query"] };
+    expect(isGraphjinCommandSafe(["cli", "write_query", "--args", "{}"], grants)).toBe(true);
+    expect(isGraphjinCommandSafe(["cli", "write_mutation", "--args", "{}"], grants)).toBe(false);
+    expect(isGraphjinCommandSafe(["cli", "setup", "http://x"], grants)).toBe(false);
+    // Unknown grant names are ignored, not honored.
+    expect(
+      isGraphjinCommandSafe(["cli", "setup", "http://x"], { allowSubcommands: ["serve", "rm -rf"] }),
+    ).toBe(false);
+    // Mutations in executor payloads stay blocked even with grants.
+    expect(
+      isGraphjinCommandSafe(
+        ["cli", "execute_graphql", "--args", '{"query":"mutation X { y }"}'],
+        grants,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("ensureGraphjinGuard wrapper script", () => {
@@ -182,6 +200,30 @@ describe("ensureGraphjinGuard wrapper script", () => {
       '{"query":"{ products(order_by: { newest: desc }) { config_value preserve_id } }"}',
     ], { encoding: "utf8" });
     expect(r.status).toBe(0);
+  });
+
+  it("GJ5: a granted wrapper passes the grant through and still blocks the rest", async () => {
+    const grantBin = join(dir, "grant-bin");
+    await mkdir(grantBin, { recursive: true });
+    const granted = await ensureGraphjinGuard(grantBin, "/bin/echo", {
+      allowSubcommands: ["write_query"],
+    });
+    expect(spawnSync("bash", ["-n", granted], { encoding: "utf8" }).status).toBe(0);
+    const ok = spawnSync(granted, ["cli", "write_query", "--args", "{}"], {
+      encoding: "utf8",
+    });
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain("write_query");
+    const denied = spawnSync(granted, ["cli", "setup", "http://x"], {
+      encoding: "utf8",
+    });
+    expect(denied.status).toBe(2);
+    const mutation = spawnSync(
+      granted,
+      ["cli", "execute_graphql", "--args", '{"query":"mutation Bad { x }"}'],
+      { encoding: "utf8" },
+    );
+    expect(mutation.status).toBe(2);
   });
 
   it("pins XDG_CONFIG_HOME for the wrapped graphjin process", async () => {

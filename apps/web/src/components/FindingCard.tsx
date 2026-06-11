@@ -3,12 +3,15 @@
 // Lean briefing card tuned for findings (workflow_outputs) and approvals.
 // Distinct from the existing BriefingCard which is heavy/KPI-shaped.
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Card } from "@/components/ui/Card";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
+
+const MUTE_DURATIONS = ["1h", "24h", "7d"] as const;
 
 export type FindingCardData = {
   id: string;
@@ -22,6 +25,9 @@ export type FindingCardData = {
   mood?: string | null;
   outputKind?: string | null;
   riskLevel?: string | null;
+  /** OL8: occurrences within the dedupe window ("2× today" badge when > 1). */
+  seenCount?: number;
+  lastSeenAt?: string;
   createdAt: string;
   pinId?: string;
   pinnedAt?: string;
@@ -63,13 +69,34 @@ export default function FindingCard({
   data,
   index,
   onUnpin,
+  onMuted,
 }: {
   data: FindingCardData;
   index: number;
   onUnpin?: (pinId: string) => void;
+  /** OL7: present on Briefing cards — right-click offers "mute scope". */
+  onMuted?: () => void;
 }) {
   const router = useRouter();
+  const [muteMenu, setMuteMenu] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const isApproval = data.kind === "approval";
+
+  const muteScope = async (duration: (typeof MUTE_DURATIONS)[number]) => {
+    setMuteMenu(null);
+    if (!data.scope) return;
+    try {
+      await fetch("/api/briefing/mute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: data.scope, duration }),
+      });
+      onMuted?.();
+    } catch {
+      // best-effort
+    }
+  };
   const pillLabel = isApproval
     ? data.riskLevel ?? "pending"
     : data.mood ?? "watch";
@@ -95,6 +122,11 @@ export default function FindingCard({
       )}
       style={{ animation: `fadeUp 0.4s ease ${index * 0.04}s both` }}
       onClick={onDrillIn}
+      onContextMenu={(e) => {
+        if (!onMuted || !data.scope) return;
+        e.preventDefault();
+        setMuteMenu({ x: e.clientX, y: e.clientY });
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -132,6 +164,21 @@ export default function FindingCard({
         </span>
         <span className="opacity-50">·</span>
         <span className="font-mono text-xs text-text2">{formatRelative(data.createdAt)}</span>
+        {(data.seenCount ?? 1) > 1 && (
+          <>
+            <span className="opacity-50">·</span>
+            <span
+              className="font-mono text-xs text-text2"
+              title={
+                data.lastSeenAt
+                  ? `last seen ${formatRelative(data.lastSeenAt)}`
+                  : undefined
+              }
+            >
+              {data.seenCount}× today
+            </span>
+          </>
+        )}
         {data.pinId && onUnpin && (
           <button
             type="button"
@@ -149,6 +196,43 @@ export default function FindingCard({
           {isApproval ? "open approvals →" : "drill in →"}
         </span>
       </div>
+
+      {muteMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={(e) => {
+            e.stopPropagation();
+            setMuteMenu(null);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMuteMenu(null);
+          }}
+        >
+          <div
+            className="absolute bg-bg border-[1.5px] border-border rounded-xl py-1.5 shadow-lg min-w-[180px]"
+            style={{ left: muteMenu.x, top: muteMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-1 text-[11px] text-text3">
+              Mute <span className="font-mono">{data.scope}</span>
+            </div>
+            {MUTE_DURATIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                className="block w-full text-left bg-transparent border-0 px-3 py-1.5 text-[13px] text-text cursor-pointer hover:bg-bg2 font-[inherit]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void muteScope(d);
+                }}
+              >
+                for {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

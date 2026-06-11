@@ -1,11 +1,18 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
   makeAgentBackend,
   type AgentBackendId,
   type AgentEvent,
   type AgentWorkspace,
 } from "@neko/llm";
-import { runAgentBackend, type RunAgentBackendInput } from "@neko/llm/work";
+import {
+  ensureGraphjinGuard,
+  resolveBinaryOnPath,
+  runAgentBackend,
+  type RunAgentBackendInput,
+} from "@neko/llm/work";
 import { BrokerControlPlane } from "./broker-client";
 import { EVENT_MARKER, RESULT_MARKER } from "./protocol";
 
@@ -35,6 +42,8 @@ interface SandboxJob {
   pluginActions?: RunAgentBackendInput["pluginActions"];
   wantsCards?: boolean;
   workspace: AgentWorkspace;
+  /** GJ5: policy write grants resolved host-side (the box has no DB). */
+  graphjinWriteGrants?: string[];
 }
 
 function requireEnv(name: string): string {
@@ -79,6 +88,23 @@ export async function main(): Promise<void> {
     emitLine(EVENT_MARKER, event);
     return Promise.resolve();
   };
+
+  // GJ6: the workspace's bin/graphjin wrapper was generated host-side with
+  // host paths baked in — rebuild it for the box, pinned at the uploaded
+  // per-run client.json (GJ4 token) and carrying the host-resolved policy
+  // grants (GJ5). Without a graphjin binary in the image this is a no-op.
+  const graphjinBinary = await resolveBinaryOnPath("graphjin");
+  if (graphjinBinary) {
+    const gjAuth = join(job.workspace.runRoot, "gj-auth");
+    const hasRunAuth = existsSync(join(gjAuth, "graphjin", "client.json"));
+    await mkdir(job.workspace.binRoot, { recursive: true });
+    await ensureGraphjinGuard(job.workspace.binRoot, graphjinBinary, {
+      ...(hasRunAuth ? { xdgConfigHome: gjAuth } : {}),
+      ...(job.graphjinWriteGrants?.length
+        ? { allowSubcommands: job.graphjinWriteGrants }
+        : {}),
+    });
+  }
 
   const result = await runAgentBackend({
     backend,

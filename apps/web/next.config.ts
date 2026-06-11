@@ -6,7 +6,12 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
   },
-  transpilePackages: ["@neko/db", "@neko/llm"],
+  transpilePackages: [
+    "@neko/db",
+    "@neko/llm",
+    "@neko/secret-crypt",
+    "@open-neko/plugin-install",
+  ],
   // Emit a self-contained build at .next/standalone for container deploys
   // (Cloud Run). Tracing root is the monorepo root so workspace deps
   // (@neko/db, @neko/llm) get included.

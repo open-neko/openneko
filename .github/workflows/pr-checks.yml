@@ -54,7 +54,7 @@ jobs:
 
       - name: Install graphjin CLI
         env:
-          GRAPHJIN_VERSION: "3.18.25"
+          GRAPHJIN_VERSION: "3.18.37"
         run: |
           curl -fsSL -o /tmp/graphjin.tgz \
             "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"
