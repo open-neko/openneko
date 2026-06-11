@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/open-neko/openneko/compare/v2.0.0...v2.0.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* plugin sandboxes self-heal stale-name collisions + publishable plugin-base default + credential redaction ([3236b80](https://github.com/open-neko/openneko/commit/3236b807dd193b44d7fb154b817ff435959bd598))
+* **worker:** plugin sandboxes self-heal name collisions; real plugin-base default; redact credentials in errors ([75e8f4e](https://github.com/open-neko/openneko/commit/75e8f4e16e485bddde974b5553d81303c45570f8))
+
 ## [2.0.0](https://github.com/open-neko/openneko/compare/v1.23.0...v2.0.0) (2026-06-11)
 
 
