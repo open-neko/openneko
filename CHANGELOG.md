@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.2.0](https://github.com/open-neko/openneko/compare/v2.1.0...v2.2.0) (2026-06-11)
+
+
+### Features
+
+* hermes gets the full neko MCP tool set (ACP stdio bridges) + the orphaned sandbox fixes from [#108](https://github.com/open-neko/openneko/issues/108) ([188b9b6](https://github.com/open-neko/openneko/commit/188b9b69debbc1a10630e49909fa3deea5622a62))
+* **llm,worker:** hermes gets the full neko MCP tool set via ACP stdio bridges ([337abcd](https://github.com/open-neko/openneko/commit/337abcdd8830369b45f7d725e40b78cd301fcca7))
+
+
+### Bug Fixes
+
+* **llm,docker:** hermes MCP actually reaches the model — SDK in image, cd /app bridges, error details surfaced ([8cb64fb](https://github.com/open-neko/openneko/commit/8cb64fb7d4c0edb6eb53665c47c89d5658e14640))
+* **llm:** web run path provisions the sandbox env; ACP client answers hermes permission requests ([bef08fd](https://github.com/open-neko/openneko/commit/bef08fdce4f14beb0dfe59cbfbb4b8db7aa0c6ba))
+* **web:** chat-proposed admin actions are approvable — approvals list no longer drops run-less requests ([4f7e710](https://github.com/open-neko/openneko/commit/4f7e7108a58b1cbe9835e7de51080a8def63e882))
+* **work:** host-local data sources reachable from the agent sandbox ([93716e7](https://github.com/open-neko/openneko/commit/93716e714f0f158979270df883a041e45d5f2587))
+
 ## [2.1.0](https://github.com/open-neko/openneko/compare/v2.0.1...v2.1.0) (2026-06-11)
 
 
