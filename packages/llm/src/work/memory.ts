@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { deriveSigningSecret } from "@neko/secret-crypt";
 import {
   and,
   asc,
@@ -73,6 +74,9 @@ export type WorkMemory = {
   promotedFromId: string | null;
   promotedBy: string | null;
   promotedAt: string | null;
+  /** SEC6: false = stored integrity hash no longer matches (tampered); dropped from agent context. */
+  integrityOk: boolean;
+  expiresAt: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -195,6 +199,59 @@ function layerVisibilityFilter(userId: string | null | undefined) {
     )))`;
 }
 
+/**
+ * SEC6: HMAC over the row's identity-bearing fields with a per-org key
+ * derived from the deployment secret. A row whose stored hash no longer
+ * matches was modified outside this store (DB tampering / memory
+ * poisoning) — readers drop it from agent context. Null when the
+ * deployment key is unavailable (legacy mode).
+ */
+function memoryIntegrityHmac(row: {
+  orgId: string;
+  userId: string | null;
+  kind: string;
+  scope: string;
+  scopeId: string | null;
+  text: string;
+}): string | null {
+  try {
+    const key = deriveSigningSecret(`work-memory:${row.orgId}`);
+    return createHmac("sha256", key)
+      .update(
+        [row.userId ?? "", row.kind, row.scope, row.scopeId ?? "", row.text].join(
+          "\u0000",
+        ),
+      )
+      .digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+/** DATA_LIFECYCLE §4: thread notes are short-lived; durable kinds never expire by default. */
+const THREAD_NOTE_TTL_DAYS = 30;
+const PENDING_MEMORY_TTL_DAYS = 14;
+
+function expiryForKind(kind: WorkMemoryKind, now: Date): Date | null {
+  if (kind !== "thread_note") return null;
+  return new Date(now.getTime() + THREAD_NOTE_TTL_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/** SEC6: keep tampered rows out of anything an agent reads. */
+function dropTampered(memories: WorkMemory[]): WorkMemory[] {
+  const ok: WorkMemory[] = [];
+  for (const memory of memories) {
+    if (memory.integrityOk) {
+      ok.push(memory);
+    } else {
+      console.warn(
+        `[work-memory] integrity check FAILED for memory ${memory.id} (org ${memory.orgId}) — excluded from agent context`,
+      );
+    }
+  }
+  return ok;
+}
+
 async function tryEmbed(text: string): Promise<string | null> {
   // Embed up front so search-by-context can find it on the very next query.
   // Failure here is not fatal — we'd rather store the memory than lose it.
@@ -240,6 +297,15 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
       source_thread_id: input.threadId ?? null,
       user_id: layerUserId,
       origin_id: id,
+      integrity_hmac: memoryIntegrityHmac({
+        orgId: input.orgId,
+        userId: layerUserId,
+        kind: input.kind,
+        scope,
+        scopeId,
+        text,
+      }),
+      expires_at: expiryForKind(input.kind, now),
       ...(embedding ? { embedding: sql`${embedding}::vector` } : {}),
       created_at: now,
       updated_at: now,
@@ -347,8 +413,7 @@ export async function getCoreWorkMemories(
     .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
     .limit(500);
 
-  return rows
-    .map(rowToMemory)
+  return dropTampered(rows.map(rowToMemory))
     .filter((memory) => {
       if (memory.pinned) return true;
       if (memory.scope === "global" && CORE_GLOBAL_KINDS.has(memory.kind)) return true;
@@ -422,7 +487,7 @@ export async function formatGlobalMemoryPromptContext(
     )
     .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
     .limit(limit);
-  const memories = rows.map(rowToMemory);
+  const memories = dropTampered(rows.map(rowToMemory));
   if (memories.length === 0) {
     return "No global memories are currently saved for this workspace.";
   }
@@ -510,6 +575,8 @@ export async function searchWorkMemoryByContext(args: {
       promoted_from_id: work_memory.promoted_from_id,
       promoted_by: work_memory.promoted_by,
       promoted_at: work_memory.promoted_at,
+      integrity_hmac: work_memory.integrity_hmac,
+      expires_at: work_memory.expires_at,
       archived_at: work_memory.archived_at,
       embedding: work_memory.embedding,
       created_at: work_memory.created_at,
@@ -532,11 +599,19 @@ export async function searchWorkMemoryByContext(args: {
     { orgId: args.orgId, runId: args.runId ?? null },
     rows.map((r) => r.id),
   );
-  return rows.map((r) => ({
-    source: "saved_memory" as const,
-    memory: rowToMemory(r),
-    score: Number(r.score) || 0,
-  }));
+  return rows
+    .map((r) => ({
+      source: "saved_memory" as const,
+      memory: rowToMemory(r),
+      score: Number(r.score) || 0,
+    }))
+    .filter((result) => {
+      if (result.memory.integrityOk) return true;
+      console.warn(
+        `[work-memory] integrity check FAILED for memory ${result.memory.id} (org ${result.memory.orgId}) — excluded from agent context`,
+      );
+      return false;
+    });
 }
 
 export async function findConflictingWorkMemories(
@@ -618,6 +693,14 @@ export async function overrideWorkMemoryForUser(input: {
       .set({
         text,
         suppressed: suppress,
+        integrity_hmac: memoryIntegrityHmac({
+          orgId: input.orgId,
+          userId: input.userId,
+          kind: target.kind,
+          scope: target.scope,
+          scopeId: target.scopeId,
+          text,
+        }),
         ...(input.text && !suppress
           ? { embedding: await embeddingValue(text) }
           : {}),
@@ -650,6 +733,14 @@ export async function overrideWorkMemoryForUser(input: {
       ),
     )
     .limit(1);
+  const overrideHmac = memoryIntegrityHmac({
+    orgId: input.orgId,
+    userId: input.userId,
+    kind: target.kind,
+    scope: target.scope,
+    scopeId: target.scopeId,
+    text,
+  });
   let memory: WorkMemory;
   if (existing) {
     const rows = await db()
@@ -657,6 +748,7 @@ export async function overrideWorkMemoryForUser(input: {
       .set({
         text,
         suppressed: suppress,
+        integrity_hmac: overrideHmac,
         ...(input.text && !suppress
           ? { embedding: await embeddingValue(text) }
           : {}),
@@ -685,6 +777,7 @@ export async function overrideWorkMemoryForUser(input: {
         origin_id: id,
         overrides_origin_id: target.originId ?? target.id,
         suppressed: suppress,
+        integrity_hmac: overrideHmac,
         ...(suppress ? {} : { embedding: await embeddingValue(text) }),
         created_at: now,
         updated_at: now,
@@ -757,6 +850,14 @@ export async function promoteWorkMemoryToOrg(input: {
       promoted_from_id: source.id,
       promoted_by: input.promotedBy,
       promoted_at: now,
+      integrity_hmac: memoryIntegrityHmac({
+        orgId: input.orgId,
+        userId: null,
+        kind: source.kind,
+        scope: source.scope,
+        scopeId: source.scopeId,
+        text: source.text,
+      }),
       embedding: await embeddingValue(source.text),
       created_at: now,
       updated_at: now,
@@ -955,6 +1056,58 @@ export async function applyMemoryPull(input: {
   return { applied };
 }
 
+/**
+ * SEC6 TTL sweep (DATA_LIFECYCLE §4): archive memories past their
+ * expires_at and expire stale proposed pending-memories. Called from
+ * the worker's nightly sweep; cheap when nothing qualifies.
+ */
+export async function sweepExpiredWorkMemories(): Promise<{
+  archived: number;
+  expiredPending: number;
+}> {
+  const now = new Date();
+  const archivedRows = await db()
+    .update(work_memory)
+    .set({ archived_at: now, updated_at: now })
+    .where(
+      and(
+        sql`${work_memory.expires_at} is not null`,
+        sql`${work_memory.expires_at} <= now()`,
+        isNull(work_memory.archived_at),
+      ),
+    )
+    .returning({ id: work_memory.id, org_id: work_memory.org_id });
+  for (const row of archivedRows) {
+    await insertWorkMemoryEvent({
+      orgId: row.org_id,
+      memoryId: row.id,
+      runId: null,
+      threadId: null,
+      action: "expired",
+      payload: {},
+    });
+  }
+  const cutoff = new Date(
+    now.getTime() - PENDING_MEMORY_TTL_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const expiredPending = await db()
+    .update(work_pending_memory)
+    .set({
+      status: "declined",
+      decision_text: "expired (unreviewed past TTL)",
+      decided_at: now,
+      updated_at: now,
+    })
+    .where(
+      and(
+        eq(work_pending_memory.status, "proposed"),
+        sql`${work_pending_memory.created_at} <= ${cutoff}`,
+      ),
+    )
+    .returning({ id: work_pending_memory.id });
+  return { archived: archivedRows.length, expiredPending: expiredPending.length };
+}
+
 export async function createPendingWorkMemory(input: {
   orgId: string;
   threadId?: string | null;
@@ -1111,8 +1264,7 @@ async function searchSavedWorkMemories(
     .orderBy(desc(work_memory.pinned), desc(work_memory.updated_at))
     .limit(1000);
   const query = input.query.trim();
-  return rows
-    .map(rowToMemory)
+  return dropTampered(rows.map(rowToMemory))
     .map((memory) => ({ source: "saved_memory" as const, memory, score: scoreMemory(memory, query, tokens, input) }))
     .filter((result) => result.score > 0 || tokens.length === 0)
     .sort((a, b) => b.score - a.score || b.memory.updatedAt.localeCompare(a.memory.updatedAt))
@@ -1205,7 +1357,22 @@ async function insertWorkMemoryEvent(input: {
 }
 
 function rowToMemory(row: WorkMemoryRow): WorkMemory {
+  // SEC6: verify on read. Pre-SEC6 rows (null hash) and key-less
+  // deployments stay trusted; only an actual mismatch flags.
+  const expected = row.integrity_hmac
+    ? memoryIntegrityHmac({
+        orgId: row.org_id,
+        userId: row.user_id,
+        kind: row.kind,
+        scope: row.scope,
+        scopeId: row.scope_id,
+        text: row.text,
+      })
+    : null;
+  const integrityOk = !row.integrity_hmac || !expected || expected === row.integrity_hmac;
   return {
+    integrityOk,
+    expiresAt: row.expires_at ? row.expires_at.toISOString() : null,
     id: row.id,
     orgId: row.org_id,
     kind: row.kind as WorkMemoryKind,

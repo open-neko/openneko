@@ -768,6 +768,10 @@ export const work_memory = pgTable(
     promoted_from_id: uuid("promoted_from_id"),
     promoted_by: text("promoted_by"),
     promoted_at: ts("promoted_at"),
+    // SEC6: per-org HMAC over identity-bearing fields (NULL = pre-SEC6
+    // row); expires_at archives short-lived kinds via the nightly sweep.
+    integrity_hmac: text("integrity_hmac"),
+    expires_at: ts("expires_at"),
     archived_at: ts("archived_at"),
     embedding: vector("embedding", 384),
     created_at: ts("created_at").notNull().defaultNow(),

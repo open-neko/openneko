@@ -509,6 +509,21 @@ for (let i = 0; i < concurrency.globalCap; i++) {
 
 await b.work(QUEUE.METRIC_REFRESH_SCHEDULED_SWEEP, async () => {
   await runMetricRefreshSweep();
+  // SEC6: archive expired memories + stale pending proposals first so
+  // the checkpoint below snapshots the post-TTL state.
+  try {
+    const { sweepExpiredWorkMemories } = await import("@neko/llm/work");
+    const swept = await sweepExpiredWorkMemories();
+    if (swept.archived || swept.expiredPending) {
+      console.log(
+        `[worker] memory TTL sweep: archived ${swept.archived}, expired ${swept.expiredPending} pending`,
+      );
+    }
+  } catch (e) {
+    console.warn(
+      `[worker] memory TTL sweep failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
   // CV0: nightly memory checkpoint into the org config repo; CV4 also
   // checkpoints each member's personal layer onto their user/<id> ref.
   try {
