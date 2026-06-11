@@ -389,6 +389,32 @@ export const channel_identity = pgTable(
   }),
 );
 
+// SEC5 — every authenticated gateway (broker) call a sandboxed agent
+// makes, stamped with the dual identity (human principal + agent
+// backend). SEC7 reads this for behavioral thresholds.
+export const control_plane_audit = pgTable(
+  "control_plane_audit",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    run_id: uuid("run_id"),
+    path: text("path").notNull(),
+    actor_user_id: text("actor_user_id"),
+    actor_role: text("actor_role"),
+    backend: text("backend"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("control_plane_audit_org_idx").on(
+      t.org_id,
+      t.created_at.desc(),
+    ),
+    run_idx: index("control_plane_audit_run_idx").on(t.run_id),
+  }),
+);
+
 // CV4 — per-member fork baseline for 3-way memory pulls.
 export const memory_fork = pgTable(
   "memory_fork",
@@ -1310,6 +1336,11 @@ export const action_request = pgTable(
     minutes_saved_basis: text("minutes_saved_basis"),
     estimate_source: text("estimate_source").notNull().default("agent"),
     estimate_version: integer("estimate_version").notNull().default(1),
+    // SEC5: dual identity snapshotted at creation — the human principal
+    // (K1) and the agent backend that proposed the action.
+    actor_user_id: text("actor_user_id"),
+    actor_role: text("actor_role"),
+    actor_backend: text("actor_backend"),
     work_run_id: uuid("work_run_id").references(() => work_run.id, {
       onDelete: "set null",
     }),

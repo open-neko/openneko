@@ -7,6 +7,7 @@ import {
   db,
   desc,
   eq,
+  work_run,
 } from "@neko/db";
 
 export type ActionScope = "internal" | "external";
@@ -244,6 +245,10 @@ export async function updateActionPolicy(
 export type ActionRequestRecord = {
   id: string;
   orgId: string;
+  /** SEC5: the human principal + agent backend, snapshotted at creation. */
+  actorUserId: string | null;
+  actorRole: string | null;
+  actorBackend: string | null;
   workflowRunId: string | null;
   triggeredByObservationId: string | null;
   policyId: string | null;
@@ -285,6 +290,9 @@ function toRequestRecord(
   return {
     id: row.id,
     orgId: row.org_id,
+    actorUserId: row.actor_user_id,
+    actorRole: row.actor_role,
+    actorBackend: row.actor_backend,
     workflowRunId: row.workflow_run_id,
     triggeredByObservationId: row.triggered_by_observation_id,
     policyId: row.policy_id,
@@ -328,15 +336,48 @@ export type CreateActionRequestInput = {
   /** Agent-estimated, server-clamped minutes of human effort this saves. */
   minutesSaved?: number | null;
   minutesSavedBasis?: string | null;
+  /** SEC5: dual identity. Omit to snapshot from workRunId's K1 actor + backend. */
+  actorUserId?: string | null;
+  actorRole?: string | null;
+  actorBackend?: string | null;
 };
 
 export async function createActionRequest(
   input: CreateActionRequestInput,
 ): Promise<ActionRequestRecord> {
+  // SEC5: snapshot the dual identity at creation. When the caller did
+  // not resolve it, derive it from the originating work run (K1 actor
+  // + agent backend) so every request carries who-via-which-agent.
+  let actor = {
+    userId: input.actorUserId ?? null,
+    role: input.actorRole ?? null,
+    backend: input.actorBackend ?? null,
+  };
+  if (input.workRunId && (!actor.role || !actor.backend)) {
+    const [run] = await db()
+      .select({
+        userId: work_run.actor_user_id,
+        role: work_run.actor_role,
+        backend: work_run.backend,
+      })
+      .from(work_run)
+      .where(eq(work_run.id, input.workRunId))
+      .limit(1);
+    if (run) {
+      actor = {
+        userId: actor.userId ?? run.userId,
+        role: actor.role ?? run.role,
+        backend: actor.backend ?? run.backend,
+      };
+    }
+  }
   const [row] = await db()
     .insert(action_request)
     .values({
       org_id: input.orgId,
+      actor_user_id: actor.userId,
+      actor_role: actor.role,
+      actor_backend: actor.backend,
       workflow_run_id: input.workflowRunId ?? null,
       triggered_by_observation_id: input.triggeredByObservationId ?? null,
       policy_id: input.policyId ?? null,

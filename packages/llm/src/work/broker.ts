@@ -53,6 +53,11 @@ async function handle(
   const path = (req.url ?? "").split("?")[0];
   const cp = deps.controlPlane;
 
+  // SEC5: every authenticated gateway call is audited with the dual
+  // identity (human principal + agent backend). Best-effort — auditing
+  // must never fail the call itself.
+  void auditControlPlaneCall(binding, path);
+
   switch (path) {
     case "/v1/policy/evaluate":
       return send(
@@ -154,6 +159,52 @@ async function handle(
       return send(res, 200, { ok: true });
     default:
       return send(res, 404, { error: "not_found" });
+  }
+}
+
+// Per-run dual-identity cache so auditing costs one DB lookup per run,
+// not per call. Bounded; runs are short-lived.
+const runIdentityCache = new Map<
+  string,
+  { userId: string | null; role: string | null; backend: string | null }
+>();
+const RUN_IDENTITY_CACHE_MAX = 500;
+
+async function auditControlPlaneCall(
+  binding: RunBinding,
+  path: string,
+): Promise<void> {
+  try {
+    const { control_plane_audit, db, eq, work_run } = await import("@neko/db");
+    let identity = runIdentityCache.get(binding.runId);
+    if (!identity) {
+      const [run] = await db()
+        .select({
+          userId: work_run.actor_user_id,
+          role: work_run.actor_role,
+          backend: work_run.backend,
+        })
+        .from(work_run)
+        .where(eq(work_run.id, binding.runId))
+        .limit(1);
+      identity = run ?? { userId: null, role: null, backend: null };
+      if (runIdentityCache.size >= RUN_IDENTITY_CACHE_MAX) {
+        runIdentityCache.clear();
+      }
+      runIdentityCache.set(binding.runId, identity);
+    }
+    await db().insert(control_plane_audit).values({
+      org_id: binding.orgId,
+      run_id: binding.runId,
+      path,
+      actor_user_id: identity.userId,
+      actor_role: identity.role,
+      backend: identity.backend,
+    });
+  } catch (err) {
+    console.warn(
+      `[agent-broker] audit insert failed (call proceeded): ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 
