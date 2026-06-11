@@ -63,21 +63,16 @@ export class OpenShellRuntime implements PluginRuntime {
 
   async start(spec: PluginVmSpec): Promise<void> {
     if (this.entries.has(spec.id)) return;
-    // `-- node --version` is a cheap initial command; the supervisor
-    // replaces it and (without --no-keep) the sandbox stays Ready.
-    await this.run([
-      "sandbox",
-      "create",
-      "--name",
-      spec.id,
-      "--from",
-      this.options.image,
-      "--no-tty",
-      "--no-auto-providers",
-      "--",
-      "node",
-      "--version",
-    ], CREATE_TIMEOUT_MS);
+    try {
+      await this.createSandbox(spec);
+    } catch (err) {
+      // A failed or orphaned start (image pull error, worker restart) leaves
+      // the name registered on the gateway, so every retry collides forever —
+      // replace the stale sandbox instead.
+      if (!formatError(err).includes("already exists")) throw err;
+      await this.run(["sandbox", "delete", spec.id], DELETE_TIMEOUT_MS);
+      await this.createSandbox(spec);
+    }
     await this.run([
       "sandbox",
       "upload",
@@ -92,6 +87,24 @@ export class OpenShellRuntime implements PluginRuntime {
       `plugin sandbox ready: ${spec.id} ` +
         `(hosts=${(spec.hosts ?? []).join(",") || "none"})`,
     );
+  }
+
+  private createSandbox(spec: PluginVmSpec): Promise<string> {
+    // `-- node --version` is a cheap initial command; the supervisor
+    // replaces it and (without --no-keep) the sandbox stays Ready.
+    return this.run([
+      "sandbox",
+      "create",
+      "--name",
+      spec.id,
+      "--from",
+      this.options.image,
+      "--no-tty",
+      "--no-auto-providers",
+      "--",
+      "node",
+      "--version",
+    ], CREATE_TIMEOUT_MS);
   }
 
   async callRpc(

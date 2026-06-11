@@ -494,9 +494,16 @@ function runProcessOnce(
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0 && !stdout.trim()) {
+        // Redact secret-bearing values (--credential name=value) — this
+        // message reaches console logs.
+        const shown = args
+          .map((a, i) =>
+            args[i - 1] === "--credential" ? a.replace(/=.*/u, "=[redacted]") : a,
+          )
+          .join(" ");
         reject(
           new Error(
-            `openshell ${args.join(" ").slice(0, 120)} exited ${code}; stderr=${stderr.slice(0, 400)}`,
+            `openshell ${shown.slice(0, 160)} exited ${code}; stderr=${stderr.slice(0, 400)}`,
           ),
         );
         return;
