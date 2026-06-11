@@ -1,13 +1,22 @@
 export * from "./workspace";
+export * from "./sandbox-net";
 export * from "./graphjin-guard";
 export * from "./graphjin-actor-guard";
 export * from "./behavior-monitor";
 export * from "./deployment-profile";
 export { buildWorkPrompt } from "./prompt";
 export {
+  buildAuditViewerServer,
+  buildChannelManagerServer,
+  buildDataSourceManagerServer,
+  buildPluginActionServer,
+  buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
+  buildSourceConfigManagerServer,
+  buildUserManagerServer,
   buildWorkMemoryServer,
+  type PluginActionDescriptor,
 } from "./tools";
 export {
   InProcessControlPlane,

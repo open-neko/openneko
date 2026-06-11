@@ -94,8 +94,11 @@ export async function GET(request: NextRequest) {
       policyName: action_policy.name,
     })
     .from(action_request)
-    .innerJoin(workflow_run, eq(action_request.workflow_run_id, workflow_run.id))
-    .innerJoin(
+    // LEFT joins: chat-proposed admin actions (plugin/user/channel/data-source/
+    // source-config) carry no workflow_run_id — inner joins dropped them here
+    // while the badge counted them, leaving them unapprovable in the UI.
+    .leftJoin(workflow_run, eq(action_request.workflow_run_id, workflow_run.id))
+    .leftJoin(
       workflow_definition,
       eq(workflow_run.workflow_id, workflow_definition.id),
     )
@@ -131,7 +134,7 @@ export async function GET(request: NextRequest) {
     actions: sorted.map((r) => ({
       id: r.id,
       workflowRunId: r.workflowRunId,
-      workflow: { id: r.workflowId, name: r.workflowName },
+      workflow: r.workflowId ? { id: r.workflowId, name: r.workflowName } : null,
       triggeredByObservation: r.observationTitle
         ? { title: r.observationTitle }
         : null,
@@ -153,7 +156,7 @@ export async function GET(request: NextRequest) {
             : null,
       approverLabel: r.approvedByUserId ?? r.policyName ?? null,
       rejectionReason: r.rejectionReason,
-      runAt: (r.runStartedAt ?? r.runCreatedAt).toISOString(),
+      runAt: (r.runStartedAt ?? r.runCreatedAt ?? r.createdAt).toISOString(),
       createdAt: r.createdAt.toISOString(),
     })),
     count: sorted.length,

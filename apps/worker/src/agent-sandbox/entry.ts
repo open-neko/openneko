@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   makeAgentBackend,
@@ -11,6 +11,7 @@ import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
   runAgentBackend,
+  sandboxReachableUrl,
   type RunAgentBackendInput,
 } from "@neko/llm/work";
 import { BrokerControlPlane } from "./broker-client";
@@ -44,6 +45,9 @@ interface SandboxJob {
   workspace: AgentWorkspace;
   /** GJ5: policy write grants resolved host-side (the box has no DB). */
   graphjinWriteGrants?: string[];
+  /** GJ6: the org's GraphJin MCP URL, resolved host-side. Lets the box
+   *  build a client.json even in legacy (token-less) mode. */
+  graphjinServerUrl?: string;
 }
 
 function requireEnv(name: string): string {
@@ -77,12 +81,19 @@ export async function main(): Promise<void> {
     apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_API_KEY,
   });
 
-  // Only claude-agent's MCP tools touch the control plane mid-turn; hermes
-  // emits fences the host parses after the turn, so it needs no broker.
+  // MCP tools reach the control plane mid-turn through the broker — claude
+  // via in-process SDK servers, hermes via stdio bridge children that ACP
+  // launches from this path.
   const controlPlane =
     brokerUrl && brokerToken
       ? new BrokerControlPlane(brokerUrl, brokerToken)
       : undefined;
+  if (brokerUrl && brokerToken) {
+    process.env.OPENNEKO_MCP_BRIDGE = new URL(
+      "./mcp-bridge.ts",
+      import.meta.url,
+    ).pathname;
+  }
 
   const emit = (event: AgentEvent): Promise<void> => {
     emitLine(EVENT_MARKER, event);
@@ -96,7 +107,34 @@ export async function main(): Promise<void> {
   const graphjinBinary = await resolveBinaryOnPath("graphjin");
   if (graphjinBinary) {
     const gjAuth = join(job.workspace.runRoot, "gj-auth");
-    const hasRunAuth = existsSync(join(gjAuth, "graphjin", "client.json"));
+    const clientJsonPath = join(gjAuth, "graphjin", "client.json");
+    let hasRunAuth = existsSync(clientJsonPath);
+    if (hasRunAuth) {
+      // The uploaded client.json holds the HOST's view of the server — a
+      // loopback URL points at the box itself here. Rewrite to the gateway's
+      // host alias.
+      const cfg = JSON.parse(readFileSync(clientJsonPath, "utf8")) as {
+        server?: string;
+      };
+      if (cfg.server) {
+        const reachable = sandboxReachableUrl(cfg.server);
+        if (reachable !== cfg.server) {
+          await writeFile(
+            clientJsonPath,
+            JSON.stringify({ ...cfg, server: reachable }),
+          );
+        }
+      }
+    } else if (job.graphjinServerUrl) {
+      // Legacy/anonymous data source: no token, but the CLI still needs a
+      // server URL (it has no default in the box).
+      await mkdir(join(gjAuth, "graphjin"), { recursive: true });
+      await writeFile(
+        clientJsonPath,
+        JSON.stringify({ server: sandboxReachableUrl(job.graphjinServerUrl) }),
+      );
+      hasRunAuth = true;
+    }
     await mkdir(job.workspace.binRoot, { recursive: true });
     await ensureGraphjinGuard(job.workspace.binRoot, graphjinBinary, {
       ...(hasRunAuth ? { xdgConfigHome: gjAuth } : {}),

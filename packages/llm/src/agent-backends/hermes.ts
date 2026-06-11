@@ -176,9 +176,11 @@ const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 export class HermesBackend implements AgentBackend {
   readonly id = "hermes" as const;
   readonly capabilities = {
-    // ACP doesn't expose any of these to the runtime. Surfaces come via fence
-    // (see surface.ts); skills/memory only via prompt-mediated shell calls.
-    mcpTools: false,
+    // ACP mounts MCP servers as stdio children (session/new mcpServers) — the
+    // neko servers ride a bridge process (OPENNEKO_MCP_BRIDGE) that rebuilds
+    // each one over the broker control plane. Surfaces still come via fence
+    // (see surface.ts).
+    mcpTools: true,
     sdkStopHook: false,
     sessionResume: false,
     canUseToolGate: false,
@@ -224,6 +226,8 @@ export class HermesBackend implements AgentBackend {
           signal,
           onEvent,
           wantsCards,
+          mcpServerNames: Object.keys(opts.mcpServers ?? {}),
+          mcpBridgeEnv: opts.mcpBridgeEnv,
         });
         if (out.error) {
           lastErr = new Error(out.error);
@@ -271,6 +275,8 @@ type RunOnceArgs = {
   signal: AbortSignal | undefined;
   onEvent: AgentRunOptions["onEvent"];
   wantsCards: boolean;
+  mcpServerNames: string[];
+  mcpBridgeEnv: Record<string, string> | undefined;
 };
 
 type RunOnceOutcome = {
@@ -290,6 +296,8 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     signal,
     onEvent,
     wantsCards,
+    mcpServerNames,
+    mcpBridgeEnv,
   } = args;
 
   let cwd: string;
@@ -383,12 +391,38 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     });
 
     // session/new per turn — see file header for the session/load double-count rationale.
-    // TODO: verify whether Hermes ACP honors user-supplied mcpServers.
-    // session/new per turn — see file header for the session/load double-count rationale.
     // Web turns get the render_cards MCP server so the model renders cards.
-    const mcpServers = wantsCards
-      ? [{ name: RENDER_MCP_SERVER_NAME, command: process.execPath, args: [ensureRenderStub()], env: [] }]
-      : [];
+    // The neko tool servers mount as stdio bridge children when a bridge entry
+    // is available (in-box: entry.ts sets OPENNEKO_MCP_BRIDGE; broker coords
+    // ride the process env down to each child).
+    const bridgePath = process.env.OPENNEKO_MCP_BRIDGE;
+    const bridgeEnv = [
+      ...Object.entries(mcpBridgeEnv ?? {}),
+      ...["OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN"]
+        .map((k) => [k, process.env[k] ?? ""])
+        .filter(([, v]) => v),
+    ].map(([name, value]) => ({ name, value }));
+    const bridgeServers =
+      bridgePath && mcpBridgeEnv
+        ? mcpServerNames
+            // neko_ui has its own stub; names are our map keys — the regex
+            // guards the shell interpolation below.
+            .filter((n) => n !== "neko_ui" && /^[a-z0-9_]+$/.test(n))
+            .map((name) => ({
+              name,
+              // cd /app first: hermes spawns MCP children with the session
+              // cwd (/sandbox/…), where `--import tsx/esm` cannot resolve.
+              command: "/bin/sh",
+              args: ["-c", `cd /app && exec node --import tsx/esm ${bridgePath} ${name}`],
+              env: bridgeEnv,
+            }))
+        : [];
+    const mcpServers = [
+      ...(wantsCards
+        ? [{ name: RENDER_MCP_SERVER_NAME, command: process.execPath, args: [ensureRenderStub()], env: [] }]
+        : []),
+      ...bridgeServers,
+    ];
     const fresh = await client.request<{ sessionId: string }>("session/new", {
       cwd,
       mcpServers,

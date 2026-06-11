@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveAgentBackend, AgentBackendConfigError } from "@neko/llm";
+import {
+  resolveAgentBackend,
+  AgentBackendConfigError,
+  ensureHostConfigProvisioned,
+} from "@neko/llm";
 import {
   agentRuntimeDepsFromEnv,
   createWorkRun,
@@ -94,6 +98,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // The web server stays the control plane, launches the box, and relays
   // events over the existing SSE.
   const broker = await ensureAgentBroker();
+
+  // Derive the agent-sandbox env (model egress, gateway provider, key alias)
+  // before the first launch — a fresh web process otherwise launches boxes
+  // that can't reach the model until a settings save re-provisions.
+  await ensureHostConfigProvisioned(orgId);
 
   void runChatTurn(
     {

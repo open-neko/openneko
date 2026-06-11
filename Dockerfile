@@ -54,9 +54,12 @@ RUN curl -LsSf --retry 5 --retry-delay 5 --retry-all-errors https://astral.sh/uv
        UV_PYTHON_INSTALL_DIR=/usr/local/uv/python \
        UV_CACHE_DIR=/tmp/uv-cache \
        uv tool install --python 3.11 \
+         --with mcp --with websockets \
          "hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git@${HERMES_AGENT_REF}" \
     && rm -rf /tmp/uv-cache /root/.cache/uv \
-    && hermes --version
+    && hermes --version \
+    && /usr/local/uv/tools/hermes-agent/bin/python -c "import mcp, websockets" \
+    && echo "hermes MCP SDK present"
 RUN npm install -g @anthropic-ai/claude-code
 # openshell: CLI driver for the OpenShell plugin runtime
 # (OPENNEKO_PLUGIN_RUNTIME=openshell). Static musl binary, no runtime deps.

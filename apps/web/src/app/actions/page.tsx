@@ -17,8 +17,8 @@ type Filter = "awaiting" | "fired" | "rejected" | "all";
 
 type ActionRow = {
   id: string;
-  workflowRunId: string;
-  workflow: { id: string; name: string };
+  workflowRunId: string | null;
+  workflow: { id: string; name: string } | null;
   triggeredByObservation: { title: string } | null;
   kind: string;
   target: string | null;
@@ -85,7 +85,7 @@ function isFilter(value: string | null): value is Filter {
 
 type Group = {
   key: string;
-  runId: string;
+  runId: string | null;
   runAt: string;
   trigger: string | null;
   workflowName: string;
@@ -99,7 +99,8 @@ function groupActions(actions: ActionRow[]): Group[] {
   const map = new Map<string, Group>();
   for (const row of actions) {
     const state = stateFor(row);
-    const key = `${row.workflowRunId}:${state}`;
+    // Chat-proposed admin actions have no workflow run — group each alone.
+    const key = `${row.workflowRunId ?? row.id}:${state}`;
     const existing = map.get(key);
     if (existing) {
       existing.rows.push(row);
@@ -109,7 +110,7 @@ function groupActions(actions: ActionRow[]): Group[] {
         runId: row.workflowRunId,
         runAt: row.runAt,
         trigger: row.triggeredByObservation?.title ?? null,
-        workflowName: row.workflow.name,
+        workflowName: row.workflow?.name ?? "the assistant",
         state,
         rows: [row],
       });
@@ -372,7 +373,7 @@ function ActionReadingPane({
           {action.summary || action.kind}
         </h2>
         <div className="text-[12.5px] text-text2 mt-2 leading-[1.5]">
-          Proposed by <span className="text-text font-semibold">{action.workflow.name}</span>
+          Proposed by <span className="text-text font-semibold">{action.workflow?.name ?? "the assistant"}</span>
           {action.triggeredByObservation ? <> · triggered by “{action.triggeredByObservation.title}”</> : null}
         </div>
 
