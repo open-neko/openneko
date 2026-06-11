@@ -101,6 +101,20 @@ export function createAcpClient(child: ChildProcess): AcpClient {
     closedResolve();
   };
 
+  const respond = (id: number, result?: unknown, error?: AcpJsonRpcError) => {
+    const frame =
+      JSON.stringify(
+        error
+          ? { jsonrpc: "2.0", id, error }
+          : { jsonrpc: "2.0", id, result: result ?? null },
+      ) + "\n";
+    try {
+      stdin.write(frame);
+    } catch {
+      // Child already gone; the close handler disposes.
+    }
+  };
+
   rl.on("line", (line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -108,6 +122,36 @@ export function createAcpClient(child: ChildProcess): AcpClient {
     try {
       frame = JSON.parse(trimmed) as Record<string, unknown>;
     } catch {
+      return;
+    }
+    if (typeof frame.method === "string" && typeof frame.id === "number") {
+      // Inbound REQUEST from hermes (a response carries no method). Hermes
+      // ≥0.14 asks terminal/tool permission over ACP — unanswered, the tool
+      // fails as "User denied", which cuts off the CLI data path. The
+      // sandbox + graphjin guard are the enforcement boundary here, so
+      // approve; everything else gets a definitive method-not-found.
+      if (frame.method === "session/request_permission") {
+        const params = (frame.params ?? {}) as {
+          options?: Array<{ optionId?: unknown; kind?: unknown }>;
+        };
+        const options = Array.isArray(params.options) ? params.options : [];
+        const allow =
+          options.find((o) => o.kind === "allow_once") ??
+          options.find((o) => o.kind === "allow_always") ??
+          options[0];
+        if (allow && typeof allow.optionId === "string") {
+          respond(frame.id, {
+            outcome: { outcome: "selected", optionId: allow.optionId },
+          });
+        } else {
+          respond(frame.id, { outcome: { outcome: "cancelled" } });
+        }
+        return;
+      }
+      respond(frame.id, undefined, {
+        code: -32601,
+        message: `method not supported: ${frame.method}`,
+      });
       return;
     }
     if (typeof frame.id === "number") {

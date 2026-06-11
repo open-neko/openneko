@@ -378,6 +378,27 @@ async function provisionOpenShellRuntime(orgId: string, backend: string): Promis
   );
 }
 
+const provisionedOrgs = new Map<string, Promise<void>>();
+
+/**
+ * provisionHostConfig, once per org per process. The worker provisions at
+ * boot, but the web process used to derive the agent-sandbox env (model
+ * egress, gateway provider, key alias) only on a settings save — so every
+ * web restart silently launched sandboxes that couldn't reach the model
+ * until someone re-saved settings. Run paths call this instead.
+ */
+export function ensureHostConfigProvisioned(orgId: string): Promise<void> {
+  let p = provisionedOrgs.get(orgId);
+  if (!p) {
+    p = provisionHostConfig(orgId).catch((err) => {
+      provisionedOrgs.delete(orgId);
+      throw err;
+    });
+    provisionedOrgs.set(orgId, p);
+  }
+  return p;
+}
+
 export async function provisionHostConfig(orgId: string): Promise<void> {
   try {
     await provisionGraphJin(orgId);

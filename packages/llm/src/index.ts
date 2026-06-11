@@ -30,7 +30,10 @@ export {
   UpstreamProviderError,
   detectUpstreamError,
 } from "./agent-error";
-export { provisionHostConfig } from "./host-provision";
+export {
+  ensureHostConfigProvisioned,
+  provisionHostConfig,
+} from "./host-provision";
 export {
   prefetchKnowledgePack,
   prefetchKnowledgeForOrg,
