@@ -33,8 +33,6 @@ jobs:
 
       - name: Resolve release tag + build outcome
         id: ctx
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -43,8 +41,11 @@ jobs:
             echo "build_ok=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          tag=$(gh api "repos/${{ github.repository }}/releases" \
-            --jq '.[] | select(.target_commitish=="main") | .tag_name' | head -1)
+          # The binaries workflow runs on tag push, so its head_branch IS the
+          # tag. Don't resolve via the releases API: release-please pins
+          # target_commitish to a SHA, so filtering on "main" matches only
+          # stale hand-made prereleases (this froze the smoke on v1.18.0-openshell.4).
+          tag="${{ github.event.workflow_run.head_branch }}"
           echo "tag=${tag:-}" >> "$GITHUB_OUTPUT"
           # Only gate stable releases — a '-' marks a prerelease, which is never "Latest".
           case "${tag:-}" in *-* | "") echo "stable=false" ;; *) echo "stable=true" ;; esac >> "$GITHUB_OUTPUT"
