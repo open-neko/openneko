@@ -101,11 +101,35 @@ export function buildBridgeServer(
   }
 }
 
+/**
+ * The egress proxy admits a freshly spawned process with a lag — its first
+ * dials get ECONNREFUSED even with an allow rule in place. Poll until the
+ * broker answers anything at all (any HTTP status counts) before serving, so
+ * the first real tool call rides a warmed path.
+ */
+async function warmUpBroker(baseUrl: string): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  for (;;) {
+    try {
+      await fetch(new URL("/v1/memory/search", baseUrl), {
+        method: "POST",
+        body: "{}",
+      });
+      return;
+    } catch {
+      if (Date.now() > deadline) return; // serve anyway; per-call retries remain
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const name = process.argv[2];
   if (!name) throw new Error("mcp-bridge: missing server-name argument");
+  const brokerUrl = requireEnv("OPENNEKO_BROKER_URL");
+  await warmUpBroker(brokerUrl);
   const controlPlane = new BrokerControlPlane(
-    requireEnv("OPENNEKO_BROKER_URL"),
+    brokerUrl,
     requireEnv("OPENNEKO_BROKER_TOKEN"),
   );
   const server = buildBridgeServer(name, {

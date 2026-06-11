@@ -40,7 +40,16 @@ export class BrokerControlPlane implements AgentControlPlane {
       }
       return (await res.json()) as T;
     }
-    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+    // undici buries the actionable code (ECONNREFUSED, ENOTFOUND, proxy
+    // denial) in error.cause — "fetch failed" alone is undebuggable.
+    const cause = (lastErr as { cause?: { code?: string; message?: string } })
+      ?.cause;
+    const detail = cause?.code ?? cause?.message;
+    throw new Error(
+      `broker ${path} unreachable after retries: ${
+        lastErr instanceof Error ? lastErr.message : String(lastErr)
+      }${detail ? ` (${detail})` : ""}`,
+    );
   }
 
   evaluateActionPolicy(
