@@ -360,11 +360,24 @@ let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
   if (brokerSingleton) return Promise.resolve(brokerSingleton);
   if (!brokerStarting) {
+    const pinned = Number(process.env.OPENNEKO_BROKER_PORT) || 0;
     brokerStarting = startAgentBroker({
       controlPlane: inProcessControlPlane,
       hostAlias: process.env.OPENNEKO_BROKER_HOST_ALIAS || undefined,
-      port: Number(process.env.OPENNEKO_BROKER_PORT) || 4199,
+      port: pinned || 4199,
     })
+      .catch((e: NodeJS.ErrnoException) => {
+        // Unpinned default only: web + worker on one host (dev) both reach
+        // for 4199 — fall back to an ephemeral port; sandboxes get the real
+        // port via the handle URL. A pinned port must fail loudly: compose
+        // publishes exactly that port to the host.
+        if (pinned || e.code !== "EADDRINUSE") throw e;
+        return startAgentBroker({
+          controlPlane: inProcessControlPlane,
+          hostAlias: process.env.OPENNEKO_BROKER_HOST_ALIAS || undefined,
+          port: 0,
+        });
+      })
       .then((h) => {
         brokerSingleton = h;
         return h;
