@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/open-neko/openneko/compare/v1.22.0...v1.23.0) (2026-06-11)
+
+
+### Features
+
+* **work:** OL5 — chat-first config of the customer GraphJin (sources/roles/access) ([d6252f0](https://github.com/open-neko/openneko/commit/d6252f0eb13cd9c1c2b447fcc2435faa40cbaf01))
+
 ## [1.22.0](https://github.com/open-neko/openneko/compare/v1.21.0...v1.22.0) (2026-06-11)
 
 
