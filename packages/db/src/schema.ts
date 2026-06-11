@@ -351,6 +351,26 @@ export const config_ref = pgTable(
   }),
 );
 
+// OL5 — named connection secrets for chat-first source config. The agent
+// references a secret by NAME; the worker resolves + decrypts (enc:v1) at
+// apply time. Values never enter model context.
+export const data_source_secret = pgTable(
+  "data_source_secret",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    value_enc: text("value_enc").notNull(),
+    description: text("description"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.org_id, t.name] }),
+  }),
+);
+
 // CH3 — channel→app_user mapping. One row per channel-native identity
 // an org has seen; linking (SSO email match or admin-map) binds it to
 // an app_user. Unlinked identities act as anonymous members.

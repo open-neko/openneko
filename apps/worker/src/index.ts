@@ -285,12 +285,14 @@ registerBuiltinAdapters();
   const {
     registerChannelAdminAdapter,
     registerDataSourceAdminAdapter,
+    registerSourceConfigAdminAdapter,
     registerPluginManagementAdapters,
     registerUserAdminAdapter,
   } = await import("./plugins/manage-adapters.js");
   registerUserAdminAdapter();
   registerChannelAdminAdapter();
   registerDataSourceAdminAdapter();
+  registerSourceConfigAdminAdapter();
   registerPluginManagementAdapters({
     repoRoot: process.cwd(),
     getInstallPolicy: async () => {

@@ -118,6 +118,30 @@ export interface AgentControlPlane {
     }>;
   }>;
   /**
+   * OL5: the live "unified source graph" of the CUSTOMER GraphJin —
+   * databases, capabilities, and namespaces discovered from gj_catalog
+   * under a minted service token. Read-only; never touches the OpenNeko
+   * internal GraphJin. `reachable: false` with `error` when the engine
+   * is down or not in sources mode.
+   */
+  describeSourceGraph(input: { orgId: string }): Promise<{
+    reachable: boolean;
+    error?: string;
+    sourceName?: string;
+    host?: string | null;
+    databases?: Array<{ id: string; name: string; summary: string }>;
+    capabilities?: Array<{ id: string; name: string; summary: string }>;
+    namespaces?: Array<{ id: string; name: string; summary: string }>;
+  }>;
+  /**
+   * OL5: the NAMES of stored data-source connection secrets (never the
+   * values). The agent references these as `secretRef` when proposing a
+   * source registration; the worker resolves the value at apply.
+   */
+  listSourceSecretNames(input: { orgId: string }): Promise<{
+    names: Array<{ name: string; description: string | null; updatedAt: string }>;
+  }>;
+  /**
    * ADM4: the audit trail, for ADMIN runs only — the requesting run's
    * K1 actor is checked server-side (the sandbox is never trusted to
    * assert its own role). Member/service runs get denied: true.
@@ -349,6 +373,85 @@ export class InProcessControlPlane implements AgentControlPlane {
         enabled: r.enabled,
         host: hostnameOf(r.graphql_url),
         hasMcp: Boolean(r.mcp_url),
+      })),
+    };
+  }
+
+  async describeSourceGraph(input: { orgId: string }) {
+    const { data_source, db, desc, eq } = await import("@neko/db");
+    const [src] = await db()
+      .select({ name: data_source.name, graphqlUrl: data_source.graphql_url })
+      .from(data_source)
+      .where(eq(data_source.org_id, input.orgId))
+      .orderBy(desc(data_source.is_default), data_source.created_at)
+      .limit(1);
+    if (!src?.graphqlUrl) {
+      return { reachable: false, error: "no data source configured" };
+    }
+    const { mintGraphjinToken } = await import("../graphjin/token");
+    const { graphjinQuery } = await import("../graphjin/client");
+    const token = mintGraphjinToken({
+      orgId: input.orgId,
+      userId: null,
+      role: "service",
+    });
+    const kinds = ["database", "capability", "namespace"] as const;
+    type Row = { id: string; name: string; summary: string };
+    const buckets: Record<string, Row[]> = {
+      database: [],
+      capability: [],
+      namespace: [],
+    };
+    try {
+      for (const kind of kinds) {
+        const res = await graphjinQuery<{ gj_catalog?: Row[] }>({
+          baseUrl: src.graphqlUrl,
+          query: `query { gj_catalog(where: { kind: { eq: "${kind}" } }, limit: 100) { id name summary } }`,
+          role: "service",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (res.errors?.length) {
+          return {
+            reachable: false,
+            error: res.errors.map((e) => e.message).join("; ").slice(0, 300),
+          };
+        }
+        buckets[kind] = Array.isArray(res.data?.gj_catalog)
+          ? res.data.gj_catalog
+          : [];
+      }
+    } catch (err) {
+      return {
+        reachable: false,
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    }
+    return {
+      reachable: true,
+      sourceName: src.name,
+      host: hostnameOf(src.graphqlUrl),
+      databases: buckets.database,
+      capabilities: buckets.capability,
+      namespaces: buckets.namespace,
+    };
+  }
+
+  async listSourceSecretNames(input: { orgId: string }) {
+    const { data_source_secret, db, desc, eq } = await import("@neko/db");
+    const rows = await db()
+      .select({
+        name: data_source_secret.name,
+        description: data_source_secret.description,
+        updatedAt: data_source_secret.updated_at,
+      })
+      .from(data_source_secret)
+      .where(eq(data_source_secret.org_id, input.orgId))
+      .orderBy(desc(data_source_secret.updated_at));
+    return {
+      names: rows.map((r) => ({
+        name: r.name,
+        description: r.description,
+        updatedAt: r.updatedAt.toISOString(),
       })),
     };
   }

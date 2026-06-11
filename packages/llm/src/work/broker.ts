@@ -154,6 +154,18 @@ async function handle(
       return send(res, 200, await cp.listChannels({ orgId: binding.orgId }));
     case "/v1/datasources/list":
       return send(res, 200, await cp.listDataSources({ orgId: binding.orgId }));
+    case "/v1/source-graph/describe":
+      return send(
+        res,
+        200,
+        await cp.describeSourceGraph({ orgId: binding.orgId }),
+      );
+    case "/v1/source-secrets/names":
+      return send(
+        res,
+        200,
+        await cp.listSourceSecretNames({ orgId: binding.orgId }),
+      );
     case "/v1/audit/list":
       // ADM4: the admin gate runs on the BOUND run's actor — the
       // sandbox can't claim someone else's run.

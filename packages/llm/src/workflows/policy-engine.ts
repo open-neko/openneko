@@ -274,6 +274,26 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // OL5: configuring the customer GraphJin (sources/roles/access) from
+  // chat needs an ADMIN. (The OpenNeko internal GraphJin is never a target.)
+  if (!names.has("source_config_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "source_config_management_default",
+      description:
+        "Adding roles, changing source access, or registering a source on the customer data engine, proposed from chat, requires an admin's approval.",
+      appliesToKinds: ["source_config_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 93,
+      enabled: true,
+    });
+  }
   // ADM2: data-source registry changes from chat need an ADMIN.
   if (!names.has("data_source_management_default")) {
     await createActionPolicy({

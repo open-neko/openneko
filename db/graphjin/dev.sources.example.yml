@@ -10,6 +10,34 @@
 #
 # NOTE (3.18.32+): in sources mode, GJ_DATABASE_* env vars are a hard
 # boot error — connection details live HERE, not in compose env.
+#
+# OL5 — chat-first config: this CUSTOMER GraphJin enables config updates
+# (mcp.allow_config_updates) so an OpenNeko admin can register/shape
+# sources, roles, and access from chat. The agent only PROPOSES (its CLI
+# guard blocks mutations); the worker applies the approved gj_config
+# preview→apply with a minted admin token.
+#
+# WHERE THE ADMIN-ONLY GUARANTEE COMES FROM: the OpenNeko approval gate
+# (source_config_admin actions require approverRole: admin) plus the agent
+# CLI mutation guard — NOT the engine. Verified live: the engine's
+# `gj_config: admin` root only distinguishes anon from authenticated, so a
+# member-role token can still reach gj_config. Treat the root as
+# defense-in-depth, not the boundary.
+#
+# TWO PRECONDITIONS for a durable apply (verified live on the fork):
+#   1. roles: must explicitly define every token role (admin, user).
+#      gj_config role/source updates re-normalize roles; without explicit
+#      entries the implicit admin role is dropped and all tokens break
+#      ("roles 'admin' not defined").
+#   2. secrets.keystore.key (base64 → 32 bytes) is REQUIRED to register a
+#      DB source with a password — GraphJin seals it to a gjsecret:// ref.
+# Also note: gj_config apply persists + reloads the config; needs a fork
+# build with the saveConfigToDisk fix (dosco/graphjin#601) or the reload
+# crash-loops on a spurious top-level database: block.
+#
+# The OpenNeko INTERNAL neko-graphjin MUST NOT enable any of this:
+# keep allow_config_updates:false and no gj_config root there — it is
+# never reconfigurable from chat.
 
 app_name: ./Graphjin/Neko-AdventureWorks (source mode)
 host_port: 0.0.0.0:8080
@@ -54,7 +82,9 @@ subs_poll_duration: 5s
 
 mcp:
   disable: false
-  allow_config_updates: false
+  # OL5: makes gj_config.update reachable. The admin-only guarantee is the
+  # OpenNeko approval gate + agent CLI guard, not the engine (see header).
+  allow_config_updates: true
   allow_mutations: false
   allow_raw_queries: true
   workflow_timeout: 300
@@ -65,6 +95,23 @@ mcp:
   legacy_discovery: false
 
 analytics_mode: true
+
+# OL5 precondition 1: define every token role explicitly. gj_config
+# role/source updates re-normalize roles; without these the implicit admin
+# role is dropped on the first apply and all tokens break.
+roles:
+  - name: user
+    comment: Authenticated user
+  - name: admin
+    comment: Org admin
+
+# OL5 precondition 2: required to register a DB source with a password —
+# GraphJin seals the value to a gjsecret:// ref at apply (plaintext never
+# lands on disk). base64 that decodes to 32 bytes; provide via
+# GJ_SECRETS_KEYSTORE_KEY in deployment, never commit a real key.
+secrets:
+  keystore:
+    key: "REPLACE_WITH_BASE64_32_BYTE_KEY"
 
 blocklist:
   - ar_internal_metadata
@@ -84,6 +131,11 @@ sources:
         # authenticated, NOT public — verified live: public leaks the
         # whole schema catalog to anonymous callers.
         gj_catalog: authenticated
+        # OL5: gates gj_config to authenticated callers (defense-in-depth).
+        # NOT a member/admin boundary — the engine treats `admin` as
+        # authenticated here; the admin-only guarantee is OpenNeko's
+        # approval gate. The worker mints an admin token to apply changes.
+        gj_config: admin
 
   - name: adventureworks
     kind: database

@@ -12,6 +12,7 @@ import {
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
+  buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -120,6 +121,12 @@ export async function runAgentBackend(
           controlPlane,
         }),
         neko_data_source_manager: buildDataSourceManagerServer({
+          orgId,
+          runId,
+          emit,
+          controlPlane,
+        }),
+        neko_source_config_manager: buildSourceConfigManagerServer({
           orgId,
           runId,
           emit,
