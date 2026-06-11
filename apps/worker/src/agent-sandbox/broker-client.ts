@@ -13,20 +13,34 @@ export class BrokerControlPlane implements AgentControlPlane {
   ) {}
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    const res = await fetch(new URL(path, this.baseUrl), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.token}`,
-      },
-      body: JSON.stringify(body ?? {}),
-    });
-    if (!res.ok) {
-      throw new Error(
-        `broker ${path} -> ${res.status}: ${(await res.text()).slice(0, 200)}`,
-      );
+    // Retry only when fetch REJECTS (connection never established — cold
+    // egress-proxy path right after a bridge child spawns rejects the first
+    // dial). HTTP error responses are never retried: the broker saw those.
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 300 * attempt));
+      let res: Response;
+      try {
+        res = await fetch(new URL(path, this.baseUrl), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify(body ?? {}),
+        });
+      } catch (err) {
+        lastErr = err;
+        continue;
+      }
+      if (!res.ok) {
+        throw new Error(
+          `broker ${path} -> ${res.status}: ${(await res.text()).slice(0, 200)}`,
+        );
+      }
+      return (await res.json()) as T;
     }
-    return (await res.json()) as T;
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   }
 
   evaluateActionPolicy(
