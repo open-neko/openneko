@@ -415,6 +415,45 @@ export const control_plane_audit = pgTable(
   }),
 );
 
+// OL4 — watchers: condition monitors over GraphJin queries that fire
+// their linked workflow when the condition holds (polling v1).
+export const watcher = pgTable(
+  "watcher",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflow_id: uuid("workflow_id")
+      .notNull()
+      .references(() => workflow_definition.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    query: text("query").notNull(),
+    value_path: text("value_path").notNull(),
+    op: text("op").notNull(),
+    threshold: jsonb("threshold"),
+    cadence_seconds: integer("cadence_seconds").notNull().default(300),
+    debounce_seconds: integer("debounce_seconds").notNull().default(3600),
+    severity: text("severity").notNull().default("medium"),
+    last_checked_at: ts("last_checked_at"),
+    last_fired_at: ts("last_fired_at"),
+    last_value: jsonb("last_value"),
+    last_error: text("last_error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_name_unique: uniqueIndex("watcher_org_name_unique").on(t.org_id, t.name),
+    org_enabled_idx: index("watcher_org_enabled_idx").on(
+      t.org_id,
+      t.enabled,
+      t.last_checked_at,
+    ),
+  }),
+);
+
 // SEC7 — behavioral threshold alerts raised by the worker sweep over
 // the SEC5 audit stream and action/memory write rates.
 export const behavior_alert = pgTable(

@@ -50,6 +50,7 @@ export {
   type SaveWorkflowWithTriggerResult,
   type WorkflowTriggerError,
 } from "./save-workflow-with-trigger";
+export * from "./watchers";
 export {
   buildRuleBuilderServer,
   type RuleBuilderContext,

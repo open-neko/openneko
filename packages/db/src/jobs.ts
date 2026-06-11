@@ -72,7 +72,7 @@ export type ChannelDeliverPayload = {
 export type WorkflowRunFirePayload = {
   orgId: string;
   workflowId: string;
-  triggerKind: "manual" | "cron" | "subscription";
+  triggerKind: "manual" | "cron" | "subscription" | "watcher";
   triggerPayload?: Record<string, unknown>;
   userMessage?: string;
   threadId?: string;

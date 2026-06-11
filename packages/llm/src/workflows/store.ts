@@ -36,6 +36,17 @@ export type WorkflowTriggers = {
     idempotency_key_template?: string;
     acknowledge_mutation_loop?: boolean;
   };
+  // OL4 condition trigger ("fire when this value crosses the line").
+  // saveWorkflow ignores it; saveWorkflowWithTrigger persists a watcher.
+  watch?: {
+    query: string;
+    value_path: string;
+    op: "gt" | "gte" | "lt" | "lte" | "eq" | "ne" | "changed";
+    threshold?: unknown;
+    cadence_seconds?: number;
+    debounce_seconds?: number;
+    severity?: "low" | "medium" | "high" | "critical";
+  };
 };
 
 export type WorkflowRecord = {
@@ -434,7 +445,7 @@ export type WorkflowRunRecord = {
   workflowId: string;
   threadId: string;
   workRunId: string;
-  triggerKind: "manual" | "cron" | "subscription";
+  triggerKind: "manual" | "cron" | "subscription" | "watcher";
   triggerPayload: Record<string, unknown>;
   triggeredBySubscriptionId: string | null;
   triggeredByOutputId: string | null;
@@ -454,7 +465,7 @@ export type CreateWorkflowRunInput = {
   workflowId: string;
   threadId: string;
   workRunId: string;
-  triggerKind: "manual" | "cron" | "subscription";
+  triggerKind: "manual" | "cron" | "subscription" | "watcher";
   triggerPayload?: Record<string, unknown>;
   chainDepth?: number;
   triggeredBySubscriptionId?: string | null;

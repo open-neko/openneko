@@ -58,7 +58,7 @@ export class WorkflowNeedsInputError extends Error {
   }
 }
 
-export type WorkflowTriggerKind = "manual" | "cron" | "subscription";
+export type WorkflowTriggerKind = "manual" | "cron" | "subscription" | "watcher";
 
 export type PrepareWorkflowRunOptions = {
   orgId: string;

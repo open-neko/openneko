@@ -557,6 +557,16 @@ await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
     );
   }
   await runWorkflowCronSweep();
+  // OL4: condition watchers poll on the same tick (each watcher's own
+  // cadence gates how often its query actually runs).
+  try {
+    const { sweepWatchers } = await import("@neko/llm/workflows");
+    await sweepWatchers(ADMIN_ORG_ID);
+  } catch (e) {
+    console.warn(
+      `[worker] watcher sweep failed: ${e instanceof Error ? e.message : e}`,
+    );
+  }
 });
 
 await b.work(
