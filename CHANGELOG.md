@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/open-neko/openneko/compare/v2.0.1...v2.1.0) (2026-06-11)
+
+
+### Features
+
+* **work:** delete a workflow from an Ask thread by [@mentioning](https://github.com/mentioning) it ([#79](https://github.com/open-neko/openneko/issues/79)) ([09369ed](https://github.com/open-neko/openneko/commit/09369ede134261f6fabce2462e64c5e538e7ceed))
+
 ## [2.0.1](https://github.com/open-neko/openneko/compare/v2.0.0...v2.0.1) (2026-06-11)
 
 
