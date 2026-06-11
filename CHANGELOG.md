@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0](https://github.com/open-neko/openneko/compare/v1.23.0...v2.0.0) (2026-06-11)
+
+
+### Documentation
+
+* FEATURES.md — plain-language guide to the roadmap release wave ([98caf34](https://github.com/open-neko/openneko/commit/98caf34fc15b8f8b0a7d77f5897bb17f0f201495))
+
 ## [1.23.0](https://github.com/open-neko/openneko/compare/v1.22.0...v1.23.0) (2026-06-11)
 
 
