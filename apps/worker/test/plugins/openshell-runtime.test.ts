@@ -137,6 +137,55 @@ describe("OpenShellRuntime", () => {
     expect(h.calls.some((c) => c.args[0] === "policy")).toBe(false);
   });
 
+  it("replaces a stale gateway sandbox when create collides on the name", async () => {
+    const rt = make();
+    let creates = 0;
+    h.state.respond = (args) => {
+      if (args[1] === "create") {
+        creates += 1;
+        return creates === 1
+          ? { stderr: "Error: × sandbox 'p1' already exists", code: 1 }
+          : { stdout: "", code: 0 };
+      }
+      return { stdout: "", code: 0 };
+    };
+
+    await rt.start({
+      id: "p1",
+      hostWorkspacePath: "/tmp/bundles/p1",
+      network: "none",
+      hosts: [],
+    });
+
+    // create (collides) → delete the corpse → create again → upload.
+    expect(h.calls.map((c) => c.args[1])).toEqual([
+      "create",
+      "delete",
+      "create",
+      "upload",
+    ]);
+    expect(rt.hasPlugin("p1")).toBe(true);
+  });
+
+  it("surfaces non-collision create failures unchanged", async () => {
+    const rt = make();
+    h.state.respond = (args) =>
+      args[1] === "create"
+        ? { stderr: "Error: manifest unknown", code: 1 }
+        : { stdout: "", code: 0 };
+
+    await expect(
+      rt.start({
+        id: "p1",
+        hostWorkspacePath: "/tmp/bundles/p1",
+        network: "none",
+        hosts: [],
+      }),
+    ).rejects.toThrow(/manifest unknown/);
+    expect(h.calls.map((c) => c.args[1])).toEqual(["create"]);
+    expect(rt.hasPlugin("p1")).toBe(false);
+  });
+
   it("start is idempotent", async () => {
     const rt = make();
     const spec = {

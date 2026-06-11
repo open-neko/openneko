@@ -1263,7 +1263,9 @@ export class PluginRegistry {
       image:
         this.options.image ??
         process.env.OPENNEKO_PLUGIN_BASE_IMAGE ??
-        "ghcr.io/open-neko/plugin-base:node20",
+        // Releases publish :latest/:vX.Y.Z only — the old :node20 default
+        // was never on GHCR, so default-config plugin sandboxes never booted.
+        "ghcr.io/open-neko/plugin-base:latest",
       cli: process.env.OPENSHELL_CLI || undefined,
       gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
       gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
