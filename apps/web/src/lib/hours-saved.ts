@@ -2,6 +2,13 @@
 // approximate by nature (see docs/HOURS_SAVED_PLAN.md) — always rendered
 // with a "~" so the estimate framing is unmistakable.
 
+// Conservative floor for the Ask-rail tile when a substantive answer
+// completed but the agent skipped its self-estimate (hermes occasionally
+// drops the closing value block on long turns). Matches the prompt's
+// minimum anchor — a single metric lookup. Display-only: it never enters
+// the dashboard's cumulative total, which sums real agent estimates.
+export const ANALYSIS_FLOOR_MIN = 15;
+
 /** Compact per-item label, e.g. "~8 min", "~1.5h". */
 export function formatSavedShort(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes <= 0) return "";

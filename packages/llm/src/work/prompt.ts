@@ -274,7 +274,9 @@ ${GRAPHJIN_DATE_RULE}
 // Closing contract shared by both backends: two JSON blocks the runtime parses
 // from the final output (hours-saved value + suggested follow-ups).
 const CLOSING_SECTION = `<closing>
-Always end your turn with these three JSON blocks, in this order.
+Always end your turn with these three JSON blocks, in this order. The
+\`neko_value\` block is MANDATORY on every answer — emit it even when the
+turn ran long; never drop it.
 
 1. The time a data analyst or BI specialist would need to produce this answer
    from scratch — finding the right data, writing and validating the queries,
