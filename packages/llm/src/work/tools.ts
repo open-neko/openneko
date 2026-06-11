@@ -180,7 +180,8 @@ async function proposeAdminAction(opts: {
     | "plugin_uninstall"
     | "user_admin"
     | "channel_admin"
-    | "data_source_admin";
+    | "data_source_admin"
+    | "source_config_admin";
   target: string;
   intent: string;
   payload: Record<string, unknown>;
@@ -525,6 +526,135 @@ export function buildDataSourceManagerServer(opts: {
     name: "neko_data_source_manager",
     version: "1.0.0",
     tools: [listSources, requestChange],
+  });
+}
+
+/**
+ * OL5 — chat-first configuration of the CUSTOMER GraphJin engine
+ * (sources, roles, access). describe_source_graph reads the live
+ * gj_catalog; request_source_config_change files a source_config_admin
+ * action an ADMIN must approve. The agent NEVER applies config (its CLI
+ * guard blocks mutations) and NEVER sees a secret value — registering a
+ * DB source references a secret by NAME; the worker resolves it at apply
+ * time. This only ever targets the customer source, never the OpenNeko
+ * internal GraphJin (the adapter asserts that boundary).
+ */
+export function buildSourceConfigManagerServer(opts: {
+  orgId: string;
+  runId?: string;
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const describe = tool(
+    "describe_source_graph",
+    [
+      "Describe the customer data engine's live source graph: the",
+      "databases, capabilities, and namespaces GraphJin has discovered.",
+      "Read-only — use it to answer 'what sources/databases do we have?'",
+      "and before proposing a config change.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            await controlPlane.describeSourceGraph({ orgId: opts.orgId }),
+          ),
+        },
+      ],
+    }),
+  );
+
+  const listSecretNames = tool(
+    "list_source_secret_names",
+    [
+      "List the NAMES of connection secrets the operator has stored for",
+      "data sources (never the values). Use these names as the `secretRef`",
+      "when proposing register_source, and offer them to the operator. If a",
+      "needed secret isn't listed, tell the operator to add it in Settings —",
+      "never ask for the value in chat.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            await controlPlane.listSourceSecretNames({ orgId: opts.orgId }),
+          ),
+        },
+      ],
+    }),
+  );
+
+  const requestChange = tool(
+    "request_source_config_change",
+    [
+      "Propose a configuration change to the CUSTOMER data engine:",
+      "- add_role { name, match }: a GraphJin role selected by a JWT match expression.",
+      "- set_source_access { source, read, write, delete }: access mode per source (one of public|authenticated|account|owner|admin|blocked; write/delete also accept blocked).",
+      "- register_source { name, kind, host?, port?, dbname?, user?, secretRef? }: add a source. For a database, pass connection fields and a secretRef — the NAME of a stored secret holding the password/connection string. NEVER pass the secret value itself; the operator stores it via Settings and the system resolves it on apply.",
+      "NEVER applies directly — files an action request that an ADMIN must",
+      "approve. After proposing, tell the operator what you proposed and end",
+      "your turn. This never touches OpenNeko's own internal database.",
+    ].join("\n"),
+    {
+      action: z.enum(["add_role", "set_source_access", "register_source"]),
+      // add_role
+      name: z.string().trim().min(1).max(64).optional(),
+      match: z.string().trim().min(1).max(500).optional(),
+      // set_source_access
+      source: z.string().trim().min(1).max(64).optional(),
+      read: z
+        .enum(["public", "authenticated", "account", "owner", "admin", "blocked"])
+        .optional(),
+      write: z.enum(["authenticated", "account", "owner", "admin", "blocked"]).optional(),
+      delete: z.enum(["authenticated", "account", "owner", "admin", "blocked"]).optional(),
+      // register_source
+      kind: z.enum(["database", "graphjin", "api"]).optional(),
+      host: z.string().trim().max(255).optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+      dbname: z.string().trim().max(128).optional(),
+      user: z.string().trim().max(128).optional(),
+      secretRef: z
+        .string()
+        .trim()
+        .max(128)
+        .regex(/^[A-Za-z0-9._-]*$/, "a secret name, not a value")
+        .optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) => {
+      // Build a credential-free payload — secretRef is a NAME only; the
+      // schema regex forbids whitespace/values, and we never accept a
+      // literal secret field.
+      const { action, intent, ...rest } = args;
+      const target =
+        action === "add_role"
+          ? `role:${args.name ?? ""}`
+          : action === "set_source_access"
+            ? `access:${args.source ?? ""}`
+            : `source:${args.name ?? ""}`;
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "source_config_admin",
+        target,
+        intent,
+        payload: { action, ...rest },
+      });
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_source_config_manager",
+    version: "1.0.0",
+    tools: [describe, listSecretNames, requestChange],
   });
 }
 

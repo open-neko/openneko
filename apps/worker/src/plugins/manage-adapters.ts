@@ -319,3 +319,252 @@ export function registerDataSourceAdminAdapter(): void {
     throw new Error(`data_source_admin: unknown action "${action}"`);
   });
 }
+
+/** OL5: the internal GraphJin endpoint the customer config path must never touch. */
+function internalGraphjinHost(): string | null {
+  try {
+    return new URL(
+      process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089",
+    ).host;
+  } catch {
+    return null;
+  }
+}
+
+function graphqlEndpointFrom(url: string): string {
+  const trimmed = url.replace(/\/+$/, "");
+  return trimmed.endsWith("/api/v1/graphql")
+    ? trimmed
+    : `${trimmed}/api/v1/graphql`;
+}
+
+/**
+ * Serialize a JS value to GraphJin's inline gj_config object syntax.
+ * Introspection is disabled on the customer engine, so the update payload
+ * must be embedded as a literal (no typed `$update` variable). String
+ * escaping is JSON-compatible, which keeps injected secret values safe.
+ */
+function gqlValue(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return JSON.stringify(v);
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return `[${v.map(gqlValue).join(", ")}]`;
+  const entries = Object.entries(v as Record<string, unknown>)
+    .filter(([, val]) => val !== undefined)
+    .map(([k, val]) => `${k}: ${gqlValue(val)}`);
+  return `{ ${entries.join(", ")} }`;
+}
+
+/**
+ * OL5 — executes approved source_config_admin actions: configure the
+ * CUSTOMER GraphJin (roles, per-source access, source registration) via
+ * its admin-only gj_config two-phase preview→apply. Three guarantees:
+ *   1. Target is resolved ONLY from data_source (the customer engine);
+ *      a host matching OPENNEKO_GRAPHJIN_URL is refused outright.
+ *   2. The agent never holds config-write power — it only proposes; this
+ *      adapter (post-approval, outside the sandbox) applies with a minted
+ *      admin token.
+ *   3. Connection secrets stay value-blind to the agent: a payload carries
+ *      a secretRef NAME; the real value is resolved + decrypted here and
+ *      injected into the gj_config source — never in the agent, payload, or
+ *      audit row.
+ */
+export function registerSourceConfigAdminAdapter(): void {
+  registerActionAdapter("source_config_admin", async ({ request }) => {
+    const { data_source, data_source_secret, and, db, desc, eq } = await import(
+      "@neko/db"
+    );
+    const { graphjinQuery, mintGraphjinToken } = await import("@neko/llm/graphjin");
+    const payload = request.payload as Record<string, unknown>;
+    const action = String(payload.action ?? "");
+    const orgId = request.orgId;
+
+    const [src] = await db()
+      .select({ graphqlUrl: data_source.graphql_url })
+      .from(data_source)
+      .where(eq(data_source.org_id, orgId))
+      .orderBy(desc(data_source.is_default), data_source.created_at)
+      .limit(1);
+    if (!src?.graphqlUrl) {
+      throw new Error("source_config_admin: no data source configured");
+    }
+    const endpoint = graphqlEndpointFrom(src.graphqlUrl);
+    // BOUNDARY: never configure the OpenNeko internal GraphJin.
+    const internal = internalGraphjinHost();
+    let endpointHost: string;
+    try {
+      endpointHost = new URL(endpoint).host;
+    } catch {
+      throw new Error(`source_config_admin: invalid data source URL ${endpoint}`);
+    }
+    if (internal && endpointHost === internal) {
+      throw new Error(
+        "source_config_admin: refusing to configure the OpenNeko internal GraphJin",
+      );
+    }
+
+    // Build the credential-free gj_config.update fields from the action.
+    // Registration/role ops use the ADDITIVE primitives (update_sources,
+    // roles) which upsert by name — `sources:`/`source_patches:` replace or
+    // patch-only and would wipe the meta-source. Verified live on the fork.
+    const update: Record<string, unknown> = {};
+    let secretName: string | null = null;
+    if (action === "add_role") {
+      const name = String(payload.name ?? "").trim();
+      const match = String(payload.match ?? "").trim();
+      if (!name || !match) throw new Error("add_role needs name + match");
+      const role: Record<string, unknown> = { name, match };
+      if (typeof payload.comment === "string" && payload.comment.trim()) {
+        role.comment = payload.comment.trim();
+      }
+      update.roles = [role];
+    } else if (action === "set_source_access") {
+      const source = String(payload.source ?? "").trim();
+      if (!source) throw new Error("set_source_access needs source");
+      const access: Record<string, unknown> = {};
+      if (payload.read) access.read = String(payload.read);
+      if (payload.write) access.write = String(payload.write);
+      if (payload.delete) access.delete = String(payload.delete);
+      update.source_patches = [{ name: source, access }];
+    } else if (action === "register_source") {
+      const name = String(payload.name ?? "").trim();
+      const kind = String(payload.kind ?? "database");
+      if (!name) throw new Error("register_source needs name");
+      const source: Record<string, unknown> = { name, kind };
+      if (kind === "database") {
+        source.type = String(payload.type ?? "postgres");
+        if (payload.host) source.host = String(payload.host);
+        if (payload.port) source.port = Number(payload.port);
+        if (payload.dbname) source.dbname = String(payload.dbname);
+        if (payload.user) source.user = String(payload.user);
+        source.access = {
+          read: String(payload.read ?? "authenticated"),
+          write: String(payload.write ?? "blocked"),
+          delete: String(payload.delete ?? "blocked"),
+        };
+        // VALUE-BLIND: resolve the named secret here, never from the
+        // agent/payload value. GraphJin's keystore seals it to a
+        // gjsecret:// ref on save, so plaintext never lands on disk.
+        const ref =
+          typeof payload.secretRef === "string" ? payload.secretRef.trim() : "";
+        if (ref) {
+          secretName = ref;
+          const [row] = await db()
+            .select({ valueEnc: data_source_secret.value_enc })
+            .from(data_source_secret)
+            .where(
+              and(
+                eq(data_source_secret.org_id, orgId),
+                eq(data_source_secret.name, ref),
+              ),
+            )
+            .limit(1);
+          if (!row) {
+            throw new Error(
+              `register_source: no stored secret named "${ref}" — add it in Settings first`,
+            );
+          }
+          const { maybeDecryptSecret } = await import("@neko/llm/secrets");
+          source.password = maybeDecryptSecret(row.valueEnc);
+        }
+      }
+      // update_sources upserts by name (NOT `sources:`, which replaces the
+      // whole list and drops the gj_catalog/gj_config meta-source).
+      update.update_sources = [source];
+    } else {
+      throw new Error(`source_config_admin: unknown action "${action}"`);
+    }
+
+    const adminToken = mintGraphjinToken({
+      orgId,
+      userId: request.payload && (payload.actorUserId as string)
+        ? (payload.actorUserId as string)
+        : "admin",
+      role: "admin",
+      ttlSeconds: 120,
+    });
+    const headers = { authorization: `Bearer ${adminToken}` };
+
+    // Phase 0: read the current catalog_revision — the two-phase apply needs
+    // it for optimistic concurrency (a stale value rejects the apply).
+    const revRes = await graphjinQuery<{
+      gj_config?: { catalog_revision?: string };
+    }>({
+      baseUrl: endpoint,
+      role: "admin",
+      headers,
+      query: 'query { gj_config(id: "current") { catalog_revision } }',
+    });
+    const rev = revRes.data?.gj_config?.catalog_revision;
+    if (!rev) {
+      throw new Error(
+        `source_config_admin: could not read catalog_revision: ${revRes.errors?.map((e) => e.message).join("; ") ?? "no revision"}`,
+      );
+    }
+
+    // Phase 1: preview (validates without applying). Inline object syntax —
+    // introspection is off, so no typed `$update` variable.
+    const previewInline = gqlValue({ mode: "preview", expected_catalog_revision: rev, ...update });
+    const preview = await graphjinQuery<{
+      gj_config?: {
+        valid?: boolean;
+        preview_id?: string;
+        change_summary_json?: string;
+        errors_json?: string;
+      };
+    }>({
+      baseUrl: endpoint,
+      role: "admin",
+      headers,
+      query: `mutation { gj_config(id: "current", update: ${previewInline}) { valid preview_id change_summary_json errors_json } }`,
+    });
+    if (preview.errors?.length) {
+      throw new Error(
+        `source_config_admin preview failed: ${preview.errors.map((e) => e.message).join("; ")}`,
+      );
+    }
+    const pv = preview.data?.gj_config;
+    if (!pv?.valid || !pv.preview_id) {
+      throw new Error(
+        `source_config_admin preview invalid: ${pv?.errors_json ?? "no preview_id returned"}`,
+      );
+    }
+
+    // Phase 2: apply with the same preview_id + identical payload.
+    const applyInline = gqlValue({
+      mode: "apply",
+      preview_id: pv.preview_id,
+      expected_catalog_revision: rev,
+      ...update,
+    });
+    const applied = await graphjinQuery<{
+      gj_config?: { applied?: boolean; catalog_revision?: string; errors_json?: string };
+    }>({
+      baseUrl: endpoint,
+      role: "admin",
+      headers,
+      query: `mutation { gj_config(id: "current", update: ${applyInline}) { applied catalog_revision errors_json } }`,
+    });
+    if (applied.errors?.length) {
+      throw new Error(
+        `source_config_admin apply failed: ${applied.errors.map((e) => e.message).join("; ")}`,
+      );
+    }
+    const av = applied.data?.gj_config;
+    if (!av?.applied) {
+      throw new Error(`source_config_admin apply rejected: ${av?.errors_json ?? "unknown"}`);
+    }
+
+    return {
+      commandOrOperation: `${action} on customer GraphJin (${endpointHost})`,
+      result: {
+        action,
+        host: endpointHost,
+        changeSummary: pv.change_summary_json ?? null,
+        catalogRevision: av.catalog_revision ?? null,
+        // Name only — never the value.
+        ...(secretName ? { secretRef: secretName } : {}),
+      },
+    };
+  });
+}
