@@ -231,6 +231,19 @@ export async function createWorkRun(
       actor_role: actor?.role ?? null,
     })
     .returning();
+  // SEC10: run lifecycle rides the tamper-evident chain.
+  const { recordAuditEvent } = await import("../workflows/audit-chain");
+  await recordAuditEvent({
+    orgId,
+    entityKind: "work_run",
+    entityId: rows[0].id,
+    event: "run:created",
+    payload: {
+      backend,
+      actorUserId: actor?.userId ?? null,
+      actorRole: actor?.role ?? null,
+    },
+  });
   return rows[0];
 }
 
@@ -246,7 +259,7 @@ export async function finishWorkRun(
   status: "completed" | "failed" | "cancelled",
   error: string | null,
 ) {
-  await db()
+  const rows = await db()
     .update(work_run)
     .set({
       status,
@@ -254,7 +267,18 @@ export async function finishWorkRun(
       updated_at: new Date(),
       finished_at: new Date(),
     })
-    .where(eq(work_run.id, runId));
+    .where(eq(work_run.id, runId))
+    .returning({ orgId: work_run.org_id });
+  if (rows[0]) {
+    const { recordAuditEvent } = await import("../workflows/audit-chain");
+    await recordAuditEvent({
+      orgId: rows[0].orgId,
+      entityKind: "work_run",
+      entityId: runId,
+      event: `run:${status}`,
+      payload: { status, error },
+    });
+  }
 }
 
 // Persist a run's agent-estimated analysis value (server-clamped minutes +

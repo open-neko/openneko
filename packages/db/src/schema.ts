@@ -415,6 +415,35 @@ export const control_plane_audit = pgTable(
   }),
 );
 
+// SEC10 — append-only per-org hash chain over the governance entities.
+// Any retroactive edit/deletion breaks every later link.
+export const audit_chain = pgTable(
+  "audit_chain",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    entity_kind: text("entity_kind").notNull(),
+    entity_id: text("entity_id").notNull(),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+    payload_hash: text("payload_hash").notNull(),
+    prev_hash: text("prev_hash").notNull(),
+    chain_hash: text("chain_hash").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_seq_unique: uniqueIndex("audit_chain_org_seq_unique").on(t.org_id, t.seq),
+    org_entity_idx: index("audit_chain_org_entity_idx").on(
+      t.org_id,
+      t.entity_kind,
+      t.entity_id,
+    ),
+  }),
+);
+
 // OL4 — watchers: condition monitors over GraphJin queries that fire
 // their linked workflow when the condition holds (polling v1).
 export const watcher = pgTable(

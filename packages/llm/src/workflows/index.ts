@@ -51,6 +51,7 @@ export {
   type WorkflowTriggerError,
 } from "./save-workflow-with-trigger";
 export * from "./watchers";
+export * from "./audit-chain";
 export {
   buildRuleBuilderServer,
   type RuleBuilderContext,

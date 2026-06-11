@@ -395,7 +395,25 @@ export async function createActionRequest(
       requested_by_run_id: input.requestedByRunId ?? null,
     })
     .returning();
-  return toRequestRecord(row);
+  const record = toRequestRecord(row);
+  // SEC10: governance events ride the tamper-evident chain.
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: input.orgId,
+    entityKind: "action_request",
+    entityId: record.id,
+    event: `created:${record.status}`,
+    payload: {
+      kind: record.kind,
+      scope: record.scope,
+      target: record.target,
+      status: record.status,
+      actorUserId: record.actorUserId,
+      actorRole: record.actorRole,
+      actorBackend: record.actorBackend,
+    },
+  });
+  return record;
 }
 
 export async function getActionRequest(
@@ -472,7 +490,16 @@ export async function approveActionRequest(args: {
     })
     .where(eq(action_request.id, args.id))
     .returning();
-  return toRequestRecord(row);
+  const record = toRequestRecord(row);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: args.orgId,
+    entityKind: "action_request",
+    entityId: record.id,
+    event: "approved",
+    payload: { approvedBy: args.approverUserId, kind: record.kind },
+  });
+  return record;
 }
 
 /**
@@ -520,7 +547,20 @@ export async function rejectActionRequest(args: {
     })
     .where(eq(action_request.id, args.id))
     .returning();
-  return toRequestRecord(row);
+  const record = toRequestRecord(row);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: args.orgId,
+    entityKind: "action_request",
+    entityId: record.id,
+    event: "rejected",
+    payload: {
+      rejectedBy: args.approverUserId,
+      reason: args.reason ?? null,
+      kind: record.kind,
+    },
+  });
+  return record;
 }
 
 export async function markActionRequestExecuted(
@@ -622,7 +662,22 @@ export async function finishActionExecution(args: {
     })
     .where(eq(action_execution.id, args.id))
     .returning();
-  return toExecutionRecord(row);
+  const record = toExecutionRecord(row);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: record.orgId,
+    entityKind: "action_execution",
+    entityId: record.id,
+    event: `execution:${record.status}`,
+    payload: {
+      actionRequestId: record.actionRequestId,
+      executor: record.executor,
+      status: record.status,
+      externalRef: record.externalRef,
+      error: record.error,
+    },
+  });
+  return record;
 }
 
 export async function listActionExecutions(
