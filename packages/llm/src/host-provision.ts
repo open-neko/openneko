@@ -152,8 +152,9 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
 
   const { mintGraphjinToken } = await import("./graphjin/token");
   const token = mintGraphjinToken({ orgId, userId: null, role: "service" });
-  // The secret write above may still be reloading server-side — retry.
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // The secret write above may still be reloading server-side — give
+  // reload_on_config_change a generous window (observed ~10s on 3.18.37).
+  for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       const res = await fetch(src.graphqlUrl, {
         method: "POST",
@@ -168,10 +169,13 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
       });
       if (res.ok) {
         const body = (await res.json()) as {
-          data?: { gj_catalog?: unknown[] };
+          data?: { gj_catalog?: unknown };
           errors?: unknown[];
         };
-        if (body.data?.gj_catalog?.length && !body.errors?.length) {
+        // gj_catalog(id:) returns one object; list queries an array.
+        const rows = body.data?.gj_catalog;
+        const answered = Array.isArray(rows) ? rows.length > 0 : Boolean(rows);
+        if (answered && !body.errors?.length) {
           await db()
             .update(data_source)
             .set({ auth_mode: "jwt", updated_at: new Date() })
@@ -185,7 +189,7 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
     } catch {
       // unreachable / not reloaded yet — retry below.
     }
-    if (attempt < 3) await new Promise((r) => setTimeout(r, 2000 * attempt));
+    if (attempt < 6) await new Promise((r) => setTimeout(r, 3000));
   }
 }
 
