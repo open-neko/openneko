@@ -23,9 +23,8 @@ import {
   type RiskLevel,
 } from "../workflows";
 import {
-  discoveryUrlFromMcpUrl,
   knowledgePackPaths,
-  prefetchKnowledgePack as defaultPrefetchKnowledgePack,
+  prefetchKnowledgeForOrg as defaultPrefetchKnowledgeForOrg,
   readKnowledgePack,
 } from "../knowledge-pack";
 import {
@@ -97,7 +96,7 @@ export type RunChatTurnDeps = {
   resolveBinaryOnPath: typeof defaultResolveBinaryOnPath;
   ensureGraphjinGuard: typeof defaultEnsureGraphjinGuard;
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
-  prefetchKnowledgePack: typeof defaultPrefetchKnowledgePack;
+  prefetchKnowledgeForOrg: typeof defaultPrefetchKnowledgeForOrg;
   listInstalledSkills: typeof defaultListInstalledSkills;
   /**
    * Runs the agent loop. Default = runAgentBackend in-process. The launcher
@@ -130,8 +129,8 @@ export async function runChatTurn(
   const ensureGraphjinGuard = deps.ensureGraphjinGuard ?? defaultEnsureGraphjinGuard;
   const formatWorkMemoryPromptContext =
     deps.formatWorkMemoryPromptContext ?? defaultFormatWorkMemoryPromptContext;
-  const prefetchKnowledgePack =
-    deps.prefetchKnowledgePack ?? defaultPrefetchKnowledgePack;
+  const prefetchKnowledgeForOrg =
+    deps.prefetchKnowledgeForOrg ?? defaultPrefetchKnowledgeForOrg;
   const listInstalledSkills =
     deps.listInstalledSkills ?? defaultListInstalledSkills;
   const runCore = deps.runCore ?? runAgentBackend;
@@ -151,23 +150,13 @@ export async function runChatTurn(
   const backend = await resolveAgentBackend(orgId);
   const workspace = await ensureWorkWorkspace(orgId, threadId, runId);
 
-  const sources = await db()
-    .select({ mcp_url: data_source.mcp_url })
-    .from(data_source)
-    .where(eq(data_source.org_id, orgId))
-    .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
-  const mcpUrl = sources[0]?.mcp_url;
-  if (mcpUrl) {
-    const refresh = await prefetchKnowledgePack({
-      discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-      destDir: workspace.knowledgeRoot,
-    });
-    if (!refresh.ok) {
-      console.warn(
-        `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
-      );
-    }
+  // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
+  // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
+  const refresh = await prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot);
+  if (!refresh.ok) {
+    console.warn(
+      `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
+    );
   }
   const knowledge = await readKnowledgePack(
     knowledgePackPaths(workspace.knowledgeRoot),

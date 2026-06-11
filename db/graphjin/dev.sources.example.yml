@@ -59,9 +59,10 @@ mcp:
   allow_raw_queries: true
   workflow_timeout: 300
   allow_dev_tools: false
-  # Bridge: keep legacy /api/v1/discovery/* alive while the knowledge-pack
-  # prefetch migrates to query_catalog (removed at RBAC_WIRING §10 step 6).
-  legacy_discovery: true
+  # The legacy /api/v1/discovery/* bridge is OFF: it serves broad schema
+  # dumps anonymously. Agentic deployments discover via gj_catalog under
+  # the caller's token; the knowledge prefetch does the same.
+  legacy_discovery: false
 
 analytics_mode: true
 
@@ -80,7 +81,9 @@ sources:
     catalog: true
     access:
       roots:
-        gj_catalog: public
+        # authenticated, NOT public — verified live: public leaks the
+        # whole schema catalog to anonymous callers.
+        gj_catalog: authenticated
 
   - name: adventureworks
     kind: database

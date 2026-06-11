@@ -24,8 +24,7 @@ import {
 } from "@neko/db";
 import {
   cancelAllAgents,
-  discoveryUrlFromMcpUrl,
-  prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
   provisionHostConfig,
   resolveAgentConcurrency,
   UpstreamProviderError,
@@ -381,10 +380,10 @@ registerChannelOutputDelivery();
   const mcpUrl = sources[0]?.mcp_url;
   if (mcpUrl) {
     const workspace = await ensureOrgWorkspace(ADMIN_ORG_ID);
-    const refresh = await prefetchKnowledgePack({
-      discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-      destDir: workspace.knowledgeRoot,
-    });
+    const refresh = await prefetchKnowledgeForOrg(
+      ADMIN_ORG_ID,
+      workspace.knowledgeRoot,
+    );
     if (refresh.ok) {
       const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
       console.log(

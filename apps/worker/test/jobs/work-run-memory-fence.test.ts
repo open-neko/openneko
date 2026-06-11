@@ -112,7 +112,7 @@ describeIfDb("runChatTurn — neko_memory fence persistence", () => {
       ensureGraphjinGuard: vi.fn(async () => undefined),
       formatWorkMemoryPromptContext: vi.fn(async () => ""),
       listInstalledSkills: vi.fn(async () => []),
-      prefetchKnowledgePack: vi.fn(async () => ({ ok: true as const })),
+      prefetchKnowledgeForOrg: vi.fn(async () => ({ ok: true as const, files: [], mode: "legacy" as const })),
     };
   }
 

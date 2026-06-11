@@ -54,7 +54,10 @@ services:
       - |
         set -eu
         if [ ! -f /config/dev.yml ]; then
-          cp /app/db/graphjin/dev.example.yml /config/dev.yml
+          # Sources (agentic) mode is the default. The per-org JWT secret
+          # placeholder is substituted by the worker at boot
+          # (OPENNEKO_GRAPHJIN_CONFIG) — the org id only exists then.
+          cp /app/db/graphjin/dev.sources.example.yml /config/dev.yml
         fi
         chmod -R a+rwX /config
     volumes:
@@ -195,6 +198,11 @@ services:
         condition: service_started
     environment:
       NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
+      # Sources mode: the worker substitutes the per-org JWT secret into
+      # the seeded GraphJin config at boot (host-provision).
+      OPENNEKO_GRAPHJIN_CONFIG: /graphjin-config/dev.yml
+    volumes:
+      - graphjin-config:/graphjin-config
 
 volumes:
   adventureworks-db-data:

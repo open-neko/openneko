@@ -33,6 +33,8 @@ export {
 export { provisionHostConfig } from "./host-provision";
 export {
   prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
+  prefetchAgenticKnowledgePack,
   knowledgePackPaths,
   discoveryUrlFromMcpUrl,
   type PrefetchKnowledgeResult,

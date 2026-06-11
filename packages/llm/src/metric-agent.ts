@@ -8,9 +8,8 @@ import {
   getDiscoveryPathways,
 } from "./discovery-pathways";
 import {
-  discoveryUrlFromMcpUrl,
   knowledgePackPaths,
-  prefetchKnowledgePack,
+  prefetchKnowledgeForOrg,
   readKnowledgePack,
 } from "./knowledge-pack";
 import { buildMetricPrompt } from "./metric-prompt";
@@ -106,10 +105,10 @@ export async function runMetricAgent(
     "metric-agent",
     input.jobId ?? input.slug,
   );
-  const refreshResult = await prefetchKnowledgePack({
-    discoveryUrl: discoveryUrlFromMcpUrl(mcpUrl),
-    destDir: workspace.knowledgeRoot,
-  });
+  const refreshResult = await prefetchKnowledgeForOrg(
+    input.orgId,
+    workspace.knowledgeRoot,
+  );
   if (refreshResult.ok) {
     const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
     console.log(
