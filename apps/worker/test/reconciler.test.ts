@@ -113,6 +113,60 @@ if (reachable && !pgbossOk) {
   console.warn("[reconciler] skipping: pgboss schema not initialized.");
 }
 
+describeIfDb("reconcileStaleRuns — queued runs with a dead launcher", () => {
+  const orgId = uniqueOrgId("reconq");
+
+  beforeAll(async () => {
+    await createTestOrg(orgId);
+  });
+
+  afterAll(async () => {
+    await deleteTestOrg(orgId);
+  });
+
+  async function insertRun(args: { status: string; createdAt: Date }) {
+    const [thread] = await db()
+      .insert(work_thread)
+      .values({ org_id: orgId, title: "t" })
+      .returning({ id: work_thread.id });
+    const [run] = await db()
+      .insert(work_run)
+      .values({
+        org_id: orgId,
+        thread_id: thread.id,
+        status: args.status,
+        backend: "hermes",
+        created_at: args.createdAt,
+        updated_at: args.createdAt,
+      })
+      .returning({ id: work_run.id });
+    return run.id;
+  }
+
+  it("cancels queued runs older than the launcher window, keeps fresh ones", async () => {
+    const oldId = await insertRun({
+      status: "queued",
+      createdAt: new Date(Date.now() - 10 * 60_000),
+    });
+    const freshId = await insertRun({ status: "queued", createdAt: new Date() });
+
+    await reconcileStaleRuns();
+
+    const [oldRun] = await db()
+      .select({ status: work_run.status, error: work_run.error })
+      .from(work_run)
+      .where(eq(work_run.id, oldId));
+    expect(oldRun.status).toBe("cancelled");
+    expect(oldRun.error).toMatch(/Never started/);
+
+    const [freshRun] = await db()
+      .select({ status: work_run.status })
+      .from(work_run)
+      .where(eq(work_run.id, freshId));
+    expect(freshRun.status).toBe("queued");
+  });
+});
+
 describeIfReady("reconcileStaleProcessingJobs", () => {
   let orgId: string;
 
