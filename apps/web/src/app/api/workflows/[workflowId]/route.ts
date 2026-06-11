@@ -12,6 +12,7 @@ import {
   workflow_run,
 } from "@neko/db";
 import {
+  deleteWorkflow,
   getWorkflow,
   listSubscriptionsByWorkflow,
 } from "@neko/llm/workflows";
@@ -253,23 +254,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   return NextResponse.json({ ok: true });
 }
 
-// Removing the definition cascades (via FK ON DELETE CASCADE) to its
-// subscriptions/triggers, runs, outputs, and proposed action requests.
 export async function DELETE(_request: Request, context: RouteContext) {
   const { workflowId } = await context.params;
   const orgId = await getOrgId();
 
-  const result = await db()
-    .delete(workflow_definition)
-    .where(
-      and(
-        eq(workflow_definition.org_id, orgId),
-        eq(workflow_definition.id, workflowId),
-      ),
-    )
-    .returning({ id: workflow_definition.id });
-
-  if (result.length === 0) {
+  const deleted = await deleteWorkflow(orgId, workflowId);
+  if (!deleted) {
     return NextResponse.json({ error: "workflow not found" }, { status: 404 });
   }
 

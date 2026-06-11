@@ -5,7 +5,11 @@ import {
   inProcessControlPlane,
   type AgentControlPlane,
 } from "../work/control-plane";
-import { subscriptionSavedCard, workflowSavedCard } from "./builder-cards";
+import {
+  subscriptionSavedCard,
+  workflowDeletedCard,
+  workflowSavedCard,
+} from "./builder-cards";
 import { WORKFLOW_SAVE_SCHEMA } from "./fence-schemas";
 
 export type WorkflowBuilderContext = {
@@ -143,9 +147,70 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
     },
   );
 
+  const deleteWorkflowTool = tool(
+    "delete_workflow",
+    [
+      "Permanently delete a workflow by its id. This also drops its triggers,",
+      "run history, outputs, and proposed/executed actions (hard cascade — no",
+      "undo). Because it is destructive, you MUST confirm with the operator in",
+      "the thread BEFORE calling this — name the workflow you're about to",
+      "remove and wait for an explicit yes. Resolve the id first with",
+      "`list_workflows` (match on the name the operator referenced or the id",
+      "carried by an @mention); never guess. On success the tool emits a",
+      "confirmation card.",
+    ].join(" "),
+    {
+      workflowId: z
+        .string()
+        .min(1)
+        .describe("The id of the workflow to delete (from list_workflows)."),
+    },
+    async (args) => {
+      const result = await controlPlane.deleteWorkflow({
+        orgId: ctx.orgId,
+        workflowId: args.workflowId,
+      });
+      if (!result.found) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ok: false,
+                error: "not_found",
+                hint: "No workflow with that id in this org. Call list_workflows to get the current ids.",
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (ctx.emit && result.name) {
+        await ctx.emit({
+          type: "surface",
+          messages: workflowDeletedCard({
+            id: args.workflowId,
+            name: result.name,
+          }),
+        });
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              ok: true,
+              deleted: { id: args.workflowId, name: result.name },
+            }),
+          },
+        ],
+      };
+    },
+  );
+
   return createSdkMcpServer({
     name: "neko_workflow_builder",
     version: "1.0.0",
-    tools: [createWorkflowTool, listWorkflowsTool],
+    tools: [createWorkflowTool, listWorkflowsTool, deleteWorkflowTool],
   });
 }

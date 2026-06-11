@@ -61,6 +61,22 @@ export function workflowSavedCard(args: {
   });
 }
 
+export function workflowDeletedCard(args: {
+  id: string;
+  name: string;
+}): AgentSurfaceMessage[] {
+  return confirmationCard({
+    surfaceId: `workflow-delete-${args.id}`,
+    label: "Deleted workflow",
+    title: args.name,
+    body: [
+      `**${args.name}** is gone, along with its triggers, run history, and proposed actions.`,
+      "",
+      "[Open workflows](/workflows)",
+    ].join("\n"),
+  });
+}
+
 export function subscriptionSavedCard(args: {
   subscription: Pick<
     SubscriptionRecord,

@@ -72,6 +72,12 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/workflow/list", input);
   }
 
+  deleteWorkflow(
+    input: Parameters<AgentControlPlane["deleteWorkflow"]>[0],
+  ): ReturnType<AgentControlPlane["deleteWorkflow"]> {
+    return this.post("/v1/workflow/delete", input);
+  }
+
   upsertActionPolicyByName(
     input: Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0],
   ): ReturnType<AgentControlPlane["upsertActionPolicyByName"]> {

@@ -14,6 +14,7 @@ import {
   type SaveWorkflowWithTriggerResult,
 } from "../workflows/save-workflow-with-trigger";
 import {
+  deleteWorkflow,
   listSubscriptionsByWorkflow,
   listWorkflows,
   type SaveWorkflowInput,
@@ -80,6 +81,15 @@ export interface AgentControlPlane {
     orgId: string;
     limit?: number;
   }): Promise<{ total: number; workflows: WorkflowListEntry[] }>;
+  /**
+   * Hard-delete a workflow and its dependents (triggers, runs, outputs,
+   * proposed actions cascade via FK). Org-scoped: `found: false` when the id
+   * doesn't belong to the org. Mirrors `DELETE /api/workflows/[id]`.
+   */
+  deleteWorkflow(input: {
+    orgId: string;
+    workflowId: string;
+  }): Promise<{ found: boolean; name: string | null }>;
   upsertActionPolicyByName(
     input: CreateActionPolicyInput,
   ): Promise<Wire<UpsertActionPolicyResult>>;
@@ -276,6 +286,14 @@ export class InProcessControlPlane implements AgentControlPlane {
         return { ...toWire(w), when: dataTrigger ? dataTrigger.filter : null };
       }),
     };
+  }
+
+  async deleteWorkflow(input: {
+    orgId: string;
+    workflowId: string;
+  }): Promise<{ found: boolean; name: string | null }> {
+    const deleted = await deleteWorkflow(input.orgId, input.workflowId);
+    return { found: deleted !== null, name: deleted?.name ?? null };
   }
 
   async upsertActionPolicyByName(
