@@ -49,6 +49,11 @@ export async function PUT(request: NextRequest) {
     );
   }
   const authMode = body.authMode === "jwt" ? "jwt" : "none";
+  const SOURCE_KINDS = ["graphjin", "database", "api", "files", "code"];
+  const kind =
+    typeof body.kind === "string" && SOURCE_KINDS.includes(body.kind)
+      ? body.kind
+      : "graphjin";
   const orgId = await getOrgId();
   const now = new Date();
   const values = {
@@ -74,7 +79,7 @@ export async function PUT(request: NextRequest) {
         .returning()
     : await db()
         .insert(data_source)
-        .values({ org_id: orgId, kind: "graphjin", name, ...values })
+        .values({ org_id: orgId, kind, name, ...values })
         .returning();
   if (body.isDefault === true && !row.is_default) {
     await db()

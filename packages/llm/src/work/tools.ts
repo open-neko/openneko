@@ -499,6 +499,8 @@ export function buildDataSourceManagerServer(opts: {
         .max(64)
         .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase letters, digits, dashes"),
       label: z.string().trim().max(120).optional(),
+      // OL5 source graph: what kind of system this source fronts.
+      sourceKind: z.enum(["graphjin", "database", "api", "files", "code"]).optional(),
       intent: z.string().trim().min(1).max(500),
     },
     async (args) =>
@@ -514,6 +516,7 @@ export function buildDataSourceManagerServer(opts: {
           action: args.action,
           name: args.name,
           ...(args.label ? { label: args.label } : {}),
+          ...(args.sourceKind ? { sourceKind: args.sourceKind } : {}),
         },
       }),
   );

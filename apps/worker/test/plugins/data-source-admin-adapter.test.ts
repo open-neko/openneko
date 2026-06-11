@@ -67,6 +67,19 @@ describeIfDb("data_source_admin adapter (ADM2)", () => {
     return row;
   }
 
+  it("register accepts a typed source kind (OL5 source graph)", async () => {
+    const result = await runAction({
+      action: "register",
+      name: "billing-api",
+      sourceKind: "api",
+    });
+    expect(result.ok).toBe(true);
+    expect((await source("billing-api")).kind).toBe("api");
+    // Unknown kinds fall back to graphjin rather than polluting the registry.
+    await runAction({ action: "register", name: "weird", sourceKind: "blockchain" });
+    expect((await source("weird")).kind).toBe("graphjin");
+  });
+
   it("register creates a disabled placeholder with no connection details", async () => {
     const result = await runAction({
       action: "register",

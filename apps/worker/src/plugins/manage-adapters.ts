@@ -253,11 +253,16 @@ export function registerDataSourceAdminAdapter(): void {
           result: { name, alreadyExisted: true },
         };
       }
+      const SOURCE_KINDS = ["graphjin", "database", "api", "files", "code"];
+      const sourceKind =
+        typeof payload.sourceKind === "string" && SOURCE_KINDS.includes(payload.sourceKind)
+          ? payload.sourceKind
+          : "graphjin";
       const [row] = await db()
         .insert(data_source)
         .values({
           org_id: orgId,
-          kind: "graphjin",
+          kind: sourceKind,
           graphql_url: "",
           name,
           label: typeof payload.label === "string" ? payload.label : null,
