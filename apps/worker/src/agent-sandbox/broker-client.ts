@@ -107,6 +107,12 @@ export class BrokerControlPlane implements AgentControlPlane {
   ): ReturnType<AgentControlPlane["listDataSources"]> {
     return this.post("/v1/datasources/list", input);
   }
+
+  listAuditTrail(
+    input: Parameters<AgentControlPlane["listAuditTrail"]>[0],
+  ): ReturnType<AgentControlPlane["listAuditTrail"]> {
+    return this.post("/v1/audit/list", input);
+  }
 }
 
 /** Emit agent events back to the host through the broker (one-way sink). */

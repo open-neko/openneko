@@ -117,6 +117,42 @@ export interface AgentControlPlane {
       hasMcp: boolean;
     }>;
   }>;
+  /**
+   * ADM4: the audit trail, for ADMIN runs only — the requesting run's
+   * K1 actor is checked server-side (the sandbox is never trusted to
+   * assert its own role). Member/service runs get denied: true.
+   */
+  listAuditTrail(input: { orgId: string; runId?: string | null; limit?: number }): Promise<{
+    denied?: boolean;
+    requests?: Array<{
+      id: string;
+      kind: string;
+      target: string | null;
+      status: string;
+      scope: string;
+      summary: string | null;
+      actorUserId: string | null;
+      actorRole: string | null;
+      actorBackend: string | null;
+      createdAt: string;
+    }>;
+    alerts?: Array<{
+      id: string;
+      kind: string;
+      subject: string;
+      observed: number;
+      threshold: number;
+      windowSeconds: number;
+      acknowledgedAt: string | null;
+      createdAt: string;
+    }>;
+    gatewaySummary?: Array<{
+      runId: string | null;
+      backend: string | null;
+      actorRole: string | null;
+      calls: number;
+    }>;
+  }>;
   /** ADM5: channel workspaces (CH2) + identities (CH3) for chat-first channel management. */
   listChannels(input: { orgId: string }): Promise<{
     workspaces: Array<{
@@ -314,6 +350,95 @@ export class InProcessControlPlane implements AgentControlPlane {
         host: hostnameOf(r.graphql_url),
         hasMcp: Boolean(r.mcp_url),
       })),
+    };
+  }
+
+  async listAuditTrail(input: {
+    orgId: string;
+    runId?: string | null;
+    limit?: number;
+  }) {
+    const {
+      action_request,
+      behavior_alert,
+      control_plane_audit,
+      and,
+      db,
+      desc,
+      eq,
+      gte,
+      sql,
+      work_run,
+    } = await import("@neko/db");
+    // Server-side admin gate on the REQUESTING run's K1 actor.
+    if (!input.runId) return { denied: true };
+    const [run] = await db()
+      .select({ role: work_run.actor_role })
+      .from(work_run)
+      .where(eq(work_run.id, input.runId))
+      .limit(1);
+    if (run?.role !== "admin") return { denied: true };
+
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+    const requests = await db()
+      .select()
+      .from(action_request)
+      .where(eq(action_request.org_id, input.orgId))
+      .orderBy(desc(action_request.created_at))
+      .limit(limit);
+    const alerts = await db()
+      .select()
+      .from(behavior_alert)
+      .where(eq(behavior_alert.org_id, input.orgId))
+      .orderBy(desc(behavior_alert.created_at))
+      .limit(limit);
+    const daySince = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const gateway = await db()
+      .select({
+        runId: control_plane_audit.run_id,
+        backend: control_plane_audit.backend,
+        actorRole: control_plane_audit.actor_role,
+        calls: sql<number>`count(*)::int`,
+      })
+      .from(control_plane_audit)
+      .where(
+        and(
+          eq(control_plane_audit.org_id, input.orgId),
+          gte(control_plane_audit.created_at, daySince),
+        ),
+      )
+      .groupBy(
+        control_plane_audit.run_id,
+        control_plane_audit.backend,
+        control_plane_audit.actor_role,
+      )
+      .orderBy(sql`count(*) desc`)
+      .limit(limit);
+
+    return {
+      requests: requests.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        target: r.target,
+        status: r.status,
+        scope: r.scope,
+        summary: r.summary,
+        actorUserId: r.actor_user_id,
+        actorRole: r.actor_role,
+        actorBackend: r.actor_backend,
+        createdAt: r.created_at.toISOString(),
+      })),
+      alerts: alerts.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        subject: a.subject,
+        observed: a.observed,
+        threshold: a.threshold,
+        windowSeconds: a.window_seconds,
+        acknowledgedAt: a.acknowledged_at?.toISOString() ?? null,
+        createdAt: a.created_at.toISOString(),
+      })),
+      gatewaySummary: gateway,
     };
   }
 

@@ -525,6 +525,60 @@ export function buildDataSourceManagerServer(opts: {
   });
 }
 
+/**
+ * ADM4 — chat-first audit viewer. One read-only tool returning the
+ * action-request trail (with SEC5 dual identity), SEC7 behavior alerts,
+ * and a 24h gateway-call summary. The control plane enforces the admin
+ * gate on the requesting run's actor — a member or service run gets a
+ * denial, never data.
+ */
+export function buildAuditViewerServer(opts: {
+  orgId: string;
+  runId?: string;
+  controlPlane?: AgentControlPlane;
+}) {
+  const controlPlane = opts.controlPlane ?? inProcessControlPlane;
+
+  const auditTrail = tool(
+    "audit_trail",
+    [
+      "ADMIN ONLY. The org's audit trail: recent action requests (who",
+      "proposed what via which agent backend, and what happened),",
+      "behavioral alerts (SEC7 thresholds), and a 24h summary of",
+      "control-plane gateway calls per run. Use to answer 'what has the",
+      "agent been doing?' and 'who approved that?'.",
+    ].join(" "),
+    {
+      limit: z.number().int().min(1).max(200).optional(),
+    },
+    async (args) => {
+      const result = await controlPlane.listAuditTrail({
+        orgId: opts.orgId,
+        runId: opts.runId ?? null,
+        limit: args.limit,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              result.denied
+                ? { ok: false, error: "audit trail is admin-only" }
+                : { ok: true, ...result },
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  return createSdkMcpServer({
+    name: "neko_audit",
+    version: "1.0.0",
+    tools: [auditTrail],
+  });
+}
+
 export function buildSkillBuilderServer(skillsRoot: string) {
   const createSkill = tool(
     "create_skill",
