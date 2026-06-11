@@ -95,6 +95,7 @@ export {
   createWorkflowRun,
   deleteSubscription,
   emitWorkflowOutput,
+  deleteWorkflow,
   finishWorkflowRun,
   getDataSourceForOrg,
   getObservation,

@@ -10,6 +10,7 @@ import {
   Pencil,
   RefreshCw,
   Square,
+  Workflow,
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -105,6 +106,11 @@ import {
   stripNekoFences,
 } from "@/components/RuleChatBubble";
 import { parseBriefingCardMessage } from "@/lib/briefing-card-context";
+import {
+  appendWorkflowMentionBlock,
+  stripWorkflowMentionBlock,
+  type WorkflowMention,
+} from "@/lib/workflow-mention";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent } from "@/a2ui/surface";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
@@ -321,6 +327,16 @@ export default function WorkScreen() {
   const [pendingMemories, setPendingMemories] = useState<PendingMemory[]>([]);
   const [draft, setDraft] = useState(() => searchParams?.get("seed") ?? "");
   const [files, setFiles] = useState<File[]>([]);
+  // @mention workflow autocomplete: `mention` is the in-progress "@…" token;
+  // `draftMentions` maps each inserted @name to its workflow id for the send.
+  const [workflowOptions, setWorkflowOptions] = useState<WorkflowMention[]>([]);
+  const [mention, setMention] = useState<{
+    query: string;
+    anchor: number;
+    activeIndex: number;
+  } | null>(null);
+  const [draftMentions, setDraftMentions] = useState<WorkflowMention[]>([]);
+  const workflowOptionsLoadedRef = useRef(false);
   const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -635,6 +651,87 @@ export default function WorkScreen() {
     return { uploaded, errors };
   }
 
+  const mentionMatches = useMemo(() => {
+    if (!mention) return [] as WorkflowMention[];
+    const q = mention.query.toLowerCase();
+    return workflowOptions
+      .filter((w) => w.name.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mention, workflowOptions]);
+  const mentionOpen = mention !== null && mentionMatches.length > 0;
+  const mentionActiveIndex = mention
+    ? Math.min(Math.max(mention.activeIndex, 0), mentionMatches.length - 1)
+    : 0;
+
+  // Lazily fetch the org's workflows the first time the operator opens an
+  // @mention. Cached for the rest of the session.
+  async function loadWorkflowOptions() {
+    if (workflowOptionsLoadedRef.current) return;
+    workflowOptionsLoadedRef.current = true;
+    try {
+      const res = await fetch("/api/workflows");
+      if (!res.ok) {
+        workflowOptionsLoadedRef.current = false;
+        return;
+      }
+      const data = (await res.json()) as {
+        workflows?: Array<{ id: string; name: string }>;
+      };
+      setWorkflowOptions(
+        (data.workflows ?? []).map((w) => ({ id: w.id, name: w.name })),
+      );
+    } catch {
+      workflowOptionsLoadedRef.current = false; // allow a retry next time
+    }
+  }
+
+  // Detect an in-progress "@query" token ending at the caret: an "@" at the
+  // start or just after whitespace, with no whitespace between it and the
+  // caret. Returns null when the caret isn't inside a fresh mention.
+  function detectMention(value: string, caret: number) {
+    const upto = value.slice(0, caret);
+    const at = upto.lastIndexOf("@");
+    if (at === -1) return null;
+    if (at > 0 && !/\s/.test(value[at - 1] ?? "")) return null;
+    const query = upto.slice(at + 1);
+    if (/\s/.test(query)) return null;
+    return { query, anchor: at, activeIndex: 0 };
+  }
+
+  function handleDraftChange(value: string, caret: number) {
+    setDraft(value);
+    const next = detectMention(value, caret);
+    setMention(next);
+    if (next) void loadWorkflowOptions();
+  }
+
+  // Replace the in-progress "@query" with the chosen workflow's "@name" and
+  // remember the id so the sent message can carry it.
+  function insertMention(option: WorkflowMention) {
+    const ta = textareaRef.current;
+    const caret = ta ? ta.selectionStart : draft.length;
+    const anchor = mention?.anchor ?? draft.slice(0, caret).lastIndexOf("@");
+    if (anchor === -1) return;
+    const before = draft.slice(0, anchor);
+    const after = draft.slice(caret);
+    const token = `@${option.name}`;
+    const sep = after.startsWith(" ") ? "" : " ";
+    const nextDraft = `${before}${token}${sep}${after}`;
+    const nextCaret = before.length + token.length + sep.length;
+    setDraft(nextDraft);
+    setMention(null);
+    setDraftMentions((prev) =>
+      prev.some((m) => m.id === option.id) ? prev : [...prev, option],
+    );
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  }
+
   async function sendMessage() {
     const trimmed = draft.trim();
     if (!trimmed && files.length === 0) return;
@@ -659,7 +756,15 @@ export default function WorkScreen() {
         return;
       }
     }
-    const message = joinMessageWithAttachments(trimmed, uploads);
+    // Only carry mentions whose @name survives in the final text — the
+    // operator may have deleted one after inserting it.
+    const activeMentions = draftMentions.filter((m) =>
+      trimmed.includes(`@${m.name}`),
+    );
+    const message = appendWorkflowMentionBlock(
+      joinMessageWithAttachments(trimmed, uploads),
+      activeMentions,
+    );
     const tempMessage: MessageRecord = {
       id: `temp-${Date.now()}`,
       runId: null,
@@ -674,6 +779,8 @@ export default function WorkScreen() {
     );
     setDraft("");
     setFiles([]);
+    setDraftMentions([]);
+    setMention(null);
 
     await postAndStreamRun(threadId, message);
   }
@@ -1081,7 +1188,10 @@ export default function WorkScreen() {
                     message={message}
                     onCopy={
                       isPersistedUser
-                        ? () => void copyUserMessage(message.content)
+                        ? () =>
+                            void copyUserMessage(
+                              stripWorkflowMentionBlock(message.content),
+                            )
                         : undefined
                     }
                     onRetry={
@@ -1140,8 +1250,44 @@ export default function WorkScreen() {
         ) : null}
 
         <div
-          className={`work-composer-shell${sending ? " is-working" : ""}`}
+          className={`work-composer-shell relative${sending ? " is-working" : ""}`}
         >
+          {mentionOpen ? (
+            <div
+              className="absolute bottom-full left-0 right-0 mb-2 z-20 max-h-60 overflow-auto rounded-xl border border-border bg-card shadow-soft py-1"
+              role="listbox"
+              aria-label="Workflows"
+            >
+              {mentionMatches.map((opt, i) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="option"
+                  aria-selected={i === mentionActiveIndex}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] ${
+                    i === mentionActiveIndex
+                      ? "bg-neutral-soft text-text"
+                      : "text-text2"
+                  }`}
+                  onMouseEnter={() =>
+                    setMention((m) => (m ? { ...m, activeIndex: i } : m))
+                  }
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    insertMention(opt);
+                  }}
+                >
+                  <Workflow
+                    size={13}
+                    strokeWidth={2}
+                    className="shrink-0 text-text3"
+                    aria-hidden
+                  />
+                  <span className="truncate">{opt.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {files.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-2 pt-2 pb-1">
               {files.map((file, index) => (
@@ -1171,12 +1317,60 @@ export default function WorkScreen() {
             className="work-input"
             placeholder={sending ? "Working…" : "Send a message…"}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) =>
+              handleDraftChange(
+                event.target.value,
+                event.target.selectionStart ?? event.target.value.length,
+              )
+            }
             onKeyDown={(event) => {
+              if (mentionOpen) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setMention((m) =>
+                    m
+                      ? {
+                          ...m,
+                          activeIndex:
+                            (mentionActiveIndex + 1) % mentionMatches.length,
+                        }
+                      : m,
+                  );
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMention((m) =>
+                    m
+                      ? {
+                          ...m,
+                          activeIndex:
+                            (mentionActiveIndex - 1 + mentionMatches.length) %
+                            mentionMatches.length,
+                        }
+                      : m,
+                  );
+                  return;
+                }
+                if (event.key === "Enter" || event.key === "Tab") {
+                  event.preventDefault();
+                  insertMention(mentionMatches[mentionActiveIndex]);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setMention(null);
+                  return;
+                }
+              }
               if (event.key === "Enter" && !event.shiftKey && !sending) {
                 event.preventDefault();
                 void sendMessage();
               }
+            }}
+            onBlur={() => {
+              // Delay so a click on a dropdown option still registers.
+              window.setTimeout(() => setMention(null), 120);
             }}
             disabled={sending}
             rows={1}
@@ -1376,8 +1570,11 @@ function MessageBubble({
   onRetry?: () => void;
   onEdit?: (text: string) => void;
 }) {
+  // What the operator sees: the raw content minus the machine-readable
+  // workflow-mention block (the agent still reads the full content).
+  const display = stripWorkflowMentionBlock(message.content);
   const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState(message.content);
+  const [editText, setEditText] = useState(display);
   const [copied, setCopied] = useState(false);
 
   if (message.role !== "user") {
@@ -1394,10 +1591,10 @@ function MessageBubble({
 
   if (editing && onEdit) {
     const trimmed = editText.trim();
-    const dirty = trimmed.length > 0 && trimmed !== message.content.trim();
+    const dirty = trimmed.length > 0 && trimmed !== display.trim();
     const cancel = () => {
       setEditing(false);
-      setEditText(message.content);
+      setEditText(display);
     };
     const save = () => {
       if (!dirty) return;
@@ -1456,7 +1653,7 @@ function MessageBubble({
   return (
     <div className="work-bubble-row is-user has-actions">
       <div className="work-bubble is-user">
-        <div className="work-markdown user-copy">{message.content}</div>
+        <div className="work-markdown user-copy">{display}</div>
       </div>
       {showActions ? (
         <div className="work-bubble-actions">
@@ -1490,7 +1687,7 @@ function MessageBubble({
               title="Edit"
               aria-label="Edit"
               onClick={() => {
-                setEditText(message.content);
+                setEditText(display);
                 setEditing(true);
               }}
             >

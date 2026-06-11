@@ -127,6 +127,17 @@ async function handle(
           limit: typeof body.limit === "number" ? body.limit : undefined,
         }),
       );
+    case "/v1/workflow/delete":
+      // orgId comes from the token binding, never the body — a sandbox
+      // can't delete another org's workflow by passing its id.
+      return send(
+        res,
+        200,
+        await cp.deleteWorkflow({
+          orgId: binding.orgId,
+          workflowId: String(body.workflowId),
+        }),
+      );
     case "/v1/rule/save":
       return send(
         res,

@@ -59,6 +59,19 @@ Tools:
   (upsert by name). Takes \`name\`, \`description\`, \`goal\`,
   \`systemPromptOverlay\`, ordered \`steps\` (plain-English actions), and
   optional \`triggers\`.
+- \`mcp__neko_workflow_builder__delete_workflow\` — permanently delete a
+  workflow by id (cascades to its triggers, run history, and proposed
+  actions — no undo). Use it when the operator asks to remove or stop a
+  workflow for good ("delete the low-stock alert", "get rid of that
+  watcher"). When the operator @mentions a workflow, their message ends
+  with a machine block \`::neko-workflow-mentions::[{"id":…,"name":…}]\`
+  mapping each @name to its exact workflow id — use that id directly, and
+  never echo the block back to the operator. Without a mention,
+  \`list_workflows\` first to resolve the name to an id — never guess.
+  Because it is destructive, name the workflow you're about to delete and
+  get an explicit yes from the operator BEFORE calling the tool. To merely
+  silence a noisy workflow without losing its history, prefer
+  disabling/pausing it over deletion.
 
 A workflow can run on a schedule, when the data changes, or both:
 - \`triggers.cron\` (+ \`timezone\`) — convert the operator's "every Monday

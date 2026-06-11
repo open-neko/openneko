@@ -50,6 +50,10 @@ function makeFakeControlPlane() {
       calls.push({ method: "wf-list", input: input as Record<string, unknown> });
       return { total: 0, workflows: [] };
     },
+    async deleteWorkflow(input) {
+      calls.push({ method: "wf-delete", input: input as Record<string, unknown> });
+      return { found: true, name: "W" };
+    },
     async upsertActionPolicyByName(input) {
       calls.push({ method: "rule-save", input: input as Record<string, unknown> });
       return { action: "created", policy: { id: "p1", name: "R" } } as Awaited<
@@ -169,6 +173,15 @@ describe("agent broker", () => {
     expect(ruleSave?.createdByRunId).toBe("r1");
     expect(fake.calls.find((c) => c.method === "wf-list")?.input.orgId).toBe("o1");
     expect(fake.calls.find((c) => c.method === "rule-list")?.input.orgId).toBe("o1");
+  });
+
+  it("forces delete org from the binding, keeps the workflowId from the body", async () => {
+    const cp = new BrokerControlPlane(baseUrl, "good");
+    const result = await cp.deleteWorkflow({ orgId: "SPOOF", workflowId: "w1" });
+    expect(result).toEqual({ found: true, name: "W" });
+    const wfDelete = fake.calls.find((c) => c.method === "wf-delete")?.input;
+    expect(wfDelete?.orgId).toBe("o1");
+    expect(wfDelete?.workflowId).toBe("w1");
   });
 
   it("rejects an invalid token (401)", async () => {

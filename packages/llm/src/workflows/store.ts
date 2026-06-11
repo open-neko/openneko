@@ -171,6 +171,28 @@ export async function listWorkflows(orgId: string): Promise<WorkflowRecord[]> {
   return rows.map(toRecord);
 }
 
+// Removing the definition cascades (via FK ON DELETE CASCADE) to its
+// subscriptions/triggers, runs, outputs, and proposed action requests.
+// Returns null when no workflow matched (wrong id or cross-org).
+export async function deleteWorkflow(
+  orgId: string,
+  workflowId: string,
+): Promise<{ id: string; name: string } | null> {
+  const rows = await db()
+    .delete(workflow_definition)
+    .where(
+      and(
+        eq(workflow_definition.org_id, orgId),
+        eq(workflow_definition.id, workflowId),
+      ),
+    )
+    .returning({
+      id: workflow_definition.id,
+      name: workflow_definition.name,
+    });
+  return rows[0] ?? null;
+}
+
 /**
  * OL7 "pause for today": re-enable workflows whose pause timer has
  * passed. The cron sweep calls this every tick so a paused workflow
