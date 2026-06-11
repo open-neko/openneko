@@ -44,7 +44,7 @@ import {
   type DataSourceContext,
   type PluginActionSeed,
 } from "@neko/llm/workflows";
-import { ensureOrgWorkspace } from "@neko/llm/work";
+import { ensureOrgWorkspace, reportDeploymentProfile } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
 import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
@@ -77,6 +77,10 @@ const RECONCILE_SWEEP_MIN_AGE_MS: number = 660_000;
 const SCHEDULED_REFRESH_HOURS: number = 24;
 
 const ADMIN_ORG_ID = await getOrgId();
+
+// SEC8: state the security posture once at boot; hardened warns when
+// the model host is a public cloud API (on-prem LLM is client-provided).
+reportDeploymentProfile();
 
 async function markRunning(processingJobId: string) {
   await db()
@@ -543,8 +547,10 @@ await b.work(QUEUE.WORKFLOW_CRON_SWEEP, async () => {
   // SEC7: behavioral thresholds ride the minute tick so a runaway agent
   // alerts within its window, not at the nightly sweep.
   try {
-    const { runBehaviorSweep } = await import("@neko/llm/work");
-    await runBehaviorSweep(ADMIN_ORG_ID);
+    const { profileBehaviorThresholds, runBehaviorSweep } = await import(
+      "@neko/llm/work"
+    );
+    await runBehaviorSweep(ADMIN_ORG_ID, profileBehaviorThresholds());
   } catch (e) {
     console.warn(
       `[worker] behavior sweep failed: ${e instanceof Error ? e.message : e}`,

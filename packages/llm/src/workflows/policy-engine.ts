@@ -234,7 +234,9 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
     });
   }
   // ADM3: chat-driven plugin management is always an explicit approval.
+  // SEC8: org/hardened postures require that approval to come from an ADMIN.
   if (!names.has("plugin_management_default")) {
+    const { profilePolicyDefaults } = await import("../work/deployment-profile");
     await createActionPolicy({
       orgId,
       name: "plugin_management_default",
@@ -247,7 +249,7 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       allowedTargets: null,
       deniedTargets: null,
       limits: {},
-      approverRole: null,
+      approverRole: profilePolicyDefaults().pluginApproverRole,
       priority: 100,
       enabled: true,
     });
