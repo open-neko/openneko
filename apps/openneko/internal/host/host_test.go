@@ -2,46 +2,41 @@ package host
 
 import "testing"
 
-func TestDarwinArm64(t *testing.T) {
-	r := checkWith("darwin", "arm64", func() bool { return false })
+// SEC9: the only runtime is OpenShell — containers, so the requirement
+// is Docker, not KVM, and amd64 macs are fine.
+
+func TestDarwinArm64WithDocker(t *testing.T) {
+	r := checkWith("darwin", "arm64", func() bool { return true })
 	if !r.Supported {
-		t.Fatal("darwin arm64 should be supported regardless of KVM")
+		t.Fatal("darwin arm64 with docker should be supported")
 	}
 	if r.Triple != "darwin-arm64" {
 		t.Fatalf("bad triple: %s", r.Triple)
 	}
 }
 
-func TestDarwinAmd64(t *testing.T) {
-	r := checkWith("darwin", "amd64", func() bool { return false })
-	if r.Supported {
-		t.Fatal("darwin amd64 should not be supported")
-	}
-	if r.Reason == "" {
-		t.Fatal("missing reason")
-	}
-}
-
-func TestLinuxNoKVM(t *testing.T) {
-	r := checkWith("linux", "amd64", func() bool { return false })
-	if r.Supported {
-		t.Fatal("linux without /dev/kvm should not be supported")
-	}
-	if r.Triple != "linux-x64-gnu" {
-		t.Fatalf("bad triple: %s", r.Triple)
-	}
-}
-
-func TestLinuxAmd64WithKVM(t *testing.T) {
-	r := checkWith("linux", "amd64", func() bool { return true })
+func TestDarwinAmd64WithDocker(t *testing.T) {
+	r := checkWith("darwin", "amd64", func() bool { return true })
 	if !r.Supported {
-		t.Fatal("linux amd64 with /dev/kvm should be supported")
+		t.Fatal("darwin amd64 with docker should be supported (no microsandbox arm64-only constraint)")
 	}
 }
 
-func TestLinuxArm64WithKVM(t *testing.T) {
+func TestNoDocker(t *testing.T) {
+	for _, goos := range []string{"darwin", "linux"} {
+		r := checkWith(goos, "amd64", func() bool { return false })
+		if r.Supported {
+			t.Fatalf("%s without docker should not be supported", goos)
+		}
+		if r.Reason == "" {
+			t.Fatal("missing reason")
+		}
+	}
+}
+
+func TestLinuxArm64WithDocker(t *testing.T) {
 	r := checkWith("linux", "arm64", func() bool { return true })
-	if !r.Supported || r.Triple != "linux-arm64-gnu" {
+	if !r.Supported || r.Triple != "linux-arm64" {
 		t.Fatalf("unexpected: %+v", r)
 	}
 }

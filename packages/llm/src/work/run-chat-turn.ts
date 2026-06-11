@@ -99,10 +99,10 @@ export type RunChatTurnDeps = {
   prefetchKnowledgeForOrg: typeof defaultPrefetchKnowledgeForOrg;
   listInstalledSkills: typeof defaultListInstalledSkills;
   /**
-   * Runs the agent loop. Default = runAgentBackend in-process. The launcher
-   * injects a sandbox-running impl for OPENNEKO_AGENT_RUNTIME=openshell: it
-   * runs the core in an OpenShell sandbox, streaming events back through
-   * `emit`. The DB-bound prologue/epilogue around this stay host-side.
+   * Runs the agent loop. Production hosts inject the OpenShell sandbox
+   * impl (agentRuntimeDepsFromEnv) — SEC9: the only runtime. The default
+   * (runAgentBackend in-process) exists for tests, which exercise the
+   * core without a sandbox. The DB-bound prologue/epilogue stay host-side.
    */
   runCore: typeof runAgentBackend;
 };

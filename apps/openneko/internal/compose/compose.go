@@ -39,19 +39,13 @@ type Supervisor struct {
 	// RuntimeDir is where compose files are written. Defaults to
 	// <cwd>/.openneko/runtime/.
 	RuntimeDir string
-	// HasKVM lets tests stub the Linux microsandbox auto-overlay.
-	HasKVM func() bool
 	// GOOS lets tests stub the platform.
 	GOOS string
-	// AgentRuntime, when "openshell", overlays the containerized OpenShell
-	// gateway and runs the agent + plugins in sandboxes. Empty = in-process.
-	AgentRuntime string
 }
 
 func New(assets fs.FS) *Supervisor {
 	return &Supervisor{
 		AssetsFS: assets,
-		HasKVM:   defaultHasKVM,
 		GOOS:     runtime.GOOS,
 	}
 }
@@ -88,15 +82,8 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
 	}
-	if s.GOOS == "linux" && s.HasKVM() {
-		files = append(files, "compose/plugins.linux.yml")
-	}
-	if s.AgentRuntime == "openshell" {
-		files = append(files, "compose/openshell.yml")
-	}
-	if s.AgentRuntime == "inprocess" {
-		files = append(files, "compose/inprocess.yml")
-	}
+	// SEC9: OpenShell is the only runtime — its overlay always applies.
+	files = append(files, "compose/openshell.yml")
 	var out []string
 	for _, name := range files {
 		raw, err := fs.ReadFile(s.AssetsFS, name)
@@ -187,11 +174,6 @@ func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []
 			return 0, nil
 		}
 	}
-}
-
-func defaultHasKVM() bool {
-	_, err := os.Stat("/dev/kvm")
-	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // EnsureImage pulls image unless it's already present locally. Used to warm the

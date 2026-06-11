@@ -3,7 +3,7 @@ import { RpcResponse } from "@open-neko/plugin-types";
 import type {
   PluginRuntime,
   PluginVmSpec,
-} from "./microsandbox-runtime.js";
+} from "./plugin-runtime.js";
 
 /**
  * Plugin-author dev-mode runtime — runs `node <workspace>/run.js method

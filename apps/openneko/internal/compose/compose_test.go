@@ -9,44 +9,16 @@ import (
 
 func sampleFS() fstest.MapFS {
 	return fstest.MapFS{
-		"compose/core.yml":          {Data: []byte("services: { web: {} }\n")},
-		"compose/dev.yml":           {Data: []byte("services: { dev: {} }\n")},
-		"compose/demo.yml":          {Data: []byte("services: { demo: {} }\n")},
-		"compose/plugins.linux.yml": {Data: []byte("services: { sandbox: {} }\n")},
-		"compose/openshell.yml":     {Data: []byte("services: { openshell-gateway: {} }\n")},
+		"compose/core.yml":      {Data: []byte("services: { web: {} }\n")},
+		"compose/dev.yml":       {Data: []byte("services: { dev: {} }\n")},
+		"compose/demo.yml":      {Data: []byte("services: { demo: {} }\n")},
+		"compose/openshell.yml": {Data: []byte("services: { openshell-gateway: {} }\n")},
 	}
 }
 
 func TestMaterializeProd(t *testing.T) {
 	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "darwin"}
-	files, err := s.Materialize(ModeProd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 1 || filepath.Base(files[0]) != "core.yml" {
-		t.Fatalf("unexpected: %v", files)
-	}
-}
-
-func TestMaterializeDemo(t *testing.T) {
-	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "darwin"}
-	files, err := s.Materialize(ModeDemo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 2 {
-		t.Fatalf("expected core + demo, got %v", files)
-	}
-	if filepath.Base(files[0]) != "core.yml" || filepath.Base(files[1]) != "demo.yml" {
-		t.Fatalf("unexpected order: %v", files)
-	}
-}
-
-func TestMaterializeLinuxOverlaysPlugins(t *testing.T) {
-	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return true }, GOOS: "linux"}
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: "darwin"}
 	files, err := s.Materialize(ModeProd)
 	if err != nil {
 		t.Fatal(err)
@@ -55,47 +27,17 @@ func TestMaterializeLinuxOverlaysPlugins(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	want := []string{"core.yml", "plugins.linux.yml"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("got %v want %v", got, want)
-	}
-}
-
-func TestMaterializeLinuxNoKVMSkipsPlugins(t *testing.T) {
-	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "linux"}
-	files, err := s.Materialize(ModeProd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range files {
-		if strings.Contains(filepath.Base(f), "plugins") {
-			t.Fatalf("plugins overlay should not be included without KVM: %v", files)
-		}
-	}
-}
-
-func TestMaterializeOpenShellOverlay(t *testing.T) {
-	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "darwin", AgentRuntime: "openshell"}
-	files, err := s.Materialize(ModeProd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := []string{}
-	for _, f := range files {
-		got = append(got, filepath.Base(f))
-	}
+	// SEC9: OpenShell is the only runtime — its overlay always applies.
 	want := []string{"core.yml", "openshell.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
 
-func TestMaterializeOpenShellComposesWithLinuxPlugins(t *testing.T) {
+func TestMaterializeDemo(t *testing.T) {
 	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return true }, GOOS: "linux", AgentRuntime: "openshell"}
-	files, err := s.Materialize(ModeProd)
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: "darwin"}
+	files, err := s.Materialize(ModeDemo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,29 +45,35 @@ func TestMaterializeOpenShellComposesWithLinuxPlugins(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	want := []string{"core.yml", "plugins.linux.yml", "openshell.yml"}
+	want := []string{"core.yml", "demo.yml", "openshell.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("got %v want %v", got, want)
+		t.Fatalf("unexpected order: %v", got)
 	}
 }
 
-func TestMaterializeNoOpenShellByDefault(t *testing.T) {
+func TestMaterializeOpenShellAlwaysOn(t *testing.T) {
 	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "darwin"}
-	files, err := s.Materialize(ModeProd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range files {
-		if strings.Contains(filepath.Base(f), "openshell") {
-			t.Fatalf("openshell overlay must be opt-in: %v", files)
+	for _, goos := range []string{"darwin", "linux"} {
+		s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: goos}
+		files, err := s.Materialize(ModeProd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, f := range files {
+			if filepath.Base(f) == "openshell.yml" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("openshell overlay must always apply (SEC9): %v", files)
 		}
 	}
 }
 
 func TestMaterializeUnknownMode(t *testing.T) {
 	dir := t.TempDir()
-	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, HasKVM: func() bool { return false }, GOOS: "linux"}
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: "linux"}
 	if _, err := s.Materialize(Mode("bogus")); err == nil {
 		t.Fatal("expected error for unknown mode")
 	}

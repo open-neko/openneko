@@ -328,18 +328,13 @@ let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
 
 /**
  * Lazily start the per-process agent broker, bound to the in-process control
- * plane. Returns undefined unless OPENNEKO_AGENT_RUNTIME=openshell (the default
- * in-process agent needs no broker). The listen port (OPENNEKO_BROKER_PORT,
- * default 4199) MUST be published to the host in compose so the sandbox can
- * reach it at host.openshell.internal:<port>. Idempotent — one broker per
- * process, shared by runWorkRun (channel runs) and the web chat route.
+ * plane. SEC9: OpenShell is the only agent runtime, so every control-plane
+ * host runs a broker. The listen port (OPENNEKO_BROKER_PORT, default 4199)
+ * MUST be published to the host in compose so the sandbox can reach it at
+ * host.openshell.internal:<port>. Idempotent — one broker per process,
+ * shared by runWorkRun (channel runs) and the web chat route.
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
-  if (
-    (process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell"
-  ) {
-    return Promise.resolve(undefined);
-  }
   if (brokerSingleton) return Promise.resolve(brokerSingleton);
   if (!brokerStarting) {
     brokerStarting = startAgentBroker({

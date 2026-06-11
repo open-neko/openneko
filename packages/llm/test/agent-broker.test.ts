@@ -80,15 +80,19 @@ describe("startAgentBroker token registry", () => {
   });
 });
 
-describe("ensureAgentBroker gating", () => {
-  const prev = process.env.OPENNEKO_AGENT_RUNTIME;
-  afterEach(() => {
-    if (prev === undefined) delete process.env.OPENNEKO_AGENT_RUNTIME;
-    else process.env.OPENNEKO_AGENT_RUNTIME = prev;
-  });
-
-  it("returns undefined only when OPENNEKO_AGENT_RUNTIME=inprocess (openshell is the default)", async () => {
-    process.env.OPENNEKO_AGENT_RUNTIME = "inprocess";
-    await expect(ensureAgentBroker()).resolves.toBeUndefined();
+describe("ensureAgentBroker (SEC9: always on)", () => {
+  it("starts the per-process broker and is idempotent", async () => {
+    const prevPort = process.env.OPENNEKO_BROKER_PORT;
+    process.env.OPENNEKO_BROKER_PORT = "0";
+    try {
+      const a = await ensureAgentBroker();
+      const b = await ensureAgentBroker();
+      expect(a).toBeDefined();
+      expect(b).toBe(a);
+      await a?.close();
+    } finally {
+      if (prevPort === undefined) delete process.env.OPENNEKO_BROKER_PORT;
+      else process.env.OPENNEKO_BROKER_PORT = prevPort;
+    }
   });
 });

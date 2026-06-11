@@ -26,7 +26,7 @@ import { ChannelCapabilityDeclaration } from "./channel.js";
 
 /**
  * JSON-RPC over stdio between the OpenNeko worker (caller) and a plugin
- * process inside its microsandbox VM (callee). v1 uses one-shot exec per
+ * process inside its sandbox VM (callee). v1 uses one-shot exec per
  * call — the worker invokes `node /workspace/plugin/run.js <method>
  * <json-params>` and reads a single JSON response from stdout.
  */

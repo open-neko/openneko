@@ -7,7 +7,7 @@
  * plugin (e.g. Scalekit) so an enterprise operator gets standard
  * OIDC SSO without the core having to know which IdP they use.
  *
- * Topology: the auth plugin lives in the worker's microsandbox VM,
+ * Topology: the auth plugin lives in the worker's sandbox VM,
  * not in this Next process. We reach it through the worker's admin
  * HTTP endpoint on localhost (loopback inside the deployment, never
  * exposed). That gives us:

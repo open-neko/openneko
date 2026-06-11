@@ -90,9 +90,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const pluginActions = await getPluginActionDescriptors();
 
-  // OPENNEKO_AGENT_RUNTIME=openshell → the agent loop runs in an OpenShell
-  // sandbox (the web server stays the control plane, launches the box, and
-  // relays events over the existing SSE); default `inprocess` is unchanged.
+  // The agent loop runs in an OpenShell sandbox (SEC9: the only runtime).
+  // The web server stays the control plane, launches the box, and relays
+  // events over the existing SSE.
   const broker = await ensureAgentBroker();
 
   void runChatTurn(
