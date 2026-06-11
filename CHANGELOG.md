@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/open-neko/openneko/compare/v1.21.0...v1.22.0) (2026-06-11)
+
+
+### Features
+
+* **SEC9:** OpenShell is the only runtime — remove microsandbox + in-process production path ([9922d08](https://github.com/open-neko/openneko/commit/9922d08149d1ac5f47965e9998891097d0e2570e))
+
 ## [1.21.0](https://github.com/open-neko/openneko/compare/v1.20.0...v1.21.0) (2026-06-11)
 
 
