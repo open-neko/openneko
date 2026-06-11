@@ -77,11 +77,16 @@ jobs:
         run: |
           set -euxo pipefail
           tag="${{ steps.ctx.outputs.tag }}"
+          # The OpenShell gateway/certgen image is part of every stack (SEC11/SEC9);
+          # with --pull never it must be pre-pulled too. Read the version off the
+          # compose pin so this list can't go stale.
+          gw_ver=$(grep -om1 'OPENSHELL_VERSION:-[0-9.]*' apps/openneko/assets/compose/openshell.yml | cut -d- -f2)
           refs=(
             "ghcr.io/open-neko/neko-web:${tag}"
             "ghcr.io/open-neko/neko-worker:${tag}"
             "ghcr.io/open-neko/neko-graphjin:${tag}"
             "ghcr.io/open-neko/neko-cli:${tag}"
+            "ghcr.io/nvidia/openshell/gateway:${gw_ver}"
             "pgvector/pgvector:pg16"
           )
           for ref in "${refs[@]}"; do
