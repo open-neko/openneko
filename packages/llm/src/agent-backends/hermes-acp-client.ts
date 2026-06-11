@@ -57,7 +57,15 @@ export type AcpJsonRpcError = {
 export class AcpProtocolError extends Error {
   readonly code: number;
   constructor(err: AcpJsonRpcError) {
-    super(err.message);
+    // hermes puts the actionable cause in data.details ("No LLM provider
+    // configured…"); the message alone is often just "Internal error".
+    super(
+      err.data &&
+        typeof err.data === "object" &&
+        typeof (err.data as { details?: unknown }).details === "string"
+        ? `${err.message}: ${(err.data as { details: string }).details}`
+        : err.message,
+    );
     this.name = "AcpProtocolError";
     this.code = err.code;
   }

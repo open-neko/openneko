@@ -405,11 +405,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     const bridgeServers =
       bridgePath && mcpBridgeEnv
         ? mcpServerNames
-            .filter((n) => n !== "neko_ui")
+            // neko_ui has its own stub; names are our map keys — the regex
+            // guards the shell interpolation below.
+            .filter((n) => n !== "neko_ui" && /^[a-z0-9_]+$/.test(n))
             .map((name) => ({
               name,
-              command: process.execPath,
-              args: ["--import", "tsx/esm", bridgePath, name],
+              // cd /app first: hermes spawns MCP children with the session
+              // cwd (/sandbox/…), where `--import tsx/esm` cannot resolve.
+              command: "/bin/sh",
+              args: ["-c", `cd /app && exec node --import tsx/esm ${bridgePath} ${name}`],
               env: bridgeEnv,
             }))
         : [];
