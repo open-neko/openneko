@@ -561,6 +561,9 @@ export type WorkflowOutputRecord = {
   timeWindowStart: Date | null;
   timeWindowEnd: Date | null;
   freshnessTtlSeconds: number | null;
+  /** OL8: how many times this finding occurred within its dedupe window. */
+  seenCount: number;
+  lastSeenAt: Date;
   createdAt: Date;
 };
 
@@ -583,13 +586,65 @@ function toOutputRecord(
     timeWindowStart: row.time_window_start,
     timeWindowEnd: row.time_window_end,
     freshnessTtlSeconds: row.freshness_ttl_seconds,
+    seenCount: row.seen_count,
+    lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
   };
+}
+
+const OUTPUT_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** OL8: identical findings = same workflow + kind + normalized title. */
+async function outputDedupeKey(
+  input: WorkflowOutputInput,
+): Promise<string | null> {
+  const title = (input.title ?? "").trim();
+  if (!title) return null;
+  const [run] = await db()
+    .select({ workflowId: workflow_run.workflow_id })
+    .from(workflow_run)
+    .where(eq(workflow_run.id, input.workflowRunId))
+    .limit(1);
+  if (!run) return null;
+  const { createHash } = await import("node:crypto");
+  return createHash("sha256")
+    .update([run.workflowId, input.kind, title.toLowerCase()].join("\u0000"))
+    .digest("hex");
 }
 
 export async function emitWorkflowOutput(
   input: WorkflowOutputInput,
 ): Promise<WorkflowOutputRecord> {
+  const now = new Date();
+  const dedupeKey = await outputDedupeKey(input);
+  if (dedupeKey) {
+    const since = new Date(now.getTime() - OUTPUT_DEDUPE_WINDOW_MS);
+    const [existing] = await db()
+      .select({ id: workflow_output.id })
+      .from(workflow_output)
+      .where(
+        and(
+          eq(workflow_output.org_id, input.orgId),
+          eq(workflow_output.dedupe_key, dedupeKey),
+          sql`${workflow_output.created_at} >= ${since}`,
+        ),
+      )
+      .orderBy(desc(workflow_output.created_at))
+      .limit(1);
+    if (existing) {
+      // OL8: same finding again — bump the original card ("2× today")
+      // instead of stacking a duplicate.
+      const [row] = await db()
+        .update(workflow_output)
+        .set({
+          seen_count: sql`${workflow_output.seen_count} + 1`,
+          last_seen_at: now,
+        })
+        .where(eq(workflow_output.id, existing.id))
+        .returning();
+      return toOutputRecord(row);
+    }
+  }
   const [row] = await db()
     .insert(workflow_output)
     .values({
@@ -607,6 +662,8 @@ export async function emitWorkflowOutput(
       time_window_start: input.timeWindowStart ?? null,
       time_window_end: input.timeWindowEnd ?? null,
       freshness_ttl_seconds: input.freshnessTtlSeconds ?? null,
+      dedupe_key: dedupeKey,
+      last_seen_at: now,
     })
     .returning();
   return toOutputRecord(row);

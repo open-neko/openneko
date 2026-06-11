@@ -25,6 +25,9 @@ export type FindingCardData = {
   mood?: string | null;
   outputKind?: string | null;
   riskLevel?: string | null;
+  /** OL8: occurrences within the dedupe window ("2× today" badge when > 1). */
+  seenCount?: number;
+  lastSeenAt?: string;
   createdAt: string;
   pinId?: string;
   pinnedAt?: string;
@@ -161,6 +164,21 @@ export default function FindingCard({
         </span>
         <span className="opacity-50">·</span>
         <span className="font-mono text-xs text-text2">{formatRelative(data.createdAt)}</span>
+        {(data.seenCount ?? 1) > 1 && (
+          <>
+            <span className="opacity-50">·</span>
+            <span
+              className="font-mono text-xs text-text2"
+              title={
+                data.lastSeenAt
+                  ? `last seen ${formatRelative(data.lastSeenAt)}`
+                  : undefined
+              }
+            >
+              {data.seenCount}× today
+            </span>
+          </>
+        )}
         {data.pinId && onUnpin && (
           <button
             type="button"

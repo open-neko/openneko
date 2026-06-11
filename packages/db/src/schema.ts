@@ -1057,6 +1057,11 @@ export const workflow_output = pgTable(
     time_window_start: ts("time_window_start"),
     time_window_end: ts("time_window_end"),
     freshness_ttl_seconds: integer("freshness_ttl_seconds"),
+    // OL8 card-level dedupe: an identical finding within 24h bumps
+    // seen_count on the original card instead of creating a new one.
+    seen_count: integer("seen_count").notNull().default(1),
+    last_seen_at: ts("last_seen_at").notNull().defaultNow(),
+    dedupe_key: text("dedupe_key"),
     created_at: ts("created_at").notNull().defaultNow(),
   },
   (t) => ({
