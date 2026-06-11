@@ -1,5 +1,74 @@
 # Changelog
 
+## [1.22.0](https://github.com/open-neko/openneko/compare/v1.21.0...v1.22.0) (2026-06-11)
+
+
+### Features
+
+* **SEC9:** OpenShell is the only runtime — remove microsandbox + in-process production path ([9922d08](https://github.com/open-neko/openneko/commit/9922d08149d1ac5f47965e9998891097d0e2570e))
+
+## [1.21.0](https://github.com/open-neko/openneko/compare/v1.20.0...v1.21.0) (2026-06-11)
+
+
+### Features
+
+* **briefing:** observation-elevation cards, scope muting, stat strip (OL2/OL7/OL9) ([579d0c5](https://github.com/open-neko/openneko/commit/579d0c5d66e10d7797c69fc79bc62ccd228f7e41))
+* **channels,db:** channel workspace → org mapping (CH2) ([3846dba](https://github.com/open-neko/openneko/commit/3846dba46fa10335fc006601cc77be0a02d23c01))
+* **channels:** capture the inbound sender identity (CH1) ([04cc6a0](https://github.com/open-neko/openneko/commit/04cc6a09b35122e36efbfe2f400e40d3112ee53e))
+* **config-vcs:** invisible auto-versioning of skills/workflows/memory (CV0) ([2c0d92a](https://github.com/open-neko/openneko/commit/2c0d92a12d432ddf4209a622b02ae84bb34fb0c8))
+* **db,llm,web,worker:** per-user actor in every run — the K1 keystone ([669c335](https://github.com/open-neko/openneko/commit/669c335d27e87c903e228b55ad3df35fbb8171f8))
+* **db,llm:** workflow ownership — per-layer names + lineage (CV1) ([9570878](https://github.com/open-neko/openneko/commit/9570878b3e06e999cdf1a364c504d84392391ca1))
+* default OpenShell on — sandboxed agent + plugins out of the box (SEC11) ([8436d5e](https://github.com/open-neko/openneko/commit/8436d5e201bbc46bb2c09b09a8a76f3f641bcc4e))
+* **graphjin:** bump to 3.18.37 (GJ1 source-mode floor) + harden subscription client ([200b5f0](https://github.com/open-neko/openneko/commit/200b5f0e6370ae9f900f8e87b1024cf55851874c))
+* **llm,db,web,worker:** multi-source registry + chat-first data sources (ADM2) ([717383b](https://github.com/open-neko/openneko/commit/717383b41465c5482b71b52ec193a09db4b6bcab))
+* **llm,db,web,worker:** personal config layers as user/&lt;id&gt; git refs (CV4) ([72953ea](https://github.com/open-neko/openneko/commit/72953ea46fe718f441684a77b927db9e62db347f))
+* **llm,db,web:** card-level finding dedupe — "2× today" (OL8) ([fb35ba1](https://github.com/open-neko/openneko/commit/fb35ba1de5db9db25d51145ce2077cf4174b894c))
+* **llm,db,web:** memory fork overlay — copy-on-write personal layers (CV2) ([2716111](https://github.com/open-neko/openneko/commit/2716111aab8066c660a96489d0db7a32658a9822))
+* **llm,db,web:** tamper-resistant audit log — hash chain + SIEM export (SEC10) ([9664c9e](https://github.com/open-neko/openneko/commit/9664c9e91b7173df9a3120fa130564e473e41da7))
+* **llm,db,worker:** behavioral threshold alerts (SEC7) ([8f7458c](https://github.com/open-neko/openneko/commit/8f7458cdbe72c8c19ec5fae5b3a45ebb232416ad))
+* **llm,db,worker:** memory integrity hash + TTL (SEC6) ([44be289](https://github.com/open-neko/openneko/commit/44be2890b97ddf97d6e8e6770c50442d57dd57fe))
+* **llm,db,worker:** watchers — condition monitors over GraphJin (OL4) ([b902a87](https://github.com/open-neko/openneko/commit/b902a87aad007bc35100b8979d961ba4f308984b))
+* **llm,db:** dual-identity audit on actions and gateway calls (SEC5) ([4b6ea08](https://github.com/open-neko/openneko/commit/4b6ea08611b96a29cda819f22db6fec9229953fd))
+* **llm,db:** GraphJin source mode — per-run actor tokens (GJ4 core) ([d044609](https://github.com/open-neko/openneko/commit/d044609e29367066599eae1ea6c6bc778cfac756))
+* **llm,plugin-install:** discovery pathways + SecretsResolver seam (GJ3, SEC2) ([22b45c4](https://github.com/open-neko/openneko/commit/22b45c4cb6bd978214720c04041c83de6a688a86))
+* **llm,web,db:** operator personas — profile-shaped agent runs (CV3) ([4b529ce](https://github.com/open-neko/openneko/commit/4b529ceb4b18d0e9c7d296076d9fcb9b61841205))
+* **llm,web,worker:** can() authorization seam + approver_role enforcement (K2) ([9d6ca86](https://github.com/open-neko/openneko/commit/9d6ca86e5d040cb530df91b92d2a500a0411f7ea))
+* **llm,worker,web,db:** chat-first user management (ADM1) ([6f9ad88](https://github.com/open-neko/openneko/commit/6f9ad8822ff533627bcf5854217f644d7ee4c011))
+* **llm,worker,web:** typed source kinds in the registry (OL5 slice) ([8a80da2](https://github.com/open-neko/openneko/commit/8a80da2ed9c8053908183b83dbd458f466e5ab75))
+* **llm,worker:** agentic knowledge layering + sources mode as the default deployment ([569d9f8](https://github.com/open-neko/openneko/commit/569d9f8cd0437c37bb9099b6b8348edd19f15726))
+* **llm,worker:** chat-first audit-log viewer (ADM4) ([028082f](https://github.com/open-neko/openneko/commit/028082f50d72e2875191fa601c830312e20ec8bd))
+* **llm,worker:** chat-first channel management (ADM5) ([32b2509](https://github.com/open-neko/openneko/commit/32b2509d6a800e20df51138d296fd8e510760c6a))
+* **llm,worker:** chat-first plugin management (ADM3) ([d73b5ea](https://github.com/open-neko/openneko/commit/d73b5eadd55543569eb2faf81647032144d52c42))
+* **llm,worker:** deployment profile dial — solo/team/org/hardened (SEC8) ([afb5c44](https://github.com/open-neko/openneko/commit/afb5c44badd04d728dc694378e3951bdd2ad2aa4))
+* **llm,worker:** policy-aware GraphJin guard + sandbox data egress (GJ5, GJ6, K3) ([ece57ac](https://github.com/open-neko/openneko/commit/ece57ac5d740aa1b5ac68148c71619cbdbdabbdf))
+* **llm:** conservative code actions — issues + patch artifacts (OL6) ([65b1943](https://github.com/open-neko/openneko/commit/65b1943f4564fd4f792a32a3750a4db09ce0ff85))
+* **llm:** iterative validation loop for job agents (GJ2) ([793333f](https://github.com/open-neko/openneko/commit/793333f24a64660532d8d4f4956cb5dd19552a87))
+* **llm:** move the A2UI catalog out of the agent prompt onto the tool (ST1) ([c7acec1](https://github.com/open-neko/openneko/commit/c7acec1d3f23a92e064c0637f2e41e6ceae8cd59))
+* **llm:** one actor-auth guard for every GraphJin agent path (GJ4) ([8630172](https://github.com/open-neko/openneko/commit/8630172a38969015dabec40012e52f31a11a8ed9))
+* **llm:** route workflow/rule builder MCP tools through AgentControlPlane (SEC4) ([db95dfd](https://github.com/open-neko/openneko/commit/db95dfda7e584c6e733049839745c327195c158f))
+* **plugin-install,db,worker:** Infisical-backed secret residency (SEC3) ([8a09952](https://github.com/open-neko/openneko/commit/8a09952e2e0b38139351b89a08960d358ffcb515))
+* **security:** encrypt secrets at rest with enc:v1 in TS + Go (SEC1) ([3afa09e](https://github.com/open-neko/openneko/commit/3afa09e85ccbb2e03b6c07165a871ea422576a76))
+* **worker,db,web:** channel identity linking — channel senders act as their app_user (CH3) ([2aad5f3](https://github.com/open-neko/openneko/commit/2aad5f3e3ebc7477b8bb335b6a8fe634cd08aeda))
+* **workflows:** external_event subscription handler + ingress (OL3); verify loop brakes (OL1) ([0fadb1b](https://github.com/open-neko/openneko/commit/0fadb1bb96f09cf431ada62397254b66647cd683))
+
+
+### Bug Fixes
+
+* **cli:** --runtime inprocess must declare itself to the stack (SEC11 follow-up) ([6d9dfa6](https://github.com/open-neko/openneko/commit/6d9dfa632ab70975b29c3cbd4e8f4e9d92f73215))
+* **llm:** GraphJin actor tokens must key off the config secret STRING (GJ4 tail, live-validated) ([9722136](https://github.com/open-neko/openneko/commit/9722136c8d3811643d8b38c648ea70e32636f951))
+* **llm:** metric-agent role union covers all offered seats (ST3) ([ac49145](https://github.com/open-neko/openneko/commit/ac4914559022a24ea153ba932d02be27560166fb))
+* **llm:** sources-mode probe handles gj_catalog(id:) object shape + wider reload window ([a01db4a](https://github.com/open-neko/openneko/commit/a01db4a5d40fe79a40a2e4bb930a9d4d2b2d80b5))
+* **web,llm:** hours-saved is always the last Answer-vitals tile ([77ff585](https://github.com/open-neko/openneko/commit/77ff58500ddf7edfe9beb9bb3383df0b68c4ac11))
+* **web,plugin-install:** bundle plugin-install through the web app ([bd14e0e](https://github.com/open-neko/openneko/commit/bd14e0eac1def7af4c382bd87fdf32cc710a6411))
+* **worker:** map plugin-suffixed channel plugins and stop hardcoding Telegram thread titles (CH4/CH5 host side) ([94c5622](https://github.com/open-neko/openneko/commit/94c5622a9ecf17689451824a580f6832352e6de1))
+
+## [1.20.0](https://github.com/open-neko/openneko/compare/v1.19.1...v1.20.0) (2026-06-10)
+
+
+### Features
+
+* **web:** surface hours-saved on the Ask thread + live dashboard sparkline ([#94](https://github.com/open-neko/openneko/issues/94)) ([9092959](https://github.com/open-neko/openneko/commit/909295932d9ff72bb05b4622d92b49732241e8a0))
+
 ## [1.19.1](https://github.com/open-neko/openneko/compare/v1.19.0...v1.19.1) (2026-06-05)
 
 
