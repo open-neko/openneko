@@ -254,6 +254,26 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // OL6: code actions require explicit approval unless an org policy
+  // says otherwise — never autonomous.
+  if (!names.has("code_action_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "code_action_default",
+      description:
+        "Filing issues and drafting patches always require operator approval; OpenNeko never applies code changes itself.",
+      appliesToKinds: ["code_create_issue", "code_draft_patch"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: null,
+      priority: 94,
+      enabled: true,
+    });
+  }
   // ADM2: data-source registry changes from chat need an ADMIN.
   if (!names.has("data_source_management_default")) {
     await createActionPolicy({
