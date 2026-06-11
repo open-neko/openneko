@@ -77,12 +77,19 @@ export async function main(): Promise<void> {
     apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_API_KEY,
   });
 
-  // Only claude-agent's MCP tools touch the control plane mid-turn; hermes
-  // emits fences the host parses after the turn, so it needs no broker.
+  // MCP tools reach the control plane mid-turn through the broker — claude
+  // via in-process SDK servers, hermes via stdio bridge children that ACP
+  // launches from this path.
   const controlPlane =
     brokerUrl && brokerToken
       ? new BrokerControlPlane(brokerUrl, brokerToken)
       : undefined;
+  if (brokerUrl && brokerToken) {
+    process.env.OPENNEKO_MCP_BRIDGE = new URL(
+      "./mcp-bridge.ts",
+      import.meta.url,
+    ).pathname;
+  }
 
   const emit = (event: AgentEvent): Promise<void> => {
     emitLine(EVENT_MARKER, event);

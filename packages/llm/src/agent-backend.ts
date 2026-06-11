@@ -139,6 +139,11 @@ export type AgentRunOptions = {
   onEvent?: (event: AgentEvent) => Promise<void> | void;
   backendState?: Record<string, unknown>;
   mcpServers?: Record<string, unknown>;
+  /** Per-run context for backends that mount MCP servers as stdio child
+   *  processes (hermes/ACP) instead of in-process SDK instances. The bridge
+   *  entry (OPENNEKO_MCP_BRIDGE) rebuilds each named server from this env;
+   *  broker coords ride the process env. */
+  mcpBridgeEnv?: Record<string, string>;
   /** Web turn ⇒ the agent renders a2ui cards. Backends that can't take the
    *  in-process SDK card server (hermes) wire their own render tool when set.
    *  See docs/PER_CHANNEL_RENDERING.md. */

@@ -14,6 +14,7 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@neko/channels": "workspace:*",
     "@neko/db": "workspace:*",
     "@neko/interaction": "workspace:*",
@@ -25,7 +26,6 @@
     "pg-boss": "^10.1.5",
     "tsx": "^4.19.2"
   },
-  "optionalDependencies": {},
   "devDependencies": {
     "@types/node": "^20",
     "@types/pg": "^8.20.0",

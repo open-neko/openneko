@@ -145,6 +145,18 @@ export async function runAgentBackend(
     backendState,
     onEvent: emit,
     mcpServers,
+    // ACP backends mount the same servers as stdio bridge children — ship the
+    // per-run context the bridge needs to rebuild them (broker coords ride the
+    // process env; see apps/worker/src/agent-sandbox/mcp-bridge.ts).
+    mcpBridgeEnv: mcp
+      ? {
+          OPENNEKO_MCP_ORG_ID: orgId,
+          OPENNEKO_MCP_THREAD_ID: threadId,
+          OPENNEKO_MCP_RUN_ID: runId,
+          OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
+          OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(pluginActions ?? []),
+        }
+      : undefined,
     wantsCards,
     tag: `work ${runId}`,
     signal,

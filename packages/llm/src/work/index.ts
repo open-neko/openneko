@@ -5,9 +5,17 @@ export * from "./behavior-monitor";
 export * from "./deployment-profile";
 export { buildWorkPrompt } from "./prompt";
 export {
+  buildAuditViewerServer,
+  buildChannelManagerServer,
+  buildDataSourceManagerServer,
+  buildPluginActionServer,
+  buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
+  buildSourceConfigManagerServer,
+  buildUserManagerServer,
   buildWorkMemoryServer,
+  type PluginActionDescriptor,
 } from "./tools";
 export {
   InProcessControlPlane,
