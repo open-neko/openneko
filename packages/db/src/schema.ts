@@ -415,6 +415,36 @@ export const control_plane_audit = pgTable(
   }),
 );
 
+// SEC7 — behavioral threshold alerts raised by the worker sweep over
+// the SEC5 audit stream and action/memory write rates.
+export const behavior_alert = pgTable(
+  "behavior_alert",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    subject: text("subject").notNull().default(""),
+    observed: integer("observed").notNull(),
+    threshold: integer("threshold").notNull(),
+    window_seconds: integer("window_seconds").notNull(),
+    details: jsonb("details"),
+    acknowledged_at: ts("acknowledged_at"),
+    acknowledged_by: text("acknowledged_by"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("behavior_alert_org_idx").on(t.org_id, t.created_at.desc()),
+    org_kind_subject_idx: index("behavior_alert_org_kind_subject_idx").on(
+      t.org_id,
+      t.kind,
+      t.subject,
+      t.created_at.desc(),
+    ),
+  }),
+);
+
 // CV4 — per-member fork baseline for 3-way memory pulls.
 export const memory_fork = pgTable(
   "memory_fork",
