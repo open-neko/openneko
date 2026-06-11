@@ -1,15 +1,16 @@
-# OpenShell sandboxed-agent runtime (preview)
+# OpenShell sandboxed-agent runtime
 
 OpenNeko can run the **agent loop itself** — not just plugins — inside an
 [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) policy sandbox, with the
 worker/web process as the only trusted control plane. This page covers the
 threat model, the architecture, how to turn it on, and what's verified.
 
-> **Status:** preview / opt-in. The default runtime is unchanged (plugins in
-> microsandbox, agent in-process). On macOS the **host-process gateway** path is
-> verified end-to-end via the web UI (hermes/gemini). The **containerised**
-> gateway (for the one-command installer) is verified up to mTLS and is pending
-> validation on the Linux target — see [Deployment](#deployment).
+> **Status:** OpenShell is the only runtime — agents and plugins always run in
+> sandboxes (SEC11 made it the default, SEC9 removed the in-process and
+> microsandbox paths). Both gateway shapes are verified end-to-end: the
+> **host-process gateway** via the web UI on macOS (hermes/gemini), and the
+> **containerised** gateway on Linux and macOS/OrbStack — see
+> [Deployment](#deployment).
 
 ## Why
 
@@ -49,7 +50,7 @@ treated as untrusted code and runs in a default-deny sandbox:
 ```
 
 `runChatTurn` splits into **prologue** (host: build the prompt from the DB),
-**runCore** (the agent loop — in-process *or* in a sandbox), and **epilogue**
+**runCore** (the agent loop, in a sandbox — tests inject an in-process core), and **epilogue**
 (host: parse action/workflow fences, persist, scrub). Only `runCore` moves into
 the box; the trusted halves stay on the host. Both the worker (channel messages)
 and the web chat route launch the sandbox through the same shared launcher
@@ -59,7 +60,7 @@ and the web chat route launch the sandbox through the same shared launcher
 host-side, so its sandbox needs only the model call. Claude uses MCP tools
 mid-turn, so it additionally needs the host-side broker (see Status).
 
-## Enabling it (developer / advanced)
+## Configuration (developer / advanced)
 
 Prerequisites: an OpenShell gateway reachable by the worker/web, the agent image
 (`openneko/agent`), and the `openshell` CLI on PATH.
@@ -69,7 +70,6 @@ Set these on the **worker** (channel runs) and/or the **web** process
 
 | Env var | Meaning |
 |---|---|
-| `OPENNEKO_AGENT_RUNTIME=openshell` | Run the agent loop in a sandbox (default `inprocess`) |
 | `OPENNEKO_AGENT_IMAGE` | The agent image (Dockerfile `agent` stage) |
 | `OPENNEKO_AGENT_MODEL_PROVIDER` | Gateway-side provider name (auto-synced; see below) |
 | `OPENNEKO_AGENT_MODEL_HOST` | Comma-separated egress hosts (e.g. `generativelanguage.googleapis.com,models.dev`) |
@@ -90,15 +90,13 @@ symlink. `OPENNEKO_AGENT_MODEL_BINARY` must be the resolved path.
 
 ## Plugins
 
-Plugins can run in OpenShell sandboxes instead of microsandbox with
-`OPENNEKO_PLUGIN_RUNTIME=openshell` (default `microsandbox`). Both sit behind one
-`PluginRuntime` interface, so it's a single flag — see
-[PLUGINS.md](PLUGINS.md).
+Plugins run in OpenShell sandboxes too, behind the same `PluginRuntime`
+interface — see [PLUGINS.md](PLUGINS.md).
 
 ## One-command install
 
 ```sh
-openneko start --runtime openshell
+openneko start
 ```
 
 overlays the containerised gateway (`compose.openshell.yml`) onto the stack and
@@ -112,7 +110,7 @@ boot — the env table below is only for manual / advanced setups.
 
 - **Host-process gateway** (brew on macOS / binary + systemd on Linux) — the
   original verified path; the first agent-in-sandbox web-UI e2e ran on this.
-- **Containerised gateway** (`compose.openshell.yml`, what `--runtime openshell`
+- **Containerised gateway** (`compose.openshell.yml`, what `openneko start`
   uses) — validated end-to-end on **both Linux** (neko-vm) **and macOS/OrbStack**:
   gateway boots with mTLS, the Docker driver creates a sandbox, the per-sandbox
   JWT delivers, `exec` runs, and the launcher drives a real hermes turn with the
@@ -120,7 +118,7 @@ boot — the env table below is only for manual / advanced setups.
   host:container bind paths** for the state dir. The one macOS subtlety: OrbStack
   only maps paths under `$HOME` into its Linux VM, so `OPENSHELL_STATE_DIR` must
   live under `$HOME` (a `/var/lib/...` source yields an empty JWT bind-mount →
-  crash-loop). `openneko start --runtime openshell` sets this for you; if you run
+  crash-loop). `openneko start` sets this for you; if you run
   compose directly on macOS, export `OPENSHELL_STATE_DIR=$HOME/.openneko/openshell`.
 
 ## Verifying key isolation

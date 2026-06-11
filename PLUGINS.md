@@ -2,7 +2,7 @@
 
 Sandboxed plugins add new action kinds — Slack, Gmail, web search, Shopify, Sheets, and more. Browse the marketplace at **[open-neko.github.io/plugins](https://open-neko.github.io/plugins/)**.
 
-Every plugin runs inside a microsandbox microVM with outbound network limited to its manifest's allowlist. Secrets (bot tokens, API keys, OAuth tokens) live in `~/.config/openneko/secrets.json` (0600 perms) and never touch `openneko.plugins.json` (tracked) or `action_request.payload` (logged).
+Every plugin runs inside an OpenShell sandbox with outbound network limited to its manifest's allowlist. Secrets (bot tokens, API keys, OAuth tokens) live in `~/.config/openneko/secrets.json` (0600 perms) and never touch `openneko.plugins.json` (tracked) or `action_request.payload` (logged).
 
 ## Capabilities
 
@@ -27,7 +27,7 @@ pnpm openneko init
 pnpm openneko install @open-neko/plugin-parallel-search
 ```
 
-The registry watches `openneko.plugins.json` and the secrets file — no worker restart needed. MicroVMs start lazily on first use. `openneko doctor` checks your host can run microsandbox.
+The registry watches `openneko.plugins.json` and the secrets file — no worker restart needed. Sandboxes start lazily on first use. `openneko doctor` checks your host can run the OpenShell runtime.
 
 ## Federated marketplaces
 
@@ -86,15 +86,14 @@ Plugins with `connect` (Google Workspace today) authorise per-operator OAuth. Ea
 | Host | Plugin system |
 |---|---|
 | macOS arm64 (Apple Silicon) | ✓ supported |
-| Linux x86_64 with `/dev/kvm` | ✓ supported |
-| Linux arm64 with `/dev/kvm` | ✓ supported |
-| macOS x86_64 (Intel) | ✗ microsandbox is arm64-only on macOS |
-| Linux without KVM | ✗ |
+| macOS x86_64 (Intel) | ✓ supported |
+| Linux x86_64 | ✓ supported |
+| Linux arm64 | ✓ supported |
 | Windows | ✗ WSL2 viability under evaluation |
 
-Plugins need hardware-virtualisation acceleration.
-
-- **macOS arm64 with the brew binary**: install works (CLI proxies into the worker container, `plugins.json` hot-reloads), but execution fails because Docker Desktop hides Hypervisor.framework from Linux containers. Use *Developer Setup* (`pnpm dev` runs the worker on the host) for execution.
-- **Linux with `/dev/kvm`** (amd64 or arm64): install and execution both work. The embedded compose's `plugins.linux.yml` overlay passes `/dev/kvm` into the worker container automatically.
+The OpenShell gateway and every sandbox run as containers, so the only host
+requirement is `docker` on PATH — no KVM or hardware-virtualisation
+acceleration. On macOS the gateway's state dir must live under `$HOME`
+(see [OPENSHELL.md](OPENSHELL.md) → Deployment).
 
 On unsupported hosts the plugin subsystem is disabled with a clear log line; OpenNeko itself still runs. The built-in `send_webhook` adapter (no sandbox) remains as an escape hatch.
