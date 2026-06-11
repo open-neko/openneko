@@ -29,14 +29,19 @@ auth:
     audience: ""
     issuer: ""
 
-# Role shaping: the JWT's `role` claim selects the GraphJin role.
+# Role shaping (verified live on 3.18.37): JWT roles only take effect
+# when they match a configured role or admin_roles; everything else
+# falls back to the built-in authenticated role "user".
 roles_query: ""
 identity:
-  query: ""
+  user_id_claim: sub
+  role_claims:
+    - role
   # K3 — multi-tenant isolation: the JWT's org_id claim becomes the
-  # namespace. Pair with `namespace_column` on any source whose tables
-  # carry org_id (single-tenant customer DBs like the demo leave it off).
-  # namespace_claim: org_id
+  # namespace ($account_id). Required for `read: account` sources.
+  namespace_claim: org_id
+  admin_roles:
+    - admin
 
 auth_fail_block: true
 
@@ -88,11 +93,15 @@ sources:
     user: postgres
     password: postgres
     access:
-      read: account
+      # `authenticated` = any valid token, no row scoping — right for a
+      # single-tenant customer DB like the demo. `account` (K3) is the
+      # multi-tenant mode: it auto-filters every query to the JWT's
+      # org_id namespace AND blocks tables missing namespace_column
+      # (verified live: account mode on a column-less table blocks).
+      read: authenticated
       write: blocked
       delete: blocked
-      # K3 — uncomment on multi-tenant sources whose tables carry org_id:
-      # every query is automatically scoped to the JWT's org_id namespace
-      # and tables missing the column are blocked outright.
+      # K3 — switch to multi-tenant isolation:
+      # read: account
       # namespace_column: org_id
       # missing_namespace_column: block

@@ -30,13 +30,19 @@ function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
 }
 
-export function graphjinSigningSecret(orgId: string): Buffer {
-  return deriveSigningSecret(`graphjin:${orgId}`);
-}
-
 /** The base64 secret to paste into the GraphJin `auth.jwt.secret` config. */
 export function graphjinSigningSecretB64(orgId: string): string {
-  return graphjinSigningSecret(orgId).toString("base64");
+  return deriveSigningSecret(`graphjin:${orgId}`).toString("base64");
+}
+
+/**
+ * The HMAC key for token signing. GraphJin uses the config string
+ * LITERALLY as the key (it does not base64-decode `auth.jwt.secret`),
+ * so both sides key off the base64 STRING — verified live against
+ * 3.18.37 sources mode (a raw-bytes key resolves every token to anon).
+ */
+export function graphjinSigningSecret(orgId: string): Buffer {
+  return Buffer.from(graphjinSigningSecretB64(orgId), "utf8");
 }
 
 export function mintGraphjinToken(input: GraphjinTokenInput): string {
