@@ -79,7 +79,7 @@ func newInstallCmd() *cobra.Command {
 				if reason == "" {
 					reason = "(unknown reason)"
 				}
-				fmt.Fprintf(errOut, "WARNING: host check: %s\n  Install will proceed. Plugin execution requires a host that can spawn microsandbox VMs (Linux with /dev/kvm, or macOS arm64 via pnpm-dev). Pass --skip-host-check to suppress this warning.\n", reason)
+				fmt.Fprintf(errOut, "WARNING: host check: %s\n  Install will proceed. Plugin execution requires a host that can run the OpenShell sandbox runtime (Docker on Linux or macOS). Pass --skip-host-check to suppress this warning.\n", reason)
 			}
 
 			if unverified && !pol.Allows(policy.SourceUnverified) {

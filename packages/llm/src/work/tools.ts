@@ -965,7 +965,7 @@ export function buildPluginActionServer(
           // adapters are registered in the worker process, not the
           // web process that hosts /work runs. Enqueuing decouples
           // the two: any process can submit the job, only the worker
-          // (which holds the plugin registry + microsandbox runtime)
+          // (which holds the plugin registry + sandbox runtime)
           // runs it.
           const request = await controlPlane.createActionRequest({
             orgId: opts.orgId,

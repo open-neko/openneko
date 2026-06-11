@@ -80,8 +80,8 @@ function shellQuote(value: string): string {
 }
 
 /**
- * Build the `runCore` the launcher injects into runChatTurn for
- * OPENNEKO_AGENT_RUNTIME=openshell: run the agent loop in an OpenShell sandbox.
+ * Build the `runCore` the launcher injects into runChatTurn: run the
+ * agent loop in an OpenShell sandbox.
  * The host-side prologue (prompt build) and epilogue (fence handling +
  * persistence) stay in runChatTurn around this call. Shared by the worker
  * (channel runs) and the web route (interactive chat) — both are control-plane
@@ -305,9 +305,9 @@ export function buildModelEgressArgs(
 }
 
 /**
- * Build the OpenShell runtime deps for runChatTurn from env. Returns `{}` unless
- * OPENNEKO_AGENT_RUNTIME=openshell, so the default in-process path is unchanged.
- * Shared by the worker (runWorkRun) and the web chat route. Env-wired for now;
+ * Build the OpenShell runtime deps for runChatTurn from env. SEC9: OpenShell
+ * is the only agent runtime — every production host injects this runCore;
+ * tests inject their own in-process runCore via deps. Env-wired for now;
  * per-org auto-sync (provider/egress/key-var from the org row) is a follow-up.
  *
  * `broker` (optional) wires the claude MCP-tool path: the caller starts a host
@@ -320,9 +320,6 @@ export function agentRuntimeDepsFromEnv(broker?: {
   tokenFor: (binding: { runId: string; orgId: string }) => string;
   release?: (runId: string) => void;
 }): Pick<Partial<RunChatTurnDeps>, "runCore"> {
-  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell") {
-    return {};
-  }
   // Comma-separated: the model endpoint AND any resolution hosts (hermes needs
   // models.dev), all scoped to the backend's one connecting binary.
   const hosts = (process.env.OPENNEKO_AGENT_MODEL_HOST ?? "")

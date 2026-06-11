@@ -1,7 +1,0 @@
-# Linux + KVM overlay: enables the microsandbox device on the worker so
-# plugin VMs can boot. Auto-overlaid by the supervisor when GOOS=linux and
-# /dev/kvm exists.
-services:
-  worker:
-    devices:
-      - "/dev/kvm:/dev/kvm"

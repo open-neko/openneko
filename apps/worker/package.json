@@ -26,7 +26,6 @@
     "tsx": "^4.19.2"
   },
   "optionalDependencies": {
-    "microsandbox": "0.4.5"
   },
   "devDependencies": {
     "@types/node": "^20",

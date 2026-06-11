@@ -18,7 +18,7 @@ import { PluginRegistry } from "../../src/plugins/plugin-registry";
 import type {
   PluginRuntime,
   PluginVmSpec,
-} from "../../src/plugins/microsandbox-runtime";
+} from "../../src/plugins/plugin-runtime";
 
 const FAKE_INTEGRITY = "sha512-" + "a".repeat(86) + "==";
 

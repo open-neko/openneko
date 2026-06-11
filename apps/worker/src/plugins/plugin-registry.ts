@@ -73,11 +73,9 @@ import { createScrubber, type Scrubber } from "@neko/llm/work";
 import { registerActionAdapter } from "@neko/llm/workflows";
 import type { ActionAdapter } from "@neko/llm/workflows";
 import {
-  MicrosandboxRuntime,
   networkModeFor,
   type PluginRuntime,
-} from "./microsandbox-runtime.js";
-import { isSupportedHost, platformTriple } from "./microsandbox-sdk.js";
+} from "./plugin-runtime.js";
 
 /**
  * Snapshot of the install policy + a per-entry flag, surfaced via
@@ -112,7 +110,7 @@ export interface PluginRegistryOptions {
   image?: string;
   cpus?: number;
   memoryMb?: number;
-  /** For tests: inject a runtime instead of constructing microsandbox. */
+  /** For tests: inject a runtime instead of constructing OpenShell. */
   runtime?: PluginRuntime;
   /** For tests: resolve a plugin to its bundled runner script. */
   resolveRunner?: (pkg: string) => string;
@@ -1088,7 +1086,7 @@ export class PluginRegistry {
       }
       if (!this.runtime) {
         throw new Error(
-          `plugin-registry: no runtime available; plugin subsystem disabled on ${platformTriple() ?? `${process.platform}-${process.arch}`}`,
+          `plugin-registry: no runtime available; plugin subsystem disabled on ${process.platform}-${process.arch}`,
         );
       }
       await this.ensureVm(pluginId, entry);
@@ -1256,42 +1254,20 @@ export class PluginRegistry {
     }
   }
 
+  // SEC9: OpenShell is the only plugin runtime. The microsandbox path
+  // (and its OPENNEKO_PLUGIN_RUNTIME escape hatch) is gone; tests inject
+  // a runtime via options.runtime.
   private async createDefaultRuntime(): Promise<PluginRuntime | null> {
-    const kind = (
-      process.env.OPENNEKO_PLUGIN_RUNTIME ?? "openshell"
-    ).toLowerCase();
-    if (kind === "openshell") {
-      const { OpenShellRuntime } = await import("./openshell-runtime.js");
-      return new OpenShellRuntime({
-        image:
-          this.options.image ??
-          process.env.OPENNEKO_PLUGIN_BASE_IMAGE ??
-          "ghcr.io/open-neko/plugin-base:node20",
-        cli: process.env.OPENSHELL_CLI || undefined,
-        gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
-        gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
-        bundleDir: this.options.workRoot,
-      });
-    }
-    if (!isSupportedHost()) return null;
-    let sdk: typeof import("microsandbox");
-    try {
-      sdk = (await import("microsandbox")) as typeof import("microsandbox");
-    } catch {
-      return null;
-    }
-    const factory = sdk.Sandbox as unknown as ConstructorParameters<
-      typeof MicrosandboxRuntime
-    >[0]["sandboxFactory"];
-    const policy = sdk.NetworkPolicy as unknown as ConstructorParameters<
-      typeof MicrosandboxRuntime
-    >[0]["networkPolicy"];
-    return new MicrosandboxRuntime({
-      image: this.options.image ?? "node:20-alpine",
-      cpus: this.options.cpus ?? 1,
-      memoryMb: this.options.memoryMb ?? 256,
-      sandboxFactory: factory,
-      networkPolicy: policy,
+    const { OpenShellRuntime } = await import("./openshell-runtime.js");
+    return new OpenShellRuntime({
+      image:
+        this.options.image ??
+        process.env.OPENNEKO_PLUGIN_BASE_IMAGE ??
+        "ghcr.io/open-neko/plugin-base:node20",
+      cli: process.env.OPENSHELL_CLI || undefined,
+      gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
+      gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+      bundleDir: this.options.workRoot,
     });
   }
 }

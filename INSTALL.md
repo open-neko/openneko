@@ -66,7 +66,7 @@ Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github
 ## Command reference
 
 ```bash
-openneko start [--mode prod|dev|demo] [--detach] [--runtime openshell]
+openneko start [--mode prod|dev|demo] [--detach]
 openneko status                    # docker compose ps proxy
 openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
@@ -85,23 +85,17 @@ Modes:
 
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
 
-### Agent-in-sandbox (preview)
+### Agent & plugin sandboxing
 
-```bash
-openneko start --runtime openshell
-```
+The agent loop **and** plugins always run inside OpenShell policy
+sandboxes — default-deny egress, and the model API key never enters the
+sandbox (the gateway's egress proxy injects it on the wire; the box only
+ever holds an opaque placeholder). The containerized OpenShell gateway is
+part of the stack and the agent image is pre-pulled at install (never on
+the first chat). State dir is handled per-platform automatically (under
+`$HOME` on macOS/OrbStack, `/var/lib/openneko/openshell` on Linux). Needs
+Docker — already required to run OpenNeko.
 
-runs the agent loop **and** plugins inside NVIDIA OpenShell policy sandboxes
-instead of in-process — default-deny egress, and the model API key never enters
-the sandbox (the gateway's egress proxy injects it on the wire; the box only
-ever holds an opaque placeholder). The containerized OpenShell gateway is added
-to the stack and the agent image is pre-pulled at install (never on the first
-chat). State dir is handled per-platform automatically (under `$HOME` on
-macOS/OrbStack, `/var/lib/openneko/openshell` on Linux). Needs Docker (already a
-requirement; the gateway uses the Docker driver).
-
-Architecture, threat model, the connecting-binary gotcha, and how to verify key
-isolation: **[OPENSHELL.md](OPENSHELL.md)**.
 
 ## Upgrade
 

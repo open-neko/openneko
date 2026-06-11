@@ -24,7 +24,6 @@ func newStartCmd() *cobra.Command {
 	var detach bool
 	var skipMigrate bool
 	var pullPolicy string
-	var agentRuntime string
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Bring up the OpenNeko stack",
@@ -49,20 +48,12 @@ Modes:
 				_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
 			}
 
-			switch agentRuntime {
-			case "openshell":
-				if err := configureOpenShellStateDir(); err != nil {
-					return err
-				}
-			case "inprocess":
-				// Dev escape hatch: unsandboxed agent, microsandbox plugins.
-				// Goes away with SEC9 (OpenShell-only).
-			default:
-				return fmt.Errorf("--runtime must be openshell or inprocess (got %q)", agentRuntime)
+			// SEC9: OpenShell is the only agent runtime.
+			if err := configureOpenShellStateDir(); err != nil {
+				return err
 			}
 
 			sup := compose.New(assets.ComposeFS)
-			sup.AgentRuntime = agentRuntime
 			files, err := sup.Materialize(m)
 			if err != nil {
 				return err
@@ -101,12 +92,10 @@ Modes:
 			// Pre-pull the agent sandbox image at install time so the gateway's
 			// first sandbox-create (the user's first chat) never blocks on a
 			// large pull. Best-effort: a failure just falls back to a lazy pull.
-			if agentRuntime == "openshell" {
-				agentImg := agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION"))
-				fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
-				if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
-				}
+			agentImg := agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION"))
+			fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
+			if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
 			}
 
 			// Stage 2: bring up the rest.
@@ -129,7 +118,6 @@ Modes:
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in the background after services start")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
 	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
-	cmd.Flags().StringVar(&agentRuntime, "runtime", "openshell", "Agent runtime: 'openshell' (default) sandboxes the agent + plugins via a containerized OpenShell gateway; 'inprocess' runs the agent unsandboxed in the worker (dev only)")
 	return cmd
 }
 

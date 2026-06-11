@@ -114,9 +114,7 @@ services:
   # Worker: channel-triggered agent runs + plugins, both in OpenShell sandboxes.
   worker:
     environment:
-      OPENNEKO_PLUGIN_RUNTIME: openshell
       OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:node20}
-      OPENNEKO_AGENT_RUNTIME: openshell
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       # provider / egress host / connecting binary / key-env are derived from the
       # org's model config by provisionHostConfig — no per-deploy egress wiring.
@@ -139,7 +137,6 @@ services:
   # self-derives on the first settings save (provisionHostConfig).
   web:
     environment:
-      OPENNEKO_AGENT_RUNTIME: openshell
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       OPENSHELL_GATEWAY: openneko
       OPENNEKO_BROKER_PORT: ${OPENNEKO_WEB_BROKER_PORT:-4198}

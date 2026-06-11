@@ -4,11 +4,11 @@ import {
   buildExecCommand,
   type PluginRuntime,
   type PluginVmSpec,
-} from "./microsandbox-runtime.js";
+} from "./plugin-runtime.js";
 
 /**
  * Plugin runtime backed by the `openshell` CLI. One OpenShell sandbox per
- * installed plugin, mirroring MicrosandboxRuntime's one-shot exec model:
+ * installed plugin, with a one-shot exec model:
  * `start` boots a Ready sandbox from the shared base image and uploads the
  * plugin's `run.js`; each `callRpc` exec's the runner and parses the single
  * JSON response from stdout.
@@ -16,7 +16,7 @@ import {
  * The runner lives at /sandbox/run.js (the sandbox user's home), not
  * /workspace — OpenShell has no host bind-mount, so the bundle is uploaded.
  * Secrets ride the same `sh -c 'export K=V; exec node …'` wrapper as
- * microsandbox (OpenShell exec has no --env), produced by buildExecCommand.
+ * a shell wrapper (OpenShell exec has no --env), produced by buildExecCommand.
  */
 const PLUGIN_RUNNER_PATH = "/sandbox/run.js";
 const DEFAULT_RPC_TIMEOUT_MS = 30_000;

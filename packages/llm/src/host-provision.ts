@@ -116,6 +116,7 @@ const SOURCES_SECRET_PLACEHOLDER = "REPLACE_WITH_PER_ORG_SECRET_B64";
  */
 async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
   const cfgPath = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
+  let wroteSecret = false;
   if (cfgPath) {
     const { readFile } = await import("node:fs/promises");
     try {
@@ -127,6 +128,7 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
           raw.replaceAll(SOURCES_SECRET_PLACEHOLDER, graphjinSigningSecretB64(orgId)),
           "utf8",
         );
+        wroteSecret = true;
         console.log(
           `[host-provision] wrote per-org JWT secret into ${cfgPath} (sources mode)`,
         );
@@ -152,9 +154,12 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
 
   const { mintGraphjinToken } = await import("./graphjin/token");
   const token = mintGraphjinToken({ orgId, userId: null, role: "service" });
-  // The secret write above may still be reloading server-side — give
-  // reload_on_config_change a generous window (observed ~10s on 3.18.37).
-  for (let attempt = 1; attempt <= 6; attempt++) {
+  // Only when WE just wrote the secret does the server need a reload
+  // window (reload_on_config_change, observed ~10s on 3.18.37). For an
+  // unmanaged source a single quick probe is enough — an unreachable or
+  // legacy endpoint must not stall boot.
+  const maxAttempts = wroteSecret ? 6 : 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(src.graphqlUrl, {
         method: "POST",
@@ -165,7 +170,7 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
         body: JSON.stringify({
           query: `query { gj_catalog(id: "help:discovery") { id } }`,
         }),
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(2_500),
       });
       if (res.ok) {
         const body = (await res.json()) as {
@@ -189,7 +194,7 @@ async function provisionGraphjinSourcesMode(orgId: string): Promise<void> {
     } catch {
       // unreachable / not reloaded yet — retry below.
     }
-    if (attempt < 6) await new Promise((r) => setTimeout(r, 3000));
+    if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 3000));
   }
 }
 
@@ -333,16 +338,13 @@ function deriveAgentEgress(
 }
 
 /**
- * OPENNEKO_AGENT_RUNTIME=openshell: self-configure the agent sandbox from the
- * org's model config — derive the egress (host/binary/key-env; explicit env
- * overrides win) and sync the model key into a gateway-side provider so the
- * proxy injects it on the wire (the key never enters the box). Replaces the
- * manual `openshell provider create` + hand-set egress env.
+ * Self-configure the agent sandbox from the org's model config — derive the
+ * egress (host/binary/key-env; explicit env overrides win) and sync the
+ * model key into a gateway-side provider so the proxy injects it on the
+ * wire (the key never enters the box). Replaces the manual `openshell
+ * provider create` + hand-set egress env.
  */
 async function provisionOpenShellRuntime(orgId: string, backend: string): Promise<void> {
-  if ((process.env.OPENNEKO_AGENT_RUNTIME ?? "openshell").toLowerCase() !== "openshell") {
-    return;
-  }
   const row = await loadProviderRow(orgId, "primary");
   if (!row || !row.enabled) return;
 
