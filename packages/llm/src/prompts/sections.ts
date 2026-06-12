@@ -225,28 +225,68 @@ ${knowledgeBlock}
 </data_access>`;
 }
 
+const TABLE_DIGEST_MAX_CHARS = 4_000;
+
+/** One short line per table from the pack's tables file (legacy or agentic
+ *  shape), hard-capped — a prompt block, not a schema dump. */
+export function compactTableDigest(raw: string): string {
+  let lines: string[];
+  try {
+    const parsed = JSON.parse(raw) as {
+      tables?: Array<{
+        name?: string;
+        schema?: string;
+        database?: string;
+        column_count?: number;
+        summary?: string;
+        id?: string;
+      }>;
+    };
+    const tables = Array.isArray(parsed.tables) ? parsed.tables : [];
+    if (tables.length === 0) throw new Error("no tables array");
+    lines = tables.map((t) => {
+      const name = [t.schema, t.name].filter(Boolean).join(".") || t.id || "?";
+      const extra = t.summary
+        ? ` — ${String(t.summary).slice(0, 60)}`
+        : t.column_count != null
+          ? ` (${t.column_count} cols)`
+          : "";
+      return `- ${name}${extra}`;
+    });
+  } catch {
+    lines = raw.split("\n").filter((l) => l.trim());
+  }
+  let out = "";
+  let dropped = 0;
+  for (const line of lines) {
+    if (out.length + line.length + 1 > TABLE_DIGEST_MAX_CHARS) {
+      dropped = lines.length - out.split("\n").filter(Boolean).length;
+      break;
+    }
+    out += line + "\n";
+  }
+  if (dropped > 0) {
+    out += `… ${dropped} more — list the rest via gj_catalog (kind: "table").\n`;
+  }
+  return out.trimEnd();
+}
+
 function buildAgenticDataAccessSection(
   opts: DataAccessOptions,
   paths: ReturnType<typeof knowledgePackPaths>,
 ): string {
-  const { shellTool, knowledge, inlineKnowledge } = opts;
+  const { shellTool, knowledge } = opts;
 
-  // Always inline the digest in agentic mode: it is one line per table by
-  // construction, and pointing the model at a file instead costs every
-  // question several discovery calls before it can write its first query
-  // (measured ~3x slower to first answer). Deeper detail (columns, examples,
-  // join paths) still comes from gj_catalog cards on demand.
+  // Inline a COMPACT table digest in agentic mode: pointing the model at a
+  // file costs every question several discovery calls before its first real
+  // query (measured ~3x slower to first answer). But the raw pack file is
+  // pretty-printed JSON (10s of KB) and inlining it verbatim broke runs —
+  // compress to one short line per table and hard-cap the block.
   const tablesBlock = `================================================================================
-Tables visible to your role (catalog id, name, one-line summary):
+Tables visible to your role (deeper detail via gj_catalog on demand):
 ================================================================================
 
-${knowledge.tables}
-
-================================================================================
-Databases / sources:
-================================================================================
-
-${knowledge.namespaces}
+${compactTableDigest(knowledge.tables)}
 
 `;
 
