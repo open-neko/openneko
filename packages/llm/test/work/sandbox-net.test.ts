@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isHostLocalName,
   isLoopbackHost,
   SANDBOX_HOST_ALIAS,
   sandboxReachableUrl,
@@ -29,5 +30,20 @@ describe("sandbox-net", () => {
       "https://gj.prod.example:443/api",
     );
     expect(sandboxReachableUrl("not a url")).toBe("not a url");
+  });
+
+  it("classifies dot-less compose service names as host-local", () => {
+    for (const h of ["graphjin", "neko-db", "localhost", "127.0.0.1"]) {
+      expect(isHostLocalName(h), h).toBe(true);
+    }
+    for (const h of ["db.example.com", "host.openshell.internal", "10.0.0.5"]) {
+      expect(isHostLocalName(h), h).toBe(false);
+    }
+  });
+
+  it("rewrites compose-internal URLs to the gateway host alias", () => {
+    expect(sandboxReachableUrl("http://graphjin:8080/api/v1/mcp")).toBe(
+      `http://${SANDBOX_HOST_ALIAS}:8080/api/v1/mcp`,
+    );
   });
 });

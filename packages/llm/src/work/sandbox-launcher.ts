@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import type { AgentEvent, AgentRunResult } from "../agent-backend";
 import type { RunAgentBackendInput } from "./agent-core";
 import type { RunChatTurnDeps } from "./run-chat-turn";
-import { isLoopbackHost, SANDBOX_HOST_ALIAS } from "./sandbox-net";
+import { isHostLocalName, SANDBOX_HOST_ALIAS } from "./sandbox-net";
 
 // Wire protocol shared with the in-image entrypoint. The agent runs in a
 // separate container, so these can't share a module at runtime — they MUST
@@ -268,10 +268,11 @@ async function resolveDataSourceEgress(
     if (!src?.mcpUrl) return { rules: [] };
     const u = new URL(src.mcpUrl);
     const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
-    // A host-local server (localhost data source) is only reachable from
-    // the box via the gateway's host alias — and the proxy refuses loopback
-    // endpoint rules outright, which would kill the whole policy update.
-    const host = isLoopbackHost(u.hostname) ? SANDBOX_HOST_ALIAS : u.hostname;
+    // A host-local server (localhost or a compose-internal name like
+    // `graphjin`) is only reachable from the box via the gateway's host
+    // alias — the proxy refuses loopback endpoint rules outright and its
+    // SSRF check rejects names resolving to private compose IPs.
+    const host = isHostLocalName(u.hostname) ? SANDBOX_HOST_ALIAS : u.hostname;
     return {
       rules: [{ host, port, binary: graphjinBinary }],
       serverUrl: src.mcpUrl,

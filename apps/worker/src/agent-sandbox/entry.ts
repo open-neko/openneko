@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   makeAgentBackend,
@@ -142,6 +143,14 @@ export async function main(): Promise<void> {
         ? { allowSubcommands: job.graphjinWriteGrants }
         : {}),
     });
+    // The backend prepends binRoot to PATH for its children, but hermes'
+    // terminal tool spawns LOGIN shells (`bash -lic`) and /etc/profile resets
+    // PATH — silently un-guarding `graphjin`. Login shells re-source these
+    // files after the reset, so the wrapper wins the lookup again.
+    const pathLine = `\nexport PATH="${job.workspace.binRoot}:$PATH"\n`;
+    for (const rc of [".bash_profile", ".profile", ".bashrc"]) {
+      await appendFile(join(homedir(), rc), pathLine).catch(() => {});
+    }
   }
 
   const result = await runAgentBackend({
