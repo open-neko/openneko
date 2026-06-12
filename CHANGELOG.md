@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.2](https://github.com/open-neko/openneko/compare/v2.3.1...v2.3.2) (2026-06-12)
+
+
+### Bug Fixes
+
+* **cli:** start derives OPENSHELL_DB_URL from the rotated local config ([94ed9d5](https://github.com/open-neko/openneko/commit/94ed9d5fc539361fed260c1a9ae005d43be83ee4))
+* gateway DB URL tracks the rotated password — agent runs survive the setup wizard ([e6d04ac](https://github.com/open-neko/openneko/commit/e6d04ac8c1b81d501c19467a84972e5d32fe0c48))
+
 ## [2.3.1](https://github.com/open-neko/openneko/compare/v2.3.0...v2.3.1) (2026-06-12)
 
 
