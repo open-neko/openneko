@@ -61,6 +61,17 @@ jobs:
             cd ~/openneko
             OPENNEKO_PORT=80 openneko start --mode demo --detach
             openneko status || true
+
+            # GC superseded OpenNeko images: every release pulls ~15GB and
+            # the disk fills after a few versions (two deploys have already
+            # died on ENOSPC). In-use tags survive (rmi refuses); non-fatal.
+            CUR=$(openneko version 2>/dev/null || true)
+            if [ -n "$CUR" ]; then
+              docker images --format '{{.Repository}}:{{.Tag}}' \
+                | grep '^ghcr.io/open-neko/' \
+                | grep -v ":v$CUR\$" \
+                | xargs -r docker rmi 2>/dev/null || true
+            fi
           EOF
 
       - name: Smoke test
