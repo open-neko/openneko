@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.1](https://github.com/open-neko/openneko/compare/v2.2.0...v2.2.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* agent-runtime resilience batch from the live sweep + doc links ([5873e95](https://github.com/open-neko/openneko/commit/5873e95ee13154b171f4b50e492dbe641e0521c2))
+* **llm:** bridge children get the proxy env — hermes spawns them clean ([6923559](https://github.com/open-neko/openneko/commit/69235594ea3394610834a880c13dd0b5d7360759))
+* **llm:** broker falls back to an ephemeral port when the unpinned default collides ([c160b55](https://github.com/open-neko/openneko/commit/c160b55ec6a0db5e5eba6dfc48540a0082c2c102))
+* **worker:** bridge children warm up the broker path before serving; surface fetch causes ([eac7542](https://github.com/open-neko/openneko/commit/eac754200b5c0fffbbf551316b5aeee20ef77f2d))
+* **worker:** broker client retries connection-level fetch failures ([83a1a2c](https://github.com/open-neko/openneko/commit/83a1a2cff9929e64b7095881f2e802f466e3c539))
+* **worker:** sweep queued runs whose launcher died — they sat queued forever ([e3394d7](https://github.com/open-neko/openneko/commit/e3394d7d3e9d85a2b30e1205bc3f8298ec7b3e63))
+
 ## [2.2.0](https://github.com/open-neko/openneko/compare/v2.1.0...v2.2.0) (2026-06-11)
 
 
