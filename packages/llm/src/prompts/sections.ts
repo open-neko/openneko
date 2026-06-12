@@ -226,6 +226,68 @@ ${knowledgeBlock}
 }
 
 const TABLE_DIGEST_MAX_CHARS = 4_000;
+const INSIGHTS_DIGEST_MAX_CHARS = 6_000;
+
+/** Hub tables with ready query templates and join paths, from the agentic
+ *  pack's insights.json — the part of the legacy pack that made first
+ *  answers fast. Compact and hard-capped: NEVER inline raw pack JSON
+ *  (a 26KB inline reproducibly hung the model stream). */
+export function compactInsightsDigest(raw: string): string {
+  let hubs: Array<{
+    name?: string;
+    summary?: string;
+    examples?: unknown[];
+    join_paths?: unknown[];
+  }>;
+  try {
+    const parsed = JSON.parse(raw) as { hub_tables?: typeof hubs };
+    hubs = Array.isArray(parsed.hub_tables) ? parsed.hub_tables : [];
+  } catch {
+    return "";
+  }
+  if (hubs.length === 0) return "";
+  let out = "";
+  for (const hub of hubs) {
+    let block = `## ${hub.name ?? "?"}${hub.summary ? ` — ${String(hub.summary).slice(0, 110)}` : ""}\n`;
+    for (const path of (hub.join_paths ?? []).slice(0, 6)) {
+      block += `  join: ${String(path).slice(0, 140)}\n`;
+    }
+    for (const ex of (hub.examples ?? []).slice(0, 2)) {
+      const q =
+        typeof ex === "string"
+          ? ex
+          : ((ex as { query?: string }).query ?? JSON.stringify(ex));
+      block += `  template: ${q.replace(/\s+/g, " ").slice(0, 300)}\n`;
+    }
+    if (out.length + block.length > INSIGHTS_DIGEST_MAX_CHARS) break;
+    out += block;
+  }
+  return out.trimEnd();
+}
+
+const HELP_INDEX_MAX_CHARS = 2_000;
+
+/** One line per help card from the agentic pack's insights file. The raw
+ *  file also carries hub_tables (rendered separately by
+ *  compactInsightsDigest) — inlining it verbatim duplicates that and
+ *  reinflates the prompt the digests exist to shrink. */
+export function compactHelpCardIndex(raw: string): string {
+  let cards: Array<{ id?: string; summary?: string }>;
+  try {
+    const parsed = JSON.parse(raw) as { help_cards?: typeof cards };
+    cards = Array.isArray(parsed.help_cards) ? parsed.help_cards : [];
+  } catch {
+    return "";
+  }
+  let out = "";
+  for (const card of cards) {
+    if (!card.id) continue;
+    const line = `- ${card.id}${card.summary ? ` — ${String(card.summary).slice(0, 90)}` : ""}\n`;
+    if (out.length + line.length > HELP_INDEX_MAX_CHARS) break;
+    out += line;
+  }
+  return out.trimEnd();
+}
 
 /** One short line per table from the pack's tables file (legacy or agentic
  *  shape), hard-capped — a prompt block, not a schema dump. */
@@ -288,7 +350,20 @@ Tables visible to your role (deeper detail via gj_catalog on demand):
 
 ${compactTableDigest(knowledge.tables)}
 
-`;
+${(() => {
+  const insights = compactInsightsDigest(knowledge.insights);
+  return insights
+    ? `================================================================================
+Hub tables — join paths and ready query templates (adapt, don't rediscover):
+A join path "s1.child.col -> s2.parent.col" means child rows reference parent;
+traverse it by nesting in one query: { child(limit: 20) { col parent { ... } } }.
+================================================================================
+
+${insights}
+
+`
+    : "";
+})()}`;
 
   return `<data_access>
 The configured GraphJin database is the authoritative source for any
@@ -351,11 +426,12 @@ Help-card index — what the catalog can teach you (pull any card's full
 guidance on demand with gj_catalog(id: "help:<topic>")):
 ================================================================================
 
-${knowledge.insights}
+${compactHelpCardIndex(knowledge.insights)}
 
 ================================================================================
-Query-DSL essentials (filters + query shape, from the catalog's help
-cards). Pull other help cards for mutations, fragments, errors:
+Query-DSL essentials — filters, query shape, and the aggregate patterns
+(distinct + sum_<col> replaces row pagination). Pull other help cards
+for mutations, fragments, errors:
 ================================================================================
 
 ${knowledge.syntax}
