@@ -1,6 +1,7 @@
 # Install OpenNeko
 
 Sections below **Command reference** are reference — not needed to get started.
+What you're installing, feature by feature, in plain language: **[FEATURES.md](FEATURES.md)**.
 
 ## Requirements
 
@@ -36,7 +37,7 @@ Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick an agent backend — Hermes (Anthropic / OpenAI / Google / Ollama / others) or Claude Agent (Anthropic in-process).
+3. Pick an agent backend — Hermes (Anthropic / OpenAI / Google / Ollama / others) or Claude Agent (Anthropic). Both run inside the OpenShell sandbox and carry the full tool set, including the chat-first management tools.
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 

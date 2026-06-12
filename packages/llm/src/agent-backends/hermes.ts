@@ -398,7 +398,19 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     const bridgePath = process.env.OPENNEKO_MCP_BRIDGE;
     const bridgeEnv = [
       ...Object.entries(mcpBridgeEnv ?? {}),
-      ...["OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN"]
+      // Hermes spawns MCP children with a CLEAN env + this list — nothing
+      // inherits. Without the proxy vars the child dials direct and the
+      // sandbox firewall refuses; broker traffic must ride the egress proxy.
+      ...[
+        "OPENNEKO_BROKER_URL",
+        "OPENNEKO_BROKER_TOKEN",
+        "ALL_PROXY",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "no_proxy",
+        "NODE_USE_ENV_PROXY",
+      ]
         .map((k) => [k, process.env[k] ?? ""])
         .filter(([, v]) => v),
     ].map(([name, value]) => ({ name, value }));

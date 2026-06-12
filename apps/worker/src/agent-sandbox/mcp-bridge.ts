@@ -101,11 +101,57 @@ export function buildBridgeServer(
   }
 }
 
+/**
+ * The egress proxy admits a freshly spawned process with a lag — its first
+ * dials get ECONNREFUSED even with an allow rule in place. Poll until the
+ * broker answers anything at all (any HTTP status counts) before serving, so
+ * the first real tool call rides a warmed path.
+ */
+async function warmUpBroker(baseUrl: string, name: string): Promise<void> {
+  const trail: string[] = [];
+  const deadline = Date.now() + 8_000;
+  let attempts = 0;
+  for (;;) {
+    attempts += 1;
+    try {
+      const res = await fetch(new URL("/v1/memory/search", baseUrl), {
+        method: "POST",
+        body: "{}",
+      });
+      trail.push(`attempt ${attempts}: HTTP ${res.status}`);
+      break;
+    } catch (err) {
+      const cause = (err as { cause?: { code?: string } }).cause?.code;
+      trail.push(`attempt ${attempts}: ${cause ?? (err as Error).message}`);
+      if (Date.now() > deadline) break; // serve anyway; per-call retries remain
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+  // Startup diagnostics, readable mid-run via `sandbox exec` — bridge stderr
+  // is swallowed by hermes, so a file is the only visible channel.
+  try {
+    const envPick = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) =>
+        /OPENNEKO_|PROXY|proxy|NODE_USE/.test(k),
+      ),
+    );
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      `/tmp/bridge-${name}.log`,
+      JSON.stringify({ baseUrl, trail, env: envPick }, null, 1),
+    );
+  } catch {
+    /* diagnostics only */
+  }
+}
+
 async function main(): Promise<void> {
   const name = process.argv[2];
   if (!name) throw new Error("mcp-bridge: missing server-name argument");
+  const brokerUrl = requireEnv("OPENNEKO_BROKER_URL");
+  await warmUpBroker(brokerUrl, name);
   const controlPlane = new BrokerControlPlane(
-    requireEnv("OPENNEKO_BROKER_URL"),
+    brokerUrl,
     requireEnv("OPENNEKO_BROKER_TOKEN"),
   );
   const server = buildBridgeServer(name, {
