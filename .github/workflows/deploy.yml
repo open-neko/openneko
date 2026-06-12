@@ -20,31 +20,22 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Pull, build, restart
+      # Production runs the RELEASED compose stack (`openneko start`), not a
+      # source build — the old git-pull + pnpm-build + systemd path is gone
+      # (2026-06-12 cutover; /opt/neko remains on disk only as a rollback).
+      # A push to main therefore deploys nothing by itself: the VM follows
+      # RELEASES. This job refreshes the CLI to the latest release and
+      # restarts the stack on its pinned images.
+      - name: Refresh CLI and restart the released stack
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
-          GIT_REF: ${{ github.sha }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           ssh -i ~/.ssh/id_ed25519 \
               "$SSH_USER@$SSH_HOST" \
-              GIT_REF="$GIT_REF" SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
               bash -se <<'EOF'
             set -euo pipefail
-            cd /opt/neko
-            git fetch origin main
-            git reset --hard "$GIT_REF"
-            export AX_SKIP_SKILL_INSTALL=1
-            pnpm install --frozen-lockfile
-            pnpm build
-
-            # Keep the openneko CLI in lockstep with releases. It ships
-            # separately from the app (GitHub Releases, installed by
-            # neko-vm-setup.sh), so without this the binary silently drifts
-            # behind the app — a stale CLI corrupts channel-plugin installs.
-            # Fully non-fatal: a missing release asset must never block a deploy.
+            # Non-fatal CLI refresh: a missing release asset must never block.
             {
               ARCH=$(uname -m)
               case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
@@ -67,50 +58,9 @@ jobs:
               fi
             } || echo "[deploy] openneko CLI refresh skipped (non-fatal)"
 
-            set -a
-            source .env
-            set +a
-            openneko migrate
-
-            sudo /usr/bin/systemctl restart neko-web
-            sudo /usr/bin/systemctl restart neko-worker
-
-            if command -v openneko >/dev/null 2>&1 && [ -d /opt/neko/.plugins ]; then
-              export OPENNEKO_PLUGIN_INSTALL_DIR=/opt/neko/.plugins
-              export OPENNEKO_PLUGINS_MANIFEST_PATH=/opt/neko/.plugins/openneko.plugins.json
-              [ -f "$OPENNEKO_PLUGINS_MANIFEST_PATH" ] || openneko init
-              # These CLI ops proxy into the worker container via `docker exec`,
-              # which can return a spurious non-zero even when the operation
-              # succeeded. So we tolerate the exit code and assert the OUTCOME
-              # instead — a deploy must go red only when something is actually
-              # wrong, not when a write that worked reported a noisy exit.
-              if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
-                openneko secrets set @open-neko/plugin-slack SLACK_BOT_TOKEN "$SLACK_BOT_TOKEN" || true
-                if printf '%s\n' "$(openneko secrets list 2>/dev/null || true)" | grep -q 'SLACK_BOT_TOKEN'; then
-                  echo "[deploy] SLACK_BOT_TOKEN saved"
-                else
-                  echo "[deploy] ERROR: SLACK_BOT_TOKEN not present after set" >&2
-                  exit 1
-                fi
-              else
-                echo "[deploy] SLACK_BOT_TOKEN secret not set in CI; slack install will be skipped"
-              fi
-              if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
-                openneko install @open-neko/plugin-slack --skip-host-check || true
-                if printf '%s\n' "$(openneko list 2>/dev/null || true)" | grep -q 'plugin-slack'; then
-                  echo "[deploy] plugin-slack installed"
-                else
-                  echo "[deploy] ERROR: plugin-slack not installed after install" >&2
-                  exit 1
-                fi
-              fi
-              if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f /opt/neko/scripts/install-telegram-channel.sh ]; then
-                bash /opt/neko/scripts/install-telegram-channel.sh \
-                  || echo "[deploy] telegram channel install non-fatal failure"
-              fi
-            else
-              echo "[deploy] skipping plugin install — run scripts/neko-vm-setup.sh on the VM once to enable"
-            fi
+            cd ~/openneko
+            OPENNEKO_PORT=80 openneko start --mode demo --detach
+            openneko status || true
           EOF
 
       - name: Smoke test
