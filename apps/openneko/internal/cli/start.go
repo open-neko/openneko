@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,6 +53,7 @@ Modes:
 			if err := configureOpenShellStateDir(); err != nil {
 				return err
 			}
+			configureOpenShellDBURL()
 
 			sup := compose.New(assets.ComposeFS)
 			files, err := sup.Materialize(m)
@@ -159,6 +161,42 @@ func configureOpenShellStateDir() error {
 		return err
 	}
 	return os.Setenv("OPENSHELL_STATE_DIR", dir)
+}
+
+// configureOpenShellDBURL derives the gateway's database URL from the local
+// config. The gateway keeps its state in neko-db, and the compose default URL
+// carries the initial password — after the setup wizard rotates the neko
+// role, a stale URL strands every sandbox create ("fetch settings failed:
+// password authentication failed"), which kills all agent runs. The local
+// config is the single source of the rotated password (ReadLocal decrypts
+// it), so build the URL from it on every start. An operator-set
+// OPENSHELL_DB_URL always wins.
+func configureOpenShellDBURL() {
+	if os.Getenv("OPENSHELL_DB_URL") != "" {
+		return
+	}
+	lc, _ := config.ReadLocal("")
+	if lc.Pg == nil || lc.Pg.Password == "" {
+		return // fresh install — the compose default matches the initial DB
+	}
+	user := lc.Pg.User
+	if user == "" {
+		user = "neko"
+	}
+	database := lc.Pg.Database
+	if database == "" {
+		database = "neko"
+	}
+	// Host/port are the compose network's, not the local config's: the
+	// gateway dials neko-db inside the project network regardless of how
+	// host-side tools reach the DB.
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, lc.Pg.Password),
+		Host:   "neko-db:5432",
+		Path:   "/" + database,
+	}
+	_ = os.Setenv("OPENSHELL_DB_URL", u.String())
 }
 
 func waitDBHealthy(ctx context.Context, timeout time.Duration) error {
