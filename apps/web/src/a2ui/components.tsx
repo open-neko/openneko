@@ -26,16 +26,25 @@ import type {
 import BriefingCard from "@/components/BriefingCard";
 
 // ─── Briefing ───
+// Rendered INSIDE a conversation, so the header is thread-scale — the
+// dashboard's hero classes (.greet, 52px) overwhelm an answer. Mirrors the
+// dashboard's eyebrow + display-title language at card proportions instead.
 registerComponent("Briefing", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as BriefingProps & { id: string };
   return (
-    <div key={props.id}>
-      <div className="greet" style={{ animation: "fadeUp 0.5s ease both" }}>
+    <div key={props.id} className="work-surface">
+      <div className="work-surface-eyebrow" style={{ animation: "fadeUp 0.5s ease both" }}>
+        <span className="work-surface-eyebrow-rule" aria-hidden="true" />
+        Briefing
+      </div>
+      <div className="work-surface-title" style={{ animation: "fadeUp 0.5s ease 0.04s both" }}>
         {props.greeting}
       </div>
-      <div className="greet-sub" style={{ animation: "fadeUp 0.5s ease 0.05s both" }}>
-        {props.subtitle}
-      </div>
+      {props.subtitle ? (
+        <div className="work-surface-sub" style={{ animation: "fadeUp 0.5s ease 0.08s both" }}>
+          {props.subtitle}
+        </div>
+      ) : null}
       {props.children && renderChildren(props.children, ctx)}
     </div>
   );
