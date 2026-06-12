@@ -56,8 +56,11 @@ services:
         if [ ! -f /config/dev.yml ]; then
           # Sources (agentic) mode is the default. The per-org JWT secret
           # placeholder is substituted by the worker at boot
-          # (OPENNEKO_GRAPHJIN_CONFIG) — the org id only exists then.
+          # (OPENNEKO_GRAPHJIN_CONFIG) — the org id only exists then. The
+          # keystore key must be real at boot, so generate it here once.
           cp /app/db/graphjin/dev.sources.example.yml /config/dev.yml
+          KEY=$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))')
+          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$KEY|" /config/dev.yml
         fi
         chmod -R a+rwX /config
     volumes:
@@ -78,11 +81,9 @@ services:
     ports:
       - "${GRAPHJIN_PORT:-8080}:8080"
     environment:
-      GJ_DATABASE_HOST: adventureworks-db
-      GJ_DATABASE_PORT: 5432
-      GJ_DATABASE_USER: ${CUSTOMER_PGUSER:-postgres}
-      GJ_DATABASE_PASSWORD: ${CUSTOMER_PGPASSWORD:-postgres}
-      GJ_DATABASE_DBNAME: ${ADVENTUREWORKS_DB:-adventureworks}
+      # No GJ_DATABASE_* here: in sources mode those are a FATAL boot error
+      # ("database is legacy database-only config") — the connection lives in
+      # the seeded /config/dev.yml. This crash-looped every fresh demo boot.
       NO_PROXY: localhost,127.0.0.1,::1,adventureworks-db,graphjin,neko-db,worker,web,host.docker.internal,host.internal
       no_proxy: localhost,127.0.0.1,::1,adventureworks-db,graphjin,neko-db,worker,web,host.docker.internal,host.internal
     volumes:
