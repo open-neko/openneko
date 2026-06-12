@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.4.0](https://github.com/open-neko/openneko/compare/v2.3.2...v2.4.0) (2026-06-12)
+
+
+### Features
+
+* thread-scale answer surfaces, sidebar timestamps, diagnosable hermes exits ([de1716f](https://github.com/open-neko/openneko/commit/de1716f9e49919ea5722a5da602e2e46ab441bc4))
+* **web,llm:** thread-scale surface headers, sidebar timestamps, diagnosable hermes exits ([1ebd70e](https://github.com/open-neko/openneko/commit/1ebd70e907c3496430885b5a7f13c43dfe383c32))
+
+
+### Bug Fixes
+
+* **llm:** agentic mode inlines the table digest — discovery tax made answers ~3x slower ([5497fb3](https://github.com/open-neko/openneko/commit/5497fb36a5005af402d3dbb7b075214945ef89d9))
+
 ## [2.3.2](https://github.com/open-neko/openneko/compare/v2.3.1...v2.3.2) (2026-06-12)
 
 
