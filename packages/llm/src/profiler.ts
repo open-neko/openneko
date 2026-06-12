@@ -8,13 +8,18 @@ import {
   type KnowledgePackContents,
 } from "./knowledge-pack";
 import {
+  compactHelpCardIndex,
+  compactInsightsDigest,
+  compactTableDigest,
+} from "./prompts/sections";
+import {
   ensureGraphjinGuard,
   resolveBinaryOnPath,
 } from "./work/graphjin-guard";
 import { ensureGraphjinGuardWithActorAuth } from "./work/graphjin-actor-guard";
 import { ensureWorkWorkspace } from "./work/workspace";
 
-function buildPrompt(args: {
+export function buildProfilerPrompt(args: {
   orgName: string;
   companyNote: string;
   knowledge: KnowledgePackContents;
@@ -74,7 +79,36 @@ HARD CONSTRAINTS (violating any of these is a critical failure):
 - Watch the silent 20-row default limit on every query level (top AND nested) — set explicit limit or use distinct+aggregation.
 - Never invent or interpolate. If a query returned no rows, the answer is "Not measured.", not a guess.
 
+${
+  // The agentic pack files are raw catalog JSON sized for on-demand reads,
+  // not for prompts — inlining them verbatim (~50KB+) is the inline class
+  // that reproducibly hangs the hermes first stream. Same digests + caps
+  // as the chat agent; deeper detail comes through gj_catalog on demand.
+  agentic
+    ? `================================================================================
+Tables visible to your role (deeper detail via gj_catalog on demand):
 ================================================================================
+
+${compactTableDigest(knowledge.tables)}
+
+================================================================================
+Hub tables — join paths and ready query templates (adapt, don't rediscover):
+================================================================================
+
+${compactInsightsDigest(knowledge.insights)}
+
+================================================================================
+Help-card index — pull any card's full guidance with gj_catalog(id: "help:<topic>"):
+================================================================================
+
+${compactHelpCardIndex(knowledge.insights)}
+
+================================================================================
+Query-DSL essentials — filters, query shape, aggregate patterns:
+================================================================================
+
+${knowledge.syntax}`
+    : `================================================================================
 Tables — every table in the database (name, schema, column_count):
 ================================================================================
 
@@ -96,7 +130,8 @@ ${knowledge.insights}
 Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagination):
 ================================================================================
 
-${knowledge.syntax}
+${knowledge.syntax}`
+}
 
 ================================================================================
 OUTPUT FORMAT — respond with EXACTLY this markdown body, no code fences, no prose around it:
@@ -196,7 +231,7 @@ export async function runProfiler(args: {
   });
   console.log(`[profiler] org=${orgId} backend=${backend.id}`);
 
-  const prompt = buildPrompt({
+  const prompt = buildProfilerPrompt({
     orgName,
     companyNote,
     knowledge,
