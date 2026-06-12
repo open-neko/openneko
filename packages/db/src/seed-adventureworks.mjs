@@ -170,7 +170,7 @@ if (wfRows.rowCount === 0) {
          org_id, name, description, goal, cron, cron_timezone,
          cron_enabled, enabled, status
        ) values ($1, $2, $3, $4, $5, $6, $7, true, 'active')
-       on conflict (org_id, name) do nothing`,
+       on conflict (org_id, owner_user_id, name) do nothing`,
       [
         orgId,
         wf.name,
