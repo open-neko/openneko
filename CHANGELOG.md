@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0](https://github.com/open-neko/openneko/compare/v2.2.3...v2.3.0) (2026-06-12)
+
+
+### Features
+
+* free-text personas in onboarding (solo + multi-user) and a 2-card briefing grid ([d3129f1](https://github.com/open-neko/openneko/commit/d3129f18586a8f94c67bf6db531a46d43467b8ec))
+* **web:** onboarding personas are free text + member persona step; briefing caps at 2 cards per row ([85408f3](https://github.com/open-neko/openneko/commit/85408f3bb6bbec20f797e7974f0cf3d30096d27c))
+
 ## [2.2.3](https://github.com/open-neko/openneko/compare/v2.2.2...v2.2.3) (2026-06-12)
 
 
