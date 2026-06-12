@@ -231,9 +231,12 @@ function buildAgenticDataAccessSection(
 ): string {
   const { shellTool, knowledge, inlineKnowledge } = opts;
 
-  const tablesBlock =
-    inlineKnowledge === "all"
-      ? `================================================================================
+  // Always inline the digest in agentic mode: it is one line per table by
+  // construction, and pointing the model at a file instead costs every
+  // question several discovery calls before it can write its first query
+  // (measured ~3x slower to first answer). Deeper detail (columns, examples,
+  // join paths) still comes from gj_catalog cards on demand.
+  const tablesBlock = `================================================================================
 Tables visible to your role (catalog id, name, one-line summary):
 ================================================================================
 
@@ -244,12 +247,6 @@ Databases / sources:
 ================================================================================
 
 ${knowledge.namespaces}
-
-`
-      : `The table list for your role is on disk at ${paths.files.tables}
-(catalog id + name + one-line summary per table; databases/sources at
-${paths.files.namespaces}). Read it with your \`${shellTool}\` tool when
-you need to know what exists.
 
 `;
 
