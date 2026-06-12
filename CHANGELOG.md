@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/open-neko/openneko/compare/v2.3.0...v2.3.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* demo seed uses the decrypted rotated DB password ([d7fb518](https://github.com/open-neko/openneko/commit/d7fb51895146e800804b1a5104d02d48e067f5d5))
+
 ## [2.3.0](https://github.com/open-neko/openneko/compare/v2.2.3...v2.3.0) (2026-06-12)
 
 
