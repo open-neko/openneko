@@ -42,6 +42,13 @@ const localConfig = await readLocalConfig();
 const localPg = localConfig.pg && typeof localConfig.pg === "object"
   ? localConfig.pg
   : {};
+// config.json stores the rotated password ENCRYPTED (enc:v1, see
+// writeLocalConfig) — using it raw fails auth on any deployment where the
+// wizard's password step ran. Decrypt like every other reader.
+if (typeof localPg.password === "string" && localPg.password.startsWith("enc:")) {
+  const { maybeDecryptSecret } = await import("@neko/secret-crypt");
+  localPg.password = maybeDecryptSecret(localPg.password);
+}
 const sslmode = localPg.sslmode ?? process.env.NEKO_PG_SSLMODE;
 const client = new pg.Client({
   host: localPg.host ?? process.env.NEKO_PG_HOST ?? "localhost",
