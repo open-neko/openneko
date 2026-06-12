@@ -63,7 +63,8 @@
 :root,
 html[data-density="compact"] {
   --d-dash-width: 1200px;
-  --d-brief-cols: repeat(auto-fill, minmax(300px, 1fr));
+  /* Cap at TWO cards side by side — charts need the width to stay legible. */
+  --d-brief-cols: repeat(2, minmax(0, 1fr));
   --d-brief-gap: 12px;
   --d-greet: 30px;
   --d-section-gap: 22px;
@@ -106,6 +107,9 @@ html[data-density="comfortable"] {
 
 .brief-grid {
   display: grid; grid-template-columns: var(--d-brief-cols); gap: var(--d-brief-gap); align-items: start;
+}
+@media (max-width: 700px) {
+  .brief-grid { grid-template-columns: 1fr; }
 }
 .brief-grid .icard { margin-bottom: 0; }
 .dash-root .icard { padding: var(--d-icard-pad); cursor: default; }
