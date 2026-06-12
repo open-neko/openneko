@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.2](https://github.com/open-neko/openneko/compare/v2.2.1...v2.2.2) (2026-06-12)
+
+
+### Bug Fixes
+
+* deploy follows releases (compose stack) + demo seed matches CV1 unique index ([586c0b0](https://github.com/open-neko/openneko/commit/586c0b074a1eaf13cc22ae87691a20bb0081f23c))
+* **deploy,db:** VM follows releases via the compose stack; demo seed matches the CV1 unique index ([1db089f](https://github.com/open-neko/openneko/commit/1db089f7d284161f0615276dad6fab1a410068da))
+
 ## [2.2.1](https://github.com/open-neko/openneko/compare/v2.2.0...v2.2.1) (2026-06-12)
 
 
