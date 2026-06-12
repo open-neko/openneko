@@ -225,30 +225,145 @@ ${knowledgeBlock}
 </data_access>`;
 }
 
+const TABLE_DIGEST_MAX_CHARS = 4_000;
+const INSIGHTS_DIGEST_MAX_CHARS = 6_000;
+
+/** Hub tables with ready query templates and join paths, from the agentic
+ *  pack's insights.json — the part of the legacy pack that made first
+ *  answers fast. Compact and hard-capped: NEVER inline raw pack JSON
+ *  (a 26KB inline reproducibly hung the model stream). */
+export function compactInsightsDigest(raw: string): string {
+  let hubs: Array<{
+    name?: string;
+    summary?: string;
+    examples?: unknown[];
+    join_paths?: unknown[];
+  }>;
+  try {
+    const parsed = JSON.parse(raw) as { hub_tables?: typeof hubs };
+    hubs = Array.isArray(parsed.hub_tables) ? parsed.hub_tables : [];
+  } catch {
+    return "";
+  }
+  if (hubs.length === 0) return "";
+  let out = "";
+  for (const hub of hubs) {
+    let block = `## ${hub.name ?? "?"}${hub.summary ? ` — ${String(hub.summary).slice(0, 110)}` : ""}\n`;
+    for (const path of (hub.join_paths ?? []).slice(0, 6)) {
+      block += `  join: ${String(path).slice(0, 140)}\n`;
+    }
+    for (const ex of (hub.examples ?? []).slice(0, 2)) {
+      const q =
+        typeof ex === "string"
+          ? ex
+          : ((ex as { query?: string }).query ?? JSON.stringify(ex));
+      block += `  template: ${q.replace(/\s+/g, " ").slice(0, 300)}\n`;
+    }
+    if (out.length + block.length > INSIGHTS_DIGEST_MAX_CHARS) break;
+    out += block;
+  }
+  return out.trimEnd();
+}
+
+const HELP_INDEX_MAX_CHARS = 2_000;
+
+/** One line per help card from the agentic pack's insights file. The raw
+ *  file also carries hub_tables (rendered separately by
+ *  compactInsightsDigest) — inlining it verbatim duplicates that and
+ *  reinflates the prompt the digests exist to shrink. */
+export function compactHelpCardIndex(raw: string): string {
+  let cards: Array<{ id?: string; summary?: string }>;
+  try {
+    const parsed = JSON.parse(raw) as { help_cards?: typeof cards };
+    cards = Array.isArray(parsed.help_cards) ? parsed.help_cards : [];
+  } catch {
+    return "";
+  }
+  let out = "";
+  for (const card of cards) {
+    if (!card.id) continue;
+    const line = `- ${card.id}${card.summary ? ` — ${String(card.summary).slice(0, 90)}` : ""}\n`;
+    if (out.length + line.length > HELP_INDEX_MAX_CHARS) break;
+    out += line;
+  }
+  return out.trimEnd();
+}
+
+/** One short line per table from the pack's tables file (legacy or agentic
+ *  shape), hard-capped — a prompt block, not a schema dump. */
+export function compactTableDigest(raw: string): string {
+  let lines: string[];
+  try {
+    const parsed = JSON.parse(raw) as {
+      tables?: Array<{
+        name?: string;
+        schema?: string;
+        database?: string;
+        column_count?: number;
+        summary?: string;
+        id?: string;
+      }>;
+    };
+    const tables = Array.isArray(parsed.tables) ? parsed.tables : [];
+    if (tables.length === 0) throw new Error("no tables array");
+    lines = tables.map((t) => {
+      const name = [t.schema, t.name].filter(Boolean).join(".") || t.id || "?";
+      const extra = t.summary
+        ? ` — ${String(t.summary).slice(0, 60)}`
+        : t.column_count != null
+          ? ` (${t.column_count} cols)`
+          : "";
+      return `- ${name}${extra}`;
+    });
+  } catch {
+    lines = raw.split("\n").filter((l) => l.trim());
+  }
+  let out = "";
+  let dropped = 0;
+  for (const line of lines) {
+    if (out.length + line.length + 1 > TABLE_DIGEST_MAX_CHARS) {
+      dropped = lines.length - out.split("\n").filter(Boolean).length;
+      break;
+    }
+    out += line + "\n";
+  }
+  if (dropped > 0) {
+    out += `… ${dropped} more — list the rest via gj_catalog (kind: "table").\n`;
+  }
+  return out.trimEnd();
+}
+
 function buildAgenticDataAccessSection(
   opts: DataAccessOptions,
   paths: ReturnType<typeof knowledgePackPaths>,
 ): string {
-  const { shellTool, knowledge, inlineKnowledge } = opts;
+  const { shellTool, knowledge } = opts;
 
-  // Always inline the digest in agentic mode: it is one line per table by
-  // construction, and pointing the model at a file instead costs every
-  // question several discovery calls before it can write its first query
-  // (measured ~3x slower to first answer). Deeper detail (columns, examples,
-  // join paths) still comes from gj_catalog cards on demand.
+  // Inline a COMPACT table digest in agentic mode: pointing the model at a
+  // file costs every question several discovery calls before its first real
+  // query (measured ~3x slower to first answer). But the raw pack file is
+  // pretty-printed JSON (10s of KB) and inlining it verbatim broke runs —
+  // compress to one short line per table and hard-cap the block.
   const tablesBlock = `================================================================================
-Tables visible to your role (catalog id, name, one-line summary):
+Tables visible to your role (deeper detail via gj_catalog on demand):
 ================================================================================
 
-${knowledge.tables}
+${compactTableDigest(knowledge.tables)}
 
+${(() => {
+  const insights = compactInsightsDigest(knowledge.insights);
+  return insights
+    ? `================================================================================
+Hub tables — join paths and ready query templates (adapt, don't rediscover):
+A join path "s1.child.col -> s2.parent.col" means child rows reference parent;
+traverse it by nesting in one query: { child(limit: 20) { col parent { ... } } }.
 ================================================================================
-Databases / sources:
-================================================================================
 
-${knowledge.namespaces}
+${insights}
 
-`;
+`
+    : "";
+})()}`;
 
   return `<data_access>
 The configured GraphJin database is the authoritative source for any
@@ -311,11 +426,12 @@ Help-card index — what the catalog can teach you (pull any card's full
 guidance on demand with gj_catalog(id: "help:<topic>")):
 ================================================================================
 
-${knowledge.insights}
+${compactHelpCardIndex(knowledge.insights)}
 
 ================================================================================
-Query-DSL essentials (filters + query shape, from the catalog's help
-cards). Pull other help cards for mutations, fragments, errors:
+Query-DSL essentials — filters, query shape, and the aggregate patterns
+(distinct + sum_<col> replaces row pagination). Pull other help cards
+for mutations, fragments, errors:
 ================================================================================
 
 ${knowledge.syntax}

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   makeAgentBackend,
@@ -89,10 +90,16 @@ export async function main(): Promise<void> {
       ? new BrokerControlPlane(brokerUrl, brokerToken)
       : undefined;
   if (brokerUrl && brokerToken) {
-    process.env.OPENNEKO_MCP_BRIDGE = new URL(
-      "./mcp-bridge.ts",
+    // Prefer the image-baked plain-JS bundle: hermes spawns one bridge
+    // process per server, and the tsx loader costs ~300MB RSS each vs
+    // ~80MB bundled. The .ts fallback keeps tests + dev images working.
+    const bundled = new URL(
+      "../../dist/agent-sandbox/mcp-bridge.js",
       import.meta.url,
     ).pathname;
+    process.env.OPENNEKO_MCP_BRIDGE = existsSync(bundled)
+      ? bundled
+      : new URL("./mcp-bridge.ts", import.meta.url).pathname;
   }
 
   const emit = (event: AgentEvent): Promise<void> => {
@@ -142,6 +149,14 @@ export async function main(): Promise<void> {
         ? { allowSubcommands: job.graphjinWriteGrants }
         : {}),
     });
+    // The backend prepends binRoot to PATH for its children, but hermes'
+    // terminal tool spawns LOGIN shells (`bash -lic`) and /etc/profile resets
+    // PATH — silently un-guarding `graphjin`. Login shells re-source these
+    // files after the reset, so the wrapper wins the lookup again.
+    const pathLine = `\nexport PATH="${job.workspace.binRoot}:$PATH"\n`;
+    for (const rc of [".bash_profile", ".profile", ".bashrc"]) {
+      await appendFile(join(homedir(), rc), pathLine).catch(() => {});
+    }
   }
 
   const result = await runAgentBackend({

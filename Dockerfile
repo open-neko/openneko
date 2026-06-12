@@ -255,6 +255,16 @@ CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
 # apps' sources; keeps tsx, @neko/llm (with its assets), and the claude SDK.
 FROM build AS agent-deploy
 RUN pnpm --filter @neko/worker deploy --prod /out/agent-app
+# Each MCP bridge is its own process (12 per agent run); under tsx one
+# bridge costs ~300MB RSS (~3.5GiB per sandbox — real memory pressure on
+# small hosts). The same bridge as a plain-JS bundle runs at ~80MB.
+# entry.ts prefers the bundle when present. transformers/onnx stay
+# external: the bridge never embeds, so they must not load eagerly.
+RUN cd apps/worker && pnpm exec esbuild src/agent-sandbox/mcp-bridge.ts \
+      --bundle --platform=node --format=esm \
+      --external:onnxruntime-node --external:@huggingface/transformers \
+      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+      --outfile=/out/agent-app/dist/agent-sandbox/mcp-bridge.js
 
 FROM cli AS agent
 USER root

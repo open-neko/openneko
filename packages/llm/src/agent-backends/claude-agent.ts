@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import {
   AgentBackendConfigError,
+  agentTurnTimeoutMs,
   type AgentBackend,
   type AgentRunOptions,
   type AgentRunResult,
@@ -37,7 +38,7 @@ export type ClaudeAgentBackendConfig = {
   model: string;
 };
 
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_TIMEOUT_MS = agentTurnTimeoutMs();
 const DEFAULT_RETRIES = 1;
 const MAX_TURNS = 25;
 

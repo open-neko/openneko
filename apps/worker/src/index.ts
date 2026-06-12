@@ -23,6 +23,7 @@ import {
   processing_job,
 } from "@neko/db";
 import {
+  agentTurnTimeoutMs,
   cancelAllAgents,
   prefetchKnowledgeForOrg,
   provisionHostConfig,
@@ -72,7 +73,13 @@ const PORT: number = 4100;
 const MAX_JOB_RETRIES: number = 2;
 
 const RECONCILE_SWEEP_INTERVAL_MS: number = 60_000;
-const RECONCILE_SWEEP_MIN_AGE_MS: number = 660_000;
+// Must exceed the agent turn budget (+ exec margin), or the sweep cancels
+// legitimately long runs as zombies — the run row's updated_at is not
+// touched while the turn streams.
+const RECONCILE_SWEEP_MIN_AGE_MS: number = Math.max(
+  660_000,
+  agentTurnTimeoutMs() + 240_000,
+);
 const SCHEDULED_REFRESH_HOURS: number = 24;
 
 const ADMIN_ORG_ID = await getOrgId();

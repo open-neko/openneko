@@ -207,6 +207,14 @@ export async function prefetchKnowledgePack(args: {
       written.push({ file, bytes: json.length });
     }
     await writeFile(join(destDir, KNOWLEDGE_INDEX_FILE), INDEX_BODY, "utf8");
+    // Stamp the mode: a deployment can move agentic→legacy (auth_mode
+    // change), and a stale agentic marker over legacy-format files makes
+    // the prompt builder describe a pack that isn't there.
+    await writeFile(
+      join(destDir, "mode.json"),
+      JSON.stringify({ mode: "legacy" }),
+      "utf8",
+    );
     return { ok: true, files: written };
   } catch (e) {
     return {
@@ -326,28 +334,227 @@ export async function prefetchAgenticKnowledgePack(args: {
 
   await mkdir(args.destDir, { recursive: true });
   try {
-    const [tables, databases, helpIndex, helpDetails] = await Promise.all([
-      catalogRows(
-        query,
-        `query { gj_catalog(where: { kind: { eq: "table" } }, limit: 500) { id name summary } }`,
-      ),
-      catalogRows(
-        query,
-        `query { gj_catalog(where: { kind: { eq: "database" } }, limit: 50) { id name summary } }`,
-      ),
-      catalogRows(
-        query,
-        `query { gj_catalog(where: { kind: { eq: "help" } }, limit: 50) { id name summary } }`,
-      ),
-      Promise.all(
-        HELP_DETAIL_IDS.map((id) =>
-          catalogRows(
-            query,
-            `query { gj_catalog(id: "${id}") { id name summary details_json examples_json } }`,
+    const [tables, databases, helpIndex, helpDetails, relationships, languageIndex] =
+      await Promise.all([
+        catalogRows(
+          query,
+          `query { gj_catalog(where: { kind: { eq: "table" } }, limit: 500) { id name summary } }`,
+        ),
+        catalogRows(
+          query,
+          `query { gj_catalog(where: { kind: { eq: "database" } }, limit: 50) { id name summary } }`,
+        ),
+        catalogRows(
+          query,
+          `query { gj_catalog(where: { kind: { eq: "help" } }, limit: 50) { id name summary } }`,
+        ),
+        Promise.all(
+          HELP_DETAIL_IDS.map((id) =>
+            catalogRows(
+              query,
+              `query { gj_catalog(id: "${id}") { id name summary details_json examples_json } }`,
+            ),
           ),
         ),
-      ),
-    ]);
+        catalogRows(
+          query,
+          `query { gj_catalog(where: { kind: { eq: "relationship" } }, limit: 1000) { id name summary } }`,
+        ),
+        catalogRows(
+          query,
+          `query { gj_catalog(where: { kind: { in: ["query_pattern", "directive", "operator_set"] } }, limit: 50) { id kind name summary } }`,
+        ).catch(() => [] as unknown[]),
+      ]);
+
+    // The language cards carry the DSL idioms (grouped summaries via
+    // distinct + sum_<col>, expression aggregates, analytics directives)
+    // that let one aggregate query replace dozens of paginated selects.
+    // The pointer cards alone teach nothing — resolve their examples now,
+    // query patterns first: they're the cards that change how the agent
+    // queries, the directive list is reference detail.
+    const kindRank: Record<string, number> = {
+      query_pattern: 0,
+      operator_set: 1,
+      directive: 2,
+    };
+    const languageCards = (
+      await Promise.all(
+        (languageIndex as Array<{ id?: string; kind?: string }>)
+          .filter((c) => c.id)
+          .sort(
+            (a, b) =>
+              (kindRank[a.kind ?? ""] ?? 9) - (kindRank[b.kind ?? ""] ?? 9),
+          )
+          .slice(0, 24)
+          .map((c) =>
+            catalogRows(
+              query,
+              `query { gj_catalog(id: "${c.id}") { id kind name summary examples_json } }`,
+            ).catch(() => [] as unknown[]),
+          ),
+      )
+    ).flat();
+    const SYNTAX_PATTERN_BUDGET = 4_000;
+    let patternBytes = 0;
+    const patterns: Array<{
+      name?: string;
+      summary?: string;
+      examples: unknown[];
+    }> = [];
+    for (const card of languageCards) {
+      const c = card as {
+        kind?: string;
+        name?: string;
+        summary?: string;
+        examples_json?: string;
+      };
+      let examples: unknown[] = [];
+      try {
+        const v = JSON.parse(c.examples_json ?? "[]") as unknown;
+        examples = (Array.isArray(v) ? v : [v]).slice(0, 2).filter(Boolean);
+      } catch {
+        examples = [];
+      }
+      // A directive without an example is a name and nothing else —
+      // not worth prompt budget. Query patterns earn a slot on their
+      // summaries alone ("group_by does not exist").
+      if (examples.length === 0 && c.kind !== "query_pattern") continue;
+      const entry = { name: c.name, summary: c.summary, examples };
+      const size = JSON.stringify(entry).length;
+      if (patternBytes + size > SYNTAX_PATTERN_BUDGET) continue;
+      patternBytes += size;
+      patterns.push(entry);
+    }
+
+    // Hub tables — the legacy pack's insights (hub tables, join paths, ready
+    // query templates) are what made first answers fast; rebuild them from
+    // the catalog. Relationship row ids encode full join paths
+    // ("relationship:db:schema.table.col->db:schema.table.col"): rank tables
+    // by how many paths touch them, then attach the readable paths to the
+    // top tables' cards.
+    type CatalogRow = { id?: string; name?: string; summary?: string };
+    const relSide = (s: string) => {
+      const label = s.replace(/^[^:]+:/, "");
+      const parts = label.split(".");
+      return { label, table: parts.length >= 2 ? parts[parts.length - 2] : label };
+    };
+    const joinPaths = (relationships as CatalogRow[])
+      .map((rel) => /^relationship:(.+?)->(.+)$/.exec(rel.id ?? ""))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => ({ from: relSide(m[1]), to: relSide(m[2]) }));
+    const idByTableName = new Map<string, string>();
+    for (const t of tables as CatalogRow[]) {
+      if (t.id && t.name) idByTableName.set(t.name, t.id);
+    }
+    // Weight the referencing (from) side heavier: fact tables hold the
+    // measures analytical questions aggregate over, and they show up as
+    // the from-side of many paths — referenced-count alone crowns lookup
+    // tables and leaves the fact tables out of the hub list.
+    const hubScores = new Map<string, number>();
+    for (const p of joinPaths) {
+      const fromId = idByTableName.get(p.from.table);
+      if (fromId) hubScores.set(fromId, (hubScores.get(fromId) ?? 0) + 3);
+      const toId = idByTableName.get(p.to.table);
+      if (toId) hubScores.set(toId, (hubScores.get(toId) ?? 0) + 1);
+    }
+    // Outgoing-FK count per table: fact tables (salesorderdetail) reference
+    // many tables, lookup tables (unitmeasure) reference none — the signal
+    // that separates analytically hot joins from alphabetical noise.
+    const fkOut = new Map<string, number>();
+    for (const p of joinPaths) {
+      fkOut.set(p.from.table, (fkOut.get(p.from.table) ?? 0) + 1);
+    }
+    // Tie-break equal scores by the weight of each table's neighbors:
+    // the bridge into the busiest tables (salesorderdetail -> product +
+    // salesorderheader) beats history/junction tables of equal FK count.
+    const neighborScore = new Map<string, number>();
+    for (const p of joinPaths) {
+      const fromId = idByTableName.get(p.from.table);
+      const toId = idByTableName.get(p.to.table);
+      if (fromId)
+        neighborScore.set(
+          fromId,
+          (neighborScore.get(fromId) ?? 0) + (toId ? (hubScores.get(toId) ?? 0) : 0),
+        );
+      if (toId)
+        neighborScore.set(
+          toId,
+          (neighborScore.get(toId) ?? 0) + (fromId ? (hubScores.get(fromId) ?? 0) : 0),
+        );
+    }
+    const hubIds = [...hubScores.entries()]
+      .sort(
+        (a, b) =>
+          b[1] - a[1] ||
+          (neighborScore.get(b[0]) ?? 0) - (neighborScore.get(a[0]) ?? 0),
+      )
+      .slice(0, 10)
+      .map(([id]) => id);
+    // A table bridging several hubs (salesorderdetail: product +
+    // salesorderheader) is the join that answers analytical questions —
+    // weigh distinct-hub connectivity above raw FK count.
+    const hubIdSet = new Set(hubIds);
+    const hubNames = new Set(
+      [...idByTableName.entries()]
+        .filter(([, id]) => hubIdSet.has(id))
+        .map(([name]) => name),
+    );
+    const hubsTouched = new Map<string, Set<string>>();
+    for (const p of joinPaths) {
+      for (const [self, other] of [
+        [p.from.table, p.to.table],
+        [p.to.table, p.from.table],
+      ] as const) {
+        if (hubNames.has(other)) {
+          let touched = hubsTouched.get(self);
+          if (!touched) hubsTouched.set(self, (touched = new Set()));
+          touched.add(other);
+        }
+      }
+    }
+    const linkScore = (t: string) =>
+      (hubsTouched.get(t)?.size ?? 0) * 4 + (fkOut.get(t) ?? 0);
+    const hubCards = (
+      await Promise.all(
+        hubIds.map((id) =>
+          catalogRows(
+            query,
+            `query { gj_catalog(id: "${id}") { id name summary examples_json } }`,
+          ).catch(() => []),
+        ),
+      )
+    ).flat();
+    const hubTables = hubCards.map((card) => {
+      const c = card as {
+        id?: string;
+        name?: string;
+        summary?: string;
+        examples_json?: string;
+      };
+      const parse = (raw: string | undefined): unknown[] => {
+        try {
+          const v = JSON.parse(raw ?? "[]");
+          return Array.isArray(v) ? v : [v];
+        } catch {
+          return [];
+        }
+      };
+      return {
+        id: c.id,
+        name: c.name,
+        summary: c.summary,
+        examples: parse(c.examples_json).slice(0, 2),
+        join_paths: joinPaths
+          .filter((p) => p.from.table === c.name || p.to.table === c.name)
+          .sort((a, b) => {
+            const other = (p: (typeof joinPaths)[number]) =>
+              p.from.table === c.name ? p.to.table : p.from.table;
+            return linkScore(other(b)) - linkScore(other(a));
+          })
+          .slice(0, 8)
+          .map((p) => `${p.from.label} -> ${p.to.label}`),
+      };
+    });
 
     const sections: Array<{ file: string; json: string }> = [
       { file: "tables.json", json: JSON.stringify({ tables }, null, 2) },
@@ -356,6 +563,7 @@ export async function prefetchAgenticKnowledgePack(args: {
         file: "insights.json",
         json: JSON.stringify(
           {
+            hub_tables: hubTables,
             help_cards: helpIndex,
             note:
               "Pull any card's full guidance on demand: gj_catalog(id: \"help:<topic>\") { details_json examples_json }",
@@ -366,7 +574,11 @@ export async function prefetchAgenticKnowledgePack(args: {
       },
       {
         file: "syntax.json",
-        json: JSON.stringify({ essentials: helpDetails.flat() }, null, 2),
+        json: JSON.stringify(
+          { essentials: helpDetails.flat(), patterns },
+          null,
+          1,
+        ),
       },
     ];
     const written: { file: string; bytes: number }[] = [];

@@ -1,11 +1,12 @@
 // Always session/new per turn — Hermes session/load replays history that the prompt already carries (see packages/llm/src/work/prompt.ts), double-counting context.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  agentTurnTimeoutMs,
   type AgentBackend,
   type AgentRunOptions,
   type AgentRunResult,
@@ -57,6 +58,36 @@ function ensureRenderStub(): string {
     renderStubPath = p;
   }
   return renderStubPath;
+}
+
+/** Last error-ish lines of hermes' own agent.log — the file dies with the
+ *  sandbox, so a mid-turn death must read it NOW or never. */
+function hermesAgentLogTail(hermesHome: string | undefined): string {
+  if (!hermesHome) return "";
+  try {
+    const lines = readFileSync(join(hermesHome, "logs", "agent.log"), "utf8")
+      .split("\n")
+      .filter((l) => l.trim() && !l.includes("Prompt on session"));
+    const errs = lines.filter((l) =>
+      /ERROR|CRITICAL|Traceback|Unhandled|fatal|Killed|Segmentation/i.test(l),
+    );
+    return (errs.length ? errs : lines).slice(-8).join("\n").slice(-900);
+  } catch {
+    return "";
+  }
+}
+
+/** MemAvailable from /proc/meminfo (Linux only) — distinguishes a memory-
+ *  pressure kill from a crash without a debug rerun. */
+function memAvailable(): string {
+  try {
+    const m = /MemAvailable:\s+(\d+) kB/.exec(
+      readFileSync("/proc/meminfo", "utf8"),
+    );
+    return m ? `${Math.round(Number(m[1]) / 1024)}MiB` : "";
+  } catch {
+    return "";
+  }
 }
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -171,7 +202,7 @@ export function parseJsonFromOutput(raw: string): unknown {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_TIMEOUT_MS = agentTurnTimeoutMs();
 
 export class HermesBackend implements AgentBackend {
   readonly id = "hermes" as const;
@@ -331,6 +362,10 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
   if (orgId) {
     env.HERMES_HOME = hermesHomeForOrg(orgId);
   }
+  // A hard native crash (SIGSEGV/SIGABRT in compiled deps) dies without a
+  // Python traceback — faulthandler makes it dump one to stderr, which the
+  // mid-turn death message below surfaces.
+  env.PYTHONFAULTHANDLER = "1";
 
   const child = spawn("hermes", ["acp", "--accept-hooks"], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -367,6 +402,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
   });
   const closedPromise = new Promise<{ code: number | null }>((resolve) => {
     child.on("close", (code) => resolve({ code }));
+  });
+  // The disposed-client error can outrun the child's exit event, in which
+  // case exitCode/signalCode still read null — the death certificate must
+  // wait for the real values (a SIGSEGV/SIGKILL is the whole diagnosis).
+  const exitInfoPromise = new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolve) => {
+    child.on("exit", (code, sig) => resolve({ code, signal: sig }));
   });
 
   const cleanup = async () => {
@@ -424,8 +468,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
               name,
               // cd /app first: hermes spawns MCP children with the session
               // cwd (/sandbox/…), where `--import tsx/esm` cannot resolve.
+              // A plain-JS bundle skips the tsx loader entirely (~80MB vs
+              // ~300MB RSS per bridge process).
               command: "/bin/sh",
-              args: ["-c", `cd /app && exec node --import tsx/esm ${bridgePath} ${name}`],
+              args: [
+                "-c",
+                bridgePath.endsWith(".ts")
+                  ? `cd /app && exec node --import tsx/esm ${bridgePath} ${name}`
+                  : `cd /app && exec node ${bridgePath} ${name}`,
+              ],
               env: bridgeEnv,
             }))
         : [];
@@ -574,6 +625,21 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     // each occurrence is diagnosable without a debug rerun. Lines echoing
     // session prompts are dropped: they carry the system prompt.
     if (e instanceof Error && e.message.includes("ACP client disposed")) {
+      // The timer's SIGTERM rejects the in-flight prompt request, so the
+      // post-await timedOut check below this try never runs — without this
+      // branch a plain timeout masquerades as an unexplained agent death
+      // (this WAS the long-undiagnosed "hermes exited mid-turn" flake).
+      if (timedOut) {
+        throw new Error(
+          `hermes turn exceeded its ${Math.round(timeoutMs / 1000)}s budget and was terminated ` +
+            `(OPENNEKO_AGENT_TURN_TIMEOUT_MS overrides)`,
+          { cause: e },
+        );
+      }
+      const exit = await Promise.race([
+        exitInfoPromise,
+        new Promise<null>((r) => setTimeout(r, 3000)),
+      ]);
       const tail = Buffer.concat(stderrChunks)
         .toString("utf8")
         .split("\n")
@@ -581,10 +647,14 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         .slice(-6)
         .join("\n")
         .slice(-600);
+      const agentLog = hermesAgentLogTail(env.HERMES_HOME);
+      const mem = memAvailable();
       throw new Error(
-        `hermes exited mid-turn (code=${child.exitCode ?? "?"} signal=${child.signalCode ?? "?"})${
+        `hermes exited mid-turn (code=${exit ? exit.code ?? "null" : "?"} signal=${
+          exit ? exit.signal ?? "null" : "?"
+        }${mem ? ` mem-available=${mem}` : ""})${
           tail ? `; last stderr: ${tail}` : ""
-        }`,
+        }${agentLog ? `; agent.log tail: ${agentLog}` : ""}`,
         { cause: e },
       );
     }

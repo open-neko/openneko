@@ -13,12 +13,25 @@ export function isLoopbackHost(hostname: string): boolean {
   return LOOPBACK_HOST.test(hostname);
 }
 
-/** Rewrite a host-loopback URL to its sandbox-reachable form; other URLs
- *  (and unparseable strings) pass through unchanged. */
+/**
+ * A name the box can never reach directly: host loopback, or a dot-less
+ * docker-compose service name (`graphjin`, `neko-db`) that only resolves on
+ * the host's container networks. The box's resolver doesn't know compose
+ * names, and even a declared egress endpoint for one fails the proxy's SSRF
+ * check (private IP). The compose stack publishes such services on the host
+ * at the same port, so the gateway's host alias is the one route that works.
+ */
+export function isHostLocalName(hostname: string): boolean {
+  return isLoopbackHost(hostname) || !hostname.includes(".");
+}
+
+/** Rewrite a host-local URL (loopback or compose-internal name) to its
+ *  sandbox-reachable form; other URLs (and unparseable strings) pass through
+ *  unchanged. */
 export function sandboxReachableUrl(raw: string): string {
   try {
     const u = new URL(raw);
-    if (!isLoopbackHost(u.hostname)) return raw;
+    if (!isHostLocalName(u.hostname)) return raw;
     u.hostname = SANDBOX_HOST_ALIAS;
     return u.toString();
   } catch {
