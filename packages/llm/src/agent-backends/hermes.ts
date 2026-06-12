@@ -569,6 +569,25 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     return { finalText: finalText.trim(), rawText: accumulatedText };
   } catch (e) {
     if (spawnError) throw spawnError;
+    // "ACP client disposed" alone means the hermes child died mid-turn with
+    // its actual cause buried in the buffered stderr — surface the tail so
+    // each occurrence is diagnosable without a debug rerun. Lines echoing
+    // session prompts are dropped: they carry the system prompt.
+    if (e instanceof Error && e.message.includes("ACP client disposed")) {
+      const tail = Buffer.concat(stderrChunks)
+        .toString("utf8")
+        .split("\n")
+        .filter((l) => l.trim() && !l.includes("Prompt on session"))
+        .slice(-6)
+        .join("\n")
+        .slice(-600);
+      throw new Error(
+        `hermes exited mid-turn (code=${child.exitCode ?? "?"} signal=${child.signalCode ?? "?"})${
+          tail ? `; last stderr: ${tail}` : ""
+        }`,
+        { cause: e },
+      );
+    }
     throw e;
   } finally {
     client?.dispose();

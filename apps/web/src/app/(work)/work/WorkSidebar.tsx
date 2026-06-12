@@ -161,9 +161,20 @@ export default function WorkSidebar() {
   );
 }
 
+// "12th June 10:23 am" — a date alone can't tell threads apart on a busy day.
 function formatDate(value: string): string {
   const d = new Date(value);
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const day = d.getDate();
+  const mod100 = day % 100;
+  const suffix =
+    mod100 >= 11 && mod100 <= 13
+      ? "th"
+      : (({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th");
+  const month = d.toLocaleDateString(undefined, { month: "long" });
+  const time = d
+    .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true })
+    .toLowerCase();
+  return `${day}${suffix} ${month} ${time}`;
 }
 
 function ThreadRow({

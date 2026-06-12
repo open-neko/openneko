@@ -720,3 +720,44 @@
 .work-confirm-body {
   margin-top: 9px;
 }
+
+/* ── In-thread surface header (a2ui Briefing) ──
+   Conversation-scale sibling of the dashboard's greet-eyebrow + greet:
+   same display face and eyebrow grammar, sized to sit inside an answer
+   instead of opening a page. */
+.work-surface-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text3);
+  margin: 4px 0 8px;
+}
+.work-surface-eyebrow-rule {
+  width: 22px;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+.work-surface-title {
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+  color: var(--text);
+}
+.work-surface-sub {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text2);
+  margin-top: 4px;
+}
+.work-surface-title + :not(.work-surface-sub),
+.work-surface-sub + * {
+  margin-top: 14px;
+}
