@@ -1,8 +1,14 @@
 name: Deploy to VM
 
+# The VM runs the RELEASED stack, so the deployable artifact is a smoked
+# release — not a merge to main. Chaining off the smoke means the VM only
+# ever receives releases that booted and served in CI, and never restarts
+# pointlessly on ordinary merges (the old push-to-main trigger predates the
+# compose cutover, when every merge produced a source deploy).
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["post-release smoke"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -11,6 +17,8 @@ concurrency:
 
 jobs:
   deploy:
+    # A failed smoke means the release was demoted — never deploy it.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Configure SSH
