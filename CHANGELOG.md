@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.5.0](https://github.com/open-neko/openneko/compare/v2.4.0...v2.5.0) (2026-06-12)
+
+
+### Features
+
+* **llm:** agentic knowledge parity — join paths, fact-table hubs, DSL pattern cards ([c16d2d0](https://github.com/open-neko/openneko/commit/c16d2d08572dbddd594616de4987f469b7f2aabb))
+
+
+### Bug Fixes
+
+* compact the agentic table digest — the raw inline merged in [#129](https://github.com/open-neko/openneko/issues/129) hangs runs ([349fc54](https://github.com/open-neko/openneko/commit/349fc543beee39d3869979f4f8a1e62aa9fd783d))
+* **llm:** agentic prompt inlines a COMPACT table digest — raw pack JSON broke runs ([d97b621](https://github.com/open-neko/openneko/commit/d97b621255a0c83c11227bf8b70da483d6c2546c))
+* **llm:** hermes 'exited mid-turn' deaths were the 5-min turn timer — raise, name, and shrink ([2254e58](https://github.com/open-neko/openneko/commit/2254e58783a0b4436ee5f6bb0dd510a742b7e207))
+* **llm:** profiler inlines compact knowledge digests in agentic mode ([c0959b9](https://github.com/open-neko/openneko/commit/c0959b95d5a7101d550e3576aa499e8e261dcb54))
+* **work:** sandboxed agent can reach a compose-internal GraphJin ([642125b](https://github.com/open-neko/openneko/commit/642125baf02de2571b3cdb0f77b9e513bec874a0))
+
 ## [2.4.0](https://github.com/open-neko/openneko/compare/v2.3.2...v2.4.0) (2026-06-12)
 
 
