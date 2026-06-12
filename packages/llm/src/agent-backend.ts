@@ -125,6 +125,18 @@ export type AgentWorkspace = {
   claudeConfigRoot: string;
 };
 
+/**
+ * Wall-clock budget for ONE agent turn. When it expires the backend kills
+ * the agent process mid-stream, so it must comfortably exceed real turn
+ * times: discovery-heavy asks measured at 280–450s against a live source.
+ * The old 5-minute default terminated every longer run and surfaced as a
+ * mysterious "hermes exited mid-turn" death (signal=SIGTERM).
+ */
+export function agentTurnTimeoutMs(): number {
+  const env = Number(process.env.OPENNEKO_AGENT_TURN_TIMEOUT_MS);
+  return Number.isFinite(env) && env > 0 ? env : 9 * 60_000;
+}
+
 export type AgentRunOptions = {
   prompt: string;
   userMessage?: string;

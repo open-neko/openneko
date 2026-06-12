@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import type { AgentEvent, AgentRunResult } from "../agent-backend";
+import {
+  agentTurnTimeoutMs,
+  type AgentEvent,
+  type AgentRunResult,
+} from "../agent-backend";
 import type { RunAgentBackendInput } from "./agent-core";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { isHostLocalName, SANDBOX_HOST_ALIAS } from "./sandbox-net";
@@ -238,7 +242,10 @@ export function makeSandboxRunCore(opts: SandboxLauncherOptions): RunCore {
           keyAliases: opts.keyAliases,
         }),
         input.emit,
-        opts.execTimeoutMs ?? 600_000,
+        // Must outlive the in-box turn budget with margin, so a long turn
+        // dies as the backend's honest timeout error — not an opaque
+        // exec-stream kill from out here.
+        opts.execTimeoutMs ?? agentTurnTimeoutMs() + 120_000,
       );
     } finally {
       opts.brokerRelease?.(input.runId);

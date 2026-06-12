@@ -9,37 +9,44 @@
 // as a volume to share across rebuilds, and a Dockerfile RUN step can
 // pre-warm it for air-gapped deployments.
 
-import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
+import type { FeatureExtractionPipeline } from "@huggingface/transformers";
 
 const EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
 export const EMBEDDING_DIM = 384;
 
-// Cache resolution: NEKO_TRANSFORMERS_CACHE wins. Otherwise the worker
-// and web Dockerfiles pre-warm into /app/.transformers-cache so the first
-// embedText() call hits disk, not the network. Local-dev fallback: a
-// hidden dir under cwd, which the package's .gitignore ignores.
-env.cacheDir =
-  process.env.NEKO_TRANSFORMERS_CACHE?.trim() ||
-  (process.env.NODE_ENV === "production"
-    ? "/app/.transformers-cache"
-    : ".cache/transformers");
-// Local-first, with network fallback if the file isn't on disk yet.
-env.allowLocalModels = true;
-env.allowRemoteModels = true;
-
 let pipelinePromise: Promise<FeatureExtractionPipeline> | null = null;
 
+// transformers.js drags in onnxruntime-node — hundreds of MB of RSS the
+// moment the module executes. This file is reachable from the work barrel,
+// which every per-run MCP bridge process imports (12 per sandbox), so the
+// library must load only when something actually embeds — never at import.
 function getPipeline(): Promise<FeatureExtractionPipeline> {
   if (!pipelinePromise) {
-    pipelinePromise = pipeline("feature-extraction", EMBEDDING_MODEL, {
-      // Quantized variant: ~22MB vs ~87MB FP32, with negligible quality
-      // loss for short rules-text similarity.
-      dtype: "q8",
-    }).catch((err) => {
-      // Reset so the next caller retries instead of caching a failure.
-      pipelinePromise = null;
-      throw err;
-    });
+    pipelinePromise = import("@huggingface/transformers")
+      .then(({ pipeline, env }) => {
+        // Cache resolution: NEKO_TRANSFORMERS_CACHE wins. Otherwise the
+        // worker and web Dockerfiles pre-warm into /app/.transformers-cache
+        // so the first embedText() call hits disk, not the network.
+        // Local-dev fallback: a hidden dir under cwd (gitignored).
+        env.cacheDir =
+          process.env.NEKO_TRANSFORMERS_CACHE?.trim() ||
+          (process.env.NODE_ENV === "production"
+            ? "/app/.transformers-cache"
+            : ".cache/transformers");
+        // Local-first, with network fallback if the file isn't on disk yet.
+        env.allowLocalModels = true;
+        env.allowRemoteModels = true;
+        return pipeline("feature-extraction", EMBEDDING_MODEL, {
+          // Quantized variant: ~22MB vs ~87MB FP32, with negligible quality
+          // loss for short rules-text similarity.
+          dtype: "q8",
+        });
+      })
+      .catch((err) => {
+        // Reset so the next caller retries instead of caching a failure.
+        pipelinePromise = null;
+        throw err;
+      });
   }
   return pipelinePromise;
 }

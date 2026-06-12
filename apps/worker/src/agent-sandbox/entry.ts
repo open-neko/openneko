@@ -90,10 +90,16 @@ export async function main(): Promise<void> {
       ? new BrokerControlPlane(brokerUrl, brokerToken)
       : undefined;
   if (brokerUrl && brokerToken) {
-    process.env.OPENNEKO_MCP_BRIDGE = new URL(
-      "./mcp-bridge.ts",
+    // Prefer the image-baked plain-JS bundle: hermes spawns one bridge
+    // process per server, and the tsx loader costs ~300MB RSS each vs
+    // ~80MB bundled. The .ts fallback keeps tests + dev images working.
+    const bundled = new URL(
+      "../../dist/agent-sandbox/mcp-bridge.js",
       import.meta.url,
     ).pathname;
+    process.env.OPENNEKO_MCP_BRIDGE = existsSync(bundled)
+      ? bundled
+      : new URL("./mcp-bridge.ts", import.meta.url).pathname;
   }
 
   const emit = (event: AgentEvent): Promise<void> => {
