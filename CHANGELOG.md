@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.3](https://github.com/open-neko/openneko/compare/v2.2.2...v2.2.3) (2026-06-12)
+
+
+### Bug Fixes
+
+* **compose:** fresh demo boots — drop GJ_DATABASE_* env (fatal in sources mode) and generate the keystore key at seed ([bd38eca](https://github.com/open-neko/openneko/commit/bd38eca0290bf4a1247a5ce0d25af170c462009b))
+* fresh demo-mode boots — sources-mode env conflict + keystore generation ([38842b9](https://github.com/open-neko/openneko/commit/38842b9c3570a6f50a828745173fe39d3a2587d4))
+
 ## [2.2.2](https://github.com/open-neko/openneko/compare/v2.2.1...v2.2.2) (2026-06-12)
 
 
