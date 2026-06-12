@@ -2,9 +2,12 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { db, eq, onboarding_wizard, organization } from "@neko/db";
+import { getOperatorProfile } from "@neko/llm/work";
 import { getOrgId } from "@/lib/db";
+import { getCurrentActor } from "@/lib/actor";
 import { getSetupCompleteAt } from "@/lib/org-state";
 import OnboardingWizard, { type WizardInitial } from "./OnboardingWizard";
+import PersonaStep from "./PersonaStep";
 
 const ORG_NAME_STUB = "My Workspace";
 
@@ -14,6 +17,20 @@ export default async function OnboardingPage() {
   const setupCompleteAt = await getSetupCompleteAt(orgId);
   if (!setupCompleteAt) {
     redirect("/settings");
+  }
+
+  // CV3: onboarding is mode-aware. The ORG wizard below is the admin's
+  // one-time setup; a MEMBER landing here after the org is set up gets the
+  // per-user persona step instead (their operator_profile row drives the
+  // agent's <operator-profile> block for their runs).
+  const actor = await getCurrentActor();
+  if (actor.role === "member" && actor.userId) {
+    const profile = await getOperatorProfile(orgId, actor.userId);
+    return (
+      <Suspense fallback={null}>
+        <PersonaStep initialRoleTemplate={profile?.roleTemplate ?? ""} />
+      </Suspense>
+    );
   }
 
   const [wizardRows, orgRows] = await Promise.all([

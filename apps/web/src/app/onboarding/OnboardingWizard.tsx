@@ -11,7 +11,11 @@ const INPUT_CLS =
   "px-[13px] py-[11px] sm:px-3.5 sm:py-[13px] rounded-xl border-[1.5px] border-border bg-bg text-text text-base sm:text-[15px] font-body outline-none transition-all duration-200 focus:border-accent focus:shadow-[0_0_0_3px_rgba(107,92,231,0.08)]";
 const LABEL_CLS = "text-[14px] font-semibold text-text";
 
-const ALL_SEATS = ["CEO", "CFO", "CRO", "COO", "CIO", "CPO"] as const;
+// Quick-pick suggestions only — seats are free text (CV3 personas). A
+// custom role flows through metrics, briefing tabs, and the persona
+// prompt the same as these.
+const SUGGESTED_SEATS = ["CEO", "CFO", "CRO", "COO", "CIO", "CPO"];
+const MAX_SEAT_LENGTH = 40;
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -43,6 +47,7 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
   const [seats, setSeats] = useState<string[]>(
     initial.activeSeats.length > 0 ? initial.activeSeats : ["CEO"],
   );
+  const [customSeat, setCustomSeat] = useState("");
   const [prioritiesText, setPrioritiesText] = useState(initial.priorities.join("\n"));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +82,15 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
     setSeats((prev) =>
       prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
     );
+  };
+
+  const addCustomSeat = () => {
+    const s = customSeat.trim().slice(0, MAX_SEAT_LENGTH);
+    if (!s) return;
+    setSeats((prev) =>
+      prev.some((x) => x.toLowerCase() === s.toLowerCase()) ? prev : [...prev, s],
+    );
+    setCustomSeat("");
   };
 
   const submit = async () => {
@@ -151,9 +165,9 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
           />
         </Field>
 
-        <Field label="Which CXO seats are active?">
+        <Field label="Which seats are active? Pick or add your own.">
           <div className="flex gap-[7px] flex-wrap">
-            {ALL_SEATS.map((s) => {
+            {[...SUGGESTED_SEATS, ...seats.filter((s) => !SUGGESTED_SEATS.includes(s))].map((s) => {
               const isOn = seats.includes(s);
               return (
                 <button
@@ -172,6 +186,29 @@ export default function OnboardingWizard({ initial = EMPTY_INITIAL }: { initial?
                 </button>
               );
             })}
+          </div>
+          <div className="flex gap-[7px] mt-2">
+            <input
+              className={INPUT_CLS + " flex-1"}
+              value={customSeat}
+              maxLength={MAX_SEAT_LENGTH}
+              placeholder="Add your own — e.g. Head of Ops, VP Sales"
+              onChange={(e) => setCustomSeat(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                addCustomSeat();
+              }}
+              aria-label="Add a custom seat"
+            />
+            <button
+              type="button"
+              onClick={addCustomSeat}
+              disabled={!customSeat.trim()}
+              className="px-4.5 rounded-xl border-[1.5px] border-border font-body text-[14.5px] font-medium cursor-pointer text-text2 hover:border-accent hover:text-accent disabled:opacity-40 disabled:cursor-default"
+            >
+              Add
+            </button>
           </div>
         </Field>
 
