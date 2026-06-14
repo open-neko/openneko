@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.1](https://github.com/open-neko/openneko/compare/v2.7.0...v2.7.1) (2026-06-14)
+
+
+### Performance Improvements
+
+* **docker:** slim web + worker images (split shared base + prod-prune worker) ([eb05f56](https://github.com/open-neko/openneko/commit/eb05f56689a9f6cdff98f69efff2d0a661e24f90))
+* **docker:** slim web + worker images by splitting the shared base ([9ccff8c](https://github.com/open-neko/openneko/commit/9ccff8c7da730d63f638eeef21cf237c547f0432))
+
 ## [2.7.0](https://github.com/open-neko/openneko/compare/v2.6.0...v2.7.0) (2026-06-14)
 
 
