@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.0](https://github.com/open-neko/openneko/compare/v2.5.0...v2.6.0) (2026-06-14)
+
+
+### Features
+
+* **cli:** guided `openneko setup` — install, preflight, onboarding, plugins ([108538d](https://github.com/open-neko/openneko/commit/108538dcf6db69c9d15e8d343c0f15225384c710))
+* **cli:** guided `openneko setup` — install, preflight, onboarding, plugins ([19e355c](https://github.com/open-neko/openneko/commit/19e355c6ed3c291ac0d3e037ca7b8598dbf54ed0))
+
 ## [2.5.0](https://github.com/open-neko/openneko/compare/v2.4.0...v2.5.0) (2026-06-12)
 
 
