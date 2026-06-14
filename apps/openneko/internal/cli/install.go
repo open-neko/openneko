@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/internal/dockerproxy"
 	"github.com/open-neko/neko/apps/openneko/internal/host"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/install"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/marketplace"
@@ -67,8 +68,13 @@ func newInstallCmd() *cobra.Command {
 				return nil
 			}
 
+			// A proxied invocation runs inside the worker container, whose
+			// image ships no docker CLI — so the host check always misfires
+			// there even though the deployment is plainly running under Docker.
+			// The real host already cleared its checks to bring the stack up.
+			proxied := os.Getenv(dockerproxy.EnvMarker) == "1"
 			h := host.Check()
-			if !h.Supported && !skipHostCheck {
+			if !h.Supported && !skipHostCheck && !proxied {
 				// Used to be a hard exit. Softened to a warning because
 				// install is increasingly decoupled from run: operators
 				// stage plugin installs from one host (e.g. Mac) and the
