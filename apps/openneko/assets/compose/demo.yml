@@ -60,7 +60,7 @@ services:
           # keystore key must be real at boot, so generate it here once.
           cp /app/db/graphjin/dev.sources.example.yml /config/dev.yml
           KEY=$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))')
-          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$KEY|" /config/dev.yml
+          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/dev.yml
         fi
         chmod -R a+rwX /config
     volumes:

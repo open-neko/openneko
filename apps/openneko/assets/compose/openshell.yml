@@ -68,7 +68,7 @@ services:
         set -e
         PKI=${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}/pki
         # web + worker have XDG_CONFIG_HOME=/config and the CLI reads gateway
-        # registrations from $XDG_CONFIG_HOME/openshell — so write to
+        # registrations from $$XDG_CONFIG_HOME/openshell — so write to
         # /config/openshell (the shared openshell-config volume), NOT under the
         # openneko-config volume (which mounts at /config/openneko).
         REG=/config/openshell/gateways/openneko
