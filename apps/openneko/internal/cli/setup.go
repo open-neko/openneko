@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
@@ -17,6 +19,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/preflight"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 	"github.com/open-neko/neko/apps/openneko/internal/setup"
+	"github.com/open-neko/neko/apps/openneko/internal/ui"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -68,26 +71,31 @@ at the prompt) to finish at the web UI. Credential flags
 			client := setup.NewClient(baseURL)
 			alreadyUp := client.Ready(ctx)
 
+			subtitle := string(m) + " mode"
+			if alreadyUp {
+				subtitle += " · stack already running"
+			}
+			ui.Banner(out, subtitle)
+
 			// 1 + 2. Preflight then bring-up — skipped if the stack already
 			// answers (re-running setup against a live install jumps straight
 			// to configuration). Port checks only run for a fresh bring-up,
 			// since a live OpenNeko legitimately holds those ports.
 			if alreadyUp {
-				fmt.Fprintln(out, "Existing OpenNeko detected — skipping preflight and bring-up.")
+				ui.Info(out, "Existing OpenNeko detected — skipping preflight and bring-up.")
 			} else {
 				if err := runPreflight(out); err != nil {
 					return err
 				}
-				fmt.Fprintln(out, "\nBringing up the stack…")
+				ui.Info(out, "Bringing up the stack…")
 				if err := bringUpStack(ctx, cmd, m, bringUpOptions{detach: true, quiet: !verbose}); err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "Waiting for the web app at %s…\n", baseURL)
-				if err := client.WaitReady(ctx, 120*time.Second); err != nil {
+				if err := ui.Spin("Waiting for the web app", func() error { return client.WaitReady(ctx, 120*time.Second) }); err != nil {
 					return err
 				}
 			}
-			fmt.Fprintln(out, "✓ web app ready")
+			ui.Success(out, "web app ready")
 
 			// 3. Onboarding.
 			interactive := prompt.IsInteractive()
@@ -95,11 +103,13 @@ at the prompt) to finish at the web UI. Credential flags
 				backend != "" || model != "" || researchProvider != "" || researchKey != ""
 
 			if skipOnboarding {
-				fmt.Fprintf(out, "\nFinish setup in your browser: %s\n", baseURL)
+				ui.Info(out, "Stack is up. Finish setup in your browser:")
+				fmt.Fprintln(out, "  "+baseURL)
 				return nil
 			}
 			if !interactive && !headless {
-				fmt.Fprintf(out, "\nNo TTY and no setup flags — finish setup in your browser: %s\n", baseURL)
+				ui.Info(out, "No TTY and no setup flags — finish setup in your browser:")
+				fmt.Fprintln(out, "  "+baseURL)
 				return nil
 			}
 
@@ -127,7 +137,12 @@ at the prompt) to finish at the web UI. Credential flags
 						return err
 					}
 				}
-				fmt.Fprintf(out, "\n✓ Setup complete. Open %s/onboarding to describe your business.\n", baseURL)
+				ui.CompletionBox(out,
+					ui.OK()+" Setup complete.",
+					"",
+					"Next: open "+baseURL+"/onboarding",
+					"      to describe your business.",
+				)
 			}
 			return nil
 		},
@@ -161,12 +176,16 @@ func offerPluginInstall(ctx context.Context, out io.Writer, csv string, interact
 	if len(preselected) == 0 && !interactive {
 		return nil
 	}
-	mp, err := marketplace.NewClient().Fetch(ctx, marketplace.OfficialURL)
-	if err != nil {
-		fmt.Fprintf(out, "\n(Skipping plugins — couldn't reach the marketplace: %v)\n", err)
+	var mp *marketplace.Marketplace
+	if err := ui.Spin("Loading the plugin marketplace", func() error {
+		var e error
+		mp, e = marketplace.NewClient().Fetch(ctx, marketplace.OfficialURL)
+		return e
+	}); err != nil {
+		ui.Info(out, "Skipping plugins — couldn't reach the marketplace: %v", err)
 		return nil
 	}
-	if len(mp.Plugins) == 0 {
+	if mp == nil || len(mp.Plugins) == 0 {
 		return nil
 	}
 
@@ -174,16 +193,27 @@ func offerPluginInstall(ctx context.Context, out io.Writer, csv string, interact
 	if len(preselected) > 0 {
 		chosen = matchPlugins(preselected, mp.Plugins)
 	} else {
-		fmt.Fprintf(out, "\nOptional: install first-party plugins from %s.\n", mp.Name)
-		fmt.Fprintln(out, "Selecting a plugin also prompts for its configuration (API keys, tokens).")
+		opts := make([]huh.Option[string], len(mp.Plugins))
 		for i, p := range mp.Plugins {
-			fmt.Fprintf(out, "  [%d] %s — %s\n", i+1, p.Name, p.Description)
+			label := p.Name
+			if p.Title != "" {
+				label = p.Name + " — " + p.Title
+			}
+			opts[i] = huh.NewOption(label, p.Name)
 		}
-		sel, err := prompt.Visible("Install which? (comma-separated numbers, 'all', or Enter to skip): ")
-		if err != nil {
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Install first-party plugins?").
+				Description("space toggles · enter confirms · each prompts for its own keys").
+				Options(opts...).
+				Value(&chosen),
+		)).WithTheme(ui.Theme())
+		if err := form.Run(); err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				return nil
+			}
 			return err
 		}
-		chosen = resolvePluginSelection(sel, mp.Plugins)
 	}
 	if len(chosen) == 0 {
 		return nil
@@ -194,13 +224,13 @@ func offerPluginInstall(ctx context.Context, out io.Writer, csv string, interact
 		return err
 	}
 	for _, name := range chosen {
-		fmt.Fprintf(out, "\nInstalling %s …\n", name)
+		ui.Info(out, "Installing %s…", name)
 		ic := exec.CommandContext(ctx, self, "install", name)
 		ic.Stdin = os.Stdin
 		ic.Stdout = os.Stdout
 		ic.Stderr = os.Stderr
 		if err := ic.Run(); err != nil {
-			fmt.Fprintf(out, "  ✗ %s install failed: %v (continuing)\n", name, err)
+			ui.Failure(out, "%s install failed: %v (continuing)", name, err)
 		}
 	}
 	return nil
@@ -275,7 +305,7 @@ func webBaseURL() string {
 // non-nil (exit-coded) error if any hard check fails. Host failure exits 3 to
 // match root.go's code map; other failures exit 1.
 func runPreflight(out io.Writer) error {
-	fmt.Fprintln(out, "Preflight:")
+	fmt.Fprintln(out, ui.Heading("Preflight"))
 	checks := []preflight.Result{preflight.Host(), preflight.Docker()}
 	checks = append(checks, preflight.Ports(preflight.DefaultPorts)...)
 	checks = append(checks, preflight.DuplicateBinary())
@@ -284,16 +314,16 @@ func runPreflight(out io.Writer) error {
 	for _, c := range checks {
 		switch c.Level {
 		case preflight.Pass:
-			fmt.Fprintf(out, "  ✓ %s: %s\n", c.Name, c.Detail)
+			ui.Success(out, "%s: %s", c.Name, c.Detail)
 		case preflight.Warn:
-			fmt.Fprintf(out, "  ! %s: %s\n", c.Name, c.Detail)
+			ui.Info(out, "! %s: %s", c.Name, c.Detail)
 			if c.Remediation != "" {
-				fmt.Fprintf(out, "      %s\n", c.Remediation)
+				ui.Info(out, "    %s", c.Remediation)
 			}
 		case preflight.Fail:
-			fmt.Fprintf(out, "  ✗ %s: %s\n", c.Name, c.Detail)
+			ui.Failure(out, "%s: %s", c.Name, c.Detail)
 			if c.Remediation != "" {
-				fmt.Fprintf(out, "      %s\n", c.Remediation)
+				ui.Info(out, "    %s", c.Remediation)
 			}
 			if c.Name == "host" {
 				code = 3

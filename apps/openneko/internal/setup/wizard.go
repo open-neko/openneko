@@ -7,7 +7,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/open-neko/neko/apps/openneko/internal/prompt"
+	"github.com/charmbracelet/huh"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ui"
 )
 
 // Config carries everything the onboarding flow needs. Headless callers set the
@@ -36,7 +38,7 @@ type Outcome struct {
 	Skipped    bool // deferred to the browser (chosen, or no TTY + no flags)
 }
 
-// errBrowser is returned by any step when the operator opts out to the browser.
+// errBrowser is returned by any step when the operator aborts to the browser.
 var errBrowser = errors.New("browser handoff")
 
 var forbiddenPasswords = map[string]bool{"secret": true, "password": true, "postgres": true}
@@ -57,18 +59,27 @@ func Run(ctx context.Context, c *Client, out io.Writer, cfg Config) (Outcome, er
 // ----- interactive -----
 
 func runInteractive(ctx context.Context, c *Client, out io.Writer, cfg Config) (Outcome, error) {
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "OpenNeko is up. Configure it now in the terminal, or finish in your browser?")
-	choice, err := prompt.Visible("  [t] terminal  ·  [b] browser  (t): ")
-	if err != nil {
+	choice := "terminal"
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("OpenNeko is up — how do you want to configure it?").
+			Options(
+				huh.NewOption("Configure here in the terminal", "terminal"),
+				huh.NewOption("Finish in the browser", "browser"),
+			).
+			Value(&choice),
+	))
+	if err := runForm(form); err != nil {
+		if errors.Is(err, errBrowser) {
+			return browserHandoff(out, cfg), nil
+		}
 		return Outcome{}, err
 	}
-	if strings.EqualFold(strings.TrimSpace(choice), "b") {
+	if choice == "browser" {
 		return browserHandoff(out, cfg), nil
 	}
-	fmt.Fprintln(out, "  (type b at any prompt to switch to the browser)")
 
-	err = stepsInteractive(ctx, c, out, cfg)
+	err := stepsInteractive(ctx, c, out, cfg)
 	if errors.Is(err, errBrowser) {
 		return browserHandoff(out, cfg), nil
 	}
@@ -79,53 +90,81 @@ func runInteractive(ctx context.Context, c *Client, out io.Writer, cfg Config) (
 }
 
 func stepsInteractive(ctx context.Context, c *Client, out io.Writer, cfg Config) error {
-	// 1. Admin DB password (only when still the bootstrap default).
 	changed, err := c.PasswordChanged(ctx)
 	if err != nil {
 		return err
 	}
+
+	total := 3
 	if !changed {
-		fmt.Fprintln(out, "\n1. Choose a database password (min 8 chars; you won't enter it again).")
-		pw, err := promptNewPassword(out)
-		if err != nil {
-			return err
-		}
-		if err := c.ChangePassword(ctx, pw); err != nil {
-			return err
-		}
-		fmt.Fprintln(out, "   ✓ password set")
+		total = 4
+	}
+	step := 0
+	next := func(title, desc string) {
+		step++
+		ui.StepHeader(out, step, total, title, desc)
 	}
 
-	// 2. Data source.
+	// 1. Admin DB password (only when still the bootstrap default).
+	if !changed {
+		next("Database password", "Pick a password only you know — you won't enter it again.")
+		var pw, confirm string
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewInput().Title("New password").EchoMode(huh.EchoModePassword).Value(&pw).Validate(validatePassword),
+			huh.NewInput().Title("Confirm password").EchoMode(huh.EchoModePassword).Value(&confirm).
+				Validate(func(s string) error {
+					if s != pw {
+						return errors.New("passwords don't match")
+					}
+					return nil
+				}),
+		))
+		if err := runForm(form); err != nil {
+			return err
+		}
+		if err := ui.Spin("Setting database password", func() error { return c.ChangePassword(ctx, pw) }); err != nil {
+			return err
+		}
+		ui.Success(out, "password set")
+	}
+
+	// 2. Data source (re-prompts until the connectivity test passes).
 	ds, err := c.GetDataSource(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "\n2. Connect your data (GraphJin base URL).")
+	next("Connect your data", "GraphJin base URL — OpenNeko adds the GraphQL & MCP paths.")
+	root := defaultDataURL(cfg, ds)
 	for {
-		root, err := askLine("   GraphJin URL", defaultDataURL(cfg, ds))
-		if err != nil {
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewInput().Title("GraphJin URL").Value(&root).Validate(nonEmpty),
+		))
+		if err := runForm(form); err != nil {
 			return err
 		}
 		gql, mcp := DeriveEndpoints(root)
-		mcpOK, err := c.TestDataSource(ctx, gql, mcp)
-		if err != nil {
-			fmt.Fprintf(out, "   ✗ %s — try again.\n", err)
+		var mcpOK bool
+		if err := ui.Spin("Testing connection", func() error {
+			var e error
+			mcpOK, e = c.TestDataSource(ctx, gql, mcp)
+			return e
+		}); err != nil {
+			ui.Failure(out, "%v — try again", err)
 			continue
 		}
-		if err := c.SaveDataSource(ctx, gql, mcp, "primary"); err != nil {
-			fmt.Fprintf(out, "   ✗ %s — try again.\n", err)
+		if err := ui.Spin("Saving data source", func() error { return c.SaveDataSource(ctx, gql, mcp, "primary") }); err != nil {
+			ui.Failure(out, "%v — try again", err)
 			continue
 		}
 		if mcpOK {
-			fmt.Fprintln(out, "   ✓ data source saved")
+			ui.Success(out, "data source saved")
 		} else {
-			fmt.Fprintln(out, "   ✓ data source saved (MCP unreachable — fine for the agent path)")
+			ui.Success(out, "data source saved (MCP unreachable — fine for the agent path)")
 		}
 		break
 	}
 
-	// 3. Agent backend + primary provider.
+	// 3. Agent backend + primary provider (re-prompts until the key validates).
 	agent, err := c.GetAgent(ctx)
 	if err != nil {
 		return err
@@ -134,80 +173,168 @@ func stepsInteractive(ctx context.Context, c *Client, out io.Writer, cfg Config)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "\n3. Choose the agent + model provider.")
-	backend, err := chooseOption(out, "   Agent backend", toOptions(agent.Options), agent.Agent.Backend)
-	if err != nil {
+	next("Agent & model provider", "The model that runs your metric queries.")
+	backend := agent.Agent.Backend
+	if err := runForm(huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().Title("Agent backend").Options(backendOptions(agent.Options)...).Value(&backend),
+	))); err != nil {
 		return err
 	}
 	var provider string
 	if backend == "claude-agent" {
 		provider = "anthropic"
-		fmt.Fprintln(out, "   Provider: anthropic (locked by Claude Agent backend)")
+		ui.Info(out, "Provider locked to anthropic by the Claude Agent backend.")
 	} else {
-		provider, err = chooseOption(out, "   Provider", prov.Options.Primary, prov.Primary.Provider)
-		if err != nil {
+		provider = prov.Primary.Provider
+		if err := runForm(huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().Title("Model provider").Options(providerOptions(prov.Options.Primary)...).Value(&provider),
+		))); err != nil {
 			return err
 		}
 	}
-	model, err := askLine("   Model", modelDefault(prov.Defaults.Primary, provider, prov.Primary))
-	if err != nil {
-		return err
+	capJobs := agent.Agent.GlobalCap
+	if capJobs == 0 {
+		capJobs = agent.Defaults.GlobalCap
 	}
-	config, secrets, err := collectFields(prov.Fields.Primary[provider])
-	if err != nil {
-		return err
+	for {
+		model, config, secrets, err := providerForm(modelDefault(prov.Defaults.Primary, provider, prov.Primary), prov.Fields.Primary[provider])
+		if err != nil {
+			return err
+		}
+		draft := ProviderDraft{Scope: "primary", Provider: provider, Model: model, Enabled: true, Config: config, Secrets: secrets}
+		if err := ui.Spin("Validating provider key", func() error { return c.TestProvider(ctx, draft) }); err != nil {
+			ui.Failure(out, "%v — try again", err)
+			continue
+		}
+		if err := ui.Spin("Saving agent + provider", func() error {
+			if e := c.SaveAgent(ctx, backend, capJobs); e != nil {
+				return e
+			}
+			return c.SaveProvider(ctx, draft)
+		}); err != nil {
+			return err
+		}
+		ui.Success(out, "agent + provider saved")
+		break
 	}
-	cap := agent.Agent.GlobalCap
-	if cap == 0 {
-		cap = agent.Defaults.GlobalCap
-	}
-	draft := ProviderDraft{Scope: "primary", Provider: provider, Model: model, Enabled: true, Config: config, Secrets: secrets}
-	fmt.Fprintln(out, "   validating key…")
-	if err := c.TestProvider(ctx, draft); err != nil {
-		return fmt.Errorf("provider key test failed: %w", err)
-	}
-	if err := c.SaveAgent(ctx, backend, cap); err != nil {
-		return err
-	}
-	if err := c.SaveProvider(ctx, draft); err != nil {
-		return err
-	}
-	fmt.Fprintln(out, "   ✓ agent + provider saved")
 
 	// 4. Research (optional).
-	fmt.Fprintln(out, "\n4. Industry research (optional).")
-	enable, err := askYesNo("   Enable industry research?", false)
-	if err != nil {
+	next("Industry research", "Optional — pull industry context during onboarding.")
+	enable := false
+	if err := runForm(huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().Title("Enable industry research?").Affirmative("Yes").Negative("No, skip").Value(&enable),
+	))); err != nil {
 		return err
 	}
 	if enable {
-		rprovider, err := chooseOption(out, "   Research provider", filterOut(prov.Options.Research, "disabled"), researchDefault(prov.Options.Research))
-		if err != nil {
-			return err
+		for {
+			rprovider := researchDefault(prov.Options.Research)
+			if err := runForm(huh.NewForm(huh.NewGroup(
+				huh.NewSelect[string]().Title("Research provider").
+					Options(providerOptions(filterOut(prov.Options.Research, "disabled"))...).Value(&rprovider),
+			))); err != nil {
+				return err
+			}
+			model, config, secrets, err := providerForm(prov.Defaults.Research[rprovider], prov.Fields.Research[rprovider])
+			if err != nil {
+				return err
+			}
+			rdraft := ProviderDraft{Scope: "research", Provider: rprovider, Model: model, Enabled: true, Config: config, Secrets: secrets}
+			if err := ui.Spin("Validating research key", func() error { return c.TestProvider(ctx, rdraft) }); err != nil {
+				ui.Failure(out, "%v — try again", err)
+				continue
+			}
+			if err := ui.Spin("Enabling research", func() error { return c.SaveProvider(ctx, rdraft) }); err != nil {
+				return err
+			}
+			ui.Success(out, "research enabled")
+			break
 		}
-		rmodel, err := askLine("   Model", prov.Defaults.Research[rprovider])
-		if err != nil {
-			return err
-		}
-		rconfig, rsecrets, err := collectFields(prov.Fields.Research[rprovider])
-		if err != nil {
-			return err
-		}
-		rdraft := ProviderDraft{Scope: "research", Provider: rprovider, Model: rmodel, Enabled: true, Config: rconfig, Secrets: rsecrets}
-		fmt.Fprintln(out, "   validating key…")
-		if err := c.TestProvider(ctx, rdraft); err != nil {
-			return fmt.Errorf("research key test failed: %w", err)
-		}
-		if err := c.SaveProvider(ctx, rdraft); err != nil {
-			return err
-		}
-		fmt.Fprintln(out, "   ✓ research enabled")
-	} else if err := c.SaveProvider(ctx, disabledResearch()); err != nil {
+	} else if err := ui.Spin("Saving", func() error { return c.SaveProvider(ctx, disabledResearch()) }); err != nil {
 		return err
 	}
 
 	// 5. Finish.
-	return c.Finish(ctx)
+	return ui.Spin("Finishing setup", func() error { return c.Finish(ctx) })
+}
+
+// runForm runs a huh form with the shared theme. A user abort (ctrl-c / esc) is
+// mapped to errBrowser so the caller can fall back to the browser.
+func runForm(f *huh.Form) error {
+	err := f.WithTheme(ui.Theme()).Run()
+	if errors.Is(err, huh.ErrUserAborted) {
+		return errBrowser
+	}
+	return err
+}
+
+// providerForm prompts for the model plus the provider's declared fields,
+// routing secret-kind fields through a masked input. Returns the model and the
+// config/secrets maps for a ProviderDraft.
+func providerForm(modelDef string, fields []Field) (model string, config, secrets map[string]string, err error) {
+	model = modelDef
+	config = map[string]string{}
+	secrets = map[string]string{}
+	formFields := []huh.Field{
+		huh.NewInput().Title("Model").Value(&model).Validate(nonEmpty),
+	}
+	ptrs := make([]*string, len(fields))
+	for i, fld := range fields {
+		p := new(string)
+		ptrs[i] = p
+		in := huh.NewInput().Title(fld.Label).Value(p)
+		if fld.Kind == "secret" {
+			in = in.EchoMode(huh.EchoModePassword)
+		}
+		if fld.Placeholder != "" {
+			in = in.Placeholder(fld.Placeholder)
+		}
+		if fld.Required {
+			in = in.Validate(nonEmpty)
+		}
+		formFields = append(formFields, in)
+	}
+	if err = runForm(huh.NewForm(huh.NewGroup(formFields...))); err != nil {
+		return "", nil, nil, err
+	}
+	for i, fld := range fields {
+		if fld.Kind == "secret" {
+			secrets[fld.Key] = *ptrs[i]
+		} else {
+			config[fld.Key] = *ptrs[i]
+		}
+	}
+	return model, config, secrets, nil
+}
+
+func backendOptions(in []AgentBackendOption) []huh.Option[string] {
+	out := make([]huh.Option[string], len(in))
+	for i, o := range in {
+		out[i] = huh.NewOption(optionLabel(o.Value, o.Description), o.Value)
+	}
+	return out
+}
+
+func providerOptions(in []ProviderOption) []huh.Option[string] {
+	out := make([]huh.Option[string], len(in))
+	for i, o := range in {
+		out[i] = huh.NewOption(optionLabel(o.Value, o.Description), o.Value)
+	}
+	return out
+}
+
+func optionLabel(value, desc string) string {
+	if desc == "" {
+		return value
+	}
+	return value + " — " + desc
+}
+
+func nonEmpty(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return errors.New("required")
+	}
+	return nil
 }
 
 // ----- headless -----
@@ -268,9 +395,9 @@ func runHeadless(ctx context.Context, c *Client, cfg Config) (Outcome, error) {
 		model = modelDefault(prov.Defaults.Primary, provider, prov.Primary)
 	}
 	secretKey := secretFieldKey(prov.Fields.Primary[provider])
-	cap := agent.Agent.GlobalCap
-	if cap == 0 {
-		cap = agent.Defaults.GlobalCap
+	capJobs := agent.Agent.GlobalCap
+	if capJobs == 0 {
+		capJobs = agent.Defaults.GlobalCap
 	}
 	draft := ProviderDraft{
 		Scope: "primary", Provider: provider, Model: model, Enabled: true,
@@ -279,7 +406,7 @@ func runHeadless(ctx context.Context, c *Client, cfg Config) (Outcome, error) {
 	if err := c.TestProvider(ctx, draft); err != nil {
 		return Outcome{}, fmt.Errorf("provider key test failed: %w", err)
 	}
-	if err := c.SaveAgent(ctx, backend, cap); err != nil {
+	if err := c.SaveAgent(ctx, backend, capJobs); err != nil {
 		return Outcome{}, err
 	}
 	if err := c.SaveProvider(ctx, draft); err != nil {
@@ -312,7 +439,8 @@ func runHeadless(ctx context.Context, c *Client, cfg Config) (Outcome, error) {
 // ----- shared helpers -----
 
 func browserHandoff(out io.Writer, cfg Config) Outcome {
-	fmt.Fprintf(out, "\nFinish setup in your browser: %s\n", cfg.BaseURL)
+	ui.Info(out, "Finish setup in your browser:")
+	fmt.Fprintln(out, "  "+cfg.BaseURL)
 	return Outcome{Skipped: true}
 }
 
@@ -362,14 +490,6 @@ func filterOut(opts []ProviderOption, drop string) []ProviderOption {
 	return out
 }
 
-func toOptions(in []AgentBackendOption) []ProviderOption {
-	out := make([]ProviderOption, len(in))
-	for i, o := range in {
-		out[i] = ProviderOption{Value: o.Value, Label: o.Label, Description: o.Description}
-	}
-	return out
-}
-
 // secretFieldKey returns the key of the first secret-kind field, defaulting to
 // "apiKey" when the provider declares none explicitly.
 func secretFieldKey(fields []Field) string {
@@ -389,116 +509,4 @@ func validatePassword(pw string) error {
 		return errors.New("that password is too common; pick something else")
 	}
 	return nil
-}
-
-// ----- prompt helpers -----
-
-// askLine reads a visible line with a default; "b" bails to the browser.
-func askLine(label, def string) (string, error) {
-	suffix := ""
-	if def != "" {
-		suffix = fmt.Sprintf(" [%s]", def)
-	}
-	v, err := prompt.Visible(fmt.Sprintf("%s%s: ", label, suffix))
-	if err != nil {
-		return "", err
-	}
-	v = strings.TrimSpace(v)
-	if strings.EqualFold(v, "b") {
-		return "", errBrowser
-	}
-	if v == "" {
-		return def, nil
-	}
-	return v, nil
-}
-
-func askYesNo(label string, def bool) (bool, error) {
-	hint := "y/N"
-	if def {
-		hint = "Y/n"
-	}
-	v, err := prompt.Visible(fmt.Sprintf("%s (%s): ", label, hint))
-	if err != nil {
-		return false, err
-	}
-	v = strings.TrimSpace(strings.ToLower(v))
-	if v == "b" {
-		return false, errBrowser
-	}
-	if v == "" {
-		return def, nil
-	}
-	return v == "y" || v == "yes", nil
-}
-
-// chooseOption prints the options and reads a value (accepts the value itself
-// or its 1-based index); empty keeps def.
-func chooseOption(out io.Writer, label string, opts []ProviderOption, def string) (string, error) {
-	for i, o := range opts {
-		marker := " "
-		if o.Value == def {
-			marker = "*"
-		}
-		fmt.Fprintf(out, "     %s [%d] %s — %s\n", marker, i+1, o.Value, o.Description)
-	}
-	v, err := askLine(label, def)
-	if err != nil {
-		return "", err
-	}
-	for i, o := range opts {
-		if v == o.Value || v == fmt.Sprintf("%d", i+1) {
-			return o.Value, nil
-		}
-	}
-	if v == def {
-		return def, nil
-	}
-	return "", fmt.Errorf("unknown option %q", v)
-}
-
-func promptNewPassword(out io.Writer) (string, error) {
-	for {
-		pw, err := prompt.Hidden("   New password: ")
-		if err != nil {
-			return "", err
-		}
-		if err := validatePassword(pw); err != nil {
-			fmt.Fprintf(out, "   ✗ %s\n", err)
-			continue
-		}
-		confirm, err := prompt.Hidden("   Confirm password: ")
-		if err != nil {
-			return "", err
-		}
-		if pw != confirm {
-			fmt.Fprintln(out, "   ✗ passwords don't match")
-			continue
-		}
-		return pw, nil
-	}
-}
-
-// collectFields prompts each provider field, routing secret-kind fields through
-// a hidden prompt and the rest into the config map.
-func collectFields(fields []Field) (config, secrets map[string]string, err error) {
-	config = map[string]string{}
-	secrets = map[string]string{}
-	for _, f := range fields {
-		label := "   " + f.Label
-		if f.Kind == "secret" {
-			v, err := prompt.Hidden(label + ": ")
-			if err != nil {
-				return nil, nil, err
-			}
-			secrets[f.Key] = v
-			continue
-		}
-		v, err := askLine(label, f.Placeholder)
-		if err != nil {
-			return nil, nil, err
-		}
-		config[f.Key] = v
-	}
-	return config, secrets, nil
 }
