@@ -78,13 +78,13 @@ type fakeRows struct {
 	idx   int
 }
 
-func (r *fakeRows) Close()                                              {}
-func (r *fakeRows) Err() error                                          { return nil }
-func (r *fakeRows) CommandTag() pgconn.CommandTag                       { return pgconn.CommandTag{} }
-func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription        { return nil }
-func (r *fakeRows) RawValues() [][]byte                                 { return nil }
-func (r *fakeRows) Values() ([]any, error)                              { return nil, nil }
-func (r *fakeRows) Conn() *pgx.Conn                                     { return nil }
+func (r *fakeRows) Close()                                       {}
+func (r *fakeRows) Err() error                                   { return nil }
+func (r *fakeRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *fakeRows) RawValues() [][]byte                          { return nil }
+func (r *fakeRows) Values() ([]any, error)                       { return nil, nil }
+func (r *fakeRows) Conn() *pgx.Conn                              { return nil }
 func (r *fakeRows) Next() bool {
 	if r.idx >= len(r.names) {
 		return false
@@ -228,12 +228,12 @@ func TestApplyAcquiresAndReleasesAdvisoryLock(t *testing.T) {
 
 func TestShouldRunInTransaction(t *testing.T) {
 	cases := map[string]bool{
-		"0001_init.sql":                              true,
+		"0001_init.sql": true,
 		"0016_reindex_after_pgvector_swap_no_tx.sql": false,
-		"weird_no_tx.sql":                            false,
-		"_no_tx.sql":                                 false,
-		"":                                           true,
-		"plain.sql":                                  true,
+		"weird_no_tx.sql": false,
+		"_no_tx.sql":      false,
+		"":                true,
+		"plain.sql":       true,
 	}
 	for name, want := range cases {
 		if got := shouldRunInTransaction(name); got != want {

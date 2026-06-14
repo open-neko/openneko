@@ -25,7 +25,7 @@ func newMarketplaceListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "Show trusted marketplaces",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
@@ -55,7 +55,7 @@ func newMarketplaceAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add <url>",
 		Short: "Trust a third-party marketplace URL",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
@@ -99,7 +99,7 @@ func newMarketplaceRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <name-or-url>",
 		Short: "Stop trusting a marketplace",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, proxied := MaybeProxyToWorker(cmd); proxied {
 				return WithExit(code, nil)
