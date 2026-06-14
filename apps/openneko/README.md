@@ -6,15 +6,22 @@ laptop, on a self-hosted server, and inside the worker container.
 
 ## Install
 
-**macOS (Apple Silicon):**
+One line, any platform:
 
 ```bash
-brew install open-neko/tap/openneko
+curl -fsSL https://openneko.app/install.sh | sh
 ```
 
-**Linux (amd64 / arm64):** download the tarball for your platform from
-[github.com/open-neko/openneko/releases](https://github.com/open-neko/openneko/releases)
-and put `openneko` somewhere on your `PATH`.
+The installer detects your OS/arch and installs via Homebrew on macOS or a
+checksum-verified release tarball on Linux (amd64 / arm64). Then run the guided
+`openneko setup`.
+
+Manual:
+
+- **macOS (Homebrew):** `brew install open-neko/tap/openneko`
+- **Linux:** download the tarball from
+  [github.com/open-neko/openneko/releases](https://github.com/open-neko/openneko/releases),
+  verify it against `checksums.txt`, and put `openneko` on your `PATH`.
 
 You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).
 
@@ -23,6 +30,7 @@ You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).
 ### Stack supervision
 
 ```bash
+openneko setup [--mode prod|dev|demo]   # guided install: preflight + bring-up + configure
 openneko start [--mode prod|dev|demo] [--detach]
 openneko stop [--volumes]
 openneko status

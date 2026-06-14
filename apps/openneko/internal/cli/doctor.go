@@ -3,13 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/host"
 	"github.com/open-neko/neko/apps/openneko/internal/plugin/manifest"
+	"github.com/open-neko/neko/apps/openneko/internal/preflight"
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -45,11 +44,14 @@ func newDoctorCmd() *cobra.Command {
 			fmt.Fprintf(out, "manifest: %s at %s\n", label, file)
 			fmt.Fprintf(out, "plugins:  %d\n", pluginCount)
 
-			dockerVer := detectDocker()
-			fmt.Fprintf(out, "docker:   %s\n", dockerVer)
+			docker := preflight.Docker()
+			fmt.Fprintf(out, "docker:   %s\n", docker.Detail)
+			if docker.Level == preflight.Fail && docker.Remediation != "" {
+				fmt.Fprintf(out, "  fix: %s\n", docker.Remediation)
+			}
 
-			if other := otherOpennekoOnPath(); other != "" {
-				fmt.Fprintf(out, "warning:  duplicate `openneko` on PATH at %s — remove the older one\n", other)
+			if dup := preflight.DuplicateBinary(); dup.Level == preflight.Warn {
+				fmt.Fprintf(out, "warning:  %s — %s\n", dup.Detail, dup.Remediation)
 			}
 
 			if !h.Supported {
@@ -58,34 +60,4 @@ func newDoctorCmd() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func detectDocker() string {
-	bin, err := exec.LookPath("docker")
-	if err != nil {
-		return "not found"
-	}
-	out, err := exec.Command(bin, "--version").Output()
-	if err != nil {
-		return bin + " (version probe failed)"
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// otherOpennekoOnPath returns a second openneko on PATH that isn't this one,
-// or "" if there's no duplicate. Useful while operators are transitioning off
-// the npm `@open-neko/cli`.
-func otherOpennekoOnPath() string {
-	self, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	bin, err := exec.LookPath("openneko")
-	if err != nil {
-		return ""
-	}
-	if bin == self {
-		return ""
-	}
-	return bin
 }

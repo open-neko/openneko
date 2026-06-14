@@ -10,30 +10,28 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 
 ## Install
 
-### macOS (Homebrew)
-
 ```bash
-brew install open-neko/tap/openneko
+curl -fsSL https://openneko.app/install.sh | sh
 mkdir -p ~/openneko && cd ~/openneko
-openneko start --mode demo --detach
+openneko setup --mode demo
 ```
 
-### Linux
-
-```bash
-TAG=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | grep -oE '"tag_name": *"[^"]+"' | head -1 | cut -d'"' -f4)
-ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
-curl -fsSL "https://github.com/open-neko/openneko/releases/download/$TAG/openneko_${TAG#v}_linux_$ARCH.tar.gz" | tar -xz openneko
-sudo install -m 0755 openneko /usr/local/bin/ && rm -f openneko
-mkdir -p ~/openneko && cd ~/openneko
-openneko start --mode demo --detach
-```
-
-Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
+The installer picks the right path for your platform — Homebrew on macOS, a checksum-verified release binary on Linux — and checks for Docker. `openneko setup` then runs preflight (Docker daemon up, host supported, ports free), brings up the stack, and configures it (see [Setup](#setup)).
 
 `--mode demo` pulls pinned images and loads AdventureWorks sample data with three example watchers. For your own data, use `--mode prod` ([Use your own data](#use-your-own-data)).
 
-## Setup wizard
+### Manual install
+
+Prefer to manage the binary yourself:
+
+- **macOS (Homebrew):** `brew install open-neko/tap/openneko`
+- **Linux:** download `openneko_<version>_linux_<arch>.tar.gz` from the [latest release](https://github.com/open-neko/openneko/releases/latest), verify it against `checksums.txt`, and put `openneko` on your `PATH`.
+
+Then run `openneko setup` (guided), or `openneko start` to bring the stack up without the guided flow.
+
+## Setup
+
+`openneko setup` walks through the steps below **in the terminal**. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`, or just run `openneko start`) and open [http://localhost:3000](http://localhost:3000) for the same wizard. Either way:
 
 1. Choose an admin database password.
 2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
@@ -41,16 +39,20 @@ Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard.
 4. Add your provider API key.
 5. Add an industry research provider, or skip.
 
+Both paths drive the same web endpoints with the same validation (a live provider-key test, a data-source connectivity check), and each step persists independently — so you can start in the terminal and finish in the browser, or vice versa. For unattended installs (CI), pass `--admin-password`, `--provider`, `--provider-key`, etc. to run setup headless.
+
+As a final optional step, `openneko setup` offers to install **first-party plugins** from the [official marketplace](https://open-neko.github.io/plugins/) — Slack, Shopify, Telegram, Google Workspace, web search, SSO. Pick from the list and each plugin prompts for its own configuration (API keys, tokens), saved into the sandbox. Skip it with `--skip-plugins`, or pre-select non-interactively with `--plugins @open-neko/plugin-slack,@open-neko/plugin-shopify`.
+
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
 ## Use your own data
 
 ```bash
 mkdir -p ~/openneko && cd ~/openneko
-openneko start --mode prod --detach
+openneko setup --mode prod
 ```
 
-Enter your GraphJin base URL in the setup wizard. If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
+Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
 
 ## Plugins
 
@@ -67,6 +69,7 @@ Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github
 ## Command reference
 
 ```bash
+openneko setup [--mode prod|dev|demo]  # guided: preflight + bring-up + configure
 openneko start [--mode prod|dev|demo] [--detach]
 openneko status                    # docker compose ps proxy
 openneko logs [service…] [-f]
@@ -74,7 +77,7 @@ openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations against running neko-db
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko reset [--all]             # tear down + clear local config (--all also wipes secrets/marketplaces)
-openneko doctor                    # host check, docker version, manifest state
+openneko doctor                    # host check, docker daemon, manifest state
 openneko version
 ```
 
