@@ -16,26 +16,15 @@
 
 You'll need **Docker** and **one LLM provider API key**.
 
-**macOS** — Homebrew:
-
 ```bash
-brew install open-neko/tap/openneko
+curl -fsSL https://openneko.app/install.sh | sh
 mkdir -p ~/openneko && cd ~/openneko
-openneko start --mode demo --detach
+openneko setup --mode demo
 ```
 
-**Linux** — latest release binary:
+The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000).
 
-```bash
-TAG=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | grep -oE '"tag_name": *"[^"]+"' | head -1 | cut -d'"' -f4)
-ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
-curl -fsSL "https://github.com/open-neko/openneko/releases/download/$TAG/openneko_${TAG#v}_linux_$ARCH.tar.gz" | tar -xz openneko
-sudo install -m 0755 openneko /usr/local/bin/ && rm -f openneko
-mkdir -p ~/openneko && cd ~/openneko
-openneko start --mode demo --detach
-```
-
-Open [http://localhost:3000](http://localhost:3000) and finish the setup wizard. The demo seeds three watchers against sample data — kick off **Slow-Ship Operations** from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing.
+The demo seeds three watchers against sample data — kick off **Slow-Ship Operations** from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing.
 
 Full propose-and-approve walkthrough, the live trial (order simulator + scenario injector), and connecting your own data → **[INSTALL.md](INSTALL.md)**.
 

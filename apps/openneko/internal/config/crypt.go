@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 )
 
 // Mirrors packages/llm/src/secrets.ts exactly: AES-256-GCM, key =

@@ -67,9 +67,10 @@ func NewRoot() *cobra.Command {
 		Short: "OpenNeko operator CLI",
 		Long: `openneko — supervises the OpenNeko stack and manages plugins.
 
+Getting started: setup (guided install — preflight, bring-up, configure).
 Plugin ops: init, install, list, remove, marketplace, secrets, doctor.
 Stack ops:  start, stop, logs, status, migrate, seed, reset.`,
-		Version: version.Version,
+		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -82,6 +83,7 @@ Stack ops:  start, stop, logs, status, migrate, seed, reset.`,
 	// happen to have a compose stack running alongside `pnpm dev`).
 	cmd.PersistentFlags().Bool("local", false, "Force local execution; don't auto-proxy plugin ops into a running worker container")
 	cmd.AddCommand(
+		newSetupCmd(),
 		newInitCmd(),
 		newInstallCmd(),
 		newRemoveCmd(),

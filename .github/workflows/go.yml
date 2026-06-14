@@ -38,6 +38,15 @@ jobs:
       - name: Verify embedded migrations are in sync
         run: ./scripts/sync-migrations.sh --check
 
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean; run 'gofmt -w .':"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: go vet
         run: go vet ./...
 

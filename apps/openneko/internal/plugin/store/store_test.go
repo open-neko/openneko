@@ -85,11 +85,11 @@ func TestRemoveMiss(t *testing.T) {
 
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"My Marketplace":           "my-marketplace",
-		"  weird!!! Stuff   ":      "weird-stuff",
-		"123":                      "123",
+		"My Marketplace":      "my-marketplace",
+		"  weird!!! Stuff   ": "weird-stuff",
+		"123":                 "123",
 		"this-is-a-very-long-name-that-exceeds-the-forty-char-cap": "this-is-a-very-long-name-that-exceeds-th",
-		"---":                      "",
+		"---": "",
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {

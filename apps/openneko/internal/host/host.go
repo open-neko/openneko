@@ -19,6 +19,13 @@ func Check() Result {
 	return checkWith(runtime.GOOS, runtime.GOARCH, hasDocker)
 }
 
+// Platform reports OS/arch support independent of whether docker is present.
+// preflight checks docker separately so it can give a sharper "daemon not
+// running" remediation, so it wants the OS/arch verdict on its own.
+func Platform() Result {
+	return checkWith(runtime.GOOS, runtime.GOARCH, func() bool { return true })
+}
+
 func checkWith(goos, goarch string, docker func() bool) Result {
 	triple := goos + "-" + goarch
 	switch goos {

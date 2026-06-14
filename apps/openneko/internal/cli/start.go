@@ -36,84 +36,13 @@ Modes:
   demo  Core + AdventureWorks trial bundle`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			m := compose.Mode(mode)
-			if m == "" {
-				m = compose.ModeProd
-			}
-			// Pin compose's image tags to this binary's version unless the
-			// caller has already set OPENNEKO_VERSION — that lets the smoke
-			// workflow (which builds openneko fresh from source, so its
-			// embedded version is "0.0.0-dev") test against a real release
-			// tag.
-			if os.Getenv("OPENNEKO_VERSION") == "" {
-				_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
-			}
-
-			// SEC9: OpenShell is the only agent runtime.
-			if err := configureOpenShellStateDir(); err != nil {
-				return err
-			}
-			configureOpenShellDBURL()
-
-			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(m)
-			if err != nil {
-				return err
-			}
-			project, err := sup.ProjectName(m)
-			if err != nil {
-				return err
-			}
-
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
-
-			pullFlag := []string{}
-			if pullPolicy != "" {
-				switch pullPolicy {
-				case "always", "missing", "never":
-					pullFlag = []string{"--pull", pullPolicy}
-				default:
-					return fmt.Errorf("--pull must be one of: always, missing, never (got %q)", pullPolicy)
-				}
-			}
-
-			// Stage 1: bring up neko-db only, wait healthy, run migrations.
-			if !skipMigrate {
-				if _, err := sup.Run(ctx, project, files, append([]string{"up", "-d"}, append(pullFlag, "neko-db")...), os.Stdout, os.Stderr); err != nil {
-					return err
-				}
-				if err := waitDBHealthy(ctx, time.Minute); err != nil {
-					return err
-				}
-				if err := runMigrations(ctx, cmd); err != nil {
-					return err
-				}
-			}
-
-			// Pre-pull the agent sandbox image at install time so the gateway's
-			// first sandbox-create (the user's first chat) never blocks on a
-			// large pull. Best-effort: a failure just falls back to a lazy pull.
-			agentImg := agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION"))
-			fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
-			if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
-			}
-
-			// Stage 2: bring up the rest.
-			upArgs := []string{"up"}
-			if detach {
-				upArgs = append(upArgs, "-d")
-			}
-			upArgs = append(upArgs, pullFlag...)
-			code, err := sup.Run(ctx, project, files, upArgs, os.Stdout, os.Stderr)
-			if err != nil {
-				return err
-			}
-			if code != 0 {
-				return WithExit(code, nil)
-			}
-			return nil
+			return bringUpStack(ctx, cmd, compose.Mode(mode), bringUpOptions{
+				detach:      detach,
+				skipMigrate: skipMigrate,
+				pullPolicy:  pullPolicy,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "prod", "Stack mode: prod|dev|demo")
@@ -121,6 +50,106 @@ Modes:
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false, "Skip running migrations on start (advanced)")
 	cmd.Flags().StringVar(&pullPolicy, "pull", "", "Override compose pull policy: always|missing|never (default: compose decides)")
 	return cmd
+}
+
+// bringUpOptions controls a stack bring-up. `start` and `setup` share the same
+// staged flow; setup sets quiet to trim the install chatter into clean step
+// lines (it adds --quiet-pull and skips the verbose pre-pull banner).
+type bringUpOptions struct {
+	detach      bool
+	skipMigrate bool
+	pullPolicy  string
+	quiet       bool
+}
+
+// bringUpStack runs the staged bring-up shared by `start` and `setup`:
+// neko-db → wait healthy → migrate → pre-pull the agent image → compose up the
+// rest. Extracted from newStartCmd so setup reuses the exact same path.
+func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, opts bringUpOptions) error {
+	m := mode
+	if m == "" {
+		m = compose.ModeProd
+	}
+	// Pin compose's image tags to this binary's version unless the caller has
+	// already set OPENNEKO_VERSION — that lets the smoke workflow (which builds
+	// openneko fresh from source, so its embedded version is "0.0.0-dev") test
+	// against a real release tag.
+	if os.Getenv("OPENNEKO_VERSION") == "" {
+		_ = os.Setenv("OPENNEKO_VERSION", "v"+version.Version)
+	}
+
+	// SEC9: OpenShell is the only agent runtime.
+	if err := configureOpenShellStateDir(); err != nil {
+		return err
+	}
+	configureOpenShellDBURL()
+
+	sup := compose.New(assets.ComposeFS)
+	files, err := sup.Materialize(m)
+	if err != nil {
+		return err
+	}
+	project, err := sup.ProjectName(m)
+	if err != nil {
+		return err
+	}
+
+	pullFlag := []string{}
+	if opts.pullPolicy != "" {
+		switch opts.pullPolicy {
+		case "always", "missing", "never":
+			pullFlag = []string{"--pull", opts.pullPolicy}
+		default:
+			return fmt.Errorf("--pull must be one of: always, missing, never (got %q)", opts.pullPolicy)
+		}
+	}
+	quietPull := []string{}
+	if opts.quiet {
+		quietPull = []string{"--quiet-pull"}
+	}
+
+	// Stage 1: bring up neko-db only, wait healthy, run migrations.
+	if !opts.skipMigrate {
+		up1 := append([]string{"up", "-d"}, pullFlag...)
+		up1 = append(up1, quietPull...)
+		up1 = append(up1, "neko-db")
+		if _, err := sup.Run(ctx, project, files, up1, os.Stdout, os.Stderr); err != nil {
+			return err
+		}
+		if err := waitDBHealthy(ctx, time.Minute); err != nil {
+			return err
+		}
+		if err := runMigrations(ctx, cmd); err != nil {
+			return err
+		}
+	}
+
+	// Pre-pull the agent sandbox image at install time so the gateway's first
+	// sandbox-create (the user's first chat) never blocks on a large pull.
+	// Best-effort: a failure just falls back to a lazy pull.
+	agentImg := agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION"))
+	if !opts.quiet {
+		fmt.Fprintf(os.Stderr, "Pre-pulling agent sandbox image %s ...\n", agentImg)
+	}
+	if err := sup.EnsureImage(ctx, agentImg, os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: agent image pre-pull failed (%v); it will pull on first use\n", err)
+	}
+
+	// Stage 2: bring up the rest.
+	upArgs := []string{"up"}
+	if opts.detach {
+		upArgs = append(upArgs, "-d")
+	}
+	upArgs = append(upArgs, pullFlag...)
+	upArgs = append(upArgs, quietPull...)
+	code, err := sup.Run(ctx, project, files, upArgs, os.Stdout, os.Stderr)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return WithExit(code, nil)
+	}
+	return nil
 }
 
 // agentImageRef resolves the agent sandbox image: an explicit override wins,
