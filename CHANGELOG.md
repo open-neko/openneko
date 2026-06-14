@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.7.0](https://github.com/open-neko/openneko/compare/v2.6.0...v2.7.0) (2026-06-14)
+
+
+### Features
+
+* **cli:** huh TUI for `openneko setup` + proxied-install & compose fixes ([cea53bd](https://github.com/open-neko/openneko/commit/cea53bd3376d6b3ddb7789cc47dfe41b06725858))
+* **cli:** redesign `openneko setup` as a huh TUI ([d63d290](https://github.com/open-neko/openneko/commit/d63d290d8271c90396c7697aaf15e1e7725b2cb2))
+
+
+### Bug Fixes
+
+* **cli:** skip host check on proxied (in-worker) plugin installs ([1b63b60](https://github.com/open-neko/openneko/commit/1b63b60a2c95aff60917f7bf9c33f94c245f5b14))
+* **compose:** escape $KEY and $XDG_CONFIG_HOME in container scripts ([303ed4d](https://github.com/open-neko/openneko/commit/303ed4d4418853133df2e74ec1665ed41306e6e8))
+
 ## [2.6.0](https://github.com/open-neko/openneko/compare/v2.5.0...v2.6.0) (2026-06-14)
 
 
