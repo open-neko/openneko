@@ -21,27 +21,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl tini \
     && rm -rf /var/lib/apt/lists/*
 
-# ─── 2. cli: install runtime CLIs the agent shells out to ──────────────
-# graphjin: required by both backends (metric agent uses `graphjin cli`).
-# hermes:   required by the default Hermes backend.
-# claude:   required by the claude-agent backend (Anthropic SDK spawns it).
-FROM base AS cli
-ARG GRAPHJIN_VERSION=3.18.37
-ARG HERMES_AGENT_REF=a91a57fa5a13d516c38b07a141a9ce8a3daabeb0
+# ─── 2. runtime-base: lean base for web/worker ─────────────────────────
+# web/worker share this; the heavy agent toolchain (graphjin/hermes/claude/
+# libreoffice) lives one layer up in `cli` so only the agent image carries it.
+FROM base AS runtime-base
 ARG OPENSHELL_VERSION=0.0.54
-# TARGETARCH is auto-supplied by buildx (amd64 or arm64) and lets the
-# graphjin download pick the right tarball when building multi-arch.
+# TARGETARCH is auto-supplied by buildx (amd64 or arm64).
 ARG TARGETARCH
 # unzip + postgresql-client are needed by db/load-adventureworks-baked.sh
 # (demo seeder, runs inside the worker container with no apt-get available
 # at runtime since the container runs as the `neko` user, not root).
-# openssh-client: `openshell sandbox exec` relays over ssh (unix:/run/openshell/
-# ssh.sock), so the worker/web — which shell out to it for the agent sandbox —
-# need an ssh client. Verified on Linux: without it the relay fails
-# "No such file or directory"; with it, exec returns the sandbox output.
+# git: git-URL skill installs shallow-clone. openssh-client: `openshell sandbox
+# exec` relays over ssh (unix:/run/openshell/ssh.sock), so the worker — which
+# shells out to it for the agent sandbox — needs an ssh client.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git unzip postgresql-client openssh-client \
     && rm -rf /var/lib/apt/lists/*
+# openshell: CLI driver the worker uses to spawn + relay to agent sandboxes.
+# Static musl binary, no runtime deps.
+RUN OS_ARCH="$(case "${TARGETARCH}" in amd64) echo x86_64 ;; arm64) echo aarch64 ;; *) echo "${TARGETARCH}" ;; esac)" \
+    && curl -fsSL -o /tmp/openshell.tgz \
+      "https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_VERSION}/openshell-${OS_ARCH}-unknown-linux-musl.tar.gz" \
+    && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
+    && rm /tmp/openshell.tgz \
+    && openshell --version
+
+# ─── 2b. cli: agent toolchain (only the `agent` image builds from this) ──
+# graphjin: metric agent uses `graphjin cli`. hermes: default Hermes backend.
+# claude: claude-agent backend (Anthropic SDK spawns it).
+FROM runtime-base AS cli
+ARG GRAPHJIN_VERSION=3.18.37
+ARG HERMES_AGENT_REF=a91a57fa5a13d516c38b07a141a9ce8a3daabeb0
+ARG TARGETARCH
 RUN curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o /tmp/graphjin.tgz \
       "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin \
@@ -61,14 +72,6 @@ RUN curl -LsSf --retry 5 --retry-delay 5 --retry-all-errors https://astral.sh/uv
     && /usr/local/uv/tools/hermes-agent/bin/python -c "import mcp, websockets" \
     && echo "hermes MCP SDK present"
 RUN npm install -g @anthropic-ai/claude-code
-# openshell: CLI driver for the OpenShell plugin runtime
-# (OPENNEKO_PLUGIN_RUNTIME=openshell). Static musl binary, no runtime deps.
-RUN OS_ARCH="$(case "${TARGETARCH}" in amd64) echo x86_64 ;; arm64) echo aarch64 ;; *) echo "${TARGETARCH}" ;; esac)" \
-    && curl -fsSL -o /tmp/openshell.tgz \
-      "https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_VERSION}/openshell-${OS_ARCH}-unknown-linux-musl.tar.gz" \
-    && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
-    && rm /tmp/openshell.tgz \
-    && openshell --version
 
 # Bundled skills (xlsx / pptx / docx / pdf / skill-creator) shell out to
 # Python + LibreOffice + Poppler / qpdf. Mirror packages/llm/src/work/skill-deps.ts
@@ -139,7 +142,7 @@ RUN mkdir -p /app/.transformers-cache && \
     cd /app/packages/llm && node scripts/prewarm-embedding.mjs
 
 # ─── 5a. web runtime ───────────────────────────────────────────────────
-FROM cli AS web
+FROM base AS web
 WORKDIR /app
 # Writable HOME under /tmp so the entrypoint can materialize config on
 # read-only container filesystems. PORT=8080 matches the common PaaS
@@ -185,10 +188,15 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "apps/web/server.js"]
 
 # ─── 5b. worker runtime ────────────────────────────────────────────────
-# The worker uses tsx (not a build step) so it ships full source +
-# node_modules. It serves /health + admin endpoints on port 4100 for
-# liveness probes (Cloud Run service startup probe, k8s liveness, etc).
-FROM cli AS worker
+# Trimmed prod closure of @neko/worker: drops devDeps + other apps' sources +
+# web/Next, keeps src + tsx + @neko/llm (with assets) + onnxruntime. Same
+# mechanism as agent-deploy; rooted at /app, so the entry is /app/src/index.ts.
+FROM build AS worker-deploy
+RUN pnpm --filter @neko/worker deploy --prod /out/worker-app
+
+# The worker runs from source via tsx (not a build step). It serves /health +
+# admin endpoints on port 4100 for liveness probes.
+FROM runtime-base AS worker
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=4100 \
@@ -197,35 +205,26 @@ ENV NODE_ENV=production \
     XDG_CONFIG_HOME=/tmp/openneko-config
 RUN useradd --system --create-home --uid 1001 neko
 # /cache is mounted by the demo-mode adventureworks-init step; pre-creating
-# it here lets the named volume initialize with neko ownership instead of
-# root (Docker copies image-side ownership into a fresh named volume on
-# first mount). Without this the loader can't write the downloaded zip.
-# /app must also be writable by neko so `openneko install` (run in-container
-# via docker exec) can write pnpm temp files + update package.json /
-# pnpm-lock.yaml during plugin installs.
+# it here lets the named volume initialize with neko ownership instead of root
+# (Docker copies image-side ownership into a fresh named volume on first mount).
+# /app must be writable by neko so `openneko install` (run in-container via
+# docker exec) can write the plugin manifest during installs.
 RUN mkdir -p /config/openneko /config/graphjin /tmp/openneko-home /tmp/openneko-tmp /cache /var/lib/openneko/plugins \
     && chown -R neko:neko /app /config /tmp/openneko-home /tmp/openneko-tmp /cache /var/lib/openneko
 # Seed the plugin install dir with an empty package.json so `npm install`
-# inside that dir has a workspace to operate on. This dir is isolated from
-# /app's pnpm-managed node_modules — plugin packages land here cleanly
-# regardless of how the worker's own deps were installed.
+# inside that dir has a workspace to operate on. Isolated from /app's
+# node_modules (OPENNEKO_PLUGIN_INSTALL_DIR points here), so plugin packages
+# land cleanly regardless of the worker's own (pruned) deps.
 RUN printf '{\n  "name": "openneko-plugins",\n  "version": "0.0.0",\n  "private": true\n}\n' > /var/lib/openneko/plugins/package.json \
     && chown neko:neko /var/lib/openneko/plugins/package.json
-COPY --from=deps --chown=neko:neko /app/node_modules ./node_modules
-COPY --from=deps --chown=neko:neko /app/apps/worker/node_modules ./apps/worker/node_modules
-COPY --from=deps --chown=neko:neko /app/packages/db/node_modules ./packages/db/node_modules
-COPY --from=deps --chown=neko:neko /app/packages/llm/node_modules ./packages/llm/node_modules
-COPY --from=deps --chown=neko:neko /app/packages/plugin-install/node_modules ./packages/plugin-install/node_modules
-COPY --from=deps --chown=neko:neko /app/packages/plugin-types/node_modules ./packages/plugin-types/node_modules
-COPY --chown=neko:neko package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY --chown=neko:neko apps/worker ./apps/worker
-COPY --chown=neko:neko packages ./packages
+# Prod closure (src + node_modules) rooted at /app, replacing the full pnpm
+# workspace install + per-package source copies.
+COPY --from=worker-deploy --chown=neko:neko /out/worker-app ./
 # Whole db/ (not just migrations): seeds + load-adventureworks-baked.sh
 # are needed for `openneko start --mode demo`'s adventureworks-init step.
 COPY --chown=neko:neko db ./db
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-RUN ln -s /app/apps/worker/node_modules/tsx /app/node_modules/tsx
 # Vendor the openneko Go binary so the agent's Bash tool inside the worker
 # container can run `openneko install/secrets/marketplace …` without an
 # extra install step. Same binary operators install on their host.
@@ -238,7 +237,7 @@ COPY --from=embedding-prewarm --chown=neko:neko /app/.transformers-cache /app/.t
 USER neko
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
+CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
 # ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
 # The agent loop running as a child inside an OpenShell sandbox (Phase 3,
