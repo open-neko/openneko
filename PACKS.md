@@ -24,8 +24,17 @@ adapters available for another application.
 
 The manifest declares artifact paths, so directory names below are conventions,
 not implicit discovery rules. All declared paths must exist and stay within the
-pack root. Keep empty artifact directories when packaging a pack that does not
-use every artifact type.
+pack root. Omit artifact paths for types the pack does not use. A declared empty
+directory must still exist in the archive.
+
+For a skills-only pack, declare `artifacts: { skills: [skills/my-skill] }`. Omit
+`artifacts.graphjin` and `compatibility.graphjin`; `compatibility.applications`
+and `compatibility.databases` can be empty arrays. Use empty health-check arrays
+and an empty readiness map. This pack needs no data connection or GraphJin
+configuration. GraphJin artifacts require GraphJin compatibility declarations.
+
+To remove all GraphJin artifacts from an installed pack, uninstall it first.
+This stops access through its owned sources before a new version is installed.
 
 ```text
 my-pack/

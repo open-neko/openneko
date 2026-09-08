@@ -115,7 +115,7 @@ type PackDoctorResult = {
 };
 
 type PackRuntime = {
-  source: PackSourceSelection;
+  source?: PackSourceSelection;
   bindings: Record<string, string>;
   bindingHashes: Record<string, string>;
   readiness: string[];
@@ -910,9 +910,14 @@ export class PackService {
   }
 
   private async runtime(bundle: SolutionPackBundle, request: PackInstallRequest, prior?: PackRuntime): Promise<PackRuntime> {
+    if (!bundle.manifest.artifacts.graphjin) {
+      if (request.dataSourceId || Object.keys(request.sourceBindings ?? {}).length) throw new Error("this pack does not use a data source");
+      if (prior?.source) throw new Error("removing GraphJin artifacts requires uninstall first");
+      return { bindings: {}, bindingHashes: {}, readiness: Object.keys(bundle.manifest.health.readiness) };
+    }
     await verifyPackQueryTables(prior?.tables);
     let source: PackSourceSelection;
-    if (!request.dataSourceId && prior) source = await resolvePackSource(this.orgId, prior.source);
+    if (!request.dataSourceId && prior?.source) source = await resolvePackSource(this.orgId, prior.source);
     else {
       if (!request.dataSourceId && bundle.manifest.metadata.id !== "magento") throw new Error("select an enabled organization dataSourceId before installing a custom pack");
       const [selected] = await db().select({ id: data_source.id, graphqlUrl: data_source.graphql_url, authMode: data_source.auth_mode }).from(data_source)
@@ -1021,7 +1026,7 @@ export class PackService {
       manifestHash: bundle.manifestHash,
       bundleHash: bundle.bundleHash,
       bindingRequirements: bundle.artifacts.filter(artifact => artifact.kind === "source" && artifactRecord(artifact).kind === "database" && !artifactRecord(artifact).host).map(artifact => ({ key: artifact.key, name: String(artifactRecord(artifact).name) })),
-      permissions: packId !== "magento" ? { database: "read-only", apiWrite: "blocked" } : {
+      permissions: packId !== "magento" ? { database: bundle.manifest.artifacts.graphjin ? "read-only" : "none", apiWrite: "blocked" } : {
         database: "view-only reporting",
         apiWrite: "specific Magento changes require approval and must be enabled individually",
         customerPii: "available to authenticated read-only queries",
@@ -1150,7 +1155,7 @@ export class PackService {
       lastError: installation.last_error,
       configuration: {
         inputs: Object.fromEntries(Object.entries(installation.config).filter(([key]) => !key.startsWith("_"))),
-        dataSourceId: storedRuntime(installation.config)?.source.id,
+        dataSourceId: storedRuntime(installation.config)?.source?.id,
         sourceBindings: storedRuntime(installation.config)?.bindings ?? {},
       },
     };
@@ -1179,8 +1184,8 @@ export class PackService {
         const runtime = await this.runtime(bundle, {}, storedRuntime(installation.config));
         declarativeGraphjinUpdate(bundle, inputs, secrets.values, [], runtime.bindings);
         const source = runtime.source;
-        await runPackReadPreflight(bindPackQueries(bundle, runtime.bindings).bundle, source.graphqlUrl, this.orgId, inputs);
-        return { packId, status: "ready", checks: [{ id: "queries", status: "ready", detail: "Pack queries and response mappings passed." }] };
+        if (source) await runPackReadPreflight(bindPackQueries(bundle, runtime.bindings).bundle, source.graphqlUrl, this.orgId, inputs);
+        return { packId, status: "ready", checks: [{ id: source ? "queries" : "configuration", status: "ready", detail: source ? "Pack queries and response mappings passed." : "Pack configuration passed. No data connection is required." }] };
       } catch {
         return { packId, status: "blocked", checks: [{ id: "queries", status: "blocked", detail: "Pack configuration or query preflight failed." }] };
       }
@@ -1228,7 +1233,7 @@ export class PackService {
 
     const selection = storedRuntime(installation.config)?.source;
     const bound = selection ? await resolvePackSource(this.orgId, selection) : null;
-    const [fallback] = bound ? [] : await db()
+    const [fallback] = bound || !bundle.manifest.artifacts.graphjin ? [] : await db()
       .select({ graphqlUrl: data_source.graphql_url })
       .from(data_source)
       .where(and(eq(data_source.org_id, this.orgId), eq(data_source.enabled, true)))
@@ -1673,6 +1678,7 @@ export class PackService {
     }
 
     const bundle = await this.installedBundle(installation);
+    const usesGraphjin = Boolean(bundle.manifest.artifacts.graphjin || storedRuntime(installation.config)?.source);
     const client = await pool().connect();
     let operationId: string | null = null;
     let graphjinRestore: (() => Promise<void>) | null = null;
@@ -1738,14 +1744,14 @@ export class PackService {
       await verifyPackQueryTables(storedRuntime(installation.config)?.tables);
       const selection = storedRuntime(installation.config)?.source;
       const bound = selection ? await resolvePackSource(this.orgId, selection) : null;
-      const [fallback] = bound ? [] : await db().select({ graphqlUrl: data_source.graphql_url })
+      const [fallback] = bound || !usesGraphjin ? [] : await db().select({ graphqlUrl: data_source.graphql_url })
         .from(data_source)
         .where(and(eq(data_source.org_id, this.orgId), eq(data_source.enabled, true)))
         .orderBy(desc(data_source.is_default), data_source.created_at)
         .limit(1);
       const source = bound ?? fallback;
-      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
-      if (!source?.graphqlUrl || !configFile) {
+      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim() ?? "";
+      if (usesGraphjin && (!source?.graphqlUrl || !configFile)) {
         throw new Error("customer GraphJin endpoint/config volume is unavailable");
       }
       const provenance = await db().select().from(pack_artifact)
@@ -1761,8 +1767,8 @@ export class PackService {
       // as a no-op. Revoke every source capability instead. The disabled
       // source/table metadata is retained so uninstall is fail closed and a
       // later pack install can safely reclaim it.
-      const revoked = await applyPackGraphjinConfig({
-        endpoint: graphjinEndpoint(source.graphqlUrl),
+      const revoked = usesGraphjin ? await applyPackGraphjinConfig({
+        endpoint: graphjinEndpoint(source!.graphqlUrl),
         orgId: this.orgId,
         configFile,
         update: {
@@ -1778,7 +1784,7 @@ export class PackService {
         },
         ownedSourceNames: new Set(sourceNames),
         restartAfterPersist: true,
-      });
+      }) : { restore: async () => {} };
       graphjinRestore = revoked.restore;
 
       const configRoot = dirname(configFile);
@@ -2162,8 +2168,8 @@ export class PackService {
       await writeSecretsStore(nextSecrets);
       secretsRestore = () => writeSecretsStore(resolvedSecrets.store);
 
-      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
-      if (!source?.graphqlUrl || !configFile) {
+      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim() ?? "";
+      if (bundle.manifest.artifacts.graphjin && (!source?.graphqlUrl || !configFile)) {
         throw new Error("customer GraphJin endpoint/config volume is unavailable");
       }
       const retiredRemovals: Array<{
@@ -2214,8 +2220,8 @@ export class PackService {
       filesRestore = files.restore;
 
       await this.runtime(authoredBundle, {}, { ...runtime, tables: storedRuntime(existing?.config ?? {})?.tables });
-      const applied = await applyPackGraphjinConfig({
-        endpoint: graphjinEndpoint(source.graphqlUrl),
+      const applied = bundle.manifest.artifacts.graphjin ? await applyPackGraphjinConfig({
+        endpoint: graphjinEndpoint(source!.graphqlUrl),
         orgId: this.orgId,
         configFile,
         update: preflight
@@ -2224,10 +2230,10 @@ export class PackService {
         ownedSourceNames,
         ...(!preflight ? { ownedTableNames: new Set((storedRuntime(existing?.config ?? {})?.tables ?? []).map(table => table.name!)) } : {}),
         restartAfterPersist: true,
-      });
+      }) : { restore: async () => {} };
       graphjinRestore = applied.restore;
-      if (preflight) await runMagentoAnalyticsSmoke(graphjinEndpoint(source.graphqlUrl), this.orgId);
-      else await runPackReadPreflight(bundle, source.graphqlUrl, this.orgId, inputs);
+      if (preflight) await runMagentoAnalyticsSmoke(graphjinEndpoint(source!.graphqlUrl), this.orgId);
+      else if (source) await runPackReadPreflight(bundle, source!.graphqlUrl, this.orgId, inputs);
 
       const retiredHashes = new Map<string, string>();
       for (const artifact of retiredArtifacts.filter(

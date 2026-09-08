@@ -25,11 +25,12 @@ type Inspection = {
     metadata: { id: string; name: string; version: string; publisher: string };
     inputs: Array<{ key: string; type: string; required?: boolean; default?: Value; description?: string; values?: Value[] }>;
     secrets: Array<{ key: string; required?: boolean }>;
+    artifacts: { graphjin?: unknown };
   };
   bindingRequirements: Array<{ key: string; name: string }>;
   permissions: Record<string, string>;
 };
-type Review = Inspection & { reviewHash: string; inputs: Record<string, Value>; runtime: { source: { id: string }; bindings: Record<string, string> }; plan: { entries: Array<{ action: string; kind: string; key: string; targetRef: string; reason?: string }> } };
+type Review = Inspection & { reviewHash: string; inputs: Record<string, Value>; runtime: { source?: { id: string }; bindings: Record<string, string> }; plan: { entries: Array<{ action: string; kind: string; key: string; targetRef: string; reason?: string }> } };
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body === undefined ? { cache: "no-store" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -96,7 +97,9 @@ export default function CustomPacksAdmin() {
       if (!response.ok && response.status !== 404) throw new Error("Could not load pack status");
       const action = mode ?? (current?.status === "installed" ? "configure" : "install");
       const inspection = await api<Inspection>(`${path}/inspect${action === "configure" && current ? `?version=${encodeURIComponent(current.version)}` : ""}`);
-      const available = await api<{ sources: Source[] }>("/api/settings/data-sources");
+      const available = inspection.manifest.artifacts.graphjin
+        ? await api<{ sources: Source[] }>("/api/settings/data-sources")
+        : { sources: [] };
       setSources(available.sources.filter(source => source.enabled && source.graphqlUrl));
       setDetail(inspection); setStatus(current); setOperation(action);
       setInputs(Object.fromEntries(inspection.manifest.inputs.map(input => [input.key, current?.configuration?.inputs[input.key] ?? input.default ?? (input.type === "boolean" ? false : "")])));
@@ -193,12 +196,12 @@ export default function CustomPacksAdmin() {
       <form onSubmit={prepare} className="grid gap-4">
         <fieldset disabled={busy !== null} className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-3 font-display text-ui-subsection font-bold">{operation === "upgrade" ? "Update configuration" : "Pack configuration"}</legend>
-          <Field label="Data connection" htmlFor="pack-source" hint="Choose an enabled connection from Data settings.">
-            <NativeSelect id="pack-source" value={sourceId} onChange={event => { changed(); setSourceId(event.target.value); }}>
-              <option value="">Use the available default</option>
+          {detail.manifest.artifacts.graphjin ? <Field label="Data connection" htmlFor="pack-source" hint="Choose an enabled connection from Data settings.">
+            <NativeSelect id="pack-source" required value={sourceId} onChange={event => { changed(); setSourceId(event.target.value); }}>
+              <option value="">Choose a connection</option>
               {sources.map(source => <option key={source.id} value={source.id}>{source.label || source.name || source.id}</option>)}
             </NativeSelect>
-          </Field>
+          </Field> : null}
           {detail.manifest.inputs.map(input => input.type === "boolean" ? <Checkbox key={input.key} label={label(input.key)} checked={Boolean(inputs[input.key])} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: event.target.checked }); }} /> :
             <Field key={input.key} label={label(input.key)} hint={input.description} htmlFor={`pack-${input.key}`}>
               {input.type === "enum" ? <NativeSelect id={`pack-${input.key}`} value={String(inputs[input.key] ?? "")} required={input.required} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: input.values?.find(value => String(value) === event.target.value) ?? "" }); }}>
@@ -215,7 +218,7 @@ export default function CustomPacksAdmin() {
       {review ? <section className="grid gap-3" aria-label="Reviewed changes" aria-live="polite">
         <h3>Review before applying</h3>
         <p className="text-ui-body-sm">{review.result.manifest.metadata.name} · Version {review.result.manifest.metadata.version}. Applying these changes enables the pack&apos;s configured automations and reads.</p>
-        <p className="text-ui-body-sm">Connection: {sources.find(source => source.id === review.result.runtime.source.id)?.label || sources.find(source => source.id === review.result.runtime.source.id)?.name || "Selected data connection"}. {review.result.plan.entries.filter(entry => entry.action === "create").length} additions, {review.result.plan.entries.filter(entry => entry.action === "update").length} updates, {review.result.plan.entries.filter(entry => entry.action === "retire").length} removals.</p>
+        <p className="text-ui-body-sm">{review.result.runtime.source ? `Connection: ${sources.find(source => source.id === review.result.runtime.source?.id)?.label || sources.find(source => source.id === review.result.runtime.source?.id)?.name || "Selected data connection"}.` : "No data connection is required."} {review.result.plan.entries.filter(entry => entry.action === "create").length} additions, {review.result.plan.entries.filter(entry => entry.action === "update").length} updates, {review.result.plan.entries.filter(entry => entry.action === "retire").length} removals.</p>
         <ul className="grid gap-1 text-ui-body-sm">{Object.entries(review.result.permissions).map(([key, value]) => <li key={key}>{label(key)}: {value}</li>)}</ul>
         <Disclosure title="Configuration and change details"><pre className="overflow-x-auto whitespace-pre-wrap break-all text-ui-caption">{JSON.stringify({ inputs: review.result.inputs, sources: review.result.runtime.bindings, changes: review.result.plan.entries.map(({ action, kind, targetRef, reason }) => ({ action, kind, target: targetRef, reason })), content: review.result.bundleHash }, null, 2)}</pre></Disclosure>
         <Button variant="primary" disabled={busy !== null || review.result.plan.entries.some(entry => entry.action === "conflict")} onClick={() => void apply()}>{busy === operation ? "Applying…" : operation === "install" ? "Approve and install" : "Approve and apply changes"}</Button>

@@ -140,8 +140,9 @@ async function sourceArtifacts(root: string, path: string): Promise<PackArtifact
 async function directoryArtifacts(
   root: string,
   kind: PackArtifactKind,
-  path: string,
+  path: string | undefined,
 ): Promise<PackArtifact[]> {
+  if (!path) return [];
   const files = await filesInDirectory(root, path);
   const allowed = kind === "saved_query" ? new Set([".gql", ".graphql"]) : new Set([".yaml", ".yml"]);
   for (const file of files) {
@@ -252,10 +253,10 @@ export async function loadSolutionPack(rootInput: string): Promise<SolutionPackB
   // making failures deterministic, this guarantees a symlink in an early
   // target cannot be hidden by a racing ENOENT or parse failure elsewhere.
   for (const path of [
-    graphjin.sources,
-    graphjin.relationships,
-    ...graphjin.specs,
-    graphjin.savedQueries,
+    graphjin?.sources,
+    graphjin?.relationships,
+    ...(graphjin?.specs ?? []),
+    graphjin?.savedQueries,
     manifest.artifacts.metrics,
     manifest.artifacts.workflows,
     manifest.artifacts.watchers,
@@ -263,15 +264,15 @@ export async function loadSolutionPack(rootInput: string): Promise<SolutionPackB
     manifest.artifacts.policies,
     ...manifest.artifacts.skills,
   ]) {
-    await assertSafePath(root, path);
+    if (path) await assertSafePath(root, path);
   }
 
   const artifacts = (
     await Promise.all([
-      sourceArtifacts(root, graphjin.sources),
-      artifactFromFile(root, "relationships", graphjin.relationships).then((value) => [value]),
-      Promise.all(graphjin.specs.map((path) => artifactFromFile(root, "spec", path))),
-      directoryArtifacts(root, "saved_query", graphjin.savedQueries),
+      graphjin ? sourceArtifacts(root, graphjin.sources) : [],
+      graphjin ? artifactFromFile(root, "relationships", graphjin.relationships).then((value) => [value]) : [],
+      Promise.all((graphjin?.specs ?? []).map((path) => artifactFromFile(root, "spec", path))),
+      graphjin ? directoryArtifacts(root, "saved_query", graphjin.savedQueries) : [],
       directoryArtifacts(root, "metric", manifest.artifacts.metrics),
       directoryArtifacts(root, "workflow", manifest.artifacts.workflows),
       directoryArtifacts(root, "watcher", manifest.artifacts.watchers),

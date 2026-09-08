@@ -48,8 +48,8 @@ const compatibilitySchema = z
         analytics: z.string().min(1),
         operator: z.string().min(1),
       })
-      .strict(),
-    applications: z.array(applicationCompatibilitySchema).min(1),
+      .strict().optional(),
+    applications: z.array(applicationCompatibilitySchema),
     databases: z.array(databaseCompatibilitySchema),
   })
   .strict();
@@ -93,12 +93,12 @@ const graphjinArtifactsSchema = z
 
 const artifactsSchema = z
   .object({
-    graphjin: graphjinArtifactsSchema,
-    metrics: relativePath,
-    workflows: relativePath,
-    watchers: relativePath,
-    actions: relativePath,
-    policies: relativePath,
+    graphjin: graphjinArtifactsSchema.optional(),
+    metrics: relativePath.optional(),
+    workflows: relativePath.optional(),
+    watchers: relativePath.optional(),
+    actions: relativePath.optional(),
+    policies: relativePath.optional(),
     skills: z.array(relativePath),
   })
   .strict();
@@ -125,6 +125,9 @@ export const solutionPackManifestSchema = z
   })
   .strict()
   .superRefine((manifest, ctx) => {
+    if (manifest.artifacts.graphjin && !manifest.compatibility.graphjin) {
+      ctx.addIssue({ code: "custom", message: "GraphJin artifacts require GraphJin compatibility", path: ["compatibility", "graphjin"] });
+    }
     for (const field of ["inputs", "secrets"] as const) {
       const seen = new Set<string>();
       manifest[field].forEach((entry, index) => {

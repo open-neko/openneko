@@ -107,6 +107,52 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     vi.unstubAllEnvs();
     await rm(root, { recursive: true, force: true });
   });
+  it("runs a skills-only lifecycle without a data source or GraphJin configuration", async () => {
+    const skillOrg = `${org}-skills`;
+    const packRoot = join(root, "packs", "skills-only");
+    const skillFile = join(packRoot, "skills/skills-only-review/SKILL.md");
+    const installedSkill = join(state.workspace, "skills/skills-only-review/SKILL.md");
+    const declaration = {
+      ...manifest,
+      metadata: { ...manifest.metadata, id: "skills-only", name: "Skills only" },
+      compatibility: { openneko: ">=2.27.0", applications: [], databases: [] },
+      artifacts: { skills: ["skills/skills-only-review"] },
+      health: { requiredPreflight: [], readiness: {}, postInstall: [], postWriteCanary: [] },
+    };
+    await mkdir(join(packRoot, "skills/skills-only-review"), { recursive: true });
+    await writeFile(skillFile, "---\nname: skills-only-review\ndescription: Review notes\n---\nReview the notes.\n");
+    await writeFile(join(packRoot, "pack.yaml"), stringify(declaration));
+    await pool().query("insert into organization (id,name) values ($1,'Skills fixture')", [skillOrg]);
+    const config = process.env.OPENNEKO_GRAPHJIN_CONFIG;
+    delete process.env.OPENNEKO_GRAPHJIN_CONFIG;
+    const queryCount = state.queries.length;
+    try {
+      let skills = new PackService(skillOrg, join(root, "packs"));
+      const review = await skills.review("skills-only");
+      expect(review.runtime.source).toBeUndefined();
+      await expect(skills.install("skills-only", { dataSourceId })).rejects.toThrow("does not use a data source");
+      expect((await skills.install("skills-only", { reviewHash: review.reviewHash })).status).toBe("installed");
+      expect(await readFile(installedSkill, "utf8")).toContain("Review the notes.");
+      await skills.configure("skills-only", { inputs: { "service.timezone": "UTC" } });
+      skills = new PackService(skillOrg, join(root, "packs"));
+      expect((await skills.status("skills-only"))?.configuration.inputs["service.timezone"]).toBe("UTC");
+      expect(await skills.doctor("skills-only")).toMatchObject({ status: "ready", checks: [{ id: "configuration" }] });
+      declaration.metadata.version = "0.2.0";
+      await writeFile(skillFile, "---\nname: skills-only-review\ndescription: Review notes\n---\nReview the updated notes.\n");
+      await writeFile(join(packRoot, "pack.yaml"), stringify(declaration));
+      expect((await skills.upgrade("skills-only")).version).toBe("0.2.0");
+      expect(await readFile(installedSkill, "utf8")).toContain("updated notes");
+      expect((await skills.uninstall("skills-only")).status).toBe("removed");
+      await expect(readFile(installedSkill)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(state.queries).toHaveLength(queryCount);
+      expect((await pool().query("select count(*) from data_source where org_id=$1", [skillOrg])).rows[0].count).toBe("0");
+    } finally {
+      if (config === undefined) delete process.env.OPENNEKO_GRAPHJIN_CONFIG;
+      else process.env.OPENNEKO_GRAPHJIN_CONFIG = config;
+      await pool().query("delete from organization where id=$1", [skillOrg]);
+    }
+  });
+
   it("installs, retries, configures, upgrades, preserves drift, compensates failure and uninstalls", async () => {
     const foreignOrg = `${org}-other`;
     await pool().query("insert into organization (id,name) values ($1,'Other fixture')", [foreignOrg]);
@@ -143,7 +189,13 @@ describe.skipIf(!enabled)("shared pack lifecycle with Postgres", () => {
     expect(await readFile(join(root, "graphjin.yml"), "utf8")).toBe(before);
     expect((await service.status("service-health"))?.status).toBe("installed");
     expect((await service.doctor("service-health")).status).toBe("ready");
+    const withoutGraphjin = { ...manifest, artifacts: { skills: manifest.artifacts.skills }, health: { requiredPreflight: [], readiness: {}, postInstall: [], postWriteCanary: [] } };
+    await writeFile(join(root, "packs/service-health/pack.yaml"), stringify(withoutGraphjin));
+    await expect(service.upgrade("service-health")).rejects.toThrow("removing GraphJin artifacts requires uninstall first");
+    expect(await readFile(join(root, "graphjin.yml"), "utf8")).toBe(before);
+    expect((await service.status("service-health"))?.status).toBe("installed");
     expect((await service.uninstall("service-health")).status).toBe("removed");
+    await writeFile(join(root, "packs/service-health/pack.yaml"), stringify(manifest));
     expect((await pool().query("select active from metric where org_id=$1", [org])).rows[0].active).toBe(false);
     expect((await pool().query("select enabled from watcher where org_id=$1", [org])).rows[0].enabled).toBe(false);
     const last = await pool().query("select id,enabled,cron_enabled from workflow_definition where org_id=$1", [org]);

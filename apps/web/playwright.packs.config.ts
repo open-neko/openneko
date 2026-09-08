@@ -3,7 +3,7 @@ import design from "./playwright.design-system.config";
 
 export default defineConfig({
   ...design,
-  testMatch: "custom-packs.spec.ts",
+  testMatch: ["custom-packs.spec.ts", "skills-only-packs.spec.ts"],
   timeout: 120_000,
   use: { ...design.use, baseURL: "http://127.0.0.1:3323" },
   webServer: {

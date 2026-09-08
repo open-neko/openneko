@@ -35,6 +35,7 @@ export function declarativeGraphjinUpdate(
   const knownChecks = new Set(["db-connect", "db-read-only", "graphjin-reload", "analytics-smoke", "queries"]);
   for (const check of [...bundle.manifest.health.requiredPreflight, ...bundle.manifest.health.postInstall, ...bundle.manifest.health.postWriteCanary, ...Object.values(bundle.manifest.health.readiness).flat()]) {
     if (["db-connect", "analytics-smoke", "queries"].includes(check) && !bundle.artifacts.some(artifact => artifact.kind === "saved_query")) throw new Error(`${check} requires a saved query`);
+    if (!bundle.manifest.artifacts.graphjin) throw new Error(`${check} requires GraphJin artifacts`);
     if (!knownChecks.has(check)) throw new Error(`unsupported pack readiness check ${check}`);
     if (check.startsWith("db-") && !bundle.artifacts.some(artifact => artifact.kind === "source" && (artifact.content as Record<string, unknown>).kind === "database")) throw new Error(`${check} requires a database source`);
   }

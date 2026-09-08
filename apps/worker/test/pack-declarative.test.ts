@@ -15,6 +15,14 @@ const inputs = { "service.base_url": "https://health.example.test" };
 const secrets = { "service.api_token": 'fixture-"token\\with\ncharacters' };
 
 describe("declarative pack configuration", () => {
+  it("rejects GraphJin readiness checks for a pack without GraphJin", () => {
+    const pack = bundle();
+    pack.manifest.artifacts = { skills: [] };
+    pack.artifacts = [];
+    pack.manifest.health.postInstall = ["graphjin-reload"];
+    expect(() => declarativeGraphjinUpdate(pack, {}, {})).toThrow("requires GraphJin artifacts");
+  });
+
   it("maps a bundled connector to the existing read-only GraphJin contract without mutating the pack", () => {
     const pack = bundle();
     const original = JSON.stringify(pack);
