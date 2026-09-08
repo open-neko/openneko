@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { packConnectorSchema } from "./connector.js";
 
 const slug = z
   .string()
@@ -122,12 +123,15 @@ export const solutionPackManifestSchema = z
     secrets: z.array(secretSchema),
     artifacts: artifactsSchema,
     health: healthSchema,
+    connectors: z.array(packConnectorSchema).optional(),
   })
   .strict()
   .superRefine((manifest, ctx) => {
     if (manifest.artifacts.graphjin && !manifest.compatibility.graphjin) {
       ctx.addIssue({ code: "custom", message: "GraphJin artifacts require GraphJin compatibility", path: ["compatibility", "graphjin"] });
     }
+    const connectorIds = (manifest.connectors ?? []).map(connector => connector.id);
+    if (new Set(connectorIds).size !== connectorIds.length) ctx.addIssue({ code: "custom", message: "duplicate connector id", path: ["connectors"] });
     for (const field of ["inputs", "secrets"] as const) {
       const seen = new Set<string>();
       manifest[field].forEach((entry, index) => {

@@ -191,3 +191,53 @@ those changes back into a versioned pack bundle. Installed customizations are
 preserved as local changes; pack upgrades refuse conflicting edits. To share a
 customization, port it into the pack's Git source and submit a PR. There is
 currently no in-app pack editor or automatic export of these edits as a release.
+
+## Executable connectors
+
+A pack can declare `connectors` in `pack.yaml`. Each connector runs in its own
+OpenShell sandbox. It does not require an installed plugin. The worker must have
+access to an OpenShell gateway and to the image registry.
+
+```yaml
+connectors:
+  - id: example
+    image: registry.example.com/example@sha256:<actual-image-digest>
+    entrypoint: /app/connector
+    operations:
+      - id: lookup
+        description: Look up a record
+        effect: read
+    network:
+      - host: api.example.com
+        port: 443
+        binary: /usr/local/bin/node
+```
+
+Replace the example image with a published image and its full SHA-256 digest.
+Floating tags are rejected. Installation review starts the image and checks the
+entry point. This checks availability and whether the image can run on the
+worker's sandbox host. Review shows the image, operations and network access.
+The digest identifies the approved image; it does not certify its publisher.
+
+The image must supply an executable entry point, `/usr/bin/test`, a `sandbox`
+user and group, and a writable `/sandbox` directory. Include all connector code
+and dependencies in the image. Use the test image under
+`apps/worker/test/fixtures/connector-image/` as a small working example.
+
+The entry point receives one argument: the path to a private JSON request file.
+The file contains `{ "operation": "lookup", "input": {} }`. Write one JSON value
+to standard output. Do not write progress messages to standard output or secrets
+to logs. Requests and output each have a 1 MiB limit. Execution has a 60-second
+limit, one CPU and 512 MiB of memory. The sandbox is deleted after each call.
+Network access requires an exact host, port and executable path in the declaration.
+A script must declare its interpreter's path for network access.
+
+Keep image source and build files in the pack repository. Build and publish the
+image first. Put its digest in the manifest. Create the installable ZIP from only
+`pack.yaml` and its permitted declarative artifacts. Do not include Dockerfiles,
+executables or dependency directories in the ZIP. The worker does not build images.
+
+Execution checks the installed pack and its approved content before each call.
+Upgrade and removal use the existing pack lock and wait for active execution.
+The current internal service supports declared reads only. Work access, approved
+writes and browser account connections are separate implementation steps.

@@ -1,6 +1,6 @@
 # Google Workspace pack implementation plan
 
-Status: step 1 is complete and verified. Steps 2 through 7 are
+Status: steps 1 and 2 are complete and verified. Steps 3 through 7 are
 not implemented. The imported Google Workspace skills, license and inventory
 remain uncommitted. They are not evidence of a working connector. Mock execution
 and dry-run mode were removed separately in commit `b2a39dc`.
@@ -51,7 +51,8 @@ Salesforce Records already implements independent client-credentials OAuth.
 
 ## Commit sequence
 
-Make these commits in order. Each commit must include its tests and the author
+Make these commits in order. Commit each step after its checks pass and before
+starting the next step. Each commit must include its tests and the author
 instructions for the behavior it adds. Do not defer required tests to commit 7.
 Keep existing plugins unchanged. Do not include unrelated changes.
 
@@ -219,28 +220,40 @@ and focused regression tests. Retained draft changes are partial and need review
 
 ### 2. Pack-owned executable connectors
 
-Proposed packaging: a pack-owned digest-pinned image containing connector code
-and its CLI dependencies. This is an implementation choice, not an existing
-platform requirement. Source/build files remain in the pack repository; the
-installable declarative bundle references the published immutable image. Users
-need no separate CLI/plugin install. Do not build arbitrary code in the worker.
+Implemented packaging: a pack-owned image with a fixed digest. The image contains
+connector code and its dependencies. Source and build files stay in the pack
+repository. The installable archive references the image. The worker does not
+build code from an archive.
 
-- [ ] Define pack-owned declarations for connector identity, entry point,
-      operations, authentication, permissions and image reference.
-- [ ] Include the declarations/dependency identity in existing review and hashing.
-- [ ] Invoke OpenShell directly through a small pack runner with bounded execution,
-      declared network access and private credential delivery. Never import pack
-      code into the worker or make credentials available to agent-generated code.
-- [ ] Validate image availability, provenance and supported architecture; include
-      image distribution in delivery, with no placeholder digest or floating tag.
-- [ ] Resolve connectors from installed pack state, with no additional registry.
-- [ ] Verify an executable test pack with no installed plugins; test timeout,
-      denied access, unavailable dependency and removal during pending work.
+- [x] Define connector identity, entry point, operations, image and network access.
+      Account authentication and credential delivery belong to commit 3.
+- [x] Include connector declarations and image identity in review and content hashes.
+- [x] Use OpenShell directly with bounded execution and a private request file.
+      Do not load connector code into the worker. Reads are internal only;
+      writes are blocked until commit 4 adds action approval checks.
+- [x] Require a full image digest. Start the image during review and check its
+      entry point. This checks availability and host compatibility. The digest
+      identifies content; it does not certify the publisher.
+- [x] Resolve connectors from installed pack state with no new registry.
+- [x] Test embedded and uploaded packs through PostgreSQL and OpenShell, without
+      plugin registration. Check non-root execution, changed content, denied
+      writes and network access, timeout, restart, unavailable images and removal
+      during active execution.
+- [x] Document the image and archive contract in `PACKS.md`. Include a small
+      executable test image and build instructions under the worker tests.
 
-Expected scope: pack schemas/loading and review, a runner under worker `packs/`,
-worker initialization and focused tests. No plugin runtime changes or global gws
-Docker installation. ZIP executable allowlisting is unnecessary for this packaging;
-source repositories and installable archives must be distinguished in author docs.
+Scope: pack schema, existing review and installation state, one worker runner,
+the existing review disclosure, author instructions and tests. No plugin runtime
+changes, worker initialization changes or global gws installation were needed.
+
+Verification: 36 pack tests and 3 runner tests passed. All 4 live execution tests
+passed against PostgreSQL and OpenShell with a locally built image pinned to
+`sha256:5bc8c90bf02dcdbebd19fc82bc8642838c15f39e557f31fa2d43df0705bd19e1`.
+The review screen passed the browser check at widths of 1280 and 390 pixels,
+including error, retry, focus, disabled controls and content wrapping.
+The connector details reuse the existing `Disclosure` and permission list.
+The 13 lifecycle, declarative and upload tests passed. Web tests passed with
+340 tests and 108 skips. Worker and web type checks, web lint and `ui:check` passed.
 
 ### 3. Custom action dispatch
 

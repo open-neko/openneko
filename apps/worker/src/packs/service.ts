@@ -1,3 +1,4 @@
+import { runPackConnector } from "./connector-runner.js";
 import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedPack, type AvailablePack } from "./uploads.js";
 import { parse as parseYaml } from "yaml";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
@@ -115,6 +116,7 @@ type PackDoctorResult = {
 };
 
 type PackRuntime = {
+  connectorBundleHash?: string;
   source?: PackSourceSelection;
   bindings: Record<string, string>;
   bindingHashes: Record<string, string>;
@@ -875,6 +877,25 @@ export class PackService {
     return bundle;
   }
 
+  async runConnector(packId: string, connectorId: string, operation: string, input: Record<string, unknown>) {
+    const client = await pool().connect();
+    try {
+      await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [`pack:${this.orgId}:${packId}`]);
+      const [installation] = await db().select().from(pack_install).where(and(
+        eq(pack_install.org_id, this.orgId), eq(pack_install.pack_id, packId), eq(pack_install.status, "installed"),
+      )).limit(1);
+      if (!installation) throw new Error("Pack is not installed");
+      const bundle = await this.installedBundle(installation);
+      if (storedRuntime(installation.config)?.connectorBundleHash !== bundle.bundleHash) throw new Error("Pack connector contents changed; review and upgrade the pack");
+      const connector = bundle.manifest.connectors?.find(value => value.id === connectorId);
+      if (!connector) throw new Error("Pack connector is not declared");
+      return await runPackConnector(connector, { operation, input });
+    } finally {
+      await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [`pack:${this.orgId}:${packId}`]).catch(() => {});
+      client.release();
+    }
+  }
+
   async upload(bytes: Buffer, request: { actorUserId?: string | null; signal?: AbortSignal } = {}) {
     const embedded = await readdir(this.embeddedRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
     const reservedIds = ["magento", ...embedded.filter(entry => entry.isDirectory() && PACK_ID.test(entry.name)).map(entry => entry.name)];
@@ -903,6 +924,7 @@ export class PackService {
       runtime.tables = [...new Map([...(storedRuntime(existing?.config ?? {})?.tables ?? []), ...bound.tables].map(table => [table.name, table])).values()];
       declarativeGraphjinUpdate(bound.bundle, inputs, secrets.values, [], runtime.bindings);
     }
+    for (const connector of bundle.manifest.connectors ?? []) await runPackConnector(connector);
     const plan = await this.planBundle(bundle);
     await assertNativeTargetsAvailable({ orgId: this.orgId, bundle, plan });
     return { ...await this.inspect(packId, bundle.manifest.metadata.version), operation, inputs, runtime, plan,
@@ -910,10 +932,11 @@ export class PackService {
   }
 
   private async runtime(bundle: SolutionPackBundle, request: PackInstallRequest, prior?: PackRuntime): Promise<PackRuntime> {
+    const connectorIdentity = bundle.manifest.connectors?.length ? { connectorBundleHash: bundle.bundleHash } : {};
     if (!bundle.manifest.artifacts.graphjin) {
       if (request.dataSourceId || Object.keys(request.sourceBindings ?? {}).length) throw new Error("this pack does not use a data source");
       if (prior?.source) throw new Error("removing GraphJin artifacts requires uninstall first");
-      return { bindings: {}, bindingHashes: {}, readiness: Object.keys(bundle.manifest.health.readiness) };
+      return { ...connectorIdentity, bindings: {}, bindingHashes: {}, readiness: Object.keys(bundle.manifest.health.readiness) };
     }
     await verifyPackQueryTables(prior?.tables);
     let source: PackSourceSelection;
@@ -953,7 +976,7 @@ export class PackService {
         if (!request.sourceBindings && prior?.bindingHashes[artifact.key] && prior.bindingHashes[artifact.key] !== bindingHashes[artifact.key]) throw new Error(`binding ${artifact.key} changed; explicitly reconfigure it`);
       }
     }
-    return { source, bindings, bindingHashes, readiness: Object.keys(bundle.manifest.health.readiness) };
+    return { ...connectorIdentity, source, bindings, bindingHashes, readiness: Object.keys(bundle.manifest.health.readiness) };
   }
 
   private async replayIdempotentOperation(
@@ -1026,12 +1049,13 @@ export class PackService {
       manifestHash: bundle.manifestHash,
       bundleHash: bundle.bundleHash,
       bindingRequirements: bundle.artifacts.filter(artifact => artifact.kind === "source" && artifactRecord(artifact).kind === "database" && !artifactRecord(artifact).host).map(artifact => ({ key: artifact.key, name: String(artifactRecord(artifact).name) })),
-      permissions: packId !== "magento" ? { database: bundle.manifest.artifacts.graphjin ? "read-only" : "none", apiWrite: "blocked" } : {
+      connectors: bundle.manifest.connectors ?? [],
+      permissions: { ...(packId !== "magento" ? { database: bundle.manifest.artifacts.graphjin ? "read-only" : "none", apiWrite: "blocked" } : {
         database: "view-only reporting",
         apiWrite: "specific Magento changes require approval and must be enabled individually",
         customerPii: "available to authenticated read-only queries",
         paymentData: "operational fields available; credentials and raw gateway payloads blocked",
-      },
+      }), ...(bundle.manifest.connectors?.length ? { connector_access: bundle.manifest.connectors.map(connector => `${connector.id}: ${connector.operations.map(operation => `${operation.id} (${operation.effect})`).join(", ")}; network: ${connector.network.map(rule => `${rule.host}:${rule.port}`).join(", ") || "none"}`).join("; ") } : {}) },
     };
   }
 
@@ -2033,7 +2057,7 @@ export class PackService {
       const resolvedSecrets = await resolveSecrets(bundle, request);
       const plan = await this.planBundle(authoredBundle);
       const reviewHash = this.reviewHash(authoredBundle, plan, operationType, request, inputs, resolvedSecrets.values, runtime);
-      if ((authoredBundle.upload || request.reviewHash) && request.reviewHash !== reviewHash) throw new Error("pack review is missing or stale; review the exact bundle, configuration, and plan before installing");
+      if ((authoredBundle.upload || authoredBundle.manifest.connectors?.length || request.reviewHash) && request.reviewHash !== reviewHash) throw new Error("pack review is missing or stale; review the exact bundle, configuration, and plan before installing");
       const preflight = firstPartyMagento ? await runMagentoPreflight({
         host: String(inputs["database.host"]),
         port: Number(inputs["database.port"]),

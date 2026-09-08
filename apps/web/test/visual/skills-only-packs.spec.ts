@@ -1,16 +1,17 @@
 import { expect, test } from "@playwright/test";
 
 // UI contract only. The worker lifecycle suite checks real persistence.
-test("configures a skills-only pack without requesting data sources", async ({ page }, testInfo) => {
+test("configures a pack without GraphJin and shows connector review details", async ({ page }, testInfo) => {
   let dataRequests = 0;
   let installed = false;
   let reviewAttempts = 0;
   const inspection = {
     source: "uploaded", bundleHash: "fixture",
+    connectors: [{ id: "fixture", image: `registry.example.com/fixture@sha256:${"a".repeat(64)}`, entrypoint: "/app/connector", operations: [{ id: "lookup", effect: "read" }], network: [] }],
     manifest: {
       metadata: { id: "skills-only", name: "Skills only", version: "1.0.0", publisher: "fixture" },
       inputs: [], secrets: [], artifacts: { skills: ["skills/review"] },
-    }, bindingRequirements: [], permissions: { database: "none", apiWrite: "blocked" },
+    }, bindingRequirements: [], permissions: { database: "none", apiWrite: "blocked", connector_access: "fixture: lookup (read); network: none" },
   };
   await page.route("**/api/settings/data-sources", route => { dataRequests++; return route.fulfill({ status: 503, json: { error: "No data service" } }); });
   await page.route(url => url.pathname.startsWith("/api/admin/packs"), async route => {
@@ -49,6 +50,14 @@ test("configures a skills-only pack without requesting data sources", async ({ p
   await expect(section.getByRole("alert")).toBeVisible();
   await expect(section.getByRole("alert")).toBeFocused();
   await section.getByRole("button", { name: "Review changes", exact: true }).click();
+  await expect(section.getByText("Connector access: fixture: lookup (read); network: none", { exact: true })).toBeVisible();
+  await section.getByText("Configuration and change details", { exact: true }).click();
+  await expect(section.locator("pre")).toContainText(`registry.example.com/fixture@sha256:${"a".repeat(64)}`);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await section.screenshot({ path: testInfo.outputPath(`connector-review-${width}.png`) });
+  }
   await section.getByRole("button", { name: "Approve and install", exact: true }).click();
   await expect(section.getByText("Installed", { exact: true })).toBeVisible();
   expect(dataRequests).toBe(0);
