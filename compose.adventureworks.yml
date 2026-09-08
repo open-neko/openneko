@@ -209,14 +209,12 @@ services:
       # the mock adapter so bundled workflows can propose Slack alerts
       # without hitting real endpoints. Flip to "false" once you're past
       # trial and have wired real webhooks.
-      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
 
   worker:
     depends_on:
       graphjin:
         condition: service_started
     environment:
-      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
       OPENNEKO_GRAPHJIN_CONFIG: ""
 
 volumes:

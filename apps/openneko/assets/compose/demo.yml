@@ -238,7 +238,6 @@ services:
       # the mock adapter so bundled workflows can propose Slack alerts
       # without hitting real endpoints. Flip to "false" once you're past
       # trial and have wired real webhooks.
-      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
     volumes:
       - graphjin-config:/graphjin-config
 
@@ -251,7 +250,6 @@ services:
       neko-adventureworks-seed:
         condition: service_completed_successfully
     environment:
-      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
       # Sources mode: the worker substitutes the per-org JWT secret into
       # the seeded GraphJin config at boot (host-provision).
       OPENNEKO_STACK_MODE: demo

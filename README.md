@@ -120,7 +120,7 @@ in every mode.
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|
 | **prod** (default) | none | Core stack only. You connect your own data source; actions run for real. |
-| **demo** | AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data; external actions default to dry-run (`NEKO_ACTIONS_DRY_RUN=true`). What `openneko setup --mode demo` gives you. |
+| **demo** | AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data. What `openneko setup --mode demo` gives you. |
 | **dev** | none (reserved overlay) | For working on OpenNeko itself: Docker runs only the dependency services while web and worker hot-reload as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [CONTRIBUTING.md](CONTRIBUTING.md). |
 
 **Solution packs** (e.g. `openneko pack install magento`) are not a mode: they

@@ -324,14 +324,14 @@ docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks
 
 ### Live trial data
 
-The source compose trickles fresh sales orders into the sample DB every 10 minutes. Briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External-action targets route to a mock adapter during trial (`NEKO_ACTIONS_DRY_RUN=true`); approvals still queue.
+The source compose trickles fresh sales orders into the sample DB every 10 minutes. Briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External actions use their configured adapters and approval policies.
 
 ```bash
 AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
   docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml up -d
 ```
 
-Disable the trickle: `AW_SIM_ENABLED=0`. Wire real webhooks past trial: `NEKO_ACTIONS_DRY_RUN=false`.
+Disable the trickle: `AW_SIM_ENABLED=0`.
 
 ### Watch the loop fire end-to-end
 
