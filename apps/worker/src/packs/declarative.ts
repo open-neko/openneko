@@ -29,9 +29,6 @@ export function declarativeGraphjinUpdate(
   retiredSources: string[] = [],
   bindings: Record<string, string> = {},
 ): Record<string, unknown> {
-  if (bundle.artifacts.some(artifact => artifact.kind === "action")) {
-    throw new Error("custom pack write actions require a supported action adapter");
-  }
   const knownChecks = new Set(["db-connect", "db-read-only", "graphjin-reload", "analytics-smoke", "queries"]);
   for (const check of [...bundle.manifest.health.requiredPreflight, ...bundle.manifest.health.postInstall, ...bundle.manifest.health.postWriteCanary, ...Object.values(bundle.manifest.health.readiness).flat()]) {
     if (["db-connect", "analytics-smoke", "queries"].includes(check) && !bundle.artifacts.some(artifact => artifact.kind === "saved_query")) throw new Error(`${check} requires a saved query`);
@@ -69,6 +66,61 @@ export function declarativeGraphjinUpdate(
       inspect(artifact.content);
     }
   }
+  const operationExposures = new Map<string, Map<string, Record<string, unknown>>>();
+  for (const artifact of bundle.artifacts.filter((value) => value.kind === "action")) {
+    const action = artifact.content as Record<string, unknown>;
+    const adapter = action.adapter as Record<string, unknown>;
+    if (adapter.kind !== "graphjin_api_operation") continue;
+    const sourceName = String(adapter.source);
+    const source = bundle.artifacts.find(
+      (value) => value.kind === "source" && String((value.content as Record<string, unknown>).name) === sourceName,
+    );
+    if (!source) throw new Error(`action ${artifact.key} references missing API source ${sourceName}`);
+    const sourceSpec = basename(String((source.content as Record<string, unknown>).openapi), extname(String((source.content as Record<string, unknown>).openapi)));
+    const specName = adapter.spec === undefined ? sourceSpec : String(adapter.spec);
+    if (specName !== sourceSpec) throw new Error(`action ${artifact.key} references spec ${specName} outside source ${sourceName}`);
+    const spec = bundle.artifacts.find(
+      (value) => value.kind === "spec" && value.path === String((source.content as Record<string, unknown>).openapi),
+    );
+    const operationMethods = new Map<string, string>();
+    const paths = (spec?.content as { paths?: Record<string, Record<string, unknown>> } | undefined)?.paths ?? {};
+    for (const methods of Object.values(paths)) {
+      for (const [method, operation] of Object.entries(methods)) {
+        if (operation && typeof operation === "object" && !Array.isArray(operation)) {
+          const operationId = (operation as Record<string, unknown>).operationId;
+          if (typeof operationId === "string") operationMethods.set(operationId, method.toLowerCase());
+        }
+      }
+    }
+    const declared = adapter.operations && typeof adapter.operations === "object"
+      ? adapter.operations as Record<string, unknown>
+      : { default: adapter };
+    const exposures = operationExposures.get(sourceName) ?? new Map<string, Record<string, unknown>>();
+    for (const operation of Object.values(declared)) {
+      if (!operation || typeof operation !== "object" || Array.isArray(operation)) continue;
+      const value = operation as Record<string, unknown>;
+      const operationId = String(value.operationId ?? "");
+      const mutationRoot = String(value.mutationRoot ?? "");
+      if (!operationId || !/^[_A-Za-z][_0-9A-Za-z]*$/.test(mutationRoot)) {
+        throw new Error(`action ${artifact.key} has an invalid GraphJin API operation`);
+      }
+      const method = operationMethods.get(operationId);
+      if (!method) throw new Error(`action ${artifact.key} references missing OpenAPI operation ${operationId}`);
+      if (method === "get") throw new Error(`action ${artifact.key} cannot expose read operation ${operationId} as a mutation`);
+      const exposure = {
+        expose_mutation: true,
+        allowed_roles: ["pack_api_executor"],
+        expose_as: mutationRoot,
+      };
+      const current = exposures.get(operationId);
+      if (current && JSON.stringify(current) !== JSON.stringify(exposure)) {
+        throw new Error(`API operation ${operationId} has conflicting action exposure`);
+      }
+      exposures.set(operationId, exposure);
+    }
+    operationExposures.set(sourceName, exposures);
+  }
+
   const sources = bundle.artifacts.filter(artifact => artifact.kind === "source").flatMap<Record<string, unknown>>(artifact => {
     const authored = artifact.content as Record<string, unknown>;
     const allowed = new Set(["name", "kind", "type", "host", "port", "dbname", "user", "password", "base_url", "openapi", "auth", "read_only", "capabilities"]);
@@ -132,6 +184,9 @@ export function declarativeGraphjinUpdate(
       specs: { [basename(spec.path, extname(spec.path))]: {
         base_url: url.toString().replace(/\/$/, ""),
         ...(auth ? { auth: { scheme: "bearer", token: auth.token } } : {}),
+        ...(operationExposures.get(String(source.name))?.size
+          ? { operations: Object.fromEntries(operationExposures.get(String(source.name))!) }
+          : {}),
       } },
       capabilities: {
         "api.read": requested?.["api.read"] !== false,
@@ -146,12 +201,17 @@ export function declarativeGraphjinUpdate(
     return value.relationships.map(edge => ({ from: `${names[value.source] ?? value.source}:${edge.left}`, to: `${names[value.source] ?? value.source}:${edge.right}` }));
   });
   return {
+    ...(operationExposures.size > 0
+      ? { roles: [{ name: "pack_api_executor", comment: "Short-lived executor for approved pack API actions" }] }
+      : {}),
     update_sources: sources, relationships,
     ...(retiredSources.length ? { source_patches: retiredSources.map(name => ({ name, read_only: true, access: { read: "blocked", write: "blocked", delete: "blocked" } })) } : {}),
   };
 }
 
 export function declarativePackPermissions(bundle: SolutionPackBundle): Record<string, string> {
+  const oauth = bundle.manifest.oauth ?? [];
+  const network = bundle.manifest.permissions?.network ?? [];
   const sources = bundle.artifacts
     .filter(artifact => artifact.kind === "source")
     .map(artifact => artifact.content as Record<string, unknown>);
@@ -163,7 +223,16 @@ export function declarativePackPermissions(bundle: SolutionPackBundle): Record<s
   })
     ? "requested; actions require an enabled policy"
     : "not requested";
-  return { database, apiWrite };
+  return {
+    database,
+    apiWrite,
+    ...(oauth.length > 0
+      ? { oauth: `${oauth.length} account connection; ${new Set(oauth.flatMap((connection) => connection.scopes)).size} consent scopes` }
+      : {}),
+    ...(network.length > 0
+      ? { network: network.join(", ") }
+      : {}),
+  };
 }
 
 export function packPolicyControlsWrite(

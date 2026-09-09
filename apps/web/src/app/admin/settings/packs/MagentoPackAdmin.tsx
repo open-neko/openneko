@@ -281,7 +281,7 @@ export type MagentoPackAdminFixture = {
   management: StoreManagement;
 };
 
-export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdminFixture }) {
+export default function MagentoPackAdmin({ fixture, initialCustomPack, connected }: { fixture?: MagentoPackAdminFixture; initialCustomPack?: string; connected?: string }) {
   const [status, setStatus] = useState<PackStatus | null>(fixture?.status ?? null);
   const [doctor, setDoctor] = useState<DoctorResult | null>(fixture?.doctor ?? null);
   const [management, setManagement] = useState<StoreManagement | null>(fixture?.management ?? null);
@@ -506,7 +506,7 @@ export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdm
         description="Install and manage packs for your business."
       />
 
-      <CustomPacksAdmin />
+      <CustomPacksAdmin initialPack={initialCustomPack} connected={connected} />
 
       {loading && !status ? (
         <section className="settings-card"><p className="settings-card-copy">Checking Magento…</p></section>

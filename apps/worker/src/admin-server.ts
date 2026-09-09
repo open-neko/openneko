@@ -224,6 +224,10 @@ export interface PacksHandlerSurface {
   configure(packId: string, input: Record<string, unknown>): Promise<unknown>;
   upgrade(packId: string, input: Record<string, unknown>): Promise<unknown>;
   uninstall(packId: string, input: Record<string, unknown>): Promise<unknown>;
+  oauthStatus(packId: string, connectionKey: string): Promise<unknown>;
+  beginOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
+  completeOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
+  disconnectOAuth(packId: string, connectionKey: string): Promise<unknown>;
   magentoStoreManagement(): Promise<unknown>;
   updateMagentoStoreManagement(input: Record<string, unknown>): Promise<unknown>;
 }
@@ -612,6 +616,36 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       return;
     }
     const packPath = (req.url ?? "").split(/[?#]/, 1)[0] ?? "";
+    const packOAuthRoute = /^\/admin\/packs\/([^/]+)\/oauth\/([^/]+)\/(status|begin|complete|disconnect)$/.exec(packPath);
+    if (packOAuthRoute) {
+      let packId: string;
+      let connectionKey: string;
+      try {
+        packId = decodeURIComponent(packOAuthRoute[1]!);
+        connectionKey = decodeURIComponent(packOAuthRoute[2]!);
+      } catch {
+        json(res, 400, { error: "pack OAuth path contains invalid URL encoding" });
+        return;
+      }
+      const action = packOAuthRoute[3]!;
+      if (req.method === "GET" && action === "status") {
+        void handlePackOAuth(res, packs, packId, connectionKey, action, {});
+        return;
+      }
+      if (req.method === "POST" && action !== "status") {
+        void readJson(req)
+          .then((body) => handlePackOAuth(
+            res,
+            packs,
+            packId,
+            connectionKey,
+            action as "begin" | "complete" | "disconnect",
+            body && typeof body === "object" ? body as Record<string, unknown> : {},
+          ))
+          .catch(() => json(res, 400, { error: "request body must be JSON" }));
+        return;
+      }
+    }
     const packRoute = /^\/admin\/packs\/([^/]+)(?:\/(inspect|plan|status|doctor|review|install|configure|upgrade|uninstall))?$/.exec(
       packPath,
     );
@@ -659,6 +693,29 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     res.writeHead(404).end();
   };
+}
+
+async function handlePackOAuth(
+  res: ServerResponse,
+  packs: PacksHandlerSurface | null,
+  packId: string,
+  connectionKey: string,
+  action: "status" | "begin" | "complete" | "disconnect",
+  input: Record<string, unknown>,
+): Promise<void> {
+  if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
+  try {
+    const result = action === "status"
+      ? await packs.oauthStatus(packId, connectionKey)
+      : action === "begin"
+        ? await packs.beginOAuth(packId, connectionKey, input)
+        : action === "complete"
+          ? await packs.completeOAuth(packId, connectionKey, input)
+          : { disconnected: await packs.disconnectOAuth(packId, connectionKey) };
+    json(res, 200, result);
+  } catch (error) {
+    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function handlePackUpload(req: IncomingMessage, res: ServerResponse, packs: PacksHandlerSurface | null): Promise<void> {

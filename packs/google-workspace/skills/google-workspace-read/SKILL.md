@@ -17,10 +17,10 @@ the smallest operation that answers the request.
 
 ## Available read operations
 
-- Gmail: `listMessages`, `getMessage`, `listThreads`, and `getThread`.
-- Drive: `listDriveFiles` and `getDriveFile`.
-- Calendar: `listCalendars` and `listCalendarEvents`.
-- Sheets: `getSpreadsheet` and `getSpreadsheetValues`.
+- Gmail: profile, message, thread, draft, label, history, and attachment reads.
+- Drive: file metadata, permission, and account storage reads.
+- Calendar: calendar lists and event lists or details.
+- Sheets: spreadsheet metadata plus single-range and batch value reads.
 - Docs: `getDocument`.
 - Slides: `getPresentation`.
 

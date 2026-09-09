@@ -19,12 +19,14 @@ type CatalogPack = { id: string; name: string; version: string; installed: boole
 type Source = { id: string; name: string; label: string | null; enabled: boolean; graphqlUrl: string };
 type Configuration = { inputs: Record<string, Value>; dataSourceId?: string; sourceBindings: Record<string, string> };
 type Status = { version: string; status: string; lastError: string | null; installedAt: string | null; configuration?: Configuration };
+type OAuthStatus = { key: string; providerLabel: string; clientId: string | null; connected: boolean; account: { id: string; label: string } | null; scopes: string[]; expiresAt: string | null; callbackUrl: string };
 type Inspection = {
   source: string; bundleHash: string;
   manifest: {
     metadata: { id: string; name: string; version: string; publisher: string };
     inputs: Array<{ key: string; type: string; required?: boolean; default?: Value; description?: string; values?: Value[] }>;
-    secrets: Array<{ key: string; required?: boolean }>;
+    secrets: Array<{ key: string; purpose: string; required?: boolean }>;
+    oauth: Array<{ key: string; providerLabel: string; clientIdInput: string; clientSecret: string; scopes: string[] }>;
     artifacts: { graphjin?: unknown };
   };
   bindingRequirements: Array<{ key: string; name: string }>;
@@ -46,7 +48,7 @@ function label(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export default function CustomPacksAdmin() {
+export default function CustomPacksAdmin({ initialPack = "", connected = "" }: { initialPack?: string; connected?: string }) {
   const [catalog, setCatalog] = useState<CatalogPack[] | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [selected, setSelected] = useState("");
@@ -57,27 +59,29 @@ export default function CustomPacksAdmin() {
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const [sourceId, setSourceId] = useState("");
+  const [oauth, setOauth] = useState<Record<string, OAuthStatus>>({});
   const [review, setReview] = useState<{ result: Review; request: Record<string, unknown> } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
   const [dirty, setDirty] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const initialLoadStarted = useRef(false);
   const removeButton = useRef<HTMLButtonElement>(null);
   const errorText = useRef<HTMLParagraphElement>(null);
 
-  function fail(error: unknown, message = "The pack could not be loaded. Try loading it again.") {
+  const fail = useCallback((error: unknown, message = "The pack could not be loaded. Try loading it again.") => {
     setError(message);
     setErrorDetail(error instanceof Error ? error.message : String(error));
     requestAnimationFrame(() => errorText.current?.focus());
-  }
+  }, []);
   function changed() { setReview(null); setDirty(true); setError(""); }
   const refresh = useCallback(async () => {
     try {
       const result = await api<{ packs: CatalogPack[] }>("/api/admin/packs");
       setCatalog(result.packs.filter(pack => pack.id !== "magento"));
     } catch (error) { fail(error); }
-  }, []);
+  }, [fail]);
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => clearTimeout(timer); }, [refresh]);
   useEffect(() => {
     if (!dirty) return;
@@ -86,10 +90,10 @@ export default function CustomPacksAdmin() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  async function loadPack(id: string, mode?: Operation) {
+  const loadPack = useCallback(async (id: string, mode?: Operation) => {
     const trigger = document.activeElement as HTMLElement | null;
     if (dirty && !await confirmDialog({ title: "Discard pack changes?", description: "The current configuration has not been applied.", confirmLabel: "Discard changes" })) { trigger?.focus(); return; }
-    setBusy("loading"); setError(""); setReview(null); setDetail(null); setDirty(false); setSecrets({}); setSelected(id);
+    setBusy("loading"); setError(""); setReview(null); setDetail(null); setDirty(false); setSecrets({}); setOauth({}); setSelected(id);
     try {
       const path = `/api/admin/packs/${encodeURIComponent(id)}`;
       const response = await fetch(`${path}/status`, { cache: "no-store" });
@@ -101,11 +105,64 @@ export default function CustomPacksAdmin() {
         ? await api<{ sources: Source[] }>("/api/settings/data-sources")
         : { sources: [] };
       setSources(available.sources.filter(source => source.enabled && source.graphqlUrl));
+      const oauthStatuses = await Promise.all(inspection.manifest.oauth.map(connection =>
+        api<OAuthStatus>(`/api/pack-accounts/${encodeURIComponent(id)}/${encodeURIComponent(connection.key)}`),
+      ));
+      setOauth(Object.fromEntries(oauthStatuses.map(value => [value.key, value])));
       setDetail(inspection); setStatus(current); setOperation(action);
-      setInputs(Object.fromEntries(inspection.manifest.inputs.map(input => [input.key, current?.configuration?.inputs[input.key] ?? input.default ?? (input.type === "boolean" ? false : "")])));
+      setInputs(Object.fromEntries(inspection.manifest.inputs.map(input => [
+        input.key,
+        current?.configuration?.inputs[input.key] ??
+          oauthStatuses.find(value => inspection.manifest.oauth.some(connection => connection.key === value.key && connection.clientIdInput === input.key))?.clientId ??
+          input.default ??
+          (input.type === "boolean" ? false : ""),
+      ])));
       setBindings(current?.configuration?.sourceBindings ?? {});
       setSourceId(current?.configuration?.dataSourceId ?? "");
     } catch (error) { fail(error); }
+    finally { setBusy(null); }
+  }, [dirty, fail]);
+  useEffect(() => {
+    if (!initialPack || initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    const timer = window.setTimeout(() => {
+      void loadPack(initialPack).then(() => {
+        if (connected) toast.success("Google Workspace account connected.");
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [connected, initialPack, loadPack]);
+
+  async function connectOAuth(connection: Inspection["manifest"]["oauth"][number]) {
+    const clientId = String(inputs[connection.clientIdInput] ?? "");
+    const clientSecret = secrets[connection.clientSecret] ?? "";
+    if (!clientId || (!clientSecret && !oauth[connection.key]?.connected)) {
+      setError(`Enter the ${connection.providerLabel} client ID and client secret first.`);
+      return;
+    }
+    setBusy(`oauth-${connection.key}`); setError("");
+    try {
+      const result = await api<{ authorizationUrl: string }>(
+        `/api/pack-accounts/${encodeURIComponent(selected)}/${encodeURIComponent(connection.key)}/start`,
+        { clientId, clientSecret, returnTo: `/admin/settings/packs` },
+      );
+      window.location.assign(result.authorizationUrl);
+    } catch (error) {
+      fail(error, `${connection.providerLabel} could not start account connection.`);
+      setBusy(null);
+    }
+  }
+
+  async function disconnectOAuth(connection: Inspection["manifest"]["oauth"][number]) {
+    setBusy(`oauth-${connection.key}`); setError("");
+    try {
+      const response = await fetch(`/api/pack-accounts/${encodeURIComponent(selected)}/${encodeURIComponent(connection.key)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? `Request failed (${response.status})`);
+      setOauth({ ...oauth, [connection.key]: { ...oauth[connection.key]!, connected: false, account: null, expiresAt: null } });
+      setReview(null);
+      toast.success(`${connection.providerLabel} disconnected.`);
+    } catch (error) { fail(error, `${connection.providerLabel} could not be disconnected.`); }
     finally { setBusy(null); }
   }
 
@@ -209,10 +266,22 @@ export default function CustomPacksAdmin() {
               </NativeSelect> : <Input id={`pack-${input.key}`} name={input.key} type={input.type === "url" ? "url" : input.type === "integer" ? "number" : "text"} step={input.type === "integer" ? 1 : undefined} required={input.required} value={String(inputs[input.key] ?? "")} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: input.type === "integer" && event.target.value !== "" ? Number(event.target.value) : event.target.value }); }} />}
             </Field>)}
           {(detail.bindingRequirements ?? []).map(binding => <Field key={binding.key} label={`${label(binding.name)} source`} htmlFor={`binding-${binding.key}`} hint="Existing read-only source name in this connection."><Input id={`binding-${binding.key}`} required value={bindings[binding.key] ?? ""} onChange={event => { changed(); setBindings({ ...bindings, [binding.key]: event.target.value }); }} /></Field>)}
-          {detail.manifest.secrets.map(secret => <Field key={secret.key} label={label(secret.key)} htmlFor={`secret-${secret.key}`} hint={status?.status === "installed" ? "Leave blank to keep the saved credential." : "Stored securely after installation."}>
-            <Input id={`secret-${secret.key}`} name={secret.key} type="password" autoComplete="new-password" spellCheck={false} required={secret.required !== false && status?.status !== "installed"} value={secrets[secret.key] ?? ""} onChange={event => { changed(); setSecrets({ ...secrets, [secret.key]: event.target.value }); }} />
+          {detail.manifest.secrets.filter(secret => secret.purpose !== "pack_oauth_token").map(secret => <Field key={secret.key} label={label(secret.key)} htmlFor={`secret-${secret.key}`} hint={status?.status === "installed" ? "Leave blank to keep the saved credential." : "Stored securely after installation."}>
+            <Input id={`secret-${secret.key}`} name={secret.key} type="password" autoComplete="new-password" spellCheck={false} required={secret.required !== false && status?.status !== "installed" && !detail.manifest.oauth.some(connection => connection.clientSecret === secret.key && oauth[connection.key]?.connected)} value={secrets[secret.key] ?? ""} onChange={event => { changed(); setSecrets({ ...secrets, [secret.key]: event.target.value }); }} />
           </Field>)}
         </fieldset>
+        {detail.manifest.oauth.map(connection => <Card key={connection.key} as="section" className="grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h3>{connection.providerLabel}</h3><p className="text-ui-body-sm text-text2">{oauth[connection.key]?.account?.label ?? "Connect the account this pack will use."}</p></div>
+            <Pill variant={oauth[connection.key]?.connected ? "success" : "muted"}>{oauth[connection.key]?.connected ? "Connected" : "Not connected"}</Pill>
+          </div>
+          <p className="text-ui-caption text-text2">The account grants {connection.scopes.length} reviewed permissions. Access and refresh tokens are encrypted.</p>
+          {oauth[connection.key]?.callbackUrl ? <Disclosure title="Google Cloud setup"><p className="text-ui-body-sm">Add this authorized redirect URI to the OAuth client:</p><code className="break-all text-ui-caption">{oauth[connection.key].callbackUrl}</code></Disclosure> : null}
+          <ActionGroup align="start">
+            <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void connectOAuth(connection)}>{busy === `oauth-${connection.key}` ? "Connecting…" : oauth[connection.key]?.connected ? "Reconnect account" : "Connect account"}</Button>
+            {oauth[connection.key]?.connected ? <Button type="button" variant="danger" disabled={busy !== null} onClick={() => void disconnectOAuth(connection)}>Disconnect</Button> : null}
+          </ActionGroup>
+        </Card>)}
         <ActionGroup align="start"><Button type="submit" variant={review ? "secondary" : "primary"} disabled={busy !== null}>{busy === "review" ? "Reviewing…" : "Review changes"}</Button></ActionGroup>
       </form>
       {review ? <section className="grid gap-3" aria-label="Reviewed changes" aria-live="polite">

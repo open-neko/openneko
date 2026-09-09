@@ -22,7 +22,12 @@ export type ActionAdapter = (
   input: ActionExecutionInput,
 ) => Promise<ActionExecutionOutcome>;
 
+export type ActionAdapterResolver = (
+  request: ActionRequestRecord,
+) => Promise<ActionAdapter | null>;
+
 const adapters = new Map<string, ActionAdapter>();
+let fallbackAdapterResolver: ActionAdapterResolver | null = null;
 
 /** Register an executor for a specific action kind. Test-overridable. */
 export function registerActionAdapter(
@@ -30,6 +35,14 @@ export function registerActionAdapter(
   adapter: ActionAdapter,
 ): void {
   adapters.set(kind, adapter);
+}
+
+/** Register one resolver for action kinds supplied by installed packs. */
+export function registerFallbackActionAdapterResolver(resolver: ActionAdapterResolver): () => void {
+  fallbackAdapterResolver = resolver;
+  return () => {
+    if (fallbackAdapterResolver === resolver) fallbackAdapterResolver = null;
+  };
 }
 
 export function getRegisteredActionKinds(): string[] {
@@ -79,7 +92,7 @@ export async function executeApprovedActionRequest(
     throw new ActionRequestNotApprovedError(request.status);
   }
 
-  const adapter = adapters.get(request.kind);
+  const adapter = adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined;
   if (!adapter) {
     await markActionRequestFailed(
       request.id,

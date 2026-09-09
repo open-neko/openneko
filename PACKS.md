@@ -15,10 +15,12 @@ For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
   custom pack with an API connector, query, metric, workflow, watcher, and skill.
 - [Magento](packs/magento/pack.yaml) is the first-party commerce pack. Its
   [README](packs/magento/README.md) explains application-specific prerequisites.
+- [Google Workspace](packs/google-workspace/pack.yaml) shows customer-owned
+  OAuth, REST reads, and generic governed API actions.
 
-Use the small example for new custom packs. Magento includes governed write
-adapters implemented in OpenNeko; copying its action YAML does not make those
-adapters available for another application.
+Use the small example for read-only custom packs. Use Google Workspace as the
+reference for generic REST writes. Magento uses additional commerce-specific
+action contracts for change sets and reconciliation.
 
 ## Directory layout
 
@@ -74,6 +76,8 @@ Copy a working `pack.yaml` and edit these sections:
 | `compatibility` | OpenNeko and GraphJin versions, supported application editions/versions, and database engines/versions |
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
+| `oauth` | Pack-owned OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
 | `health` | Required preflight checks, readiness groups, post-install steps, and post-write canaries |
 
@@ -102,7 +106,7 @@ collisions with other packs or operator-created artifacts.
 | Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; OpenShell scopes those hosts to that workflow sandbox. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
-| Actions and policies | Use supported runtime contracts. A declaration alone cannot implement a new execution adapter. |
+| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. |
 
 See the [artifact schemas](packages/packs/src/artifact-schema.ts) for exact fields
 and the [bundle loader](packages/packs/src/bundle.ts) for identity and reference
@@ -129,10 +133,23 @@ purpose `graphjin_api_auth`. The installer supplies configuration and resolves
 secret references through the encrypted secret store. Keep credentials out of
 Git, archives, skills, and example payloads.
 
-Custom source access is currently read-only. Executable connector code, OAuth
-refresh, and custom write adapters are not supported. A spec containing write
-operations does not grant permission to execute them. Magento uses the same pack
-lifecycle but retains its existing application-specific governed write adapters.
+For a user account connection, declare `oauth` in the manifest. The customer
+supplies the OAuth client ID and secret. OpenNeko calculates the callback URL,
+drives PKCE consent, encrypts the tokens, refreshes access before expiry, and
+binds the selected account to the installation. The OAuth endpoint hosts and API
+hosts must appear in `permissions.network`. See the
+[Google Workspace manifest](packs/google-workspace/pack.yaml) for an example.
+
+API sources may request write or delete access. Each operation still needs a
+pack action and policy. Write policies install disabled, so installing a pack
+does not enable mutations. Packs do not use executable connectors for OAuth.
+
+A generic REST action names its API source, OpenAPI spec, approved operation IDs,
+and stable GraphQL mutation roots. At execution, the action accepts only a named
+declared operation plus `path`, `query`, and `body` objects. OpenNeko sends that
+complete reviewed payload through a short-lived `pack_api_executor` role. Read
+operations are never exposed as mutations. See the
+[Google Workspace actions](packs/google-workspace/actions) for complete examples.
 
 Database source references require an existing read-only source binding and an
 organization GraphJin data source. See the [installation guide](docs/CUSTOM_PACKS.md)

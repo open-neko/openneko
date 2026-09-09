@@ -1,7 +1,7 @@
 # Google Workspace REST pack plan
 
-Status: the executable pack design has been removed. Google Workspace is not
-implemented. This plan replaces the previous seven-step gws plan.
+Status: the executable pack design has been removed. The REST pack now has an
+installable manifest and a separate pack-owned OAuth path. Broader REST reads, read workflows, and governed write definitions are now present. Live Google acceptance and the cross-pack test remain.
 
 ## Boundaries
 
@@ -22,46 +22,51 @@ Google-specific API definitions and skills under `packs/google-workspace/`.
 
 - Magento declares an API source with an OpenAPI spec and bearer authentication
   in `packs/magento/graphjin/sources.yaml`.
-- `apps/worker/src/packs/declarative.ts` installs custom API sources with bearer
-  authentication. It restricts those sources to reads and rejects custom write
-  action artifacts. Magento has separate governed write adapters.
-- A REST source alone does not prove browser OAuth, account isolation or token
-  refresh. The removed account implementation depended on executable connectors;
-  it cannot be retained unchanged.
-- The previous gws skills contain CLI instructions. The unfinished import has
-  been removed. REST-based skills must describe the supported GraphJin operations.
+- The generic installer accepts API sources that request `api.write` or
+  `api.delete` when they set `read_only: false`.
+- Generic pack action artifacts are installed as pack-owned action definitions.
+  Work exposes them through the governed action and approval path without using
+  the plugin registry. Write policies install disabled.
+- Plugin OAuth remains independent. Packs now have a separate declarative OAuth
+  flow with encrypted credentials, refresh, account selection, and source
+  binding.
+- `packs/google-workspace/` has an installable manifest, six API sources, twenty-four reviewed reads, nineteen governed writes, one installation query, six skills, two read workflows, four action groups, and one write policy.
+- Gmail, Calendar, Drive, and Sheets request write access at the source. Only declared operations are exposed to the isolated pack executor role. The write policy installs disabled. Docs and Slides remain read-only.
+- The upstream `gws` skills contain CLI instructions. REST-based skills must
+  cover the same supported tasks through reviewed Google API operations without
+  copying CLI commands.
 
 ## Logical commits
 
-1. Remove executable pack support and replace the plan.
-   Revert the runtime, executable connector declarations, connector account
-   routes/screens and connector action dispatch. Remove the unfinished gws pack.
-   Verify the retained declarative and Magento installation paths.
+1. Correct the plan for the current generic pack runtime.
+   Record the existing REST draft, generic write-source support and generic
+   governed pack actions. Keep plugin OAuth and pack OAuth separate. Make no
+   runtime or pack changes in this commit.
 
-2. Verify the Google REST and authentication path.
-   Trace the installed GraphJin version's API source authentication and the
-   existing OpenNeko source-secret handling. Prove a Google REST read with a
-   customer-owned OAuth client. Identify the minimum support needed for browser
-   consent, token refresh and explicit account selection. Explain any required
-   platform change before editing it. Do not use plugin registration or a
-   pack-supplied executable as a shortcut.
+2. Add generic pack-owned OAuth.
+   Let an administrator configure a customer-owned Google OAuth client. Build
+   the callback URL from OpenNeko's public URL. Store tokens encrypted, refresh
+   access tokens, bind the selected Google account to the installed pack and
+   remove credentials on uninstall. Do not register a plugin or run a
+   pack-supplied executable.
 
-3. Add the declarative Google Workspace read pack.
-   Add the manifest, OpenAPI specs, sources, saved queries, read workflows, skills
-   and setup instructions. Use the existing installer. Verify installation,
-   real Google reads, refresh, restart and uninstall. Record service permissions
-   and account restrictions. Do not claim unsupported services work.
+3. Complete the declarative Google Workspace read pack.
+   Add the manifest, OAuth requirements, reviewed scopes, saved queries, read
+   workflows and setup instructions. Validate every current operation against
+   GraphJin 3.20.75 and a real Google account. Verify installation, reads, token
+   refresh, restart and uninstall. Do not claim unsupported services work.
 
 4. Add governed Google REST writes.
-   First verify the existing GraphJin mutation and action approval paths. Reuse
-   those paths and explain any missing generic support before changing platform
-   code. Bind the selected account and complete payload to approval. Verify
-   provider results and prevent repeated uncertain writes.
+   Add reviewed mutation operations, pack action definitions and policies for
+   Gmail, Drive, Calendar, Sheets and Docs. Keep Slides read-only. Bind the
+   selected account and complete payload to approval. Install write policies disabled. Verify
+   provider results, reconciliation, idempotency and supported undo operations.
 
 5. Verify cross-pack use and complete coverage.
-   Test the Gmail price-email to Magento SKU-update task through Work. Build the
-   requested broad Workspace coverage with REST-based skills and workflows.
-   Record the supported operations and any remaining API or permission limits.
+   Map the applicable upstream `gws` task catalog to reviewed REST operations,
+   skills and workflows. Test the Gmail price-email to Magento SKU-update task
+   through Work. Record supported operations and remaining API or permission
+   limits.
 
 Commit each completed step after its relevant checks pass. A source declaration,
 a simulated provider response or an installed skill is not live acceptance.

@@ -77,8 +77,40 @@ const inputSchema = z
 const secretSchema = z
   .object({
     key: z.string().regex(/^[a-z][a-z0-9_.-]+$/),
-    purpose: z.enum(["graphjin_source", "graphjin_api_auth", "pack_runtime"]),
+    purpose: z.enum([
+      "graphjin_source",
+      "graphjin_api_auth",
+      "pack_runtime",
+      "pack_oauth_client",
+      "pack_oauth_token",
+    ]),
     required: z.boolean().optional().default(true),
+  })
+  .strict();
+
+const oauthConnectionSchema = z
+  .object({
+    key: slug,
+    providerLabel: z.string().min(1),
+    authorizationUrl: z.string().url(),
+    tokenUrl: z.string().url(),
+    userInfoUrl: z.string().url(),
+    clientIdInput: z.string().min(1),
+    clientSecret: z.string().min(1),
+    accessToken: z.string().min(1),
+    refreshToken: z.string().min(1),
+    scopes: z.array(z.string().min(1)).min(1),
+    authorizationParams: z.record(z.string(), z.string()).optional(),
+    accountIdField: z.string().min(1).default("sub"),
+    accountLabelField: z.string().min(1).default("email"),
+  })
+  .strict();
+
+const permissionsSchema = z
+  .object({
+    network: z
+      .array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i))
+      .default([]),
   })
   .strict();
 
@@ -120,6 +152,8 @@ export const solutionPackManifestSchema = z
     compatibility: compatibilitySchema,
     inputs: z.array(inputSchema),
     secrets: z.array(secretSchema),
+    oauth: z.array(oauthConnectionSchema).default([]),
+    permissions: permissionsSchema.default({ network: [] }),
     artifacts: artifactsSchema,
     health: healthSchema,
   })
@@ -137,6 +171,33 @@ export const solutionPackManifestSchema = z
         seen.add(entry.key);
       });
     }
+    const inputs = new Set(manifest.inputs.map((input) => input.key));
+    const secrets = new Map(manifest.secrets.map((secret) => [secret.key, secret]));
+    const hosts = new Set(manifest.permissions.network.map((host) => host.toLowerCase()));
+    const connections = new Set<string>();
+    manifest.oauth.forEach((connection, index) => {
+      if (connections.has(connection.key)) {
+        ctx.addIssue({ code: "custom", message: "duplicate OAuth connection key", path: ["oauth", index, "key"] });
+      }
+      connections.add(connection.key);
+      if (!inputs.has(connection.clientIdInput)) {
+        ctx.addIssue({ code: "custom", message: "OAuth clientIdInput must reference a declared input", path: ["oauth", index, "clientIdInput"] });
+      }
+      for (const field of ["clientSecret", "accessToken", "refreshToken"] as const) {
+        if (!secrets.has(connection[field])) {
+          ctx.addIssue({ code: "custom", message: `OAuth ${field} must reference a declared secret`, path: ["oauth", index, field] });
+        }
+      }
+      for (const field of ["authorizationUrl", "tokenUrl", "userInfoUrl"] as const) {
+        const url = new URL(connection[field]);
+        if (url.protocol !== "https:") {
+          ctx.addIssue({ code: "custom", message: "OAuth endpoints must use HTTPS", path: ["oauth", index, field] });
+        }
+        if (!hosts.has(url.hostname.toLowerCase())) {
+          ctx.addIssue({ code: "custom", message: "OAuth endpoint host must be declared in permissions.network", path: ["oauth", index, field] });
+        }
+      }
+    });
   });
 
 export type SolutionPackManifest = z.infer<typeof solutionPackManifestSchema>;

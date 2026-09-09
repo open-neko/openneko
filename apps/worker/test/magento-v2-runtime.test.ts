@@ -13,6 +13,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const runtimeSource = resolve(here, "../src/packs/magento-v2-runtime.ts");
 const serviceSource = resolve(here, "../src/packs/service.ts");
+const adminSource = resolve(here, "../src/packs/magento-admin.ts");
 
 describe("Magento V2 GraphJin mutation aliases", () => {
   it("calls the expose_as field rather than the namespaced artifact identity", () => {
@@ -36,6 +37,7 @@ describe("Magento V2 GraphJin mutation aliases", () => {
     const source = [
       await readFile(runtimeSource, "utf8"),
       await readFile(serviceSource, "utf8"),
+      await readFile(adminSource, "utf8"),
     ].join("\n");
 
     expect(source).not.toMatch(/\bclass\s*[012]\b/i);

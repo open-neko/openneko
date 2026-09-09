@@ -268,8 +268,10 @@ export {
   executeApprovedActionRequest,
   getRegisteredActionKinds,
   registerActionAdapter,
+  registerFallbackActionAdapterResolver,
   RetryableActionAdapterError,
   type ActionAdapter,
+  type ActionAdapterResolver,
   type ActionExecutionInput,
   type ActionExecutionOutcome,
 } from "./action-executor";

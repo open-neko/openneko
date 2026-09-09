@@ -7,7 +7,8 @@ sources:
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
-    read_only: true
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: true }
 
   - key: source.google_workspace_drive
     name: google_workspace_drive
@@ -17,7 +18,8 @@ sources:
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
-    read_only: true
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: true }
 
   - key: source.google_workspace_calendar
     name: google_workspace_calendar
@@ -27,7 +29,8 @@ sources:
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
-    read_only: true
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: true }
 
   - key: source.google_workspace_sheets
     name: google_workspace_sheets
@@ -37,7 +40,8 @@ sources:
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
-    read_only: true
+    read_only: false
+    capabilities: { api.read: true, api.write: true, api.delete: false }
 
   - key: source.google_workspace_docs
     name: google_workspace_docs

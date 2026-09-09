@@ -1,5 +1,7 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { PackArtifact, SolutionPackBundle } from "@neko/packs";
+import { loadSolutionPack, type PackArtifact, type SolutionPackBundle } from "@neko/packs";
 import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packPolicyControlsWrite, packValue } from "../src/packs/declarative.js";
 import { nativeArtifactStateHash } from "../src/packs/artifact-state.js";
 
@@ -16,6 +18,24 @@ const inputs = { "service.base_url": "https://health.example.test" };
 const secrets = { "service.api_token": 'fixture-"token\\with\ncharacters' };
 
 describe("declarative pack configuration", () => {
+  it("exposes the installed Google Workspace writes only to the pack executor", async () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const workspace = await loadSolutionPack(resolve(here, "../../../packs/google-workspace"));
+    const update = declarativeGraphjinUpdate(workspace, {}, {
+      "google-workspace.access_token": "token",
+    }) as { roles: Array<{ name: string }>; update_sources: Array<Record<string, unknown>> };
+    expect(update.roles).toEqual([{ name: "pack_api_executor", comment: expect.any(String) }]);
+    const gmail = update.update_sources.find((source) => source.name === "google_workspace_gmail") as {
+      specs: Record<string, { operations: Record<string, Record<string, unknown>> }>;
+    };
+    expect(gmail.specs.gmail.operations.sendMessage).toEqual({
+      expose_mutation: true,
+      allowed_roles: ["pack_api_executor"],
+      expose_as: "gws_gmail_send_message",
+    });
+    expect(gmail.specs.gmail.operations.getMessage).toBeUndefined();
+  });
+
   it("rejects GraphJin readiness checks for a pack without GraphJin", () => {
     const pack = bundle();
     pack.manifest.artifacts = { skills: [] };
@@ -44,6 +64,12 @@ describe("declarative pack configuration", () => {
       read_only: false,
       capabilities: { "api.read": true, "api.write": true, "api.delete": false },
     };
+    (pack.artifacts[1]!.content as Record<string, unknown>).paths = {
+      "/health-summary": {
+        get: { operationId: "getHealthSummary" },
+        put: { operationId: "updateHealth" },
+      },
+    };
     expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
       update_sources: [{
         name: "service_health",
@@ -55,6 +81,55 @@ describe("declarative pack configuration", () => {
     expect(declarativePackPermissions(pack)).toEqual({
       database: "none",
       apiWrite: "requested; actions require an enabled policy",
+    });
+  });
+
+  it("exposes only operations declared by a governed pack action", () => {
+    const pack = bundle();
+    pack.artifacts[0]!.content = {
+      ...(pack.artifacts[0]!.content as Record<string, unknown>),
+      read_only: false,
+      capabilities: { "api.read": true, "api.write": true, "api.delete": false },
+    };
+    (pack.artifacts[1]!.content as Record<string, unknown>).paths = {
+      "/health-summary": {
+        get: { operationId: "getHealthSummary" },
+        put: { operationId: "updateHealth" },
+      },
+    };
+    pack.artifacts.push({
+      kind: "action",
+      key: "action.change_health",
+      targetRef: "fixture.change_health",
+      path: "actions/change-health.yaml",
+      hash: "fixture-action",
+      content: {
+        kind: "fixture.change_health",
+        adapter: {
+          kind: "graphjin_api_operation",
+          source: "service_health",
+          spec: "service-health",
+          operations: {
+            update: { operationId: "updateHealth", mutationRoot: "fixture_update_health" },
+          },
+        },
+      },
+    });
+    expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
+      roles: [{ name: "pack_api_executor" }],
+      update_sources: [{
+        specs: {
+          "service-health": {
+            operations: {
+              updateHealth: {
+                expose_mutation: true,
+                allowed_roles: ["pack_api_executor"],
+                expose_as: "fixture_update_health",
+              },
+            },
+          },
+        },
+      }],
     });
   });
 

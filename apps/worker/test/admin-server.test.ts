@@ -272,6 +272,10 @@ describe("worker solution-pack admin routes", () => {
       })),
       upload: vi.fn(async () => ({ packId: "service-health", version: "0.1.0" })),
       review: vi.fn(async () => ({ reviewHash: "reviewed" })),
+      oauthStatus: vi.fn(async () => ({ connected: true, account: { label: "owner@example.test" } })),
+      beginOAuth: vi.fn(async () => ({ authorizationUrl: "https://accounts.example.test/authorize" })),
+      completeOAuth: vi.fn(async () => ({ connected: true })),
+      disconnectOAuth: vi.fn(async () => true),
       magentoStoreManagement: vi.fn(async () => ({ controls: [{ domain: "catalog" }] })),
       updateMagentoStoreManagement: vi.fn(async (input: Record<string, unknown>) => ({ input })),
     };
@@ -354,6 +358,22 @@ describe("worker solution-pack admin routes", () => {
       );
       expect(updateManagement.status).toBe(200);
       expect(surface.updateMagentoStoreManagement).toHaveBeenCalledWith(managementInput);
+
+      const oauthBase = `http://127.0.0.1:${srv.port}/admin/packs/google-workspace/oauth/workspace`;
+      expect((await fetch(`${oauthBase}/status`)).status).toBe(200);
+      expect(surface.oauthStatus).toHaveBeenCalledWith("google-workspace", "workspace");
+      for (const action of ["begin", "complete"] as const) {
+        const response = await fetch(`${oauthBase}/${action}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ state: "state" }),
+        });
+        expect(response.status).toBe(200);
+        expect(surface[action === "begin" ? "beginOAuth" : "completeOAuth"])
+          .toHaveBeenCalledWith("google-workspace", "workspace", { state: "state" });
+      }
+      expect((await fetch(`${oauthBase}/disconnect`, { method: "POST", body: "{}" })).status).toBe(200);
+      expect(surface.disconnectOAuth).toHaveBeenCalledWith("google-workspace", "workspace");
     } finally {
       await srv.close();
     }
