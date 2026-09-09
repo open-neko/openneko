@@ -439,9 +439,12 @@ services:
     restart: "no"
 
   graphjin:
-    # The upstream GraphJin image is distroless, while the reload supervisor
-    # requires a shell. Reuse OpenNeko's released Alpine GraphJin runtime.
-    image: ${OPENNEKO_GRAPHJIN_IMAGE:-ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}}
+    # Use the same locally built, pinned runtime as the records data planes.
+    # Released installs use the matching released image in the embedded
+    # Compose file; this source Compose file must exercise the current pin.
+    build:
+      context: .
+      target: records-graphjin
     entrypoint:
       - /bin/sh
       - -c
