@@ -315,6 +315,7 @@ services:
     build:
       context: .
       target: records-graphjin
+    user: "1001:999"
     restart: unless-stopped
     depends_on:
       records-graphjin-config-init:
@@ -346,6 +347,7 @@ services:
     build:
       context: .
       target: records-graphjin
+    user: "1001:999"
     restart: unless-stopped
     depends_on:
       records-graphjin-config-init:
@@ -445,6 +447,7 @@ services:
     build:
       context: .
       target: records-graphjin
+    user: "1001:999"
     entrypoint:
       - /bin/sh
       - -c

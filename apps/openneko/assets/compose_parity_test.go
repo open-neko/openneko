@@ -20,6 +20,7 @@ type composeParityDocument struct {
 
 type composeParityService struct {
 	Image       string                             `yaml:"image"`
+	User        string                             `yaml:"user"`
 	Entrypoint  []string                           `yaml:"entrypoint"`
 	Restart     string                             `yaml:"restart"`
 	ReadOnly    bool                               `yaml:"read_only"`
@@ -589,9 +590,31 @@ func TestRecordsGraphJinEndpointsRemainPrivate(t *testing.T) {
 			if len(service.Ports) != 0 {
 				t.Errorf("%s %s must not publish host ports: %v", label, serviceName, service.Ports)
 			}
+			if service.User != "1001:999" {
+				t.Errorf("%s %s user = %q, want 1001:999", label, serviceName, service.User)
+			}
 			if got := composeHealthcheckTest(t, label, serviceName, service); !reflect.DeepEqual(got, wantHealthcheck) {
 				t.Errorf("%s %s healthcheck must accept an authenticated-error HTTP response as ready:\ngot:  %v\nwant: %v", label, serviceName, got, wantHealthcheck)
 			}
+		}
+	}
+}
+
+func TestCustomerGraphJinDoesNotOwnWorkerConfigAsRoot(t *testing.T) {
+	rootRaw, err := os.ReadFile("../../../compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, document := range map[string]composeParityDocument{
+		"source":   loadComposeParityDocument(t, rootRaw),
+		"packaged": loadComposeParityDocument(t, packagedRaw),
+	} {
+		if got := document.Services["graphjin"].User; got != "1001:999" {
+			t.Errorf("%s graphjin user = %q, want 1001:999", label, got)
 		}
 	}
 }

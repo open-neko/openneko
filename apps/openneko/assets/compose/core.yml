@@ -250,6 +250,7 @@ services:
   # the image entrypoint exits before binding a port if the config is absent.
   records-graphjin:
     image: ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}
+    user: "1001:999"
     restart: unless-stopped
     depends_on:
       records-graphjin-config-init:
@@ -277,6 +278,7 @@ services:
   # replayed against the private watch-control roots.
   records-watch-graphjin:
     image: ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}
+    user: "1001:999"
     restart: unless-stopped
     depends_on:
       records-graphjin-config-init:
@@ -376,6 +378,7 @@ services:
     # volume. The fallback preserves main-supervisor/release-image skew during
     # the first release that introduces the image-owned path.
     image: ${OPENNEKO_GRAPHJIN_IMAGE:-ghcr.io/open-neko/records-graphjin:${OPENNEKO_VERSION:-latest}}
+    user: "1001:999"
     entrypoint:
       - /bin/sh
       - -c
