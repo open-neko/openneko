@@ -101,8 +101,8 @@ services:
       context: .
       target: graphjin-runtime
       args:
-        GRAPHJIN_VERSION: "3.20.47"
-    image: openneko-backend-eval-graphjin:3.20.47
+        GRAPHJIN_VERSION: "3.20.75"
+    image: openneko-backend-eval-graphjin:3.20.75
     entrypoint: ["/sbin/tini", "--", "graphjin"]
     command: ["serve", "--path", "/config"]
     restart: unless-stopped
