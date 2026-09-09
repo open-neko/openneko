@@ -564,6 +564,28 @@ describe("makeSandboxRunCore", () => {
     expect(execCommand).toContain('export GEMINI_API_KEY="$api_key"');
   });
 
+  it("serializes pack actions into the isolated Work job", async () => {
+    const runCore = makeSandboxRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      onLog: () => {},
+    });
+    const input = fakeInput(async () => {});
+    input.packActions = [{
+      kind: "magento.manage_catalog",
+      description: "Change Magento catalog data.",
+      scope: "external",
+      default_mode: "ask",
+    }];
+
+    await runCore(input);
+
+    expect(jobCapture.jobs.at(-1)).toMatchObject({
+      kind: "work",
+      packActions: input.packActions,
+      pluginActions: [],
+    });
+  });
+
   it("serializes and drains streamed events before accepting the result", async () => {
     h.state.execLines = [
       `__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "first" })}\n`,

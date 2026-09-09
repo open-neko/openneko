@@ -1494,7 +1494,7 @@ export function buildLibraryServer(
  * only needs the {kind, description, default_mode} triples to build
  * tools.
  */
-export interface PluginActionDescriptor {
+interface GovernedActionDescriptor {
   kind: string;
   description: string;
   /** Fixed policy scope. External preserves the plugin compatibility default. */
@@ -1516,6 +1516,10 @@ export interface PluginActionDescriptor {
   /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
   example?: Record<string, unknown>;
 }
+
+export interface PluginActionDescriptor extends GovernedActionDescriptor {}
+
+export interface PackActionDescriptor extends GovernedActionDescriptor {}
 
 function modeForScope(
   default_mode: PluginActionDescriptor["default_mode"],
@@ -1562,6 +1566,15 @@ export interface BuildPluginActionServerOptions {
   controlPlane?: AgentControlPlane;
 }
 
+export interface BuildPackActionServerOptions {
+  orgId: string;
+  threadId: string;
+  runId: string;
+  descriptors: readonly PackActionDescriptor[];
+  emit: (event: AgentEvent) => Promise<void> | void;
+  controlPlane?: AgentControlPlane;
+}
+
 /**
  * One MCP tool per registered plugin action kind. Each tool's handler
  * routes through the action_policy engine:
@@ -1594,8 +1607,9 @@ export interface BuildPluginActionServerOptions {
  * Returns null when no kinds are registered (or all are deny) so the
  * caller can omit the server from the MCP map.
  */
-export function buildPluginActionServer(
-  opts: BuildPluginActionServerOptions,
+function buildGovernedActionServer(
+  opts: BuildPluginActionServerOptions | BuildPackActionServerOptions,
+  serverName: "neko_plugin_actions" | "neko_pack_actions",
 ): ReturnType<typeof createMcpServer> | null {
   const active = opts.descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return null;
@@ -1907,8 +1921,20 @@ export function buildPluginActionServer(
   });
 
   return createMcpServer({
-    name: "neko_plugin_actions",
+    name: serverName,
     version: "1.0.0",
     tools,
   });
+}
+
+export function buildPluginActionServer(
+  opts: BuildPluginActionServerOptions,
+): ReturnType<typeof createMcpServer> | null {
+  return buildGovernedActionServer(opts, "neko_plugin_actions");
+}
+
+export function buildPackActionServer(
+  opts: BuildPackActionServerOptions,
+): ReturnType<typeof createMcpServer> | null {
+  return buildGovernedActionServer(opts, "neko_pack_actions");
 }

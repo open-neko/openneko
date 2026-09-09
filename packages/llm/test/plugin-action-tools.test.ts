@@ -30,7 +30,7 @@ vi.mock("../src/mcp-server", () => ({
   ),
 }));
 
-import { buildPluginActionServer } from "../src/work/tools";
+import { buildPackActionServer, buildPluginActionServer } from "../src/work/tools";
 
 function controlPlane(
   result: Awaited<
@@ -197,5 +197,72 @@ describe("auto-mode plugin action tools", () => {
       expect.objectContaining(expectedScope),
     );
     expect(emit).toHaveBeenCalledWith(expect.objectContaining(expectedScope));
+  });
+});
+
+describe("pack action tools", () => {
+  beforeEach(() => sdk.tools.clear());
+
+  it("creates a governed approval request without a plugin descriptor", async () => {
+    const evaluateActionPolicy = vi.fn(async () => ({
+      decision: "needs_approval" as const,
+      mode: "ask" as const,
+      reason: "policy requires approval",
+      policy: { id: "policy-magento", name: "Magento governed store changes" },
+    }));
+    const createActionRequest = vi.fn(async () => ({
+      id: "action-magento",
+      status: "pending_approval",
+    }));
+    const emit = vi.fn();
+
+    buildPackActionServer({
+      orgId: "org-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      descriptors: [{
+        kind: "magento.manage_catalog",
+        description: "Change Magento catalog data.",
+        scope: "external",
+        default_mode: "ask",
+      }],
+      emit,
+      controlPlane: {
+        evaluateActionPolicy,
+        createActionRequest,
+      } as unknown as AgentControlPlane,
+    });
+
+    const registered = sdk.tools.get("magento.manage_catalog");
+    if (!registered) throw new Error("pack action tool was not registered");
+    const payload = {
+      operation: "product_update",
+      rows: [{ entity_ref: "24-MB01" }],
+    };
+    const response = await registered.handler({
+      intent: "Change one Magento price for the live test.",
+      target: "24-MB01",
+      payload,
+    });
+
+    expect(createActionRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "magento.manage_catalog",
+        target: "24-MB01",
+        payload,
+        status: "pending_approval",
+        workRunId: "run-1",
+      }),
+    );
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "action_request_emit",
+        action_request_id: "action-magento",
+      }),
+    );
+    expect(JSON.parse(response.content[0]?.text ?? "{}")).toMatchObject({
+      decision: "pending_approval",
+      action_request_id: "action-magento",
+    });
   });
 });

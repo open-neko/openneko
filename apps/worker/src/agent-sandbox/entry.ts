@@ -48,6 +48,7 @@ interface SandboxJob {
   model?: string;
   backendState?: Record<string, unknown>;
   pluginActions?: RunAgentBackendInput["pluginActions"];
+  packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
   dataSurface?: RunAgentBackendInput["dataSurface"];
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
@@ -231,6 +232,7 @@ export async function main(): Promise<void> {
       workspace: job.workspace,
       backendState: job.backendState,
       pluginActions: job.pluginActions ?? [],
+      packActions: job.packActions ?? [],
       sourceConfigEnabled: job.sourceConfigEnabled ?? false,
       dataSurface: job.dataSurface ?? "customer",
       ...(job.graphjinToolPolicy

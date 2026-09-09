@@ -17,6 +17,10 @@ current entity before proposing a change. Use only an operation installed in
 `magento.manage_catalog`. Include a stable idempotency key, one `entity_ref`
 per row, path parameters, and the Magento request body.
 
+For a single product update, use `operation: product_update`. Each row must put
+the SKU in `path.sku` and the update in `body.product`; for example:
+`{"entity_ref":"24-MB01","path":{"sku":"24-MB01"},"body":{"product":{"sku":"24-MB01","price":34.01}}}`.
+
 Show the before image, requested diff, approval requirement, limits, row count,
 and whether the operation is reversible. Unknown attributes and price, tax,
 visibility, status, website assignment, or destructive changes escalate to

@@ -31,6 +31,7 @@ const SERVERS = [
   "neko_source_config_manager",
   "neko_audit",
   "neko_plugin_actions",
+  "neko_pack_actions",
 ];
 
 function ctx() {
@@ -48,6 +49,14 @@ function ctx() {
         pluginId: "@open-neko/plugin-slack",
         description: "send",
         scope: "external" as const,
+      },
+    ],
+    packActions: [
+      {
+        kind: "magento.manage_catalog",
+        description: "Change Magento catalog data.",
+        scope: "external" as const,
+        default_mode: "ask" as const,
       },
     ],
     controlPlane: new BrokerControlPlane("http://127.0.0.1:9", "tok"),

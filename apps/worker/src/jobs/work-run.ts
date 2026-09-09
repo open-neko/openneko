@@ -9,6 +9,7 @@ import {
   registerAgentBrokerEventSink,
   runChatTurn,
   scrubAgentEvent,
+  listPackActionDescriptors,
   type RunChannel,
 } from "@neko/llm/work";
 import {
@@ -86,6 +87,7 @@ export async function runWorkRun(
   const pluginActions = includeRecordActionDescriptors(
     getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
   );
+  const packActions = await listPackActionDescriptors(orgId);
 
   // Same gate the workflow job runs: if the boot-time provider sync lost a
   // race with a gateway restart, this is the retry — memoized on success, so
@@ -106,6 +108,7 @@ export async function runWorkRun(
         channel,
         emit,
         pluginActions,
+        packActions,
         observer: runTelemetry.observer,
       },
       agentRuntimeDepsFromConfig(agentRuntime, broker),

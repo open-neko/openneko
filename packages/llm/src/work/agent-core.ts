@@ -21,6 +21,7 @@ import {
 } from "./data-surface";
 import {
   buildPluginActionServer,
+  buildPackActionServer,
   buildPluginManagerServer,
   buildAuditViewerServer,
   buildChannelManagerServer,
@@ -34,6 +35,7 @@ import {
   buildSkillBuilderServer,
   buildWorkMemoryServer,
   type PluginActionDescriptor,
+  type PackActionDescriptor,
 } from "./tools";
 
 export interface RunAgentBackendInput {
@@ -47,6 +49,8 @@ export interface RunAgentBackendInput {
   workspace: AgentWorkspace;
   backendState?: Record<string, unknown>;
   pluginActions: readonly PluginActionDescriptor[];
+  /** Installed pack actions, discovered independently of plugins. */
+  packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
   /** Selects the isolated data plane for this turn. */
@@ -86,6 +90,7 @@ export async function runAgentBackend(
     workspace,
     backendState,
     pluginActions,
+    packActions = [],
     sourceConfigEnabled = false,
     dataSurface = "customer",
     graphjinToolPolicy,
@@ -118,6 +123,16 @@ export async function runAgentBackend(
         threadId,
         runId,
         descriptors: pluginActions,
+        emit,
+        controlPlane,
+      })
+    : null;
+  const packActionServer = mcp && !recordsOnly
+    ? buildPackActionServer({
+        orgId,
+        threadId,
+        runId,
+        descriptors: packActions,
         emit,
         controlPlane,
       })
@@ -210,6 +225,7 @@ export async function runAgentBackend(
           : {}),
         neko_audit: buildAuditViewerServer({ orgId, runId, controlPlane }),
         ...(pluginActionServer ? { neko_plugin_actions: pluginActionServer } : {}),
+        ...(packActionServer ? { neko_pack_actions: packActionServer } : {}),
       }
     : undefined;
 
@@ -240,6 +256,9 @@ export async function runAgentBackend(
             : {}),
           OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(
             recordsOnly ? [] : (pluginActions ?? []),
+          ),
+          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(
+            recordsOnly ? [] : packActions,
           ),
           ...(recordScope
             ? { OPENNEKO_MCP_RECORD_SCOPE: JSON.stringify(recordScope) }
