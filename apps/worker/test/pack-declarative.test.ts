@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PackArtifact, SolutionPackBundle } from "@neko/packs";
-import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packValue } from "../src/packs/declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packPolicyControlsWrite, packValue } from "../src/packs/declarative.js";
 import { nativeArtifactStateHash } from "../src/packs/artifact-state.js";
 
 function bundle(): SolutionPackBundle {
@@ -124,10 +124,26 @@ describe("declarative pack configuration", () => {
     expect(() => packValue("{{missing}}", {})).toThrow();
   });
 
-  it("leaves every pack policy's activation with the administrator", () => {
-    expect(installedPackPolicyEnabled()).toBe(false);
-    expect(installedPackPolicyEnabled(false)).toBe(false);
-    expect(installedPackPolicyEnabled(true)).toBe(true);
+  it("disables only write policies on first install and preserves later admin choices", () => {
+    expect(installedPackPolicyEnabled({ declared: true, controlsWrite: true })).toBe(false);
+    expect(installedPackPolicyEnabled({ declared: true, controlsWrite: false })).toBe(true);
+    expect(installedPackPolicyEnabled({ declared: false, controlsWrite: false })).toBe(false);
+    expect(installedPackPolicyEnabled({ declared: false, controlsWrite: true, existing: true })).toBe(true);
+
+    const pack = bundle();
+    pack.artifacts.push({
+      kind: "action",
+      key: "action.change_health",
+      targetRef: "fixture.change_health",
+      path: "actions/change-health.yaml",
+      hash: "fixture-action",
+      content: {
+        kind: "fixture.change_health",
+        adapter: { kind: "graphjin_api_operation" },
+      },
+    });
+    expect(packPolicyControlsWrite(pack, { appliesToKinds: ["fixture.change_health"] })).toBe(true);
+    expect(packPolicyControlsWrite(pack, { appliesToKinds: ["fixture.read_health"] })).toBe(false);
     expect(nativeArtifactStateHash("policy", { name: "Fixture", enabled: false }))
       .toBe(nativeArtifactStateHash("policy", { name: "Fixture", enabled: true }));
   });

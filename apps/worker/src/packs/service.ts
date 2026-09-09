@@ -2,7 +2,7 @@ import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedP
 import { parse as parseYaml } from "yaml";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
 import { mapSavedQueryMetric } from "../jobs/deterministic-metric.js";
-import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packVariables } from "./declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packPolicyControlsWrite, packVariables } from "./declarative.js";
 import { createHmac, randomUUID } from "node:crypto";
 import {
   cp,
@@ -2553,7 +2553,11 @@ export class PackService {
             limits: value.limits as Record<string, unknown>,
             approver_role: value.approverRole ? String(value.approverRole) : null,
             priority: Number(value.priority),
-            enabled: installedPackPolicyEnabled(existingPolicy?.enabled),
+            enabled: installedPackPolicyEnabled({
+              declared: Boolean(value.enabled),
+              controlsWrite: packPolicyControlsWrite(bundle, value),
+              ...(existingPolicy ? { existing: existingPolicy.enabled } : {}),
+            }),
             updated_at: new Date(),
           };
           if (existingPolicy) await tx.update(action_policy).set(set).where(eq(action_policy.id, existingPolicy.id));

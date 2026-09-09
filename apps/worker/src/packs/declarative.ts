@@ -166,9 +166,28 @@ export function declarativePackPermissions(bundle: SolutionPackBundle): Record<s
   return { database, apiWrite };
 }
 
-/** Pack policy activation belongs to the administrator, including across upgrades. */
-export function installedPackPolicyEnabled(existing?: boolean): boolean {
-  return existing ?? false;
+export function packPolicyControlsWrite(
+  bundle: SolutionPackBundle,
+  policy: Record<string, unknown>,
+): boolean {
+  const kinds = new Set((policy.appliesToKinds as string[] | undefined) ?? []);
+  return bundle.artifacts.some(artifact => {
+    if (artifact.kind !== "action") return false;
+    const action = artifact.content as Record<string, unknown>;
+    if (!kinds.has(String(action.kind))) return false;
+    const adapter = action.adapter as Record<string, unknown> | undefined;
+    return ["graphjin_api_operation", "magento_governed_operation", "magento_changeset"]
+      .includes(String(adapter?.kind));
+  });
+}
+
+/** Write policies start disabled; upgrades retain the administrator's current choice. */
+export function installedPackPolicyEnabled(input: {
+  declared: boolean;
+  controlsWrite: boolean;
+  existing?: boolean;
+}): boolean {
+  return input.existing ?? (input.controlsWrite ? false : input.declared);
 }
 
 /** Existing generated packs use these time-window variables; authored declarations override them. */
