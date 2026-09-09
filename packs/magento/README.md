@@ -105,12 +105,23 @@ Installation adds focused skills for recurring Magento work:
 - managing products, categories, assignments, and prices through change-sets;
   and
 - designing and running capped, approval-required promotions.
+- checking the installed release against Adobe Magento security bulletins.
 
 Ask OpenNeko for the task in ordinary language. The matching skill is selected
-automatically; operators do not need to remember its installed ID. All eight
+automatically; operators do not need to remember its installed ID. All nine
 skills install even when governed Magento writes are unavailable. The order
 investigation still works read-only when its optional private-note action is
 blocked.
+
+The security advisory workflow runs daily at 06:00 UTC. OpenShell deployments
+must explicitly allow the read-only advisory hosts for the agent sandbox:
+
+```sh
+OPENNEKO_AGENT_EXTRA_EGRESS_HOSTS=helpx.adobe.com,experienceleague.adobe.com
+```
+
+If these hosts are not allowed, the workflow reports that live Adobe advisory
+data is unavailable and does not guess the security status.
 
 ## Optional Magento Integration token
 

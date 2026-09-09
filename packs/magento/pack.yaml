@@ -111,6 +111,7 @@ artifacts:
     - skills/magento-diagnose-platform-health
     - skills/magento-manage-catalog
     - skills/magento-run-promotions
+    - skills/magento-security-advisories
 
 health:
   requiredPreflight: [mariadb-connect, mariadb-read-only, magento-version, magento-scopes]

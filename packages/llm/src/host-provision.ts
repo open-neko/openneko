@@ -467,6 +467,7 @@ function deriveAgentEgress(
 const OPERATOR_AGENT_ENV = {
   provider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || "",
   host: process.env.OPENNEKO_AGENT_MODEL_HOST || "",
+  extraEgressHosts: process.env.OPENNEKO_AGENT_EXTRA_EGRESS_HOSTS || "",
   keyEnv: process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || "",
   hermesHome: process.env.OPENNEKO_AGENT_HERMES_HOME || "",
 };
@@ -493,6 +494,14 @@ function modelHosts(value: string): ProviderEndpoint[] {
         ? { host: hostPort[1]!, port: Number(hostPort[2]) }
         : { host: entry };
     });
+}
+
+function extraEgressHosts(value: string): ProviderEndpoint[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((host) => ({ host }));
 }
 
 function serializeModelEndpoint(endpoint: ProviderEndpoint): string {
@@ -525,6 +534,9 @@ function agentRuntimeLaunchConfig(args: {
     modelHosts: OPERATOR_AGENT_ENV.host
       ? modelHosts(OPERATOR_AGENT_ENV.host)
       : derivedEndpoints,
+    ...(OPERATOR_AGENT_ENV.extraEgressHosts
+      ? { extraEgressHosts: extraEgressHosts(OPERATOR_AGENT_ENV.extraEgressHosts) }
+      : {}),
     ...(keyEnv
       ? { keyAliases: [{ from: credentialName, to: keyEnv }] }
       : {}),

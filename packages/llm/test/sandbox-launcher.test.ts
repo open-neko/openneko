@@ -137,6 +137,7 @@ const {
 describe("sandboxLauncherOptionsFromEnv", () => {
   it("ignores a persisted operator binary and exposes only model hosts", () => {
     vi.stubEnv("OPENNEKO_AGENT_MODEL_HOST", "models.example.com,models.dev");
+    vi.stubEnv("OPENNEKO_AGENT_EXTRA_EGRESS_HOSTS", "helpx.adobe.com, experienceleague.adobe.com");
     vi.stubEnv(
       "OPENNEKO_AGENT_MODEL_BINARY",
       "/usr/local/uv/python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
@@ -146,6 +147,10 @@ describe("sandboxLauncherOptionsFromEnv", () => {
       expect(options.modelHosts).toEqual([
         { host: "models.example.com" },
         { host: "models.dev" },
+      ]);
+      expect(options.extraEgressHosts).toEqual([
+        { host: "helpx.adobe.com" },
+        { host: "experienceleague.adobe.com" },
       ]);
       expect(options).not.toHaveProperty("modelEgress");
     } finally {
