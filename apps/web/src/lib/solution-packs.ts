@@ -1,4 +1,3 @@
-import type { ActionDescriptor } from "@neko/llm/work";
 const PACK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export const packReadActions = ["inspect", "plan", "status", "doctor"] as const;
@@ -55,11 +54,4 @@ export async function readPackRequest(request: Request, limit: number): Promise<
     }
   } finally { reader?.releaseLock(); }
   return Buffer.concat(chunks, size);
-}
-
-
-export async function getPackActionDescriptors(owner: string): Promise<ActionDescriptor[]> {
-  const result = await requestPackWorker("/admin/packs/actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner }) });
-  if (result.status !== 200) throw new Error("Pack actions could not be loaded");
-  return (result.body as { actions: ActionDescriptor[] }).actions;
 }

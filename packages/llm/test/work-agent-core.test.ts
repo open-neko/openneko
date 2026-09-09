@@ -53,20 +53,17 @@ describe("runAgentBackend", () => {
       workspace,
       controlPlane,
       pluginActions: [],
-      packActions: [{ kind: "pack.fixture.read", description: "Read fixture" }],
       emit: async () => {},
     });
 
     expect(captured?.mcpServers).toEqual(
       expect.objectContaining({
-        neko_pack_actions: expect.anything(),
         neko_interaction: expect.anything(),
         neko_graphjin: expect.anything(),
         neko_records: expect.anything(),
       }),
     );
     expect(captured?.mcpBridgeEnv).toMatchObject({
-      OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify([{ kind: "pack.fixture.read", description: "Read fixture" }]),
       OPENNEKO_MCP_MODE: "work",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_MCP_RUN_ID: "run-1",

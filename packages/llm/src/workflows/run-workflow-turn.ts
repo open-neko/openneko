@@ -1,4 +1,3 @@
-import type { ActionDescriptor } from "../work/tools";
 import type { AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
@@ -156,7 +155,6 @@ export type RunWorkflowTurnOptions = {
    * registry snapshot; tests may omit it.
    */
   pluginActions?: readonly PluginActionPromptDescriptor[];
-  packActions?: readonly ActionDescriptor[];
 };
 
 export type RunWorkflowTurnDeps = {
@@ -259,7 +257,6 @@ export async function runWorkflowTurn(
       workspace,
       knowledge,
       pluginActions: opts.pluginActions ?? [],
-      packActions: opts.packActions ?? [],
     });
 
     const seedMessage = synthesizeSeedMessage(

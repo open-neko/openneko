@@ -199,14 +199,3 @@ describe("auto-mode plugin action tools", () => {
     expect(emit).toHaveBeenCalledWith(expect.objectContaining(expectedScope));
   });
 });
-
-
-it("honors a worker preflight that changes an automatic request to pending approval", async () => {
-  const plane = controlPlane({ status: "failed", error: "must not execute" });
-  plane.createActionRequest = async () => ({ id: "prepared", status: "pending_approval" });
-  const enqueue = vi.fn(); plane.enqueueActionExecute = enqueue;
-  buildPluginActionServer({ orgId: "org-1", threadId: "thread-1", runId: "run-1", descriptors: [{ kind: "prepared_read", description: "Read", default_mode: "auto" }], emit: () => {}, controlPlane: plane as AgentControlPlane });
-  const response = await sdk.tools.get("prepared_read")!.handler({ payload: {} });
-  expect(JSON.parse(response.content[0]!.text).status).toBe("pending_approval");
-  expect(enqueue).not.toHaveBeenCalled();
-});

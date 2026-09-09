@@ -176,7 +176,6 @@ import {
 } from "./workflow-scheduler.js";
 import { startWorkflowApiDispatcher } from "./workflow-api-dispatcher.js";
 import { PackService } from "./packs/service.js";
-import { registerPackActionRuntime } from "./packs/actions.js";
 import { registerPackActionPreflight } from "./packs/action-preflight.js";
 import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
 
@@ -580,7 +579,21 @@ const server = createServer(
         return getInstallPolicyForOrg(ADMIN_ORG_ID);
       },
     },
-    packs: packService,
+    packs: {
+      upload: (bytes, input) => packService.upload(bytes, input),
+      review: (packId, input, operation) => packService.review(packId, input, operation),
+      list: () => packService.list(),
+      inspect: (packId, version) => packService.inspect(packId, version),
+      plan: (packId, version) => packService.plan(packId, version),
+      status: (packId) => packService.status(packId),
+      doctor: (packId) => packService.doctor(packId),
+      install: (packId, input) => packService.install(packId, input),
+      configure: (packId, input) => packService.configure(packId, input),
+      upgrade: (packId, input) => packService.upgrade(packId, input),
+      uninstall: (packId, input) => packService.uninstall(packId, input),
+      magentoStoreManagement: () => packService.magentoStoreManagement(),
+      updateMagentoStoreManagement: (input) => packService.updateMagentoStoreManagement(input),
+    },
     connect: {
       getConnectProviders: () => pluginRegistry?.getConnectProviders() ?? [],
       getOperatorConnectStatus: (operatorId) =>
@@ -746,7 +759,6 @@ const unregisterRecordArtifactImportPreflight = registerRecordArtifactImportActi
 });
 const unregisterPackActionPreflight = registerPackActionPreflight();
 const unregisterMagentoV2Runtime = registerMagentoV2Runtime();
-const unregisterPackActionRuntime = await registerPackActionRuntime();
 // Only now may the web process create action requests through this worker:
 // every worker-owned preflight hook is registered and will finish before the
 // request id is returned for an approval card.
@@ -1609,7 +1621,6 @@ const shutdown = async (signal: string) => {
   unregisterRecordArtifactImportPreflight();
   unregisterRecordSalesforcePreflight();
   unregisterPackActionPreflight();
-  unregisterPackActionRuntime();
   server.close();
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {

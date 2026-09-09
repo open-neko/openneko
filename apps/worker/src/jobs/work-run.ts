@@ -1,4 +1,3 @@
-import { packActionDescriptors } from "../packs/actions.js";
 import { ensureHostConfigProvisioned, type AgentEvent } from "@neko/llm";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { db, eq, skill_usage } from "@neko/db";
@@ -92,7 +91,6 @@ export async function runWorkRun(
   // race with a gateway restart, this is the retry — memoized on success, so
   // the healthy path costs nothing. Without it, channel-triggered runs
   // stayed broken until a settings save or a worker restart.
-  const packActions = await packActionDescriptors(orgId, run.actor_user_id ? `user:${run.actor_user_id}` : "solo");
   const agentRuntime = await ensureHostConfigProvisioned(orgId);
 
   const broker = await ensureAgentBroker();
@@ -108,7 +106,6 @@ export async function runWorkRun(
         channel,
         emit,
         pluginActions,
-        packActions,
         observer: runTelemetry.observer,
       },
       agentRuntimeDepsFromConfig(agentRuntime, broker),

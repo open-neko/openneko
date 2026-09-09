@@ -21,8 +21,6 @@ import {
 } from "./data-surface";
 import {
   buildPluginActionServer,
-  buildActionServer,
-  type ActionDescriptor,
   buildPluginManagerServer,
   buildAuditViewerServer,
   buildChannelManagerServer,
@@ -49,7 +47,6 @@ export interface RunAgentBackendInput {
   workspace: AgentWorkspace;
   backendState?: Record<string, unknown>;
   pluginActions: readonly PluginActionDescriptor[];
-  packActions?: readonly ActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
   /** Selects the isolated data plane for this turn. */
@@ -89,7 +86,6 @@ export async function runAgentBackend(
     workspace,
     backendState,
     pluginActions,
-    packActions,
     sourceConfigEnabled = false,
     dataSurface = "customer",
     graphjinToolPolicy,
@@ -126,8 +122,6 @@ export async function runAgentBackend(
         controlPlane,
       })
     : null;
-
-  const packActionServer = mcp && !recordsOnly ? buildActionServer({ orgId, threadId, runId, descriptors: packActions ?? [], emit, controlPlane, serverName: "neko_pack_actions" }) : null;
 
   const mcpServers = mcp
     ? recordsOnly
@@ -180,7 +174,6 @@ export async function runAgentBackend(
           emit,
           controlPlane,
         }),
-        ...(packActionServer ? { neko_pack_actions: packActionServer } : {}),
         neko_plugin_manager: buildPluginManagerServer({
           orgId,
           runId,
@@ -245,7 +238,6 @@ export async function runAgentBackend(
                   serializeGraphjinMcpToolPolicy(graphjinToolPolicy),
               }
             : {}),
-          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(recordsOnly ? [] : (packActions ?? [])),
           OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(
             recordsOnly ? [] : (pluginActions ?? []),
           ),

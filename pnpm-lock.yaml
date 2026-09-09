@@ -140,9 +140,6 @@ importers:
       '@neko/records':
         specifier: workspace:*
         version: link:../../packages/records
-      '@neko/secret-crypt':
-        specifier: workspace:^
-        version: link:../../packages/secret-crypt
       '@neko/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry

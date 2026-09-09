@@ -1,4 +1,3 @@
-import { packActionDescriptors } from "../packs/actions.js";
 import type { WorkflowRunFirePayload } from "@neko/db/jobs";
 import {
   ensureHostConfigProvisioned,
@@ -401,7 +400,6 @@ export async function runWorkflowRunFire(
       const pluginActions = includeRecordActionDescriptors(
         getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
       );
-      const packActions = await packActionDescriptors(payload.orgId, prepared.workflow.ownerUserId ? `user:${prepared.workflow.ownerUserId}` : `workflow:${prepared.workflowRun.id}`);
       const broker = await ensureAgentBroker();
       const abort = new AbortController();
       const unregister = registerAgentCanceller(() => abort.abort());
@@ -437,7 +435,6 @@ export async function runWorkflowRunFire(
             emit: guardedEmit,
             signal: abort.signal,
             pluginActions,
-            packActions,
             observer: telemetry.observer,
           },
           workflowRuntimeDepsFromConfig(agentRuntime, broker),

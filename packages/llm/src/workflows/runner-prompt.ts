@@ -1,4 +1,3 @@
-import type { ActionDescriptor } from "../work/tools";
 import {
   shellToolName,
   type AgentBackendId,
@@ -24,7 +23,6 @@ export type BuildWorkflowRunnerPromptInput = {
   knowledge: KnowledgePackContents;
   /** Installed plugin action kinds, so the runner uses real kinds (e.g. send_slack_dm) not generic ones. */
   pluginActions?: readonly PluginActionPromptDescriptor[];
-  packActions?: readonly ActionDescriptor[];
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -198,7 +196,7 @@ ${overlay}
     : "";
 
   const outputsBlock = MCP_OUTPUTS_BLOCK;
-  const actionsBlock = buildMcpActionsBlock(pluginActions) + installedKindsBlock(input.packActions ?? []);
+  const actionsBlock = buildMcpActionsBlock(pluginActions);
 
   return `<role>
 You are running a saved OpenNeko workflow as part of an operational loop.

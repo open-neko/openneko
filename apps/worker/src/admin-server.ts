@@ -213,9 +213,6 @@ export interface InstallPolicyHandlerSurface {
 }
 
 export interface PacksHandlerSurface {
-  actionDescriptors?(owner: string): Promise<unknown>;
-  accountProviders?(owner: string): Promise<unknown>;
-  connectAccount?(packId: string, connectorId: string, owner: string, action: string, input: Record<string, unknown>): Promise<unknown>;
   upload(bytes: Buffer, input: { actorUserId?: string | null; signal?: AbortSignal }): Promise<unknown>;
   review(packId: string, input: Record<string, unknown>, operation: "install" | "configure" | "upgrade"): Promise<unknown>;
   list(): Promise<unknown>;
@@ -612,29 +609,6 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
     }
     if (req.method === "POST" && req.url === "/admin/packs/magento/store-management") {
       void handleMagentoStoreManagementWrite(req, res, packs);
-      return;
-    }
-    if (req.method === "POST" && ["/admin/pack-accounts", "/admin/packs/actions"].includes(req.url ?? "")) {
-      void (async () => {
-        try {
-          const body = await readJson(req) as { owner?: unknown };
-          if (!packs?.accountProviders || typeof body?.owner !== "string" || !body.owner) throw new Error("Pack accounts unavailable");
-          if (req.url === "/admin/packs/actions" && !packs.actionDescriptors) throw new Error("Pack action discovery unavailable");
-          json(res, 200, req.url === "/admin/packs/actions" ? { actions: await packs.actionDescriptors!(body.owner) } : { providers: await packs.accountProviders(body.owner) });
-        } catch { json(res, 400, { error: "Pack accounts could not be loaded" }); }
-      })();
-      return;
-    }
-    const accountRoute = /^\/admin\/packs\/([a-z0-9-]+)\/connections\/([a-z0-9-]+)\/(list|configure|start|callback|disconnect)$/.exec(req.url ?? "");
-    if (req.method === "POST" && accountRoute) {
-      void (async () => {
-        try {
-          if (!packs?.connectAccount) { json(res, 503, { error: "Pack accounts unavailable" }); return; }
-          const body = await readJson(req) as Record<string, unknown>;
-          if (!body || typeof body.owner !== "string" || !body.input || typeof body.input !== "object" || Array.isArray(body.input)) throw new Error("Invalid pack account request");
-          json(res, 200, await packs.connectAccount(accountRoute[1]!, accountRoute[2]!, body.owner, accountRoute[3]!, body.input as Record<string, unknown>));
-        } catch { json(res, 400, { error: "Pack account request failed. Check the account settings and try again." }); }
-      })();
       return;
     }
     const packPath = (req.url ?? "").split(/[?#]/, 1)[0] ?? "";

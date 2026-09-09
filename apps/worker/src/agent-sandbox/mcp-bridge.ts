@@ -17,8 +17,6 @@ import {
   buildGraphjinMcpServer,
   buildLibraryServer,
   buildPluginActionServer,
-  buildActionServer,
-  type ActionDescriptor,
   buildPluginManagerServer,
   buildRecordsReadServer,
   buildRenderCardsServer,
@@ -64,7 +62,6 @@ export type BridgeServerContext = {
   runId: string;
   skillsRoot: string;
   pluginActions: PluginActionDescriptor[];
-  packActions?: ActionDescriptor[];
   controlPlane: BrokerControlPlane;
   brokerUrl?: string;
   brokerToken?: string;
@@ -176,11 +173,6 @@ export function buildBridgeServer(
       return buildSourceConfigManagerServer(common);
     case "neko_audit":
       return buildAuditViewerServer({ orgId, runId, controlPlane });
-    case "neko_pack_actions": {
-      const server = buildActionServer({ orgId, threadId, runId, descriptors: ctx.packActions ?? [], emit, controlPlane, serverName: "neko_pack_actions" });
-      if (!server) throw new Error("No pack actions in this run");
-      return server;
-    }
     case "neko_plugin_actions": {
       const server = buildPluginActionServer({
         orgId,
@@ -361,7 +353,6 @@ async function main(): Promise<void> {
     threadId: requireEnv("OPENNEKO_MCP_THREAD_ID"),
     runId: requireEnv("OPENNEKO_MCP_RUN_ID"),
     skillsRoot: requireEnv("OPENNEKO_MCP_SKILLS_ROOT"),
-    packActions: JSON.parse(process.env.OPENNEKO_MCP_PACK_ACTIONS ?? "[]") as ActionDescriptor[],
     pluginActions: JSON.parse(
       process.env.OPENNEKO_MCP_PLUGIN_ACTIONS ?? "[]",
     ) as PluginActionDescriptor[],

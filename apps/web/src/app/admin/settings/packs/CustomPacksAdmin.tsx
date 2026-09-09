@@ -29,7 +29,6 @@ type Inspection = {
   };
   bindingRequirements: Array<{ key: string; name: string }>;
   permissions: Record<string, string>;
-  connectors?: unknown[];
 };
 type Review = Inspection & { reviewHash: string; inputs: Record<string, Value>; runtime: { source?: { id: string }; bindings: Record<string, string> }; plan: { entries: Array<{ action: string; kind: string; key: string; targetRef: string; reason?: string }> } };
 
@@ -221,7 +220,7 @@ export default function CustomPacksAdmin() {
         <p className="text-ui-body-sm">{review.result.manifest.metadata.name} · Version {review.result.manifest.metadata.version}. Applying these changes enables the pack&apos;s configured automations and reads.</p>
         <p className="text-ui-body-sm">{review.result.runtime.source ? `Connection: ${sources.find(source => source.id === review.result.runtime.source?.id)?.label || sources.find(source => source.id === review.result.runtime.source?.id)?.name || "Selected data connection"}.` : "No data connection is required."} {review.result.plan.entries.filter(entry => entry.action === "create").length} additions, {review.result.plan.entries.filter(entry => entry.action === "update").length} updates, {review.result.plan.entries.filter(entry => entry.action === "retire").length} removals.</p>
         <ul className="grid gap-1 text-ui-body-sm">{Object.entries(review.result.permissions).map(([key, value]) => <li key={key}>{label(key)}: {value}</li>)}</ul>
-        <Disclosure title="Configuration and change details"><pre className="overflow-x-auto whitespace-pre-wrap break-all text-ui-caption">{JSON.stringify({ inputs: review.result.inputs, connectors: review.result.connectors, sources: review.result.runtime.bindings, changes: review.result.plan.entries.map(({ action, kind, targetRef, reason }) => ({ action, kind, target: targetRef, reason })), content: review.result.bundleHash }, null, 2)}</pre></Disclosure>
+        <Disclosure title="Configuration and change details"><pre className="overflow-x-auto whitespace-pre-wrap break-all text-ui-caption">{JSON.stringify({ inputs: review.result.inputs, sources: review.result.runtime.bindings, changes: review.result.plan.entries.map(({ action, kind, targetRef, reason }) => ({ action, kind, target: targetRef, reason })), content: review.result.bundleHash }, null, 2)}</pre></Disclosure>
         <Button variant="primary" disabled={busy !== null || review.result.plan.entries.some(entry => entry.action === "conflict")} onClick={() => void apply()}>{busy === operation ? "Applying…" : operation === "install" ? "Approve and install" : "Approve and apply changes"}</Button>
         {review.result.plan.entries.some(entry => entry.action === "conflict") ? <p role="alert">Resolve the conflicting changes, then review again.</p> : null}
       </section> : null}

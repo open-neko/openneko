@@ -23,8 +23,6 @@ export {
   buildLibraryServer,
   buildRecordsReadServer,
   buildPluginActionServer,
-  buildActionServer,
-  type ActionDescriptor,
   buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,

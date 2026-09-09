@@ -509,7 +509,6 @@ function makeSandboxCore(
         ? {
             backendState: (input as RunAgentBackendInput).backendState,
             pluginActions: (input as RunAgentBackendInput).pluginActions,
-            packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
               (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
             dataSurface:

@@ -224,15 +224,7 @@ const magentoV2ActionSchema = z
   })
   .strict();
 
-export const connectorActionSchema = z.object({
-  ...base,
-  kind: z.string().regex(/^pack\.[a-z0-9-]+\.[a-z0-9-]+$/),
-  description: z.string().min(1),
-  inputSchema: z.record(z.string(), z.unknown()),
-  example: z.record(z.string(), z.unknown()).optional(),
-  adapter: z.object({ kind: z.literal("pack_connector"), connector: z.string().min(1), operation: z.string().min(1) }).strict(),
-}).strict();
-const actionSchema = z.union([legacyActionSchema, magentoV2ActionSchema, connectorActionSchema]);
+const actionSchema = z.union([legacyActionSchema, magentoV2ActionSchema]);
 
 const policySchema = z
   .object({
