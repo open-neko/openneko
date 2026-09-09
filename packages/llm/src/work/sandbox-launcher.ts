@@ -46,8 +46,6 @@ export interface SandboxLauncherOptions {
   modelProvider?: string;
   /** Model endpoint egress; always scoped to the vendored Hermes executable. */
   modelHosts?: ReadonlyArray<{ host: string; port?: number }>;
-  /** Explicit operator-approved hosts for declarative pack skills. */
-  extraEgressHosts?: ReadonlyArray<{ host: string; port?: number }>;
   /** Extra env exported into the exec sh-wrapper (e.g. HERMES_HOME). Values must be safe. */
   env?: Record<string, string>;
   /**
@@ -83,7 +81,7 @@ export interface SandboxLauncherOptions {
  */
 export type AgentRuntimeLaunchConfig = Pick<
   SandboxLauncherOptions,
-  "modelProvider" | "modelHosts" | "extraEgressHosts" | "keyAliases" | "hermesHomeHostPath"
+  "modelProvider" | "modelHosts" | "keyAliases" | "hermesHomeHostPath"
 >;
 
 type RunCore = (input: RunAgentBackendInput) => Promise<AgentRunResult>;
@@ -535,6 +533,7 @@ function makeSandboxCore(
           ? {
             workflowRunId: (input as RunWorkflowAgentBackendInput).workflowRunId,
             mode: (input as RunWorkflowAgentBackendInput).mode,
+            networkHosts: (input as RunWorkflowAgentBackendInput).networkHosts,
             triggeredByObservationId:
               (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
             }
@@ -564,10 +563,12 @@ function makeSandboxCore(
         ...endpoint,
         binary: VENDORED_HERMES_MODEL_BINARY,
       })),
-      ...(opts.extraEgressHosts ?? []).map((endpoint) => ({
-        ...endpoint,
-        binary: VENDORED_HERMES_MODEL_BINARY,
-      })),
+      ...(kind === "workflow"
+        ? ((input as RunWorkflowAgentBackendInput).networkHosts ?? []).map((host) => ({
+            host,
+            binary: VENDORED_HERMES_MODEL_BINARY,
+          }))
+        : []),
       ...brokerEgress,
     ];
 
@@ -857,10 +858,6 @@ export function sandboxLauncherOptionsFromEnv(
     .split(",")
     .map((h) => h.trim())
     .filter(Boolean);
-  const extraEgressHosts = (process.env.OPENNEKO_AGENT_EXTRA_EGRESS_HOSTS ?? "")
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
   // OpenShell injects the credential under the credential NAME (default
   // `api_key`); alias it to the env var the backend reads (the hermes
   // provider→key map, e.g. GEMINI_API_KEY). The proxy swaps in the real key on
@@ -870,7 +867,6 @@ export function sandboxLauncherOptionsFromEnv(
   return sandboxLauncherOptionsFromConfig({
     modelProvider: process.env.OPENNEKO_AGENT_MODEL_PROVIDER || undefined,
     modelHosts: hosts.map((host) => ({ host })),
-    extraEgressHosts: extraEgressHosts.map((host) => ({ host })),
     keyAliases: keyEnv ? [{ from: credName, to: keyEnv }] : undefined,
     hermesHomeHostPath: process.env.OPENNEKO_AGENT_HERMES_HOME || undefined,
   }, broker);

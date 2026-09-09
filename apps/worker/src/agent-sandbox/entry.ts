@@ -55,6 +55,7 @@ interface SandboxJob {
   wantsCards?: boolean;
   workflowRunId?: string;
   mode?: "live" | "headless";
+  networkHosts?: string[];
   triggeredByObservationId?: string | null;
   workspace: AgentWorkspace;
   /** Explicit least-privilege envelope for non-interactive agent jobs. */
@@ -210,6 +211,7 @@ export async function main(): Promise<void> {
       runId: job.runId,
       workflowRunId,
       mode: job.mode ?? "headless",
+      networkHosts: job.networkHosts ?? [],
       triggeredByObservationId: job.triggeredByObservationId ?? null,
       workspace: job.workspace,
       controlPlane,

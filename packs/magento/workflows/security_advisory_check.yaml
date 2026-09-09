@@ -15,6 +15,9 @@ schedule:
   cron: "0 6 * * *"
   timezoneInput: UTC
   enabled: true
+networkHosts:
+  - helpx.adobe.com
+  - experienceleague.adobe.com
 outputContract:
   kind: finding
   required: [title, body, mood, evidence]

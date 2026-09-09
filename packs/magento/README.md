@@ -113,15 +113,11 @@ skills install even when governed Magento writes are unavailable. The order
 investigation still works read-only when its optional private-note action is
 blocked.
 
-The security advisory workflow runs daily at 06:00 UTC. OpenShell deployments
-must explicitly allow the read-only advisory hosts for the agent sandbox:
-
-```sh
-OPENNEKO_AGENT_EXTRA_EGRESS_HOSTS=helpx.adobe.com,experienceleague.adobe.com
-```
-
-If these hosts are not allowed, the workflow reports that live Adobe advisory
-data is unavailable and does not guess the security status.
+The security advisory workflow runs daily at 06:00 UTC. The pack declares the
+read-only Adobe hosts required by that workflow, and OpenShell applies those
+hosts only to its workflow sandbox. If an Adobe request is denied, the workflow
+reports that live advisory data is unavailable and does not guess the security
+status.
 
 ## Optional Magento Integration token
 

@@ -66,6 +66,7 @@ export type WorkflowRecord = {
   cron: string | null;
   cronTimezone: string;
   cronEnabled: boolean;
+  networkHosts: string[];
   dailyRunBudget: number | null;
   outputContract: Record<string, unknown> | null;
   createdByThreadId: string | null;
@@ -90,6 +91,7 @@ export type SaveWorkflowInput = {
   triggers?: WorkflowTriggers;
   dailyRunBudget?: number | null;
   outputContract?: Record<string, unknown> | null;
+  networkHosts?: string[];
   /** Explicit workflow-native batch shape; null removes batch support. */
   batch?: WorkflowApiBatchDefinition | null;
   createdByThreadId?: string | null;
@@ -119,6 +121,7 @@ function toRecord(
     cron: row.cron,
     cronTimezone: row.cron_timezone,
     cronEnabled: row.cron_enabled,
+    networkHosts: row.network_hosts ?? [],
     dailyRunBudget: row.daily_run_budget,
     outputContract:
       (row.output_contract as Record<string, unknown> | null) ?? null,
@@ -271,6 +274,7 @@ export async function saveWorkflow(
         cron,
         cron_timezone: cronTimezone,
         cron_enabled: cronEnabled,
+        network_hosts: input.networkHosts ?? existing.networkHosts,
         daily_run_budget:
           input.dailyRunBudget === undefined
             ? existing.dailyRunBudget
@@ -298,6 +302,7 @@ export async function saveWorkflow(
       cron,
       cron_timezone: cronTimezone,
       cron_enabled: cronEnabled,
+      network_hosts: input.networkHosts ?? [],
       daily_run_budget: input.dailyRunBudget ?? null,
       output_contract: resolveOutputContract(null),
       created_by_thread_id: input.createdByThreadId ?? null,

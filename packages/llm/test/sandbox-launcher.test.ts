@@ -137,7 +137,6 @@ const {
 describe("sandboxLauncherOptionsFromEnv", () => {
   it("ignores a persisted operator binary and exposes only model hosts", () => {
     vi.stubEnv("OPENNEKO_AGENT_MODEL_HOST", "models.example.com,models.dev");
-    vi.stubEnv("OPENNEKO_AGENT_EXTRA_EGRESS_HOSTS", "helpx.adobe.com, experienceleague.adobe.com");
     vi.stubEnv(
       "OPENNEKO_AGENT_MODEL_BINARY",
       "/usr/local/uv/python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
@@ -147,10 +146,6 @@ describe("sandboxLauncherOptionsFromEnv", () => {
       expect(options.modelHosts).toEqual([
         { host: "models.example.com" },
         { host: "models.dev" },
-      ]);
-      expect(options.extraEgressHosts).toEqual([
-        { host: "helpx.adobe.com" },
-        { host: "experienceleague.adobe.com" },
       ]);
       expect(options).not.toHaveProperty("modelEgress");
     } finally {
@@ -230,6 +225,7 @@ function fakeWorkflowInput(
     runId: "run-1",
     workflowRunId: "workflow-run-1",
     mode: "headless",
+    networkHosts: [],
     triggeredByObservationId: "obs-1",
     workspace:
       workspaceOverride ??
@@ -737,6 +733,7 @@ describe("makeSandboxRunCore", () => {
       workflowRunId: "workflow-run-1",
       mode: "headless",
       triggeredByObservationId: "obs-1",
+      networkHosts: [],
       backendId: "hermes",
       message: "begin",
     });
@@ -746,6 +743,31 @@ describe("makeSandboxRunCore", () => {
     expect(h.calls.filter((c) => c.args.includes("create"))).toHaveLength(1);
     expect(h.calls.filter((c) => c.args.includes("exec"))).toHaveLength(1);
     expect(h.calls.filter((c) => c.args.includes("delete"))).toHaveLength(1);
+  });
+
+  it("adds pack-declared workflow hosts to the OpenShell policy", async () => {
+    const runCore = makeSandboxWorkflowRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      onLog: () => {},
+    });
+    const input = fakeWorkflowInput(async () => {});
+    input.networkHosts = ["helpx.adobe.com", "experienceleague.adobe.com"];
+
+    await runCore(input);
+
+    const policies = Object.values(
+      (jobCapture.policies.at(-1)?.network_policies ?? {}) as Record<
+        string,
+        { binaries: Array<{ path: string }>; endpoints: Array<{ host: string }> }
+      >,
+    );
+    const workflowPolicy = policies.find(
+      (policy) => policy.binaries[0]?.path === "/usr/bin/python3.11",
+    );
+    expect(workflowPolicy?.endpoints.map((endpoint) => endpoint.host)).toEqual([
+      "experienceleague.adobe.com",
+      "helpx.adobe.com",
+    ]);
   });
 
   it("does not serialize GraphJin credentials into workflow sandbox jobs", async () => {

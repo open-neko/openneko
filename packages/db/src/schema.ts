@@ -1474,6 +1474,7 @@ export const workflow_definition = pgTable(
     cron: text("cron"),
     cron_timezone: text("cron_timezone").notNull().default("UTC"),
     cron_enabled: boolean("cron_enabled").notNull().default(true),
+    network_hosts: text("network_hosts").array().notNull().default(sql`'{}'::text[]`),
     daily_run_budget: integer("daily_run_budget"),
     // OL7 "pause for today": enabled=false with a re-enable timer the
     // cron sweep honors.

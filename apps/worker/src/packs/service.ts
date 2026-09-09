@@ -2430,6 +2430,9 @@ export class PackService {
             cron: schedule ? String(schedule.cron) : null,
             cron_timezone: String(inputs[String(schedule?.timezoneInput)] ?? schedule?.timezoneInput ?? "UTC"),
             cron_enabled: Boolean(schedule?.enabled),
+            network_hosts: Array.isArray(value.networkHosts)
+              ? value.networkHosts.map((host) => String(host))
+              : [],
             output_contract: value.outputContract as Record<string, unknown>,
             updated_at: new Date(),
           };

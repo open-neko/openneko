@@ -62,6 +62,7 @@ const workflowSchema = z
       })
       .strict()
       .nullable(),
+    networkHosts: z.array(z.string().min(1)).optional(),
     activation: z.string().optional(),
     outputContract: z
       .object({

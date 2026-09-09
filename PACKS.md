@@ -99,7 +99,7 @@ collisions with other packs or operator-created artifacts.
 | OpenAPI specs | Describe the provider's actual paths, HTTP methods, parameters, bodies, and responses. Use local references. |
 | Saved queries | Give queries stable filenames. Metric execution refers to the query name without its extension. |
 | Metrics | Define presentation, cadence, source, saved query, result extraction, and freshness. See the [example metric](apps/worker/test/fixtures/service-health/metrics/health.yaml). |
-| Workflows | Define a goal, output contract, and optional schedule with a timezone input. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
+| Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; OpenShell scopes those hosts to that workflow sandbox. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
 | Actions and policies | Use supported runtime contracts. A declaration alone cannot implement a new execution adapter. |
