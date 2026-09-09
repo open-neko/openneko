@@ -1,0 +1,60 @@
+sources:
+  - key: source.google_workspace_gmail
+    name: google_workspace_gmail
+    kind: api
+    base_url: https://gmail.googleapis.com
+    openapi: graphjin/specs/gmail.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true
+
+  - key: source.google_workspace_drive
+    name: google_workspace_drive
+    kind: api
+    base_url: https://www.googleapis.com
+    openapi: graphjin/specs/drive.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true
+
+  - key: source.google_workspace_calendar
+    name: google_workspace_calendar
+    kind: api
+    base_url: https://www.googleapis.com
+    openapi: graphjin/specs/calendar.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true
+
+  - key: source.google_workspace_sheets
+    name: google_workspace_sheets
+    kind: api
+    base_url: https://sheets.googleapis.com
+    openapi: graphjin/specs/sheets.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true
+
+  - key: source.google_workspace_docs
+    name: google_workspace_docs
+    kind: api
+    base_url: https://docs.googleapis.com
+    openapi: graphjin/specs/docs.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true
+
+  - key: source.google_workspace_slides
+    name: google_workspace_slides
+    kind: api
+    base_url: https://slides.googleapis.com
+    openapi: graphjin/specs/slides.yaml
+    auth:
+      type: bearer
+      token: "{{secret.google-workspace.access_token}}"
+    read_only: true

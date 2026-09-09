@@ -37,4 +37,35 @@ describe("Google Workspace curated REST specifications", () => {
       expect(content).toMatch(/read-only|does not perform writes/i);
     }
   });
+
+  it("binds every service to a bundled read-only source", async () => {
+    const sourceFile = parseYaml(
+      await readFile(resolve(specsRoot, "../sources.yaml"), "utf8"),
+    ) as {
+      sources: Array<{
+        name: string;
+        kind: string;
+        base_url: string;
+        openapi: string;
+        read_only: boolean;
+        auth: { type: string; token: string };
+      }>;
+    };
+
+    expect(sourceFile.sources).toHaveLength(services.length);
+    expect(sourceFile.sources.map((source) => source.name).sort()).toEqual(
+      services.map((service) => `google_workspace_${service}`).sort(),
+    );
+    for (const source of sourceFile.sources) {
+      expect(source.kind).toBe("api");
+      expect(source.read_only).toBe(true);
+      expect(source.auth).toEqual({
+        type: "bearer",
+        token: "{{secret.google-workspace.access_token}}",
+      });
+      await expect(
+        readFile(resolve(specsRoot, source.openapi.replace("graphjin/specs/", "")), "utf8"),
+      ).resolves.toContain("openapi: 3.0.3");
+    }
+  });
 });
