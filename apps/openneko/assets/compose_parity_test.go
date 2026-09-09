@@ -182,10 +182,17 @@ func assertGraphJinSupervisorRepair(t *testing.T, label string, service composeP
 		copyLine,
 		"chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp",
 		"mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh",
+		"chown -R 1001:999 /config",
+		"find /config -type d -exec chmod 0700 {} +",
+		"find /config -type f -exec chmod 0600 {} +",
+		"chmod 0700 /config/.openneko-graphjin-supervisor.sh",
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("%s does not atomically repair an existing GraphJin supervisor volume: missing %q", label, required)
 		}
+	}
+	if strings.Contains(script, "chmod -R a+rwX /config") {
+		t.Fatalf("%s makes GraphJin secrets writable by every container user", label)
 	}
 	if lastConditionalEnd := strings.LastIndex(script, "\nfi\n"); lastConditionalEnd >= 0 && strings.Index(script, copyLine) < lastConditionalEnd {
 		t.Fatalf("%s repairs the supervisor only on first install; upgrades must refresh it unconditionally", label)
