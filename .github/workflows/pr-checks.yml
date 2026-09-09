@@ -162,6 +162,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Verify GraphJin version pins
+        run: node scripts/check-graphjin-version-consistency.mjs
+
       - uses: pnpm/action-setup@v6
         with:
           version: 9.14.1
