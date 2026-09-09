@@ -1,0 +1,83 @@
+openapi: 3.0.3
+info:
+  title: Google Gmail read API
+  version: 1.0.0
+servers:
+  - url: https://gmail.googleapis.com
+security:
+  - oauthBearer: []
+paths:
+  /gmail/v1/users/{userId}/messages:
+    get:
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Message references
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/MessageRef" }
+                  nextPageToken: { type: string }
+                  resultSizeEstimate: { type: integer }
+  /gmail/v1/users/{userId}/messages/{messageId}:
+    get:
+      operationId: getMessage
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [minimal, full, raw, metadata] } }
+        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/threads:
+    get:
+      operationId: listThreads
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: labelIds, in: query, schema: { type: array, items: { type: string } } }
+        - { name: maxResults, in: query, schema: { type: integer, minimum: 1, maximum: 500 } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /gmail/v1/users/{userId}/threads/{threadId}:
+    get:
+      operationId: getThread
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - { name: threadId, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [full, metadata, minimal] } }
+        - { name: metadataHeaders, in: query, schema: { type: array, items: { type: string } } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, default: me }
+  schemas:
+    MessageRef:
+      type: object
+      properties:
+        id: { type: string }
+        threadId: { type: string }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }

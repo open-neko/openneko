@@ -1,0 +1,35 @@
+openapi: 3.0.3
+info: { title: Google Sheets read API, version: 1.0.0 }
+servers: [{ url: https://sheets.googleapis.com }]
+security: [{ oauthBearer: [] }]
+paths:
+  /v4/spreadsheets/{spreadsheetId}:
+    get:
+      operationId: getSpreadsheet
+      parameters:
+        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }
+        - { name: ranges, in: query, schema: { type: array, items: { type: string } } }
+        - { name: includeGridData, in: query, schema: { type: boolean } }
+        - { name: fields, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+  /v4/spreadsheets/{spreadsheetId}/values/{range}:
+    get:
+      operationId: getSpreadsheetValues
+      parameters:
+        - { name: spreadsheetId, in: path, required: true, schema: { type: string } }
+        - { name: range, in: path, required: true, schema: { type: string } }
+        - { name: majorDimension, in: query, schema: { type: string, enum: [ROWS, COLUMNS] } }
+        - { name: valueRenderOption, in: query, schema: { type: string } }
+        - { name: dateTimeRenderOption, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Object" }
+components:
+  securitySchemes:
+    oauthBearer: { type: http, scheme: bearer }
+  responses:
+    Object:
+      description: Google API response
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
