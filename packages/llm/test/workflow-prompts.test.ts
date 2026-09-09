@@ -53,6 +53,12 @@ describe("buildWorkflowRunnerPrompt", () => {
     knowledge: sampleKnowledge,
   };
 
+  it("includes pack action kinds and explicit account payloads without installed plugins", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: true, pluginActions: [], packActions: [{ kind: "pack.fixture.read", description: "Read an account", example: { input: {}, accountId: "account-1" } }] });
+    expect(prompt).toContain("pack.fixture.read");
+    expect(prompt).toContain('"accountId":"account-1"');
+  });
+
   it("uses MCP tool names when mcpTools=true", () => {
     const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: true });
     expect(prompt).toContain("mcp_neko_workflow_output_emit");

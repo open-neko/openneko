@@ -1,3 +1,4 @@
+import type { ActionDescriptor } from "./tools";
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
 import { type KnowledgePackContents } from "../knowledge-pack";
 import {
@@ -795,6 +796,7 @@ export function buildWorkPrompt(args: {
   inlineTranscript: boolean;
   /** Installed plugin action kinds used by the fence fallback. */
   pluginActions?: readonly PluginActionPromptDescriptor[];
+  packActions?: readonly ActionDescriptor[];
   /** Trusted server-side surface selection; never inferred from user text. */
   dataSurface?: WorkDataSurface;
   appContext?: AppWorkContext;
@@ -823,6 +825,7 @@ export function buildWorkPrompt(args: {
     pluginCatalog,
     inlineTranscript,
     pluginActions,
+    packActions,
     dataSurface = "customer",
     appContext,
     recordContext,
@@ -887,6 +890,7 @@ that flags churn risk every Monday."
     dataSurface === "customer"
       ? buildPluginActionsSection(pluginActions ?? [], !supportsCardTool)
       : "",
+    dataSurface === "customer" ? buildPluginActionsSection(packActions ?? [], !supportsCardTool) : "",
     RULES_SECTION,
     CLOSING_SECTION,
   ].filter((s) => s.length > 0);

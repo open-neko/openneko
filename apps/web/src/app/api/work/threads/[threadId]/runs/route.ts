@@ -1,3 +1,4 @@
+import { getPackActionDescriptors } from "@/lib/solution-packs";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveAgentBackend,
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   });
 
   const pluginActions = await getPluginActionDescriptors();
+  const packActions = await getPackActionDescriptors(actor.userId ? `user:${actor.userId}` : "solo");
 
   // The agent loop runs in an OpenShell sandbox (SEC9: the only runtime).
   // The web server stays the control plane, launches the box, and relays
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       emit,
       signal: abortController.signal,
       pluginActions,
+      packActions,
       observer: runTelemetry.observer,
     },
     agentRuntimeDepsFromConfig(agentRuntime, broker),

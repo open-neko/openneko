@@ -53,7 +53,7 @@ import {
   setWorkThreadBackendState,
 } from "./store";
 import type { GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
-import type { PluginActionDescriptor } from "./tools";
+import type { ActionDescriptor, PluginActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
 import { createAgentEventTelemetry } from "./agent-event-telemetry";
@@ -96,6 +96,7 @@ export type RunChatTurnOptions = {
    * Mounted for Hermes through the sandbox MCP bridge.
    */
   pluginActions?: readonly PluginActionDescriptor[];
+  packActions?: readonly ActionDescriptor[];
   /**
    * Control-plane impl for the DB-touching MCP tools. Default (undefined)
    * uses the in-process plane; the agent sandbox injects a broker client.
@@ -487,6 +488,7 @@ export async function runChatTurn(
         opts.nativeDelegation !== "disabled",
       pluginCatalog,
       inlineTranscript,
+      packActions: customerSurface ? (opts.packActions ?? []) : [],
       pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
       dataSurface,
       ...(appContext ? { appContext } : {}),
@@ -507,6 +509,7 @@ export async function runChatTurn(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
+      packActions: customerSurface ? (opts.packActions ?? []) : [],
       pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
       sourceConfigEnabled: supportsSourceConfigTool,
       dataSurface,

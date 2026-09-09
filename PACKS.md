@@ -129,10 +129,10 @@ purpose `graphjin_api_auth`. The installer supplies configuration and resolves
 secret references through the encrypted secret store. Keep credentials out of
 Git, archives, skills, and example payloads.
 
-Custom source access is currently read-only. Executable connector code, OAuth
-refresh, and custom write adapters are not supported. A spec containing write
-operations does not grant permission to execute them. Magento uses the same pack
-lifecycle but retains its existing application-specific governed write adapters.
+Custom GraphJin source access is read-only. A spec containing write operations
+does not grant permission to execute them. Pack-owned connectors support OAuth
+and approved actions as described below. Magento uses the same pack lifecycle
+but retains its existing application-specific governed write adapters.
 
 Database source references require an existing read-only source binding and an
 organization GraphJin data source. See the [installation guide](docs/CUSTOM_PACKS.md)
@@ -239,8 +239,8 @@ executables or dependency directories in the ZIP. The worker does not build imag
 
 Execution checks the installed pack and its approved content before each call.
 Upgrade and removal use the existing pack lock and wait for active execution.
-The current internal service supports declared reads only. Work access, approved
-writes and browser account connections are separate implementation steps.
+The internal read service permits declared reads. Work and workflows use the
+approved action path below. Browser account connections use the pack routes.
 
 ## Browser account connections
 
@@ -299,8 +299,8 @@ through its private request file; it does not return them to the browser or agen
 Internal execution of an authenticated operation requires both `ownerId` and
 `accountId`. The caller must supply the authorized execution user. Background work
 must preserve that explicit binding; there is no default or fallback account.
-The service checks ownership before it supplies a credential. Work and workflow
-exposure still belong to the action-dispatch step.
+The service checks ownership before it supplies a credential. Work and workflows
+use the action binding described below.
 
 Refresh starts within 60 seconds of expiry and uses the existing pack lock. A
 successful refresh is saved before execution. An uncertain or failed refresh
@@ -319,3 +319,90 @@ therefore adds `pack_connection_client` and `pack_account`, with cascading forei
 keys to the existing installation. It does not add another pack registry.
 
 Security reference: [OAuth security best current practice](https://www.rfc-editor.org/rfc/rfc9700.html).
+
+## Connector actions in Work and workflows
+
+Declare an action for each connector operation that users can call. Put the files
+in the directory named by `artifacts.actions`. Example `actions/update.yaml`:
+
+```yaml
+key: action.update
+targetRef: pack.example.update
+kind: pack.example.update
+description: Update the selected record
+inputSchema:
+  type: object
+  properties:
+    value: {type: number}
+example:
+  input: {value: 12}
+adapter:
+  kind: pack_connector
+  connector: example
+  operation: update
+```
+
+The kind must be `pack.<pack-id>.<action-name>`. The target reference must match
+that kind. The connector and operation must exist in this pack's manifest.
+`inputSchema` describes the provider input to the agent. The connector must
+validate that input before it calls the provider. The platform validates the
+outer request, account binding and attachment contents.
+
+Use the existing policy artifacts to permit the exact kinds in the `external`
+scope. A missing or denied policy blocks the request. Reads can use automatic
+approval. Writes require a human decision, including when a policy permits
+automatic execution. This version does not enable unattended pack writes.
+
+Pack actions appear in the separate `neko_pack_actions` Work tool server.
+Scheduled workflows receive the same pack-owned action descriptions and use the
+existing action request tool. This does not require plugin registration or use
+plugin discovery endpoints. An authenticated operation requires an explicit
+`accountId`. A personal workflow uses its saved owner's account. An organization
+workflow has no personal account owner and cannot inherit another user's account.
+
+Action payloads have this form:
+
+```json
+{
+  "input": {"value": 12},
+  "accountId": "<selected-account-uuid>",
+  "attachments": [
+    {"name":"prices.csv","mediaType":"text/csv","contentBase64":"...","sha256":"..."}
+  ]
+}
+```
+
+Omit `accountId` for a connector without authentication. Attachments are optional.
+Their content must use canonical Base64 with a matching SHA-256 digest. Each
+request can contain up to 20 attachments. The complete payload has a 512 KiB
+limit. Do not use mutable file paths as attachments. `input.attachments` is
+reserved; use the top-level field. The platform supplies those attachments inside
+`input.attachments` in the connector's private request file.
+
+Before approval, the platform seals the installed bundle, action definition,
+owner, account ID, target, summary and complete payload. Do not create or change
+the reserved `_pack` field. At execution, the platform checks this seal, current
+policy, active user, account access and installation state again. A changed or
+removed pack requires a new request. Credentials stay in the private sandbox
+request file and do not enter the action payload or agent context.
+
+The connector also receives `action.requestId` and `action.executionId`. Use the
+request ID as a provider idempotency or correlation key where supported. Return
+one JSON result:
+
+```json
+{"status":"succeeded","receipt":{"id":"provider-record-id"},"output":{"value":12}}
+```
+
+Allowed status values are `succeeded`, `failed` and `reconcile_required`. The
+receipt is a JSON object with provider evidence. `output` is an optional JSON
+object for the agent. Validate and reconcile provider responses in the connector.
+Report success only when the provider confirms the requested result.
+
+A timeout, invalid result or uncertain write is recorded as a failed action with
+`reconcile_required` in its stored result. OpenNeko does not report it as executed.
+It retains returned provider receipts. It does not repeat that action request,
+even if someone resets its status. Supply a read operation to check the provider
+when reconciliation is needed. A new write requires a new request and approval.
+Concurrent queue deliveries use the existing action records and a database lock;
+they cannot execute the same approved request twice.

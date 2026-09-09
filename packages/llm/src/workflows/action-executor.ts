@@ -1,3 +1,4 @@
+import { pool } from "@neko/db";
 import {
   finishActionExecution,
   getActionRequest,
@@ -9,9 +10,12 @@ import {
 
 export type ActionExecutionInput = {
   request: ActionRequestRecord;
+  executionId?: string;
 };
 
 export type ActionExecutionOutcome = {
+  /** A provider receipt can be retained even when execution did not succeed. */
+  error?: string;
   externalRef?: string | null;
   result?: Record<string, unknown> | null;
   commandOrOperation?: string | null;
@@ -71,6 +75,18 @@ export async function executeApprovedActionRequest(
   error?: string;
   outcome?: ActionExecutionOutcome;
 }> {
+  const client = await pool().connect();
+  const lock = `action:${orgId}:${actionRequestId}`;
+  try {
+    await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lock]);
+    return await executeActionAttempt(orgId, actionRequestId);
+  } finally {
+    await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [lock]).catch(() => {});
+    client.release();
+  }
+}
+
+async function executeActionAttempt(orgId: string, actionRequestId: string): Promise<{ ok: boolean; error?: string; outcome?: ActionExecutionOutcome }> {
   const request = await getActionRequest(orgId, actionRequestId);
   if (!request) {
     throw new Error(`action_request ${actionRequestId} not found`);
@@ -99,15 +115,20 @@ export async function executeApprovedActionRequest(
   });
 
   try {
-    const outcome = await adapter({ request });
+    const outcome = await adapter({ request, executionId: exec.id });
     await finishActionExecution({
       id: exec.id,
-      status: "succeeded",
+      status: outcome.error ? "failed" : "succeeded",
+      error: outcome.error,
       result: outcome.result ?? null,
       externalRef: outcome.externalRef ?? null,
       changesetId: outcome.changesetId ?? null,
       commandOrOperation: outcome.commandOrOperation ?? null,
     });
+    if (outcome.error) {
+      await markActionRequestFailed(request.id, outcome.error);
+      return { ok: false, error: outcome.error, outcome };
+    }
     await markActionRequestExecuted(request.id);
     return { ok: true, outcome };
   } catch (err) {

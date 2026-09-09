@@ -12,6 +12,17 @@ if (connection === 'authorize') {
   console.log(JSON.stringify({ accountId: account, label: account + '@example.test', scopes: input.scopes, expiresAt: Date.now() + 300000, tokens: { access: 'test-only-' + randomUUID() } }));
 } else if (connection === 'refresh') console.log(JSON.stringify({ ...input.credential, expiresAt: Date.now() + 300000, tokens: { access: 'test-only-' + randomUUID() } }));
 else if (connection === 'revoke') console.log('{"revoked":true}');
+else if (['read-record', 'write-record', 'uncertain-write'].includes(operation)) {
+  const write = operation !== 'read-record';
+  if (write && typeof input.value !== 'number') {
+    console.log(JSON.stringify({ status: 'failed', receipt: { validation: 'value must be a number' } }));
+  } else {
+    const response = await fetch('http://host.docker.internal:4114/record', write ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: input.value }) } : {});
+    const record = await response.json();
+    if (operation === 'uncertain-write') process.exit(1);
+    console.log(JSON.stringify({ status: response.ok ? 'succeeded' : 'failed', receipt: { id: String(record.writes) }, output: record }));
+  }
+}
 else if (operation === 'echo') console.log(JSON.stringify({ value: input.value, uid: process.getuid(), accountId: credential?.accountId }));
 else if (operation === 'wait') await new Promise(resolve => setTimeout(resolve, 120000));
 else if (operation === 'network') {

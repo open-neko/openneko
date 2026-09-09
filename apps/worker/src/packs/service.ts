@@ -879,7 +879,8 @@ export class PackService {
     return bundle;
   }
 
-  private async withConnector<T>(packId: string, connectorId: string, fn: (ctx: Omit<PackConnectionContext, "owner">) => Promise<T>) {
+  /** Worker-owned call boundary; never exposed as an agent endpoint. */
+  async withConnector<T>(packId: string, connectorId: string, fn: (ctx: Omit<PackConnectionContext, "owner"> & { bundle: AvailablePack }) => Promise<T>) {
     const client = await pool().connect();
     try {
       await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [`pack:${this.orgId}:${packId}`]);
@@ -891,11 +892,16 @@ export class PackService {
       if (storedRuntime(installation.config)?.connectorBundleHash !== bundle.bundleHash) throw new Error("Pack connector contents changed; review and upgrade the pack");
       const connector = bundle.manifest.connectors?.find(value => value.id === connectorId);
       if (!connector) throw new Error("Pack connector is not declared");
-      return await fn({ sql: client, installationId: installation.id, connector });
+      return await fn({ sql: client, installationId: installation.id, connector, bundle });
     } finally {
       await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [`pack:${this.orgId}:${packId}`]).catch(() => {});
       client.release();
     }
+  }
+
+  async actionDescriptors(owner: string) {
+    const { packActionDescriptors } = await import("./actions.js");
+    return packActionDescriptors(this.orgId, owner, this);
   }
 
   async accountProviders(owner: string) {
@@ -2618,7 +2624,7 @@ export class PackService {
           const readinessValue = value.readiness as Record<string, unknown> | undefined;
           const domain = String(readinessValue?.domain ?? "") as MagentoDomain;
           const adapter = value.adapter as Record<string, unknown> | undefined;
-          const reason = adapter?.kind === "magento_financial_handoff"
+          const reason = adapter?.kind === "pack_connector" || adapter?.kind === "magento_financial_handoff"
             ? "ready"
             : preflight?.operatorDomains[domain] ?? preflight?.operatorReadiness ?? "unsupported_adapter";
           const actionReady = reason === "ready";

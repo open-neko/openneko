@@ -213,6 +213,7 @@ export interface InstallPolicyHandlerSurface {
 }
 
 export interface PacksHandlerSurface {
+  actionDescriptors?(owner: string): Promise<unknown>;
   accountProviders?(owner: string): Promise<unknown>;
   connectAccount?(packId: string, connectorId: string, owner: string, action: string, input: Record<string, unknown>): Promise<unknown>;
   upload(bytes: Buffer, input: { actorUserId?: string | null; signal?: AbortSignal }): Promise<unknown>;
@@ -613,12 +614,13 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       void handleMagentoStoreManagementWrite(req, res, packs);
       return;
     }
-    if (req.method === "POST" && req.url === "/admin/pack-accounts") {
+    if (req.method === "POST" && ["/admin/pack-accounts", "/admin/packs/actions"].includes(req.url ?? "")) {
       void (async () => {
         try {
           const body = await readJson(req) as { owner?: unknown };
           if (!packs?.accountProviders || typeof body?.owner !== "string" || !body.owner) throw new Error("Pack accounts unavailable");
-          json(res, 200, { providers: await packs.accountProviders(body.owner) });
+          if (req.url === "/admin/packs/actions" && !packs.actionDescriptors) throw new Error("Pack action discovery unavailable");
+          json(res, 200, req.url === "/admin/packs/actions" ? { actions: await packs.actionDescriptors!(body.owner) } : { providers: await packs.accountProviders(body.owner) });
         } catch { json(res, 400, { error: "Pack accounts could not be loaded" }); }
       })();
       return;

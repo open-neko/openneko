@@ -31,6 +31,7 @@ const SERVERS = [
   "neko_source_config_manager",
   "neko_audit",
   "neko_plugin_actions",
+  "neko_pack_actions",
 ];
 
 function ctx() {
@@ -42,6 +43,7 @@ function ctx() {
     skillsRoot: "/tmp/skills",
     workflowRunId: "33333333-3333-4333-8333-333333333333",
     triggeredByObservationId: null,
+    packActions: [{ kind: "pack.fixture.read", description: "Read fixture", default_mode: "auto" as const }],
     pluginActions: [
       {
         kind: "send_slack_message",
@@ -367,4 +369,16 @@ describe("mcp-bridge lazy tool catalogs", () => {
       await multiplexed.instance.close();
     }
   });
+});
+
+
+it("keeps pack tool discovery separate from plugin tool discovery", async () => {
+  const context = { ...ctx(), pluginActions: [] };
+  const server = buildBridgeServer("neko_pack_actions", context);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.instance.connect(serverTransport);
+  const client = new Client({ name: "pack-bridge-test", version: "1" });
+  await client.connect(clientTransport);
+  expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(["pack.fixture.read"]);
+  await client.close();
 });

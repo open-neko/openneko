@@ -1,6 +1,6 @@
 # Google Workspace pack implementation plan
 
-Status: steps 1 through 3 are complete and verified. Steps 4 through 7 are
+Status: steps 1 through 4 are complete and verified. Steps 5 through 7 are
 not implemented. The imported Google Workspace skills, license and inventory
 remain uncommitted. They are not evidence of a working connector. Mock execution
 and dry-run mode were removed separately in commit `b2a39dc`.
@@ -154,6 +154,38 @@ Requires commits 2 and 3.
 
 Complete when the test pack can perform a read and an approved write through
 Work, with no plugin registration and no mock execution.
+
+Step 4 verification:
+
+- Connector actions use the existing definitions, policy checks, approval records
+  and executor. Pack discovery is separate from plugin discovery. Work receives
+  `neko_pack_actions`; workflows receive the same action descriptions.
+- The worker checks installed content, current policy, active owner, selected
+  account and complete payload before execution. Approval binds attachment bytes.
+  Pack writes require human approval, even with an automatic policy. Unattended
+  pack writes are not enabled. Personal workflows use their saved owner's account;
+  organization workflows cannot inherit a personal account.
+- Four live integration tests pass with PostgreSQL, the actual worker HTTP handler,
+  Work MCP tools and OpenShell. A deterministic test backend selects tools; no
+  paid model or Google service is used. The connector calls a separate HTTP test
+  provider that retains actual record changes outside the sandbox. No plugin is
+  registered and connector execution is not mocked.
+- The tests cover reads, approved writes, duplicate queue delivery, changed
+  payloads and attachments, denied policy, changed pack content, forged actors,
+  disconnected accounts, disabled users, explicit workflow account selection,
+  uncertain provider writes and queued actions after uninstall. An uncertain
+  write retains its failed result and cannot execute again on the same request.
+- The fixture image digest is
+  `sha256:bae1cee2e6d312f92967a7b9df0144ef6fa7b9a8a835e55f7b63df77e283a684`.
+  Build and test instructions are in the connector fixture README.
+- Regression checks pass: 16 worker pack tests, including the Magento lifecycle;
+  36 pack schema/archive tests; 53 action and agent transport tests; 13 sandbox
+  bridge tests; and 7 PostgreSQL action-flow tests. Web tests report 345 passed
+  and 108 skipped. Worker/web type checks, web lint and `ui:check` pass.
+- This step also corrects the production worker setup from step 3. Its copied
+  method list omitted account methods. It now passes PackService directly, as
+  the HTTP integration test does. The earlier browser fixture did not detect
+  that production setup error.
 
 ### 5. `feat(google-workspace): package gws and account connection`
 

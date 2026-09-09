@@ -24,6 +24,8 @@ export {
   buildGraphjinReadServer,
   buildLibraryServer,
   buildPluginActionServer,
+  buildActionServer,
+  type ActionDescriptor,
   buildPluginManagerServer,
   buildRecordsReadServer,
   buildRenderCardsServer,

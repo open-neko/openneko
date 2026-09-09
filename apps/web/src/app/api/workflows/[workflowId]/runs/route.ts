@@ -1,3 +1,4 @@
+import { getPackActionDescriptors } from "@/lib/solution-packs";
 import { NextRequest, NextResponse } from "next/server";
 import { db, eq, workflow_run } from "@neko/db";
 import { ensureHostConfigProvisioned } from "@neko/llm";
@@ -92,6 +93,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     let unregisterBrokerEvents: () => void = () => undefined;
     try {
       const pluginActions = await getPluginActionDescriptors();
+      const packActions = await getPackActionDescriptors(prepared.workflow.ownerUserId ? `user:${prepared.workflow.ownerUserId}` : `workflow:${prepared.workflowRun.id}`);
       const broker = await ensureAgentBroker();
       unregisterBrokerEvents = registerAgentBrokerEventSink(
         prepared.workRunId,
@@ -105,6 +107,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           emit,
           signal: abortController.signal,
           pluginActions,
+          packActions,
           observer: runTelemetry.observer,
         },
         workflowRuntimeDepsFromConfig(agentRuntime, broker),

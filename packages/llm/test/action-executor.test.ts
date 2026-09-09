@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
+vi.mock("@neko/db", () => ({ pool: () => ({ connect: async () => ({ query: async () => ({}), release() {} }) }) }));
+
 vi.mock("../src/workflows/action-store", () => ({
   getActionRequest: vi.fn(),
   markActionRequestFailed: vi.fn(),
@@ -37,4 +39,13 @@ it("executes a registered adapter and persists its actual outcome", async () => 
   expect(adapter).toHaveBeenCalledOnce();
   expect(store.finishActionExecution).toHaveBeenCalledWith(expect.objectContaining({ status: "succeeded", externalRef: "provider-receipt" }));
   expect(store.markActionRequestExecuted).toHaveBeenCalledWith("request");
+});
+
+
+it("retains an uncertain provider receipt without marking the request executed", async () => {
+  approved("test_uncertain_adapter");
+  registerActionAdapter("test_uncertain_adapter", async () => ({ error: "reconcile_required", result: { receipt: { id: "provider-job" } } }));
+  expect((await executeApprovedActionRequest("org", "request")).ok).toBe(false);
+  expect(store.finishActionExecution).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", result: { receipt: { id: "provider-job" } } }));
+  expect(store.markActionRequestExecuted).not.toHaveBeenCalled();
 });

@@ -1494,7 +1494,7 @@ export function buildLibraryServer(
  * only needs the {kind, description, default_mode} triples to build
  * tools.
  */
-export interface PluginActionDescriptor {
+export interface ActionDescriptor {
   kind: string;
   description: string;
   /** Fixed policy scope. External preserves the plugin compatibility default. */
@@ -1516,6 +1516,9 @@ export interface PluginActionDescriptor {
   /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
   example?: Record<string, unknown>;
 }
+
+/** Compatibility name for published plugin callers. */
+export type PluginActionDescriptor = ActionDescriptor;
 
 function modeForScope(
   default_mode: PluginActionDescriptor["default_mode"],
@@ -1552,11 +1555,12 @@ function needsIntentForKind(
   return false;
 }
 
-export interface BuildPluginActionServerOptions {
+export interface BuildActionServerOptions {
+  serverName?: "neko_plugin_actions" | "neko_pack_actions";
   orgId: string;
   threadId: string;
   runId: string;
-  descriptors: readonly PluginActionDescriptor[];
+  descriptors: readonly ActionDescriptor[];
   emit: (event: AgentEvent) => Promise<void> | void;
   /** Explicit in-process or broker-backed control plane. */
   controlPlane?: AgentControlPlane;
@@ -1594,8 +1598,8 @@ export interface BuildPluginActionServerOptions {
  * Returns null when no kinds are registered (or all are deny) so the
  * caller can omit the server from the MCP map.
  */
-export function buildPluginActionServer(
-  opts: BuildPluginActionServerOptions,
+export function buildActionServer(
+  opts: BuildActionServerOptions,
 ): ReturnType<typeof createMcpServer> | null {
   const active = opts.descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return null;
@@ -1788,6 +1792,10 @@ export function buildPluginActionServer(
             workRunId: opts.runId,
             requestedByRunId: null,
           });
+          if (request.status === "pending_approval") {
+            await opts.emit({ type: "action_request_emit", action_request_id: request.id, kind: d.kind, scope: actionScope, decision: "pending_approval", summary: intent });
+            return { content: [{ type: "text" as const, text: JSON.stringify({ ok: true, status: "pending_approval", action_request_id: request.id }) }] };
+          }
           await controlPlane.enqueueActionExecute({
             orgId: opts.orgId,
             actionRequestId: request.id,
@@ -1907,8 +1915,13 @@ export function buildPluginActionServer(
   });
 
   return createMcpServer({
-    name: "neko_plugin_actions",
+    name: opts.serverName ?? "neko_plugin_actions",
     version: "1.0.0",
     tools,
   });
 }
+
+/** Existing plugins retain the same transport and name. */
+export const buildPluginActionServer = buildActionServer;
+
+export type BuildPluginActionServerOptions = BuildActionServerOptions;

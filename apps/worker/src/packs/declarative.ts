@@ -1,7 +1,7 @@
 import { resolveWatcherVariables } from "@neko/llm/workflows";
 import { Kind, parse, print, visit, type FieldNode, type SelectionSetNode } from "graphql";
 import { basename, extname } from "node:path";
-import { sha256, type SolutionPackBundle } from "@neko/packs";
+import { connectorActionSchema, sha256, type SolutionPackBundle } from "@neko/packs";
 
 /** Resolve values, never interpolate secrets into serialized YAML or JSON. */
 export function packValue(value: unknown, inputs: Record<string, unknown>, secrets: Record<string, string> = {}): unknown {
@@ -29,8 +29,11 @@ export function declarativeGraphjinUpdate(
   retiredSources: string[] = [],
   bindings: Record<string, string> = {},
 ): Record<string, unknown> {
-  if (bundle.artifacts.some(artifact => artifact.kind === "action")) {
-    throw new Error("custom pack write actions require a supported action adapter");
+  for (const artifact of bundle.artifacts.filter(value => value.kind === "action")) {
+    const action = connectorActionSchema.safeParse(artifact.content);
+    if (!action.success) throw new Error("custom pack write actions require a supported action adapter");
+    const connector = bundle.manifest.connectors?.find(value => value.id === action.data.adapter.connector);
+    if (!action.data.kind.startsWith(`pack.${bundle.manifest.metadata.id}.`) || action.data.targetRef !== action.data.kind || !connector?.operations.some(value => value.id === action.data.adapter.operation)) throw new Error("Pack action must reference its own declared connector operation");
   }
   const knownChecks = new Set(["db-connect", "db-read-only", "graphjin-reload", "analytics-smoke", "queries"]);
   for (const check of [...bundle.manifest.health.requiredPreflight, ...bundle.manifest.health.postInstall, ...bundle.manifest.health.postWriteCanary, ...Object.values(bundle.manifest.health.readiness).flat()]) {

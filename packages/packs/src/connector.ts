@@ -40,3 +40,21 @@ export const packCredentialSchema = z.object({
   expiresAt: z.number().finite().positive(),
   tokens: z.record(z.string(), z.unknown()),
 }).strict();
+
+export const packActionPayloadSchema = z.object({
+  input: z.record(z.string(), z.unknown()),
+  accountId: z.uuid().optional(),
+  attachments: z.array(z.object({
+    name: z.string().min(1).max(200).regex(/^[^/\\]+$/),
+    mediaType: z.string().min(1).max(200),
+    contentBase64: z.string(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict()).max(20).optional(),
+  _pack: z.object({ binding: z.string(), seal: z.string() }).strict().optional(),
+}).strict();
+
+export const packOperationResultSchema = z.object({
+  status: z.enum(["succeeded", "failed", "reconcile_required"]),
+  receipt: z.record(z.string(), z.unknown()),
+  output: z.record(z.string(), z.unknown()).optional(),
+}).strict();

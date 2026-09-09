@@ -52,3 +52,23 @@ database and a substituted provider runner:
 OPENNEKO_PACK_ACCOUNTS_TEST=1 pnpm --filter @neko/worker exec vitest run \
   test/pack-accounts.integration.test.ts --maxWorkers=1 --minWorkers=1
 ```
+
+## Governed action test
+
+The image also supplies `read-record`, `write-record` and `uncertain-write`.
+The action test starts a small provider on port 4114. Its state survives each
+sandbox invocation. Only the test connector can reach that declared endpoint.
+The uncertain operation writes to the provider and then exits without a result.
+
+```sh
+OPENNEKO_PACK_ACTIONS_TEST_IMAGE=YOUR_REGISTRY/pack-fixture@sha256:ACTUAL_DIGEST \
+  pnpm --filter @neko/worker exec vitest run test/pack-actions.integration.test.ts \
+  --maxWorkers=1 --minWorkers=1
+```
+
+Set the migrated PostgreSQL connection variables and an active OpenShell gateway.
+The test uses actual worker discovery, Work MCP tools, approval records and
+sandbox execution. A deterministic test backend calls the Work tools; no paid
+model or real provider account is needed. It checks confirmed writes, duplicate
+queue delivery, uncertain outcomes, changed payloads and attachments, current
+policy and account access, workflow ownership and uninstall.

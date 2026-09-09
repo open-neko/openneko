@@ -6,3 +6,5 @@ export * from "./planner.js";
 export * from "./magento-v2.js";
 export * from "./archive.js";
 export * from "./connector.js";
+
+export { connectorActionSchema } from "./artifact-schema.js";
