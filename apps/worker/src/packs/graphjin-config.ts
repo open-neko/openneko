@@ -359,16 +359,44 @@ export async function applyPackGraphjinConfig(input: {
     }
     if (!appliedUpdate) throw new Error("pack GraphJin config revision did not stabilize");
 
-    await persistGraphjinSourceConfigUpdate({
-      configFile: input.configFile,
-      update: appliedUpdate,
-    });
-    await persistPackSections(input.configFile, appliedUpdate);
-    if (input.restartAfterPersist) {
-      await requestGraphjinRestart(input.configFile, input.endpoint);
+    const restoreSnapshot = async () => {
+      if (previousKeystore) {
+        const temporaryKeystore = `${keystore}.${randomUUID()}.pack-rollback`;
+        await writeFile(temporaryKeystore, previousKeystore, { mode: 0o600 });
+        await rename(temporaryKeystore, keystore);
+      } else await rm(keystore, { force: true });
+      const temporary = `${input.configFile}.${randomUUID()}.pack-rollback`;
+      await writeFile(temporary, previous, { mode: previousMode });
+      await rename(temporary, input.configFile);
+      if (input.restartAfterPersist) {
+        await requestGraphjinRestart(input.configFile, input.endpoint);
+      }
+    };
+
+    let appliedConfig: Buffer;
+    let appliedKeystore: Buffer | null;
+    try {
+      await persistGraphjinSourceConfigUpdate({
+        configFile: input.configFile,
+        update: appliedUpdate,
+      });
+      await persistPackSections(input.configFile, appliedUpdate);
+      if (input.restartAfterPersist) {
+        await requestGraphjinRestart(input.configFile, input.endpoint);
+      }
+      appliedConfig = await readFile(input.configFile);
+      appliedKeystore = await readKeystore();
+    } catch (error) {
+      try {
+        await restoreSnapshot();
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "pack GraphJin persistence failed and its live update could not be rolled back",
+        );
+      }
+      throw error;
     }
-    const appliedConfig = await readFile(input.configFile);
-    const appliedKeystore = await readKeystore();
     return {
       catalogRevision,
       restore: async () => {
@@ -379,17 +407,7 @@ export async function applyPackGraphjinConfig(input: {
               !((currentKeystore === null && appliedKeystore === null) || (currentKeystore && appliedKeystore && currentKeystore.equals(appliedKeystore)))) {
             throw new Error("GraphJin configuration changed after pack apply; rollback preserved the newer state");
           }
-          if (previousKeystore) {
-            const temporaryKeystore = `${keystore}.${randomUUID()}.pack-rollback`;
-            await writeFile(temporaryKeystore, previousKeystore, { mode: 0o600 });
-            await rename(temporaryKeystore, keystore);
-          } else await rm(keystore, { force: true });
-          const temporary = `${input.configFile}.${randomUUID()}.pack-rollback`;
-          await writeFile(temporary, previous, { mode: previousMode });
-          await rename(temporary, input.configFile);
-          if (input.restartAfterPersist) {
-            await requestGraphjinRestart(input.configFile, input.endpoint);
-          }
+          await restoreSnapshot();
         } finally { await unlock(); }
       },
     };
