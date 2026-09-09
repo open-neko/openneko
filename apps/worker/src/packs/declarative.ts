@@ -71,11 +71,10 @@ export function declarativeGraphjinUpdate(
   }
   const sources = bundle.artifacts.filter(artifact => artifact.kind === "source").flatMap<Record<string, unknown>>(artifact => {
     const authored = artifact.content as Record<string, unknown>;
-    const allowed = new Set(["name", "kind", "type", "host", "port", "dbname", "user", "password", "base_url", "openapi", "auth", "read_only"]);
+    const allowed = new Set(["name", "kind", "type", "host", "port", "dbname", "user", "password", "base_url", "openapi", "auth", "read_only", "capabilities"]);
     for (const key of Object.keys(authored)) {
       if (!allowed.has(key)) throw new Error(`unsupported custom source property ${key}`);
     }
-    if (authored.read_only === false) throw new Error("custom pack sources must be read-only");
     if (bindings[artifact.key]) {
       if (Object.keys(authored).some(key => !["name", "kind", "read_only"].includes(key))) throw new Error("a source binding cannot also declare connection settings");
       return [];
@@ -87,14 +86,19 @@ export function declarativeGraphjinUpdate(
       }
     }
     const source = packValue(authored, inputs, secrets) as Record<string, unknown>;
-    const common = {
-      name: source.name, kind: source.kind, default: false, read_only: true,
-      access: { read: "authenticated", write: "blocked", delete: "blocked" },
-    };
     if (source.kind === "database") {
+      if (source.read_only === false) throw new Error("custom pack database sources must be read-only");
       if (!source.host || !source.dbname || !source.type) throw new Error("database source requires an explicit connection; select an existing-source binding for a source without connection settings");
       if (!["postgres", "mysql", "mariadb"].includes(String(source.type))) throw new Error("unsupported database type");
-      return { ...source, ...common, capabilities: { "data.read": true, "data.write": false, "schema.read": true, "schema.write": false } };
+      return {
+        ...source,
+        name: source.name,
+        kind: source.kind,
+        default: false,
+        read_only: true,
+        access: { read: "authenticated", write: "blocked", delete: "blocked" },
+        capabilities: { "data.read": true, "data.write": false, "schema.read": true, "schema.write": false },
+      };
     }
     const spec = bundle.artifacts.find(artifact => artifact.kind === "spec" && artifact.path === source.openapi);
     if (!spec) throw new Error(`API source ${source.name} must reference a bundled OpenAPI spec`);
@@ -102,13 +106,38 @@ export function declarativeGraphjinUpdate(
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("API base URL must be HTTP(S) without credentials");
     const auth = source.auth as Record<string, unknown> | undefined;
     if (auth && (auth.type !== "bearer" || typeof auth.token !== "string" || Object.keys(auth).some(key => !["type", "token"].includes(key)))) throw new Error("custom API sources support bearer authentication only");
+    const requested = source.capabilities as Record<string, unknown> | undefined;
+    if (requested && (Object.keys(requested).some(key => !["api.read", "api.write", "api.delete"].includes(key)) || Object.values(requested).some(value => typeof value !== "boolean"))) {
+      throw new Error("custom API source capabilities must be boolean api.read, api.write, or api.delete values");
+    }
+    const write = requested?.["api.write"] === true;
+    const remove = requested?.["api.delete"] === true;
+    if ((write || remove) && source.read_only !== false) {
+      throw new Error("custom API sources requesting write or delete capability must set read_only to false");
+    }
+    if (source.read_only === false && !write && !remove) {
+      throw new Error("custom API sources may set read_only to false only when requesting write or delete capability");
+    }
     return {
-      ...common, specs_dir: "/config/specs",
+      name: source.name,
+      kind: source.kind,
+      default: false,
+      read_only: !(write || remove),
+      access: {
+        read: requested?.["api.read"] === false ? "blocked" : "authenticated",
+        write: write ? "authenticated" : "blocked",
+        delete: remove ? "authenticated" : "blocked",
+      },
+      specs_dir: "/config/specs",
       specs: { [basename(spec.path, extname(spec.path))]: {
         base_url: url.toString().replace(/\/$/, ""),
         ...(auth ? { auth: { scheme: "bearer", token: auth.token } } : {}),
       } },
-      capabilities: { "api.read": true, "api.write": false, "api.delete": false },
+      capabilities: {
+        "api.read": requested?.["api.read"] !== false,
+        "api.write": write,
+        "api.delete": remove,
+      },
     };
   });
   const names = Object.fromEntries(bundle.artifacts.filter(artifact => artifact.kind === "source" && bindings[artifact.key]).map(artifact => [String((artifact.content as Record<string, unknown>).name), bindings[artifact.key]]));
@@ -120,6 +149,21 @@ export function declarativeGraphjinUpdate(
     update_sources: sources, relationships,
     ...(retiredSources.length ? { source_patches: retiredSources.map(name => ({ name, read_only: true, access: { read: "blocked", write: "blocked", delete: "blocked" } })) } : {}),
   };
+}
+
+export function declarativePackPermissions(bundle: SolutionPackBundle): Record<string, string> {
+  const sources = bundle.artifacts
+    .filter(artifact => artifact.kind === "source")
+    .map(artifact => artifact.content as Record<string, unknown>);
+  const database = sources.some(source => source.kind === "database") ? "read-only" : "none";
+  const apiSources = sources.filter(source => source.kind === "api");
+  const apiWrite = apiSources.some(source => {
+    const capabilities = source.capabilities as Record<string, unknown> | undefined;
+    return capabilities?.["api.write"] === true || capabilities?.["api.delete"] === true;
+  })
+    ? "requested; actions require an enabled policy"
+    : "not requested";
+  return { database, apiWrite };
 }
 
 /** Existing generated packs use these time-window variables; authored declarations override them. */

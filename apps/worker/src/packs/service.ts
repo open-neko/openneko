@@ -2,7 +2,7 @@ import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedP
 import { parse as parseYaml } from "yaml";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
 import { mapSavedQueryMetric } from "../jobs/deterministic-metric.js";
-import { bindPackQueries, declarativeGraphjinUpdate, packVariables } from "./declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, packVariables } from "./declarative.js";
 import { createHmac, randomUUID } from "node:crypto";
 import {
   cp,
@@ -1026,7 +1026,7 @@ export class PackService {
       manifestHash: bundle.manifestHash,
       bundleHash: bundle.bundleHash,
       bindingRequirements: bundle.artifacts.filter(artifact => artifact.kind === "source" && artifactRecord(artifact).kind === "database" && !artifactRecord(artifact).host).map(artifact => ({ key: artifact.key, name: String(artifactRecord(artifact).name) })),
-      permissions: packId !== "magento" ? { database: bundle.manifest.artifacts.graphjin ? "read-only" : "none", apiWrite: "blocked" } : {
+      permissions: packId !== "magento" ? declarativePackPermissions(bundle) : {
         database: "view-only reporting",
         apiWrite: "specific Magento changes require approval and must be enabled individually",
         customerPii: "available to authenticated read-only queries",

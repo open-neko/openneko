@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PackArtifact, SolutionPackBundle } from "@neko/packs";
-import { bindPackQueries, declarativeGraphjinUpdate, packValue } from "../src/packs/declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, packValue } from "../src/packs/declarative.js";
 
 function bundle(): SolutionPackBundle {
   const artifact = (kind: PackArtifact["kind"], content: unknown, path = ""): PackArtifact => ({ kind, content, path, key: `${kind}.health`, targetRef: "health", hash: "fixture" });
@@ -36,9 +36,32 @@ describe("declarative pack configuration", () => {
     expect(JSON.stringify(pack)).toBe(original);
   });
 
+  it("preserves a pack API source write request while keeping undeclared operations blocked", () => {
+    const pack = bundle();
+    pack.artifacts[0]!.content = {
+      ...(pack.artifacts[0]!.content as Record<string, unknown>),
+      read_only: false,
+      capabilities: { "api.read": true, "api.write": true, "api.delete": false },
+    };
+    expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
+      update_sources: [{
+        name: "service_health",
+        read_only: false,
+        access: { read: "authenticated", write: "authenticated", delete: "blocked" },
+        capabilities: { "api.read": true, "api.write": true, "api.delete": false },
+      }],
+    });
+    expect(declarativePackPermissions(pack)).toEqual({
+      database: "none",
+      apiWrite: "requested; actions require an enabled policy",
+    });
+  });
+
   it("rejects unsupported and unsafe declarations before mutation", () => {
     for (const change of [
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).read_only = false; },
+      (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).capabilities = { "api.write": true }; },
+      (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).capabilities = { "data.write": true }; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).specs_dir = "/arbitrary"; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).openapi = "https://example.test/spec"; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).auth = { type: "bearer", token: "plaintext" }; },
@@ -54,6 +77,19 @@ describe("declarative pack configuration", () => {
       expect(() => declarativeGraphjinUpdate(pack, inputs, secrets)).toThrow();
     }
     expect(() => declarativeGraphjinUpdate(bundle(), inputs, {})).toThrow(/missing pack template/);
+
+    const database = bundle();
+    database.artifacts[0]!.content = {
+      name: "service_health",
+      kind: "database",
+      type: "postgres",
+      host: "db.example.test",
+      dbname: "health",
+      user: "reader",
+      password: "{{secret.service.api_token}}",
+      read_only: false,
+    };
+    expect(() => declarativeGraphjinUpdate(database, inputs, secrets)).toThrow(/database sources must be read-only/);
   });
 
   it("binds database query roots and named directives without rewriting literals or nested fields", () => {
