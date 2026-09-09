@@ -41,7 +41,7 @@ const nativeStateKeys = {
   ],
   policy: [
     "name", "description", "applies_to_kinds", "applies_to_scopes", "mode",
-    "allowed_targets", "limits", "approver_role", "priority", "enabled",
+    "allowed_targets", "limits", "approver_role", "priority",
   ],
   action: ["kind", "description", "definition", "definition_hash", "enabled"],
 } as const;

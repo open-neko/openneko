@@ -166,6 +166,11 @@ export function declarativePackPermissions(bundle: SolutionPackBundle): Record<s
   return { database, apiWrite };
 }
 
+/** Pack policy activation belongs to the administrator, including across upgrades. */
+export function installedPackPolicyEnabled(existing?: boolean): boolean {
+  return existing ?? false;
+}
+
 /** Existing generated packs use these time-window variables; authored declarations override them. */
 export function packVariables(value: unknown, inputs: Record<string, unknown>): Record<string, unknown> {
   const definition = packValue(value ?? {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PackArtifact, SolutionPackBundle } from "@neko/packs";
-import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, packValue } from "../src/packs/declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packValue } from "../src/packs/declarative.js";
+import { nativeArtifactStateHash } from "../src/packs/artifact-state.js";
 
 function bundle(): SolutionPackBundle {
   const artifact = (kind: PackArtifact["kind"], content: unknown, path = ""): PackArtifact => ({ kind, content, path, key: `${kind}.health`, targetRef: "health", hash: "fixture" });
@@ -121,5 +122,13 @@ describe("declarative pack configuration", () => {
     expect(packValue({ count: "{{count}}", enabled: "{{enabled}}" }, { count: 3, enabled: false })).toEqual({ count: 3, enabled: false });
     expect(() => packValue("prefix-{{missing}}", {})).toThrow();
     expect(() => packValue("{{missing}}", {})).toThrow();
+  });
+
+  it("leaves every pack policy's activation with the administrator", () => {
+    expect(installedPackPolicyEnabled()).toBe(false);
+    expect(installedPackPolicyEnabled(false)).toBe(false);
+    expect(installedPackPolicyEnabled(true)).toBe(true);
+    expect(nativeArtifactStateHash("policy", { name: "Fixture", enabled: false }))
+      .toBe(nativeArtifactStateHash("policy", { name: "Fixture", enabled: true }));
   });
 });

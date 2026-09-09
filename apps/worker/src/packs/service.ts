@@ -2,7 +2,7 @@ import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedP
 import { parse as parseYaml } from "yaml";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
 import { mapSavedQueryMetric } from "../jobs/deterministic-metric.js";
-import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, packVariables } from "./declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packVariables } from "./declarative.js";
 import { createHmac, randomUUID } from "node:crypto";
 import {
   cp,
@@ -2536,7 +2536,7 @@ export class PackService {
 
         for (const artifact of bundle.artifacts.filter((value) => value.kind === "policy")) {
           const value = artifactRecord(artifact);
-          const [existingPolicy] = await tx.select({ id: action_policy.id }).from(action_policy)
+          const [existingPolicy] = await tx.select({ id: action_policy.id, enabled: action_policy.enabled }).from(action_policy)
             .where(and(eq(action_policy.org_id, this.orgId), eq(action_policy.name, String(value.name)))).limit(1);
           const set = {
             description: String(value.description),
@@ -2553,7 +2553,7 @@ export class PackService {
             limits: value.limits as Record<string, unknown>,
             approver_role: value.approverRole ? String(value.approverRole) : null,
             priority: Number(value.priority),
-            enabled: Boolean(value.enabled),
+            enabled: installedPackPolicyEnabled(existingPolicy?.enabled),
             updated_at: new Date(),
           };
           if (existingPolicy) await tx.update(action_policy).set(set).where(eq(action_policy.id, existingPolicy.id));
