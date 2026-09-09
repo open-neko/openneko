@@ -23,6 +23,7 @@
     "@neko/llm": "workspace:*",
     "@neko/packs": "workspace:*",
     "@neko/records": "workspace:*",
+    "@neko/secret-crypt": "workspace:^",
     "@neko/telemetry": "workspace:*",
     "@open-neko/plugin-install": "workspace:*",
     "@open-neko/plugin-parallel-search": "0.3.1",

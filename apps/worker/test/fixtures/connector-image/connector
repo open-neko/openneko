@@ -1,7 +1,18 @@
 #!/usr/bin/env -S node --use-env-proxy
 import { readFileSync } from 'node:fs';
-const { operation, input } = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-if (operation === 'echo') console.log(JSON.stringify({ value: input.value, uid: process.getuid() }));
+import { createHash, randomUUID } from 'node:crypto';
+const { operation, input, connection, credential } = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+if (connection === 'authorize') {
+  const url = new URL('https://provider.example/authorize');
+  for (const [key, value] of Object.entries({ client_id: input.client.clientId, state: input.state, redirect_uri: input.redirectUri, scope: input.scopes.join(' '), response_type: 'code', code_challenge: input.codeChallenge, code_challenge_method: 'S256' })) url.searchParams.set(key, value);
+  console.log(JSON.stringify({ authorizationUrl: url.toString() }));
+} else if (connection === 'exchange') {
+  const [challenge, account] = input.code.split(':');
+  if (challenge !== createHash('sha256').update(input.codeVerifier).digest('base64url') || !account) process.exit(1);
+  console.log(JSON.stringify({ accountId: account, label: account + '@example.test', scopes: input.scopes, expiresAt: Date.now() + 300000, tokens: { access: 'test-only-' + randomUUID() } }));
+} else if (connection === 'refresh') console.log(JSON.stringify({ ...input.credential, expiresAt: Date.now() + 300000, tokens: { access: 'test-only-' + randomUUID() } }));
+else if (connection === 'revoke') console.log('{"revoked":true}');
+else if (operation === 'echo') console.log(JSON.stringify({ value: input.value, uid: process.getuid(), accountId: credential?.accountId }));
 else if (operation === 'wait') await new Promise(resolve => setTimeout(resolve, 120000));
 else if (operation === 'network') {
   try {

@@ -25,3 +25,30 @@ OpenShell gateway. It checks both embedded and uploaded pack installation,
 review, content changes, non-root execution, denied writes, denied network
 access, timeout, removal during execution, restart and an unavailable image.
 Without the image variable, the live tests are skipped.
+
+## Browser account test
+
+The same image implements a test-only OAuth protocol. It checks PKCE and returns
+synthetic tokens. The browser test supplies a simulated provider consent page;
+the web routes, worker, PostgreSQL and OpenShell remain real.
+
+After building the image, set the same image and database variables and run:
+
+```sh
+pnpm --filter @neko/worker exec tsx test/fixtures/pack-account-server.ts
+```
+
+This installs the test pack and starts an isolated worker handler on port 4113.
+Start a test web server with `WORKER_ADMIN_URL=http://127.0.0.1:4113`. Point a
+Playwright config at that web server and run `test/visual/pack-accounts.spec.ts`.
+The test connects two accounts, executes a sandbox read with the selected account,
+and disconnects it. It also checks desktop/phone controls and error recovery.
+Stop the fixture server with SIGTERM to remove its installation and organization.
+
+For ownership, callback replay, consent, refresh and lifecycle tests with a real
+database and a substituted provider runner:
+
+```sh
+OPENNEKO_PACK_ACCOUNTS_TEST=1 pnpm --filter @neko/worker exec vitest run \
+  test/pack-accounts.integration.test.ts --maxWorkers=1 --minWorkers=1
+```

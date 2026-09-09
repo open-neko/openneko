@@ -6,6 +6,8 @@ it("accepts a fixed image and rejects unsafe declarations", () => {
   expect(packConnectorSchema.parse(connector).network).toEqual([]);
   for (const change of [
     { image: "example.test/notes:latest" },
+    { auth: { label: "Notes", authorizationOrigin: "http://insecure.example", scopes: ["read"], credentialVersion: "1" } },
+    { auth: { label: "Notes", authorizationOrigin: "https://example.test/path", scopes: ["read"], credentialVersion: "1" } },
     { entrypoint: "/app/../tmp/connector" },
     { operations: [...connector.operations, ...connector.operations] },
     { network: [{ host: "*", port: 443, binary: "/usr/bin/curl" }] },

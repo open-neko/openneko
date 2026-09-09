@@ -1,3 +1,4 @@
+import { packConnection, type PackConnectionContext } from "./connections.js";
 import { runPackConnector } from "./connector-runner.js";
 import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedPack, type AvailablePack } from "./uploads.js";
 import { parse as parseYaml } from "yaml";
@@ -35,6 +36,7 @@ import {
   pack_action_definition,
   pack_artifact,
   pack_install,
+  pack_connection_client,
   pack_operation,
   processing_job,
   pool,
@@ -877,7 +879,7 @@ export class PackService {
     return bundle;
   }
 
-  async runConnector(packId: string, connectorId: string, operation: string, input: Record<string, unknown>) {
+  private async withConnector<T>(packId: string, connectorId: string, fn: (ctx: Omit<PackConnectionContext, "owner">) => Promise<T>) {
     const client = await pool().connect();
     try {
       await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [`pack:${this.orgId}:${packId}`]);
@@ -889,11 +891,36 @@ export class PackService {
       if (storedRuntime(installation.config)?.connectorBundleHash !== bundle.bundleHash) throw new Error("Pack connector contents changed; review and upgrade the pack");
       const connector = bundle.manifest.connectors?.find(value => value.id === connectorId);
       if (!connector) throw new Error("Pack connector is not declared");
-      return await runPackConnector(connector, { operation, input });
+      return await fn({ sql: client, installationId: installation.id, connector });
     } finally {
       await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [`pack:${this.orgId}:${packId}`]).catch(() => {});
       client.release();
     }
+  }
+
+  async accountProviders(owner: string) {
+    const installations = await db().select().from(pack_install).where(and(eq(pack_install.org_id, this.orgId), eq(pack_install.status, "installed")));
+    const providers = [];
+    for (const installation of installations) {
+      const bundle = await this.installedBundle(installation);
+      for (const connector of bundle.manifest.connectors ?? []) {
+        if (connector.auth) providers.push({ packId: installation.pack_id, connectorId: connector.id, name: connector.auth.label, scopes: connector.auth.scopes, ...await this.connectAccount(installation.pack_id, connector.id, owner, "list", {}) });
+      }
+    }
+    return providers;
+  }
+
+  async connectAccount(packId: string, connectorId: string, owner: string, action: string, input: Record<string, unknown>) {
+    if (!["configure", "list", "start", "callback", "disconnect"].includes(action)) throw new Error("Unknown pack connection action");
+    return this.withConnector(packId, connectorId, ctx => packConnection({ ...ctx, owner }, action, input));
+  }
+
+  async runConnector(packId: string, connectorId: string, operation: string, input: Record<string, unknown>, binding?: { ownerId: string; accountId: string }) {
+    return this.withConnector(packId, connectorId, async ctx => {
+      if (ctx.connector.auth && (!binding?.ownerId || !binding.accountId)) throw new Error("Select a pack account owned by the execution user");
+      const credential = ctx.connector.auth ? await packConnection({ ...ctx, owner: binding!.ownerId }, "credential", { accountId: binding!.accountId }) : undefined;
+      return runPackConnector(ctx.connector, { operation, input, ...(credential ? { credential } : {}) });
+    });
   }
 
   async upload(bytes: Buffer, request: { actorUserId?: string | null; signal?: AbortSignal } = {}) {
@@ -1938,6 +1965,7 @@ export class PackService {
             updated_at: new Date(),
           }).where(eq(pack_artifact.id, artifact.id));
         }
+        await tx.delete(pack_connection_client).where(eq(pack_connection_client.pack_install_id, installation.id));
         await tx.update(pack_install).set({
           status: "removed",
           removed_at: new Date(),
@@ -2687,6 +2715,13 @@ export class PackService {
               updated_at: new Date(),
             },
           });
+        }
+        // Keep compatible accounts across image upgrades. Changed OAuth contracts
+        // require new client setup and consent; cleanup shares this transaction.
+        const clients = await tx.select().from(pack_connection_client).where(eq(pack_connection_client.pack_install_id, installationId!));
+        for (const client of clients) {
+          const auth = authoredBundle.manifest.connectors?.find(value => value.id === client.connector_id)?.auth;
+          if (!auth || canonicalHash(auth) !== client.auth_hash) await tx.delete(pack_connection_client).where(and(eq(pack_connection_client.pack_install_id, installationId!), eq(pack_connection_client.connector_id, client.connector_id)));
         }
         await tx.update(pack_install).set({
           status: "installed",

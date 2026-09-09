@@ -241,3 +241,81 @@ Execution checks the installed pack and its approved content before each call.
 Upgrade and removal use the existing pack lock and wait for active execution.
 The current internal service supports declared reads only. Work access, approved
 writes and browser account connections are separate implementation steps.
+
+## Browser account connections
+
+An executable connector can add an `auth` declaration:
+
+```yaml
+auth:
+  label: Example service
+  authorizationOrigin: https://accounts.example.com
+  scopes: [records.read]
+  credentialVersion: "1"
+```
+
+The customer supplies the OAuth client ID and secret on **Integrations → Pack
+accounts**. Only an administrator can change these settings. Each user then
+connects their own accounts. The account selector supports reconnect and
+disconnect. Users can connect more than one account. Solo mode has its own owner;
+its accounts do not become a signed-in user's accounts when SSO is enabled.
+
+Register this callback with the provider, using your OpenNeko site's origin:
+`/api/pack-accounts/<pack-id>/<connector-id>/callback`.
+Use HTTPS outside localhost development. The connector must support authorization
+codes with PKCE S256. Its authorization URL must use the declared origin, client
+ID, callback, state and scopes. The platform rejects extra scopes and changed
+callback parameters. State expires after ten minutes and can be used once. The
+callback also requires the same browser cookie and authenticated account owner.
+
+Connection requests use the same private file and sandbox as normal execution:
+
+```json
+{"connection":"authorize","input":{"client":{"clientId":"...","clientSecret":"..."},"redirectUri":"...","state":"...","codeChallenge":"...","scopes":["records.read"]}}
+```
+
+Implement these four requests in the connector:
+
+| Request | Input in addition to `client` | Required result |
+| --- | --- | --- |
+| `authorize` | `redirectUri`, `state`, `codeChallenge`, `scopes` | `{ "authorizationUrl": "https://..." }` |
+| `exchange` | `code`, `redirectUri`, `codeVerifier`, `scopes` | Credential object below |
+| `refresh` | `credential` | Complete replacement credential, including rotated refresh tokens |
+| `revoke` | `credential` | `{ "revoked": true }` only after the provider confirms revocation |
+
+The credential object has `accountId` (stable provider identity), `label`,
+`scopes` (actually granted), `expiresAt` (Unix milliseconds) and `tokens` (an opaque
+JSON object). The connector must validate provider responses and account identity.
+It must fail on provider errors. Do not report requested scopes as granted without
+checking the response. The platform rejects partial consent and a different
+provider identity during reconnect or refresh.
+
+Client settings and account credentials use the existing encryption code. They
+are stored in separate pack tables linked to the installation. They are not
+plugin credentials or named source secrets. Listing accounts returns only account
+IDs, labels and status. The platform passes credentials to the selected connector
+through its private request file; it does not return them to the browser or agent.
+
+Internal execution of an authenticated operation requires both `ownerId` and
+`accountId`. The caller must supply the authorized execution user. Background work
+must preserve that explicit binding; there is no default or fallback account.
+The service checks ownership before it supplies a credential. Work and workflow
+exposure still belong to the action-dispatch step.
+
+Refresh starts within 60 seconds of expiry and uses the existing pack lock. A
+successful refresh is saved before execution. An uncertain or failed refresh
+requires reconnect; the platform does not retry an old rotating refresh token.
+Disconnect keeps credentials for retry if revocation is not confirmed.
+
+Compatible image upgrades keep accounts. Changes to the authentication declaration
+(including scopes or `credentialVersion`) require new client setup and consent.
+Client setting changes remove saved accounts and pending callbacks. Uninstall
+removes these records in the existing installation transaction. Disconnect first
+if you also want to revoke the provider's grant before uninstall.
+
+Storage choice: `data_source_secret` is organization-scoped and has no account
+owner field. The plugin store has a different ownership contract. Migration 0071
+therefore adds `pack_connection_client` and `pack_account`, with cascading foreign
+keys to the existing installation. It does not add another pack registry.
+
+Security reference: [OAuth security best current practice](https://www.rfc-editor.org/rfc/rfc9700.html).

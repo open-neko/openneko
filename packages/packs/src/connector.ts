@@ -9,6 +9,13 @@ export const packConnectorSchema = z.object({
   id: identifier,
   image: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha256:[a-f0-9]{64}$/, "connector image must have a SHA-256 digest"),
   entrypoint: executable,
+  auth: z.object({
+    label: z.string().min(1).max(100),
+    // The pack owns provider endpoints and validates issuer/token responses.
+    authorizationOrigin: z.url().refine(value => new URL(value).protocol === "https:" && new URL(value).origin === value, "use an HTTPS origin"),
+    scopes: z.array(z.string().min(1).max(500)).min(1),
+    credentialVersion: z.string().min(1).max(100),
+  }).strict().optional(),
   operations: z.array(z.object({
     id: identifier,
     description: z.string().min(1).max(1000),
@@ -25,3 +32,11 @@ export const packConnectorSchema = z.object({
 });
 
 export type PackConnector = z.infer<typeof packConnectorSchema>;
+
+export const packCredentialSchema = z.object({
+  accountId: z.string().min(1).max(500),
+  label: z.string().min(1).max(200),
+  scopes: z.array(z.string().min(1)),
+  expiresAt: z.number().finite().positive(),
+  tokens: z.record(z.string(), z.unknown()),
+}).strict();

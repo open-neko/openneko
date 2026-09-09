@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  foreignKey,
   date,
   index,
   bigint,
@@ -2664,6 +2665,29 @@ export const pack_install = pgTable(
     ),
   }),
 );
+
+// Pack accounts are private to an owner, not resolvable as source secrets.
+export const pack_connection_client = pgTable("pack_connection_client", {
+  pack_install_id: uuid("pack_install_id").notNull().references(() => pack_install.id, { onDelete: "cascade" }),
+  connector_id: text("connector_id").notNull(),
+  auth_hash: text("auth_hash").notNull(),
+  value_enc: text("value_enc").notNull(),
+}, t => ({ pk: primaryKey({ columns: [t.pack_install_id, t.connector_id] }) }));
+
+export const pack_account = pgTable("pack_account", {
+  id: uuid("id").primaryKey(),
+  pack_install_id: uuid("pack_install_id").notNull().references(() => pack_install.id, { onDelete: "cascade" }),
+  connector_id: text("connector_id").notNull(),
+  owner_id: text("owner_id").notNull(),
+  status: text("status").notNull(),
+  value_enc: text("value_enc").notNull(),
+  label: text("label").notNull().default(""),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+}, t => ({
+  owner: index("pack_account_owner").on(t.pack_install_id, t.connector_id, t.owner_id),
+  client: foreignKey({ columns: [t.pack_install_id, t.connector_id], foreignColumns: [pack_connection_client.pack_install_id, pack_connection_client.connector_id] }).onDelete("cascade"),
+  status: check("pack_account_status_check", sql`${t.status} in ('pending', 'connected', 'reconnect_required')`),
+}));
 
 export const pack_artifact = pgTable(
   "pack_artifact",

@@ -1,6 +1,6 @@
 # Google Workspace pack implementation plan
 
-Status: steps 1 and 2 are complete and verified. Steps 3 through 7 are
+Status: steps 1 through 3 are complete and verified. Steps 4 through 7 are
 not implemented. The imported Google Workspace skills, license and inventory
 remain uncommitted. They are not evidence of a working connector. Mock execution
 and dry-run mode were removed separately in commit `b2a39dc`.
@@ -99,6 +99,46 @@ Requires commit 2.
 
 Complete when a user can connect the test pack through the browser. Credentials
 must stay available after restart and remain inaccessible to other accounts.
+
+Step 3 verification:
+
+- Migration 0071 adds encrypted client settings and owner-scoped account rows.
+  Existing source secrets have no owner field; plugin storage is not used.
+  Both tables attach to the existing installation. Uninstall and incompatible
+  upgrades remove accounts in the installation transaction.
+- Four PostgreSQL tests cover two accounts, user and organization isolation,
+  one-use state, callback binding, expiry, partial consent, reconnect identity,
+  rotating refresh across service instances, failed refresh, restart, compatible
+  upgrades, increased scopes, changed client settings and uninstall.
+- Five web route tests cover session-derived ownership, browser state cookies,
+  CSRF, admin-only client setup, solo mode, signed-out SSO rejection and no token
+  resolution endpoint. The seven existing plugin connection route tests pass.
+- The browser test uses actual web routes, worker handlers, PostgreSQL and
+  OpenShell. The provider consent page and provider credentials are test fixtures.
+  It connects two accounts, runs a sandbox read with the selected account, and
+  disconnects that account. A second browser test covers loading, error, retry
+  and empty states. No real Google connection is claimed at this step.
+- The fixture image was built and run with digest
+  `sha256:07c7e7e1bc534d5af270dd3867e5003e2e7d6da780b7f4bf8ddc9e0b1d508d32`.
+- Existing plugin registry tests: 51 passed. Pack schema tests: 36 passed.
+  Worker lifecycle, account, declarative and runner tests: 17 passed.
+  Web tests: 345 passed, 108 skipped. Worker/web type checks, web lint and
+  `ui:check` passed.
+
+UI reuse and evidence:
+
+| Need | Existing component | Evidence |
+| --- | --- | --- |
+| Page and section | `AppHeader`, `PageHeading`, `Card` | Live browser page |
+| Client fields and account choice | `Field`, `Input`, `NativeSelect` | Browser setup and two-account selection |
+| Actions and navigation | `Button`, `ButtonLink`, `ActionGroup` | Focus and phone target checks at 1280/390 pixels |
+| Permission and client details | `Disclosure` | Browser setup flow |
+| Disconnect confirmation | `confirmDialog` | Browser disconnect flow |
+| Result and error | Existing Toaster and focused alert | Success, error and retry checks |
+
+The internal account binding requires both owner and account ID. Step 4 must
+carry this binding through Work and background execution; no implicit account
+selection or new workflow runtime was added here.
 
 ### 4. `feat(packs): execute declared operations through action approvals`
 
@@ -275,24 +315,25 @@ fallback. Changes to action transport are limited to removing discovery coupling
 
 ### 4. Browser connections owned by packs
 
-- [ ] Add pack-specific start/callback/disconnect routes and manifest-driven UI
+- [x] Add pack-specific start/callback/disconnect routes and manifest-driven UI
       using the existing design system. Preserve plugin routes unchanged.
-- [ ] Bind expiring single-use state to organization, owner, installation and
+- [x] Bind expiring single-use state to organization, owner, installation and
       callback; enforce PKCE where supported and validate authorization on return.
-- [ ] Run provider authorization, token exchange, refresh and revocation logic in
+- [x] Run provider authorization, token exchange, refresh and revocation logic in
       the pack connector. Platform manages identity, encrypted persistence and
       delivery of credentials to that connector.
-- [ ] Choose storage by checking existing access boundaries, account identity,
+- [x] Choose storage by checking existing access boundaries, account identity,
       concurrent refresh and lifecycle needs first. A new table is not presumed.
       Do not expose personal tokens through generic source-secret listing/resolution.
-- [ ] Keep client configuration and account credentials scoped appropriately;
+- [x] Keep client configuration and account credentials scoped appropriately;
       invalidate affected connections when OAuth client settings change.
-- [ ] Use existing installation state and uninstall compensation/cleanup paths.
+- [x] Use existing installation state and uninstall compensation/cleanup paths.
       Preserve compatible connections across upgrades and require renewed consent
       for increased access. No separate connector lifecycle.
-- [ ] Test account/org isolation, partial consent, replay, refresh rotation,
-      reconnect, uninstall and explicit background workflow bindings.
-- [ ] Verify desktop/mobile UI and existing published-plugin compatibility tests.
+- [x] Test account/org isolation, partial consent, replay, refresh rotation,
+      reconnect, uninstall and explicit execution owner/account bindings.
+      Work and background workflow wiring remain in commit 4.
+- [x] Verify desktop/mobile UI and existing published-plugin compatibility tests.
 
 Expected scope: worker pack connection handlers and persistence, pack-specific web
 routes/controls, lifecycle cleanup integration and focused tests. Any schema change

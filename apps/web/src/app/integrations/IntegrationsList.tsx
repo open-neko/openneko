@@ -114,6 +114,8 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
         description="Connect external accounts for agent actions. Credentials remain in this deployment."
       />
 
+      <ButtonLink href="/integrations/packs" variant="secondary">Pack accounts</ButtonLink>
+
       {workspace.length > 0 && (
         <>
           <h2 className="mt-6 mb-2 font-display text-ui-section font-bold text-text">

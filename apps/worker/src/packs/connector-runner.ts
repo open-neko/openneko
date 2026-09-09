@@ -12,14 +12,16 @@ const MAX_BYTES = 1024 * 1024;
 /** One invocation per sandbox. Request data never appears in command arguments. */
 export async function runPackConnector(
   declaration: PackConnector,
-  request?: { operation: string; input: Record<string, unknown> },
+  request?: { operation: string; input: Record<string, unknown>; credential?: Record<string, unknown> }
+    | { connection: "authorize" | "exchange" | "refresh" | "revoke"; input: Record<string, unknown> },
 ): Promise<unknown> {
   const connector = packConnectorSchema.parse(declaration);
-  if (request) {
+  if (request && "operation" in request) {
     const operation = connector.operations.find(value => value.id === request.operation);
     if (!operation) throw new Error("Pack connector operation is not declared");
     if (operation.effect !== "read") throw new Error("Pack connector writes require action dispatch support");
   }
+  if (request && "connection" in request && !connector.auth) throw new Error("Pack connector does not support accounts");
   const payload = JSON.stringify(request ?? {});
   if (Buffer.byteLength(payload) > MAX_BYTES) throw new Error("Pack connector request exceeds 1 MiB");
   const directory = await mkdtemp(join(tmpdir(), "openneko-pack-"));
