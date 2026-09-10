@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.42.0](https://github.com/open-neko/openneko/compare/v2.41.0...v2.42.0) (2026-09-10)
+
+
+### Features
+
+* **evals:** add backend qualification v4 ([830b670](https://github.com/open-neko/openneko/commit/830b670bc143dfb97a8379a330b8b38f34330d4c))
+* **evals:** add backend qualification v4 ([c6ae133](https://github.com/open-neko/openneko/commit/c6ae133daacfaa596329b75218837e46019335a1))
+
 ## [2.41.0](https://github.com/open-neko/openneko/compare/v2.40.0...v2.41.0) (2026-09-10)
 
 
