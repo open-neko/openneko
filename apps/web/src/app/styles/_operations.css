@@ -1477,7 +1477,6 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .workflow-detail-section {
-  counter-increment: workflow-section;
   display: grid;
   grid-template-columns: minmax(112px, 0.32fr) minmax(0, 1fr);
   gap: clamp(20px, 4vw, 54px);
@@ -1486,14 +1485,8 @@ html[data-density="compact"] .operations-root .operations-layout {
   border-bottom: 1px solid var(--border);
 }
 
-.workflow-detail {
-  counter-reset: workflow-section;
-}
-
 .workflow-detail-section h3 {
-  position: relative;
   margin: 0;
-  padding-left: 28px;
   color: var(--text2);
   font-family: var(--font-display), "Archivo", sans-serif;
   font-size: var(--type-label);
@@ -1501,16 +1494,6 @@ html[data-density="compact"] .operations-root .operations-layout {
   letter-spacing: 0.13em;
   line-height: 1.45;
   text-transform: uppercase;
-}
-
-.workflow-detail-section h3::before {
-  content: counter(workflow-section, decimal-leading-zero);
-  position: absolute;
-  top: 0;
-  left: 0;
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: var(--type-label);
 }
 
 .workflow-detail-section-body {
