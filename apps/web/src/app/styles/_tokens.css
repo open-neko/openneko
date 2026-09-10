@@ -20,9 +20,13 @@
   --watch-soft: #FFF1D8;
   --warn: #F0D97A;
   --warn-soft: #FFF4CC;
-  --warn-ink: #8A6D00;
+  /* Amber text token. Meets WCAG AA on card, bg, watch-soft, and warn-soft. */
+  --warn-ink: #7E6200;
   --danger: #A53535;
   --danger-soft: #FEECEC;
+  /* Danger text for dark surfaces (heroes, inspector head), where the base
+     --danger red drops below AA. Mirrors bright --success and --watch. */
+  --danger-bright: #F58A8A;
   --accent-hover: #5A4CD1;
   --danger-hover: #852626;
   --on-accent: #FFFFFF;

@@ -1097,7 +1097,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .workflows-ops-status > div[data-state="attention"] strong {
-  color: var(--danger);
+  color: var(--danger-bright);
 }
 
 .workflows-ops-status > div[data-state="clear"] strong {
@@ -1373,7 +1373,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .operations-root.is-workflows .workflow-inspector-state[data-state="broken"] {
-  color: var(--danger);
+  color: var(--danger-bright);
 }
 
 .operations-root.is-workflows .workflow-inspector-head h2 {
@@ -1613,7 +1613,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .workflow-budget-copy strong[data-state="watch"] {
-  color: var(--watch);
+  color: var(--warn-ink);
 }
 
 .workflow-budget-track {

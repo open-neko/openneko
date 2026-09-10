@@ -326,7 +326,7 @@ section.library-empty [data-ui-empty-state-body] {
 }
 
 .memory-review-meta span {
-  color: var(--watch);
+  color: var(--warn-ink);
   font-family: var(--font-mono);
   font-size: var(--type-label);
   font-weight: 700;
