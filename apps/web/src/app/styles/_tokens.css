@@ -30,6 +30,9 @@
   --accent-hover: #5A4CD1;
   --danger-hover: #852626;
   --on-accent: #FFFFFF;
+  /* Warm-paper text tones for the dark hero surfaces. Both meet AA on --text. */
+  --on-dark-2: #CDCCC9;
+  --on-dark-3: #B4B3AF;
   --hover-wash: rgba(20,18,12,0.04);
   --backdrop: rgba(20,18,12,0.45);
   --radius: 20px;

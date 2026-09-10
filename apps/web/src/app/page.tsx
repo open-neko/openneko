@@ -23,7 +23,6 @@ import ActCard, {
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import SectionNav from "@/components/SectionNav";
-import PageHeading from "@/components/PageHeading";
 import HoursSavedHero, {
   type HoursSavedItem,
   type HoursSavedValue,
@@ -540,59 +539,65 @@ export default function Dashboard() {
                 Example metrics · set up your own →
               </Link>
             )}
-            <PageHeading
-              title="Briefing"
-              description={
-                awaiting && awaiting.count > 0
-                  ? `${awaiting.count} decision${awaiting.count === 1 ? "" : "s"} need your judgment.`
-                  : "No decisions are waiting."
-              }
-              actions={
-                !personalMode && roles.length > 0 ? (
-                  <div className="dash-role-control" aria-label="Briefing role">
-                    <span>Briefing view</span>
-                    <SegmentedControl className="dash-role-list">
-                      {roles.map((kind) => (
-                        <Segment
-                          key={kind}
-                          selected={role === kind}
-                          onClick={() => setRole(kind)}
-                        >
-                          {kind}
-                        </Segment>
-                      ))}
-                    </SegmentedControl>
-                  </div>
-                ) : null
-              }
-            />
-
-            {/* Legacy greeting + subtitle from the KPI-only briefing API.
-                When the live summary is present, it's the canonical
-                read-on-the-business; the legacy greeting goes silent so the
-                page doesn't contradict itself. */}
-            {!findings?.summary && (
-              <>
-                <div className="greet" style={{ animation: "fadeUp 0.5s ease 0.05s both" }}>{greeting}</div>
-                <div className="greet-sub-quote" style={{ animation: "fadeUp 0.5s ease 0.1s both" }}>{subtitle}</div>
-              </>
-            )}
-
-            {findings?.summary && (
-              <div
-                className="dash-read"
-                style={{ animation: "fadeUp 0.5s ease 0.15s both" }}
-              >
-                <p>{findings.summary.summaryMd}</p>
-                <div className="dash-read-stamp">
-                  as of {new Date(findings.summary.createdAt).toLocaleTimeString("en-IN", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                    hour12: true,
-                  })}
-                </div>
+            {!personalMode && roles.length > 0 ? (
+              <div className="dash-command-roles" aria-label="Briefing role">
+                <SegmentedControl className="dash-role-list">
+                  {roles.map((kind) => (
+                    <Segment
+                      key={kind}
+                      selected={role === kind}
+                      onClick={() => setRole(kind)}
+                    >
+                      {kind}
+                    </Segment>
+                  ))}
+                </SegmentedControl>
               </div>
-            )}
+            ) : null}
+
+            {/* Command strip: the proactive read on the business. The agent has
+                already swept; this states what changed and what needs a decision,
+                over the dark hero the design system reserves for what is live. */}
+            <section
+              className="dash-command"
+              aria-label="Briefing"
+              style={{ animation: "fadeUp 0.55s cubic-bezier(0.2, 0.72, 0.2, 1) both" }}
+            >
+              <span className="dash-command-sweep" aria-hidden="true" />
+              <div className="dash-command-status">
+                <span className="dash-command-pulse" aria-hidden="true" />
+                <span>OpenNeko checked your systems</span>
+                {findings?.summary && (
+                  <>
+                    <span className="dash-command-dot" aria-hidden="true" />
+                    <span className="dash-command-stamp">
+                      {new Date(findings.summary.createdAt).toLocaleTimeString("en-IN", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      })}
+                    </span>
+                  </>
+                )}
+              </div>
+              <h1 className="dash-command-head">
+                {awaiting && awaiting.count > 0 ? (
+                  <>
+                    <span className="dash-command-n">
+                      {awaiting.count} decision{awaiting.count === 1 ? "" : "s"}
+                    </span>{" "}
+                    need you.
+                  </>
+                ) : (
+                  greeting || "You are all caught up."
+                )}
+              </h1>
+              {(findings?.summary?.summaryMd ?? subtitle) ? (
+                <p className="dash-command-read">
+                  {findings?.summary?.summaryMd ?? subtitle}
+                </p>
+              ) : null}
+            </section>
 
             <StatStrip />
 
