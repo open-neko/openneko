@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
@@ -10,9 +9,10 @@ import SectionNav from "@/components/SectionNav";
 import { ActionGroup } from "@/components/ui/ActionGroup";
 import { Button } from "@/components/ui/Button";
 import { Disclosure } from "@/components/ui/Disclosure";
-import { Input } from "@/components/ui/Field";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { cn } from "@/lib/cn";
+import { matchesListSearch } from "@/lib/list-search";
 import SkillLearnCard from "./SkillLearnCard";
 
 type Policy = {
@@ -174,15 +174,15 @@ export default function RulesClient() {
     };
   }, []);
 
-  const normalizedQuery = query.trim().toLowerCase();
   const filteredPolicies = policies?.filter((policy) =>
-    [
+    matchesListSearch(
+      query,
       policy.name,
       policy.description,
       policy.mode,
       ...policy.appliesToKinds,
       ...policy.appliesToScopes,
-    ].some((value) => value.toLowerCase().includes(normalizedQuery)),
+    ),
   );
 
   return (
@@ -212,22 +212,16 @@ export default function RulesClient() {
           }
         />
 
-        <SkillLearnCard />
-
-        <label className="relative mb-5 mt-6 block max-w-[520px]">
-          <span className="sr-only">Search rules and action kinds</span>
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-text3"
-          />
-          <Input
-            type="search"
+        <div className="mb-5 max-w-[520px]">
+          <SearchInput
+            label="Search rules and action kinds"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search rules and action kinds"
-            className="pl-10"
           />
-        </label>
+        </div>
+
+        <SkillLearnCard />
 
         {error ? (
           <div className="py-14 text-center text-sm text-danger">{error}</div>

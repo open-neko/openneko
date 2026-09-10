@@ -131,7 +131,7 @@
 .workflow-drawer-btn.is-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .workflow-drawer-btn.is-primary:hover:not(:disabled) {
   background: var(--accent-hover);
@@ -807,7 +807,7 @@
 .builder-msg-user {
   align-self: flex-end;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .builder-msg-assistant {
   align-self: flex-start;
@@ -893,7 +893,7 @@
 }
 .workflow-event-tick {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: var(--type-body);
   font-weight: 700;
 }
@@ -922,7 +922,7 @@
 .action-event-risk-low { background: var(--success-soft); color: var(--success-mid); }
 .action-event-risk-medium { background: var(--watch-soft); color: var(--warn-ink); border: 1px solid color-mix(in srgb, var(--watch) 35%, transparent); }
 .action-event-risk-high { background: var(--danger-soft); color: var(--danger); }
-.action-event-risk-critical { background: var(--danger); color: #fff; }
+.action-event-risk-critical { background: var(--danger); color: var(--on-accent); }
 
 /* Clickable variant — when an href is set, the card itself is the link. */
 .rule-event-link {

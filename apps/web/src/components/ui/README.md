@@ -20,6 +20,7 @@ Use `Button`, `IconButton`, `ButtonLink`, or `buttonClassName` instead of creati
 - Use `Field` with `Input`, `Textarea`, or `NativeSelect` for labelled form controls.
 - Use `Disclosure` for secondary detail that would otherwise make a page difficult to scan.
 - Use `LocalDateTime` for browser-local timestamps so server rendering and hydration stay consistent.
+- Use `SearchInput` for instant filtering on row-heavy indexes so search geometry and labelling stay consistent.
 
 ## Status and density
 

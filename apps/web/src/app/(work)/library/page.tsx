@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, RefreshCw, Share2, Trash2, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, FileText, RefreshCw, Share2, Trash2, Upload } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
 import { ActionGroup } from "@/components/ui/ActionGroup";
@@ -9,7 +11,9 @@ import { Button } from "@/components/ui/Button";
 import { MenuItem, OverflowMenu } from "@/components/ui/OverflowMenu";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { validateLibraryUploadBatch } from "@/lib/library-upload-contract";
+import { matchesListSearch } from "@/lib/list-search";
 import { LIBRARY_UPLOAD_ACCEPT } from "@neko/llm/library/formats";
 
 type DocumentRow = {
@@ -98,6 +102,7 @@ export default function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [packs, setPacks] = useState<PackRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -377,65 +382,147 @@ export default function LibraryPage() {
   );
 
   const { isAdmin, documents, personal, team, pending } = data;
+  const visible = useMemo(
+    () => ({
+      documents: documents.filter((document) =>
+        matchesListSearch(
+          query,
+          document.filename,
+          document.relativePath,
+          document.status,
+        ),
+      ),
+      personal: personal.filter((concept) =>
+        matchesListSearch(
+          query,
+          concept.title,
+          concept.description,
+          concept.type,
+          concept.path,
+          concept.body,
+        ),
+      ),
+      team: team.filter((concept) =>
+        matchesListSearch(
+          query,
+          concept.title,
+          concept.description,
+          concept.type,
+          concept.path,
+          concept.body,
+        ),
+      ),
+      pending: pending.filter((concept) =>
+        matchesListSearch(
+          query,
+          concept.title,
+          concept.description,
+          concept.type,
+          concept.path,
+          concept.body,
+        ),
+      ),
+      packs: packs.filter((pack) =>
+        matchesListSearch(query, pack.id, pack.title, pack.description),
+      ),
+    }),
+    [documents, packs, pending, personal, query, team],
+  );
 
   const conceptRow = (
     concept: ConceptRow,
     index: number,
+    layer: "pending" | "personal" | "team",
     actions: React.ReactNode,
-  ) => (
-    <li key={concept.id} className="memory-review-row">
-      <span className="library-index">{String(index + 1).padStart(2, "0")}</span>
-      <div className="memory-review-copy">
-        <div className="memory-review-meta">
-          <span>{concept.type}</span>
-          <span>{concept.path}</span>
-          <span>{formatDate(concept.updatedAt)}</span>
+  ) => {
+    const expansionKey = `${layer}:${concept.id}`;
+    const isExpanded = expandedId === expansionKey;
+    const detailId = `library-concept-${layer}-${concept.id}`;
+
+    return (
+      <li
+        key={concept.id}
+        className="memory-review-row library-concept-row"
+        data-expanded={isExpanded}
+      >
+        <span className="library-index">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <div className="memory-review-copy">
+          <div className="memory-review-meta">
+            <span>{concept.type}</span>
+            <span>{concept.path}</span>
+            <span>{formatDate(concept.updatedAt)}</span>
+          </div>
+          <p>
+            <button
+              data-ui-bespoke-reason="inline concept detail toggle"
+              type="button"
+              className="library-concept-title"
+              aria-expanded={isExpanded}
+              aria-controls={detailId}
+              onClick={() => setExpandedId(isExpanded ? null : expansionKey)}
+            >
+              <span>{concept.title}</span>
+              <ChevronDown aria-hidden="true" strokeWidth={2} />
+            </button>
+          </p>
+          {concept.description ? <small>{concept.description}</small> : null}
         </div>
-        <p>
-          <button
-            data-ui-bespoke-reason="inline concept detail toggle"
-            type="button"
-            className="library-concept-title"
-            onClick={() =>
-              setExpandedId(expandedId === concept.id ? null : concept.id)
-            }
-          >
-            {concept.title}
-          </button>
-        </p>
-        {concept.description ? <small>{concept.description}</small> : null}
-        {expandedId === concept.id ? (
-          <div className="library-concept-detail">
-            <pre>{concept.body}</pre>
-            {concept.sources.length > 0 ? (
-              <small>
-                Sources:{" "}
-                {concept.sources.map((source, i) => (
-                  <span key={source.resource}>
-                    {i > 0 ? ", " : ""}
-                    <a
-                      href={`/api/work/files/${source.resource.replace(/^\//, "")}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {source.resource.split("/").pop()}
-                    </a>
-                  </span>
-                ))}
-              </small>
-            ) : null}
-            {concept.verified.length > 0 ? (
-              <small>
-                Verified by {concept.verified[concept.verified.length - 1].by} on{" "}
-                {formatDate(concept.verified[concept.verified.length - 1].at)}
-              </small>
+        <ActionGroup className="memory-review-actions">{actions}</ActionGroup>
+        {isExpanded ? (
+          <div className="library-concept-detail" id={detailId}>
+            <article className="library-markdown library-concept-body">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{ h1: "h3", h2: "h4", h3: "h5" }}
+              >
+                {concept.body}
+              </ReactMarkdown>
+            </article>
+            {concept.sources.length > 0 || concept.verified.length > 0 ? (
+              <aside
+                className="library-concept-evidence"
+                aria-label="Concept evidence"
+              >
+                {concept.sources.length > 0 ? (
+                  <div>
+                    <span>Sources</span>
+                    <p>
+                      {concept.sources.map((source, i) => (
+                        <span key={source.resource}>
+                          {i > 0 ? ", " : ""}
+                          <a
+                            href={`/api/work/files/${source.resource.replace(/^\//, "")}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {source.resource.split("/").pop()}
+                          </a>
+                        </span>
+                      ))}
+                    </p>
+                  </div>
+                ) : null}
+                {concept.verified.length > 0 ? (
+                  <div>
+                    <span>Verification</span>
+                    <p>
+                      Verified by{" "}
+                      {concept.verified[concept.verified.length - 1].by} on{" "}
+                      {formatDate(
+                        concept.verified[concept.verified.length - 1].at,
+                      )}
+                    </p>
+                  </div>
+                ) : null}
+              </aside>
             ) : null}
           </div>
         ) : null}
-      </div>
-      <ActionGroup className="memory-review-actions">{actions}</ActionGroup>
-    </li>
-  );
+      </li>
+    );
+  };
 
   return (
     <div className="library-page document-library">
@@ -456,6 +543,14 @@ export default function LibraryPage() {
       />
 
       <main className="library-main">
+        <SearchInput
+          label="Search library"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search documents and concepts"
+          className="bg-card"
+        />
+
         {error ? (
           <div className="library-error" role="alert">
             <div>
@@ -473,20 +568,21 @@ export default function LibraryPage() {
           </div>
         ) : null}
 
-        {pending.length > 0 ? (
-          <section className="library-section memory-review">
+        {visible.pending.length > 0 ? (
+          <section className="library-section memory-review library-pending">
             <header className="library-section-head">
               <div>
                 <span>Review queue</span>
                 <h2>Shared with the team</h2>
               </div>
-              <strong>{String(pending.length).padStart(2, "0")}</strong>
+              <strong>{String(visible.pending.length).padStart(2, "0")}</strong>
             </header>
             <ol className="memory-review-list">
-              {pending.map((concept, index) =>
+              {visible.pending.map((concept, index) =>
                 conceptRow(
                   concept,
                   index,
+                  "pending",
                   <>
                     <Button
                       variant="primary"
@@ -510,11 +606,10 @@ export default function LibraryPage() {
           </section>
         ) : null}
 
-        <section className="library-section">
-          <header className="library-section-head">
-            <div>
-              <span>Uploads</span>
-              <h2>Your documents</h2>
+          <section className="library-section library-documents">
+            <header className="library-section-head">
+              <div>
+                <h2>Your documents</h2>
               <small id="library-upload-limit" className="library-upload-limit">
                 Digital PDF, Word, PowerPoint, Excel, CSV, Markdown, or text;
                 up to 100 MB at once.
@@ -533,6 +628,7 @@ export default function LibraryPage() {
               />
               <Button
                 variant="primary"
+                size="sm"
                 disabled={uploading}
                 onClick={() => fileInputRef.current?.click()}
               >
@@ -547,15 +643,19 @@ export default function LibraryPage() {
               <span />
               <span />
             </div>
-          ) : documents.length === 0 ? (
+          ) : visible.documents.length === 0 ? (
             <EmptyState
               className="library-empty"
-              title="No documents yet"
-              body="Upload a document above, or attach one in a conversation. OpenNeko distills durable knowledge into concepts it can cite."
+              title={query ? "No matching documents" : "No documents yet"}
+              body={
+                query
+                  ? "Try another filename, path, or status."
+                  : "Upload a document above, or attach one in a conversation. OpenNeko distills durable knowledge into concepts it can cite."
+              }
             />
           ) : (
             <ol className="memory-review-list">
-              {documents.map((doc, index) => (
+              {visible.documents.map((doc, index) => (
                 <li key={doc.id} className="memory-review-row">
                   <span className="library-index">
                     {String(index + 1).padStart(2, "0")}
@@ -573,7 +673,10 @@ export default function LibraryPage() {
                       <small>{doc.skipReason}</small>
                     ) : null}
                     {doc.status === "failed" && doc.error ? (
-                      <small>{doc.error}</small>
+                      <small>
+                        Extraction failed. Retry it, or remove the document and
+                        upload it again.
+                      </small>
                     ) : null}
                   </div>
                   <ActionGroup className="memory-review-actions">
@@ -608,72 +711,77 @@ export default function LibraryPage() {
           )}
         </section>
 
-        <section className="library-section">
-          <header className="library-section-head">
-            <div>
-              <span>Personal layer</span>
-              <h2>Your concepts</h2>
+          <section className="library-section library-personal">
+            <header className="library-section-head">
+              <div>
+                <h2>Your concepts</h2>
             </div>
-            <strong>{String(personal.length).padStart(2, "0")}</strong>
+            <strong>{String(visible.personal.length).padStart(2, "0")}</strong>
           </header>
-          {personal.length === 0 && !loading ? (
+          {visible.personal.length === 0 && !loading ? (
             <EmptyState
               className="library-empty"
-              title="No personal concepts"
-              body="Distilled concepts stay private here until you share them with the team."
+              title={query ? "No matching personal concepts" : "No personal concepts"}
+              body={
+                query
+                  ? "Try another title, type, path, or phrase."
+                  : "Distilled concepts stay private here until you share them with the team."
+              }
             />
           ) : (
             <ol className="memory-review-list">
-              {personal.map((concept, index) =>
+              {visible.personal.map((concept, index) =>
                 conceptRow(
                   concept,
                   index,
-                  <>
-                    <Button
-                      size="sm"
+                  "personal",
+                  <OverflowMenu label={`Actions for ${concept.title}`}>
+                    <MenuItem
                       disabled={busyId === concept.id}
                       onClick={() => void share(concept.id)}
                     >
                       <Share2 aria-hidden="true" strokeWidth={2} />
                       Share with team
-                    </Button>
-                    <OverflowMenu label={`Actions for ${concept.title}`}>
-                      <MenuItem
-                        danger
-                        disabled={busyId === concept.id}
-                        onClick={() => void archiveConcept(concept.id)}
-                      >
-                        <Trash2 aria-hidden="true" strokeWidth={2} />
-                        Archive concept
-                      </MenuItem>
-                    </OverflowMenu>
-                  </>,
+                    </MenuItem>
+                    <MenuItem
+                      danger
+                      disabled={busyId === concept.id}
+                      onClick={() => void archiveConcept(concept.id)}
+                    >
+                      <Trash2 aria-hidden="true" strokeWidth={2} />
+                      Archive concept
+                    </MenuItem>
+                  </OverflowMenu>,
                 ),
               )}
             </ol>
           )}
         </section>
 
-        <section className="library-section">
-          <header className="library-section-head">
-            <div>
-              <span>Team layer</span>
-              <h2>Team library</h2>
+          <section className="library-section library-team">
+            <header className="library-section-head">
+              <div>
+                <h2>Team library</h2>
             </div>
-            <strong>{String(team.length).padStart(2, "0")}</strong>
+            <strong>{String(visible.team.length).padStart(2, "0")}</strong>
           </header>
-          {team.length === 0 && !loading ? (
+          {visible.team.length === 0 && !loading ? (
             <EmptyState
               className="library-empty"
-              title="No team concepts"
-              body="Shared concepts appear here after an admin approves them for the workspace."
+              title={query ? "No matching team concepts" : "No team concepts"}
+              body={
+                query
+                  ? "Try another title, type, path, or phrase."
+                  : "Shared concepts appear here after an admin approves them for the workspace."
+              }
             />
           ) : (
             <ol className="memory-review-list">
-              {team.map((concept, index) =>
+              {visible.team.map((concept, index) =>
                 conceptRow(
                   concept,
                   index,
+                  "team",
                   <>
                     <Pill variant={statusVariant(concept.status)}>
                       {humanize(concept.status)}
@@ -698,10 +806,9 @@ export default function LibraryPage() {
           )}
         </section>
         {isAdmin ? (
-          <section className="library-section">
+          <section className="library-section library-admin">
             <header className="library-section-head">
               <div>
-                <span>Admin</span>
                 <h2>Portability &amp; starter packs</h2>
               </div>
             </header>
@@ -726,9 +833,9 @@ export default function LibraryPage() {
                 Import bundle
               </Button>
             </ActionGroup>
-            {packs.length > 0 ? (
+            {visible.packs.length > 0 ? (
               <ol className="memory-review-list">
-                {packs.map((pack, index) => (
+                {visible.packs.map((pack, index) => (
                   <li key={pack.id} className="memory-review-row">
                     <span className="library-index">
                       {String(index + 1).padStart(2, "0")}

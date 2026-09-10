@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
@@ -8,7 +8,9 @@ import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
 import { Button } from "@/components/ui/Button";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { matchesListSearch } from "@/lib/list-search";
 
 type StatusFilter = "active" | "completed" | "failed" | "all";
 
@@ -130,6 +132,7 @@ function RunsPageInner() {
   );
   const [data, setData] = useState<RunsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -170,6 +173,21 @@ function RunsPageInner() {
     else url.searchParams.set("status", next);
     window.history.replaceState({}, "", url.toString());
   }, []);
+  const visibleRuns = useMemo(
+    () =>
+      (data?.runs ?? []).filter((run) =>
+        matchesListSearch(
+          query,
+          run.workflow.name,
+          run.triggerKind,
+          run.executionMode,
+          run.status,
+          run.summary,
+          run.error,
+        ),
+      ),
+    [data?.runs, query],
+  );
 
   return (
     <>
@@ -181,8 +199,17 @@ function RunsPageInner() {
         <PageHeading
           title="Run history"
           description="Inspect recent workflow runs, findings, and proposed actions."
-          meta={data ? `${data.runs.length} shown` : undefined}
+          meta={data ? `${visibleRuns.length} shown` : undefined}
         />
+
+        <div className="mb-4 max-w-[520px]">
+          <SearchInput
+            label="Search run history"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search workflows, triggers, and results"
+          />
+        </div>
 
         <SegmentedControl aria-label="Run status filter" className="mb-5">
           {TABS.map((tab) => (
@@ -204,13 +231,13 @@ function RunsPageInner() {
           <div className="py-[50px] text-center text-sm text-text3">
             Loading…
           </div>
-        ) : data.runs.length === 0 ? (
+        ) : visibleRuns.length === 0 ? (
           <div className="py-[50px] text-center text-sm text-text3">
-            No workflow runs yet.
+            {query ? "No runs match this search." : "No workflow runs yet."}
           </div>
         ) : (
           <ul className="list-none p-0 m-0 flex flex-col gap-2.5">
-            {data.runs.map((run) => (
+            {visibleRuns.map((run) => (
               <li key={run.id}>
                 <Button
                   variant="secondary"

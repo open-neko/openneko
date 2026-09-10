@@ -126,7 +126,7 @@
     border: 1.5px solid var(--card);
     border-radius: 999px;
     background: var(--danger);
-    color: #fff;
+    color: var(--on-accent);
     font-size: var(--type-label);
     font-weight: 800;
     line-height: 1;

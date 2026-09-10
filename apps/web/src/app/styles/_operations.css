@@ -281,8 +281,8 @@ html[data-density="compact"] .operations-root .operations-layout {
   content: "";
   width: 5px;
   height: 3px;
-  border-bottom: 1.5px solid white;
-  border-left: 1.5px solid white;
+  border-bottom: 1.5px solid var(--on-accent);
+  border-left: 1.5px solid var(--on-accent);
   transform: rotate(-45deg) translateY(-1px);
 }
 
@@ -329,9 +329,10 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-stream-error {
-  padding: 13px 0 13px 18px;
-  border-left: 3px solid var(--danger);
-  background: linear-gradient(90deg, var(--danger-soft), transparent 74%);
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
+  border-radius: var(--radius-inner);
+  background: var(--danger-soft);
   color: var(--danger);
   font-size: var(--type-body-sm);
   line-height: 1.5;
@@ -388,10 +389,10 @@ html[data-density="compact"] .operations-root .operations-layout {
   width: 100%;
   min-height: 108px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) 24px;
   align-items: center;
   gap: 14px;
-  padding: 18px 2px;
+  padding: 18px 12px;
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
@@ -401,34 +402,30 @@ html[data-density="compact"] .operations-root .operations-layout {
   text-align: left;
   cursor: pointer;
   transition:
-    padding 0.2s ease,
     background 0.2s ease,
-    color 0.2s ease;
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .work-empty-prompt:hover {
-  padding-inline: 14px;
-  border-color: var(--text);
-  background: var(--text);
-  color: var(--bg);
-  transform: none;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  transform: translateY(-1px);
 }
 
 .work-empty-prompt:active {
-  background: var(--accent);
+  background: var(--accent-soft);
+  transform: none;
 }
 
 .work-empty-prompt-no {
-  align-self: start;
-  padding-top: 2px;
-  color: var(--text3);
-  font-family: var(--font-mono);
-  font-size: var(--type-label);
-  font-weight: 700;
+  display: none;
 }
 
 .work-empty-prompt:hover .work-empty-prompt-no {
-  color: var(--success);
+  color: var(--accent);
 }
 
 .work-empty-prompt-copy {
@@ -453,7 +450,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 .work-empty-prompt:hover .work-empty-prompt-copy strong,
 .work-empty-prompt:hover .work-empty-prompt-copy > span {
-  color: inherit;
+  color: var(--text);
 }
 
 .work-empty-prompt-arrow {
@@ -463,7 +460,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-empty-prompt:hover .work-empty-prompt-arrow {
-  color: var(--success);
+  color: var(--accent);
   transform: translate(3px, -3px);
 }
 
@@ -504,7 +501,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 .work-bubble.is-user {
   max-width: min(700px, 88%);
   padding: 13px 17px;
-  border-radius: 2px 18px 2px 18px;
+  border-radius: var(--radius-inner);
   background: var(--text);
   color: var(--bg);
 }
@@ -555,7 +552,6 @@ html[data-density="compact"] .operations-root .operations-layout {
 .work-tool-group:has(.work-tool-group-body),
 .work-tool-group-single .work-tool-row {
   border: 1px solid var(--border);
-  border-left: 3px solid var(--text);
 }
 
 .work-tool-group-head {
@@ -568,19 +564,19 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-action-row {
-  border-left-color: var(--accent) !important;
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border)) !important;
 }
 
 .work-action-row-done {
-  border-left-color: var(--success-mid) !important;
+  border-color: color-mix(in srgb, var(--success-mid) 42%, var(--border)) !important;
 }
 
 .work-action-row-failed {
-  border-left-color: var(--danger) !important;
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border)) !important;
 }
 
 .work-action-row-rejected {
-  border-left-color: var(--text3) !important;
+  border-color: var(--text3) !important;
 }
 
 .work-action-row-head {
@@ -672,18 +668,18 @@ html[data-density="compact"] .operations-root .operations-layout {
 .work-action-button.is-primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .work-action-button.is-primary:hover {
-  background: #5a4cd1;
-  color: white;
+  background: var(--accent-hover);
+  color: var(--on-accent);
 }
 
 .work-action-button.is-danger {
   border-color: var(--danger);
   background: var(--danger);
-  color: white;
+  color: var(--on-accent);
 }
 
 .work-action-button:disabled {
@@ -735,15 +731,6 @@ html[data-density="compact"] .operations-root .operations-layout {
   font-size: var(--type-caption);
 }
 
-.work-confirm {
-  padding: 15px 18px;
-  border: 0;
-  border-left: 4px solid var(--success-mid);
-  border-radius: 0;
-  background: var(--success-soft);
-  box-shadow: none;
-}
-
 /* Composer is the dispatch instrument: crisp, tactile, unmistakable. */
 .work-command-surface > .work-composer {
   width: min(850px, calc(100% - 56px));
@@ -757,10 +744,10 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 .work-command-surface .work-composer-shell {
   padding: 5px 6px 6px;
-  border: 1.5px solid var(--text);
-  border-radius: 3px 22px 3px 22px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
   background: var(--card);
-  box-shadow: 8px 8px 0 var(--accent-soft);
+  box-shadow: var(--shadow);
   transition:
     border-color 0.18s ease,
     box-shadow 0.2s ease,
@@ -768,13 +755,13 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-command-surface .work-composer-shell:hover {
-  border-color: var(--text);
+  border-color: var(--text3);
 }
 
 .work-command-surface .work-composer-shell:focus-within {
   border-color: var(--accent);
-  box-shadow: 8px 8px 0 var(--accent);
-  transform: translate(-2px, -2px);
+  box-shadow: 0 0 0 3px var(--focus-ring), var(--shadow-lift);
+  transform: none;
 }
 
 .work-command-surface .work-input {
@@ -794,9 +781,9 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-command-surface .work-send-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--success) 88%, white);
-  box-shadow: 3px 3px 0 var(--text);
-  transform: translate(-2px, -2px);
+  background: color-mix(in srgb, var(--success) 88%, var(--card));
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
 }
 
 .work-command-surface .work-send-btn:disabled {
@@ -1486,7 +1473,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .operations-root.is-workflows .workflow-drawer-btn.is-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--success) 80%, white);
+  background: color-mix(in srgb, var(--success) 80%, var(--card));
 }
 
 .workflow-detail-section {
@@ -1883,10 +1870,13 @@ html[data-density="compact"] .operations-root .operations-layout {
     bottom: calc(86px + env(safe-area-inset-bottom, 0px));
   }
 
-  .work-command-surface .work-composer-shell,
-  .work-command-surface .work-composer-shell:focus-within {
-    box-shadow: 5px 5px 0 var(--accent-soft);
+  .work-command-surface .work-composer-shell {
+    box-shadow: var(--shadow);
     transform: none;
+  }
+
+  .work-command-surface .work-composer-shell:focus-within {
+    box-shadow: 0 0 0 3px var(--focus-ring), var(--shadow-lift);
   }
 
   .work-command-surface .work-input {
@@ -2243,7 +2233,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 .work-command-action.is-primary:hover:not(:disabled) {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .work-command-action:disabled {

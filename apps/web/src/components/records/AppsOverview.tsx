@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import {
   ArrowRight,
   Database,
@@ -6,6 +9,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { buttonClassName } from "@/components/ui/Button";
+import { SearchInput } from "@/components/ui/SearchInput";
+import { matchesListSearch } from "@/lib/list-search";
 import type { RecordAppNavItem } from "@/lib/records";
 
 const CREATE_APP_PROMPT =
@@ -33,6 +38,15 @@ export function AppsOverview({
   unavailable?: boolean;
 }) {
   const createHref = createAppHref();
+  const [query, setQuery] = useState("");
+  const visibleApps = apps.filter((app) =>
+    matchesListSearch(
+      query,
+      app.label,
+      app.purpose,
+      ...app.objects.flatMap((object) => [object.label, object.pluralLabel]),
+    ),
+  );
 
   return (
     <main className="apps-overview-root">
@@ -59,6 +73,17 @@ export function AppsOverview({
         )}
       </header>
 
+      {apps.length > 0 && !unavailable ? (
+        <div className="mb-6 max-w-[520px]">
+          <SearchInput
+            label="Search apps"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search apps and record types"
+          />
+        </div>
+      ) : null}
+
       {unavailable ? (
         <section className="apps-overview-empty" aria-labelledby="apps-unavailable-title">
           <span className="apps-overview-empty-icon"><RefreshCw aria-hidden="true" /></span>
@@ -71,14 +96,16 @@ export function AppsOverview({
             Try again
           </Link>
         </section>
-      ) : apps.length > 0 ? (
+      ) : visibleApps.length > 0 ? (
         <section className="apps-overview-section" aria-labelledby="accessible-apps-title">
           <div className="apps-overview-section-heading">
             <h2 id="accessible-apps-title">Available to you</h2>
-            <span>{apps.length} {apps.length === 1 ? "app" : "apps"}</span>
+            <span>
+              {visibleApps.length} {visibleApps.length === 1 ? "app" : "apps"}
+            </span>
           </div>
           <div className="apps-overview-list">
-            {apps.map((app) => (
+            {visibleApps.map((app) => (
               <Link
                 className="apps-overview-row"
                 href={`/a/${app.appId}`}
@@ -99,6 +126,12 @@ export function AppsOverview({
               </Link>
             ))}
           </div>
+        </section>
+      ) : query ? (
+        <section className="apps-overview-empty" aria-labelledby="empty-apps-title">
+          <span className="apps-overview-empty-icon"><Database aria-hidden="true" /></span>
+          <h2 id="empty-apps-title">No matching apps</h2>
+          <p>Try another app name, purpose, or record type.</p>
         </section>
       ) : canCreate ? (
         <section className="apps-overview-empty" aria-labelledby="empty-apps-title">

@@ -52,12 +52,38 @@ typography:
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "normal"
+  subtitle:
+    fontFamily: "Archivo Variable, Archivo, sans-serif"
+    fontSize: "16px"
+    fontWeight: 700
+    lineHeight: 1.25
+    letterSpacing: "-0.01em"
+  body-large:
+    fontFamily: "Manrope Variable, Manrope, sans-serif"
+    fontSize: "15px"
+    fontWeight: 400
+    lineHeight: 1.55
+  body-small:
+    fontFamily: "Manrope Variable, Manrope, sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.5
+  caption:
+    fontFamily: "Manrope Variable, Manrope, sans-serif"
+    fontSize: "12px"
+    fontWeight: 500
+    lineHeight: 1.4
   label:
     fontFamily: "Manrope Variable, Manrope, sans-serif"
     fontSize: "11px"
     fontWeight: 800
     lineHeight: 1
     letterSpacing: "0.08em"
+  mono:
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    fontSize: "13px"
+    fontWeight: 500
+    lineHeight: 1.4
 rounded:
   card: "20px"
   inner: "12px"

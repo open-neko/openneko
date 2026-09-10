@@ -37,7 +37,7 @@ export function AdminDenied() {
   return (
     <AdminShell
       title="Administration"
-      subtitle="OpenNeko configuration, users, plugins, and data-source RBAC."
+      subtitle="OpenNeko configuration, users, plugins, and data access."
     >
       <div className="settings-card">
         <div className="settings-card-head">

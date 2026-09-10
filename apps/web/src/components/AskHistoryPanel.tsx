@@ -5,7 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { confirmDialog } from "@/components/ConfirmModal";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { cn } from "@/lib/cn";
+import { matchesListSearch } from "@/lib/list-search";
 
 type ThreadSummary = {
   id: string;
@@ -30,6 +32,10 @@ export default function AskHistoryPanel({
   }, [pathname]);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const visibleThreads = threads.filter((thread) =>
+    matchesListSearch(query, displayThreadTitle(thread.title)),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -91,13 +97,27 @@ export default function AskHistoryPanel({
         </button>
       </div>
 
+      {threads.length > 0 ? (
+        <div className="px-2.5 pt-2.5">
+          <SearchInput
+            label="Search work history"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search history"
+            className="min-h-8 py-1.5 text-ui-body-sm"
+          />
+        </div>
+      ) : null}
+
       <div className="ask-history-list">
         {loading ? (
           <div className="ask-history-empty">Loading threads...</div>
-        ) : threads.length === 0 ? (
-          <div className="ask-history-empty">Start a thread to see it here.</div>
+        ) : visibleThreads.length === 0 ? (
+          <div className="ask-history-empty">
+            {query ? "No threads match this search." : "Start a thread to see it here."}
+          </div>
         ) : (
-          threads.map((thread) => {
+          visibleThreads.map((thread) => {
             const active = thread.id === activeThreadId;
             return (
               <div

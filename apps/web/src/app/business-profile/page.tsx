@@ -283,7 +283,7 @@ export default function ProcessingPage() {
             setTab("profile");
           }}
         >
-          Business Profile
+          Business profile
         </Segment>
         <Segment
           selected={tab === "insights"}
@@ -292,7 +292,7 @@ export default function ProcessingPage() {
             setTab("insights");
           }}
         >
-          Industry Insights
+          Industry insights
           {insightsPending && (
             <span
               style={{

@@ -20,7 +20,9 @@ import {
 } from "@/components/records/RecordActionDiff";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Tab, Tabs } from "@/components/ui/Tabs";
+import { matchesListSearch } from "@/lib/list-search";
 
 type Filter = "awaiting" | "fired" | "rejected" | "all";
 
@@ -147,6 +149,7 @@ function ActionsPageInner() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [query, setQuery] = useState("");
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
   const load = useCallback(async () => {
@@ -229,10 +232,28 @@ function ActionsPageInner() {
     });
   }, [focusedId]);
 
-  const groups = useMemo(
-    () => (data ? groupActions(data.actions) : []),
-    [data],
+  const visibleActions = useMemo(
+    () =>
+      (data?.actions ?? []).filter((action) =>
+        matchesListSearch(
+          query,
+          action.summary,
+          action.kind,
+          action.target,
+          action.scope,
+          action.status,
+          action.workflow?.name,
+          action.triggeredByObservation?.title,
+        ),
+      ),
+    [data?.actions, query],
   );
+  const groups = useMemo(() => groupActions(visibleActions), [visibleActions]);
+  const visibleFocusedId = visibleActions.some(
+    (action) => action.id === focusedId,
+  )
+    ? focusedId
+    : (visibleActions[0]?.id ?? null);
 
   return (
     <>
@@ -251,7 +272,16 @@ function ActionsPageInner() {
           }
         />
 
-        <Tabs aria-label="Review queue filter" className="-mt-2 mb-[18px]">
+        <div className="mb-4 max-w-[520px]">
+          <SearchInput
+            label="Search actions"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search actions, workflows, and targets"
+          />
+        </div>
+
+        <Tabs aria-label="Review queue filter" className="mb-[18px]">
           {TABS.map((t) => {
             const active = filter === t.key;
             return (
@@ -272,6 +302,11 @@ function ActionsPageInner() {
           <div className="py-[60px] text-center text-text3 text-ui-body">Loading…</div>
         ) : data.actions.length === 0 ? (
           <ActionsEmptyState filter={filter} onBack={() => router.push("/")} />
+        ) : visibleActions.length === 0 ? (
+          <EmptyState
+            title="No matching actions"
+            body="Try another action, workflow, target, or status."
+          />
         ) : (
           <div className="triage-layout">
             <div className="act-list triage-queue">
@@ -303,7 +338,7 @@ function ActionsPageInner() {
                   key={group.key}
                   data={cardData}
                   index={i}
-                  focusedRowId={focusedId}
+                  focusedRowId={visibleFocusedId}
                   busyRowId={busyId}
                   rejectingRowId={rejectingId}
                   rejectReason={rejectReason}
@@ -322,10 +357,16 @@ function ActionsPageInner() {
             </div>
             {filter === "awaiting" && (
               <ActionReadingPane
-                action={data.actions.find((a) => a.id === focusedId) ?? null}
-                busy={busyId !== null && busyId === focusedId}
-                onApprove={() => { if (focusedId) void act(focusedId, "approve"); }}
-                onReject={() => { if (focusedId) beginReject(focusedId); }}
+                action={
+                  visibleActions.find((a) => a.id === visibleFocusedId) ?? null
+                }
+                busy={busyId !== null && busyId === visibleFocusedId}
+                onApprove={() => {
+                  if (visibleFocusedId) void act(visibleFocusedId, "approve");
+                }}
+                onReject={() => {
+                  if (visibleFocusedId) beginReject(visibleFocusedId);
+                }}
               />
             )}
           </div>
@@ -479,7 +520,7 @@ function ActionsEmptyState({ filter, onBack }: { filter: Filter; onBack: () => v
       className="py-20"
       action={
         <Button variant="ghost" size="sm" onClick={onBack}>
-          ← Back to dashboard
+          ← Back to briefing
         </Button>
       }
     />

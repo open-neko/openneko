@@ -74,7 +74,7 @@ html {
   transition: background 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 .creator-credit:hover {
-  background: #58f26c;
+  background: color-mix(in srgb, var(--success) 88%, var(--success-mid));
   box-shadow: 0 4px 14px rgba(17, 55, 25, 0.16);
   transform: translateY(-1px);
 }

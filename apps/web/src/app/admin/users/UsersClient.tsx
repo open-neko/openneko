@@ -6,6 +6,8 @@ import { ActionGroup } from "@/components/ui/ActionGroup";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, NativeSelect } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
+import { SearchInput } from "@/components/ui/SearchInput";
+import { matchesListSearch } from "@/lib/list-search";
 
 export interface AdminUserRow {
   id: string;
@@ -31,6 +33,16 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
   const [role, setRole] = useState<"member" | "admin">("member");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const visibleUsers = users.filter((user) =>
+    matchesListSearch(
+      query,
+      user.email,
+      user.name,
+      user.role,
+      user.disabled ? "disabled" : "active",
+    ),
+  );
 
   async function callApi(path: string, init: RequestInit): Promise<boolean> {
     setError(null);
@@ -93,6 +105,15 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         </div>
       ) : null}
 
+      <div className="mb-4 max-w-[520px]">
+        <SearchInput
+          label="Search users"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search users by name, email, role, or status"
+        />
+      </div>
+
       <form
         onSubmit={createUser}
         className="mb-6 grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1fr)_minmax(130px,0.6fr)_auto] items-end gap-3 max-[820px]:grid-cols-2 max-[520px]:grid-cols-1"
@@ -137,9 +158,11 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         </Button>
       </form>
 
-      {users.length === 0 ? (
+      {visibleUsers.length === 0 ? (
         <p className="text-sm text-text2">
-          No users yet. Add one above to allow them to sign in.
+          {query
+            ? "No users match this search."
+            : "No users yet. Add one above to allow them to sign in."}
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -155,7 +178,7 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
+              {visibleUsers.map((user) => (
                 <tr key={user.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-3">
                     <div className="font-semibold text-text">{user.email}</div>

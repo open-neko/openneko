@@ -41,7 +41,7 @@ export function buttonClassName({
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0",
     "aria-disabled:pointer-events-none aria-disabled:opacity-50",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0",
+    "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
     BUTTON_VARIANTS[variant],
     BUTTON_SIZES[size],
     className,

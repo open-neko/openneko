@@ -399,7 +399,7 @@ body {
     display: grid;
     place-items: center;
     background: var(--danger);
-    color: #fff;
+    color: var(--on-accent);
     border: 1.5px solid var(--card);
     font-size: var(--type-label);
     font-weight: 700;

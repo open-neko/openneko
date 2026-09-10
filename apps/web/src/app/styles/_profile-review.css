@@ -214,7 +214,7 @@
 .dskel { display: flex; flex-direction: column; gap: 6px; }
 .skel {
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--border) 0%, #F5F2EC 50%, var(--border) 100%);
+  background: linear-gradient(90deg, var(--border) 0%, var(--neutral-soft) 50%, var(--border) 100%);
   background-size: 200% 100%;
   animation: skel-shimmer 1.4s ease-in-out infinite;
 }

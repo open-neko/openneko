@@ -14,6 +14,8 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { SearchInput } from "@/components/ui/SearchInput";
+import { matchesListSearch } from "@/lib/list-search";
 import { WorkflowApiAccessPanel } from "./WorkflowApiAccessPanel";
 
 type WorkflowListItem = {
@@ -179,6 +181,7 @@ export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sparklines, setSparklines] = useState<Record<string, number[]>>({});
+  const [query, setQuery] = useState("");
   const inspectorRef = useRef<HTMLElement | null>(null);
 
   const fetchList = useCallback(async () => {
@@ -236,12 +239,24 @@ export default function WorkflowsPage() {
     const paused: WorkflowListItem[] = [];
     const broken: WorkflowListItem[] = [];
     for (const w of workflows ?? []) {
+      if (
+        !matchesListSearch(
+          query,
+          w.name,
+          w.description,
+          w.goal,
+          w.status,
+          w.steps.map((step) => step.description).join(" "),
+        )
+      ) {
+        continue;
+      }
       if (w.status === "broken") broken.push(w);
       else if (!w.enabled) paused.push(w);
       else active.push(w);
     }
     return { active, paused, broken };
-  }, [workflows]);
+  }, [query, workflows]);
 
   const recordSparkline = useCallback((id: string, values: number[]) => {
     setSparklines((prev) =>
@@ -254,10 +269,15 @@ export default function WorkflowsPage() {
 
   const totalCount =
     grouped.active.length + grouped.paused.length + grouped.broken.length;
+  const visibleWorkflows = [
+    ...grouped.active,
+    ...grouped.paused,
+    ...grouped.broken,
+  ];
   const selectedWorkflow =
-    workflows?.find((workflow) => workflow.id === selectedId) ?? null;
+    visibleWorkflows.find((workflow) => workflow.id === selectedId) ?? null;
   const selectedPosition = selectedWorkflow
-    ? [...grouped.active, ...grouped.paused, ...grouped.broken].findIndex(
+    ? visibleWorkflows.findIndex(
         (workflow) => workflow.id === selectedWorkflow.id,
       ) + 1
     : null;
@@ -322,6 +342,15 @@ export default function WorkflowsPage() {
         }
       />
 
+      <div className="mb-5 max-w-[520px]">
+        <SearchInput
+          label="Search workflows"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search workflows and steps"
+        />
+      </div>
+
       {error ? (
         <div className="workflow-page-state is-error" role="alert">
           <strong>Workflows could not be loaded</strong>
@@ -336,13 +365,17 @@ export default function WorkflowsPage() {
           <span className="workflow-loading-line" />
           <span className="workflow-loading-line is-short" />
         </div>
-      ) : workflows.length === 0 ? (
+      ) : workflows.length === 0 || (query && totalCount === 0) ? (
         <EmptyState
           className="workflow-page-state is-empty"
-          title="No workflows"
-          body="Ask OpenNeko to create the first recurring task."
+          title={query ? "No matching workflows" : "No workflows"}
+          body={
+            query
+              ? "Try another workflow name, status, goal, or step."
+              : "Ask OpenNeko to create the first recurring task."
+          }
           action={
-            <Button
+            query ? null : <Button
               variant="primary"
               onClick={() =>
                 router.push(

@@ -20,7 +20,8 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 30%, transparent);
 }
 .example-banner:hover {
-  background: #ffe89a; border-color: #e3c656;
+  background: color-mix(in srgb, var(--warn-soft) 58%, var(--warn));
+  border-color: color-mix(in srgb, var(--warn) 72%, var(--warn-ink));
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(138,109,0,0.12);
 }
@@ -105,20 +106,11 @@
 }
 /* ─── INSIGHT CARD ─── */
 .icard {
-  background: var(--card); border-radius: var(--radius); padding: 22px 24px 22px 28px;
+  background: var(--card); border-radius: var(--radius); padding: 22px 24px;
   margin-bottom: 12px; box-shadow: var(--shadow); cursor: pointer;
   transition: box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), border-color 0.3s;
   border: 1px solid var(--border);
   position: relative; overflow: hidden;
-}
-.icard::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: var(--mood-color, var(--accent));
-  opacity: 0.85;
-  border-radius: inherit;
 }
 .icard::after {
   content: "";
@@ -286,8 +278,7 @@
   margin: 0 0 36px;
   padding: 18px 18px 16px;
   border: 1px solid color-mix(in srgb, var(--watch) 32%, transparent);
-  border-left: 3px solid var(--watch);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--watch) 7%, transparent), color-mix(in srgb, var(--watch) 2%, transparent));
   box-shadow: 0 1px 0 color-mix(in srgb, var(--watch) 6%, transparent), 0 12px 28px -16px color-mix(in srgb, var(--watch) 18%, transparent);

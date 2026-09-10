@@ -96,7 +96,7 @@ export default async function AdminPage() {
       title: "Users",
       copy: authProviderInstalled
         ? "Admin and member accounts from the installed auth plugin."
-        : "No auth plugin installed; this dashboard runs with solo admin access.",
+        : "No auth plugin installed; this deployment runs with solo admin access.",
       status: authProviderInstalled
         ? `${activeUserCount} active - ${adminCount} admin`
         : "Solo admin",
@@ -155,7 +155,7 @@ export default async function AdminPage() {
   return (
     <AdminShell
       title="Administration"
-      subtitle="OpenNeko configuration, users, plugins, and data-source RBAC."
+      subtitle="OpenNeko configuration, users, plugins, and data access."
       wide
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -239,14 +239,12 @@ function AdminCardGroup({
 
 function StatusText({ value, ok }: { value: string; ok: boolean }) {
   return (
-    <div className="min-w-[128px] text-right text-xs font-semibold leading-snug text-text2">
-      <span
-        className={`inline-block h-1.5 w-1.5 rounded-full align-middle ${
-          ok ? "bg-success-ink" : "bg-danger"
-        }`}
-        aria-hidden="true"
-      />{" "}
-      <span>{value}</span>
+    <div
+      className={`min-w-[128px] text-right text-xs font-semibold leading-snug ${
+        ok ? "text-success-mid" : "text-danger"
+      }`}
+    >
+      {value}
     </div>
   );
 }
