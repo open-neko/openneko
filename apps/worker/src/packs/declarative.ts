@@ -67,6 +67,38 @@ export function declarativeGraphjinUpdate(
     }
   }
   const operationExposures = new Map<string, Map<string, Record<string, unknown>>>();
+  for (const artifact of bundle.artifacts.filter((value) => value.kind === "source")) {
+    const source = artifact.content as Record<string, unknown>;
+    if (source.kind !== "api" || source.operations === undefined) continue;
+    if (!source.operations || typeof source.operations !== "object" || Array.isArray(source.operations)) {
+      throw new Error(`API source ${source.name} operations must be an object`);
+    }
+    const spec = bundle.artifacts.find(
+      (value) => value.kind === "spec" && value.path === String(source.openapi),
+    );
+    if (!spec) throw new Error(`API source ${source.name} must reference a bundled OpenAPI spec`);
+    const methods = new Map<string, string>();
+    for (const path of Object.values((spec.content as { paths?: Record<string, Record<string, unknown>> }).paths ?? {})) {
+      for (const [method, operation] of Object.entries(path)) {
+        if (operation && typeof operation === "object" && !Array.isArray(operation)) {
+          const operationId = (operation as Record<string, unknown>).operationId;
+          if (typeof operationId === "string") methods.set(operationId, method.toLowerCase());
+        }
+      }
+    }
+    const exposures = new Map<string, Record<string, unknown>>();
+    for (const [operationId, raw] of Object.entries(source.operations as Record<string, unknown>)) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`API operation ${operationId} override must be an object`);
+      if (methods.get(operationId) !== "get") throw new Error(`API read override ${operationId} must reference a GET operation`);
+      const override = raw as Record<string, unknown>;
+      if (Object.keys(override).some((key) => key !== "expose_top_level") || override.expose_top_level !== true) {
+        throw new Error(`API read override ${operationId} may only set expose_top_level: true`);
+      }
+      exposures.set(operationId, { expose_top_level: true });
+    }
+    operationExposures.set(String(source.name), exposures);
+  }
+  let exposesMutations = false;
   for (const artifact of bundle.artifacts.filter((value) => value.kind === "action")) {
     const action = artifact.content as Record<string, unknown>;
     const adapter = action.adapter as Record<string, unknown>;
@@ -117,13 +149,14 @@ export function declarativeGraphjinUpdate(
         throw new Error(`API operation ${operationId} has conflicting action exposure`);
       }
       exposures.set(operationId, exposure);
+      exposesMutations = true;
     }
     operationExposures.set(sourceName, exposures);
   }
 
   const sources = bundle.artifacts.filter(artifact => artifact.kind === "source").flatMap<Record<string, unknown>>(artifact => {
     const authored = artifact.content as Record<string, unknown>;
-    const allowed = new Set(["name", "kind", "type", "host", "port", "dbname", "user", "password", "base_url", "openapi", "auth", "read_only", "capabilities"]);
+    const allowed = new Set(["name", "kind", "type", "host", "port", "dbname", "user", "password", "base_url", "openapi", "auth", "read_only", "capabilities", "operations"]);
     for (const key of Object.keys(authored)) {
       if (!allowed.has(key)) throw new Error(`unsupported custom source property ${key}`);
     }
@@ -201,7 +234,7 @@ export function declarativeGraphjinUpdate(
     return value.relationships.map(edge => ({ from: `${names[value.source] ?? value.source}:${edge.left}`, to: `${names[value.source] ?? value.source}:${edge.right}` }));
   });
   return {
-    ...(operationExposures.size > 0
+    ...(exposesMutations
       ? { roles: [{ name: "pack_api_executor", comment: "Short-lived executor for approved pack API actions" }] }
       : {}),
     update_sources: sources, relationships,

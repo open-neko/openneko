@@ -116,6 +116,7 @@ artifacts:
 health:
   requiredPreflight: [mariadb-connect, mariadb-read-only, magento-version, magento-scopes]
   readiness:
+    analytics: [analytics-smoke]
     catalog: [graphjin-mutations, magento-api-token, magento-catalog-acl]
     inventory: [graphjin-mutations, magento-api-token, magento-inventory-acl, magento-bulk-consumers]
     orders: [graphjin-mutations, magento-api-token, magento-orders-acl]

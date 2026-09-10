@@ -23,6 +23,9 @@ describe("Google Workspace curated REST specifications", () => {
         refreshToken: "google-workspace.refresh_token",
       }),
     ]);
+    expect(bundle.manifest.oauth[0]?.scopes).toContain("https://www.googleapis.com/auth/userinfo.email");
+    expect(bundle.manifest.oauth[0]?.scopes).not.toContain("email");
+    expect(bundle.manifest.oauth[0]?.authorizationParams).not.toHaveProperty("include_granted_scopes");
     expect(bundle.manifest.permissions.network).toEqual(expect.arrayContaining([
       "accounts.google.com",
       "oauth2.googleapis.com",

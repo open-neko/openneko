@@ -4,6 +4,18 @@ sources:
     kind: api
     base_url: https://gmail.googleapis.com
     openapi: graphjin/specs/gmail.yaml
+    operations:
+      getProfile: { expose_top_level: true }
+      listMessages: { expose_top_level: true }
+      getMessage: { expose_top_level: true }
+      listThreads: { expose_top_level: true }
+      getThread: { expose_top_level: true }
+      listDrafts: { expose_top_level: true }
+      getDraft: { expose_top_level: true }
+      listLabels: { expose_top_level: true }
+      getLabel: { expose_top_level: true }
+      listHistory: { expose_top_level: true }
+      getAttachment: { expose_top_level: true }
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
@@ -15,6 +27,9 @@ sources:
     kind: api
     base_url: https://www.googleapis.com
     openapi: graphjin/specs/drive.yaml
+    operations:
+      listDrivePermissions: { expose_top_level: true }
+      getDrivePermission: { expose_top_level: true }
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
@@ -26,6 +41,9 @@ sources:
     kind: api
     base_url: https://www.googleapis.com
     openapi: graphjin/specs/calendar.yaml
+    operations:
+      listCalendarEvents: { expose_top_level: true }
+      getCalendarEvent: { expose_top_level: true }
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"
@@ -37,6 +55,9 @@ sources:
     kind: api
     base_url: https://sheets.googleapis.com
     openapi: graphjin/specs/sheets.yaml
+    operations:
+      getSpreadsheetValues: { expose_top_level: true }
+      batchGetSpreadsheetValues: { expose_top_level: true }
     auth:
       type: bearer
       token: "{{secret.google-workspace.access_token}}"

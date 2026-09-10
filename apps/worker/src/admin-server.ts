@@ -41,6 +41,23 @@ import type {
   ConnectorCredential,
 } from "@open-neko/plugin-types";
 import { getAuditLoggingHealth } from "@neko/llm/workflows";
+import { packFailurePayload, type PackErrorPhase } from "./packs/errors.js";
+
+const PACK_FAILURE_NEXT_STEP: Record<PackErrorPhase, string> = {
+  upload: "Correct the archive layout or manifest, then upload the pack again.",
+  inspection: "Correct the reported manifest or artifact, then inspect the pack again.",
+  review: "Correct the reported configuration or artifact, then review the pack again.",
+  install: "Correct the reported configuration or artifact, then review and install the pack again.",
+  configure: "Correct the reported configuration or artifact, then review and apply the change again.",
+  upgrade: "Correct the reported configuration or artifact, then review and apply the upgrade again.",
+  uninstall: "Check the reported pack state, then try removing the pack again.",
+  oauth: "Check the OAuth client, redirect URI, and requested scopes, then connect the account again.",
+  query_preflight: "Correct the reported query or source configuration, then review the pack again.",
+};
+
+function packFailure(error: unknown, phase: PackErrorPhase) {
+  return packFailurePayload(error, phase, PACK_FAILURE_NEXT_STEP[phase]);
+}
 
 export interface AuthHandlerSurface {
   getAuthProvider(): {
@@ -714,7 +731,7 @@ async function handlePackOAuth(
           : { disconnected: await packs.disconnectOAuth(packId, connectionKey) };
     json(res, 200, result);
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "oauth"));
   }
 }
 
@@ -733,7 +750,7 @@ async function handlePackUpload(req: IncomingMessage, res: ServerResponse, packs
     json(res, 200, await packs.upload(bytes, { actorUserId: actor ? decodeURIComponent(actor) : null, signal: controller.signal }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    json(res, message === "body too large" ? 413 : 400, { error: message });
+    json(res, message === "body too large" ? 413 : 400, packFailure(error, "upload"));
   } finally { res.off("close", abort); }
 }
 
@@ -763,7 +780,7 @@ async function handleMagentoStoreManagementRead(
   try {
     json(res, 200, await packs.magentoStoreManagement());
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "inspection"));
   }
 }
 
@@ -784,7 +801,7 @@ async function handleMagentoStoreManagementWrite(
   try {
     json(res, 200, await packs.updateMagentoStoreManagement(body as Record<string, unknown>));
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "inspection"));
   }
 }
 
@@ -807,7 +824,7 @@ async function handlePackRead(
     }
     json(res, 200, result);
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "inspection"));
   }
 }
 
@@ -835,7 +852,7 @@ async function handlePackApply(
       json(res, 200, await packs.review(packId, input, operation));
     } else json(res, 200, await packs[action](packId, input));
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, action === "review" ? "review" : action));
   }
 }
 

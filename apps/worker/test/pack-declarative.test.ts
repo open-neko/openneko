@@ -33,7 +33,7 @@ describe("declarative pack configuration", () => {
       allowed_roles: ["pack_api_executor"],
       expose_as: "gws_gmail_send_message",
     });
-    expect(gmail.specs.gmail.operations.getMessage).toBeUndefined();
+    expect(gmail.specs.gmail.operations.getMessage).toEqual({ expose_top_level: true });
   });
 
   it("rejects GraphJin readiness checks for a pack without GraphJin", () => {
@@ -81,6 +81,19 @@ describe("declarative pack configuration", () => {
     expect(declarativePackPermissions(pack)).toEqual({
       database: "none",
       apiWrite: "requested; actions require an enabled policy",
+    });
+  });
+
+  it("passes explicit GET top-level exposure to GraphJin", () => {
+    const pack = bundle();
+    pack.artifacts[0]!.content = {
+      ...(pack.artifacts[0]!.content as Record<string, unknown>),
+      operations: { getHealthSummary: { expose_top_level: true } },
+    };
+    expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
+      update_sources: [{ specs: { "service-health": { operations: {
+        getHealthSummary: { expose_top_level: true },
+      } } } }],
     });
   });
 
@@ -141,6 +154,7 @@ describe("declarative pack configuration", () => {
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).specs_dir = "/arbitrary"; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).openapi = "https://example.test/spec"; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).auth = { type: "bearer", token: "plaintext" }; },
+      (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).operations = { getHealthSummary: { expose_mutation: true } }; },
       (pack: SolutionPackBundle) => { pack.artifacts[3]!.content = "mutation { delete_records { id } }"; },
       (pack: SolutionPackBundle) => { pack.artifacts[1]!.content = { $ref: "file:///private" }; },
       (pack: SolutionPackBundle) => { pack.artifacts[3]!.kind = "action"; },

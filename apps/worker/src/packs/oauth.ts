@@ -113,7 +113,9 @@ export class PackOAuthService {
     const tokens = await exchangePackOAuthCode({ connection, clientId, clientSecret, code, codeVerifier, redirectUri });
     if (!tokens.refreshToken) throw new Error("OAuth provider did not return a refresh token; grant offline access and consent again");
     const missingScopes = connection.scopes.filter((scope) => !tokens.scopes.includes(scope));
-    if (missingScopes.length > 0) throw new Error(`OAuth consent did not grant ${missingScopes.length} required scope(s)`);
+    if (missingScopes.length > 0) {
+      throw new Error(`OAuth consent did not grant required scope(s): ${missingScopes.join(", ")}`);
+    }
     const account = await fetchPackOAuthAccount({ connection, accessToken: tokens.accessToken });
     const installed = await this.isInstalled(packId);
     const nextPackSecrets = {

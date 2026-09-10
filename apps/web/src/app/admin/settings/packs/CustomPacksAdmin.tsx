@@ -15,7 +15,7 @@ import { Pill } from "@/components/ui/Pill";
 
 type Value = string | number | boolean;
 type Operation = "install" | "configure" | "upgrade";
-type CatalogPack = { id: string; name: string; version: string; installed: boolean };
+type CatalogPack = { id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null };
 type Source = { id: string; name: string; label: string | null; enabled: boolean; graphqlUrl: string };
 type Configuration = { inputs: Record<string, Value>; dataSourceId?: string; sourceBindings: Record<string, string> };
 type Status = { version: string; status: string; lastError: string | null; installedAt: string | null; configuration?: Configuration };
@@ -127,7 +127,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
     initialLoadStarted.current = true;
     const timer = window.setTimeout(() => {
       void loadPack(initialPack).then(() => {
-        if (connected) toast.success("Google Workspace account connected.");
+        if (connected) toast.success("Pack account connected.");
         window.history.replaceState({}, "", window.location.pathname);
       });
     }, 0);
@@ -205,7 +205,13 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
       setStatus(result); setReview(null); setSecrets({}); setDirty(false);
       toast.success("Pack changes applied."); await refresh();
       setOperation("configure");
-    } catch (error) { setReview(null); fail(error, "The pack could not be applied. Check the connection and credentials, then review again."); }
+    } catch (error) {
+      setReview(null);
+      fail(error, "The pack could not be applied. Share the error details with the pack author, then review the corrected pack again.");
+      const response = await fetch(`/api/admin/packs/${encodeURIComponent(selected)}/status`, { cache: "no-store" }).catch(() => null);
+      if (response?.ok) setStatus(await response.json() as Status);
+      await refresh();
+    }
     finally { setBusy(null); }
   }
 
@@ -234,7 +240,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
       {catalog === null ? <p role="status">Loading packs…</p> : catalog.length === 0 ? <EmptyState title="No custom packs yet" body="Choose a pack archive above to review your first pack." className="py-4" /> :
         <Field label="Available pack" htmlFor="custom-pack"><NativeSelect id="custom-pack" value={selected} disabled={busy !== null} onChange={event => { if (event.target.value) void loadPack(event.target.value); }}>
           <option value="">Choose a pack</option>
-          {catalog.map(pack => <option key={pack.id} value={pack.id}>{pack.name} · {pack.version}{pack.installed ? " · Installed" : ""}</option>)}
+          {catalog.map(pack => <option key={pack.id} value={pack.id}>{pack.name} · {pack.version}{pack.installed ? " · Installed" : pack.status === "failed" ? " · Install failed" : ""}</option>)}
         </NativeSelect></Field>}
       {error && !detail ? <Button variant="secondary" onClick={() => { setError(""); void (selected ? loadPack(selected) : refresh()); }} disabled={busy !== null}>Retry loading packs</Button> : null}
       {busy === "loading" ? <p role="status">Loading pack configuration…</p> : null}
@@ -243,9 +249,9 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2>{detail.manifest.metadata.name}</h2><p className="text-ui-body-sm text-text2">Version {detail.manifest.metadata.version} · Published by {detail.manifest.metadata.publisher}</p>
           {status?.status === "installed" && status.installedAt ? <p className="text-ui-caption text-text2">Installed <LocalDateTime value={status.installedAt} /></p> : null}</div>
-        <Pill variant={status?.status === "installed" ? "success" : "muted"}>{status?.status === "installed" ? "Installed" : "Not installed"}</Pill>
+        <Pill variant={status?.status === "installed" ? "success" : status?.status === "failed" ? "danger" : "muted"}>{status?.status === "installed" ? "Installed" : status?.status === "failed" ? "Install failed" : "Not installed"}</Pill>
       </div>
-      {status?.lastError ? <Disclosure title="Last operation failed"><p className="break-words text-ui-body-sm">{status.lastError}</p></Disclosure> : null}
+      {status?.lastError ? <div className="grid gap-2"><p role="alert" className="text-ui-body-sm text-danger">The last installation attempt failed. Use the error details to correct the pack or its configuration, then review it again.</p><Disclosure title="Pack author error details"><p className="break-words text-ui-body-sm">{status.lastError}</p></Disclosure></div> : null}
       {status?.status === "installed" ? <ActionGroup align="start">
         <Button variant="secondary" disabled={busy !== null} onClick={() => void loadPack(selected, operation === "upgrade" ? "configure" : "upgrade")}>{operation === "upgrade" ? "Edit installed version" : "Review available update"}</Button>
         <Button ref={removeButton} variant="danger" disabled={busy !== null} onClick={() => void remove()}>{busy === "uninstall" ? "Removing…" : "Remove pack"}</Button>

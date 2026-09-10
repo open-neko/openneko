@@ -15,6 +15,7 @@ import {
   resetAuditLoggingHealthForTesting,
 } from "@neko/llm/workflows";
 import { createAdminHandler } from "../src/admin-server";
+import { PackPreflightError } from "../src/packs/preflight.js";
 
 async function startServer(handler: ReturnType<typeof createAdminHandler>) {
   const server = createServer(handler);
@@ -313,6 +314,26 @@ describe("worker solution-pack admin routes", () => {
       expect(install.status).toBe(200);
       expect(surface.install).toHaveBeenCalledWith("magento", input);
 
+      surface.install.mockRejectedValueOnce(new PackPreflightError(
+        "account_profile",
+        "graphjin/saved-queries/account_profile.gql",
+        ["table not found: customer_api_get_profile"],
+      ));
+      const failedInstall = await fetch(
+        `http://127.0.0.1:${srv.port}/admin/packs/google-workspace/install`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+      );
+      expect(failedInstall.status).toBe(400);
+      expect(await failedInstall.json()).toMatchObject({
+        error: expect.stringContaining("graphjin/saved-queries/account_profile.gql"),
+        diagnostic: {
+          code: "pack_query_preflight_failed",
+          phase: "query_preflight",
+          artifact: { kind: "saved_query", name: "account_profile", path: "graphjin/saved-queries/account_profile.gql" },
+          causes: ["table not found: customer_api_get_profile"],
+        },
+      });
+
       for (const action of ["configure", "upgrade", "uninstall"] as const) {
         const response = await fetch(
           `http://127.0.0.1:${srv.port}/admin/packs/magento/${action}`,
@@ -341,6 +362,19 @@ describe("worker solution-pack admin routes", () => {
       });
       expect(review.status).toBe(200);
       expect(surface.review).toHaveBeenCalledWith("service-health", { operation: "upgrade", version: "0.2.0" }, "upgrade");
+      surface.review.mockRejectedValueOnce(new Error("manifest input service.base_url is missing"));
+      const failedReview = await fetch(`http://127.0.0.1:${srv.port}/admin/packs/service-health/review`, {
+        method: "POST", body: JSON.stringify({ operation: "install" }),
+      });
+      expect(await failedReview.json()).toMatchObject({
+        error: "manifest input service.base_url is missing",
+        diagnostic: {
+          code: "pack_operation_failed",
+          phase: "review",
+          causes: ["manifest input service.base_url is missing"],
+          nextStep: expect.any(String),
+        },
+      });
       const management = await fetch(
         `http://127.0.0.1:${srv.port}/admin/packs/magento/store-management`,
       );

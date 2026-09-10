@@ -396,13 +396,13 @@ export class PackService {
     throw new Error(`the ${packId} operation for this idempotency key is still ${prior.status}`);
   }
 
-  async list(): Promise<Array<{ id: string; name: string; version: string; installed: boolean }>> {
+  async list(): Promise<Array<{ id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null }>> {
     const entries = await readdir(this.embeddedRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
-    const installed = await db()
-      .select({ packId: pack_install.pack_id })
+    const installations = await db()
+      .select({ packId: pack_install.pack_id, status: pack_install.status, lastError: pack_install.last_error })
       .from(pack_install)
-      .where(and(eq(pack_install.org_id, this.orgId), eq(pack_install.status, "installed")));
-    const installedIds = new Set(installed.map((row) => row.packId));
+      .where(eq(pack_install.org_id, this.orgId));
+    const installationByPack = new Map(installations.map((row) => [row.packId, row]));
     const packDirectories: string[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || !PACK_ID.test(entry.name)) continue;
@@ -414,12 +414,17 @@ export class PackService {
       }
     }
     const bundles = [...await Promise.all(packDirectories.map((packId) => this.bundle(packId))), ...await listUploadedPacks(this.uploadsRoot(), this.orgId)];
-    return bundles.map((bundle) => ({
-      id: bundle.manifest.metadata.id,
-      name: bundle.manifest.metadata.name,
-      version: bundle.manifest.metadata.version,
-      installed: installedIds.has(bundle.manifest.metadata.id),
-    }));
+    return bundles.map((bundle) => {
+      const installation = installationByPack.get(bundle.manifest.metadata.id);
+      return {
+        id: bundle.manifest.metadata.id,
+        name: bundle.manifest.metadata.name,
+        version: bundle.manifest.metadata.version,
+        installed: installation?.status === "installed",
+        status: installation?.status ?? "available",
+        lastError: installation?.lastError ?? null,
+      };
+    });
   }
 
   async inspect(packId: string, version?: string): Promise<Record<string, unknown>> {
@@ -539,8 +544,9 @@ export class PackService {
       .where(eq(pack_artifact.pack_install_id, installation.id));
     const readiness: PackStatus["readiness"] = {};
     for (const artifact of artifacts) {
+      if (!artifact.reason?.startsWith("operator:")) continue;
       const operatorMatch = /^operator:([^:]+):(.*)$/.exec(artifact.reason ?? "");
-      const capability = operatorMatch?.[1] ?? (artifact.reason?.startsWith("operator:") ? "operator" : "analytics");
+      const capability = operatorMatch?.[1] ?? "operator";
       if (!readiness[capability] || artifact.readiness === "blocked") {
         readiness[capability] = {
           status: artifact.readiness,

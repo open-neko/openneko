@@ -5,15 +5,43 @@ import { graphjinQuery, mintGraphjinToken } from "@neko/llm/graphjin";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
 import { mapSavedQueryMetric } from "../jobs/deterministic-metric.js";
 import { packVariables } from "./declarative.js";
+import { PackAuthorError, type PackAuthorDiagnostic } from "./errors.js";
 
 function artifactRecord(artifact: SolutionPackBundle["artifacts"][number]): Record<string, unknown> {
   return artifact.content as Record<string, unknown>;
 }
 
 function savedQuery(bundle: SolutionPackBundle, name: string): string {
+  const artifact = savedQueryArtifact(bundle, name);
+  return String(artifact.content);
+}
+
+function savedQueryArtifact(bundle: SolutionPackBundle, name: string): SolutionPackBundle["artifacts"][number] {
   const artifact = bundle.artifacts.find((value) => value.kind === "saved_query" && basename(value.path, extname(value.path)) === name);
   if (!artifact || typeof artifact.content !== "string") throw new Error(`pack saved query ${name} is missing`);
-  return artifact.content;
+  return artifact;
+}
+
+export type PackPreflightDiagnostic = PackAuthorDiagnostic & {
+  code: "pack_query_preflight_failed";
+  phase: "query_preflight";
+  artifact: { kind: "saved_query"; name: string; path: string };
+};
+
+export class PackPreflightError extends PackAuthorError {
+  constructor(name: string, path: string, causes: string[]) {
+    const detail = causes.join("; ") || "GraphJin returned no data";
+    const nextStep = "Check the saved query, source operation exposure, and credentials, then upload and review the corrected pack.";
+    const diagnostic: PackPreflightDiagnostic = {
+      code: "pack_query_preflight_failed",
+      phase: "query_preflight",
+      artifact: { kind: "saved_query", name, path },
+      causes,
+      nextStep,
+    };
+    super(`Pack query preflight failed for saved query "${name}" at ${path}: ${detail}. ${nextStep}`, diagnostic);
+    this.name = "PackPreflightError";
+  }
 }
 
 function graphjinEndpoint(url: string): string {
@@ -51,12 +79,21 @@ export async function runPackReadPreflight(bundle: SolutionPackBundle, endpoint:
     const resolved = resolveWatcherVariables(packVariables(variables, inputs), now);
     const key = canonicalHash({ name, resolved });
     if (results.has(key)) return results.get(key);
-    const result = await graphjinQuery({
-      baseUrl: graphjinEndpoint(endpoint), query: savedQuery(bundle, name), variables: resolved,
-      headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId: "pack-preflight", role: "service", ttlSeconds: 60 })}` },
-      role: "service", signal: AbortSignal.timeout(30_000),
-    });
-    if (result.errors?.length || !result.data) throw new Error(`pack query ${name} failed preflight`);
+    const artifact = savedQueryArtifact(bundle, name);
+    let result: Awaited<ReturnType<typeof graphjinQuery>>;
+    try {
+      result = await graphjinQuery({
+        baseUrl: graphjinEndpoint(endpoint), query: String(artifact.content), variables: resolved,
+        headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId: "pack-preflight", role: "service", ttlSeconds: 60 })}` },
+        role: "service", signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      throw new PackPreflightError(name, artifact.path, [error instanceof Error ? error.message : String(error)]);
+    }
+    if (result.errors?.length || !result.data) {
+      const causes = result.errors?.map((error) => `${error.message}${error.path?.length ? ` (path: ${error.path.join(".")})` : ""}`) ?? [];
+      throw new PackPreflightError(name, artifact.path, causes);
+    }
     exercised.add(name); results.set(key, result.data); return result.data;
   };
   for (const artifact of bundle.artifacts) {
