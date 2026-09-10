@@ -580,11 +580,11 @@ export default function Dashboard() {
 
             {findings?.summary && (
               <div
-                className="my-5 mb-7 text-base leading-[1.55] text-text max-w-[620px]"
+                className="dash-read"
                 style={{ animation: "fadeUp 0.5s ease 0.15s both" }}
               >
-                <p className="m-0">{findings.summary.summaryMd}</p>
-                <div className="mt-2 font-mono text-ui-caption text-text3 italic">
+                <p>{findings.summary.summaryMd}</p>
+                <div className="dash-read-stamp">
                   as of {new Date(findings.summary.createdAt).toLocaleTimeString("en-IN", {
                     hour: "numeric",
                     minute: "2-digit",

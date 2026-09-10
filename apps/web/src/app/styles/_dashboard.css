@@ -81,6 +81,25 @@
 }
 .date-note { font-size: var(--type-body); color: var(--text3); }
 
+/* The agent's read on the business is the considered lede, not body copy. */
+.dash-read {
+  max-width: 60ch;
+  margin: 2px 0 32px;
+  color: var(--text);
+  font-size: var(--type-section);
+  line-height: 1.55;
+  letter-spacing: -0.006em;
+}
+.dash-read p { margin: 0; }
+.dash-read strong { font-weight: 700; }
+.dash-read-stamp {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  letter-spacing: 0.02em;
+  color: var(--text3);
+}
+
 @media (max-width: 600px) {
   .greet { font-size: var(--type-display); }
   .greet-sub { font-size: var(--type-body); }
