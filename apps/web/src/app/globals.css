@@ -121,7 +121,6 @@ html[data-density="comfortable"] {
 
 .dash-root {
   --page-width: var(--d-dash-width);
-  transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .dash-root .greet { font-size: var(--d-greet); }
 
@@ -186,7 +185,7 @@ html[data-density="compact"] .triage-pane {
 .wcr-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); transform: translateY(-1px); }
 .wcr-source { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: var(--type-body-sm); color: var(--text2); }
 .wcr-source-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: 0.7; flex: none; }
-.wcr-memo { background: var(--bg); border: 1px solid var(--border); border-left: 2px solid var(--accent); border-radius: 11px; padding: 9px 11px; font-size: var(--type-caption); line-height: var(--leading-compact); color: var(--text2); }
+.wcr-memo { background: var(--bg); border: 1px solid var(--border); border-radius: 11px; padding: 9px 11px; font-size: var(--type-caption); line-height: var(--leading-compact); color: var(--text2); }
 .wcr-empty-text { margin: 0; font-size: var(--type-caption); line-height: var(--leading-body); color: var(--text3); }
 .wcr-vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .wcr-vital { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 9px 10px; }
