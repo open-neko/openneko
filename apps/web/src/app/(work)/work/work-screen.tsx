@@ -1686,7 +1686,6 @@ function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="work-empty">
       <div className="work-empty-statement">
-        <span className="work-empty-index" aria-hidden="true">01—03</span>
         <h2>Give OpenNeko a job.</h2>
         <p>
           Ask for an answer, investigation, file, or recurring workflow.

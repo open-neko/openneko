@@ -763,7 +763,7 @@ export default function Dashboard() {
                   role="status"
                   className="mt-4 px-3.5 py-2.5 rounded-[10px] border border-border bg-accent-soft text-accent text-ui-body-sm inline-block"
                 >
-                  Building your briefing — {metricsProgress.completed + metricsProgress.failed} of {metricsProgress.total} cards complete
+                  Building your briefing: {metricsProgress.completed + metricsProgress.failed} of {metricsProgress.total} cards complete
                 </div>
               )}
 
