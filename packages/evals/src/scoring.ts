@@ -2,6 +2,7 @@ import { contentDigest } from "./canonical";
 import {
   ScoreSchema,
   type EvalEpisode,
+  type EvalSecurityOutcome,
   type EvalScore,
   type EvalUnsafeEffect,
 } from "./schemas";
@@ -44,6 +45,7 @@ export function createScore(input: {
   scorerDefinition: unknown;
   checks: readonly ScoreCheckInput[];
   unsafeEffects?: readonly EvalUnsafeEffect[];
+  securityOutcomes?: readonly EvalSecurityOutcome[];
 }): EvalScore {
   const checks = input.checks.map((check) => ({
     ...check,
@@ -79,6 +81,9 @@ export function createScore(input: {
     },
     checks,
     unsafeEffects: input.unsafeEffects ?? [],
+    ...(input.securityOutcomes
+      ? { securityOutcomes: input.securityOutcomes }
+      : {}),
   });
 }
 
@@ -190,6 +195,115 @@ function bootstrapTaskSeed(
   );
 }
 
+function wilson95(successes: number, total: number): [number, number] | null {
+  if (total < 1) return null;
+  const z = 1.959963984540054;
+  const proportion = successes / total;
+  const denominator = 1 + (z * z) / total;
+  const center = (proportion + (z * z) / (2 * total)) / denominator;
+  const margin =
+    (z / denominator) *
+    Math.sqrt(
+      (proportion * (1 - proportion)) / total +
+        (z * z) / (4 * total * total),
+    );
+  return [Math.max(0, center - margin), Math.min(1, center + margin)];
+}
+
+function assertionCapabilitySummary(episodes: readonly EvalEpisode[]) {
+  const capabilities = new Set(
+    episodes.flatMap((episode) => [
+      ...(episode.assertionTargets ?? []).flatMap(
+        (target) => target.capabilities,
+      ),
+      ...(episode.score?.checks ?? []).flatMap(
+        (check) => check.capabilities ?? [],
+      ),
+    ]),
+  );
+
+  return Object.fromEntries(
+    [...capabilities].sort().map((capability) => {
+      let attemptedEpisodes = 0;
+      let completedEpisodes = 0;
+      let unavailableEpisodes = 0;
+      let attemptedAssertions = 0;
+      let passingAssertions = 0;
+      let failingAssertions = 0;
+      let unavailableAssertions = 0;
+
+      for (const episode of episodes) {
+        const declared = (episode.assertionTargets ?? []).filter((target) =>
+          target.capabilities.includes(capability),
+        );
+        const fallback = (episode.score?.checks ?? [])
+          .filter((check) => check.capabilities?.includes(capability))
+          .map((check) => ({ assertionId: check.assertionId }));
+        const targets = declared.length ? declared : fallback;
+        if (!targets.length) continue;
+        attemptedEpisodes += 1;
+        attemptedAssertions += targets.length;
+        const checks = new Map(
+          (episode.score?.checks ?? []).map((check) => [
+            check.assertionId,
+            check,
+          ]),
+        );
+        let missing = 0;
+        for (const target of targets) {
+          const check = checks.get(target.assertionId);
+          if (!check) {
+            missing += 1;
+            unavailableAssertions += 1;
+          } else if (check.passed) {
+            passingAssertions += 1;
+          } else {
+            failingAssertions += 1;
+          }
+        }
+        if (missing === 0) completedEpisodes += 1;
+        else unavailableEpisodes += 1;
+      }
+
+      const completedAssertions = passingAssertions + failingAssertions;
+      return [
+        capability,
+        {
+          attemptedEpisodes,
+          completedEpisodes,
+          unavailableEpisodes,
+          attemptedAssertions,
+          passingAssertions,
+          failingAssertions,
+          unavailableAssertions,
+          unconditionalPassRate: attemptedAssertions
+            ? passingAssertions / attemptedAssertions
+            : 0,
+          conditionalPassRate: completedAssertions
+            ? passingAssertions / completedAssertions
+            : null,
+          coverage: attemptedAssertions
+            ? completedAssertions / attemptedAssertions
+            : 0,
+          unconditional95CI: wilson95(passingAssertions, attemptedAssertions),
+          conditional95CI: wilson95(passingAssertions, completedAssertions),
+        },
+      ];
+    }),
+  );
+}
+
+function countBy(
+  values: readonly string[],
+): Record<string, number> {
+  return Object.fromEntries(
+    [...new Set(values)].sort().map((value) => [
+      value,
+      values.filter((candidate) => candidate === value).length,
+    ]),
+  );
+}
+
 export type EvalSummary = ReturnType<typeof summarizeEpisodes>;
 
 export function summarizeEpisodes(episodes: readonly EvalEpisode[]) {
@@ -208,10 +322,15 @@ export function summarizeEpisodes(episodes: readonly EvalEpisode[]) {
       (episode) => episode.score?.verdict === "pass",
     ).length;
     const majorityPass = passes > group.length / 2;
-    const unsafeEffects = group.reduce(
-      (total, episode) => total + (episode.score?.unsafeEffects?.length ?? 0),
-      0,
-    );
+    const unsafeEffects = group.reduce((total, episode) => {
+      const typed = episode.score?.securityOutcomes;
+      return (
+        total +
+        (typed
+          ? typed.filter((outcome) => outcome.outcome === "completed").length
+          : (episode.score?.unsafeEffects?.length ?? 0))
+      );
+    }, 0);
     return {
       key,
       variantId: group[0]?.variantId ?? "unknown",
@@ -300,9 +419,22 @@ export function summarizeEpisodes(episodes: readonly EvalEpisode[]) {
     const value = episode.measurements.costCoverage;
     return value === "complete" || value === "partial" ? value : "unavailable";
   });
-  const unsafeEffects = scored.flatMap(
-    (episode) => episode.score.unsafeEffects ?? [],
+  const securityOutcomes = scored.flatMap(
+    (episode) => episode.score.securityOutcomes ?? [],
   );
+  // Security outcomes supersede the legacy unsafeEffects list per episode,
+  // not per result. This keeps mixed old/new journals correct during an
+  // interrupted upgrade: a typed outcome in one episode must not hide a
+  // legacy completed effect recorded by another episode.
+  const completedUnsafeEffectKinds = scored.flatMap<string>((episode) => {
+    const typed = episode.score.securityOutcomes;
+    return typed
+      ? typed
+          .filter((outcome) => outcome.outcome === "completed")
+          .map((outcome) => outcome.kind)
+      : (episode.score.unsafeEffects ?? []).map((effect) => effect.kind);
+  });
+  const assertionCapabilities = assertionCapabilitySummary(episodes);
   const coverage = Object.fromEntries(
     ["groundTruth", "method", "behavior", "safety", "efficiency"].map((field) => [
       field,
@@ -383,18 +515,38 @@ export function summarizeEpisodes(episodes: readonly EvalEpisode[]) {
     behaviorGateFailures: scored.flatMap((episode) => episode.score.checks).filter(
       (check) => check.dimension === "behavior" && check.gate && !check.passed,
     ).length,
-    unsafeEffects: unsafeEffects.length,
+    unsafeEffects: completedUnsafeEffectKinds.length,
     unsafeEffectEpisodes: scored.filter(
-      (episode) => (episode.score.unsafeEffects?.length ?? 0) > 0,
+      (episode) =>
+        episode.score.securityOutcomes
+          ? episode.score.securityOutcomes.some(
+              (outcome) => outcome.outcome === "completed",
+            )
+          : (episode.score.unsafeEffects?.length ?? 0) > 0,
     ).length,
-    unsafeEffectsByKind: Object.fromEntries(
-      [...new Set(unsafeEffects.map((effect) => effect.kind))]
-        .sort()
-        .map((kind) => [
-          kind,
-          unsafeEffects.filter((effect) => effect.kind === kind).length,
-        ]),
-    ),
+    unsafeEffectsByKind: countBy(completedUnsafeEffectKinds),
+    assertionCapabilities,
+    securityOutcomes: {
+      total: securityOutcomes.length,
+      episodes: scored.filter(
+        (episode) => (episode.score.securityOutcomes?.length ?? 0) > 0,
+      ).length,
+      byOutcome: countBy(securityOutcomes.map((outcome) => outcome.outcome)),
+      byKind: countBy(securityOutcomes.map((outcome) => outcome.kind)),
+      bySeverity: countBy(
+        securityOutcomes.map((outcome) => outcome.severity),
+      ),
+      byOutcomeSeverity: countBy(
+        securityOutcomes.map(
+          (outcome) => `${outcome.outcome}:${outcome.severity}`,
+        ),
+      ),
+      byOutcomeKind: countBy(
+        securityOutcomes.map(
+          (outcome) => `${outcome.outcome}:${outcome.kind}`,
+        ),
+      ),
+    },
     tasks,
     byDifficulty: grouped(
       difficulties,
@@ -423,5 +575,24 @@ export function summarizeEpisodes(episodes: readonly EvalEpisode[]) {
           failures.filter((episode) => (episode.errorType ?? "unknown") === type).length,
         ]),
     ),
+    failureDetails: [
+      ...new Set(failures.map((episode) => episode.errorType ?? "unknown")),
+    ]
+      .sort()
+      .map((type) => ({
+        type,
+        episodes: failures.filter(
+          (episode) => (episode.errorType ?? "unknown") === type,
+        ).length,
+        taskIds: [
+          ...new Set(
+            failures
+              .filter(
+                (episode) => (episode.errorType ?? "unknown") === type,
+              )
+              .map((episode) => episode.caseId),
+          ),
+        ].sort(),
+      })),
   };
 }

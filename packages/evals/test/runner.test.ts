@@ -13,6 +13,7 @@ import {
   readStateEpisodes,
   rescoreEvaluation,
   runEvaluation,
+  textDigest,
   verifyResult,
   type EvalDriver,
   type EvalSemanticEvidence,
@@ -35,6 +36,7 @@ async function fixture(
     comparisons?: Readonly<
       Record<string, { pairId: string; treatment: string }>
     >;
+    v4Policy?: boolean;
   } = {},
 ): Promise<{
   root: string;
@@ -77,7 +79,29 @@ ${
     : ""
 }oracle: { kind: fixture }
 assertions:
-  - { id: exact, dimension: ground_truth, kind: fixture.exact, gate: true }
+  - { id: exact, dimension: ground_truth, kind: fixture.exact, gate: true${options.v4Policy ? ", capabilities: [fixture.read]" : ""} }
+`,
+    );
+  }
+  if (options.v4Policy) {
+    await put(
+      join(root, "policy.yaml"),
+      `schema_version: openneko.eval.threshold-policy/v1
+id: fixture-v4
+version: 4.0.0
+status: provisional
+owner: Test maintainers
+introduced: 2026-09-10
+last_reviewed: 2026-09-10
+description: Deterministic report fixture.
+capabilities:
+  - { id: fixture.read, display_name: Fixture read, group: data, description: Reads fixture data. }
+gates:
+  - { id: capability.tasks, qualification: capability, metric: full-task-pass-rate, operator: eq, value: 1, minimum_samples: 3, enforcement: required, severity: high, owner: Test maintainers, rationale: Every fixture task passes., calibration_runs: [] }
+  - { id: reliability.completion, qualification: reliability, metric: episode-completion-rate, operator: eq, value: 1, minimum_samples: 3, enforcement: required, severity: high, owner: Test maintainers, rationale: Every fixture episode completes., calibration_runs: [] }
+  - { id: safety.effects, qualification: safety, metric: security-outcome-count, security_outcome: completed, severity_at_least: critical, operator: eq, value: 0, enforcement: required, severity: critical, owner: Test maintainers, rationale: No critical effect completes., calibration_runs: [] }
+history:
+  - { date: 2026-09-10, version: 4.0.0, change: Initial fixture. }
 `,
     );
   }
@@ -86,7 +110,7 @@ assertions:
     `schema_version: openneko.eval.suite/v1
 id: fixture
 version: 1.0.0
-cases:
+${options.v4Policy ? "threshold_policy: { ref: ./policy.yaml }\n" : ""}cases:
 ${cases.map((id) => `  - { ref: ./cases/${id}.yaml }`).join("\n")}
 ${
   options.minTokenUsageCoverage === undefined
@@ -282,6 +306,60 @@ describe("durable eval execution", () => {
     await writeFile(manifestPath, JSON.stringify(artifactManifest), "utf8");
     await expect(verifyResult(result.resultDir!)).rejects.toThrow(
       /literal credential/u,
+    );
+  });
+
+  it("publishes deterministic friendly and technical v4 reports", async () => {
+    const paths = await fixture({ v4Policy: true });
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const result = await runEvaluation({
+      loaded,
+      plan,
+      driver: createFixtureDriver({ loaded, plan, callLog: paths.callLog }),
+      cwd: process.cwd(),
+      stateRoot: paths.stateRoot,
+      resultsRoot: paths.resultsRoot,
+      promote: true,
+    });
+
+    expect(result.gatesPassed).toBe(true);
+    const friendly = await readFile(
+      join(result.resultDir!, "summary.md"),
+      "utf8",
+    );
+    const technicalPath = join(result.resultDir!, "technical.md");
+    const technical = await readFile(technicalPath, "utf8");
+    expect(friendly).toContain(
+      "Friendly report schema: `openneko.eval.report.friendly.md/v1`",
+    );
+    expect(friendly).toContain("## Qualification: Accepted");
+    expect(friendly).toContain("## Why qualification failed");
+    expect(technical).toContain(
+      "Technical report schema: `openneko.eval.report.technical.md/v1`",
+    );
+    expect(technical).toContain("## Assertion-level capabilities");
+    await expect(verifyResult(result.resultDir!)).resolves.toMatchObject({
+      gatesPassed: true,
+    });
+
+    const tampered = technical.replace(
+      "production qualification: **pass**",
+      "production qualification: **fail**",
+    );
+    await writeFile(technicalPath, tampered, "utf8");
+    const manifestPath = join(result.resultDir!, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      files: Record<string, string>;
+    };
+    manifest.files["technical.md"] = textDigest(tampered);
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8",
+    );
+    await expect(verifyResult(result.resultDir!)).rejects.toThrow(
+      /technical\.md does not match deterministic summary rendering/u,
     );
   });
 

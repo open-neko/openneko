@@ -381,6 +381,48 @@ export function hermesModelConfigLines(runtime: HermesProviderRuntime): string[]
   return lines;
 }
 
+/**
+ * Translate eval-neutral provider limits into the pinned Hermes 0.21 model
+ * keys. Keeping this mapping here means the values recorded in an eval
+ * manifest are the same values actually written to Hermes config.yaml.
+ */
+export function hermesModelBudgetConfigLines(
+  config: Record<string, unknown> | null | undefined,
+): string[] {
+  const value = config ?? {};
+  const positiveInteger = (key: string): number | undefined => {
+    const candidate = value[key];
+    if (candidate === undefined) return undefined;
+    if (
+      typeof candidate !== "number" ||
+      !Number.isInteger(candidate) ||
+      candidate <= 0
+    ) {
+      throw new Error(`${key} must be a positive integer.`);
+    }
+    return candidate;
+  };
+  const maxOutputTokens = positiveInteger("max_output_tokens");
+  const contextWindowTokens = positiveInteger("context_window_tokens");
+  if (
+    maxOutputTokens !== undefined &&
+    contextWindowTokens !== undefined &&
+    maxOutputTokens >= contextWindowTokens
+  ) {
+    throw new Error(
+      "max_output_tokens must be smaller than context_window_tokens.",
+    );
+  }
+  return [
+    ...(contextWindowTokens !== undefined
+      ? [`  context_length: ${contextWindowTokens}`]
+      : []),
+    ...(maxOutputTokens !== undefined
+      ? [`  max_tokens: ${maxOutputTokens}`]
+      : []),
+  ];
+}
+
 async function provisionHermes(orgId: string): Promise<void> {
   const row = await loadProviderRow(orgId, "primary");
   const hermesHome = hermesHomeForOrg(orgId);
@@ -406,6 +448,7 @@ async function provisionHermes(orgId: string): Promise<void> {
   await mkdir(hermesHome, { recursive: true });
 
   const yamlLines = hermesModelConfigLines(runtime);
+  yamlLines.push(...hermesModelBudgetConfigLines(row.config));
   yamlLines.push("");
   yamlLines.push("agent:");
   yamlLines.push(`  max_turns: ${HERMES_DEFAULT_MAX_TURNS}`);

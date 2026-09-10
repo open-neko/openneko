@@ -18,11 +18,23 @@
       "type": "string",
       "maxLength": 4096
     },
+    "threshold_policy": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "additionalProperties": false
+    },
     "cases": {
       "minItems": 1,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema1"
+        "$ref": "#/$defs/__schema2"
       }
     },
     "gates": {
@@ -99,17 +111,55 @@
       "pattern": "^[a-z0-9][a-z0-9._-]*$"
     },
     "__schema1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema2": {
       "type": "object",
       "properties": {
         "ref": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/__schema1"
+        },
+        "assertion_attribution": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "capabilities": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema0"
+                }
+              },
+              "semantics": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema3"
+                }
+              }
+            },
+            "required": [
+              "capabilities"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
         "ref"
       ],
       "additionalProperties": false
+    },
+    "__schema3": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
     }
   }
 }

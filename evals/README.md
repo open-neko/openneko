@@ -1,13 +1,16 @@
 # OpenNeko harness evaluation and telemetry plan
 
-> **IMPLEMENTATION STATUS — 2026-08-14.** The reusable eval core, typed
+> **IMPLEMENTATION STATUS — 2026-09-10.** The reusable eval core, typed
 > observation contract, durable resume journal, deterministic rescoring,
 > PR-safe result verifier, CLI (including the `oracles` ground-truth
 > extraction command), semantic registry, a 40-case authored AdventureWorks
 > corpus (`adventureworks-40q`), direct and delegated GraphJin paths,
 > optional OTLP tracing in worker and web execution, persisted production
-> summaries, latency/token/cost aggregates, and the first executable
-> watcher/action lifecycle pack are implemented. Corpus generation toward
+> summaries, latency/token/cost aggregates, the first executable watcher/action
+> lifecycle pack, and backend eval v4 assertion attribution, typed security
+> outcomes, independent qualification policy, explicit runtime limits, and dual
+> human/technical reports are implemented. See
+> [`V4-CONTRACT.md`](./V4-CONTRACT.md). Corpus generation toward
 > hundreds of queries and the remaining whole-product suites in section 14
 > are still roadmap work; `GROUND-TRUTH.md` defines how ground truth is
 > established for the harness-level suites (dashboards, memory/skills work,
@@ -27,7 +30,27 @@ Validation and planning make no provider calls and need no credentials:
 pnpm openneko eval validate --config evals/configs/adventureworks-smoke.yaml
 pnpm openneko eval plan --config evals/configs/adventureworks-smoke.yaml
 pnpm openneko eval plan --config evals/configs/adventureworks-harness-factorial.yaml
+
+# Complete backend v4 plan: 65 tasks x 3 repetitions, provider-free to inspect.
+pnpm openneko eval validate --config evals/configs/openneko-backend-scripted-good-v4.yaml
+pnpm openneko eval plan --config evals/configs/openneko-backend-scripted-good-v4.yaml
 ```
+
+The dedicated v4 control runs through the frozen backend-eval environment and
+makes no provider call:
+
+```sh
+pnpm eval:backend --smoke-v4 --no-promote
+```
+
+Do not use `pnpm dev:setup` for the backend benchmark: that is the product demo
+stack and may run date backfilling. The dedicated runner statically rejects the
+simulator, scenario injector, and backfill scripts, then verifies the frozen
+AdventureWorks fingerprint before and after the run.
+
+The Hermes v4 config is provider-backed. Validation and planning are free, but
+a canary or full cohort must not be started until the resolved model, 195
+episodes, runtime limits, and budget have explicit operator approval.
 
 With only the seeded oracle database available, `oracles` resolves and prints
 every case's ground truth without any provider call:

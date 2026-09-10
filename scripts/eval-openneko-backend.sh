@@ -28,6 +28,7 @@ Suites (default: --smoke):
   --smoke             Provider-free 13-call passing walking skeleton
   --smoke-v2          Provider-free 53-call full-coverage walking skeleton
   --smoke-v3          Provider-free 59-call stateful walking skeleton
+  --smoke-v4          Provider-free 195-episode v4 qualification control
   --contrast          Provider-free 52-call good/bad discrimination run
   --identity          Single-episode Hermes identity and transport canary
   --canary            Seven-episode Hermes capability canary
@@ -38,6 +39,7 @@ Suites (default: --smoke):
   --core              Three-repetition, 39-episode Hermes v1 cohort
   --full              Three-repetition, 159-episode Hermes v2 reference cohort
   --full-v3           Three-repetition, 177-episode Hermes v3 reference cohort
+  --full-v4           Three-repetition, 195-episode Hermes v4 reference cohort
   --config PATH       Run another openneko.work-backend config
 
 Options:
@@ -80,6 +82,9 @@ while [ "$#" -gt 0 ]; do
     --smoke-v3)
       select_config evals/configs/openneko-backend-scripted-good-v3.yaml
       ;;
+    --smoke-v4)
+      select_config evals/configs/openneko-backend-scripted-good-v4.yaml
+      ;;
     --contrast)
       select_config evals/configs/openneko-backend-scripted.yaml
       ;;
@@ -109,6 +114,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --full-v3)
       select_config evals/configs/openneko-backend-hermes-v3.yaml
+      ;;
+    --full-v4)
+      select_config evals/configs/openneko-backend-hermes-v4.yaml
       ;;
     --config)
       [ "$#" -ge 2 ] || { echo "--config requires a path" >&2; exit 2; }

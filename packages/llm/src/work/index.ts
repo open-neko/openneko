@@ -63,6 +63,7 @@ export {
   WORK_SEMANTIC_TRACE_SCHEMA_VERSION,
   recordWorkSemanticHostEvent,
   registerWorkSemanticTraceSink,
+  traceActionPolicy,
   traceAgentControlPlane,
   workSemanticDigest,
   type WorkSemanticHostEventInput,

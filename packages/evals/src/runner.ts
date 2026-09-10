@@ -12,7 +12,7 @@ import { contentDigest } from "./canonical";
 import type { LoadedCase, LoadedEval } from "./load";
 import type { EvalPlan, EvalSlot } from "./plan";
 import { evaluateSuiteGates, promoteResult } from "./report";
-import { summarizeEpisodes } from "./scoring";
+import { assertionsForPhase, summarizeEpisodes } from "./scoring";
 import {
   EvalSemanticEvidenceSchema,
   type EvalSemanticEvidence,
@@ -239,6 +239,90 @@ function semanticsForSlot(slot: EvalSlot): string[] {
   return [...new Set([...slot.case.semantics, ...(semantic ? [semantic] : [])])];
 }
 
+function assertionTargetsForSlot(slot: EvalSlot) {
+  return assertionsForPhase(slot.case.assertions, slot.phase).flatMap(
+    (assertion) =>
+      assertion.capabilities
+        ? [
+            {
+              assertionId: assertion.id,
+              dimension: assertion.dimension,
+              gate: assertion.gate,
+              capabilities: assertion.capabilities,
+              semantics: assertion.semantics ?? [],
+            },
+          ]
+        : [],
+  );
+}
+
+function positiveInteger(value: unknown): number | null {
+  return Number.isSafeInteger(value) && Number(value) > 0
+    ? Number(value)
+    : null;
+}
+
+function runtimeBudgets(loaded: LoadedEval): EvalManifest["runtimeBudgets"] {
+  const outputLimits = loaded.config.variants.map((variant) =>
+    positiveInteger(variant.outer_model.config?.max_output_tokens),
+  );
+  const contextLimits = loaded.config.variants.map((variant) =>
+    positiveInteger(variant.outer_model.config?.context_window_tokens),
+  );
+  const commonLimit = (values: readonly (number | null)[]) =>
+    values.length > 0 && values.every((value) => value === values[0])
+      ? (values[0] ?? null)
+      : null;
+  const providerOutputTokenLimit = commonLimit(outputLimits);
+  const modelContextTokenLimit = commonLimit(contextLimits);
+  const resolutionNotes: string[] = [];
+  if (providerOutputTokenLimit === null) {
+    resolutionNotes.push(
+      "provider output-token limit was not explicitly resolved by every variant",
+    );
+  }
+  if (modelContextTokenLimit === null) {
+    resolutionNotes.push(
+      "model context limit was not explicitly resolved by every variant",
+    );
+  }
+  return {
+    perEpisodeTimeoutMs: durationMs(loaded.config.defaults.timeout),
+    providerOutputTokenLimit,
+    modelContextTokenLimit,
+    toolCallCeilings: Object.fromEntries(
+      loaded.config.variants.map((variant) => [
+        variant.id,
+        positiveInteger(variant.settings?.max_tool_calls),
+      ]),
+    ),
+    harnessMaxAttempts: loaded.config.defaults.max_attempts,
+    backendRetryAttempts: Object.fromEntries(
+      loaded.config.variants.map((variant) => [
+        variant.id,
+        Number.isSafeInteger(variant.settings?.backend_retry_attempts) &&
+        Number(variant.settings?.backend_retry_attempts) >= 0
+          ? Number(variant.settings?.backend_retry_attempts)
+          : variant.backend === "hermes"
+            ? 1
+            : 0,
+      ]),
+    ),
+    concurrency: loaded.config.defaults.concurrency,
+    cacheState: loaded.config.defaults.cache_state,
+    configuredModels: Object.fromEntries(
+      loaded.config.variants.map((variant) => [
+        variant.id,
+        {
+          provider: variant.outer_model.provider,
+          model: variant.outer_model.model,
+        },
+      ]),
+    ),
+    resolutionNotes,
+  };
+}
+
 export type RunEvaluationOptions = {
   loaded: LoadedEval;
   plan: EvalPlan;
@@ -303,6 +387,9 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
           ),
       ),
       sourceDigest: source.digest,
+      ...(options.loaded.digests.thresholdPolicy
+        ? { thresholdPolicyDigest: options.loaded.digests.thresholdPolicy }
+        : {}),
     };
     const store = new EvalStateStore(options.stateRoot);
     let manifest: EvalManifest | undefined;
@@ -329,6 +416,13 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         suiteId: options.loaded.suite.id,
         attestation: "self-reported",
         suiteGates: options.loaded.suite.gates,
+        ...(options.loaded.thresholdPolicy
+          ? {
+              thresholdPolicy: options.loaded.thresholdPolicy,
+              thresholdPolicyDigest: options.loaded.digests.thresholdPolicy,
+            }
+          : {}),
+        runtimeBudgets: runtimeBudgets(options.loaded),
         status: "in_progress",
         createdAt: now,
         updatedAt: now,
@@ -501,6 +595,9 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
               difficulty: slot.case.difficulty,
               capabilityTags: slot.case.capability_tags,
               semantics: semanticsForSlot(slot),
+              ...(assertionTargetsForSlot(slot).length
+                ? { assertionTargets: assertionTargetsForSlot(slot) }
+                : {}),
               variantId: slot.variantId,
               datasetId: slot.datasetId,
               repetition: slot.repetition,
@@ -557,6 +654,9 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
                 difficulty: slot.case.difficulty,
                 capabilityTags: slot.case.capability_tags,
                 semantics: semanticsForSlot(slot),
+                ...(assertionTargetsForSlot(slot).length
+                  ? { assertionTargets: assertionTargetsForSlot(slot) }
+                  : {}),
                 variantId: slot.variantId,
                 datasetId: slot.datasetId,
                 repetition: slot.repetition,

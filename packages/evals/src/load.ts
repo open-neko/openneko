@@ -10,11 +10,13 @@ import {
   PricingCatalogSchema,
   SemanticRegistrySchema,
   SuiteSchema,
+  ThresholdPolicySchema,
   type EvalCase,
   type EvalConfig,
   type PricingCatalog,
   type EvalDataset,
   type EvalSuite,
+  type EvalThresholdPolicy,
   type EvalVariant,
   type SemanticRegistry,
 } from "./schemas";
@@ -80,6 +82,7 @@ export type LoadedEval = {
   configPath: string;
   config: EvalConfig;
   suite: EvalSuite;
+  thresholdPolicy?: EvalThresholdPolicy;
   datasets: ReadonlyMap<string, EvalDataset>;
   datasetPaths: ReadonlyMap<string, string>;
   datasetSnapshots: ReadonlyMap<string, string>;
@@ -93,6 +96,7 @@ export type LoadedEval = {
     cases: string;
     semantics?: string;
     pricing?: string;
+    thresholdPolicy?: string;
   };
 };
 
@@ -204,12 +208,65 @@ export async function loadEval(configPathInput: string): Promise<LoadedEval> {
 
   const suitePath = resolveRef(configPath, config.suite.ref);
   const suite = SuiteSchema.parse(await readYaml(suitePath));
+  let thresholdPolicy: EvalThresholdPolicy | undefined;
+  let thresholdPolicyDigest: string | undefined;
+  if (suite.threshold_policy) {
+    const policyPath = resolveRef(suitePath, suite.threshold_policy.ref);
+    thresholdPolicy = ThresholdPolicySchema.parse(await readYaml(policyPath));
+    ensureUnique(
+      thresholdPolicy.gates.map((gate) => gate.id),
+      "threshold policy gates",
+    );
+    ensureUnique(
+      thresholdPolicy.capabilities.map((capability) => capability.id),
+      "threshold policy capabilities",
+    );
+    const declaredCapabilities = new Set(
+      thresholdPolicy.capabilities.map((capability) => capability.id),
+    );
+    const undeclared = thresholdPolicy.gates
+      .flatMap((gate) => (gate.capability ? [gate.capability] : []))
+      .filter((capability) => !declaredCapabilities.has(capability));
+    if (undeclared.length) {
+      throw new Error(
+        `threshold policy gates reference undeclared capabilities: ${[
+          ...new Set(undeclared),
+        ].join(", ")}`,
+      );
+    }
+    thresholdPolicyDigest = contentDigest(thresholdPolicy);
+  }
   const selected = config.suite.cases ? new Set(config.suite.cases) : undefined;
 
   const cases: LoadedCase[] = [];
   for (const caseRef of suite.cases) {
     const casePath = resolveRef(suitePath, caseRef.ref);
     const parsedCase = CaseSchema.parse(await readYaml(casePath));
+    if (caseRef.assertion_attribution) {
+      const knownAssertions = new Set(
+        parsedCase.assertions.map((assertion) => assertion.id),
+      );
+      const unknownAssertions = Object.keys(
+        caseRef.assertion_attribution,
+      ).filter((id) => !knownAssertions.has(id));
+      if (unknownAssertions.length) {
+        throw new Error(
+          `${suitePath}: assertion attribution for ${parsedCase.id} references unknown assertions: ${unknownAssertions.join(", ")}`,
+        );
+      }
+      parsedCase.assertions = parsedCase.assertions.map((assertion) => {
+        const attribution = caseRef.assertion_attribution?.[assertion.id];
+        return attribution
+          ? {
+              ...assertion,
+              capabilities: attribution.capabilities,
+              ...(attribution.semantics
+                ? { semantics: attribution.semantics }
+                : {}),
+            }
+          : assertion;
+      });
+    }
     if (parsedCase.product_path === "metric") {
       parsedCase.input = MetricQuestionInputSchema.parse(parsedCase.input);
     }
@@ -241,6 +298,36 @@ export async function loadEval(configPathInput: string): Promise<LoadedEval> {
     });
   }
   ensureUnique(cases.map((item) => item.id), "suite cases");
+  if (thresholdPolicy) {
+    const attributedCapabilities = new Set(
+      cases.flatMap((evalCase) =>
+        evalCase.assertions.flatMap(
+          (assertion) => assertion.capabilities ?? [],
+        ),
+      ),
+    );
+    const declaredCapabilities = new Set(
+      thresholdPolicy.capabilities.map((capability) => capability.id),
+    );
+    const undeclared = [...attributedCapabilities].filter(
+      (capability) => !declaredCapabilities.has(capability),
+    );
+    if (undeclared.length) {
+      throw new Error(
+        `assertion attribution references capabilities absent from the threshold policy: ${undeclared.sort().join(", ")}`,
+      );
+    }
+    const uncovered = thresholdPolicy.gates
+      .flatMap((gate) => (gate.capability ? [gate.capability] : []))
+      .filter((capability) => !attributedCapabilities.has(capability));
+    if (uncovered.length) {
+      throw new Error(
+        `threshold policy capabilities have no assertion attribution: ${[
+          ...new Set(uncovered),
+        ].join(", ")}`,
+      );
+    }
+  }
   if (selected) {
     const missing = [...selected].filter((id) => !cases.some((item) => item.id === id));
     if (missing.length) throw new Error(`selected cases not in suite: ${missing.join(", ")}`);
@@ -277,7 +364,12 @@ export async function loadEval(configPathInput: string): Promise<LoadedEval> {
     ensureUnique(semantics.entries.map((entry) => entry.id), "semantic registry");
     const known = new Set(semantics.entries.map((entry) => entry.id));
     const unknown = cases.flatMap((evalCase) =>
-      evalCase.semantics.filter((id) => !known.has(id)).map((id) => `${evalCase.id}:${id}`),
+      [
+        ...evalCase.semantics,
+        ...evalCase.assertions.flatMap((assertion) => assertion.semantics ?? []),
+      ]
+        .filter((id) => !known.has(id))
+        .map((id) => `${evalCase.id}:${id}`),
     );
     if (unknown.length) {
       throw new Error(`cases reference unknown semantics: ${unknown.join(", ")}`);
@@ -289,6 +381,7 @@ export async function loadEval(configPathInput: string): Promise<LoadedEval> {
     configPath,
     config,
     suite,
+    ...(thresholdPolicy ? { thresholdPolicy } : {}),
     datasets,
     datasetPaths,
     datasetSnapshots,
@@ -302,6 +395,7 @@ export async function loadEval(configPathInput: string): Promise<LoadedEval> {
       cases: contentDigest(cases.map((item) => item.contentId)),
       ...(semanticsDigest ? { semantics: semanticsDigest } : {}),
       ...(pricingDigest ? { pricing: pricingDigest } : {}),
+      ...(thresholdPolicyDigest ? { thresholdPolicy: thresholdPolicyDigest } : {}),
     },
   };
 }

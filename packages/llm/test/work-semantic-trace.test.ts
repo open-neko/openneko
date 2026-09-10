@@ -562,6 +562,75 @@ describe("trusted broker semantic trace", () => {
     }
   });
 
+  it("records privacy-safe action-policy decisions at host and broker boundaries", async () => {
+    const decision = {
+      decision: "deny" as const,
+      mode: "observe_only" as const,
+      reason: "target denied",
+      policy: { id: "policy-1", name: "Outbound guard" },
+    };
+    const evaluateActionPolicy = vi.fn(async () => decision);
+    const controlPlane = stubControlPlane({ evaluateActionPolicy });
+    const binding = {
+      runId: "action-policy-run",
+      orgId: "trusted-org",
+      kind: "workflow" as const,
+    };
+    const events: WorkSemanticTraceEvent[] = [];
+    const unregister = registerWorkSemanticTraceSink(binding.runId, (event) => {
+      events.push(event);
+    });
+    const handle = await startAgentBroker({ controlPlane, port: 0 });
+    const target = "channel:SECRET-EXTERNAL-TARGET";
+
+    try {
+      await traceAgentControlPlane(controlPlane, binding).evaluateActionPolicy({
+        orgId: binding.orgId,
+        scope: "external",
+        kind: "eval_send_notice",
+        target,
+        riskLevel: "high",
+      });
+      const token = handle.tokenFor(binding);
+      expect(
+        (
+          await postBroker(handle.port, token, "/v1/policy/evaluate", {
+            scope: "external",
+            kind: "eval_send_notice",
+            target,
+            riskLevel: "high",
+          })
+        ).status,
+      ).toBe(200);
+
+      expect(evaluateActionPolicy).toHaveBeenCalledTimes(2);
+      expect(events).toHaveLength(2);
+      expect(events.map((event) => event.source)).toEqual([
+        "trusted-host",
+        "trusted-broker",
+      ]);
+      for (const event of events) {
+        expect(event).toMatchObject({
+          operation: "action.policy",
+          status: "ok",
+          evidence: {
+            kind: "eval_send_notice",
+            scope: "external",
+            decision: "deny",
+            mode: "observe_only",
+            targetDigest: workSemanticDigest(target),
+            policyDigest: workSemanticDigest("policy-1"),
+          },
+        });
+      }
+      expect(JSON.stringify(events)).not.toContain(target);
+      expect(JSON.stringify(events)).not.toContain("Outbound guard");
+    } finally {
+      await handle.close();
+      unregister();
+    }
+  });
+
   it("records typed, digest-only host prefetch and skill-load evidence", async () => {
     const events: WorkSemanticTraceEvent[] = [];
     const binding = {

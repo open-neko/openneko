@@ -9,6 +9,7 @@ import type { AgentEvent } from "../agent-backend";
 import { inProcessControlPlane, type AgentControlPlane } from "./control-plane";
 import { sandboxBrokerHost } from "./sandbox-net";
 import {
+  traceActionPolicy,
   traceGraphjinQuery,
   traceGraphjinToolCall,
   traceGraphjinToolsList,
@@ -107,10 +108,24 @@ async function handle(
       return send(
         res,
         200,
-        await cp.evaluateActionPolicy({
-          ...body,
-          orgId: binding.orgId,
-        } as Parameters<AgentControlPlane["evaluateActionPolicy"]>[0]),
+        await traceActionPolicy({
+          binding,
+          request: {
+            scope: body.scope === "internal" ? "internal" : "external",
+            kind: String(body.kind ?? ""),
+            ...(typeof body.target === "string" || body.target === null
+              ? { target: body.target }
+              : {}),
+            ...(typeof body.riskLevel === "string" || body.riskLevel === null
+              ? { riskLevel: body.riskLevel }
+              : {}),
+          },
+          execute: () =>
+            cp.evaluateActionPolicy({
+              ...body,
+              orgId: binding.orgId,
+            } as Parameters<AgentControlPlane["evaluateActionPolicy"]>[0]),
+        }),
       );
     case "/v1/action/request":
       return send(

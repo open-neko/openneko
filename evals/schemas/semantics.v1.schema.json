@@ -30,6 +30,8 @@
       "properties": {
         "id": {
           "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
           "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
         },
         "category": {

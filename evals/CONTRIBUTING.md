@@ -6,7 +6,8 @@ same fork/branch/pull-request workflow as code.
 ## Run an eval from a pull request
 
 From the repository root, install dependencies and provision the dataset named
-by the submitted config. AdventureWorks configs use the standard demo stack:
+by the submitted config. General AdventureWorks configs may use the standard
+demo stack:
 
 ```sh
 pnpm install
@@ -14,6 +15,17 @@ pnpm dev:setup
 pnpm openneko eval validate --config evals/configs/<config>.yaml
 pnpm openneko eval plan --config evals/configs/<config>.yaml --json
 ```
+
+The OpenNeko backend benchmark is the exception. Use its dedicated frozen
+runner; never start the product demo stack for that benchmark because the demo
+may backfill AdventureWorks dates:
+
+```sh
+pnpm eval:backend --smoke-v4 --no-promote
+```
+
+This provider-free v4 control restores and fingerprints the immutable seed and
+cannot inherit the simulator or scenario injector.
 
 Read the plan before spending provider budget. It is the resolved statement of
 which dataset, cases, variants, repetitions, models, and data paths will run.
@@ -54,7 +66,10 @@ or reuses these versioned files:
    the calculation. Put exact computation rules and expected values only in the
    host-side oracle and assertions.
 3. `evals/suites/<suite>.yaml` selects cases and defines aggregate quality and
-   safety gates. Model-backed suites should require
+   safety gates. V4-style suites should reference a versioned threshold policy,
+   attribute individual assertions to declared capabilities, and give each gate
+   an owner, rationale, enforcement, severity, evidence minimum, and calibration
+   history. Model-backed suites should require
    `min_token_usage_coverage: 1`; do not require dollar cost because local and
    self-hosted models may not have a meaningful USD price.
 4. `evals/configs/<config>.yaml` selects the suite, dataset snapshot, backend,
@@ -115,7 +130,8 @@ pnpm openneko eval rescore --config evals/configs/<config>.yaml --run <run-id>
 
 ## Submit a result
 
-Only the four files in the promoted result directory belong in a PR:
+Only the declared sanitized files in the promoted result directory belong in a
+PR. Legacy results contain four files; v4 results add `technical.md`:
 
 ```text
 evals/results/<config-id>/<run-id>/
@@ -123,6 +139,7 @@ evals/results/<config-id>/<run-id>/
   results.jsonl
   summary.json
   summary.md
+  technical.md  # v4 only
 ```
 
 Run the verifier before committing:
@@ -136,7 +153,10 @@ It checks file digests, schema versions, expected slot coverage, duplicate
 slots, secret-shaped values, absence of raw outputs/observations, and recomputes
 the aggregate summary from `results.jsonl`, including macro/micro quality,
 dataset/product-path groups, latency percentiles, token and cost totals, and
-explicit measurement coverage. Raw episodes, prompts, tool data,
+explicit measurement coverage. For v4 it also verifies the threshold-policy
+digest, recomputes independent qualification and assertion-level capability
+coverage, and re-renders both Markdown reports byte-for-byte. Raw episodes,
+prompts, tool data,
 oracles, and traces remain under ignored `.openneko/evals/` paths.
 Missing token totals fail suites that declare the token-coverage gate. Missing
 pricing does not fail verification and is rendered as `unavailable`, while any
