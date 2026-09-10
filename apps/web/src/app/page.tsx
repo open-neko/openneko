@@ -567,8 +567,6 @@ export default function Dashboard() {
               }
             />
 
-            <AgentLauncher />
-
             {/* Legacy greeting + subtitle from the KPI-only briefing API.
                 When the live summary is present, it's the canonical
                 read-on-the-business; the legacy greeting goes silent so the
@@ -788,6 +786,8 @@ export default function Dashboard() {
                 ))}
               </ProgressiveList>
             </div>
+
+            <AgentLauncher />
 
             {recentActions && recentActions.receipts.length > 0 && (
               <details data-ui-bespoke-reason="briefing proof expander"
