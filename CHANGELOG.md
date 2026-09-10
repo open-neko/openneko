@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.41.0](https://github.com/open-neko/openneko/compare/v2.40.0...v2.41.0) (2026-09-10)
+
+
+### Features
+
+* **google-workspace:** add read API specifications ([87aae43](https://github.com/open-neko/openneko/commit/87aae431be859e8c86091902a4d1a94ca1ea4879))
+* **google-workspace:** add read skills ([f4ff0c4](https://github.com/open-neko/openneko/commit/f4ff0c45c2dd895e10a1ee47eb062eac50f37637))
+* **google-workspace:** declare read sources ([024f1cb](https://github.com/open-neko/openneko/commit/024f1cbd8ca46b9c0497c3f27f5b46c3a52afc1b))
+* **magento:** add daily security advisory workflow ([b1bbe9f](https://github.com/open-neko/openneko/commit/b1bbe9f5df35b6003ed1a44ba8e79706fc04faef))
+* **packs:** add Google Workspace OAuth and actions ([142c939](https://github.com/open-neko/openneko/commit/142c939a4fdbf6cd1fc77d57e3298d36c716b76f))
+* **packs:** execute declared operations through action approvals ([e09935a](https://github.com/open-neko/openneko/commit/e09935abb7f0b9221fa5928fd3aa01d9434a4134))
+* **packs:** install declarative custom packs ([a8aea3a](https://github.com/open-neko/openneko/commit/a8aea3a7b371e6fc83a44bcd5e8de40408816574))
+* **packs:** run pack-owned connectors in isolation ([34c59f3](https://github.com/open-neko/openneko/commit/34c59f354b19ab8bdec016b63caa7ccb4fd3da9e))
+* **packs:** support browser account connections ([30f9b26](https://github.com/open-neko/openneko/commit/30f9b26e03c3e8109ce5cdd6b8301d07ee9106a8))
+* **packs:** support packs without GraphJin ([b58e1a7](https://github.com/open-neko/openneko/commit/b58e1a7681afd97372ee19219a8d13074402bf1d))
+
+
+### Bug Fixes
+
+* **actions:** remove mock execution and dry-run mode ([b2a39dc](https://github.com/open-neko/openneko/commit/b2a39dce03d14264a15a5fdd1bd05b477b26a3f3))
+* **db:** add workflow network hosts migration ([f635072](https://github.com/open-neko/openneko/commit/f635072df43f1b090ceaa8262f9201332056c42a))
+* **graphjin:** protect shared configuration secrets ([6694fe7](https://github.com/open-neko/openneko/commit/6694fe743c5c9d313812404207be661b8d44f6e9))
+* **graphjin:** run shared config services unprivileged ([7e9c826](https://github.com/open-neko/openneko/commit/7e9c8262c693fc0ffdccb6f0b6f1dd8a7ef8c168))
+* **graphjin:** use pinned runtime in source stack ([cfb34fa](https://github.com/open-neko/openneko/commit/cfb34fa8b4cf7f1b9f50b9888b149a327084929a))
+* **packs:** disable only write policies by default ([1aeb631](https://github.com/open-neko/openneko/commit/1aeb631d4aec715b1f6adc5d7a2ccd11f08c0505))
+* **packs:** expose installed actions to Work ([6e8c781](https://github.com/open-neko/openneko/commit/6e8c781d812b3fb4c0e2f47974dd785546a30122))
+* **packs:** improve declarative pack diagnostics ([cda22dd](https://github.com/open-neko/openneko/commit/cda22dd6db623c3b21918408386242e005d7777f))
+* **packs:** leave policy activation to admins ([ba4717d](https://github.com/open-neko/openneko/commit/ba4717d48d9e04c1ebeeab9e177c7b06b38aee39))
+* **packs:** preserve declared API write capabilities ([a2ef6a9](https://github.com/open-neko/openneko/commit/a2ef6a95574b502425ab7f06c1d8344469bcc9e1))
+* **packs:** roll back failed GraphJin persistence ([0e9bba7](https://github.com/open-neko/openneko/commit/0e9bba70cac4e12957f947669230374792a4272c))
+* **workflows:** provision pack-owned network hosts ([213061d](https://github.com/open-neko/openneko/commit/213061d63f36e10693724927ed82274815fca509))
+
 ## [2.40.0](https://github.com/open-neko/openneko/compare/v2.39.1...v2.40.0) (2026-09-08)
 
 
