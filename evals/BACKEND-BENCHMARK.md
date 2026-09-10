@@ -1,7 +1,10 @@
 # OpenNeko backend benchmark contract
 
 Status: implementation contract for `openneko-backend-v1`, the expanded
-`openneko-backend-v2`, and the stateful `openneko-backend-v3` tranche.
+`openneko-backend-v2`, the stateful `openneko-backend-v3`, and the
+qualification-focused `openneko-backend-v4` tranche. The detailed v4 scoring,
+safety, policy, runtime, and report contract is in
+[`V4-CONTRACT.md`](./V4-CONTRACT.md).
 
 This benchmark compares agent backends through the production OpenNeko Work
 orchestration. It does not benchmark GraphJin's internal agent and it does not
@@ -86,7 +89,8 @@ runner episode per case but gives its backend adapter ownership of an isolated
 scenario lifecycle: trusted setup, ready state, model turn, deterministic
 execution, post-state observation, collateral comparison, and teardown. The
 generic `phases` field remains independent runner slots and is not presented as
-shared state.
+shared state. V4 preserves those worlds and adds split safety fixtures plus
+assertion-level attribution without changing any v1-v3 case or result artifact.
 
 ## 3. Trusted private evidence
 
@@ -214,7 +218,7 @@ These are semantic state checks, not snapshots of the model's tool-call JSON or
 final prose. Stateful and mutating cases remain ahead of every ordinary read,
 matching GraphJin's mutation-first ordering discipline.
 
-The current tranche deliberately stops at controlled system boundaries. Channel
+V3 deliberately stopped at controlled system boundaries. Channel
 delivery is captured at the production delivery hook with no Slack/Telegram
 network call. Actions use the product approval/execution path and a mock adapter,
 so they prove governance and idempotency without a real external effect. Records
@@ -222,6 +226,20 @@ coverage proves shipped-blueprint discovery and an approval-gated unchanged
 proposal, not generated-app row CRUD. Compaction coverage proves that a backend
 can consume and preserve an existing rolling summary; model-generated folding
 and differential replay over a full conversation remain follow-on cases.
+
+V4 retains all 59 v3 tasks and adds six controls: independent prompt-injection,
+tenant-isolation, database-mutation-denial, and disallowed-skill cases, plus
+stateful approval-bypass and channel/secret-exfiltration cases. The result is a
+65-task suite and 195-episode reference cohort. The new safety cases retain a
+positive workload so a candidate cannot pass by refusing all tool use.
+
+V4 attributes individual assertions to versioned capability IDs and reports
+attempted, completed, and unavailable evidence separately. Execution failures
+therefore reduce the unconditional capability rate and reliability, while the
+conditional rate remains available as a diagnostic of completed work. Security
+evidence is typed as `assertion_failed`, `attempted`, `blocked`, or `completed`;
+only trusted host/broker evidence can claim a completed effect. See
+[`V4-CONTRACT.md`](./V4-CONTRACT.md) for the exact taxonomy and formulas.
 
 ## 6. Provenance and candidate eligibility
 
@@ -268,6 +286,9 @@ manual edits to result files:
 | Attribution | Required memory, skill, library, workflow, and GraphJin operations are proven by trusted host evidence |
 | Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, explicitly exposed API `call` mutations remain possible, prompt injection is resisted, and tenant scope is actor-bound |
 | Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, Records proposal integrity, and compaction preservation pass host-read state-machine oracles |
+| V4 safety controls | Split prompt, tenant, mutation, skill, approval-bypass, and channel/exfiltration cases produce typed outcomes without classifying passive retrieval as an effect |
+| Qualification | A versioned policy independently decides capability, reliability, safety, and production qualification from assertion-level evidence |
+| Reporting | A decision-oriented `summary.md` links to a deterministic `technical.md` with gate rationale, coverage, task IDs, runtime limits, and provenance |
 | Privacy | Promoted report contains no raw evidence bodies, planted sentinels, prompts, credentials, or oracle answers |
 | Hermes | Identity canary and the thirteen cases complete at one repetition before the three-repetition reference cohort |
 
@@ -287,6 +308,7 @@ removes only the dedicated metadata volumes and eval containers.
 pnpm eval:backend                         # provider-free 13-call core smoke run
 pnpm eval:backend --smoke-v2              # provider-free 53-call v2 smoke run
 pnpm eval:backend --smoke-v3              # provider-free 59-call v3 stateful smoke run
+pnpm eval:backend --smoke-v4              # provider-free 195-episode v4 qualification control
 pnpm eval:backend --contrast              # 52-call good/bad discrimination
 pnpm eval:backend --identity              # single-episode Hermes identity/transport gate
 pnpm eval:backend --canary                # seven-episode Hermes canary
@@ -297,6 +319,7 @@ pnpm eval:backend --composition           # nine-episode mutation-first composit
 pnpm eval:backend --core                  # 39-episode Hermes v1 cohort
 pnpm eval:backend --full                  # 159-episode Hermes v2 reference cohort
 pnpm eval:backend --full-v3                # 177-episode Hermes v3 reference cohort
+pnpm eval:backend --full-v4                # 195-episode Hermes v4 reference cohort (provider-backed)
 pnpm eval:backend --canary --resume RUN_ID
 ```
 

@@ -108,6 +108,17 @@ export type WorkSemanticTraceEvent =
       };
     })
   | (WorkSemanticTraceBase & {
+      operation: "action.policy";
+      evidence: {
+        kind: string;
+        scope: "external" | "internal";
+        decision: "allow" | "needs_approval" | "deny" | "no_policy";
+        mode?: string;
+        targetDigest?: string;
+        policyDigest?: string;
+      };
+    })
+  | (WorkSemanticTraceBase & {
       operation: "graphjin.tools_list";
       evidence: {
         returnedCount: number;
@@ -473,6 +484,48 @@ export function traceRecordBlueprints<T>(input: {
   });
 }
 
+export function traceActionPolicy<
+  T extends {
+    decision: "allow" | "needs_approval" | "deny" | "no_policy";
+    mode?: string;
+    policy?: { id?: string; name?: string };
+  },
+>(input: {
+  binding: WorkSemanticTraceBinding;
+  source?: WorkSemanticTraceSource;
+  request: {
+    scope: "external" | "internal";
+    kind: string;
+    target?: string | null;
+    riskLevel?: string | null;
+  };
+  execute: () => Promise<T>;
+}): Promise<T> {
+  return traced({
+    binding: input.binding,
+    ...(input.source !== undefined ? { source: input.source } : {}),
+    operation: "action.policy",
+    request: input.request,
+    execute: input.execute,
+    event: (base, result) => ({
+      ...base,
+      operation: "action.policy",
+      evidence: {
+        kind: input.request.kind,
+        scope: input.request.scope,
+        decision: result?.decision ?? "no_policy",
+        ...(result?.mode ? { mode: result.mode } : {}),
+        ...(input.request.target
+          ? { targetDigest: workSemanticDigest(input.request.target) }
+          : {}),
+        ...(result?.policy
+          ? { policyDigest: workSemanticDigest(result.policy.id ?? result.policy.name) }
+          : {}),
+      },
+    }),
+  });
+}
+
 export function traceGraphjinToolsList<T>(input: {
   binding: WorkSemanticTraceBinding;
   source?: WorkSemanticTraceSource;
@@ -680,6 +733,18 @@ export function traceAgentControlPlane(
   }
   const target = existing?.target ?? controlPlane;
   const tracedMethods: Partial<AgentControlPlane> = {
+    evaluateActionPolicy: (args) =>
+      traceActionPolicy({
+        binding,
+        source: "trusted-host",
+        request: {
+          scope: args.scope,
+          kind: args.kind,
+          ...(args.target !== undefined ? { target: args.target } : {}),
+          ...(args.riskLevel !== undefined ? { riskLevel: args.riskLevel } : {}),
+        },
+        execute: () => target.evaluateActionPolicy(args),
+      }),
     searchWorkMemoryByContext: (args) =>
       traceMemorySearch({
         binding,

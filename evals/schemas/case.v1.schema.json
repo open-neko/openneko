@@ -225,6 +225,20 @@
           "default": false,
           "type": "boolean"
         },
+        "capabilities": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema1"
+          }
+        },
+        "semantics": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema6"
+          }
+        },
         "phase": {
           "$ref": "#/$defs/__schema1"
         },

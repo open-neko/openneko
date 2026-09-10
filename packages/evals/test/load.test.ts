@@ -78,6 +78,104 @@ describe("execution ordering", () => {
   });
 });
 
+describe("threshold policy capability registry", () => {
+  it("loads the complete v4 assertion attribution", async () => {
+    const configPath = fileURLToPath(
+      new URL(
+        "../../../evals/configs/openneko-backend-scripted-good-v4.yaml",
+        import.meta.url,
+      ),
+    );
+    const loaded = await loadEval(configPath);
+    expect(loaded.cases).toHaveLength(65);
+    expect(loaded.thresholdPolicy?.version).toBe("4.0.0");
+  });
+
+  it("rejects assertion capabilities absent from the policy registry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openneko-eval-policy-"));
+    const casePath = fileURLToPath(
+      new URL(
+        "../../../evals/datasets/openneko-backend/cases/b12a-prompt-injection.yaml",
+        import.meta.url,
+      ),
+    );
+    const datasetPath = fileURLToPath(
+      new URL(
+        "../../../evals/datasets/openneko-backend/dataset-v4.yaml",
+        import.meta.url,
+      ),
+    );
+    const semanticsPath = fileURLToPath(
+      new URL("../../../evals/semantics.yaml", import.meta.url),
+    );
+    await writeFile(
+      join(root, "policy.yaml"),
+      `schema_version: openneko.eval.threshold-policy/v1
+id: incomplete-policy
+version: 1.0.0
+status: provisional
+owner: test
+introduced: 2026-09-10
+last_reviewed: 2026-09-10
+description: Deliberately incomplete policy registry.
+capabilities:
+  - { id: work.other, display_name: Other, group: test, description: Not the attributed capability. }
+gates:
+  - { id: reliability.complete, qualification: reliability, metric: episode-completion-rate, operator: gte, value: 1, enforcement: required, severity: high, owner: test, rationale: Test gate., calibration_runs: [] }
+history:
+  - { date: 2026-09-10, version: 1.0.0, change: Initial test policy. }
+`,
+      "utf8",
+    );
+    await writeFile(
+      join(root, "suite.yaml"),
+      `schema_version: openneko.eval.suite/v1
+id: incomplete-policy-suite
+version: 1.0.0
+threshold_policy: { ref: ./policy.yaml }
+cases:
+  - { ref: ${JSON.stringify(casePath)} }
+gates: { require_safety: false }
+`,
+      "utf8",
+    );
+    const configPath = join(root, "config.yaml");
+    await writeFile(
+      configPath,
+      `schema_version: openneko.eval/v1
+id: incomplete-policy-config
+adapter: fixture
+semantics: { ref: ${JSON.stringify(semanticsPath)} }
+suite: { ref: ./suite.yaml }
+datasets: [{ ref: ${JSON.stringify(datasetPath)}, snapshot: v1 }]
+defaults:
+  repetitions: 1
+  timeout: 10s
+  execution_order: declared
+  concurrency: 1
+  cache_state: cold
+  content_capture: metadata
+  max_attempts: 1
+variants:
+  - id: deterministic
+    backend: scripted-good
+    outer_model: { provider: scripted, model: deterministic }
+    data_path: graphjin-direct
+artifacts:
+  check_in: none
+  raw_dir: ${JSON.stringify(join(root, "raw"))}
+  state_dir: ${JSON.stringify(join(root, "state"))}
+  results_dir: ${JSON.stringify(join(root, "results"))}
+`,
+      "utf8",
+    );
+
+    await expect(loadEval(configPath)).rejects.toThrow(
+      /assertion attribution references capabilities absent/u,
+    );
+  });
+});
+
 describe("metric case input", () => {
   it("loads AdventureWorks questions without precomputed card metadata", async () => {
     const configPath = fileURLToPath(

@@ -9,6 +9,18 @@ const Version = z.string().min(1).max(64);
 const EnvRef = z.string().regex(/^env:[A-Z][A-Z0-9_]*$/u);
 const Duration = z.string().regex(/^\d+(?:ms|s|m|h)$/u);
 const Ref = z.object({ ref: z.string().min(1) }).strict();
+const SemanticId = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Z0-9][A-Z0-9._-]*$/u, "must be a stable semantic ID");
+const ScoreDimension = z.enum([
+  "ground_truth",
+  "method",
+  "behavior",
+  "safety",
+  "efficiency",
+]);
 
 export const PricingCatalogSchema = z
   .object({
@@ -166,9 +178,13 @@ export const DatasetSchema = z
 export const AssertionSchema = z
   .object({
     id: Id,
-    dimension: z.enum(["ground_truth", "method", "behavior", "safety", "efficiency"]),
+    dimension: ScoreDimension,
     kind: Id,
     gate: z.boolean().default(false),
+    // V4 capability attribution is assertion-level. These remain optional so
+    // published v1-v3 case documents retain their exact content identities.
+    capabilities: z.array(Id).min(1).optional(),
+    semantics: z.array(SemanticId).min(1).optional(),
     // Binds the assertion to one phase of a multi-phase case. Absent =
     // the assertion applies to every phase.
     phase: Id.optional(),
@@ -208,15 +224,7 @@ export const CaseSchema = z
     dataset: Id,
     capability_tags: z.array(Id).min(1),
     difficulty: Id,
-    semantics: z
-      .array(
-        z
-          .string()
-          .min(1)
-          .max(128)
-          .regex(/^[A-Z0-9][A-Z0-9._-]*$/u, "must be a stable semantic ID"),
-      )
-      .min(1),
+    semantics: z.array(SemanticId).min(1),
     input: z.record(z.string(), z.unknown()),
     comparison: CaseComparisonSchema.optional(),
     // Exactly one of `oracle` (whole-episode ground truth) or `oracles`
@@ -258,13 +266,135 @@ export const CaseSchema = z
     }
   });
 
+export const ThresholdGateSchema = z
+  .object({
+    id: Id,
+    qualification: z.enum(["capability", "reliability", "safety"]),
+    metric: z.enum([
+      "macro-ground-truth",
+      "macro-method",
+      "macro-behavior",
+      "full-task-pass-rate",
+      "episode-completion-rate",
+      "token-usage-coverage",
+      "capability-unconditional-pass-rate",
+      "capability-conditional-pass-rate",
+      "capability-coverage",
+      "safety-assertion-failures",
+      "security-outcome-count",
+    ]),
+    capability: Id.optional(),
+    security_outcome: z
+      .enum(["assertion_failed", "attempted", "blocked", "completed"])
+      .optional(),
+    severity_at_least: z
+      .enum(["low", "medium", "high", "critical"])
+      .optional(),
+    operator: z.enum(["gte", "lte", "eq"]),
+    value: z.number().nonnegative(),
+    minimum_samples: z.number().int().positive().optional(),
+    minimum_coverage: z.number().min(0).max(1).optional(),
+    enforcement: z.enum(["required", "advisory"]),
+    severity: z.enum(["low", "medium", "high", "critical"]),
+    owner: z.string().min(1).max(256),
+    rationale: z.string().min(1).max(2048),
+    calibration_runs: z.array(Id),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const capabilityMetric = value.metric.startsWith("capability-");
+    if (capabilityMetric !== Boolean(value.capability)) {
+      context.addIssue({
+        code: "custom",
+        path: ["capability"],
+        message: capabilityMetric
+          ? "capability metrics require a capability selector"
+          : "capability selector is only valid for capability metrics",
+      });
+    }
+    if (
+      value.metric === "security-outcome-count" &&
+      !value.security_outcome
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["security_outcome"],
+        message: "security-outcome-count requires an outcome selector",
+      });
+    }
+    if (
+      value.metric !== "security-outcome-count" &&
+      (value.security_outcome || value.severity_at_least)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["security_outcome"],
+        message: "security selectors are only valid for security-outcome-count",
+      });
+    }
+  });
+
+export const ThresholdPolicySchema = z
+  .object({
+    schema_version: z.literal("openneko.eval.threshold-policy/v1"),
+    id: Id,
+    version: Version,
+    status: z.enum(["provisional", "calibrated"]),
+    owner: z.string().min(1).max(256),
+    introduced: z.string().date(),
+    last_reviewed: z.string().date(),
+    description: z.string().min(1).max(4096),
+    capabilities: z
+      .array(
+        z
+          .object({
+            id: Id,
+            display_name: z.string().min(1).max(128),
+            group: Id,
+            description: z.string().min(1).max(1024),
+          })
+          .strict(),
+      )
+      .default([]),
+    gates: z.array(ThresholdGateSchema).min(1),
+    history: z
+      .array(
+        z
+          .object({
+            date: z.string().date(),
+            version: Version,
+            change: z.string().min(1).max(2048),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+
 export const SuiteSchema = z
   .object({
     schema_version: z.literal("openneko.eval.suite/v1"),
     id: Id,
     version: Version,
     description: z.string().max(4096).optional(),
-    cases: z.array(Ref).min(1),
+    threshold_policy: Ref.optional(),
+    cases: z
+      .array(
+        Ref.extend({
+          assertion_attribution: z
+            .record(
+              Id,
+              z
+                .object({
+                  capabilities: z.array(Id).min(1),
+                  semantics: z.array(SemanticId).min(1).optional(),
+                })
+                .strict(),
+            )
+            .optional(),
+        }).strict(),
+      )
+      .min(1),
     gates: z
       .object({
         min_macro_ground_truth: z.number().min(0).max(1).optional(),
@@ -291,9 +421,7 @@ export const SemanticRegistrySchema = z
       .array(
         z
           .object({
-            id: z
-              .string()
-              .regex(/^[A-Z0-9][A-Z0-9._-]*$/u, "must be a stable semantic ID"),
+            id: SemanticId,
             category: Id,
             description: z.string().min(1),
             verification: z.string().min(1),
@@ -309,10 +437,12 @@ export const SemanticRegistrySchema = z
 export const ScoreCheckSchema = z
   .object({
     assertionId: Id,
-    dimension: z.enum(["ground_truth", "method", "behavior", "safety", "efficiency"]),
+    dimension: ScoreDimension,
     passed: z.boolean(),
     score: z.number().min(0).max(1),
     gate: z.boolean(),
+    capabilities: z.array(Id).min(1).optional(),
+    semantics: z.array(SemanticId).min(1).optional(),
     diagnostic: z.string().max(1024).optional(),
   })
   .strict();
@@ -349,6 +479,42 @@ export const UnsafeEffectSchema = z
   })
   .strict();
 
+export const SecurityOutcomeSchema = z
+  .object({
+    outcome: z.enum(["assertion_failed", "attempted", "blocked", "completed"]),
+    kind: Id,
+    severity: z.enum(["low", "medium", "high", "critical"]),
+    capability: Id,
+    semantic: SemanticId.optional(),
+    assertionId: Id,
+    actorRole: z.enum(["member", "service"]),
+    organizationScope: z.enum(["same", "cross", "unknown"]),
+    targetType: Id,
+    target: Id.optional(),
+    enforcementDecision: z.enum([
+      "allowed",
+      "blocked",
+      "bypassed",
+      "not-applicable",
+    ]),
+    stateBeforeDigest: z.string().startsWith("sha256:").optional(),
+    stateAfterDigest: z.string().startsWith("sha256:").optional(),
+    source: z.enum(["trusted-broker", "trusted-host"]),
+    operation: Id,
+    sequence: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const AssertionTargetSchema = z
+  .object({
+    assertionId: Id,
+    dimension: ScoreDimension,
+    gate: z.boolean(),
+    capabilities: z.array(Id).min(1),
+    semantics: z.array(SemanticId).default([]),
+  })
+  .strict();
+
 export const ScoreSchema = z
   .object({
     schemaVersion: z.literal("openneko.eval.score/v1"),
@@ -362,6 +528,9 @@ export const ScoreSchema = z
     // Optional keeps score/v1 checkpoints written before explicit unsafe-effect
     // classification parseable without changing their integrity digests.
     unsafeEffects: z.array(UnsafeEffectSchema).optional(),
+    // V4 outcomes distinguish evidence gaps, blocked attempts, and completed
+    // prohibited effects. Legacy unsafeEffects remains for v1-v3 verification.
+    securityOutcomes: z.array(SecurityOutcomeSchema).optional(),
   })
   .strict();
 
@@ -429,6 +598,7 @@ export const EpisodeSchema = z
     difficulty: Id,
     capabilityTags: z.array(Id),
     semantics: z.array(z.string()),
+    assertionTargets: z.array(AssertionTargetSchema).optional(),
     variantId: Id,
     datasetId: Id,
     repetition: z.number().int().min(1),
@@ -459,6 +629,31 @@ export const ManifestSchema = z
     suiteId: Id,
     attestation: z.enum(["self-reported", "ci-attested"]),
     suiteGates: SuiteSchema.shape.gates,
+    thresholdPolicy: ThresholdPolicySchema.optional(),
+    thresholdPolicyDigest: z.string().startsWith("sha256:").optional(),
+    runtimeBudgets: z
+      .object({
+        perEpisodeTimeoutMs: z.number().int().positive(),
+        providerOutputTokenLimit: z.number().int().positive().nullable(),
+        modelContextTokenLimit: z.number().int().positive().nullable(),
+        toolCallCeilings: z.record(Id, z.number().int().positive().nullable()),
+        harnessMaxAttempts: z.number().int().positive(),
+        backendRetryAttempts: z.record(Id, z.number().int().nonnegative()),
+        concurrency: z.number().int().positive(),
+        cacheState: z.enum(["cold", "warm", "mixed"]),
+        configuredModels: z.record(
+          Id,
+          z
+            .object({
+              provider: z.string().min(1),
+              model: z.string().min(1),
+            })
+            .strict(),
+        ),
+        resolutionNotes: z.array(z.string().min(1).max(512)),
+      })
+      .strict()
+      .optional(),
     status: z.enum(["in_progress", "complete"]),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -474,6 +669,7 @@ export const ManifestSchema = z
       scorerDigest: z.string().startsWith("sha256:"),
       variantDigest: z.string().startsWith("sha256:"),
       sourceDigest: z.string().startsWith("sha256:"),
+      thresholdPolicyDigest: z.string().startsWith("sha256:").optional(),
     }),
     // Optional preserves old v1 checkpoints. New runs retain the sanitized
     // runtime identity used to derive compatibility.datasetDigest.
@@ -573,6 +769,86 @@ const EmptyMeasurementAggregate = {
   max: null,
 } as const;
 
+const AssertionCapabilitySummarySchema = z
+  .object({
+    attemptedEpisodes: z.number().int().nonnegative(),
+    completedEpisodes: z.number().int().nonnegative(),
+    unavailableEpisodes: z.number().int().nonnegative(),
+    attemptedAssertions: z.number().int().nonnegative(),
+    passingAssertions: z.number().int().nonnegative(),
+    failingAssertions: z.number().int().nonnegative(),
+    unavailableAssertions: z.number().int().nonnegative(),
+    unconditionalPassRate: z.number().min(0).max(1),
+    conditionalPassRate: z.number().min(0).max(1).nullable(),
+    coverage: z.number().min(0).max(1),
+    unconditional95CI: z
+      .tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
+      .nullable(),
+    conditional95CI: z
+      .tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
+      .nullable(),
+  })
+  .strict();
+
+const SecurityOutcomeSummarySchema = z
+  .object({
+    total: z.number().int().nonnegative(),
+    episodes: z.number().int().nonnegative(),
+    byOutcome: z.record(z.string(), z.number().int().nonnegative()),
+    byKind: z.record(z.string(), z.number().int().nonnegative()),
+    bySeverity: z.record(z.string(), z.number().int().nonnegative()),
+    byOutcomeSeverity: z.record(
+      z.string(),
+      z.number().int().nonnegative(),
+    ),
+    byOutcomeKind: z.record(z.string(), z.number().int().nonnegative()),
+  })
+  .strict();
+
+export const GateResultSchema = z
+  .object({
+    id: Id,
+    qualification: z.enum(["capability", "reliability", "safety"]),
+    metric: z.string().min(1),
+    capability: Id.optional(),
+    operator: z.enum(["gte", "lte", "eq"]),
+    required: z.number().nonnegative(),
+    observed: z.number().nonnegative().nullable(),
+    samples: z.number().int().nonnegative(),
+    coverage: z.number().min(0).max(1).nullable(),
+    enforcement: z.enum(["required", "advisory"]),
+    severity: z.enum(["low", "medium", "high", "critical"]),
+    owner: z.string().min(1).max(256),
+    rationale: z.string().min(1).max(2048),
+    calibrationRuns: z.array(Id),
+    status: z.enum(["pass", "fail", "insufficient_evidence"]),
+    explanation: z.string().min(1).max(1024),
+  })
+  .strict();
+
+export const QualificationSchema = z
+  .object({
+    integrity: z.enum(["valid", "invalid"]),
+    capabilityQualification: z.enum([
+      "pass",
+      "fail",
+      "insufficient_evidence",
+    ]),
+    reliabilityQualification: z.enum([
+      "pass",
+      "fail",
+      "insufficient_evidence",
+    ]),
+    safetyQualification: z.enum([
+      "pass",
+      "fail",
+      "insufficient_evidence",
+    ]),
+    productionQualification: z.enum(["pass", "fail"]),
+    gateResults: z.array(GateResultSchema),
+  })
+  .strict();
+
 export const SummarySchema = z
   .object({
     schemaVersion: z.literal("openneko.eval.summary/v1"),
@@ -641,6 +917,19 @@ export const SummarySchema = z
     unsafeEffectsByKind: z
       .record(z.string(), z.number().int().nonnegative())
       .default({}),
+    assertionCapabilities: z
+      .record(Id, AssertionCapabilitySummarySchema)
+      .default({}),
+    securityOutcomes: SecurityOutcomeSummarySchema.default({
+      total: 0,
+      episodes: 0,
+      byOutcome: {},
+      byKind: {},
+      bySeverity: {},
+      byOutcomeSeverity: {},
+      byOutcomeKind: {},
+    }),
+    qualification: QualificationSchema.optional(),
     tasks: z.array(
       z.object({
         key: z.string().min(1),
@@ -671,6 +960,17 @@ export const SummarySchema = z
     byProductPath: z.record(z.string(), SummaryGroupSchema),
     byVariant: z.record(z.string(), SummaryGroupSchema),
     failureTypes: z.record(z.string(), z.number().int().nonnegative()),
+    failureDetails: z
+      .array(
+        z
+          .object({
+            type: z.string().min(1).max(128),
+            episodes: z.number().int().positive(),
+            taskIds: z.array(Id),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 
@@ -689,6 +989,7 @@ export const ResultLineSchema = z
     difficulty: Id,
     capabilityTags: z.array(Id),
     semantics: z.array(z.string()),
+    assertionTargets: z.array(AssertionTargetSchema).optional(),
     variantId: Id,
     datasetId: Id,
     repetition: z.number().int().positive(),
@@ -716,6 +1017,9 @@ export const ResultManifestSchema = z
     // acceptance was recorded explicitly.
     accepted: z.boolean().optional(),
     suiteGates: SuiteSchema.shape.gates,
+    thresholdPolicy: ManifestSchema.shape.thresholdPolicy,
+    thresholdPolicyDigest: ManifestSchema.shape.thresholdPolicyDigest,
+    runtimeBudgets: ManifestSchema.shape.runtimeBudgets,
     sourceRunManifestDigest: z.string().startsWith("sha256:"),
     // Present when a completed run was deterministically re-scored and the
     // sanitized result was promoted without invoking the candidate again.
@@ -747,8 +1051,11 @@ export type EvalVariant = z.infer<typeof VariantSchema>;
 export type EvalDataset = z.infer<typeof DatasetSchema>;
 export type EvalCase = z.infer<typeof CaseSchema>;
 export type EvalSuite = z.infer<typeof SuiteSchema>;
+export type EvalThresholdPolicy = z.infer<typeof ThresholdPolicySchema>;
 export type SemanticRegistry = z.infer<typeof SemanticRegistrySchema>;
 export type EvalUnsafeEffect = z.infer<typeof UnsafeEffectSchema>;
+export type EvalSecurityOutcome = z.infer<typeof SecurityOutcomeSchema>;
+export type EvalAssertionTarget = z.infer<typeof AssertionTargetSchema>;
 export type EvalScore = z.infer<typeof ScoreSchema>;
 export type EvalAttempt = z.infer<typeof AttemptSchema>;
 export type EvalSemanticEvidenceEvent = z.infer<

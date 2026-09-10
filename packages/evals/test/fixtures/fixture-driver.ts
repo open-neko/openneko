@@ -83,6 +83,10 @@ export function createFixtureDriver(input: {
           dimension: assertion.dimension,
           passed: actual === expected,
           gate: assertion.gate,
+          ...(assertion.capabilities
+            ? { capabilities: assertion.capabilities }
+            : {}),
+          ...(assertion.semantics ? { semantics: assertion.semantics } : {}),
         })),
       });
     },

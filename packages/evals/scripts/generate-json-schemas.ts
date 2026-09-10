@@ -18,6 +18,7 @@ import {
   SemanticRegistrySchema,
   SummarySchema,
   SuiteSchema,
+  ThresholdPolicySchema,
   UsageSchema,
 } from "../src/schemas";
 
@@ -28,6 +29,7 @@ const schemas = {
   "config.v1.schema.json": EvalConfigSchema,
   "dataset.v1.schema.json": DatasetSchema,
   "suite.v1.schema.json": SuiteSchema,
+  "threshold-policy.v1.schema.json": ThresholdPolicySchema,
   "case.v1.schema.json": CaseSchema,
   "attempt.v1.schema.json": AttemptSchema,
   "episode.v1.schema.json": EpisodeSchema,

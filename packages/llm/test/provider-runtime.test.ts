@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PRIMARY_PROVIDER_OPTIONS, type PrimaryProviderId } from "../src/config";
 import { resolveHermesProviderRuntime } from "../src/provider-runtime";
-import { hermesModelConfigLines } from "../src/host-provision";
+import {
+  hermesModelBudgetConfigLines,
+  hermesModelConfigLines,
+} from "../src/host-provision";
 
 const configByProvider: Partial<Record<PrimaryProviderId, Record<string, unknown>>> = {
   "azure-openai": {
@@ -70,6 +73,27 @@ describe("resolveHermesProviderRuntime", () => {
       }
       expect(yaml, provider).not.toContain("REAL_SECRET");
     }
+  });
+
+  it("maps explicit eval runtime budgets to the pinned Hermes config keys", () => {
+    expect(
+      hermesModelBudgetConfigLines({
+        context_window_tokens: 1_048_576,
+        max_output_tokens: 65_536,
+      }),
+    ).toEqual([
+      "  context_length: 1048576",
+      "  max_tokens: 65536",
+    ]);
+    expect(() =>
+      hermesModelBudgetConfigLines({
+        context_window_tokens: 8_192,
+        max_output_tokens: 8_192,
+      }),
+    ).toThrow("max_output_tokens must be smaller than context_window_tokens");
+    expect(() =>
+      hermesModelBudgetConfigLines({ max_output_tokens: "65536" }),
+    ).toThrow("max_output_tokens must be a positive integer");
   });
 
   it("uses the Azure deployment name as the wire model", () => {
