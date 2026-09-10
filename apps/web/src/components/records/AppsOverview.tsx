@@ -52,7 +52,6 @@ export function AppsOverview({
     <main className="apps-overview-root">
       <header className="apps-overview-header">
         <div>
-          <span className="apps-overview-eyebrow">Apps</span>
           <h1>Your workspaces</h1>
           <p>
             Governed record systems available to you. Access follows your app,
