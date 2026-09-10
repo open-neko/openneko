@@ -15,17 +15,28 @@ For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
   custom pack with an API connector, query, metric, workflow, watcher, and skill.
 - [Magento](packs/magento/pack.yaml) is the first-party commerce pack. Its
   [README](packs/magento/README.md) explains application-specific prerequisites.
+- [Google Workspace](packs/google-workspace/pack.yaml) shows customer-owned
+  OAuth, REST reads, and generic governed API actions.
 
-Use the small example for new custom packs. Magento includes governed write
-adapters implemented in OpenNeko; copying its action YAML does not make those
-adapters available for another application.
+Use the small example for read-only custom packs. Use Google Workspace as the
+reference for generic REST writes. Magento uses additional commerce-specific
+action contracts for change sets and reconciliation.
 
 ## Directory layout
 
 The manifest declares artifact paths, so directory names below are conventions,
 not implicit discovery rules. All declared paths must exist and stay within the
-pack root. Keep empty artifact directories when packaging a pack that does not
-use every artifact type.
+pack root. Omit artifact paths for types the pack does not use. A declared empty
+directory must still exist in the archive.
+
+For a skills-only pack, declare `artifacts: { skills: [skills/my-skill] }`. Omit
+`artifacts.graphjin` and `compatibility.graphjin`; `compatibility.applications`
+and `compatibility.databases` can be empty arrays. Use empty health-check arrays
+and an empty readiness map. This pack needs no data connection or GraphJin
+configuration. GraphJin artifacts require GraphJin compatibility declarations.
+
+To remove all GraphJin artifacts from an installed pack, uninstall it first.
+This stops access through its owned sources before a new version is installed.
 
 ```text
 my-pack/
@@ -65,6 +76,8 @@ Copy a working `pack.yaml` and edit these sections:
 | `compatibility` | OpenNeko and GraphJin versions, supported application editions/versions, and database engines/versions |
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
+| `oauth` | Pack-owned OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
 | `health` | Required preflight checks, readiness groups, post-install steps, and post-write canaries |
 
@@ -90,10 +103,10 @@ collisions with other packs or operator-created artifacts.
 | OpenAPI specs | Describe the provider's actual paths, HTTP methods, parameters, bodies, and responses. Use local references. |
 | Saved queries | Give queries stable filenames. Metric execution refers to the query name without its extension. |
 | Metrics | Define presentation, cadence, source, saved query, result extraction, and freshness. See the [example metric](apps/worker/test/fixtures/service-health/metrics/health.yaml). |
-| Workflows | Define a goal, output contract, and optional schedule with a timezone input. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
+| Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; OpenShell scopes those hosts to that workflow sandbox. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
-| Actions and policies | Use supported runtime contracts. A declaration alone cannot implement a new execution adapter. |
+| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. |
 
 See the [artifact schemas](packages/packs/src/artifact-schema.ts) for exact fields
 and the [bundle loader](packages/packs/src/bundle.ts) for identity and reference
@@ -120,10 +133,23 @@ purpose `graphjin_api_auth`. The installer supplies configuration and resolves
 secret references through the encrypted secret store. Keep credentials out of
 Git, archives, skills, and example payloads.
 
-Custom source access is currently read-only. Executable connector code, OAuth
-refresh, and custom write adapters are not supported. A spec containing write
-operations does not grant permission to execute them. Magento uses the same pack
-lifecycle but retains its existing application-specific governed write adapters.
+For a user account connection, declare `oauth` in the manifest. The customer
+supplies the OAuth client ID and secret. OpenNeko calculates the callback URL,
+drives PKCE consent, encrypts the tokens, refreshes access before expiry, and
+binds the selected account to the installation. The OAuth endpoint hosts and API
+hosts must appear in `permissions.network`. See the
+[Google Workspace manifest](packs/google-workspace/pack.yaml) for an example.
+
+API sources may request write or delete access. Each operation still needs a
+pack action and policy. Write policies install disabled, so installing a pack
+does not enable mutations. Packs do not use executable connectors for OAuth.
+
+A generic REST action names its API source, OpenAPI spec, approved operation IDs,
+and stable GraphQL mutation roots. At execution, the action accepts only a named
+declared operation plus `path`, `query`, and `body` objects. OpenNeko sends that
+complete reviewed payload through a short-lived `pack_api_executor` role. Read
+operations are never exposed as mutations. See the
+[Google Workspace actions](packs/google-workspace/actions) for complete examples.
 
 Database source references require an existing read-only source binding and an
 organization GraphJin data source. See the [installation guide](docs/CUSTOM_PACKS.md)
@@ -182,3 +208,10 @@ those changes back into a versioned pack bundle. Installed customizations are
 preserved as local changes; pack upgrades refuse conflicting edits. To share a
 customization, port it into the pack's Git source and submit a PR. There is
 currently no in-app pack editor or automatic export of these edits as a release.
+
+## Declarative boundary
+
+Packs do not install executables, container images, CLIs or dependencies. Package
+skills, workflows and other supported declarative artifacts. Use GraphJin API
+sources for REST access. Browser OAuth and token refresh must use supported
+platform authentication; a bearer source declaration alone does not supply them.

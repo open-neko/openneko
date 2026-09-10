@@ -17,6 +17,7 @@ import {
   buildGraphjinMcpServer,
   buildLibraryServer,
   buildPluginActionServer,
+  buildPackActionServer,
   buildPluginManagerServer,
   buildRecordsReadServer,
   buildRenderCardsServer,
@@ -32,6 +33,7 @@ import {
   parseGraphjinMcpToolPolicy,
   type GraphjinMcpToolPolicy,
   type PluginActionDescriptor,
+  type PackActionDescriptor,
 } from "@neko/llm/sandbox-runtime";
 import { BrokerControlPlane, postAgentEvents } from "./broker-client";
 
@@ -62,6 +64,7 @@ export type BridgeServerContext = {
   runId: string;
   skillsRoot: string;
   pluginActions: PluginActionDescriptor[];
+  packActions: PackActionDescriptor[];
   controlPlane: BrokerControlPlane;
   brokerUrl?: string;
   brokerToken?: string;
@@ -183,6 +186,18 @@ export function buildBridgeServer(
         controlPlane,
       });
       if (!server) throw new Error("mcp-bridge: no plugin actions in this run");
+      return server;
+    }
+    case "neko_pack_actions": {
+      const server = buildPackActionServer({
+        orgId,
+        threadId,
+        runId,
+        descriptors: ctx.packActions,
+        emit,
+        controlPlane,
+      });
+      if (!server) throw new Error("mcp-bridge: no pack actions in this run");
       return server;
     }
     default:
@@ -356,6 +371,9 @@ async function main(): Promise<void> {
     pluginActions: JSON.parse(
       process.env.OPENNEKO_MCP_PLUGIN_ACTIONS ?? "[]",
     ) as PluginActionDescriptor[],
+    packActions: JSON.parse(
+      process.env.OPENNEKO_MCP_PACK_ACTIONS ?? "[]",
+    ) as PackActionDescriptor[],
     controlPlane,
     brokerUrl,
     brokerToken,

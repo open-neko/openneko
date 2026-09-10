@@ -71,6 +71,51 @@ describe("runAgentBackend", () => {
     });
   });
 
+  it("mounts pack actions separately from plugin actions", async () => {
+    let captured: AgentRunOptions | undefined;
+    const backend: AgentBackend = {
+      id: "hermes",
+      capabilities: {
+        mcpTools: true,
+        sessionResume: false,
+        nativeDelegation: "hermes-delegate-task",
+      },
+      async run(opts) {
+        captured = opts;
+        return { status: "completed", finalText: "done" };
+      },
+    };
+
+    const packActions = [{
+      kind: "magento.manage_catalog",
+      description: "Change Magento catalog data.",
+      scope: "external" as const,
+      default_mode: "ask" as const,
+    }];
+    await runAgentBackend({
+      backend,
+      prompt: "prompt",
+      userMessage: "change one Magento price",
+      orgId: "org-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      workspace,
+      controlPlane,
+      pluginActions: [],
+      packActions,
+      emit: async () => {},
+    });
+
+    expect(captured?.mcpServers).toEqual(
+      expect.objectContaining({ neko_pack_actions: expect.anything() }),
+    );
+    expect(captured?.mcpServers).not.toHaveProperty("neko_plugin_actions");
+    expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_PACK_ACTIONS).toBe(
+      JSON.stringify(packActions),
+    );
+    expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_PLUGIN_ACTIONS).toBe("[]");
+  });
+
   it("applies and serializes the same per-run GraphJin policy", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {

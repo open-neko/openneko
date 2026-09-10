@@ -4,7 +4,7 @@ The Magento pack connects OpenNeko to Magento Open Source or Adobe Commerce
 2.4.x. Analytics use a dedicated SELECT-only MariaDB/MySQL account. Governed
 writes use a Magento Integration token through GraphJin's curated REST adapter.
 
-The complete pack is installed every time. GraphJin 3.20.47 provides isolated
+The complete pack is installed every time. GraphJin 3.20.75 provides isolated
 executor roles for curated Magento REST operations. A missing or insufficient
 Integration token leaves the affected domains view-only without producing a
 partial installation.
@@ -105,12 +105,19 @@ Installation adds focused skills for recurring Magento work:
 - managing products, categories, assignments, and prices through change-sets;
   and
 - designing and running capped, approval-required promotions.
+- checking the installed release against Adobe Magento security bulletins.
 
 Ask OpenNeko for the task in ordinary language. The matching skill is selected
-automatically; operators do not need to remember its installed ID. All eight
+automatically; operators do not need to remember its installed ID. All nine
 skills install even when governed Magento writes are unavailable. The order
 investigation still works read-only when its optional private-note action is
 blocked.
+
+The security advisory workflow runs daily at 06:00 UTC. The pack declares the
+read-only Adobe hosts required by that workflow, and OpenShell applies those
+hosts only to its workflow sandbox. If an Adobe request is denied, the workflow
+reports that live advisory data is unavailable and does not guess the security
+status.
 
 ## Optional Magento Integration token
 

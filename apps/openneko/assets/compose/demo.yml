@@ -68,7 +68,10 @@ services:
         cp /app/scripts/graphjin-supervisor.sh /config/.openneko-graphjin-supervisor.sh.tmp
         chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp
         mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh
-        chmod -R a+rwX /config
+        chown -R 1001:999 /config 2>/dev/null || true
+        find /config -type d -exec chmod 0700 {} +
+        find /config -type f -exec chmod 0600 {} +
+        chmod 0700 /config/.openneko-graphjin-supervisor.sh
     volumes:
       - graphjin-config:/config
     restart: "no"
@@ -238,7 +241,6 @@ services:
       # the mock adapter so bundled workflows can propose Slack alerts
       # without hitting real endpoints. Flip to "false" once you're past
       # trial and have wired real webhooks.
-      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
     volumes:
       - graphjin-config:/graphjin-config
 
@@ -251,7 +253,6 @@ services:
       neko-adventureworks-seed:
         condition: service_completed_successfully
     environment:
-      NEKO_ACTIONS_DRY_RUN: ${NEKO_ACTIONS_DRY_RUN:-true}
       # Sources mode: the worker substitutes the per-org JWT secret into
       # the seeded GraphJin config at boot (host-provision).
       OPENNEKO_STACK_MODE: demo

@@ -1,6 +1,9 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { PackArtifact, SolutionPackBundle } from "@neko/packs";
-import { bindPackQueries, declarativeGraphjinUpdate, packValue } from "../src/packs/declarative.js";
+import { loadSolutionPack, type PackArtifact, type SolutionPackBundle } from "@neko/packs";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packPolicyControlsWrite, packValue } from "../src/packs/declarative.js";
+import { nativeArtifactStateHash } from "../src/packs/artifact-state.js";
 
 function bundle(): SolutionPackBundle {
   const artifact = (kind: PackArtifact["kind"], content: unknown, path = ""): PackArtifact => ({ kind, content, path, key: `${kind}.health`, targetRef: "health", hash: "fixture" });
@@ -15,6 +18,32 @@ const inputs = { "service.base_url": "https://health.example.test" };
 const secrets = { "service.api_token": 'fixture-"token\\with\ncharacters' };
 
 describe("declarative pack configuration", () => {
+  it("exposes the installed Google Workspace writes only to the pack executor", async () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const workspace = await loadSolutionPack(resolve(here, "../../../packs/google-workspace"));
+    const update = declarativeGraphjinUpdate(workspace, {}, {
+      "google-workspace.access_token": "token",
+    }) as { roles: Array<{ name: string }>; update_sources: Array<Record<string, unknown>> };
+    expect(update.roles).toEqual([{ name: "pack_api_executor", comment: expect.any(String) }]);
+    const gmail = update.update_sources.find((source) => source.name === "google_workspace_gmail") as {
+      specs: Record<string, { operations: Record<string, Record<string, unknown>> }>;
+    };
+    expect(gmail.specs.gmail.operations.sendMessage).toEqual({
+      expose_mutation: true,
+      allowed_roles: ["pack_api_executor"],
+      expose_as: "gws_gmail_send_message",
+    });
+    expect(gmail.specs.gmail.operations.getMessage).toEqual({ expose_top_level: true });
+  });
+
+  it("rejects GraphJin readiness checks for a pack without GraphJin", () => {
+    const pack = bundle();
+    pack.manifest.artifacts = { skills: [] };
+    pack.artifacts = [];
+    pack.manifest.health.postInstall = ["graphjin-reload"];
+    expect(() => declarativeGraphjinUpdate(pack, {}, {})).toThrow("requires GraphJin artifacts");
+  });
+
   it("maps a bundled connector to the existing read-only GraphJin contract without mutating the pack", () => {
     const pack = bundle();
     const original = JSON.stringify(pack);
@@ -28,12 +57,104 @@ describe("declarative pack configuration", () => {
     expect(JSON.stringify(pack)).toBe(original);
   });
 
+  it("preserves a pack API source write request while keeping undeclared operations blocked", () => {
+    const pack = bundle();
+    pack.artifacts[0]!.content = {
+      ...(pack.artifacts[0]!.content as Record<string, unknown>),
+      read_only: false,
+      capabilities: { "api.read": true, "api.write": true, "api.delete": false },
+    };
+    (pack.artifacts[1]!.content as Record<string, unknown>).paths = {
+      "/health-summary": {
+        get: { operationId: "getHealthSummary" },
+        put: { operationId: "updateHealth" },
+      },
+    };
+    expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
+      update_sources: [{
+        name: "service_health",
+        read_only: false,
+        access: { read: "authenticated", write: "authenticated", delete: "blocked" },
+        capabilities: { "api.read": true, "api.write": true, "api.delete": false },
+      }],
+    });
+    expect(declarativePackPermissions(pack)).toEqual({
+      database: "none",
+      apiWrite: "requested; actions require an enabled policy",
+    });
+  });
+
+  it("passes explicit GET top-level exposure to GraphJin", () => {
+    const pack = bundle();
+    pack.artifacts[0]!.content = {
+      ...(pack.artifacts[0]!.content as Record<string, unknown>),
+      operations: { getHealthSummary: { expose_top_level: true } },
+    };
+    expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
+      update_sources: [{ specs: { "service-health": { operations: {
+        getHealthSummary: { expose_top_level: true },
+      } } } }],
+    });
+  });
+
+  it("exposes only operations declared by a governed pack action", () => {
+    const pack = bundle();
+    pack.artifacts[0]!.content = {
+      ...(pack.artifacts[0]!.content as Record<string, unknown>),
+      read_only: false,
+      capabilities: { "api.read": true, "api.write": true, "api.delete": false },
+    };
+    (pack.artifacts[1]!.content as Record<string, unknown>).paths = {
+      "/health-summary": {
+        get: { operationId: "getHealthSummary" },
+        put: { operationId: "updateHealth" },
+      },
+    };
+    pack.artifacts.push({
+      kind: "action",
+      key: "action.change_health",
+      targetRef: "fixture.change_health",
+      path: "actions/change-health.yaml",
+      hash: "fixture-action",
+      content: {
+        kind: "fixture.change_health",
+        adapter: {
+          kind: "graphjin_api_operation",
+          source: "service_health",
+          spec: "service-health",
+          operations: {
+            update: { operationId: "updateHealth", mutationRoot: "fixture_update_health" },
+          },
+        },
+      },
+    });
+    expect(declarativeGraphjinUpdate(pack, inputs, secrets)).toMatchObject({
+      roles: [{ name: "pack_api_executor" }],
+      update_sources: [{
+        specs: {
+          "service-health": {
+            operations: {
+              updateHealth: {
+                expose_mutation: true,
+                allowed_roles: ["pack_api_executor"],
+                expose_as: "fixture_update_health",
+              },
+            },
+          },
+        },
+      }],
+    });
+  });
+
   it("rejects unsupported and unsafe declarations before mutation", () => {
     for (const change of [
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).read_only = false; },
+      (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).capabilities = { "api.write": true }; },
+      (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).capabilities = { "data.write": true }; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).specs_dir = "/arbitrary"; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).openapi = "https://example.test/spec"; },
       (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).auth = { type: "bearer", token: "plaintext" }; },
+      (pack: SolutionPackBundle) => { (pack.artifacts[0]!.content as Record<string, unknown>).operations = { getHealthSummary: { expose_mutation: true } }; },
       (pack: SolutionPackBundle) => { pack.artifacts[3]!.content = "mutation { delete_records { id } }"; },
       (pack: SolutionPackBundle) => { pack.artifacts[1]!.content = { $ref: "file:///private" }; },
       (pack: SolutionPackBundle) => { pack.artifacts[3]!.kind = "action"; },
@@ -46,6 +167,19 @@ describe("declarative pack configuration", () => {
       expect(() => declarativeGraphjinUpdate(pack, inputs, secrets)).toThrow();
     }
     expect(() => declarativeGraphjinUpdate(bundle(), inputs, {})).toThrow(/missing pack template/);
+
+    const database = bundle();
+    database.artifacts[0]!.content = {
+      name: "service_health",
+      kind: "database",
+      type: "postgres",
+      host: "db.example.test",
+      dbname: "health",
+      user: "reader",
+      password: "{{secret.service.api_token}}",
+      read_only: false,
+    };
+    expect(() => declarativeGraphjinUpdate(database, inputs, secrets)).toThrow(/database sources must be read-only/);
   });
 
   it("binds database query roots and named directives without rewriting literals or nested fields", () => {
@@ -77,5 +211,29 @@ describe("declarative pack configuration", () => {
     expect(packValue({ count: "{{count}}", enabled: "{{enabled}}" }, { count: 3, enabled: false })).toEqual({ count: 3, enabled: false });
     expect(() => packValue("prefix-{{missing}}", {})).toThrow();
     expect(() => packValue("{{missing}}", {})).toThrow();
+  });
+
+  it("disables only write policies on first install and preserves later admin choices", () => {
+    expect(installedPackPolicyEnabled({ declared: true, controlsWrite: true })).toBe(false);
+    expect(installedPackPolicyEnabled({ declared: true, controlsWrite: false })).toBe(true);
+    expect(installedPackPolicyEnabled({ declared: false, controlsWrite: false })).toBe(false);
+    expect(installedPackPolicyEnabled({ declared: false, controlsWrite: true, existing: true })).toBe(true);
+
+    const pack = bundle();
+    pack.artifacts.push({
+      kind: "action",
+      key: "action.change_health",
+      targetRef: "fixture.change_health",
+      path: "actions/change-health.yaml",
+      hash: "fixture-action",
+      content: {
+        kind: "fixture.change_health",
+        adapter: { kind: "graphjin_api_operation" },
+      },
+    });
+    expect(packPolicyControlsWrite(pack, { appliesToKinds: ["fixture.change_health"] })).toBe(true);
+    expect(packPolicyControlsWrite(pack, { appliesToKinds: ["fixture.read_health"] })).toBe(false);
+    expect(nativeArtifactStateHash("policy", { name: "Fixture", enabled: false }))
+      .toBe(nativeArtifactStateHash("policy", { name: "Fixture", enabled: true }));
   });
 });

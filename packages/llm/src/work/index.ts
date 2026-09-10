@@ -23,6 +23,7 @@ export {
   buildLibraryServer,
   buildRecordsReadServer,
   buildPluginActionServer,
+  buildPackActionServer,
   buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
@@ -30,6 +31,7 @@ export {
   buildUserManagerServer,
   buildWorkMemoryServer,
   type PluginActionDescriptor,
+  type PackActionDescriptor,
 } from "./tools";
 export {
   GRAPHJIN_DIRECT_GOVERNED_POLICY,
@@ -74,6 +76,7 @@ export {
 export * from "./memory";
 export * from "./library";
 export * from "./store";
+export { listPackActionDescriptors } from "./pack-action-descriptors";
 export {
   detectSkillUse,
   recordSkillUsageFromEvent,

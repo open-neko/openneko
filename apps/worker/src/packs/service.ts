@@ -2,7 +2,7 @@ import { listUploadedPacks, loadUploadedPack, storePackUpload, snapshotUploadedP
 import { parse as parseYaml } from "yaml";
 import { extractValueAtPath, resolveWatcherVariables } from "@neko/llm/workflows";
 import { mapSavedQueryMetric } from "../jobs/deterministic-metric.js";
-import { bindPackQueries, declarativeGraphjinUpdate, packVariables } from "./declarative.js";
+import { bindPackQueries, declarativeGraphjinUpdate, declarativePackPermissions, installedPackPolicyEnabled, packPolicyControlsWrite, packVariables } from "./declarative.js";
 import { createHmac, randomUUID } from "node:crypto";
 import {
   cp,
@@ -14,12 +14,10 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   localConfigPath,
   action_policy,
-  action_changeset,
-  action_changeset_row,
   and,
   data_source,
   db,
@@ -28,8 +26,6 @@ import {
   inArray,
   metric,
   magento_attribute_classification,
-  magento_auto_rule,
-  magento_financial_handoff,
   magento_store_control,
   pack_action_definition,
   pack_artifact,
@@ -45,38 +41,53 @@ import { graphjinQuery, graphjinSigningSecret, mintGraphjinToken, resolvePackSou
 import {
   canonicalHash,
   DEFAULT_MAGENTO_ATTRIBUTE_CLASSIFICATIONS,
-  DEFAULT_MAGENTO_CAPS,
   DEFAULT_MAGENTO_DOMAIN_CONTROLS,
   loadSolutionPack,
-  magentoExecutionMode,
   planPack,
   type PackArtifact,
   type PackPlan,
   type MagentoDomain,
-  type MagentoRiskClass,
   type SolutionPackBundle,
 } from "@neko/packs";
 import {
   readSecretsStore,
   writeSecretsStore,
 } from "@open-neko/plugin-install/secrets";
+import { PackOAuthService, packOAuthBinding } from "./oauth.js";
+import {
+  assertOwnedPath,
+  installGraphjinFiles,
+  installSkills,
+  pathExists,
+  stageOwnedRemoval,
+} from "./materialize.js";
+import { assertNativeTargetsAvailable } from "./native-targets.js";
+import { enqueuePackMetricRefreshes, runMagentoAnalyticsSmoke, runPackReadPreflight } from "./preflight.js";
 import { applyPackGraphjinConfig } from "./graphjin-config.js";
 import {
   runMagentoPreflight,
   type MagentoPreflightResult,
 } from "./magento-preflight.js";
-import { magentoGraphjinTables } from "./magento-source-policy.js";
-import { buildMagentoActivity, isMagentoTestRule } from "./magento-activity.js";
 import {
   inspectPackArtifactCurrent,
   inspectInstalledPackArtifactCurrent,
   nativeArtifactStateHash,
   packArtifactLocator,
 } from "./artifact-state.js";
+import { packSecretSection, resolveInputs, resolveSecrets, secretEnvKey } from "./configuration.js";
+import { magentoCapsFromInputs, magentoGraphjinUpdate } from "./magento-graphjin.js";
+import { MagentoPackAdminService } from "./magento-admin.js";
+import {
+  artifactLocatorFromMetadata,
+  artifactRecord,
+  boundPackLocator,
+  findSavedQuery,
+  operatorReadinessDetail,
+} from "./pack-artifacts.js";
+
+export { resolveInputs } from "./configuration.js";
 
 const PACK_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const PACK_SECRET_PREFIX = "pack.";
-
 type PackInstallRequest = {
   version?: string;
   reviewHash?: string;
@@ -115,7 +126,7 @@ type PackDoctorResult = {
 };
 
 type PackRuntime = {
-  source: PackSourceSelection;
+  source?: PackSourceSelection;
   bindings: Record<string, string>;
   bindingHashes: Record<string, string>;
   readiness: string[];
@@ -126,727 +137,30 @@ function storedRuntime(config: Record<string, unknown>): PackRuntime | undefined
   return config._runtime as PackRuntime | undefined;
 }
 
-function boundPackLocator(bundle: SolutionPackBundle, artifact: PackArtifact, bindings: Record<string, string>): Record<string, unknown> {
-  if (bindings[artifact.key]) return { name: bindings[artifact.key] };
-  if (artifact.kind === "relationships") {
-    const source = bundle.artifacts.find(value => value.kind === "source" && artifactRecord(value).name === artifactRecord(artifact).source);
-    if (source && bindings[source.key]) return { source: bindings[source.key], ignorePackAliases: true };
-  }
-  return packArtifactLocator(artifact);
-}
-
-function operatorReadinessDetail(
-  reason: MagentoPreflightResult["operatorReadiness"] | null,
-): string {
-  switch (reason) {
-    case "integration_token_missing":
-      return "View only. Add a Magento API token if you later want to allow specific, approval-required changes; store insights and automations are fully available without it.";
-    case "integration_token_invalid":
-      return "View only because Magento rejected the saved API token. Store insights and automations are unaffected.";
-    case "acl_missing":
-      return "View only because the saved API token does not have the required Magento permissions. Store insights and automations are unaffected.";
-    case "graphjin_version_unsupported":
-      return "View only in this version. Store insights and automations are fully available.";
-    case "ready":
-      return "Approved Magento changes are available. Each area follows its configured approval and automation limits.";
-    case "domain_disabled":
-      return "This change domain is disabled by the administrator.";
-    default:
-      return "View-only access could not be checked because the reporting connection is unavailable.";
-  }
-}
-
-function artifactRecord(artifact: PackArtifact): Record<string, unknown> {
-  if (!artifact.content || typeof artifact.content !== "object" || Array.isArray(artifact.content)) {
-    throw new Error(`${artifact.kind} artifact ${artifact.path} must be an object`);
-  }
-  return artifact.content as Record<string, unknown>;
-}
-
-function artifactLocatorFromMetadata(
-  metadata: Record<string, unknown> | null | undefined,
-  fallback?: PackArtifact,
-): Record<string, unknown> {
-  const value = metadata?.locator;
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return fallback ? packArtifactLocator(fallback) : {};
-}
-
-function secretEnvKey(key: string): string {
-  return key.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
-}
-
 function graphjinEndpoint(url: string): string {
   const clean = url.replace(/\/+$/, "");
   return clean.endsWith("/api/v1/graphql") ? clean : `${clean}/api/v1/graphql`;
-}
-
-async function runMagentoAnalyticsSmoke(endpoint: string, orgId: string): Promise<void> {
-  const headers = {
-    authorization: `Bearer ${mintGraphjinToken({
-      orgId,
-      userId: "pack-health",
-      role: "service",
-      ttlSeconds: 60,
-    })}`,
-  };
-  const result = await graphjinQuery<{ sales_order?: Array<{ entity_id?: string | number }> }>({
-    baseUrl: endpoint,
-    headers,
-    query:
-      'query MagentoPackAnalyticsSmoke { sales_order(where: { created_at: { gte: "1970-01-01 00:00:00" } }, limit: 1) { entity_id } }',
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (result.errors?.length || !Array.isArray(result.data?.sales_order)) {
-    throw new Error(
-      `Magento analytics smoke query failed: ${result.errors?.map((error) => error.message).join("; ") ?? "sales_order result unavailable"}`,
-    );
-  }
-  const operational = await graphjinQuery<{
-    sales_order?: Array<{
-      customer_id?: string | number;
-      customer_email?: string;
-      customer_firstname?: string;
-    }>;
-  }>({
-    baseUrl: endpoint,
-    headers,
-    query:
-      'query MagentoPackOperationalDataCanary { sales_order(where: { created_at: { gte: "1970-01-01 00:00:00" } }, limit: 1) { customer_id customer_email customer_firstname } }',
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (operational.errors?.length || !Array.isArray(operational.data?.sales_order)) {
-    throw new Error(
-      `Magento operational data check failed: ${operational.errors?.map((error) => error.message).join("; ") ?? "sales_order result unavailable"}`,
-    );
-  }
-  const secret = await graphjinQuery<{ sales_order?: Array<{ protect_code?: string }> }>({
-    baseUrl: endpoint,
-    headers,
-    query:
-      'query MagentoPackSecretColumnCanary { sales_order(where: { created_at: { gte: "1970-01-01 00:00:00" } }, limit: 1) { protect_code } }',
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!secret.errors?.length) {
-    throw new Error(
-      "Magento secret-data check failed: GraphJin did not enforce the sales_order protect_code blocklist",
-    );
-  }
-}
-
-async function runPackReadPreflight(bundle: SolutionPackBundle, endpoint: string, orgId: string, inputs: Record<string, unknown>): Promise<void> {
-  const results = new Map<string, unknown>();
-  const exercised = new Set<string>();
-  const now = new Date();
-  const run = async (name: string, variables?: unknown): Promise<unknown> => {
-    const resolved = resolveWatcherVariables(packVariables(variables, inputs), now);
-    const key = canonicalHash({ name, resolved });
-    if (results.has(key)) return results.get(key);
-    const result = await graphjinQuery({
-      baseUrl: graphjinEndpoint(endpoint), query: findSavedQuery(bundle, name), variables: resolved,
-      headers: { authorization: `Bearer ${mintGraphjinToken({ orgId, userId: "pack-preflight", role: "service", ttlSeconds: 60 })}` },
-      role: "service", signal: AbortSignal.timeout(30_000),
-    });
-    if (result.errors?.length || !result.data) throw new Error(`pack query ${name} failed preflight`);
-    exercised.add(name);
-    results.set(key, result.data);
-    return result.data;
-  };
-  for (const artifact of bundle.artifacts) {
-    if (artifact.kind !== "metric" && artifact.kind !== "watcher") continue;
-    const value = artifactRecord(artifact);
-    if (artifact.kind === "metric") {
-      const execution = value.execution as Record<string, unknown>;
-      const data = await run(String(execution.query), execution.variables);
-      const mapping = execution.result as Record<string, unknown>;
-      if (mapping.kind === "scalar" && typeof mapping.path === "string" && extractValueAtPath(data, mapping.path) == null) {
-        throw new Error(`pack metric ${artifact.key} result path is missing or null`);
-      }
-      mapSavedQueryMetric({ definition: { ...value, execution: { ...execution, document: findSavedQuery(bundle, String(execution.query)) } }, data, baseline: null });
-    } else {
-      const data = await run(String(value.query), value.variables);
-      if (extractValueAtPath(data, String(value.valuePath)) === undefined) throw new Error(`pack watcher ${artifact.key} result path is missing`);
-    }
-  }
-  for (const artifact of bundle.artifacts.filter(value => value.kind === "saved_query")) {
-    const name = basename(artifact.path, extname(artifact.path));
-    if (!exercised.has(name)) await run(name);
-  }
 }
 
 function packRoot(): string {
   return resolve(process.env.OPENNEKO_PACKS_DIR?.trim() || join(process.cwd(), "packs"));
 }
 
-function renderTemplate(value: string, inputs: Record<string, unknown>): string {
-  return value.replace(/\{\{([^}]+)}}/g, (_match, key: string) => {
-    const resolved = inputs[key.trim()];
-    if (resolved === undefined || resolved === null) {
-      throw new Error(`missing pack template input ${key.trim()}`);
-    }
-    return String(resolved);
-  });
-}
-
-function findSavedQuery(bundle: SolutionPackBundle, name: string): string {
-  const artifact = bundle.artifacts.find(
-    (value) =>
-      value.kind === "saved_query" && basename(value.path, extname(value.path)) === name,
-  );
-  if (!artifact || typeof artifact.content !== "string") {
-    throw new Error(`pack saved query ${name} is missing`);
-  }
-  return artifact.content;
-}
-
-async function enqueuePackMetricRefreshes(
-  orgId: string,
-  bundle: SolutionPackBundle,
-): Promise<number> {
-  const { enqueue, QUEUE } = await import("@neko/db/jobs");
-  let enqueued = 0;
-  for (const artifact of bundle.artifacts.filter((value) => value.kind === "metric")) {
-    const definition = artifactRecord(artifact);
-    const [card] = await db().select({ id: metric.id }).from(metric).where(and(
-      eq(metric.org_id, orgId),
-      eq(metric.role, String(definition.role)),
-      eq(metric.slug, artifact.targetRef),
-    )).limit(1);
-    if (!card) continue;
-    const [job] = await db().insert(processing_job).values({
-      org_id: orgId,
-      kind: "metric_refresh",
-      status: "queued",
-      trigger: "pack_install",
-      trigger_payload: { metricId: card.id },
-    }).returning({ id: processing_job.id });
-    if (!job) continue;
-    await db().update(metric).set({
-      last_refresh_status: "pending",
-      last_refresh_error: null,
-      last_refresh_job_id: job.id,
-      updated_at: new Date(),
-    }).where(eq(metric.id, card.id));
-    try {
-      await enqueue(QUEUE.METRIC_REFRESH, { processingJobId: job.id, orgId });
-      enqueued++;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await db().update(processing_job).set({
-        status: "failed",
-        error: message.slice(0, 1_000),
-        finished_at: new Date(),
-        updated_at: new Date(),
-      }).where(eq(processing_job.id, job.id));
-      await db().update(metric).set({
-        last_refresh_status: "failed",
-        last_refresh_error: message.slice(0, 500),
-        updated_at: new Date(),
-      }).where(eq(metric.id, card.id));
-      console.warn(
-        `[packs] could not schedule initial refresh for ${artifact.targetRef}: ${message}`,
-      );
-    }
-  }
-  return enqueued;
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  return lstat(path).then(() => true).catch(() => false);
-}
-
-async function writeAtomic(
-  path: string,
-  content: string,
-  alreadyOwned: boolean,
-): Promise<() => Promise<void>> {
-  await mkdir(dirname(path), { recursive: true });
-  const existed = await pathExists(path);
-  if (existed && !alreadyOwned) {
-    throw new Error(`pack file target ${path} already exists and is not owned by this pack`);
-  }
-  const previous = existed ? await readFile(path) : null;
-  const temporary = `${path}.${randomUUID()}.pack-stage`;
-  await writeFile(temporary, content, { mode: 0o644 });
-  await rename(temporary, path);
-  return async () => {
-    if (previous) {
-      const rollback = `${path}.${randomUUID()}.pack-rollback`;
-      await writeFile(rollback, previous, { mode: 0o644 });
-      await rename(rollback, path);
-    } else {
-      await rm(path, { force: true });
-    }
-  };
-}
-
-async function stageOwnedRemoval(path: string): Promise<{
-  restore: () => Promise<void>;
-  commit: () => Promise<void>;
-}> {
-  let target;
-  try {
-    target = await lstat(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { restore: async () => {}, commit: async () => {} };
-    }
-    throw error;
-  }
-  if (target.isSymbolicLink()) throw new Error(`pack-owned removal target is a symlink: ${path}`);
-  const backup = `${path}.${randomUUID()}.pack-remove-backup`;
-  await rename(path, backup);
-  return {
-    restore: async () => {
-      if (await pathExists(backup)) await rename(backup, path);
-    },
-    commit: async () => {
-      await rm(backup, { recursive: target.isDirectory(), force: true });
-    },
-  };
-}
-
-function assertOwnedPath(root: string, target: string, label: string): string {
-  const absoluteRoot = resolve(root);
-  const absoluteTarget = resolve(target);
-  const path = relative(absoluteRoot, absoluteTarget);
-  if (!path || path === ".." || path.startsWith(`..${sep}`) || path.startsWith(sep)) {
-    throw new Error(`${label} target escapes its managed root: ${target}`);
-  }
-  return absoluteTarget;
-}
-
-async function installGraphjinFiles(input: {
-  bundle: SolutionPackBundle;
-  configFile: string;
-  values: Record<string, unknown>;
-  ownedTargets: Set<string>;
-}): Promise<{ restore: () => Promise<void>; targets: Map<string, string> }> {
-  const configRoot = dirname(input.configFile);
-  const restorers: Array<() => Promise<void>> = [];
-  const targets = new Map<string, string>();
-  try {
-    for (const artifact of input.bundle.artifacts) {
-      let destination: string | null = null;
-      let content: string | null = null;
-      if (artifact.kind === "spec") {
-        destination = join(configRoot, "specs", basename(artifact.path));
-        content = renderTemplate(await readFile(join(input.bundle.root, artifact.path), "utf8"), input.values);
-      } else if (artifact.kind === "saved_query") {
-        destination = join(
-          configRoot,
-          "queries",
-          `${input.bundle.manifest.metadata.id.replaceAll("-", "_")}_${basename(artifact.path)}`,
-        );
-        content = String(artifact.content);
-      }
-      if (destination && content !== null) {
-        restorers.push(
-          await writeAtomic(destination, content, input.ownedTargets.has(destination)),
-        );
-        targets.set(`${artifact.kind}:${artifact.key}`, destination);
-      }
-    }
-    return {
-      targets,
-      restore: async () => {
-        for (const restore of restorers.reverse()) await restore();
-      },
-    };
-  } catch (error) {
-    for (const restore of restorers.reverse()) await restore().catch(() => {});
-    throw error;
-  }
-}
-
-async function assertNativeTargetsAvailable(input: {
-  orgId: string;
-  bundle: SolutionPackBundle;
-  plan: PackPlan;
-}): Promise<void> {
-  const creates = new Set(
-    input.plan.entries
-      .filter((entry) => entry.action === "create")
-      .map((entry) => `${entry.kind}:${entry.key}`),
-  );
-  for (const artifact of input.bundle.artifacts) {
-    if (!creates.has(`${artifact.kind}:${artifact.key}`)) continue;
-    const value = artifact.content && typeof artifact.content === "object" && !Array.isArray(artifact.content)
-      ? artifact.content as Record<string, unknown>
-      : null;
-    let existing: { id: string } | undefined;
-    if (artifact.kind === "metric" && value) {
-      [existing] = await db().select({ id: metric.id }).from(metric).where(and(
-        eq(metric.org_id, input.orgId),
-        eq(metric.role, String(value.role)),
-        eq(metric.slug, artifact.targetRef),
-      )).limit(1);
-    } else if (artifact.kind === "workflow" && value) {
-      [existing] = await db().select({ id: workflow_definition.id }).from(workflow_definition).where(and(
-        eq(workflow_definition.org_id, input.orgId),
-        eq(workflow_definition.owner_user_id, ""),
-        eq(workflow_definition.name, String(value.name)),
-      )).limit(1);
-    } else if (artifact.kind === "watcher" && value) {
-      [existing] = await db().select({ id: watcher.id }).from(watcher).where(and(
-        eq(watcher.org_id, input.orgId),
-        eq(watcher.name, String(value.name)),
-      )).limit(1);
-    } else if (artifact.kind === "policy" && value) {
-      [existing] = await db().select({ id: action_policy.id }).from(action_policy).where(and(
-        eq(action_policy.org_id, input.orgId),
-        eq(action_policy.name, String(value.name)),
-      )).limit(1);
-    } else if (artifact.kind === "action" && value) {
-      [existing] = await db().select({ id: pack_action_definition.id }).from(pack_action_definition).where(and(
-        eq(pack_action_definition.org_id, input.orgId),
-        eq(pack_action_definition.kind, String(value.kind)),
-      )).limit(1);
-    }
-    if (existing) {
-      throw new Error(
-        `${artifact.kind} target ${artifact.targetRef} already exists and is not owned by pack ${input.bundle.manifest.metadata.id}`,
-      );
-    }
-  }
-}
-
-async function installSkills(input: {
-  orgId: string;
-  bundle: SolutionPackBundle;
-  ownedTargets: Set<string>;
-}): Promise<{
-  targets: Map<string, string>;
-  restore: () => Promise<void>;
-  commit: () => Promise<void>;
-}> {
-  const workspace = await ensureOrgWorkspace(input.orgId);
-  const restorers: Array<() => Promise<void>> = [];
-  const committers: Array<() => Promise<void>> = [];
-  const targets = new Map<string, string>();
-  try {
-    for (const artifact of input.bundle.artifacts.filter((value) => value.kind === "skill")) {
-      const source = join(input.bundle.root, dirname(artifact.path));
-      const target = join(workspace.skillsRoot, artifact.targetRef);
-      const backup = `${target}.${randomUUID()}.pack-backup`;
-      const stage = `${target}.${randomUUID()}.pack-stage`;
-      const existed = await pathExists(target);
-      if (existed && !input.ownedTargets.has(target)) {
-        throw new Error(`skill target ${basename(target)} already exists and is not owned by this pack`);
-      }
-      await cp(source, stage, { recursive: true, force: false, errorOnExist: true });
-      if (existed) await rename(target, backup);
-      await rename(stage, target);
-      targets.set(`${artifact.kind}:${artifact.key}`, target);
-      restorers.push(async () => {
-        await rm(target, { recursive: true, force: true });
-        if (existed) await rename(backup, target);
-      });
-      committers.push(async () => {
-        await rm(backup, { recursive: true, force: true });
-      });
-    }
-    return {
-      targets,
-      restore: async () => {
-        for (const restore of restorers.reverse()) await restore();
-      },
-      commit: async () => {
-        for (const commit of committers) await commit();
-      },
-    };
-  } catch (error) {
-    for (const restore of restorers.reverse()) await restore().catch(() => {});
-    throw error;
-  }
-}
-
-export function resolveInputs(bundle: SolutionPackBundle, supplied: Record<string, unknown>): Record<string, unknown> {
-  const declared = new Map(bundle.manifest.inputs.map((input) => [input.key, input]));
-  for (const key of Object.keys(supplied)) {
-    if (!declared.has(key)) throw new Error(`unknown pack input ${key}`);
-  }
-  const resolved: Record<string, unknown> = {};
-  for (const input of bundle.manifest.inputs) {
-    const value = Object.hasOwn(supplied, input.key) ? supplied[input.key] : input.default;
-    if (value === undefined && input.required) throw new Error(`required pack input ${input.key} is missing`);
-    if (value === undefined) continue;
-    switch (input.type) {
-      case "string":
-      case "timezone":
-      case "url": {
-        if (typeof value !== "string" || (input.type !== "string" && !value.trim())) {
-          throw new Error(`pack input ${input.key} must be ${input.type === "string" ? "a string" : `a non-empty ${input.type}`}`);
-        }
-        const normalized = value.trim();
-        if (input.required && !normalized) {
-          throw new Error(`required pack input ${input.key} must not be empty`);
-        }
-        if (input.type === "url") {
-          let parsed: URL;
-          try {
-            parsed = new URL(normalized);
-          } catch {
-            throw new Error(`pack input ${input.key} must be an absolute URL`);
-          }
-          if (!['http:', 'https:'].includes(parsed.protocol)) {
-            throw new Error(`pack input ${input.key} must use HTTP or HTTPS`);
-          }
-          resolved[input.key] = normalized.replace(/\/+$/, "");
-        } else if (input.type === "timezone") {
-          try {
-            new Intl.DateTimeFormat("en-US", { timeZone: normalized }).format();
-          } catch {
-            throw new Error(`pack input ${input.key} must be a valid IANA timezone`);
-          }
-          resolved[input.key] = normalized;
-        } else {
-          resolved[input.key] = normalized;
-        }
-        break;
-      }
-      case "integer": {
-        const number = typeof value === "number" ? value : Number(value);
-        if (!Number.isInteger(number)) throw new Error(`pack input ${input.key} must be an integer`);
-        resolved[input.key] = number;
-        break;
-      }
-      case "boolean":
-        if (typeof value !== "boolean") throw new Error(`pack input ${input.key} must be a boolean`);
-        resolved[input.key] = value;
-        break;
-      case "enum":
-        if (!input.values?.some((candidate) => candidate === value)) {
-          throw new Error(`pack input ${input.key} must be one of: ${input.values?.join(", ")}`);
-        }
-        resolved[input.key] = value;
-        break;
-    }
-  }
-  const port = resolved["database.port"];
-  if (port !== undefined && (typeof port !== "number" || port < 1 || port > 65535)) {
-    throw new Error("database.port must be an integer from 1 to 65535");
-  }
-  return resolved;
-}
-
-async function resolveSecrets(
-  bundle: SolutionPackBundle,
-  request: PackInstallRequest,
-): Promise<{
-  values: Record<string, string>;
-  cleared: Set<string>;
-  store: Awaited<ReturnType<typeof readSecretsStore>>;
-}> {
-  const store = await readSecretsStore();
-  const section = `${PACK_SECRET_PREFIX}${bundle.manifest.metadata.id}`;
-  const current = store[section] ?? {};
-  const declared = new Set(bundle.manifest.secrets.map((secret) => secret.key));
-  for (const key of [...Object.keys(request.secrets ?? {}), ...Object.keys(request.secretRefs ?? {})]) {
-    if (!declared.has(key)) throw new Error(`unknown pack secret ${key}`);
-  }
-  const values: Record<string, string> = {};
-  const cleared = new Set<string>();
-  for (const secret of bundle.manifest.secrets) {
-    const direct = request.secrets?.[secret.key];
-    const ref = request.secretRefs?.[secret.key];
-    if (direct !== undefined && typeof direct !== "string") {
-      throw new Error(`pack secret ${secret.key} must be a string`);
-    }
-    if (direct !== undefined && !direct.trim() && !secret.required) {
-      cleared.add(secret.key);
-      continue;
-    }
-    const stored = ref ? current[ref] : current[secretEnvKey(secret.key)];
-    const value = direct !== undefined ? direct : stored;
-    if (secret.required && (!value || !value.trim())) {
-      throw new Error(`required pack secret ${secret.key} is missing`);
-    }
-    if (value) values[secret.key] = value;
-  }
-  return { values, cleared, store };
-}
-
-function graphjinRelationships(bundle: SolutionPackBundle, available: string[]): Record<string, unknown>[] {
-  const artifact = bundle.artifacts.find((value) => value.kind === "relationships");
-  const relationships = artifactRecord(artifact!).relationships as Array<Record<string, unknown>>;
-  const tables = new Set(available);
-  return relationships
-    .filter((relationship) =>
-      tables.has(String(relationship.left).split(".")[0]) &&
-      tables.has(String(relationship.right).split(".")[0]),
-    )
-    .map((relationship) => ({
-      from: `magento_analytics:${String(relationship.left)}`,
-      to: `magento_analytics:${String(relationship.right)}`,
-    }));
-}
-
-function magentoCapsFromInputs(inputs: Record<string, unknown>) {
-  return {
-    ...DEFAULT_MAGENTO_CAPS,
-    maxRowsPerChangeset: Number(inputs["magento.max_rows_per_changeset"]),
-    maxPriceDeltaPercent: Number(inputs["magento.max_price_delta_percent"]),
-    maxDiscountPercent: Number(inputs["magento.max_discount_percent"]),
-    maxCouponCount: Number(inputs["magento.max_coupon_count"]),
-    maxProjectedExposure: Number(inputs["magento.max_projected_exposure"]),
-    maxDailyAutoActions: Number(inputs["magento.max_daily_auto_actions"]),
-    skuCooldownSeconds: Number(inputs["magento.sku_cooldown_seconds"]),
-  };
-}
-
-function magentoV2OperationExposure(
-  bundle: SolutionPackBundle,
-): Record<string, unknown> {
-  const operations: Record<string, unknown> = {};
-  for (const artifact of bundle.artifacts.filter((value) => value.kind === "action")) {
-    const content = artifactRecord(artifact);
-    const adapter = content.adapter;
-    if (!adapter || typeof adapter !== "object" || Array.isArray(adapter)) continue;
-    const definition = adapter as Record<string, unknown>;
-    if (
-      definition.kind !== "magento_changeset" &&
-      definition.kind !== "magento_governed_operation"
-    ) continue;
-    const declared = definition.operations;
-    if (!declared || typeof declared !== "object" || Array.isArray(declared)) continue;
-    for (const operation of Object.values(declared as Record<string, unknown>)) {
-      if (!operation || typeof operation !== "object" || Array.isArray(operation)) continue;
-      const value = operation as Record<string, unknown>;
-      const operationId = String(value.operationId ?? "");
-      const mutationRoot = String(value.mutationRoot ?? "");
-      const exposeAs = mutationRoot.replace(/^magento_operator_v2_/, "");
-      if (!operationId || !mutationRoot || exposeAs === mutationRoot) {
-        throw new Error(`Magento operation ${operationId || "<unknown>"} has an invalid V2 mutation root`);
-      }
-      const next = {
-        expose_mutation: true,
-        allowed_roles: Number(value.defaultClass) === 2
-          ? ["magento_ops_executor", "magento_sensitive_executor"]
-          : ["magento_sensitive_executor"],
-        expose_as: exposeAs,
-      };
-      const current = operations[operationId];
-      if (current && canonicalHash(current) !== canonicalHash(next)) {
-        throw new Error(`Magento operation ${operationId} has conflicting V2 exposure`);
-      }
-      operations[operationId] = next;
-    }
-  }
-  return operations;
-}
-
-function graphjinUpdate(
-  inputs: Record<string, unknown>,
-  secrets: Record<string, string>,
-  preflight: MagentoPreflightResult,
-  bundle: SolutionPackBundle,
-  retiredSourceNames: string[] = [],
-): Record<string, unknown> {
-  const integrationToken = secrets["magento.integration_token"];
-  const writeEnabled = Boolean(integrationToken);
-  const auth = integrationToken
-    ? {
-        auth: {
-          scheme: "bearer",
-          token: integrationToken,
-        },
-      }
-    : {};
-  return {
-    roles: [
-      {
-        name: "magento_ops_executor",
-        comment: "Short-lived Magento executor for approved automations",
-      },
-      {
-        name: "magento_sensitive_executor",
-        comment: "Short-lived Magento executor minted after administrator approval",
-      },
-    ],
-    update_sources: [
-      {
-        name: "magento_analytics",
-        kind: "database",
-        default: false,
-        type: preflight.databaseType,
-        host: String(inputs["database.host"]),
-        port: Number(inputs["database.port"]),
-        dbname: String(inputs["database.name"]),
-        user: secrets["database.analytics_username"],
-        password: secrets["database.analytics_password"],
-        read_only: true,
-        analytics_mode: true,
-        capabilities: {
-          "data.read": true,
-          "data.write": false,
-          "schema.read": true,
-          "schema.write": false,
-        },
-        access: {
-          read: "authenticated",
-          write: "blocked",
-          delete: "blocked",
-          blocked_tables: preflight.blockedTables,
-        },
-      },
-      {
-        name: "magento_operator",
-        kind: "api",
-        default: false,
-        specs_dir: "/config/specs",
-        specs: {
-          "magento-operator-v1": {
-            base_url: String(inputs["magento.base_url"]),
-            ...auth,
-            operations: {
-              magentoAddInternalOrderComment: {
-                expose_mutation: false,
-                allowed_roles: [],
-              },
-            },
-          },
-          "magento-operator-v2": {
-            base_url: String(inputs["magento.base_url"]),
-            ...auth,
-            operations: magentoV2OperationExposure(bundle),
-          },
-        },
-        read_only: !writeEnabled,
-        capabilities: {
-          "api.read": true,
-          "api.write": writeEnabled,
-          "api.delete": writeEnabled,
-        },
-        access: {
-          read: "authenticated",
-          write: writeEnabled ? "authenticated" : "blocked",
-          delete: writeEnabled ? "authenticated" : "blocked",
-        },
-      },
-    ],
-    ...(retiredSourceNames.length > 0
-      ? {
-          source_patches: retiredSourceNames.map((name) => ({
-            name,
-            read_only: true,
-            access: { read: "blocked", write: "blocked", delete: "blocked" },
-          })),
-        }
-      : {}),
-    tables: magentoGraphjinTables(preflight.tablePrefix, preflight.availableAnalyticsTables),
-    relationships: graphjinRelationships(bundle, preflight.availableAnalyticsTables),
-  };
-}
-
 export class PackService {
+  private readonly oauth: PackOAuthService;
+  private readonly magentoAdmin: MagentoPackAdminService;
+
   constructor(
     private readonly orgId: string,
     private readonly embeddedRoot = packRoot(),
     private readonly uploadedRoot?: string,
-  ) {}
+  ) {
+    this.magentoAdmin = new MagentoPackAdminService(orgId);
+    this.oauth = new PackOAuthService(orgId, {
+      loadBundle: (packId, version) => this.bundle(packId, version),
+      syncInstalledConnection: (packId, connectionKey, enabled) => this.syncInstalledOAuthConnection(packId, connectionKey, enabled),
+    });
+  }
 
   private uploadsRoot(): string { return this.uploadedRoot ?? join(dirname(localConfigPath()), "agents", "orgs", encodeURIComponent(this.orgId).replaceAll(".", "%2E"), "packs"); }
 
@@ -875,6 +189,94 @@ export class PackService {
     return bundle;
   }
 
+  oauthStatus(packId: string, connectionKey: string): Promise<Record<string, unknown>> {
+    return this.oauth.status(packId, connectionKey);
+  }
+
+  beginOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<{ authorizationUrl: string }> {
+    return this.oauth.begin(packId, connectionKey, input);
+  }
+
+  completeOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.oauth.complete(packId, connectionKey, input);
+  }
+
+  disconnectOAuth(packId: string, connectionKey: string): Promise<boolean> {
+    return this.oauth.disconnect(packId, connectionKey);
+  }
+
+  private async syncInstalledOAuthConnection(packId: string, connectionKey: string, enabled: boolean): Promise<void> {
+    const [installation] = await db().select().from(pack_install).where(and(
+      eq(pack_install.org_id, this.orgId),
+      eq(pack_install.pack_id, packId),
+      eq(pack_install.status, "installed"),
+    )).limit(1);
+    if (!installation) return;
+    const authored = await this.installedBundle(installation);
+    if (!authored.manifest.artifacts.graphjin) return;
+    const runtime = storedRuntime(installation.config);
+    if (!runtime?.source) throw new Error(`installed pack ${packId} has no data source binding`);
+    const bundle = bindPackQueries(authored, runtime.bindings).bundle;
+    const connection = bundle.manifest.oauth.find((value) => value.key === connectionKey);
+    if (!connection) throw new Error(`installed pack ${packId} does not declare OAuth connection ${connectionKey}`);
+    const inputs = resolveInputs(bundle, Object.fromEntries(
+      Object.entries(installation.config).filter(([key]) => bundle.manifest.inputs.some((value) => value.key === key)),
+    ));
+    const secrets = enabled ? await resolveSecrets(bundle, {}) : null;
+    const source = await resolvePackSource(this.orgId, runtime.source);
+    const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
+    if (!configFile) throw new Error("GraphJin configuration is unavailable");
+    const ownedSources = bundle.artifacts.filter((artifact) => artifact.kind === "source" && !runtime.bindings[artifact.key]);
+    const connectionSources = ownedSources.filter(
+      (artifact) => (artifact.content as { auth?: { token?: string } }).auth?.token === `{{secret.${connection.accessToken}}}`,
+    );
+    if (!enabled && connectionSources.length === 0) {
+      throw new Error(`OAuth connection ${connectionKey} is not bound to an installed API source`);
+    }
+    const update = enabled
+      ? declarativeGraphjinUpdate(bundle, inputs, secrets!.values, [], runtime.bindings)
+      : {
+          source_patches: connectionSources.map((artifact) => ({
+              name: artifact.targetRef,
+              read_only: true,
+              access: { read: "blocked", write: "blocked", delete: "blocked" },
+            })),
+        };
+    await applyPackGraphjinConfig({
+      endpoint: graphjinEndpoint(source.graphqlUrl),
+      orgId: this.orgId,
+      configFile,
+      update,
+      ownedSourceNames: new Set(ownedSources.map((artifact) => artifact.targetRef)),
+      restartAfterPersist: true,
+    });
+    const connectedSourceNames = new Set(
+      connectionSources.map((artifact) => String((artifact.content as Record<string, unknown>).name)),
+    );
+    const actionKinds = bundle.artifacts.flatMap((artifact) => {
+      if (artifact.kind !== "action") return [];
+      const value = artifactRecord(artifact);
+      const adapter = value.adapter as Record<string, unknown> | undefined;
+      return adapter?.kind === "graphjin_api_operation" && connectedSourceNames.has(String(adapter.source))
+        ? [String(value.kind)]
+        : [];
+    });
+    if (actionKinds.length > 0) {
+      await db().update(pack_action_definition).set({
+        readiness: enabled ? "ready" : "blocked",
+        readiness_reason: enabled ? null : "oauth_not_connected",
+        updated_at: new Date(),
+      }).where(and(
+        eq(pack_action_definition.org_id, this.orgId),
+        inArray(pack_action_definition.kind, actionKinds),
+      ));
+    }
+  }
+
+  refreshOAuthConnections(): Promise<number> {
+    return this.oauth.refreshDue();
+  }
+
   async upload(bytes: Buffer, request: { actorUserId?: string | null; signal?: AbortSignal } = {}) {
     const embedded = await readdir(this.embeddedRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
     const reservedIds = ["magento", ...embedded.filter(entry => entry.isDirectory() && PACK_ID.test(entry.name)).map(entry => entry.name)];
@@ -882,9 +284,12 @@ export class PackService {
   }
 
   private reviewHash(bundle: AvailablePack, plan: PackPlan, operation: string, request: PackInstallRequest, inputs: Record<string, unknown>, secrets: Record<string, string>, runtime: PackRuntime): string {
+    const reviewedSecrets = Object.fromEntries(Object.entries(secrets).filter(([key]) =>
+      bundle.manifest.secrets.find((secret) => secret.key === key)?.purpose !== "pack_oauth_token",
+    ));
     return createHmac("sha256", graphjinSigningSecret(this.orgId)).update("pack-review/v1:").update(canonicalHash({
       orgId: this.orgId, actor: request.actorUserId ?? null, operation, plan,
-      contentHash: bundle.upload?.contentHash ?? bundle.bundleHash, inputs, secrets, runtime,
+      contentHash: bundle.upload?.contentHash ?? bundle.bundleHash, inputs, secrets: reviewedSecrets, runtime,
       secretRefs: request.secretRefs ?? {},
     })).digest("hex");
   }
@@ -910,9 +315,14 @@ export class PackService {
   }
 
   private async runtime(bundle: SolutionPackBundle, request: PackInstallRequest, prior?: PackRuntime): Promise<PackRuntime> {
+    if (!bundle.manifest.artifacts.graphjin) {
+      if (request.dataSourceId || Object.keys(request.sourceBindings ?? {}).length) throw new Error("this pack does not use a data source");
+      if (prior?.source) throw new Error("removing GraphJin artifacts requires uninstall first");
+      return { bindings: {}, bindingHashes: {}, readiness: Object.keys(bundle.manifest.health.readiness) };
+    }
     await verifyPackQueryTables(prior?.tables);
     let source: PackSourceSelection;
-    if (!request.dataSourceId && prior) source = await resolvePackSource(this.orgId, prior.source);
+    if (!request.dataSourceId && prior?.source) source = await resolvePackSource(this.orgId, prior.source);
     else {
       if (!request.dataSourceId && bundle.manifest.metadata.id !== "magento") throw new Error("select an enabled organization dataSourceId before installing a custom pack");
       const [selected] = await db().select({ id: data_source.id, graphqlUrl: data_source.graphql_url, authMode: data_source.auth_mode }).from(data_source)
@@ -986,13 +396,13 @@ export class PackService {
     throw new Error(`the ${packId} operation for this idempotency key is still ${prior.status}`);
   }
 
-  async list(): Promise<Array<{ id: string; name: string; version: string; installed: boolean }>> {
+  async list(): Promise<Array<{ id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null }>> {
     const entries = await readdir(this.embeddedRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
-    const installed = await db()
-      .select({ packId: pack_install.pack_id })
+    const installations = await db()
+      .select({ packId: pack_install.pack_id, status: pack_install.status, lastError: pack_install.last_error })
       .from(pack_install)
-      .where(and(eq(pack_install.org_id, this.orgId), eq(pack_install.status, "installed")));
-    const installedIds = new Set(installed.map((row) => row.packId));
+      .where(eq(pack_install.org_id, this.orgId));
+    const installationByPack = new Map(installations.map((row) => [row.packId, row]));
     const packDirectories: string[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || !PACK_ID.test(entry.name)) continue;
@@ -1004,12 +414,17 @@ export class PackService {
       }
     }
     const bundles = [...await Promise.all(packDirectories.map((packId) => this.bundle(packId))), ...await listUploadedPacks(this.uploadsRoot(), this.orgId)];
-    return bundles.map((bundle) => ({
-      id: bundle.manifest.metadata.id,
-      name: bundle.manifest.metadata.name,
-      version: bundle.manifest.metadata.version,
-      installed: installedIds.has(bundle.manifest.metadata.id),
-    }));
+    return bundles.map((bundle) => {
+      const installation = installationByPack.get(bundle.manifest.metadata.id);
+      return {
+        id: bundle.manifest.metadata.id,
+        name: bundle.manifest.metadata.name,
+        version: bundle.manifest.metadata.version,
+        installed: installation?.status === "installed",
+        status: installation?.status ?? "available",
+        lastError: installation?.lastError ?? null,
+      };
+    });
   }
 
   async inspect(packId: string, version?: string): Promise<Record<string, unknown>> {
@@ -1021,7 +436,7 @@ export class PackService {
       manifestHash: bundle.manifestHash,
       bundleHash: bundle.bundleHash,
       bindingRequirements: bundle.artifacts.filter(artifact => artifact.kind === "source" && artifactRecord(artifact).kind === "database" && !artifactRecord(artifact).host).map(artifact => ({ key: artifact.key, name: String(artifactRecord(artifact).name) })),
-      permissions: packId !== "magento" ? { database: "read-only", apiWrite: "blocked" } : {
+      permissions: packId !== "magento" ? declarativePackPermissions(bundle) : {
         database: "view-only reporting",
         apiWrite: "specific Magento changes require approval and must be enabled individually",
         customerPii: "available to authenticated read-only queries",
@@ -1129,8 +544,9 @@ export class PackService {
       .where(eq(pack_artifact.pack_install_id, installation.id));
     const readiness: PackStatus["readiness"] = {};
     for (const artifact of artifacts) {
+      if (!artifact.reason?.startsWith("operator:")) continue;
       const operatorMatch = /^operator:([^:]+):(.*)$/.exec(artifact.reason ?? "");
-      const capability = operatorMatch?.[1] ?? (artifact.reason?.startsWith("operator:") ? "operator" : "analytics");
+      const capability = operatorMatch?.[1] ?? "operator";
       if (!readiness[capability] || artifact.readiness === "blocked") {
         readiness[capability] = {
           status: artifact.readiness,
@@ -1150,7 +566,7 @@ export class PackService {
       lastError: installation.last_error,
       configuration: {
         inputs: Object.fromEntries(Object.entries(installation.config).filter(([key]) => !key.startsWith("_"))),
-        dataSourceId: storedRuntime(installation.config)?.source.id,
+        dataSourceId: storedRuntime(installation.config)?.source?.id,
         sourceBindings: storedRuntime(installation.config)?.bindings ?? {},
       },
     };
@@ -1179,8 +595,8 @@ export class PackService {
         const runtime = await this.runtime(bundle, {}, storedRuntime(installation.config));
         declarativeGraphjinUpdate(bundle, inputs, secrets.values, [], runtime.bindings);
         const source = runtime.source;
-        await runPackReadPreflight(bindPackQueries(bundle, runtime.bindings).bundle, source.graphqlUrl, this.orgId, inputs);
-        return { packId, status: "ready", checks: [{ id: "queries", status: "ready", detail: "Pack queries and response mappings passed." }] };
+        if (source) await runPackReadPreflight(bindPackQueries(bundle, runtime.bindings).bundle, source.graphqlUrl, this.orgId, inputs);
+        return { packId, status: "ready", checks: [{ id: source ? "queries" : "configuration", status: "ready", detail: source ? "Pack queries and response mappings passed." : "Pack configuration passed. No data connection is required." }] };
       } catch {
         return { packId, status: "blocked", checks: [{ id: "queries", status: "blocked", detail: "Pack configuration or query preflight failed." }] };
       }
@@ -1228,7 +644,7 @@ export class PackService {
 
     const selection = storedRuntime(installation.config)?.source;
     const bound = selection ? await resolvePackSource(this.orgId, selection) : null;
-    const [fallback] = bound ? [] : await db()
+    const [fallback] = bound || !bundle.manifest.artifacts.graphjin ? [] : await db()
       .select({ graphqlUrl: data_source.graphql_url })
       .from(data_source)
       .where(and(eq(data_source.org_id, this.orgId), eq(data_source.enabled, true)))
@@ -1316,326 +732,11 @@ export class PackService {
   }
 
   async magentoStoreManagement(): Promise<Record<string, unknown>> {
-    const controls = await db()
-      .select()
-      .from(magento_store_control)
-      .where(eq(magento_store_control.org_id, this.orgId))
-      .orderBy(magento_store_control.domain);
-    const rules = await db()
-      .select()
-      .from(magento_auto_rule)
-      .where(eq(magento_auto_rule.org_id, this.orgId))
-      .orderBy(desc(magento_auto_rule.updated_at));
-    const changesets = await db()
-      .select({
-        id: action_changeset.id,
-        domain: action_changeset.domain,
-        operationId: action_changeset.operation_id,
-        riskClass: action_changeset.risk_class,
-        status: action_changeset.status,
-        summary: action_changeset.summary,
-        bulkUuid: action_changeset.bulk_uuid,
-        projectedExposure: action_changeset.projected_exposure,
-        inverseOfId: action_changeset.inverse_of_id,
-        scope: action_changeset.scope,
-        capSnapshot: action_changeset.cap_snapshot,
-        createdAt: action_changeset.created_at,
-        reconciledAt: action_changeset.reconciled_at,
-      })
-      .from(action_changeset)
-      .where(eq(action_changeset.org_id, this.orgId))
-      .orderBy(desc(action_changeset.created_at))
-      .limit(20);
-    const changesetRows = changesets.length === 0
-      ? []
-      : await db()
-        .select({
-          changesetId: action_changeset_row.changeset_id,
-          entityRef: action_changeset_row.entity_ref,
-          beforeImage: action_changeset_row.before_image,
-          afterImage: action_changeset_row.after_image,
-        })
-        .from(action_changeset_row)
-        .where(inArray(action_changeset_row.changeset_id, changesets.map((changeset) => changeset.id)));
-    const handoffs = await db()
-      .select({
-        id: magento_financial_handoff.id,
-        kind: magento_financial_handoff.kind,
-        entityRef: magento_financial_handoff.entity_ref,
-        status: magento_financial_handoff.status,
-        draft: magento_financial_handoff.draft,
-        evidence: magento_financial_handoff.evidence,
-        createdAt: magento_financial_handoff.created_at,
-        completedAt: magento_financial_handoff.completed_at,
-      })
-      .from(magento_financial_handoff)
-      .where(eq(magento_financial_handoff.org_id, this.orgId))
-      .orderBy(desc(magento_financial_handoff.created_at))
-      .limit(20);
-    const actionDefinitions = await db()
-      .select({
-        definition: pack_action_definition.definition,
-        readiness: pack_action_definition.readiness,
-        reason: pack_action_definition.readiness_reason,
-      })
-      .from(pack_action_definition)
-      .where(
-        and(
-          eq(pack_action_definition.org_id, this.orgId),
-          eq(pack_action_definition.enabled, true),
-        ),
-      );
-    const readinessByDomain = new Map<string, { readiness: string; reason: string | null }>();
-    for (const action of actionDefinitions) {
-      const adapter = action.definition.adapter;
-      if (!adapter || typeof adapter !== "object" || Array.isArray(adapter)) continue;
-      if ((adapter as Record<string, unknown>).kind === "magento_financial_handoff") continue;
-      const domain = String(action.definition.domain ?? "");
-      const current = readinessByDomain.get(domain);
-      if (!current || action.readiness === "blocked") {
-        readinessByDomain.set(domain, { readiness: action.readiness, reason: action.reason });
-      }
-    }
-    const operations = actionDefinitions.flatMap(({ definition }) => {
-      const domain = String(definition.domain ?? "");
-      const adapter = definition.adapter;
-      if (!adapter || typeof adapter !== "object" || Array.isArray(adapter)) return [];
-      const declared = (adapter as Record<string, unknown>).operations;
-      if (!declared || typeof declared !== "object" || Array.isArray(declared)) return [];
-      return Object.entries(declared as Record<string, unknown>).flatMap(([name, value]) => {
-        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-        const operation = value as Record<string, unknown>;
-        return [{
-          name,
-          domain,
-          operationId: String(operation.operationId ?? ""),
-          executionMode: magentoExecutionMode(
-            Number(operation.defaultClass) as MagentoRiskClass,
-          ),
-          reversible: Boolean(operation.reversible),
-          resultMode: String(operation.resultMode ?? "sync"),
-        }];
-      });
-    });
-    const changesetsWithMode = changesets.map(({ riskClass, ...changeset }) => ({
-      ...changeset,
-      executionMode: magentoExecutionMode(riskClass as MagentoRiskClass),
-    }));
-    const rowsByChangeset = new Map<string, typeof changesetRows>();
-    for (const row of changesetRows) {
-      const rows = rowsByChangeset.get(row.changesetId) ?? [];
-      rows.push(row);
-      rowsByChangeset.set(row.changesetId, rows);
-    }
-    return {
-      controls: controls.map((control) => {
-        const domainReadiness = readinessByDomain.get(control.domain);
-        return {
-          domain: control.domain,
-          automationEligible: control.risk_class === 2,
-          enabled: control.enabled,
-          autoExecute: control.auto_execute,
-          caps: control.caps,
-          scope: control.scope,
-          readiness: domainReadiness?.readiness ?? "blocked",
-          readinessReason: domainReadiness ? domainReadiness.reason : "change_access_unavailable",
-          readinessMessage: domainReadiness
-            ? operatorReadinessDetail(
-              domainReadiness.reason as MagentoPreflightResult["operatorReadiness"],
-            )
-            : "View-only access could not be checked because the reporting connection is unavailable.",
-          updatedAt: control.updated_at,
-        };
-      }),
-      rules: rules.map((rule) => {
-        const compiledPolicy = rule.compiled_policy;
-        return {
-          id: rule.id,
-          name: rule.name,
-          instruction: rule.instruction,
-          domain: rule.domain,
-          actionKind: rule.action_kind,
-          compiledPolicy,
-          dailyCap: rule.daily_cap,
-          cooldownSeconds: rule.cooldown_seconds,
-          enabled: rule.enabled,
-          suspendedReason: rule.suspended_reason,
-          lastFiredAt: rule.last_fired_at,
-          isTest: isMagentoTestRule({ name: rule.name, compiledPolicy }),
-        };
-      }),
-      changesets: changesetsWithMode,
-      handoffs,
-      activity: buildMagentoActivity({
-        changesets: changesetsWithMode.map((changeset) => ({
-          ...changeset,
-          rows: rowsByChangeset.get(changeset.id) ?? [],
-        })),
-        handoffs,
-      }),
-      operations,
-      handoffOnly: {
-        executePath: false,
-        handoffKinds: [
-          "online_refund",
-          "return_approval",
-          "financial_configuration",
-          "store_credit_over_cap",
-        ],
-      },
-    };
+    return this.magentoAdmin.read();
   }
 
-  async updateMagentoStoreManagement(
-    input: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    const action = String(input.action ?? "");
-    const actorUserId = typeof input.actorUserId === "string" ? input.actorUserId : null;
-    if (action === "update_domain") {
-      const domain = String(input.domain ?? "");
-      if (!["catalog", "inventory", "orders", "promotions", "content", "customers"].includes(domain)) {
-        throw new Error("unknown Magento change domain");
-      }
-      const [current] = await db()
-        .select()
-        .from(magento_store_control)
-        .where(
-          and(
-            eq(magento_store_control.org_id, this.orgId),
-            eq(magento_store_control.domain, domain),
-          ),
-        )
-        .limit(1);
-      if (!current) throw new Error(`Magento ${domain} control is not installed`);
-      const set: Record<string, unknown> = {
-        updated_by_user_id: actorUserId,
-        updated_at: new Date(),
-      };
-      if (typeof input.enabled === "boolean") set.enabled = input.enabled;
-      if (typeof input.autoExecute === "boolean") {
-        if (input.autoExecute && current.risk_class !== 2) {
-          throw new Error("Automatic execution is not available for this Magento domain");
-        }
-        set.auto_execute = input.autoExecute;
-      }
-      if (input.caps !== undefined) {
-        if (!input.caps || typeof input.caps !== "object" || Array.isArray(input.caps)) {
-          throw new Error("Magento caps must be an object");
-        }
-        const allowed = new Set([
-          "maxRowsPerChangeset",
-          "maxPriceDeltaPercent",
-          "maxDiscountPercent",
-          "maxCouponCount",
-          "maxProjectedExposure",
-          "maxDailyAutoActions",
-          "maxStoreCredit",
-          "minPromotionDays",
-          "skuCooldownSeconds",
-        ]);
-        const caps = { ...(current.caps as Record<string, unknown>) };
-        for (const [key, value] of Object.entries(input.caps as Record<string, unknown>)) {
-          if (!allowed.has(key)) throw new Error(`unknown Magento cap ${key}`);
-          const number = Number(value);
-          if (!Number.isFinite(number) || number < 0) throw new Error(`Magento cap ${key} must be non-negative`);
-          caps[key] = number;
-        }
-        set.caps = caps;
-      }
-      await db().update(magento_store_control).set(set).where(
-        and(
-          eq(magento_store_control.org_id, this.orgId),
-          eq(magento_store_control.domain, domain),
-        ),
-      );
-    } else if (action === "create_rule") {
-      const name = typeof input.name === "string" ? input.name.trim() : "";
-      const instruction = typeof input.instruction === "string" ? input.instruction.trim() : "";
-      const domain = String(input.domain ?? "");
-      const actionKind = typeof input.actionKind === "string" ? input.actionKind.trim() : "";
-      const policySource = input.source === "acceptance_test"
-        ? "acceptance_test"
-        : "admin_plain_language";
-      const dailyCap = Number(input.dailyCap);
-      const cooldownSeconds = Number(input.cooldownSeconds ?? 0);
-      if (!name || name.length > 120 || !instruction || instruction.length > 1000) {
-        throw new Error("Magento automatic rule needs a concise name and instruction");
-      }
-      if (!Number.isInteger(dailyCap) || dailyCap < 1 || !Number.isInteger(cooldownSeconds) || cooldownSeconds < 0) {
-        throw new Error("Magento automatic rule caps are invalid");
-      }
-      const [control] = await db().select().from(magento_store_control).where(and(
-        eq(magento_store_control.org_id, this.orgId),
-        eq(magento_store_control.domain, domain),
-      )).limit(1);
-      if (!control || !control.enabled || !control.auto_execute || control.risk_class !== 2) {
-        throw new Error(`Magento ${domain} automatic execution is not enabled`);
-      }
-      const [definition] = await db().select({ definition: pack_action_definition.definition })
-        .from(pack_action_definition)
-        .where(and(
-          eq(pack_action_definition.org_id, this.orgId),
-          eq(pack_action_definition.kind, actionKind),
-          eq(pack_action_definition.enabled, true),
-        )).limit(1);
-      if (!definition || String(definition.definition.domain ?? "") !== domain) {
-        throw new Error("Magento automatic rule action does not belong to this domain");
-      }
-      const controlDailyCap = Number((control.caps as Record<string, unknown>).maxDailyAutoActions ?? 0);
-      if (controlDailyCap > 0 && dailyCap > controlDailyCap) {
-        throw new Error(`Rule daily cap exceeds the domain ceiling of ${controlDailyCap}`);
-      }
-      await db().insert(magento_auto_rule).values({
-        org_id: this.orgId,
-        name,
-        instruction,
-        domain,
-        action_kind: actionKind,
-        compiled_policy: {
-          version: 1,
-          source: policySource,
-          condition: "watcher_finding",
-          dailyCap,
-          cooldownSeconds,
-        },
-        daily_cap: dailyCap,
-        cooldown_seconds: cooldownSeconds,
-        enabled: Boolean(input.enabled),
-        created_by_user_id: actorUserId,
-      }).onConflictDoUpdate({
-        target: [magento_auto_rule.org_id, magento_auto_rule.name],
-        set: {
-          instruction,
-          domain,
-          action_kind: actionKind,
-          compiled_policy: {
-            version: 1,
-            source: policySource,
-            condition: "watcher_finding",
-            dailyCap,
-            cooldownSeconds,
-          },
-          daily_cap: dailyCap,
-          cooldown_seconds: cooldownSeconds,
-          enabled: Boolean(input.enabled),
-          suspended_reason: null,
-          updated_at: new Date(),
-        },
-      });
-    } else if (action === "set_rule_status") {
-      const ruleId = typeof input.ruleId === "string" ? input.ruleId : "";
-      if (!ruleId || typeof input.enabled !== "boolean") {
-        throw new Error("Magento rule status needs ruleId and enabled");
-      }
-      await db().update(magento_auto_rule).set({
-        enabled: input.enabled,
-        suspended_reason: input.enabled ? null : "suspended_by_admin",
-        updated_at: new Date(),
-      }).where(and(eq(magento_auto_rule.id, ruleId), eq(magento_auto_rule.org_id, this.orgId)));
-    } else {
-      throw new Error("unknown Magento store-management action");
-    }
-    return this.magentoStoreManagement();
+  async updateMagentoStoreManagement(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.magentoAdmin.update(input);
   }
 
   async install(packId: string, request: PackInstallRequest = {}): Promise<PackStatus> {
@@ -1673,6 +774,7 @@ export class PackService {
     }
 
     const bundle = await this.installedBundle(installation);
+    const usesGraphjin = Boolean(bundle.manifest.artifacts.graphjin || storedRuntime(installation.config)?.source);
     const client = await pool().connect();
     let operationId: string | null = null;
     let graphjinRestore: (() => Promise<void>) | null = null;
@@ -1738,14 +840,14 @@ export class PackService {
       await verifyPackQueryTables(storedRuntime(installation.config)?.tables);
       const selection = storedRuntime(installation.config)?.source;
       const bound = selection ? await resolvePackSource(this.orgId, selection) : null;
-      const [fallback] = bound ? [] : await db().select({ graphqlUrl: data_source.graphql_url })
+      const [fallback] = bound || !usesGraphjin ? [] : await db().select({ graphqlUrl: data_source.graphql_url })
         .from(data_source)
         .where(and(eq(data_source.org_id, this.orgId), eq(data_source.enabled, true)))
         .orderBy(desc(data_source.is_default), data_source.created_at)
         .limit(1);
       const source = bound ?? fallback;
-      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
-      if (!source?.graphqlUrl || !configFile) {
+      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim() ?? "";
+      if (usesGraphjin && (!source?.graphqlUrl || !configFile)) {
         throw new Error("customer GraphJin endpoint/config volume is unavailable");
       }
       const provenance = await db().select().from(pack_artifact)
@@ -1761,8 +863,8 @@ export class PackService {
       // as a no-op. Revoke every source capability instead. The disabled
       // source/table metadata is retained so uninstall is fail closed and a
       // later pack install can safely reclaim it.
-      const revoked = await applyPackGraphjinConfig({
-        endpoint: graphjinEndpoint(source.graphqlUrl),
+      const revoked = usesGraphjin ? await applyPackGraphjinConfig({
+        endpoint: graphjinEndpoint(source!.graphqlUrl),
         orgId: this.orgId,
         configFile,
         update: {
@@ -1778,7 +880,7 @@ export class PackService {
         },
         ownedSourceNames: new Set(sourceNames),
         restartAfterPersist: true,
-      });
+      }) : { restore: async () => {} };
       graphjinRestore = revoked.restore;
 
       const configRoot = dirname(configFile);
@@ -1798,7 +900,7 @@ export class PackService {
       }
 
       const currentSecrets = await readSecretsStore();
-      const secretSection = `${PACK_SECRET_PREFIX}${packId}`;
+      const secretSection = packSecretSection(packId);
       const nextSecrets = { ...currentSecrets };
       delete nextSecrets[secretSection];
       await writeSecretsStore(nextSecrets);
@@ -1969,7 +1071,7 @@ export class PackService {
     const replay = await this.replayIdempotentOperation(packId, request.idempotencyKey);
     if (replay) return replay;
     const firstPartyMagento = packId === "magento";
-    const secretSection = `${PACK_SECRET_PREFIX}${packId}`;
+    const secretSection = packSecretSection(packId);
     const client = await pool().connect();
     let cleanupBundle: (() => Promise<void>) | undefined;
     let priorInstallation: typeof pack_install.$inferSelect | undefined;
@@ -2162,8 +1264,8 @@ export class PackService {
       await writeSecretsStore(nextSecrets);
       secretsRestore = () => writeSecretsStore(resolvedSecrets.store);
 
-      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
-      if (!source?.graphqlUrl || !configFile) {
+      const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim() ?? "";
+      if (bundle.manifest.artifacts.graphjin && (!source?.graphqlUrl || !configFile)) {
         throw new Error("customer GraphJin endpoint/config volume is unavailable");
       }
       const retiredRemovals: Array<{
@@ -2214,20 +1316,20 @@ export class PackService {
       filesRestore = files.restore;
 
       await this.runtime(authoredBundle, {}, { ...runtime, tables: storedRuntime(existing?.config ?? {})?.tables });
-      const applied = await applyPackGraphjinConfig({
-        endpoint: graphjinEndpoint(source.graphqlUrl),
+      const applied = bundle.manifest.artifacts.graphjin ? await applyPackGraphjinConfig({
+        endpoint: graphjinEndpoint(source!.graphqlUrl),
         orgId: this.orgId,
         configFile,
         update: preflight
-          ? graphjinUpdate(inputs, resolvedSecrets.values, preflight, bundle, retiredSourceNames)
+          ? magentoGraphjinUpdate(inputs, resolvedSecrets.values, preflight, bundle, retiredSourceNames)
           : { ...declarativeGraphjinUpdate(bundle, inputs, resolvedSecrets.values, retiredSourceNames, runtime.bindings), tables: (runtime.tables ?? []).map(table => ({ ...table, database: table.source })) },
         ownedSourceNames,
         ...(!preflight ? { ownedTableNames: new Set((storedRuntime(existing?.config ?? {})?.tables ?? []).map(table => table.name!)) } : {}),
         restartAfterPersist: true,
-      });
+      }) : { restore: async () => {} };
       graphjinRestore = applied.restore;
-      if (preflight) await runMagentoAnalyticsSmoke(graphjinEndpoint(source.graphqlUrl), this.orgId);
-      else await runPackReadPreflight(bundle, source.graphqlUrl, this.orgId, inputs);
+      if (preflight) await runMagentoAnalyticsSmoke(graphjinEndpoint(source!.graphqlUrl), this.orgId);
+      else if (source) await runPackReadPreflight(bundle, source!.graphqlUrl, this.orgId, inputs);
 
       const retiredHashes = new Map<string, string>();
       for (const artifact of retiredArtifacts.filter(
@@ -2424,6 +1526,9 @@ export class PackService {
             cron: schedule ? String(schedule.cron) : null,
             cron_timezone: String(inputs[String(schedule?.timezoneInput)] ?? schedule?.timezoneInput ?? "UTC"),
             cron_enabled: Boolean(schedule?.enabled),
+            network_hosts: Array.isArray(value.networkHosts)
+              ? value.networkHosts.map((host) => String(host))
+              : [],
             output_contract: value.outputContract as Record<string, unknown>,
             updated_at: new Date(),
           };
@@ -2527,7 +1632,7 @@ export class PackService {
 
         for (const artifact of bundle.artifacts.filter((value) => value.kind === "policy")) {
           const value = artifactRecord(artifact);
-          const [existingPolicy] = await tx.select({ id: action_policy.id }).from(action_policy)
+          const [existingPolicy] = await tx.select({ id: action_policy.id, enabled: action_policy.enabled }).from(action_policy)
             .where(and(eq(action_policy.org_id, this.orgId), eq(action_policy.name, String(value.name)))).limit(1);
           const set = {
             description: String(value.description),
@@ -2544,7 +1649,11 @@ export class PackService {
             limits: value.limits as Record<string, unknown>,
             approver_role: value.approverRole ? String(value.approverRole) : null,
             priority: Number(value.priority),
-            enabled: Boolean(value.enabled),
+            enabled: installedPackPolicyEnabled({
+              declared: Boolean(value.enabled),
+              controlsWrite: packPolicyControlsWrite(bundle, value),
+              ...(existingPolicy ? { existing: existingPolicy.enabled } : {}),
+            }),
             updated_at: new Date(),
           };
           if (existingPolicy) await tx.update(action_policy).set(set).where(eq(action_policy.id, existingPolicy.id));
@@ -2560,7 +1669,9 @@ export class PackService {
           const readinessValue = value.readiness as Record<string, unknown> | undefined;
           const domain = String(readinessValue?.domain ?? "") as MagentoDomain;
           const adapter = value.adapter as Record<string, unknown> | undefined;
-          const reason = adapter?.kind === "magento_financial_handoff"
+          const reason = adapter?.kind === "graphjin_api_operation"
+            ? "ready"
+            : adapter?.kind === "magento_financial_handoff"
             ? "ready"
             : preflight?.operatorDomains[domain] ?? preflight?.operatorReadiness ?? "unsupported_adapter";
           const actionReady = reason === "ready";
@@ -2660,7 +1771,18 @@ export class PackService {
         }
         await tx.update(pack_install).set({
           status: "installed",
-          config: { ...inputs, _runtime: runtime, ...(authoredBundle.upload ? { _bundle: authoredBundle.upload } : {}), ...(preflight ? { magentoVersion: preflight.magentoVersion } : {}) },
+          config: {
+            ...inputs,
+            _runtime: runtime,
+            ...(bundle.manifest.oauth.length > 0 ? {
+              _oauth: Object.fromEntries(bundle.manifest.oauth.flatMap((connection) => {
+                const binding = packOAuthBinding(connection, nextPackSecrets);
+                return binding ? [[connection.key, binding]] : [];
+              })),
+            } : {}),
+            ...(authoredBundle.upload ? { _bundle: authoredBundle.upload } : {}),
+            ...(preflight ? { magentoVersion: preflight.magentoVersion } : {}),
+          },
           installed_at: new Date(),
           updated_at: new Date(),
         }).where(eq(pack_install.id, installationId!));

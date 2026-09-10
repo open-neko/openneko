@@ -279,6 +279,7 @@ export async function runWorkflowTurn(
       runId: workRunId,
       workflowRunId: workflowRun.id,
       mode,
+      networkHosts: workflow.networkHosts,
       triggeredByObservationId:
         workflowRun.triggeredByObservationId ?? null,
       workspace,

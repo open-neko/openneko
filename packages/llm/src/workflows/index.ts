@@ -267,11 +267,11 @@ export {
   ActionRequestNotApprovedError,
   executeApprovedActionRequest,
   getRegisteredActionKinds,
-  mockActionAdapter,
   registerActionAdapter,
+  registerFallbackActionAdapterResolver,
   RetryableActionAdapterError,
-  setDefaultActionAdapter,
   type ActionAdapter,
+  type ActionAdapterResolver,
   type ActionExecutionInput,
   type ActionExecutionOutcome,
 } from "./action-executor";

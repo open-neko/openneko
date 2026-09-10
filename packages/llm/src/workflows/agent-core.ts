@@ -24,6 +24,7 @@ export interface RunWorkflowAgentBackendInput {
   runId: string;
   workflowRunId: string;
   mode: "live" | "headless";
+  networkHosts: string[];
   triggeredByObservationId?: string | null;
   workspace: AgentWorkspace;
   /** In-process on the host; broker-backed inside the agent sandbox. */

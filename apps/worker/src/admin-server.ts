@@ -41,6 +41,23 @@ import type {
   ConnectorCredential,
 } from "@open-neko/plugin-types";
 import { getAuditLoggingHealth } from "@neko/llm/workflows";
+import { packFailurePayload, type PackErrorPhase } from "./packs/errors.js";
+
+const PACK_FAILURE_NEXT_STEP: Record<PackErrorPhase, string> = {
+  upload: "Correct the archive layout or manifest, then upload the pack again.",
+  inspection: "Correct the reported manifest or artifact, then inspect the pack again.",
+  review: "Correct the reported configuration or artifact, then review the pack again.",
+  install: "Correct the reported configuration or artifact, then review and install the pack again.",
+  configure: "Correct the reported configuration or artifact, then review and apply the change again.",
+  upgrade: "Correct the reported configuration or artifact, then review and apply the upgrade again.",
+  uninstall: "Check the reported pack state, then try removing the pack again.",
+  oauth: "Check the OAuth client, redirect URI, and requested scopes, then connect the account again.",
+  query_preflight: "Correct the reported query or source configuration, then review the pack again.",
+};
+
+function packFailure(error: unknown, phase: PackErrorPhase) {
+  return packFailurePayload(error, phase, PACK_FAILURE_NEXT_STEP[phase]);
+}
 
 export interface AuthHandlerSurface {
   getAuthProvider(): {
@@ -224,6 +241,10 @@ export interface PacksHandlerSurface {
   configure(packId: string, input: Record<string, unknown>): Promise<unknown>;
   upgrade(packId: string, input: Record<string, unknown>): Promise<unknown>;
   uninstall(packId: string, input: Record<string, unknown>): Promise<unknown>;
+  oauthStatus(packId: string, connectionKey: string): Promise<unknown>;
+  beginOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
+  completeOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
+  disconnectOAuth(packId: string, connectionKey: string): Promise<unknown>;
   magentoStoreManagement(): Promise<unknown>;
   updateMagentoStoreManagement(input: Record<string, unknown>): Promise<unknown>;
 }
@@ -612,6 +633,36 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       return;
     }
     const packPath = (req.url ?? "").split(/[?#]/, 1)[0] ?? "";
+    const packOAuthRoute = /^\/admin\/packs\/([^/]+)\/oauth\/([^/]+)\/(status|begin|complete|disconnect)$/.exec(packPath);
+    if (packOAuthRoute) {
+      let packId: string;
+      let connectionKey: string;
+      try {
+        packId = decodeURIComponent(packOAuthRoute[1]!);
+        connectionKey = decodeURIComponent(packOAuthRoute[2]!);
+      } catch {
+        json(res, 400, { error: "pack OAuth path contains invalid URL encoding" });
+        return;
+      }
+      const action = packOAuthRoute[3]!;
+      if (req.method === "GET" && action === "status") {
+        void handlePackOAuth(res, packs, packId, connectionKey, action, {});
+        return;
+      }
+      if (req.method === "POST" && action !== "status") {
+        void readJson(req)
+          .then((body) => handlePackOAuth(
+            res,
+            packs,
+            packId,
+            connectionKey,
+            action as "begin" | "complete" | "disconnect",
+            body && typeof body === "object" ? body as Record<string, unknown> : {},
+          ))
+          .catch(() => json(res, 400, { error: "request body must be JSON" }));
+        return;
+      }
+    }
     const packRoute = /^\/admin\/packs\/([^/]+)(?:\/(inspect|plan|status|doctor|review|install|configure|upgrade|uninstall))?$/.exec(
       packPath,
     );
@@ -661,6 +712,29 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   };
 }
 
+async function handlePackOAuth(
+  res: ServerResponse,
+  packs: PacksHandlerSurface | null,
+  packId: string,
+  connectionKey: string,
+  action: "status" | "begin" | "complete" | "disconnect",
+  input: Record<string, unknown>,
+): Promise<void> {
+  if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
+  try {
+    const result = action === "status"
+      ? await packs.oauthStatus(packId, connectionKey)
+      : action === "begin"
+        ? await packs.beginOAuth(packId, connectionKey, input)
+        : action === "complete"
+          ? await packs.completeOAuth(packId, connectionKey, input)
+          : { disconnected: await packs.disconnectOAuth(packId, connectionKey) };
+    json(res, 200, result);
+  } catch (error) {
+    json(res, 400, packFailure(error, "oauth"));
+  }
+}
+
 async function handlePackUpload(req: IncomingMessage, res: ServerResponse, packs: PacksHandlerSurface | null): Promise<void> {
   if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
   if (req.headers["content-type"]?.split(";", 1)[0]?.trim() !== "application/zip") {
@@ -676,7 +750,7 @@ async function handlePackUpload(req: IncomingMessage, res: ServerResponse, packs
     json(res, 200, await packs.upload(bytes, { actorUserId: actor ? decodeURIComponent(actor) : null, signal: controller.signal }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    json(res, message === "body too large" ? 413 : 400, { error: message });
+    json(res, message === "body too large" ? 413 : 400, packFailure(error, "upload"));
   } finally { res.off("close", abort); }
 }
 
@@ -706,7 +780,7 @@ async function handleMagentoStoreManagementRead(
   try {
     json(res, 200, await packs.magentoStoreManagement());
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "inspection"));
   }
 }
 
@@ -727,7 +801,7 @@ async function handleMagentoStoreManagementWrite(
   try {
     json(res, 200, await packs.updateMagentoStoreManagement(body as Record<string, unknown>));
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "inspection"));
   }
 }
 
@@ -750,7 +824,7 @@ async function handlePackRead(
     }
     json(res, 200, result);
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, "inspection"));
   }
 }
 
@@ -778,7 +852,7 @@ async function handlePackApply(
       json(res, 200, await packs.review(packId, input, operation));
     } else json(res, 200, await packs[action](packId, input));
   } catch (error) {
-    json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    json(res, 400, packFailure(error, action === "review" ? "review" : action));
   }
 }
 

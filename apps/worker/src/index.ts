@@ -84,12 +84,14 @@ import {
   handleSourceChangeMatch,
   handleSubscriptionMatch,
   registerBuiltinAdapters,
+  registerFallbackActionAdapterResolver,
   seedDefaultActionPolicies,
   seedPluginActionPolicies,
   startSubscriptionManager,
   type DataSourceContext,
   type PluginActionSeed,
 } from "@neko/llm/workflows";
+import { resolveDeclarativePackActionAdapter } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, reportDeploymentProfile } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
@@ -591,6 +593,10 @@ const server = createServer(
       configure: (packId, input) => packService.configure(packId, input),
       upgrade: (packId, input) => packService.upgrade(packId, input),
       uninstall: (packId, input) => packService.uninstall(packId, input),
+      oauthStatus: (packId, connectionKey) => packService.oauthStatus(packId, connectionKey),
+      beginOAuth: (packId, connectionKey, input) => packService.beginOAuth(packId, connectionKey, input),
+      completeOAuth: (packId, connectionKey, input) => packService.completeOAuth(packId, connectionKey, input),
+      disconnectOAuth: (packId, connectionKey) => packService.disconnectOAuth(packId, connectionKey),
       magentoStoreManagement: () => packService.magentoStoreManagement(),
       updateMagentoStoreManagement: (input) => packService.updateMagentoStoreManagement(input),
     },
@@ -704,6 +710,7 @@ try {
 
 await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
+registerFallbackActionAdapterResolver(resolveDeclarativePackActionAdapter);
 registerRecordActionAdapters(recordsWriteExecutor);
 registerRecordAccessActions(new RecordsAccessAdmin(recordsPool));
 registerRecordBackfillAction(recordsBackfillExecutor);
@@ -1600,6 +1607,19 @@ libraryRecovery();
 const libraryRecoveryTimer = setInterval(libraryRecovery, 60_000);
 libraryRecoveryTimer.unref();
 
+const packOAuthRefresh = () => {
+  packService.refreshOAuthConnections()
+    .then((count) => {
+      if (count > 0) console.log(`[packs] refreshed ${count} OAuth connection(s)`);
+    })
+    .catch((error) => {
+      console.warn(`[packs] OAuth refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+};
+void packOAuthRefresh();
+const packOAuthRefreshTimer = setInterval(packOAuthRefresh, 60_000);
+packOAuthRefreshTimer.unref();
+
 server.listen(PORT, () => {
   console.log(
     `[worker] pg-boss running; /health on http://localhost:${PORT}`,
@@ -1613,6 +1633,7 @@ const shutdown = async (signal: string) => {
   clearInterval(reconcileTimer);
   clearInterval(libraryCleanupTimer);
   clearInterval(libraryRecoveryTimer);
+  clearInterval(packOAuthRefreshTimer);
   workflowScheduler.stop();
   workflowApiDispatcher.stop();
   channelInbound.stop();

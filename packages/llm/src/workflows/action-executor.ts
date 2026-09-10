@@ -22,8 +22,12 @@ export type ActionAdapter = (
   input: ActionExecutionInput,
 ) => Promise<ActionExecutionOutcome>;
 
+export type ActionAdapterResolver = (
+  request: ActionRequestRecord,
+) => Promise<ActionAdapter | null>;
+
 const adapters = new Map<string, ActionAdapter>();
-let defaultAdapter: ActionAdapter | null = null;
+let fallbackAdapterResolver: ActionAdapterResolver | null = null;
 
 /** Register an executor for a specific action kind. Test-overridable. */
 export function registerActionAdapter(
@@ -33,38 +37,17 @@ export function registerActionAdapter(
   adapters.set(kind, adapter);
 }
 
-/** Set the fallback adapter used when no kind-specific adapter is registered. */
-export function setDefaultActionAdapter(adapter: ActionAdapter | null): void {
-  defaultAdapter = adapter;
+/** Register one resolver for action kinds supplied by installed packs. */
+export function registerFallbackActionAdapterResolver(resolver: ActionAdapterResolver): () => void {
+  fallbackAdapterResolver = resolver;
+  return () => {
+    if (fallbackAdapterResolver === resolver) fallbackAdapterResolver = null;
+  };
 }
 
 export function getRegisteredActionKinds(): string[] {
   return Array.from(adapters.keys());
 }
-
-/**
- * Built-in mock adapter — records the action as executed without any
- * external side effect. Suitable for tests and demo runs while real
- * adapters (Slack, CRM, git, etc.) are being built. Returns the request's
- * payload as the execution result so callers can inspect what was
- * "executed" without leaving the local DB.
- */
-export const mockActionAdapter: ActionAdapter = async ({ request }) => {
-  return {
-    commandOrOperation: `mock:${request.kind}`,
-    externalRef: `mock-${request.id}`,
-    result: {
-      mocked: true,
-      kind: request.kind,
-      scope: request.scope,
-      target: request.target,
-      summary: request.summary,
-      payload: request.payload,
-    },
-  };
-};
-
-setDefaultActionAdapter(mockActionAdapter);
 
 export class ActionRequestNotApprovedError extends Error {
   constructor(public readonly status: string) {
@@ -89,7 +72,7 @@ export class RetryableActionAdapterError extends Error {
 
 /**
  * Execute an approved action_request. Writes an action_execution row,
- * runs the registered adapter (or the default mock adapter), updates
+ * runs the registered adapter, updates
  * the execution + request status, and returns the final execution
  * record. Throws if the request isn't approved.
  */
@@ -109,7 +92,7 @@ export async function executeApprovedActionRequest(
     throw new ActionRequestNotApprovedError(request.status);
   }
 
-  const adapter = adapters.get(request.kind) ?? defaultAdapter;
+  const adapter = adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined;
   if (!adapter) {
     await markActionRequestFailed(
       request.id,
@@ -124,7 +107,7 @@ export async function executeApprovedActionRequest(
   const exec = await recordActionExecution({
     orgId,
     actionRequestId: request.id,
-    executor: adapters.has(request.kind) ? request.kind : "default_mock",
+    executor: request.kind,
     payload: request.payload,
   });
 

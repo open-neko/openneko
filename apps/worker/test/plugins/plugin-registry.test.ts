@@ -9,8 +9,6 @@ import {
   type RpcResponse,
 } from "@open-neko/plugin-types";
 import {
-  mockActionAdapter,
-  setDefaultActionAdapter,
   type ActionAdapter,
   type ActionRequestRecord,
 } from "@neko/llm/workflows";
@@ -160,14 +158,12 @@ describe("PluginRegistry", () => {
     runnerPath = path.join(repoRoot, "fake-runner.js");
     await writeFakeRunner(runnerPath);
     captured = new Map();
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
     await rm(workRoot, { recursive: true, force: true });
     await rm(secretsConfigDir, { recursive: true, force: true });
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   function newRegistry(runtime: PluginRuntime, opts: { manifestPlugins?: unknown } = {}) {
@@ -632,14 +628,12 @@ describe("PluginRegistry — auth provider", () => {
     secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
     runnerPath = path.join(repoRoot, "fake-runner.js");
     await writeFakeRunner(runnerPath);
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
     await rm(workRoot, { recursive: true, force: true });
     await rm(secretsConfigDir, { recursive: true, force: true });
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   function newRegistry(runtime: PluginRuntime) {
@@ -986,14 +980,12 @@ describe("PluginRegistry — connect capability", () => {
     secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
     runnerPath = path.join(repoRoot, "fake-runner.js");
     await writeFakeRunner(runnerPath);
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
     await rm(workRoot, { recursive: true, force: true });
     await rm(secretsConfigDir, { recursive: true, force: true });
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   function newRegistry(runtime: PluginRuntime) {
@@ -1615,14 +1607,12 @@ describe("PluginRegistry — deployment-scoped connect", () => {
     runnerPath = path.join(repoRoot, "fake-runner.js");
     await writeFakeRunner(runnerPath);
     captured = new Map();
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
     await rm(workRoot, { recursive: true, force: true });
     await rm(secretsConfigDir, { recursive: true, force: true });
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   function newRegistry(runtime: PluginRuntime) {
@@ -1815,14 +1805,12 @@ describe("PluginRegistry — install-policy flagging", () => {
     secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
     runnerPath = path.join(repoRoot, "fake-runner.js");
     await writeFakeRunner(runnerPath);
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
     await rm(workRoot, { recursive: true, force: true });
     await rm(secretsConfigDir, { recursive: true, force: true });
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   function newRegistry(

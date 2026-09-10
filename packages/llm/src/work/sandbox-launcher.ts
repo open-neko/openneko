@@ -509,6 +509,7 @@ function makeSandboxCore(
         ? {
             backendState: (input as RunAgentBackendInput).backendState,
             pluginActions: (input as RunAgentBackendInput).pluginActions,
+            packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
               (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
             dataSurface:
@@ -533,6 +534,7 @@ function makeSandboxCore(
           ? {
             workflowRunId: (input as RunWorkflowAgentBackendInput).workflowRunId,
             mode: (input as RunWorkflowAgentBackendInput).mode,
+            networkHosts: (input as RunWorkflowAgentBackendInput).networkHosts,
             triggeredByObservationId:
               (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
             }
@@ -562,6 +564,12 @@ function makeSandboxCore(
         ...endpoint,
         binary: VENDORED_HERMES_MODEL_BINARY,
       })),
+      ...(kind === "workflow"
+        ? ((input as RunWorkflowAgentBackendInput).networkHosts ?? []).map((host) => ({
+            host,
+            binary: VENDORED_HERMES_MODEL_BINARY,
+          }))
+        : []),
       ...brokerEgress,
     ];
 

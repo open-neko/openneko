@@ -40,6 +40,7 @@ adventureworks-onboarding.md
 # local agent-tool config (never part of the application runtime)
 .agents/
 .claude/
+.codex/
 
 # design preview screenshots
 design-preview/

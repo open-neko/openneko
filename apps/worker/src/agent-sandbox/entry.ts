@@ -48,6 +48,7 @@ interface SandboxJob {
   model?: string;
   backendState?: Record<string, unknown>;
   pluginActions?: RunAgentBackendInput["pluginActions"];
+  packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
   dataSurface?: RunAgentBackendInput["dataSurface"];
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
@@ -55,6 +56,7 @@ interface SandboxJob {
   wantsCards?: boolean;
   workflowRunId?: string;
   mode?: "live" | "headless";
+  networkHosts?: string[];
   triggeredByObservationId?: string | null;
   workspace: AgentWorkspace;
   /** Explicit least-privilege envelope for non-interactive agent jobs. */
@@ -210,6 +212,7 @@ export async function main(): Promise<void> {
       runId: job.runId,
       workflowRunId,
       mode: job.mode ?? "headless",
+      networkHosts: job.networkHosts ?? [],
       triggeredByObservationId: job.triggeredByObservationId ?? null,
       workspace: job.workspace,
       controlPlane,
@@ -229,6 +232,7 @@ export async function main(): Promise<void> {
       workspace: job.workspace,
       backendState: job.backendState,
       pluginActions: job.pluginActions ?? [],
+      packActions: job.packActions ?? [],
       sourceConfigEnabled: job.sourceConfigEnabled ?? false,
       dataSurface: job.dataSurface ?? "customer",
       ...(job.graphjinToolPolicy

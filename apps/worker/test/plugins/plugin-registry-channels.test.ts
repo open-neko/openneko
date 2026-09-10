@@ -4,8 +4,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RPC_PROTOCOL_VERSION, rpcOk, type RpcResponse } from "@open-neko/plugin-types";
 import {
-  mockActionAdapter,
-  setDefaultActionAdapter,
 } from "@neko/llm/workflows";
 import { PluginRegistry } from "../../src/plugins/plugin-registry";
 import type {
@@ -114,13 +112,11 @@ describe("PluginRegistry — channel capability", () => {
     secretsConfigDir = await mkdtemp(path.join(tmpdir(), "openneko-secrets-"));
     runnerPath = path.join(repoRoot, "fake-runner.js");
     await writeFile(runnerPath, "// runner\n", "utf8");
-    setDefaultActionAdapter(mockActionAdapter);
   });
   afterEach(async () => {
     await rm(repoRoot, { recursive: true, force: true });
     await rm(workRoot, { recursive: true, force: true });
     await rm(secretsConfigDir, { recursive: true, force: true });
-    setDefaultActionAdapter(mockActionAdapter);
   });
 
   function newRegistry(runtime: PluginRuntime) {

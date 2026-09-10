@@ -24,6 +24,7 @@ export {
   buildGraphjinReadServer,
   buildLibraryServer,
   buildPluginActionServer,
+  buildPackActionServer,
   buildPluginManagerServer,
   buildRecordsReadServer,
   buildRenderCardsServer,
@@ -32,6 +33,7 @@ export {
   buildUserManagerServer,
   buildWorkMemoryServer,
   type PluginActionDescriptor,
+  type PackActionDescriptor,
 } from "./work/tools";
 export {
   GRAPHJIN_DIRECT_GOVERNED_POLICY,

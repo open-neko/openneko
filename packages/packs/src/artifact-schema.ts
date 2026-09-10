@@ -62,6 +62,7 @@ const workflowSchema = z
       })
       .strict()
       .nullable(),
+    networkHosts: z.array(z.string().min(1)).optional(),
     activation: z.string().optional(),
     outputContract: z
       .object({
@@ -137,6 +138,40 @@ const legacyActionSchema = z
             redact: z.array(z.string()),
           })
           .strict(),
+        ambiguousOutcome: z.literal("reconcile_required"),
+        retry: z.literal("never"),
+      })
+      .strict(),
+  })
+  .strict();
+
+const graphjinApiOperationSchema = z
+  .object({
+    operationId: z.string().min(1),
+    mutationRoot: z.string().regex(/^[_A-Za-z][_0-9A-Za-z]*$/),
+    reversible: z.boolean().default(false),
+  })
+  .strict();
+
+const graphjinApiActionSchema = z
+  .object({
+    ...base,
+    kind: targetRef,
+    description: z.string().min(1),
+    readiness: z
+      .object({
+        capability: z.literal("operator"),
+        unavailableReasons: z.array(z.string()).min(1),
+      })
+      .strict(),
+    inputSchema: z.record(z.string(), z.unknown()),
+    example: z.record(z.string(), z.unknown()).optional(),
+    adapter: z
+      .object({
+        kind: z.literal("graphjin_api_operation"),
+        source: z.string().min(1),
+        spec: z.string().min(1),
+        operations: z.record(z.string().min(1), graphjinApiOperationSchema),
         ambiguousOutcome: z.literal("reconcile_required"),
         retry: z.literal("never"),
       })
@@ -224,7 +259,7 @@ const magentoV2ActionSchema = z
   })
   .strict();
 
-const actionSchema = z.union([legacyActionSchema, magentoV2ActionSchema]);
+const actionSchema = z.union([legacyActionSchema, graphjinApiActionSchema, magentoV2ActionSchema]);
 
 const policySchema = z
   .object({

@@ -225,6 +225,7 @@ function fakeWorkflowInput(
     runId: "run-1",
     workflowRunId: "workflow-run-1",
     mode: "headless",
+    networkHosts: [],
     triggeredByObservationId: "obs-1",
     workspace:
       workspaceOverride ??
@@ -563,6 +564,28 @@ describe("makeSandboxRunCore", () => {
     expect(execCommand).toContain('export GEMINI_API_KEY="$api_key"');
   });
 
+  it("serializes pack actions into the isolated Work job", async () => {
+    const runCore = makeSandboxRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      onLog: () => {},
+    });
+    const input = fakeInput(async () => {});
+    input.packActions = [{
+      kind: "magento.manage_catalog",
+      description: "Change Magento catalog data.",
+      scope: "external",
+      default_mode: "ask",
+    }];
+
+    await runCore(input);
+
+    expect(jobCapture.jobs.at(-1)).toMatchObject({
+      kind: "work",
+      packActions: input.packActions,
+      pluginActions: [],
+    });
+  });
+
   it("serializes and drains streamed events before accepting the result", async () => {
     h.state.execLines = [
       `__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "first" })}\n`,
@@ -732,6 +755,7 @@ describe("makeSandboxRunCore", () => {
       workflowRunId: "workflow-run-1",
       mode: "headless",
       triggeredByObservationId: "obs-1",
+      networkHosts: [],
       backendId: "hermes",
       message: "begin",
     });
@@ -741,6 +765,31 @@ describe("makeSandboxRunCore", () => {
     expect(h.calls.filter((c) => c.args.includes("create"))).toHaveLength(1);
     expect(h.calls.filter((c) => c.args.includes("exec"))).toHaveLength(1);
     expect(h.calls.filter((c) => c.args.includes("delete"))).toHaveLength(1);
+  });
+
+  it("adds pack-declared workflow hosts to the OpenShell policy", async () => {
+    const runCore = makeSandboxWorkflowRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      onLog: () => {},
+    });
+    const input = fakeWorkflowInput(async () => {});
+    input.networkHosts = ["helpx.adobe.com", "experienceleague.adobe.com"];
+
+    await runCore(input);
+
+    const policies = Object.values(
+      (jobCapture.policies.at(-1)?.network_policies ?? {}) as Record<
+        string,
+        { binaries: Array<{ path: string }>; endpoints: Array<{ host: string }> }
+      >,
+    );
+    const workflowPolicy = policies.find(
+      (policy) => policy.binaries[0]?.path === "/usr/bin/python3.11",
+    );
+    expect(workflowPolicy?.endpoints.map((endpoint) => endpoint.host)).toEqual([
+      "experienceleague.adobe.com",
+      "helpx.adobe.com",
+    ]);
   });
 
   it("does not serialize GraphJin credentials into workflow sandbox jobs", async () => {

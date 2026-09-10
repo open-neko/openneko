@@ -9,6 +9,7 @@ import {
   ensureAgentBroker,
   finishWorkRun,
   getWorkRun,
+  listPackActionDescriptors,
   registerAgentBrokerEventSink,
   runChatTurn,
 } from "@neko/llm/work";
@@ -142,7 +143,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     runId: run.id,
   });
 
-  const pluginActions = await getPluginActionDescriptors();
+  const [pluginActions, packActions] = await Promise.all([
+    getPluginActionDescriptors(),
+    listPackActionDescriptors(orgId),
+  ]);
 
   // The agent loop runs in an OpenShell sandbox (SEC9: the only runtime).
   // The web server stays the control plane, launches the box, and relays
@@ -160,6 +164,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       emit,
       signal: abortController.signal,
       pluginActions,
+      packActions,
       observer: runTelemetry.observer,
     },
     agentRuntimeDepsFromConfig(agentRuntime, broker),

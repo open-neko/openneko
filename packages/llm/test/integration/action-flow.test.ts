@@ -50,7 +50,7 @@ describeIfDb("action stack — approve → execute → executed", () => {
     await pool().end();
   });
 
-  it("approve transitions pending_approval → approved → executed via mock adapter", async () => {
+  it("approve transitions pending_approval → approved → executed via an explicitly registered test adapter", async () => {
     await withTestOrg(async (orgId) => {
       const { workflowRunId } = await setupWorkflowRun(orgId);
       const policy = await createActionPolicy({
@@ -89,6 +89,7 @@ describeIfDb("action stack — approve → execute → executed", () => {
       });
       expect(approved.status).toBe("approved");
 
+      registerActionAdapter("send_message", async () => ({ result: { delivered: true } }));
       const result = await executeApprovedActionRequest(orgId, request.id);
       expect(result.ok).toBe(true);
 
@@ -210,7 +211,7 @@ describeIfDb("action stack — approve → execute → executed", () => {
     });
   });
 
-  it("kind-specific adapter overrides the default mock", async () => {
+  it("kind-specific adapter returns its provider outcome", async () => {
     await withTestOrg(async (orgId) => {
       const adapter = vi.fn().mockResolvedValue({
         commandOrOperation: "real:slack.postMessage",

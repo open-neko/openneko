@@ -28,9 +28,11 @@ be replaced by uploads.
 
 Custom API connectors support bundled OpenAPI with local references and optional
 bearer authentication. Credentials must use declared `{{secret.<key>}}`
-references; never put credentials in the archive. Custom sources are read-only.
-OAuth refresh, executable connector code, and custom write adapters are not
-supported. Magento retains its existing governed action adapters.
+references; never put credentials in the archive. A pack may declare a
+customer-owned OAuth client, reviewed consent scopes, and required network hosts.
+OpenNeko handles browser consent and token refresh without installing a plugin
+or executable connector. API write access requires explicit source capability,
+action, and policy declarations. Write policies install disabled.
 
 ## Upload, review, and install
 

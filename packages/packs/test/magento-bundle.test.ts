@@ -22,11 +22,16 @@ describe("Magento solution pack", () => {
     const count = (kind: string) => bundle.artifacts.filter((artifact) => artifact.kind === kind).length;
     expect(count("source")).toBe(2);
     expect(count("metric")).toBe(13);
-    expect(count("workflow")).toBe(6);
+    expect(count("workflow")).toBe(7);
+    const securityWorkflow = bundle.artifacts.find((artifact) => artifact.key === "workflow.security_advisory_check");
+    expect(securityWorkflow?.content).toMatchObject({
+      enabled: true,
+      schedule: { cron: "0 6 * * *", timezoneInput: "UTC", enabled: true },
+    });
     expect(count("watcher")).toBe(6);
     expect(count("action")).toBe(8);
     expect(count("policy")).toBe(2);
-    expect(count("skill")).toBe(8);
+    expect(count("skill")).toBe(9);
     expect(
       bundle.artifacts
         .filter((artifact) => artifact.kind === "skill")
@@ -40,6 +45,7 @@ describe("Magento solution pack", () => {
       "magento-manage-catalog",
       "magento-review-performance",
       "magento-run-promotions",
+      "magento-security-advisories",
       "magento-triage-fulfillment",
     ]);
     expect(bundle.artifacts.some((artifact) => artifact.targetRef === "magento-ops")).toBe(false);
@@ -315,7 +321,7 @@ describe("drift-aware planning", () => {
     });
     expect(
       plan.entries.filter((entry) => entry.kind === "skill" && entry.action === "create"),
-    ).toHaveLength(8);
+    ).toHaveLength(9);
   });
 
   it("does not repeatedly retire an artifact already removed by an earlier upgrade", async () => {

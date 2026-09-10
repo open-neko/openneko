@@ -96,6 +96,8 @@ export type RunChatTurnOptions = {
    * Mounted for Hermes through the sandbox MCP bridge.
    */
   pluginActions?: readonly PluginActionDescriptor[];
+  /** Installed pack actions. Kept separate from the plugin registry. */
+  packActions?: readonly import("./tools").PackActionDescriptor[];
   /**
    * Control-plane impl for the DB-touching MCP tools. Default (undefined)
    * uses the in-process plane; the agent sandbox injects a broker client.
@@ -508,6 +510,7 @@ export async function runChatTurn(
       workspace,
       backendState: bundle.thread.backendState,
       pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
+      packActions: customerSurface ? (opts.packActions ?? []) : [],
       sourceConfigEnabled: supportsSourceConfigTool,
       dataSurface,
       ...(opts.graphjinToolPolicy
