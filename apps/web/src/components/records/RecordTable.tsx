@@ -8,7 +8,15 @@ import {
 } from "@/lib/records-reference";
 import { RecordCell } from "./RecordCell";
 import { PendingChangeMarker } from "./PendingChangeMarker";
-import { buttonClassName } from "@/components/ui/Button";
+import { buttonClassName } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function hrefWith(
   base: string,
@@ -54,19 +62,30 @@ export function RecordTable({
   const shownThrough = (page - 1) * 50 + rows.length;
   const hasMore = cursor !== null && shownThrough < total;
   return (
-    <section className="records-list-card" aria-label={`${view.object.pluralLabel} records`}>
+    <section
+      className="records-list-card"
+      aria-label={`${view.object.pluralLabel} records`}
+    >
       <div className="records-table-scroll">
-        <table className="records-table">
-          <thead>
-            <tr>
+        <Table className="records-table">
+          <TableHeader>
+            <TableRow>
               {view.columns.map((column) => {
                 const active = query.sort === column.apiName;
-                const direction = active && query.direction === "desc" ? "asc" : "desc";
-                const sortable = column.kind !== "owner" && column.kind !== "system_datetime";
+                const direction =
+                  active && query.direction === "desc" ? "asc" : "desc";
+                const sortable =
+                  column.kind !== "owner" && column.kind !== "system_datetime";
                 return (
-                  <th
+                  <TableHead
                     key={column.apiName}
-                    className={["integer", "decimal", "currency", "percent"].includes(column.kind) ? "is-number" : undefined}
+                    className={
+                      ["integer", "decimal", "currency", "percent"].includes(
+                        column.kind,
+                      )
+                        ? "is-number"
+                        : undefined
+                    }
                   >
                     {sortable ? (
                       <Link
@@ -78,64 +97,94 @@ export function RecordTable({
                         })}
                       >
                         {column.label}
-                        {active && <span aria-hidden="true"> {query.direction === "desc" ? "↓" : "↑"}</span>}
+                        {active && (
+                          <span aria-hidden="true">
+                            {" "}
+                            {query.direction === "desc" ? "↓" : "↑"}
+                          </span>
+                        )}
                       </Link>
                     ) : (
                       column.label
                     )}
-                  </th>
+                  </TableHead>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row, rowIndex) => {
               const recordId = String(row.id ?? "");
               const recordPendingActions = pendingActions[recordId] ?? [];
               return (
-                <tr
+                <TableRow
                   key={recordId || `row-${rowIndex}`}
-                  className={recordPendingActions.length > 0 ? "is-pending" : undefined}
+                  className={
+                    recordPendingActions.length > 0 ? "is-pending" : undefined
+                  }
                 >
                   {view.columns.map((column) => {
                     const value = row[column.columnName];
-                    const ownerId = column.kind === "owner" && typeof value === "string" ? value : null;
-                    const nameColumn = column.columnName === view.object.nameField;
+                    const ownerId =
+                      column.kind === "owner" && typeof value === "string"
+                        ? value
+                        : null;
+                    const nameColumn =
+                      column.columnName === view.object.nameField;
                     const content = (
                       <RecordCell
                         appId={appId}
                         column={column}
                         value={value}
                         owner={ownerId ? owners[ownerId] : undefined}
-                        reference={references[
-                          recordReferenceIdentityKey(column.apiName, String(value ?? ""))
-                        ]}
+                        reference={
+                          references[
+                            recordReferenceIdentityKey(
+                              column.apiName,
+                              String(value ?? ""),
+                            )
+                          ]
+                        }
                         linkify={!nameColumn}
                       />
                     );
                     return (
-                      <td
+                      <TableCell
                         key={column.apiName}
-                        className={["integer", "decimal", "currency", "percent"].includes(column.kind) ? "is-number" : undefined}
+                        className={
+                          [
+                            "integer",
+                            "decimal",
+                            "currency",
+                            "percent",
+                          ].includes(column.kind)
+                            ? "is-number"
+                            : undefined
+                        }
                       >
                         {nameColumn && recordId ? (
                           <span className="records-name-cell">
-                            <Link className="records-name-link" href={`${base}/${encodeURIComponent(recordId)}`}>
+                            <Link
+                              className="records-name-link"
+                              href={`${base}/${encodeURIComponent(recordId)}`}
+                            >
                               {content}
                             </Link>
-                            <PendingChangeMarker actions={recordPendingActions} />
+                            <PendingChangeMarker
+                              actions={recordPendingActions}
+                            />
                           </span>
                         ) : (
                           content
                         )}
-                      </td>
+                      </TableCell>
                     );
                   })}
-                </tr>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       {rows.length === 0 && (
         <div className="records-empty">
@@ -145,7 +194,9 @@ export function RecordTable({
       )}
       <footer className="records-list-foot">
         <span>
-          {total === 0 ? "No records" : `Showing ${(page - 1) * 50 + 1}–${shownThrough} of ${total}`}
+          {total === 0
+            ? "No records"
+            : `Showing ${(page - 1) * 50 + 1}–${shownThrough} of ${total}`}
         </span>
         {hasMore && (
           <Link

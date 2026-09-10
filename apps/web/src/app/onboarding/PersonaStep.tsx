@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import EntryShell from "@/components/EntryShell";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * Per-user onboarding (CV3): every SSO identity describes its own role and
@@ -61,7 +63,7 @@ export default function PersonaStep({
       <div className="entry-fields">
         <label className="entry-field">
           <span>Your role</span>
-          <input data-ui-bespoke-reason="onboarding entry fields"
+          <Input
             className="entry-control"
             value={roleTemplate}
             maxLength={120}
@@ -71,13 +73,18 @@ export default function PersonaStep({
           />
         </label>
         <label className="entry-field">
-          <span>What needs your attention? <span className="entry-optional">Optional</span></span>
-          <textarea data-ui-bespoke-reason="onboarding entry fields"
+          <span>
+            What needs your attention?{" "}
+            <span className="entry-optional">Optional</span>
+          </span>
+          <Textarea
             className="entry-control"
             rows={5}
             value={focusAreas}
             onChange={(event) => setFocusAreas(event.target.value)}
-            placeholder={"Stock-outs on top SKUs\nReorder lead times\nWholesale margin"}
+            placeholder={
+              "Stock-outs on top SKUs\nReorder lead times\nWholesale margin"
+            }
           />
           <span className="entry-field-help">Add one priority per line.</span>
         </label>

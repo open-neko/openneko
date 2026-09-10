@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { Field, Input, NativeSelect } from "@/components/ui/Field";
-import { Pill } from "@/components/ui/Pill";
-import { SearchInput } from "@/components/ui/SearchInput";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { Field, Input, NativeSelect } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { matchesListSearch } from "@/lib/list-search";
 
 export interface AdminUserRow {
@@ -100,7 +108,10 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
   return (
     <>
       {error ? (
-        <div className="mb-4 rounded-control bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
+        <div
+          className="mb-4 rounded-control bg-danger-soft px-3 py-2 text-sm text-danger"
+          role="alert"
+        >
           {error}
         </div>
       ) : null}
@@ -149,11 +160,7 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
             <option value="admin">admin</option>
           </NativeSelect>
         </Field>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={busy === "create"}
-        >
+        <Button type="submit" variant="primary" disabled={busy === "create"}>
           {busy === "create" ? "Adding…" : "Add user"}
         </Button>
       </form>
@@ -166,40 +173,55 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead className="text-ui-label uppercase tracking-[0.12em] text-text3">
-              <tr>
-                <th className="border-b border-border px-3 py-2 font-bold">User</th>
-                <th className="border-b border-border px-3 py-2 font-bold">Role</th>
-                <th className="border-b border-border px-3 py-2 font-bold">Status</th>
-                <th className="border-b border-border px-3 py-2 font-bold">Last login</th>
-                <th className="border-b border-border px-3 py-2 font-bold">Created</th>
-                <th className="border-b border-border px-3 py-2 font-bold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="w-full border-collapse text-left text-sm">
+            <TableHeader className="text-ui-label uppercase tracking-[0.12em] text-text3">
+              <TableRow>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  User
+                </TableHead>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  Role
+                </TableHead>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  Status
+                </TableHead>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  Last login
+                </TableHead>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  Created
+                </TableHead>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  Actions
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {visibleUsers.map((user) => (
-                <tr key={user.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-3">
+                <TableRow
+                  key={user.id}
+                  className="border-b border-border last:border-0"
+                >
+                  <TableCell className="px-3 py-3">
                     <div className="font-semibold text-text">{user.email}</div>
                     <div className="text-xs text-text3">
                       {user.name ?? user.id}
                       {user.hasSignedIn ? null : " · never signed in"}
                     </div>
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
                     <RoleBadge role={user.role} />
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
                     <StatusBadge disabled={user.disabled} />
-                  </td>
-                  <td className="px-3 py-3 text-text2">
+                  </TableCell>
+                  <TableCell className="px-3 py-3 text-text2">
                     {formatDate(user.lastLoginAt)}
-                  </td>
-                  <td className="px-3 py-3 text-text2">
+                  </TableCell>
+                  <TableCell className="px-3 py-3 text-text2">
                     {formatDate(user.createdAt)}
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
                     <ActionGroup align="start" className="flex-nowrap">
                       <Button
                         size="sm"
@@ -223,11 +245,11 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
                         {user.disabled ? "Enable" : "Disable"}
                       </Button>
                     </ActionGroup>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </>
@@ -236,18 +258,14 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
 
 function RoleBadge({ role }: { role: string }) {
   const isAdmin = role === "admin";
-  return (
-    <Pill variant={isAdmin ? "success" : "muted"}>
-      {role}
-    </Pill>
-  );
+  return <Badge variant={isAdmin ? "success" : "muted"}>{role}</Badge>;
 }
 
 function StatusBadge({ disabled }: { disabled: boolean }) {
   return (
-    <Pill variant={disabled ? "danger" : "success"}>
+    <Badge variant={disabled ? "danger" : "success"}>
       {disabled ? "Disabled" : "Active"}
-    </Pill>
+    </Badge>
   );
 }
 

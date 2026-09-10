@@ -9,12 +9,12 @@ import {
 } from "react";
 import { Check, Copy, KeyRound, RotateCw, Save, ShieldOff } from "lucide-react";
 import { confirmDialog } from "@/components/ConfirmModal";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Field, Input } from "@/components/ui/Field";
-import { Pill } from "@/components/ui/Pill";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Field, Input } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
 
 type WorkflowApiLimits = {
   requestLimitPerMinute: number;
@@ -373,9 +373,9 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     <section className="workflow-detail-section workflow-api-panel">
       <div className="workflow-api-heading">
         <h3>API access</h3>
-        <Pill variant={access.enabled ? "live" : "muted"}>
+        <Badge variant={access.enabled ? "live" : "muted"}>
           {access.enabled ? "Enabled" : "Disabled"}
-        </Pill>
+        </Badge>
       </div>
       <div className="workflow-detail-section-body grid gap-3">
         <p className="text-text2 leading-[1.5]">
@@ -435,7 +435,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
           <Card className="workflow-api-token" role="status">
             <div className="workflow-api-token-head">
               <div>
-                <Pill variant="watch">Shown once</Pill>
+                <Badge variant="watch">Shown once</Badge>
                 <strong>Save this token now</strong>
               </div>
               <Button

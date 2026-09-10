@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import AskHistoryPanel from "@/components/AskHistoryPanel";
+import { IconButton } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 export default function WorkHistoryDrawer({
   open,
@@ -11,73 +19,33 @@ export default function WorkHistoryDrawer({
   open: boolean;
   onClose: () => void;
 }) {
-  const closeRef = useRef<HTMLButtonElement | null>(null);
-  const onCloseRef = useRef(onClose);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const frame = requestAnimationFrame(() => closeRef.current?.focus());
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !document.querySelector(".confirm-modal-root")
-      ) {
-        onCloseRef.current();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  if (!open) return null;
-
   return (
-    <div className="work-history-layer">
-      <button data-ui-bespoke-reason="ask history drawer"
-        type="button"
-        className="work-history-scrim"
-        aria-label="Close thread history"
-        onClick={onClose}
-      />
-      <aside
-        className="work-history-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="work-history-title"
+    <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        overlayClassName="work-history-scrim"
+        className="work-history-drawer gap-0 border-border bg-card p-0"
       >
-        <header className="work-history-drawer-head">
+        <SheetHeader className="work-history-drawer-head">
           <div>
             <span>OpenNeko / Work</span>
-            <h2 id="work-history-title">Past work</h2>
-            <p>Resume one of your threads.</p>
+            <SheetTitle id="work-history-title">Past work</SheetTitle>
+            <SheetDescription>Resume one of your threads.</SheetDescription>
           </div>
-          <button data-ui-bespoke-reason="ask history drawer"
-            ref={closeRef}
-            type="button"
-            className="work-history-close"
-            aria-label="Close thread history"
-            onClick={onClose}
-          >
-            <X aria-hidden="true" strokeWidth={2} />
-          </button>
-        </header>
-        <AskHistoryPanel
-          className="work-history-panel"
-          onNavigate={onClose}
-        />
-      </aside>
-    </div>
+          <SheetClose asChild>
+            <IconButton
+              label="Close thread history"
+              size="icon-sm"
+              variant="ghost"
+              className="work-history-close"
+            >
+              <X aria-hidden="true" strokeWidth={2} />
+            </IconButton>
+          </SheetClose>
+        </SheetHeader>
+        <AskHistoryPanel className="work-history-panel" onNavigate={onClose} />
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -6,10 +6,10 @@ import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { Button } from "@/components/ui/Button";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
-import { SearchInput } from "@/components/ui/SearchInput";
-import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
 import { matchesListSearch } from "@/lib/list-search";
 
 type StatusFilter = "active" | "completed" | "failed" | "all";
@@ -77,7 +77,7 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, " ");
 }
 
-function statusVariant(status: string): PillVariant {
+function statusVariant(status: string): BadgeVariant {
   switch (status) {
     case "completed":
       return "success";
@@ -258,22 +258,22 @@ function RunsPageInner() {
                             : ""}
                         </span>
                         {run.triggerKind === "api" && run.executionMode ? (
-                          <Pill
+                          <Badge
                             variant={
                               run.executionMode === "batch" ? "success" : "muted"
                             }
                           >
                             {run.executionMode}
-                          </Pill>
+                          </Badge>
                         ) : null}
                       </div>
                       <p className="mt-1.5 mb-0 text-ui-body-sm leading-[1.45] text-text2 line-clamp-2">
                         {describeRun(run)}
                       </p>
                     </div>
-                    <Pill variant={statusVariant(run.status)}>
+                    <Badge variant={statusVariant(run.status)}>
                       {statusLabel(run.status)}
-                    </Pill>
+                    </Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-1.5 text-ui-caption text-text3">
                     <span className="font-mono">

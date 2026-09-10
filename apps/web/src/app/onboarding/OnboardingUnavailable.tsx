@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import EntryShell from "@/components/EntryShell";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
 
 type OnboardingUnavailableProps = {
   retryAction?: ReactNode;

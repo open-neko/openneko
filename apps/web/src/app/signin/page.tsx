@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import EntryShell from "@/components/EntryShell";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface ProviderInfo {
   pluginName: string;
@@ -65,8 +66,8 @@ function SignInBody() {
 
       {notice === "link-sent" ? (
         <div className="entry-system-state" role="status">
-          If that email belongs to a provisioned user, a sign-in link is on
-          its way. Open it in this browser within 10 minutes.
+          If that email belongs to a provisioned user, a sign-in link is on its
+          way. Open it in this browser within 10 minutes.
         </div>
       ) : null}
 
@@ -77,7 +78,12 @@ function SignInBody() {
         </div>
       ) : provider ? (
         <form action="/api/auth/begin" method="GET" className="entry-fields">
-          <input data-ui-bespoke-reason="sign-in entry fields" type="hidden" name="returnTo" value={returnTo} />
+          <input
+            data-ui-bespoke-reason="sign-in entry fields"
+            type="hidden"
+            name="returnTo"
+            value={returnTo}
+          />
           <label className="entry-field">
             <span>
               Email{" "}
@@ -85,7 +91,7 @@ function SignInBody() {
                 <span className="entry-optional">(optional)</span>
               )}
             </span>
-            <input data-ui-bespoke-reason="sign-in entry fields"
+            <Input
               type="email"
               name="loginHint"
               value={loginHint}
@@ -115,8 +121,8 @@ function SignInBody() {
           <p className="entry-section-kicker">Setup in progress</p>
           <h3>{pendingLabel} sign-in is being set up</h3>
           <p>
-            An administrator is still configuring sign-in for this
-            deployment. Try again shortly.
+            An administrator is still configuring sign-in for this deployment.
+            Try again shortly.
           </p>
         </div>
       ) : (

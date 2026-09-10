@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { CircleAlert } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function RecordsDegradedBanner({ message }: { message: string }) {
   return (
-    <div className="records-degraded" role="alert">
+    <Alert variant="destructive" className="records-degraded">
       <CircleAlert aria-hidden="true" />
-      <span>
-        <strong>Records are unavailable.</strong> {message} No fallback database read was attempted.
-      </span>
+      <AlertTitle>Records are unavailable.</AlertTitle>
+      <AlertDescription>
+        {message} No fallback database read was attempted.
+      </AlertDescription>
       <Link href="/admin">Open health settings</Link>
-    </div>
+    </Alert>
   );
 }
 
@@ -20,9 +22,11 @@ export function RecordsUnavailable({ message }: { message: string }) {
       <section className="records-unavailable-panel">
         <span className="records-eyebrow">Protected data plane</span>
         <h1>This app is paused</h1>
-        <p>OpenNeko will not bypass GraphJin or query application tables directly while records are degraded.</p>
+        <p>
+          OpenNeko will not bypass GraphJin or query application tables directly
+          while records are degraded.
+        </p>
       </section>
     </main>
   );
 }
-

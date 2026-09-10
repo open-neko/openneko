@@ -1,16 +1,22 @@
 import Link from "next/link";
 import type { RecordObjectView } from "@neko/records";
-import type {
-  RecordChangeLogEntry,
-  RecordRelatedList,
-} from "@/lib/records";
+import type { RecordChangeLogEntry, RecordRelatedList } from "@/lib/records";
 import { RecordCell } from "./RecordCell";
 import { recordReferenceIdentityKey } from "@/lib/records-reference";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") return "Not set";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return JSON.stringify(value);
 }
 
@@ -37,17 +43,28 @@ export function RecordRelatedLists({
               <p>No related {list.view.object.pluralLabel.toLowerCase()}.</p>
             ) : (
               <div className="records-related-scroll">
-                <table>
-                  <thead><tr>{columns.map((column) => <th key={column.apiName}>{column.label}</th>)}</tr></thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {columns.map((column) => (
+                        <TableHead key={column.apiName}>
+                          {column.label}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {list.rows.map((row, index) => {
                       const id = String(row.id ?? "");
                       return (
-                        <tr key={id || index}>
+                        <TableRow key={id || index}>
                           {columns.map((column) => (
-                            <td key={column.apiName}>
-                              {column.columnName === list.view.object.nameField && id ? (
-                                <Link href={`${base}/${encodeURIComponent(id)}`}>
+                            <TableCell key={column.apiName}>
+                              {column.columnName ===
+                                list.view.object.nameField && id ? (
+                                <Link
+                                  href={`${base}/${encodeURIComponent(id)}`}
+                                >
                                   <RecordCell
                                     appId={appId}
                                     column={column}
@@ -61,25 +78,30 @@ export function RecordRelatedLists({
                                   column={column}
                                   value={row[column.columnName]}
                                   owner={
-                                    column.kind === "owner" && typeof row[column.columnName] === "string"
-                                      ? list.owners[String(row[column.columnName])]
+                                    column.kind === "owner" &&
+                                    typeof row[column.columnName] === "string"
+                                      ? list.owners[
+                                          String(row[column.columnName])
+                                        ]
                                       : undefined
                                   }
-                                  reference={list.references[
-                                    recordReferenceIdentityKey(
-                                      column.apiName,
-                                      String(row[column.columnName] ?? ""),
-                                    )
-                                  ]}
+                                  reference={
+                                    list.references[
+                                      recordReferenceIdentityKey(
+                                        column.apiName,
+                                        String(row[column.columnName] ?? ""),
+                                      )
+                                    ]
+                                  }
                                 />
                               )}
-                            </td>
+                            </TableCell>
                           ))}
-                        </tr>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </article>
@@ -96,10 +118,15 @@ export function RecordChangeTimeline({
   history: RecordChangeLogEntry[];
   view: RecordObjectView;
 }) {
-  const labels = new Map(view.columns.map((column) => [column.apiName, column.label]));
+  const labels = new Map(
+    view.columns.map((column) => [column.apiName, column.label]),
+  );
   return (
     <section className="records-history" aria-label="Change history">
-      <header><h2>Change history</h2><span>{history.length} recent events</span></header>
+      <header>
+        <h2>Change history</h2>
+        <span>{history.length} recent events</span>
+      </header>
       {history.length === 0 ? (
         <p>No recorded changes yet.</p>
       ) : (
@@ -108,19 +135,29 @@ export function RecordChangeTimeline({
             <li key={entry.id}>
               <div className="records-history-event">
                 <strong>{entry.action}</strong>
-                <time dateTime={entry.at}>{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.at))}</time>
+                <time dateTime={entry.at}>
+                  {new Intl.DateTimeFormat("en", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  }).format(new Date(entry.at))}
+                </time>
                 <span>{entry.actorUserId ?? "System"}</span>
               </div>
               {Object.entries(entry.changes).length > 0 && (
                 <dl>
                   {Object.entries(entry.changes).map(([field, raw]) => {
-                    const change = raw && typeof raw === "object" && !Array.isArray(raw)
-                      ? raw as Record<string, unknown>
-                      : {};
+                    const change =
+                      raw && typeof raw === "object" && !Array.isArray(raw)
+                        ? (raw as Record<string, unknown>)
+                        : {};
                     return (
                       <div key={field}>
                         <dt>{labels.get(field) ?? field}</dt>
-                        <dd><s>{display(change.old ?? change.from)}</s><span aria-hidden="true">→</span><ins>{display(change.new ?? change.to)}</ins></dd>
+                        <dd>
+                          <s>{display(change.old ?? change.from)}</s>
+                          <span aria-hidden="true">→</span>
+                          <ins>{display(change.new ?? change.to)}</ins>
+                        </dd>
                       </div>
                     );
                   })}

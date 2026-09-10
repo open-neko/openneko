@@ -121,10 +121,10 @@ import {
   type DraftWorkMention,
   type WorkMention,
 } from "@/lib/workflow-mention";
-import { Pill } from "@/components/ui/Pill";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Input, Textarea } from "@/components/ui/Field";
-import { Disclosure } from "@/components/ui/Disclosure";
+import { Badge } from "@/components/ui/badge";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input, Textarea } from "@/components/ui/field";
+import { Disclosure } from "@/components/ui/disclosure";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent, setDataModelValue } from "@/a2ui/surface";
 import { buildActionFollowUp } from "@/a2ui/action";
@@ -1426,12 +1426,12 @@ export default function WorkScreen() {
                       }}
                     >
                       <span className="work-mention-option-head">
-                        <Pill
+                        <Badge
                           className="work-mention-kind"
                           variant={option.kind === "skill" ? "success" : "muted"}
                         >
                           {option.kind === "skill" ? "Skill" : "Workflow"}
-                        </Pill>
+                        </Badge>
                         <span className="work-mention-name">@{option.name}</span>
                       </span>
                       <span className="work-mention-description">
@@ -1460,7 +1460,7 @@ export default function WorkScreen() {
                     className="work-mention-detail"
                     aria-live="polite"
                   >
-                    <Pill
+                    <Badge
                       className="work-mention-kind"
                       variant={
                         mentionActiveOption.kind === "skill"
@@ -1471,7 +1471,7 @@ export default function WorkScreen() {
                       {mentionActiveOption.kind === "skill"
                         ? "Skill"
                         : "Workflow"}
-                    </Pill>
+                    </Badge>
                     <strong>@{mentionActiveOption.name}</strong>
                     <p>{mentionActiveOption.description}</p>
                   </aside>

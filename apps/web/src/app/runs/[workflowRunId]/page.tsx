@@ -9,12 +9,12 @@ import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button, ButtonLink } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Field, Textarea } from "@/components/ui/Field";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Field, Textarea } from "@/components/ui/field";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 
 type RunDetailPayload = {
@@ -199,7 +199,7 @@ function formatTaxonomy(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function actionPillVariant(status: string): PillVariant {
+function actionPillVariant(status: string): BadgeVariant {
   switch (status) {
     case "pending_approval":
       return "watch";
@@ -261,7 +261,7 @@ function formatCost(value: number | undefined): string {
   return `$${value.toFixed(value < 0.01 ? 4 : 2)}`;
 }
 
-function apiRunStatusVariant(status: string): PillVariant {
+function apiRunStatusVariant(status: string): BadgeVariant {
   if (status === "completed") return "success";
   if (status === "failed" || status === "cancelled") return "danger";
   if (status === "running") return "live";
@@ -567,9 +567,9 @@ export default function RunPage() {
                     >
                       {a.summary || a.kind}
                     </Button>
-                    <Pill variant={actionPillVariant(a.status)}>
+                    <Badge variant={actionPillVariant(a.status)}>
                       {actionStatusLabel(a.status)}
-                    </Pill>
+                    </Badge>
                   </div>
                   <div className="flex flex-wrap gap-1.5 items-center text-xs text-text3">
                     <span className="font-mono text-text2">{a.kind}</span>
@@ -798,9 +798,9 @@ function ApiRunContext({
       <Card className="run-api-card">
         <div className="run-api-card-head">
           <div>
-            <Pill variant={apiRunStatusVariant(run.status)}>
+            <Badge variant={apiRunStatusVariant(run.status)}>
               {formatTaxonomy(run.status)}
-            </Pill>
+            </Badge>
             <strong>{formatTaxonomy(stage)}</strong>
           </div>
           <ActionGroup>
@@ -849,7 +849,7 @@ function ApiRunContext({
 
         {run.error ? (
           <div className="run-api-error" role="alert">
-            <Pill variant="danger">Execution error</Pill>
+            <Badge variant="danger">Execution error</Badge>
             <p>{run.error}</p>
           </div>
         ) : null}

@@ -2,6 +2,8 @@
 
 OpenNeko uses one calm interaction language across product surfaces. Page CSS may compose layouts, but common controls belong in this directory.
 
+These are custom shadcn components, not untouched registry copies. `components.json` uses the Radix Nova registry; registry components are adapted to OpenNeko tokens, typography, motion, and stable `data-ui-*` contracts. Add new primitives with the shadcn CLI, then review and customize the generated source. Do not overwrite an existing component from the registry.
+
 ## Action hierarchy
 
 - `primary`: the single main action in a working region.
@@ -24,7 +26,7 @@ Use `Button`, `IconButton`, `ButtonLink`, or `buttonClassName` instead of creati
 
 ## Status and density
 
-Use `Pill` for compact row status. Use plain sentence-case state text when a larger card needs quieter metadata. Do not pair a decorative dot with narrow, letter-spaced text or force status into a fixed-width gutter.
+Use `Badge` for compact row status. Use plain sentence-case state text when a larger card needs quieter metadata. Do not pair a decorative dot with narrow, letter-spaced text or force status into a fixed-width gutter.
 
 Preserve this hierarchy at every breakpoint:
 
@@ -39,8 +41,8 @@ Bespoke controls are reserved for interactions whose behavior is genuinely uniqu
 
 For every UI PR, add a reuse map before implementation:
 
-| Surface need | Canonical component or token | Verification |
-| --- | --- | --- |
-| Example: boolean setting | `Checkbox` | 16px control, accent, focus, disabled and phone tap target checked live |
+| Surface need             | Canonical component or token | Verification                                                            |
+| ------------------------ | ---------------------------- | ----------------------------------------------------------------------- |
+| Example: boolean setting | `Checkbox`                   | 16px control, accent, focus, disabled and phone tap target checked live |
 
 Run `pnpm ui:check` from the repository root. Modified page components may not introduce raw native controls, page-local control styles, literal colors, or handcrafted status pills. If an interaction is genuinely unique, add a specific `data-ui-bespoke-reason` and document why none of the shared primitives can represent it.

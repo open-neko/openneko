@@ -6,7 +6,6 @@ import {
   Check,
   CircleAlert,
   Link2,
-  LoaderCircle,
   RefreshCcw,
   UserRoundX,
 } from "lucide-react";
@@ -15,7 +14,17 @@ import type {
   RecordIdentityAdminMapping,
   RecordIdentityAdminModel,
 } from "@/lib/records-identity";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type IdentityStatus = RecordIdentityAdminMapping["status"];
 
@@ -64,16 +73,19 @@ function MappingControl({
     setPending(decision);
     setMessage(null);
     try {
-      const response = await fetch(`/api/a/${encodeURIComponent(appId)}/identity/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sourceInstanceId: mapping.sourceInstanceId,
-          sourceUserId: mapping.sourceUserId,
-          decision,
-          ...(decision === "link" ? { appUserId } : {}),
-        }),
-      });
+      const response = await fetch(
+        `/api/a/${encodeURIComponent(appId)}/identity/decision`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sourceInstanceId: mapping.sourceInstanceId,
+            sourceUserId: mapping.sourceUserId,
+            decision,
+            ...(decision === "link" ? { appUserId } : {}),
+          }),
+        },
+      );
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
         setMessage(payload.error ?? "The identity could not be updated.");
@@ -95,7 +107,7 @@ function MappingControl({
         void decide("link");
       }}
     >
-      <select data-ui-bespoke-reason="records identity mapping"
+      <NativeSelect
         aria-label={`OpenNeko user for ${sourceLabel(mapping)}`}
         value={appUserId}
         onChange={(event) => setAppUserId(event.target.value)}
@@ -107,14 +119,14 @@ function MappingControl({
             {userLabel(user)}
           </option>
         ))}
-      </select>
+      </NativeSelect>
       <Button
         variant="primary"
         size="sm"
         type="submit"
         disabled={pending !== null || !appUserId}
       >
-        {pending === "link" ? <LoaderCircle className="records-spin" /> : <Link2 />}
+        {pending === "link" ? <Spinner className="records-spin" /> : <Link2 />}
         Link
       </Button>
       <Button
@@ -122,7 +134,11 @@ function MappingControl({
         disabled={pending !== null}
         onClick={() => void decide("ignore")}
       >
-        {pending === "ignore" ? <LoaderCircle className="records-spin" /> : <UserRoundX />}
+        {pending === "ignore" ? (
+          <Spinner className="records-spin" />
+        ) : (
+          <UserRoundX />
+        )}
         Ignore
       </Button>
       {message && <span role="alert">{message}</span>}
@@ -130,7 +146,13 @@ function MappingControl({
   );
 }
 
-function BackfillControl({ appId, sources }: { appId: string; sources: string[] }) {
+function BackfillControl({
+  appId,
+  sources,
+}: {
+  appId: string;
+  sources: string[];
+}) {
   const [sourceInstanceId, setSourceInstanceId] = useState(sources[0] ?? "");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -141,11 +163,14 @@ function BackfillControl({ appId, sources }: { appId: string; sources: string[] 
     setPending(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/a/${encodeURIComponent(appId)}/identity/backfill`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sourceInstanceId }),
-      });
+      const response = await fetch(
+        `/api/a/${encodeURIComponent(appId)}/identity/backfill`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sourceInstanceId }),
+        },
+      );
       const payload = (await response.json()) as {
         error?: string;
         status?: "executed" | "queued";
@@ -173,7 +198,7 @@ function BackfillControl({ appId, sources }: { appId: string; sources: string[] 
 
   return (
     <form className="records-identity-backfill" onSubmit={run}>
-      <select data-ui-bespoke-reason="records identity mapping"
+      <NativeSelect
         aria-label="Source instance to backfill"
         value={sourceInstanceId}
         onChange={(event) => setSourceInstanceId(event.target.value)}
@@ -188,13 +213,9 @@ function BackfillControl({ appId, sources }: { appId: string; sources: string[] 
             </option>
           ))
         )}
-      </select>
-      <Button
-        size="sm"
-        type="submit"
-        disabled={pending || !sourceInstanceId}
-      >
-        {pending ? <LoaderCircle className="records-spin" /> : <RefreshCcw />}
+      </NativeSelect>
+      <Button size="sm" type="submit" disabled={pending || !sourceInstanceId}>
+        {pending ? <Spinner className="records-spin" /> : <RefreshCcw />}
         Re-run ownership
       </Button>
       {message && <span role="status">{message}</span>}
@@ -218,11 +239,16 @@ export function RecordIdentityPanel({
   return (
     <div className="records-identity-layout">
       <div className="records-identity-toolbar">
-        <nav className="records-identity-filters" aria-label="Identity status filters">
+        <nav
+          className="records-identity-filters"
+          aria-label="Identity status filters"
+        >
           {FILTERS.map((filter) => (
             <Link
               key={filter.value}
-              className={activeFilter === filter.value ? "is-active" : undefined}
+              className={
+                activeFilter === filter.value ? "is-active" : undefined
+              }
               href={
                 filter.value === "all"
                   ? `/a/${appId}/admin/identity`
@@ -237,51 +263,64 @@ export function RecordIdentityPanel({
         <BackfillControl appId={appId} sources={sourceInstances} />
       </div>
 
-      <section className="records-identity-card" aria-label="Source identity mappings">
+      <section
+        className="records-identity-card"
+        aria-label="Source identity mappings"
+      >
         <header>
           <div>
             <h2>Source identities</h2>
             <p>
-              Links are scoped to this app and source instance. Resolve conflicts before
-              ownership is backfilled.
+              Links are scoped to this app and source instance. Resolve
+              conflicts before ownership is backfilled.
             </p>
           </div>
           <span>{mappings.length.toLocaleString("en")} shown</span>
         </header>
         <div className="records-identity-scroll">
-          <table className="records-identity-table">
-            <thead>
-              <tr>
-                <th>Source user</th>
-                <th>Source</th>
-                <th>Status</th>
-                <th>OpenNeko user</th>
-                <th>Resolution</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="records-identity-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Source user</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>OpenNeko user</TableHead>
+                <TableHead>Resolution</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {mappings.map((mapping) => (
-                <tr key={`${mapping.sourceInstanceId}\u0000${mapping.sourceUserId}`}>
-                  <td>
+                <TableRow
+                  key={`${mapping.sourceInstanceId}\u0000${mapping.sourceUserId}`}
+                >
+                  <TableCell>
                     <strong>{sourceLabel(mapping)}</strong>
                     {mapping.sourceName && <small>{mapping.sourceEmail}</small>}
                     <small>{mapping.sourceUserId}</small>
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <code>{mapping.sourceInstanceId}</code>
-                    {mapping.sourceIsActive === false && <small>Inactive at source</small>}
-                  </td>
-                  <td>
-                    <span className={`records-identity-status is-${mapping.status}`}>
+                    {mapping.sourceIsActive === false && (
+                      <small>Inactive at source</small>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`records-identity-status is-${mapping.status}`}
+                    >
                       <StatusIcon status={mapping.status} />
                       {mapping.status}
                     </span>
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     {mapping.appUser ? (
                       <>
-                        <strong>{mapping.appUser.name ?? mapping.appUser.email}</strong>
-                        {mapping.appUser.name && <small>{mapping.appUser.email}</small>}
+                        <strong>
+                          {mapping.appUser.name ?? mapping.appUser.email}
+                        </strong>
+                        {mapping.appUser.name && (
+                          <small>{mapping.appUser.email}</small>
+                        )}
                       </>
                     ) : mapping.appUserId ? (
                       <>
@@ -291,14 +330,18 @@ export function RecordIdentityPanel({
                     ) : (
                       "—"
                     )}
-                  </td>
-                  <td>
-                    <MappingControl appId={appId} mapping={mapping} users={users} />
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell>
+                    <MappingControl
+                      appId={appId}
+                      mapping={mapping}
+                      users={users}
+                    />
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
         {mappings.length === 0 && (
           <div className="records-empty">

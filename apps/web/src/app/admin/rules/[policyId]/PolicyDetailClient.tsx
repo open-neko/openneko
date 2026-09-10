@@ -6,7 +6,7 @@ import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 
 type PolicyDetail = {
   policy: {

@@ -14,7 +14,8 @@ import { RecordTable } from "@/components/records/RecordTable";
 import { RecordViewBar } from "@/components/records/RecordViewBar";
 import { RecordsUnavailable } from "@/components/records/RecordsNotice";
 import { SubstrateStrip } from "@/components/records/SubstrateStrip";
-import { buttonClassName } from "@/components/ui/Button";
+import { buttonClassName } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   normalizeRecordSavedViewDefinition,
   type RecordFilterExpression,
@@ -35,14 +36,18 @@ function value(params: SearchParams, key: string): string | undefined {
 
 function positivePage(raw: string | undefined): number {
   const parsed = Number.parseInt(raw ?? "1", 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 && parsed < 10_000 ? parsed : 1;
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed < 10_000
+    ? parsed
+    : 1;
 }
 
 function has(params: SearchParams, key: string): boolean {
   return Object.hasOwn(params, key);
 }
 
-function filterExpression(raw: string | undefined): RecordFilterExpression | null {
+function filterExpression(
+  raw: string | undefined,
+): RecordFilterExpression | null {
   if (!raw) return null;
   try {
     return normalizeRecordSavedViewDefinition({
@@ -88,22 +93,22 @@ async function loadPage(input: {
     ? value(input.queryParams, "direction") === "desc"
       ? "desc"
       : "asc"
-    : selected?.sort?.direction ?? "asc";
+    : (selected?.sort?.direction ?? "asc");
   const sortField = has(input.queryParams, "sort")
     ? value(input.queryParams, "sort")
     : selected?.sort?.field;
   const explicitSearch = has(input.queryParams, "q");
   const search = explicitSearch
-    ? value(input.queryParams, "q") ?? null
-    : selected?.search ?? null;
+    ? (value(input.queryParams, "q") ?? null)
+    : (selected?.search ?? null);
   const explicitMine = has(input.queryParams, "mine");
   const mine = explicitMine
     ? value(input.queryParams, "mine") === "true"
-    : selected?.myRecords ?? false;
+    : (selected?.myRecords ?? false);
   const explicitFilter = has(input.queryParams, "filter");
   const filter = explicitFilter
     ? filterExpression(value(input.queryParams, "filter"))
-    : selected?.filter ?? null;
+    : (selected?.filter ?? null);
   const page = positivePage(value(input.queryParams, "page"));
   const result = await readRecordList({
     orgId: input.orgId,
@@ -121,7 +126,9 @@ async function loadPage(input: {
     (candidate) => candidate.apiName === result.view.object.apiName,
   );
   const filterFields = shell.snapshot.fields
-    .filter((field) => field.objectId === object?.id && field.archivedAt === null)
+    .filter(
+      (field) => field.objectId === object?.id && field.archivedAt === null,
+    )
     .map((field) => ({
       apiName: String(field.apiName),
       label: field.label,
@@ -144,17 +151,28 @@ async function loadPage(input: {
       search,
       myRecords: mine,
       columns: result.view.columns
-        .filter((column) => column.kind !== "owner" && column.kind !== "system_datetime")
+        .filter(
+          (column) =>
+            column.kind !== "owner" && column.kind !== "system_datetime",
+        )
         .map((column) => column.apiName),
     },
     page,
     base: `/a/${result.app.appId}/${result.view.object.apiName}`,
     query: {
-      q: explicitSearch ? value(input.queryParams, "q") ?? "" : search ?? undefined,
+      q: explicitSearch
+        ? (value(input.queryParams, "q") ?? "")
+        : (search ?? undefined),
       sort: sortField,
       direction,
-      mine: explicitMine ? (mine ? "true" : "false") : mine ? "true" : undefined,
-      filter: explicitFilter ? serializedFilter ?? "null" : serializedFilter,
+      mine: explicitMine
+        ? mine
+          ? "true"
+          : "false"
+        : mine
+          ? "true"
+          : undefined,
+      filter: explicitFilter ? (serializedFilter ?? "null") : serializedFilter,
       view: selectedView?.id,
       after: value(input.queryParams, "after"),
       page: value(input.queryParams, "page"),
@@ -192,7 +210,8 @@ export default async function RecordObjectPage({
   if (routeError?.status === 404) notFound();
   if (routeError) return <RecordsUnavailable message={routeError.message} />;
   if (!loaded) throw new Error("Record page did not resolve.");
-  if (loaded.kind === "degraded") return <RecordsUnavailable message={loaded.message} />;
+  if (loaded.kind === "degraded")
+    return <RecordsUnavailable message={loaded.message} />;
 
   const {
     result,
@@ -213,22 +232,59 @@ export default async function RecordObjectPage({
           <span className="records-breadcrumb">{result.app.label}</span>
           <span aria-hidden="true">/</span>
           <h1>{result.view.object.pluralLabel}</h1>
-          <span className="records-total">{result.total.toLocaleString("en")} records</span>
+          <span className="records-total">
+            {result.total.toLocaleString("en")} records
+          </span>
         </div>
         <form className="records-search" action={base} method="get">
           <Search aria-hidden="true" />
-          <input data-ui-bespoke-reason="records list search and hidden query fields"
+          <Input
             type="search"
             name="q"
             defaultValue={query.q}
             placeholder={`Search ${result.view.object.pluralLabel.toLowerCase()}`}
             aria-label={`Search ${result.view.object.pluralLabel}`}
           />
-          {query.sort && <input data-ui-bespoke-reason="records list search and hidden query fields" type="hidden" name="sort" value={query.sort} />}
-          {query.direction && <input data-ui-bespoke-reason="records list search and hidden query fields" type="hidden" name="direction" value={query.direction} />}
-          {query.mine && <input data-ui-bespoke-reason="records list search and hidden query fields" type="hidden" name="mine" value={query.mine} />}
-          {query.filter && <input data-ui-bespoke-reason="records list search and hidden query fields" type="hidden" name="filter" value={query.filter} />}
-          {query.view && <input data-ui-bespoke-reason="records list search and hidden query fields" type="hidden" name="view" value={query.view} />}
+          {query.sort && (
+            <input
+              data-ui-bespoke-reason="records list search and hidden query fields"
+              type="hidden"
+              name="sort"
+              value={query.sort}
+            />
+          )}
+          {query.direction && (
+            <input
+              data-ui-bespoke-reason="records list search and hidden query fields"
+              type="hidden"
+              name="direction"
+              value={query.direction}
+            />
+          )}
+          {query.mine && (
+            <input
+              data-ui-bespoke-reason="records list search and hidden query fields"
+              type="hidden"
+              name="mine"
+              value={query.mine}
+            />
+          )}
+          {query.filter && (
+            <input
+              data-ui-bespoke-reason="records list search and hidden query fields"
+              type="hidden"
+              name="filter"
+              value={query.filter}
+            />
+          )}
+          {query.view && (
+            <input
+              data-ui-bespoke-reason="records list search and hidden query fields"
+              type="hidden"
+              name="view"
+              value={query.view}
+            />
+          )}
         </form>
         {result.view.permission.canCreate && (
           <Link
@@ -239,7 +295,8 @@ export default async function RecordObjectPage({
             })}
             href={`${base}/new`}
           >
-            <Plus aria-hidden="true" /> New {result.view.object.label.toLowerCase()}
+            <Plus aria-hidden="true" /> New{" "}
+            {result.view.object.label.toLowerCase()}
           </Link>
         )}
         {actor.role === "admin" && (

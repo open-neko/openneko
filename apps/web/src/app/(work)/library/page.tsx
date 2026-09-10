@@ -1,17 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileText, RefreshCw, Share2, Trash2, Upload } from "lucide-react";
+import {
+  ChevronDown,
+  FileText,
+  RefreshCw,
+  Share2,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { MenuItem, OverflowMenu } from "@/components/ui/OverflowMenu";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
-import { SearchInput } from "@/components/ui/SearchInput";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
+import { EmptyState } from "@/components/ui/empty";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
+import { Input } from "@/components/ui/input";
 import { validateLibraryUploadBatch } from "@/lib/library-upload-contract";
 import { matchesListSearch } from "@/lib/list-search";
 import { LIBRARY_UPLOAD_ACCEPT } from "@neko/llm/library/formats";
@@ -68,7 +76,7 @@ async function fetchLibraryData(signal?: AbortSignal): Promise<LibraryData> {
   };
 }
 
-function statusVariant(status: string): PillVariant {
+function statusVariant(status: string): BadgeVariant {
   if (["cataloged", "stable", "approved", "ready"].includes(status)) {
     return "success";
   }
@@ -114,7 +122,9 @@ export default function LibraryPage() {
       setData(await fetchLibraryData());
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Library could not be loaded.");
+      setError(
+        cause instanceof Error ? cause.message : "Library could not be loaded.",
+      );
     } finally {
       setLoading(false);
     }
@@ -130,7 +140,9 @@ export default function LibraryPage() {
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         setError(
-          cause instanceof Error ? cause.message : "Library could not be loaded.",
+          cause instanceof Error
+            ? cause.message
+            : "Library could not be loaded.",
         );
       })
       .finally(() => {
@@ -196,10 +208,12 @@ export default function LibraryPage() {
           body,
         });
         if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(payload?.error ?? "The documents could not be imported.");
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(
+            payload?.error ?? "The documents could not be imported.",
+          );
         }
         setError(null);
         await refresh();
@@ -317,7 +331,10 @@ export default function LibraryPage() {
   useEffect(() => {
     if (!data.isAdmin) return;
     const controller = new AbortController();
-    fetch("/api/library/packs", { cache: "no-store", signal: controller.signal })
+    fetch("/api/library/packs", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (res) => (res.ok ? res.json() : { packs: [] }))
       .then((payload: { packs?: PackRow[] }) => setPacks(payload.packs ?? []))
       .catch(() => {});
@@ -352,9 +369,9 @@ export default function LibraryPage() {
           body: JSON.stringify(parsed),
         });
         if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const payload = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(payload?.error ?? "Import failed.");
         }
         setError(null);
@@ -606,13 +623,13 @@ export default function LibraryPage() {
           </section>
         ) : null}
 
-          <section className="library-section library-documents">
-            <header className="library-section-head">
-              <div>
-                <h2>Your documents</h2>
+        <section className="library-section library-documents">
+          <header className="library-section-head">
+            <div>
+              <h2>Your documents</h2>
               <small id="library-upload-limit" className="library-upload-limit">
-                Digital PDF, Word, PowerPoint, Excel, CSV, Markdown, or text;
-                up to 100 MB at once.
+                Digital PDF, Word, PowerPoint, Excel, CSV, Markdown, or text; up
+                to 100 MB at once.
               </small>
             </div>
             <ActionGroup className="memory-review-actions library-upload-actions">
@@ -638,7 +655,11 @@ export default function LibraryPage() {
             </ActionGroup>
           </header>
           {loading ? (
-            <div className="library-loading" role="status" aria-label="Loading library">
+            <div
+              className="library-loading"
+              role="status"
+              aria-label="Loading library"
+            >
               <span />
               <span />
               <span />
@@ -663,7 +684,11 @@ export default function LibraryPage() {
                   <div className="memory-review-copy">
                     <div className="memory-review-meta">
                       <span>
-                        <FileText aria-hidden="true" strokeWidth={2} size={12} />{" "}
+                        <FileText
+                          aria-hidden="true"
+                          strokeWidth={2}
+                          size={12}
+                        />{" "}
                         {doc.filename}
                       </span>
                       <span>{formatSize(doc.sizeBytes)}</span>
@@ -680,9 +705,9 @@ export default function LibraryPage() {
                     ) : null}
                   </div>
                   <ActionGroup className="memory-review-actions">
-                    <Pill variant={statusVariant(doc.status)}>
+                    <Badge variant={statusVariant(doc.status)}>
                       {humanize(doc.status)}
-                    </Pill>
+                    </Badge>
                     {doc.status === "failed" || doc.status === "skipped" ? (
                       <Button
                         size="sm"
@@ -711,17 +736,19 @@ export default function LibraryPage() {
           )}
         </section>
 
-          <section className="library-section library-personal">
-            <header className="library-section-head">
-              <div>
-                <h2>Your concepts</h2>
+        <section className="library-section library-personal">
+          <header className="library-section-head">
+            <div>
+              <h2>Your concepts</h2>
             </div>
             <strong>{String(visible.personal.length).padStart(2, "0")}</strong>
           </header>
           {visible.personal.length === 0 && !loading ? (
             <EmptyState
               className="library-empty"
-              title={query ? "No matching personal concepts" : "No personal concepts"}
+              title={
+                query ? "No matching personal concepts" : "No personal concepts"
+              }
               body={
                 query
                   ? "Try another title, type, path, or phrase."
@@ -758,10 +785,10 @@ export default function LibraryPage() {
           )}
         </section>
 
-          <section className="library-section library-team">
-            <header className="library-section-head">
-              <div>
-                <h2>Team library</h2>
+        <section className="library-section library-team">
+          <header className="library-section-head">
+            <div>
+              <h2>Team library</h2>
             </div>
             <strong>{String(visible.team.length).padStart(2, "0")}</strong>
           </header>
@@ -783,9 +810,9 @@ export default function LibraryPage() {
                   index,
                   "team",
                   <>
-                    <Pill variant={statusVariant(concept.status)}>
+                    <Badge variant={statusVariant(concept.status)}>
                       {humanize(concept.status)}
-                    </Pill>
+                    </Badge>
                     {isAdmin && concept.status === "stable" ? (
                       <OverflowMenu label={`Actions for ${concept.title}`}>
                         <MenuItem
@@ -819,17 +846,14 @@ export default function LibraryPage() {
               <Button size="sm" onClick={() => void exportBundle()}>
                 Export OKF bundle
               </Button>
-              <input data-ui-bespoke-reason="library file picker"
+              <Input
                 ref={importInputRef}
                 type="file"
                 accept=".json,application/json"
                 hidden
                 onChange={(event) => void importBundle(event.target.files)}
               />
-              <Button
-                size="sm"
-                onClick={() => importInputRef.current?.click()}
-              >
+              <Button size="sm" onClick={() => importInputRef.current?.click()}>
                 Import bundle
               </Button>
             </ActionGroup>
@@ -846,7 +870,9 @@ export default function LibraryPage() {
                         <span>{pack.concepts} concepts</span>
                       </div>
                       <p>{pack.title}</p>
-                      {pack.description ? <small>{pack.description}</small> : null}
+                      {pack.description ? (
+                        <small>{pack.description}</small>
+                      ) : null}
                     </div>
                     <ActionGroup className="memory-review-actions">
                       <Button

@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import {
-  ChevronRight,
-  Ellipsis,
-  LogOut,
-  UserRound,
-  X,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronRight, Ellipsis, LogOut, UserRound, X } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   PRIMARY_NAV,
   SECONDARY_NAV,
@@ -57,7 +61,10 @@ function DockLink({
       <Icon aria-hidden="true" strokeWidth={1.9} />
       <span className="cdock-lbl">{item.shortLabel}</span>
       {item.href === "/actions" && pending > 0 ? (
-        <span className="cdock-badge font-mono" aria-label={`${pending} pending`}>
+        <span
+          className="cdock-badge font-mono"
+          aria-label={`${pending} pending`}
+        >
           {pending > 99 ? "99+" : pending}
         </span>
       ) : null}
@@ -75,33 +82,6 @@ export default function CommandDock() {
     signedIn: boolean;
     role: "admin" | "member" | null;
   }>({ resolved: false, signedIn: false, role: null });
-  const sheetRef = useRef<HTMLElement | null>(null);
-  const triggerRef = useRef<HTMLAnchorElement | HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!openSheet) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const frame = requestAnimationFrame(() => sheetRef.current?.focus());
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === "Escape" &&
-        !document.querySelector(".confirm-modal-root")
-      ) {
-        setOpenSheet(null);
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-      triggerRef.current?.focus({ preventScroll: true });
-    };
-  }, [openSheet]);
-
   useEffect(() => {
     if (hidden) return;
     let cancelled = false;
@@ -145,131 +125,137 @@ export default function CommandDock() {
 
   const secondaryNav = SECONDARY_NAV.filter(
     (item) =>
-      item.href !== "/admin" ||
-      (session.resolved && session.role !== "member"),
+      item.href !== "/admin" || (session.resolved && session.role !== "member"),
   );
   const moreActive = secondaryNav.some((item) => isActive(pathname, item.href));
   return (
-    <div className="cdock-wrap">
-      {openSheet ? (
-        <>
-          <button data-ui-bespoke-reason="phone command dock"
-            type="button"
-            className="cdock-scrim"
-            aria-label="Close navigation sheet"
-            onClick={closeSheet}
-          />
-          <section
-            ref={sheetRef}
-            id={`cdock-${openSheet}-sheet`}
-            className={`cdock-sheet is-${openSheet}`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`cdock-${openSheet}-title`}
-            tabIndex={-1}
-          >
-            <div className="cdock-sheet-grab" aria-hidden="true" />
-            <div className="cdock-sheet-head">
-              <div>
-                <h2 id={`cdock-${openSheet}-title`}>
-                  More
-                </h2>
-                <p>Knowledge, connections, and workspace settings.</p>
-              </div>
-              <button data-ui-bespoke-reason="phone command dock"
+    <Sheet
+      open={openSheet === "more"}
+      onOpenChange={(open) => setOpenSheet(open ? "more" : null)}
+    >
+      <div className="cdock-wrap">
+        <SheetContent
+          id={`cdock-${openSheet}-sheet`}
+          className={`cdock-sheet is-${openSheet}`}
+          side="bottom"
+          showCloseButton={false}
+          overlayClassName="cdock-scrim"
+        >
+          <div className="cdock-sheet-grab" aria-hidden="true" />
+          <SheetHeader className="cdock-sheet-head">
+            <div>
+              <SheetTitle id={`cdock-${openSheet}-title`}>More</SheetTitle>
+              <SheetDescription>
+                Knowledge, connections, and workspace settings.
+              </SheetDescription>
+            </div>
+            <SheetClose asChild>
+              <Button
+                variant="ghost"
                 type="button"
                 className="cdock-sheet-close"
                 aria-label="Close"
-                onClick={closeSheet}
               >
                 <X aria-hidden="true" strokeWidth={2} />
-              </button>
-            </div>
+              </Button>
+            </SheetClose>
+          </SheetHeader>
 
-            <>
-                <nav className="cdock-sheet-list" aria-label="More destinations">
-                  {secondaryNav.map((item) => {
-                    const active = isActive(pathname, item.href);
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={closeSheet}
-                        aria-current={active ? "page" : undefined}
-                        className={`cdock-sheet-row${active ? " is-active" : ""}`}
-                      >
-                        <span className="cdock-sheet-icon">
-                          <Icon aria-hidden="true" strokeWidth={1.9} />
-                        </span>
-                        <span className="cdock-sheet-copy">
-                          <span className="cdock-sheet-label">{item.label}</span>
-                          <span className="cdock-sheet-desc">{item.description}</span>
-                        </span>
-                        <ChevronRight className="cdock-sheet-chevron" aria-hidden="true" />
-                      </Link>
-                    );
-                  })}
-                </nav>
-                {session.signedIn ? (
+          <>
+            <nav className="cdock-sheet-list" aria-label="More destinations">
+              {secondaryNav.map((item) => {
+                const active = isActive(pathname, item.href);
+                const Icon = item.icon;
+                return (
                   <Link
-                    href="/onboarding"
+                    key={item.href}
+                    href={item.href}
                     onClick={closeSheet}
-                    className="cdock-persona-link"
+                    aria-current={active ? "page" : undefined}
+                    className={`cdock-sheet-row${active ? " is-active" : ""}`}
                   >
-                    <UserRound aria-hidden="true" strokeWidth={1.9} />
-                    <span>
-                      <strong>Personal setup</strong>
-                      <small>Role and priorities</small>
+                    <span className="cdock-sheet-icon">
+                      <Icon aria-hidden="true" strokeWidth={1.9} />
                     </span>
-                    <ChevronRight aria-hidden="true" />
+                    <span className="cdock-sheet-copy">
+                      <span className="cdock-sheet-label">{item.label}</span>
+                      <span className="cdock-sheet-desc">
+                        {item.description}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      className="cdock-sheet-chevron"
+                      aria-hidden="true"
+                    />
                   </Link>
-                ) : null}
-                <div className="cdock-sheet-settings">
-                  <span>Layout density</span>
-                  <DensityToggle />
-                </div>
-                {session.signedIn ? (
-                  <button data-ui-bespoke-reason="phone command dock" type="button" className="cdock-sheet-out" onClick={handleSignOut}>
-                    <LogOut aria-hidden="true" strokeWidth={2} />
-                    <span>Sign out</span>
-                  </button>
-                ) : null}
-            </>
-          </section>
-        </>
-      ) : null}
+                );
+              })}
+            </nav>
+            {session.signedIn ? (
+              <Link
+                href="/onboarding"
+                onClick={closeSheet}
+                className="cdock-persona-link"
+              >
+                <UserRound aria-hidden="true" strokeWidth={1.9} />
+                <span>
+                  <strong>Personal setup</strong>
+                  <small>Role and priorities</small>
+                </span>
+                <ChevronRight aria-hidden="true" />
+              </Link>
+            ) : null}
+            <div className="cdock-sheet-settings">
+              <span>Layout density</span>
+              <DensityToggle />
+            </div>
+            {session.signedIn ? (
+              <Button
+                variant="ghost"
+                type="button"
+                className="cdock-sheet-out"
+                onClick={handleSignOut}
+              >
+                <LogOut aria-hidden="true" strokeWidth={2} />
+                <span>Sign out</span>
+              </Button>
+            ) : null}
+          </>
+        </SheetContent>
 
-      <nav className="cdock" aria-label="Primary navigation">
-        <DockLink item={DASHBOARD} pathname={pathname} onNavigate={closeSheet} />
-        <DockLink item={WORKFLOWS} pathname={pathname} onNavigate={closeSheet} />
+        <nav className="cdock" aria-label="Primary navigation">
+          <DockLink
+            item={DASHBOARD}
+            pathname={pathname}
+            onNavigate={closeSheet}
+          />
+          <DockLink
+            item={WORKFLOWS}
+            pathname={pathname}
+            onNavigate={closeSheet}
+          />
 
-        <DockLink item={ASK} pathname={pathname} onNavigate={closeSheet} />
+          <DockLink item={ASK} pathname={pathname} onNavigate={closeSheet} />
 
-        <DockLink
-          item={ACTIONS}
-          pathname={pathname}
-          pending={pending}
-          onNavigate={closeSheet}
-        />
+          <DockLink
+            item={ACTIONS}
+            pathname={pathname}
+            pending={pending}
+            onNavigate={closeSheet}
+          />
 
-        <button data-ui-bespoke-reason="phone command dock"
-          ref={(node) => {
-            if (openSheet === "more") triggerRef.current = node;
-          }}
-          type="button"
-          className={`cdock-item${moreActive || openSheet === "more" ? " is-active" : ""}`}
-          aria-expanded={openSheet === "more"}
-          aria-controls="cdock-more-sheet"
-          onClick={(event) => {
-            triggerRef.current = event.currentTarget;
-            setOpenSheet((current) => (current === "more" ? null : "more"));
-          }}
-        >
-          <Ellipsis aria-hidden="true" strokeWidth={2.2} />
-          <span className="cdock-lbl">More</span>
-        </button>
-      </nav>
-    </div>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              type="button"
+              className={`cdock-item${moreActive || openSheet === "more" ? " is-active" : ""}`}
+            >
+              <Ellipsis aria-hidden="true" strokeWidth={2.2} />
+              <span className="cdock-lbl">More</span>
+            </Button>
+          </SheetTrigger>
+        </nav>
+      </div>
+    </Sheet>
   );
 }

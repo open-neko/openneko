@@ -5,9 +5,9 @@ import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
 import Select from "@/components/Select";
-import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, Input } from "@/components/ui/field";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -30,25 +30,39 @@ type ProviderConfig = {
 type SettingsPayload = {
   primary: ProviderConfig;
   research: ProviderConfig;
-  options: { primary: readonly ProviderOption[]; research: readonly ProviderOption[] };
-  defaults: { primary: Record<string, string>; research: Record<string, string> };
-  fields: { primary: Record<string, ProviderField[]>; research: Record<string, ProviderField[]> };
+  options: {
+    primary: readonly ProviderOption[];
+    research: readonly ProviderOption[];
+  };
+  defaults: {
+    primary: Record<string, string>;
+    research: Record<string, string>;
+  };
+  fields: {
+    primary: Record<string, ProviderField[]>;
+    research: Record<string, ProviderField[]>;
+  };
 };
 
-export default function ResearchForm({ initial }: { initial: SettingsPayload }) {
+export default function ResearchForm({
+  initial,
+}: {
+  initial: SettingsPayload;
+}) {
   const initialResearch = initial.research;
   const [enabled, setEnabled] = useState(
     initialResearch.enabled && initialResearch.provider !== "disabled",
   );
   const initialProvider =
     initialResearch.provider === "disabled"
-      ? initial.options.research.find((o) => o.value !== "disabled")?.value ?? "perplexity"
+      ? (initial.options.research.find((o) => o.value !== "disabled")?.value ??
+        "perplexity")
       : initialResearch.provider;
   const [research, setResearch] = useState({
     provider: initialProvider,
     model:
       initialResearch.provider === "disabled"
-        ? initial.defaults.research[initialProvider] ?? ""
+        ? (initial.defaults.research[initialProvider] ?? "")
         : initialResearch.model,
     config: stringRecord(initialResearch.config),
     secretStatus: initialResearch.secretStatus,
@@ -57,8 +71,11 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
   });
   const [saving, setSaving] = useState(false);
 
-  const fields: ProviderField[] = initial.fields.research[research.provider] ?? [];
-  const providerOptions = initial.options.research.filter((o) => o.value !== "disabled");
+  const fields: ProviderField[] =
+    initial.fields.research[research.provider] ?? [];
+  const providerOptions = initial.options.research.filter(
+    (o) => o.value !== "disabled",
+  );
 
   async function save() {
     setSaving(true);
@@ -87,7 +104,9 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
-      toast.success(enabled ? "Research enabled and saved." : "Research disabled.");
+      toast.success(
+        enabled ? "Research enabled and saved." : "Research disabled.",
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -119,7 +138,7 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
           <Checkbox
             label="Enable industry research"
             checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
+            onCheckedChange={(checked) => setEnabled(checked === true)}
           />
         </div>
 
@@ -148,7 +167,9 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
                 <Input
                   id="research-model"
                   value={research.model}
-                  onChange={(e) => setResearch((p) => ({ ...p, model: e.target.value }))}
+                  onChange={(e) =>
+                    setResearch((p) => ({ ...p, model: e.target.value }))
+                  }
                 />
               </Field>
             </div>
@@ -157,8 +178,8 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
               const masked = research.secretStatus[field.key];
               const isSecret = field.kind === "secret";
               const value = isSecret
-                ? research.secretsInput[field.key] ?? ""
-                : (research.config[field.key] as string) ?? "";
+                ? (research.secretsInput[field.key] ?? "")
+                : ((research.config[field.key] as string) ?? "");
 
               return (
                 <Field
@@ -178,8 +199,14 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
                       if (isSecret) {
                         setResearch((p) => ({
                           ...p,
-                          secretsInput: { ...p.secretsInput, [field.key]: e.target.value },
-                          clearedSecrets: { ...p.clearedSecrets, [field.key]: false },
+                          secretsInput: {
+                            ...p.secretsInput,
+                            [field.key]: e.target.value,
+                          },
+                          clearedSecrets: {
+                            ...p.clearedSecrets,
+                            [field.key]: false,
+                          },
                         }));
                       } else {
                         setResearch((p) => ({
@@ -189,25 +216,35 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
                       }
                     }}
                   />
-                  {isSecret && masked && !research.clearedSecrets[field.key] && (
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-text3 text-ui-body-sm">Saved: {masked}</span>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        onClick={() =>
-                          setResearch((p) => ({
-                            ...p,
-                            secretsInput: { ...p.secretsInput, [field.key]: "" },
-                            clearedSecrets: { ...p.clearedSecrets, [field.key]: true },
-                          }))
-                        }
-                      >
-                        Clear saved value
-                      </Button>
-                    </div>
-                  )}
+                  {isSecret &&
+                    masked &&
+                    !research.clearedSecrets[field.key] && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-text3 text-ui-body-sm">
+                          Saved: {masked}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          onClick={() =>
+                            setResearch((p) => ({
+                              ...p,
+                              secretsInput: {
+                                ...p.secretsInput,
+                                [field.key]: "",
+                              },
+                              clearedSecrets: {
+                                ...p.clearedSecrets,
+                                [field.key]: true,
+                              },
+                            }))
+                          }
+                        >
+                          Clear saved value
+                        </Button>
+                      </div>
+                    )}
                 </Field>
               );
             })}

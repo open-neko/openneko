@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, RotateCcw } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 export function RecordRestoreButton({
   appId,
@@ -62,7 +63,7 @@ export function RecordRestoreButton({
         disabled={submitting}
       >
         {submitting ? (
-          <LoaderCircle className="records-spin" aria-hidden="true" />
+          <Spinner className="records-spin" aria-hidden="true" />
         ) : (
           <RotateCcw aria-hidden="true" />
         )}

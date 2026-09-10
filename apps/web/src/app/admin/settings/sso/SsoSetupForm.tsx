@@ -6,8 +6,8 @@ import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { Button, ButtonLink } from "@/components/ui/Button";
-import { Input, NativeSelect } from "@/components/ui/Field";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Input, NativeSelect } from "@/components/ui/field";
 import type {
   SsoEnvironmentRow,
   SsoOrganizationRow,

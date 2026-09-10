@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/ConfirmModal";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Input, NativeSelect } from "@/components/ui/Field";
-import { LocalDateTime } from "@/components/ui/LocalDateTime";
-import { Pill } from "@/components/ui/Pill";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Disclosure } from "@/components/ui/disclosure";
+import { EmptyState } from "@/components/ui/empty";
+import { Field, Input, NativeSelect } from "@/components/ui/field";
+import { LocalDateTime } from "@/components/ui/local-date-time";
+import { Badge } from "@/components/ui/badge";
 
 type Value = string | number | boolean;
 type Operation = "install" | "configure" | "upgrade";
@@ -249,7 +249,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2>{detail.manifest.metadata.name}</h2><p className="text-ui-body-sm text-text2">Version {detail.manifest.metadata.version} · Published by {detail.manifest.metadata.publisher}</p>
           {status?.status === "installed" && status.installedAt ? <p className="text-ui-caption text-text2">Installed <LocalDateTime value={status.installedAt} /></p> : null}</div>
-        <Pill variant={status?.status === "installed" ? "success" : status?.status === "failed" ? "danger" : "muted"}>{status?.status === "installed" ? "Installed" : status?.status === "failed" ? "Install failed" : "Not installed"}</Pill>
+        <Badge variant={status?.status === "installed" ? "success" : status?.status === "failed" ? "danger" : "muted"}>{status?.status === "installed" ? "Installed" : status?.status === "failed" ? "Install failed" : "Not installed"}</Badge>
       </div>
       {status?.lastError ? <div className="grid gap-2"><p role="alert" className="text-ui-body-sm text-danger">The last installation attempt failed. Use the error details to correct the pack or its configuration, then review it again.</p><Disclosure title="Pack author error details"><p className="break-words text-ui-body-sm">{status.lastError}</p></Disclosure></div> : null}
       {status?.status === "installed" ? <ActionGroup align="start">
@@ -265,7 +265,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
               {sources.map(source => <option key={source.id} value={source.id}>{source.label || source.name || source.id}</option>)}
             </NativeSelect>
           </Field> : null}
-          {detail.manifest.inputs.map(input => input.type === "boolean" ? <Checkbox key={input.key} label={label(input.key)} checked={Boolean(inputs[input.key])} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: event.target.checked }); }} /> :
+          {detail.manifest.inputs.map(input => input.type === "boolean" ? <Checkbox key={input.key} label={label(input.key)} checked={Boolean(inputs[input.key])} onCheckedChange={checked => { changed(); setInputs({ ...inputs, [input.key]: checked === true }); }} /> :
             <Field key={input.key} label={label(input.key)} hint={input.description} htmlFor={`pack-${input.key}`}>
               {input.type === "enum" ? <NativeSelect id={`pack-${input.key}`} value={String(inputs[input.key] ?? "")} required={input.required} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: input.values?.find(value => String(value) === event.target.value) ?? "" }); }}>
                 <option value="">Choose a value</option>{input.values?.map(value => <option key={String(value)} value={String(value)}>{String(value)}</option>)}
@@ -279,7 +279,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
         {detail.manifest.oauth.map(connection => <Card key={connection.key} as="section" className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h3>{connection.providerLabel}</h3><p className="text-ui-body-sm text-text2">{oauth[connection.key]?.account?.label ?? "Connect the account this pack will use."}</p></div>
-            <Pill variant={oauth[connection.key]?.connected ? "success" : "muted"}>{oauth[connection.key]?.connected ? "Connected" : "Not connected"}</Pill>
+            <Badge variant={oauth[connection.key]?.connected ? "success" : "muted"}>{oauth[connection.key]?.connected ? "Connected" : "Not connected"}</Badge>
           </div>
           <p className="text-ui-caption text-text2">The account grants {connection.scopes.length} reviewed permissions. Access and refresh tokens are encrypted.</p>
           {oauth[connection.key]?.callbackUrl ? <Disclosure title="Google Cloud setup"><p className="text-ui-body-sm">Add this authorized redirect URI to the OAuth client:</p><code className="break-all text-ui-caption">{oauth[connection.key].callbackUrl}</code></Disclosure> : null}

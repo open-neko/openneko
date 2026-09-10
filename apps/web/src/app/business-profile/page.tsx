@@ -6,8 +6,8 @@ import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
 import EditableMarkdown from "@/components/EditableMarkdown";
-import { Button } from "@/components/ui/Button";
-import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { StageKind } from "@/lib/db";
 

@@ -1,7 +1,15 @@
 import Link from "next/link";
 import type { RecycledRecordSummary } from "@neko/records";
 import type { RecordOwnerIdentity } from "@/lib/records";
-import { buttonClassName } from "@/components/ui/Button";
+import { buttonClassName } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function dateLabel(value: string): string {
   const date = new Date(value);
@@ -55,23 +63,28 @@ export function RecordRecycleTable({
   const shownThrough = (page - 1) * 50 + rows.length;
   const hasMore = cursor !== null && shownThrough < total;
   return (
-    <section className="records-list-card" aria-label={`${objectPluralLabel} recycle bin`}>
+    <section
+      className="records-list-card"
+      aria-label={`${objectPluralLabel} recycle bin`}
+    >
       <div className="records-table-scroll">
-        <table className="records-table records-recycle-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Deleted</th>
-              <th>Deleted by</th>
-              <th>Owner</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="records-table records-recycle-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Deleted</TableHead>
+              <TableHead>Deleted by</TableHead>
+              <TableHead>Owner</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => {
-              const owner = row.ownerUserId ? owners[row.ownerUserId] : undefined;
+              const owner = row.ownerUserId
+                ? owners[row.ownerUserId]
+                : undefined;
               return (
-                <tr key={row.recordId}>
-                  <td>
+                <TableRow key={row.recordId}>
+                  <TableCell>
                     <Link
                       className="records-name-link"
                       href={`${base}/${encodeURIComponent(row.recordId)}`}
@@ -79,22 +92,28 @@ export function RecordRecycleTable({
                       {row.recordName}
                     </Link>
                     <small className="records-recycle-id">{row.recordId}</small>
-                  </td>
-                  <td>
-                    <time dateTime={row.deletedAt}>{dateLabel(row.deletedAt)}</time>
-                  </td>
-                  <td>{row.deletedBy ?? "—"}</td>
-                  <td>{owner?.label ?? row.ownerUserId ?? "—"}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell>
+                    <time dateTime={row.deletedAt}>
+                      {dateLabel(row.deletedAt)}
+                    </time>
+                  </TableCell>
+                  <TableCell>{row.deletedBy ?? "—"}</TableCell>
+                  <TableCell>
+                    {owner?.label ?? row.ownerUserId ?? "—"}
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       {rows.length === 0 && (
         <div className="records-empty">
           <strong>Recycle bin is empty</strong>
-          <span>Deleted {objectPluralLabel.toLowerCase()} will appear here.</span>
+          <span>
+            Deleted {objectPluralLabel.toLowerCase()} will appear here.
+          </span>
         </div>
       )}
       <footer className="records-list-foot">

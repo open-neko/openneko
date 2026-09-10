@@ -5,8 +5,8 @@ import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
 import Select from "@/components/Select";
-import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/field";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {

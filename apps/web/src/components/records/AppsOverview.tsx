@@ -8,8 +8,8 @@ import {
   Plus,
   RefreshCw,
 } from "lucide-react";
-import { buttonClassName } from "@/components/ui/Button";
-import { SearchInput } from "@/components/ui/SearchInput";
+import { buttonClassName } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
 import type { RecordAppNavItem } from "@/lib/records";
 

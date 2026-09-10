@@ -5,8 +5,8 @@ import { ChevronDown, Copy, RotateCw, Search, X } from "lucide-react";
 import Chart from "./Chart";
 import type { ChartDataPoint } from "./Chart";
 import KpiHeadline from "./KpiHeadline";
-import { IconButton } from "@/components/ui/Button";
-import { MenuItem, OverflowMenu } from "@/components/ui/OverflowMenu";
+import { Button, IconButton } from "@/components/ui/button";
+import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
 
 async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   const lines: string[] = [];
@@ -52,7 +52,13 @@ export interface BriefingCardData {
   chartData: ChartDataPoint[];
 }
 
-export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDive }: {
+export default function BriefingCard({
+  ins,
+  index,
+  onDismiss,
+  onRetry,
+  onDeepDive,
+}: {
   ins: BriefingCardData;
   index: number;
   onDismiss?: () => void;
@@ -94,7 +100,11 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
           </div>
           <div className="itext">{ins.text}</div>
           {state === "pending" ? (
-            <div className="iskel" aria-label="Refreshing metric" aria-busy="true">
+            <div
+              className="iskel"
+              aria-label="Refreshing metric"
+              aria-busy="true"
+            >
               <div className="skel skel-metric" />
               <div className="skel skel-label" />
             </div>
@@ -150,7 +160,8 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
           ) : null}
         </OverflowMenu>
       </div>
-      <button data-ui-bespoke-reason="briefing card interaction"
+      <Button
+        variant="ghost"
         type="button"
         className="icard-toggle"
         data-ui-disclosure=""
@@ -158,8 +169,11 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
         onClick={() => setMobileOpen((current) => !current)}
       >
         {mobileOpen ? "Hide detail" : "View detail"}
-        <ChevronDown aria-hidden="true" className={mobileOpen ? "is-open" : ""} />
-      </button>
+        <ChevronDown
+          aria-hidden="true"
+          className={mobileOpen ? "is-open" : ""}
+        />
+      </Button>
       <div className="idetail open" data-mobile-open={mobileOpen}>
         {state === "pending" ? (
           <div className="dskel" aria-hidden="true">

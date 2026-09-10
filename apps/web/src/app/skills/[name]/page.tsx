@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import PageHeading from "@/components/PageHeading";
-import { Button, buttonClassName } from "@/components/ui/Button";
+import { Button, buttonClassName } from "@/components/ui/button";
 
 function stripFrontmatter(markdown: string): string {
   return markdown.replace(/^---\n[\s\S]*?\n---\n?/, "").trimStart();

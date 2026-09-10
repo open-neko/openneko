@@ -2,12 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Search } from "lucide-react";
 import { getOrgId } from "@/lib/db";
-import {
-  readRecordRecycleList,
-  RecordAppRouteError,
-} from "@/lib/records";
+import { readRecordRecycleList, RecordAppRouteError } from "@/lib/records";
 import { RecordRecycleTable } from "@/components/records/RecordRecycleTable";
 import { RecordsUnavailable } from "@/components/records/RecordsNotice";
+import { Input } from "@/components/ui/input";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +18,9 @@ function value(params: SearchParams, key: string): string | undefined {
 
 function positivePage(raw: string | undefined): number {
   const parsed = Number.parseInt(raw ?? "1", 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 && parsed < 10_000 ? parsed : 1;
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed < 10_000
+    ? parsed
+    : 1;
 }
 
 export default async function RecordRecyclePage({
@@ -85,7 +85,7 @@ export default async function RecordRecyclePage({
         </div>
         <form className="records-search" action={recycleBase} method="get">
           <Search aria-hidden="true" />
-          <input data-ui-bespoke-reason="records list search and hidden query fields"
+          <Input
             type="search"
             name="q"
             defaultValue={query.q}
@@ -96,7 +96,9 @@ export default async function RecordRecyclePage({
       </header>
       <div className="records-recycle-note">
         <strong>{result.view.object.pluralLabel}</strong>
-        <span>Only restore identity and deletion metadata are exposed here.</span>
+        <span>
+          Only restore identity and deletion metadata are exposed here.
+        </span>
       </div>
       <RecordRecycleTable
         appId={result.app.appId}

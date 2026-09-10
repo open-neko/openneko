@@ -4,8 +4,8 @@ import { useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/field";
 
 type DataSourcePayload = {
   source: "org" | "unset";

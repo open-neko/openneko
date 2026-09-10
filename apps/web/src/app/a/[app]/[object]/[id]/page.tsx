@@ -10,7 +10,7 @@ import {
   RecordRelatedLists,
 } from "@/components/records/RecordDetailActivity";
 import { PendingChangeMarker } from "@/components/records/PendingChangeMarker";
-import { buttonClassName } from "@/components/ui/Button";
+import { buttonClassName } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 

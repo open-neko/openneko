@@ -10,10 +10,10 @@ import {
   RecordFilterBuilder,
   type RecordFilterField,
 } from "./RecordFilterBuilder";
-import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Input, NativeSelect } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Input, NativeSelect } from "@/components/ui/field";
 
 function hrefWith(base: string, current: Record<string, string | undefined>, mine: boolean) {
   const params = new URLSearchParams();

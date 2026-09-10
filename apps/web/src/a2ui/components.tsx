@@ -11,6 +11,21 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Button } from "@/components/ui/button";
+import { CheckboxControl } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Separator } from "@/components/ui/separator";
+import { Segment, SegmentedControl, Tab, Tabs } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS,
   linkifyWorkspacePaths,
@@ -51,24 +66,39 @@ import BriefingCard from "@/components/BriefingCard";
 // display-title language at card proportions. `eyebrow` is optional: the
 // dashboard passes "Briefing", an Answer passes its own kicker or none.
 function surfaceFrame(
-  opts: { id: string; eyebrow?: string; title?: string; subtitle?: string; childIds: string[] },
+  opts: {
+    id: string;
+    eyebrow?: string;
+    title?: string;
+    subtitle?: string;
+    childIds: string[];
+  },
   ctx: RenderContext,
 ) {
   return (
     <div key={opts.id} className="work-surface">
       {opts.eyebrow ? (
-        <div className="work-surface-eyebrow" style={{ animation: "fadeUp 0.5s ease both" }}>
+        <div
+          className="work-surface-eyebrow"
+          style={{ animation: "fadeUp 0.5s ease both" }}
+        >
           <span className="work-surface-eyebrow-rule" aria-hidden="true" />
           {opts.eyebrow}
         </div>
       ) : null}
       {opts.title ? (
-        <div className="work-surface-title" style={{ animation: "fadeUp 0.5s ease 0.04s both" }}>
+        <div
+          className="work-surface-title"
+          style={{ animation: "fadeUp 0.5s ease 0.04s both" }}
+        >
           {opts.title}
         </div>
       ) : null}
       {opts.subtitle ? (
-        <div className="work-surface-sub" style={{ animation: "fadeUp 0.5s ease 0.08s both" }}>
+        <div
+          className="work-surface-sub"
+          style={{ animation: "fadeUp 0.5s ease 0.08s both" }}
+        >
           {opts.subtitle}
         </div>
       ) : null}
@@ -80,7 +110,13 @@ function surfaceFrame(
 registerComponent("Answer", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as AnswerProps & { id: string };
   return surfaceFrame(
-    { id: props.id, eyebrow: props.eyebrow, title: props.title, subtitle: props.subtitle, childIds: bodyChildIds(ctx.surface, comp) },
+    {
+      id: props.id,
+      eyebrow: props.eyebrow,
+      title: props.title,
+      subtitle: props.subtitle,
+      childIds: bodyChildIds(ctx.surface, comp),
+    },
     ctx,
   );
 });
@@ -88,7 +124,13 @@ registerComponent("Answer", (comp: A2UIComponent, ctx: RenderContext) => {
 registerComponent("Briefing", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as BriefingProps & { id: string };
   return surfaceFrame(
-    { id: props.id, eyebrow: "Briefing", title: props.greeting, subtitle: props.subtitle, childIds: bodyChildIds(ctx.surface, comp) },
+    {
+      id: props.id,
+      eyebrow: "Briefing",
+      title: props.greeting,
+      subtitle: props.subtitle,
+      childIds: bodyChildIds(ctx.surface, comp),
+    },
     ctx,
   );
 });
@@ -104,15 +146,26 @@ registerComponent("Confirmation", (comp: A2UIComponent, ctx: RenderContext) => {
     >
       <div className="work-confirm-head">
         <span className="work-confirm-check" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M5 13l4 4L19 7" />
           </svg>
         </span>
         <span className="work-confirm-label">{props.label}</span>
       </div>
-      {props.title ? <div className="work-confirm-title">{props.title}</div> : null}
+      {props.title ? (
+        <div className="work-confirm-title">{props.title}</div>
+      ) : null}
       {props.children ? (
-        <div className="work-confirm-body">{renderChildren(props.children, ctx)}</div>
+        <div className="work-confirm-body">
+          {renderChildren(props.children, ctx)}
+        </div>
       ) : null}
     </div>
   );
@@ -142,20 +195,24 @@ registerComponent("KeyFigures", (comp: A2UIComponent) => {
   const items = Array.isArray(props.items) ? props.items : [];
   if (items.length === 0) return null;
   return (
-    <section key={props.id} className="work-key-figures" aria-label="Key figures">
+    <section
+      key={props.id}
+      className="work-key-figures"
+      aria-label="Key figures"
+    >
       <div className="work-key-figures-label">Key figures</div>
       <dl className="work-key-figures-grid">
         {items.map((item, index) => {
-          const provenance = [
-            item.basis,
-            item.asOf,
-            item.source,
-          ].filter((value): value is string => Boolean(value));
+          const provenance = [item.basis, item.asOf, item.source].filter(
+            (value): value is string => Boolean(value),
+          );
           return (
             <div className="work-key-figure" key={`${item.label}-${index}`}>
               <dt>{item.label}</dt>
               <dd>{item.value}</dd>
-              {item.sub ? <div className="work-key-figure-sub">{item.sub}</div> : null}
+              {item.sub ? (
+                <div className="work-key-figure-sub">{item.sub}</div>
+              ) : null}
               {provenance.length > 0 ? (
                 <div className="work-key-figure-proof">
                   {provenance.join(" · ")}
@@ -174,10 +231,12 @@ registerComponent("KeyFigures", (comp: A2UIComponent) => {
 // dashboard (and in already-stored surfaces). Same renderer.
 const renderMetricCard = (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as BriefingCardProps & { id: string };
-  const extras = ctx.extras as {
-    onDismiss?: (id: string) => void;
-    indexMap?: Map<string, number>;
-  } | undefined;
+  const extras = ctx.extras as
+    | {
+        onDismiss?: (id: string) => void;
+        indexMap?: Map<string, number>;
+      }
+    | undefined;
 
   const index = extras?.indexMap?.get(props.id) ?? 0;
 
@@ -199,7 +258,9 @@ const renderMetricCard = (comp: A2UIComponent, ctx: RenderContext) => {
       key={props.id}
       ins={insight}
       index={index}
-      onDismiss={extras?.onDismiss ? () => extras.onDismiss?.(props.id) : undefined}
+      onDismiss={
+        extras?.onDismiss ? () => extras.onDismiss?.(props.id) : undefined
+      }
     />
   );
 };
@@ -216,29 +277,37 @@ registerComponent("Table", (comp: A2UIComponent) => {
   const rows = Array.isArray(props.rows) ? props.rows : [];
   return (
     <div key={props.id} className="work-table-wrap">
-      {props.caption ? <div className="work-table-caption">{props.caption}</div> : null}
-      <table className="work-table">
-        <thead>
-          <tr>
+      {props.caption ? (
+        <div className="work-table-caption">{props.caption}</div>
+      ) : null}
+      <Table className="work-table">
+        <TableHeader>
+          <TableRow>
             {columns.map((col) => (
-              <th key={col.key} style={col.align ? { textAlign: col.align } : undefined}>
+              <TableHead
+                key={col.key}
+                style={col.align ? { textAlign: col.align } : undefined}
+              >
                 {col.label}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((row, r) => (
-            <tr key={r}>
+            <TableRow key={r}>
               {columns.map((col) => (
-                <td key={col.key} style={col.align ? { textAlign: col.align } : undefined}>
+                <TableCell
+                  key={col.key}
+                  style={col.align ? { textAlign: col.align } : undefined}
+                >
                   {String(row[col.key] ?? "")}
-                </td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 });
@@ -249,11 +318,23 @@ registerComponent("Table", (comp: A2UIComponent) => {
 registerComponent("Section", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as SectionProps & { id: string };
   const childIds = Array.isArray(props.children) ? props.children : [];
-  const body = <div className="work-section-body">{renderChildren(childIds, ctx)}</div>;
+  const body = (
+    <div className="work-section-body">{renderChildren(childIds, ctx)}</div>
+  );
   if (props.collapsible) {
     return (
-      <details data-ui-bespoke-reason="agent-rendered A2UI catalog" key={props.id} className="work-section is-collapsible" open={props.defaultOpen !== false}>
-        <summary data-ui-bespoke-reason="agent-rendered A2UI catalog" className="work-section-summary">{props.title}</summary>
+      <details
+        data-ui-bespoke-reason="agent-rendered A2UI catalog"
+        key={props.id}
+        className="work-section is-collapsible"
+        open={props.defaultOpen !== false}
+      >
+        <summary
+          data-ui-bespoke-reason="agent-rendered A2UI catalog"
+          className="work-section-summary"
+        >
+          {props.title}
+        </summary>
         {body}
       </details>
     );
@@ -274,9 +355,14 @@ registerComponent("Callout", (comp: A2UIComponent) => {
   const mood = props.mood ?? "watch";
   return (
     <div key={props.id} className={`work-callout work-callout-${mood}`}>
-      {props.title ? <div className="work-callout-title">{props.title}</div> : null}
+      {props.title ? (
+        <div className="work-callout-title">{props.title}</div>
+      ) : null}
       <div className="work-callout-body work-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={WORKSPACE_MARKDOWN_COMPONENTS}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={WORKSPACE_MARKDOWN_COMPONENTS}
+        >
           {linkifyWorkspacePaths(props.text)}
         </ReactMarkdown>
       </div>
@@ -294,18 +380,23 @@ registerComponent("Choice", (comp: A2UIComponent, ctx: RenderContext) => {
   return (
     <div key={props.id} className="work-choice">
       {options.map((opt, i) => (
-        <button data-ui-bespoke-reason="agent-rendered A2UI catalog"
+        <Button
           key={i}
           type="button"
           className="work-choice-btn"
           data-mood={opt.mood ?? undefined}
           onClick={() =>
-            ctx.onAction?.(props.id, "select", { prompt: opt.prompt, value: opt.label })
+            ctx.onAction?.(props.id, "select", {
+              prompt: opt.prompt,
+              value: opt.label,
+            })
           }
         >
           <span>{opt.label}</span>
-          <span className="work-choice-arrow" aria-hidden="true">→</span>
-        </button>
+          <span className="work-choice-arrow" aria-hidden="true">
+            →
+          </span>
+        </Button>
       ))}
     </div>
   );
@@ -321,10 +412,14 @@ registerComponent("Divider", (comp: A2UIComponent) => {
       </div>
     );
   }
-  return <hr key={props.id} className="work-divider" />;
+  return <Separator key={props.id} className="work-divider" />;
 });
 
-function bindingPath(ctx: RenderContext, componentId: string, property: string): string | null {
+function bindingPath(
+  ctx: RenderContext,
+  componentId: string,
+  property: string,
+): string | null {
   const raw = ctx.surface.components.get(componentId)?.[property];
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   return typeof (raw as { path?: unknown }).path === "string"
@@ -335,8 +430,13 @@ function bindingPath(ctx: RenderContext, componentId: string, property: string):
 registerComponent("Text", (comp: A2UIComponent) => {
   const props = comp as unknown as TextProps & { id: string };
   return (
-    <div key={props.id} className={`work-a2ui-text is-${props.variant ?? "body"}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{props.text ?? ""}</ReactMarkdown>
+    <div
+      key={props.id}
+      className={`work-a2ui-text is-${props.variant ?? "body"}`}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {props.text ?? ""}
+      </ReactMarkdown>
     </div>
   );
 });
@@ -364,35 +464,50 @@ const layoutRenderer = (direction: "row" | "column") =>
       "--a2ui-align": align,
     } as React.CSSProperties;
     return (
-      <div key={props.id} className={`work-a2ui-layout is-${direction}`} style={style}>
-        {renderChildren(Array.isArray(props.children) ? props.children : [], ctx)}
+      <div
+        key={props.id}
+        className={`work-a2ui-layout is-${direction}`}
+        style={style}
+      >
+        {renderChildren(
+          Array.isArray(props.children) ? props.children : [],
+          ctx,
+        )}
       </div>
     );
   };
 registerComponent("Row", layoutRenderer("row"));
 registerComponent("Column", layoutRenderer("column"));
 
-function TabsView({ props, ctx }: { props: TabsProps & { id: string }; ctx: RenderContext }) {
+function TabsView({
+  props,
+  ctx,
+}: {
+  props: TabsProps & { id: string };
+  ctx: RenderContext;
+}) {
   const tabs = Array.isArray(props.tabs) ? props.tabs : [];
   const [active, setActive] = React.useState(0);
   const selected = tabs[Math.min(active, Math.max(tabs.length - 1, 0))];
   return (
     <div className="work-a2ui-tabs">
-      <div className="work-a2ui-tab-list" role="tablist" aria-label="Configuration sections">
+      <Tabs className="work-a2ui-tab-list" aria-label="Configuration sections">
         {tabs.map((tab, index) => (
-          <button data-ui-bespoke-reason="agent-rendered A2UI catalog"
+          <Tab
             key={`${tab.child}-${index}`}
-            type="button"
-            role="tab"
-            aria-selected={index === active}
+            selected={index === active}
             className="work-a2ui-tab"
             onClick={() => setActive(index)}
           >
             {tab.title}
-          </button>
+          </Tab>
         ))}
-      </div>
-      {selected ? <div className="work-a2ui-tab-panel">{renderChildren([selected.child], ctx)}</div> : null}
+      </Tabs>
+      {selected ? (
+        <div className="work-a2ui-tab-panel">
+          {renderChildren([selected.child], ctx)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -404,24 +519,36 @@ registerComponent("Tabs", (comp: A2UIComponent, ctx: RenderContext) => (
 registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as TextFieldProps & { id: string };
   const path = bindingPath(ctx, props.id, "value");
-  const inputType = props.variant === "number" ? "number" : props.variant === "obscured" ? "password" : "text";
+  const inputType =
+    props.variant === "number"
+      ? "number"
+      : props.variant === "obscured"
+        ? "password"
+        : "text";
   const common = {
     id: `${ctx.surface.surfaceId}-${props.id}`,
     className: "work-a2ui-input",
     placeholder: props.placeholder,
     value: props.value == null ? "" : String(props.value),
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    onChange: (
+      event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    ) => {
       if (!path) return;
-      const next = props.variant === "number" && event.target.value !== ""
-        ? Number(event.target.value)
-        : event.target.value;
+      const next =
+        props.variant === "number" && event.target.value !== ""
+          ? Number(event.target.value)
+          : event.target.value;
       ctx.onDataChange?.(path, next);
     },
   };
   return (
     <label className="work-a2ui-field" htmlFor={common.id}>
       <span className="work-a2ui-label">{props.label}</span>
-      {props.variant === "longText" ? <textarea data-ui-bespoke-reason="agent-rendered A2UI catalog" {...common} rows={4} /> : <input data-ui-bespoke-reason="agent-rendered A2UI catalog" {...common} type={inputType} />}
+      {props.variant === "longText" ? (
+        <Textarea {...common} rows={4} />
+      ) : (
+        <Input {...common} type={inputType} />
+      )}
     </label>
   );
 });
@@ -431,10 +558,11 @@ registerComponent("CheckBox", (comp: A2UIComponent, ctx: RenderContext) => {
   const path = bindingPath(ctx, props.id, "value");
   return (
     <label className="work-a2ui-checkbox">
-      <input data-ui-bespoke-reason="agent-rendered A2UI catalog"
-        type="checkbox"
+      <CheckboxControl
         checked={Boolean(props.value)}
-        onChange={(event) => path && ctx.onDataChange?.(path, event.target.checked)}
+        onCheckedChange={(checked) =>
+          path && ctx.onDataChange?.(path, checked === true)
+        }
       />
       <span>{props.label}</span>
     </label>
@@ -453,32 +581,56 @@ registerComponent("ChoicePicker", (comp: A2UIComponent, ctx: RenderContext) => {
   if (props.variant !== "multipleSelection") {
     return (
       <label className="work-a2ui-field">
-        {props.label ? <span className="work-a2ui-label">{props.label}</span> : null}
-        <select data-ui-bespoke-reason="agent-rendered A2UI catalog"
+        {props.label ? (
+          <span className="work-a2ui-label">{props.label}</span>
+        ) : null}
+        <NativeSelect
           className="work-a2ui-input"
           value={selected[0] ?? ""}
-          onChange={(event) => path && ctx.onDataChange?.(path, event.target.value ? [event.target.value] : [])}
+          onChange={(event) =>
+            path &&
+            ctx.onDataChange?.(
+              path,
+              event.target.value ? [event.target.value] : [],
+            )
+          }
         >
           <option value="">Select…</option>
-          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </NativeSelect>
       </label>
     );
   }
   return (
     <fieldset className="work-a2ui-picker">
-      {props.label ? <legend className="work-a2ui-label">{props.label}</legend> : null}
-      <div className={props.displayStyle === "chips" ? "work-a2ui-chips" : "work-a2ui-check-list"}>
+      {props.label ? (
+        <legend className="work-a2ui-label">{props.label}</legend>
+      ) : null}
+      <div
+        className={
+          props.displayStyle === "chips"
+            ? "work-a2ui-chips"
+            : "work-a2ui-check-list"
+        }
+      >
         {options.map((option) => {
           const checked = selected.includes(option.value);
           return (
             <label key={option.value} className="work-a2ui-check-option">
-              <input data-ui-bespoke-reason="agent-rendered A2UI catalog"
-                type="checkbox"
+              <CheckboxControl
                 checked={checked}
-                onChange={() => {
+                onCheckedChange={() => {
                   if (!path) return;
-                  ctx.onDataChange?.(path, checked ? selected.filter((v) => v !== option.value) : [...selected, option.value]);
+                  ctx.onDataChange?.(
+                    path,
+                    checked
+                      ? selected.filter((v) => v !== option.value)
+                      : [...selected, option.value],
+                  );
                 }}
               />
               <span>{option.label}</span>
@@ -531,9 +683,10 @@ function OpenApiSpecInputView({
   ctx: RenderContext;
 }) {
   const path = bindingPath(ctx, props.id, "value");
-  const asset = props.value && typeof props.value === "object"
-    ? (props.value as ImportedOpenApiAsset)
-    : null;
+  const asset =
+    props.value && typeof props.value === "object"
+      ? (props.value as ImportedOpenApiAsset)
+      : null;
   const [mode, setMode] = React.useState<"url" | "upload">("url");
   const [url, setUrl] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState("");
@@ -552,7 +705,10 @@ function OpenApiSpecInputView({
         response = await fetch("/api/settings/openapi-specs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ url: url.trim(), baseUrl: baseUrl.trim() || undefined }),
+          body: JSON.stringify({
+            url: url.trim(),
+            baseUrl: baseUrl.trim() || undefined,
+          }),
         });
       } else {
         if (!file) throw new Error("Choose an OpenAPI YAML or JSON file.");
@@ -573,7 +729,9 @@ function OpenApiSpecInputView({
       }
       ctx.onDataChange?.(path, result.asset);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "OpenAPI import failed.");
+      setError(
+        caught instanceof Error ? caught.message : "OpenAPI import failed.",
+      );
     } finally {
       setBusy(false);
     }
@@ -581,19 +739,24 @@ function OpenApiSpecInputView({
 
   return (
     <div className="work-openapi-import">
-      <div className="work-a2ui-label">{props.label ?? "OpenAPI specification"}</div>
-      <div className="work-openapi-mode" role="tablist" aria-label="OpenAPI import method">
-        <button data-ui-bespoke-reason="agent-rendered A2UI catalog" type="button" role="tab" aria-selected={mode === "url"} onClick={() => setMode("url")}>
-          Hosted URL
-        </button>
-        <button data-ui-bespoke-reason="agent-rendered A2UI catalog" type="button" role="tab" aria-selected={mode === "upload"} onClick={() => setMode("upload")}>
-          Upload file
-        </button>
+      <div className="work-a2ui-label">
+        {props.label ?? "OpenAPI specification"}
       </div>
+      <SegmentedControl
+        className="work-openapi-mode"
+        aria-label="OpenAPI import method"
+      >
+        <Segment selected={mode === "url"} onClick={() => setMode("url")}>
+          Hosted URL
+        </Segment>
+        <Segment selected={mode === "upload"} onClick={() => setMode("upload")}>
+          Upload file
+        </Segment>
+      </SegmentedControl>
       {mode === "url" ? (
         <label className="work-a2ui-field">
           <span className="work-a2ui-label">OpenAPI YAML or JSON URL</span>
-          <input data-ui-bespoke-reason="agent-rendered A2UI catalog"
+          <Input
             className="work-a2ui-input"
             type="url"
             value={url}
@@ -604,7 +767,7 @@ function OpenApiSpecInputView({
       ) : (
         <label className="work-a2ui-field">
           <span className="work-a2ui-label">OpenAPI file</span>
-          <input data-ui-bespoke-reason="agent-rendered A2UI catalog"
+          <Input
             className="work-a2ui-input work-openapi-file"
             type="file"
             accept=".yaml,.yml,.json,application/yaml,application/json,text/yaml"
@@ -614,7 +777,7 @@ function OpenApiSpecInputView({
       )}
       <label className="work-a2ui-field">
         <span className="work-a2ui-label">Base URL override (optional)</span>
-        <input data-ui-bespoke-reason="agent-rendered A2UI catalog"
+        <Input
           className="work-a2ui-input"
           type="url"
           value={baseUrl}
@@ -622,32 +785,65 @@ function OpenApiSpecInputView({
           onChange={(event) => setBaseUrl(event.target.value)}
         />
       </label>
-      <button data-ui-bespoke-reason="agent-rendered A2UI catalog"
+      <Button
         type="button"
         className="work-a2ui-button"
         disabled={busy}
         onClick={() => void importSpec()}
       >
-        {busy ? "Validating…" : asset ? "Replace imported spec" : "Import and validate"}
-      </button>
-      {error ? <div className="work-openapi-error" role="alert">{error}</div> : null}
+        {busy
+          ? "Validating…"
+          : asset
+            ? "Replace imported spec"
+            : "Import and validate"}
+      </Button>
+      {error ? (
+        <div className="work-openapi-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       {asset ? (
         <div className="work-openapi-summary">
           <div className="work-openapi-summary-head">
             <div>
               <strong>{asset.title}</strong>
-              <span>{asset.version ? `v${asset.version}` : asset.originalName}</span>
+              <span>
+                {asset.version ? `v${asset.version}` : asset.originalName}
+              </span>
             </div>
             <span className="work-openapi-ready">Validated</span>
           </div>
           <dl>
-            <div><dt>Base URL</dt><dd>{asset.baseUrl}</dd></div>
-            <div><dt>Operations</dt><dd>{asset.operationCount} ({asset.readOperationCount} read, {asset.mutatingOperationCount} mutating)</dd></div>
-            <div><dt>Authentication</dt><dd>{asset.authSchemes.length ? asset.authSchemes.join(", ") : "Not declared"}</dd></div>
-            <div><dt>SHA-256</dt><dd className="work-openapi-checksum">{asset.checksumSha256}</dd></div>
+            <div>
+              <dt>Base URL</dt>
+              <dd>{asset.baseUrl}</dd>
+            </div>
+            <div>
+              <dt>Operations</dt>
+              <dd>
+                {asset.operationCount} ({asset.readOperationCount} read,{" "}
+                {asset.mutatingOperationCount} mutating)
+              </dd>
+            </div>
+            <div>
+              <dt>Authentication</dt>
+              <dd>
+                {asset.authSchemes.length
+                  ? asset.authSchemes.join(", ")
+                  : "Not declared"}
+              </dd>
+            </div>
+            <div>
+              <dt>SHA-256</dt>
+              <dd className="work-openapi-checksum">{asset.checksumSha256}</dd>
+            </div>
           </dl>
           {asset.warnings.length ? (
-            <ul>{asset.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            <ul>
+              {asset.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
           ) : null}
         </div>
       ) : null}
@@ -655,12 +851,15 @@ function OpenApiSpecInputView({
   );
 }
 
-registerComponent("OpenApiSpecInput", (comp: A2UIComponent, ctx: RenderContext) => (
-  <OpenApiSpecInputView
-    props={comp as unknown as OpenApiSpecInputProps & { id: string }}
-    ctx={ctx}
-  />
-));
+registerComponent(
+  "OpenApiSpecInput",
+  (comp: A2UIComponent, ctx: RenderContext) => (
+    <OpenApiSpecInputView
+      props={comp as unknown as OpenApiSpecInputProps & { id: string }}
+      ctx={ctx}
+    />
+  ),
+);
 
 type ManagedLocalFileSet = {
   sourceName: string;
@@ -682,10 +881,12 @@ function ManagedFileSourceInputView({
   ctx: RenderContext;
 }) {
   const path = bindingPath(ctx, props.id, "value");
-  const sourceName = typeof props.sourceName === "string" ? props.sourceName.trim() : "";
-  const staged = props.value && typeof props.value === "object"
-    ? (props.value as ManagedLocalFileSet)
-    : null;
+  const sourceName =
+    typeof props.sourceName === "string" ? props.sourceName.trim() : "";
+  const staged =
+    props.value && typeof props.value === "object"
+      ? (props.value as ManagedLocalFileSet)
+      : null;
   const current = staged?.sourceName === sourceName ? staged : null;
   const [files, setFiles] = React.useState<File[]>([]);
   const [busy, setBusy] = React.useState(false);
@@ -723,7 +924,11 @@ function ManagedFileSourceInputView({
       ctx.onDataChange?.(path, result.managedLocalFiles);
       setFiles([]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Managed file upload failed.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Managed file upload failed.",
+      );
     } finally {
       setBusy(false);
     }
@@ -731,40 +936,50 @@ function ManagedFileSourceInputView({
 
   return (
     <div className="work-openapi-import work-managed-files">
-      <div className="work-a2ui-label">{props.label ?? "Managed local files"}</div>
+      <div className="work-a2ui-label">
+        {props.label ?? "Managed local files"}
+      </div>
       <div className="work-managed-files-note">
-        OpenNeko creates an isolated GraphJin directory for this source. Uploaded
-        files become readable to authenticated organization members after admin
-        approval. Upload only team-approved content.
+        OpenNeko creates an isolated GraphJin directory for this source.
+        Uploaded files become readable to authenticated organization members
+        after admin approval. Upload only team-approved content.
       </div>
       <label className="work-a2ui-field">
         <span className="work-a2ui-label">Files</span>
-        <input data-ui-bespoke-reason="agent-rendered A2UI catalog"
+        <Input
           className="work-a2ui-input work-openapi-file"
           type="file"
           multiple
           onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
         />
       </label>
-      <button data-ui-bespoke-reason="agent-rendered A2UI catalog"
+      <Button
         type="button"
         className="work-a2ui-button"
         disabled={busy || !sourceName || files.length === 0}
         onClick={() => void uploadFiles()}
       >
         {busy ? "Uploading securely…" : "Stage files"}
-      </button>
+      </Button>
       {staged && !current ? (
         <div className="work-openapi-error" role="alert">
-          The source name changed. Stage files for “{sourceName || "the new source"}”.
+          The source name changed. Stage files for “
+          {sourceName || "the new source"}”.
         </div>
       ) : null}
-      {error ? <div className="work-openapi-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="work-openapi-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       {current ? (
         <div className="work-openapi-summary">
           <div className="work-openapi-summary-head">
             <div>
-              <strong>{current.files.length} staged file{current.files.length === 1 ? "" : "s"}</strong>
+              <strong>
+                {current.files.length} staged file
+                {current.files.length === 1 ? "" : "s"}
+              </strong>
               <span>{current.totalSize.toLocaleString()} bytes</span>
             </div>
             <span className="work-openapi-ready">Isolated</span>
@@ -783,12 +998,15 @@ function ManagedFileSourceInputView({
   );
 }
 
-registerComponent("ManagedFileSourceInput", (comp: A2UIComponent, ctx: RenderContext) => (
-  <ManagedFileSourceInputView
-    props={comp as unknown as ManagedFileSourceInputProps & { id: string }}
-    ctx={ctx}
-  />
-));
+registerComponent(
+  "ManagedFileSourceInput",
+  (comp: A2UIComponent, ctx: RenderContext) => (
+    <ManagedFileSourceInputView
+      props={comp as unknown as ManagedFileSourceInputProps & { id: string }}
+      ctx={ctx}
+    />
+  ),
+);
 
 registerComponent("Button", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as ButtonProps & { id: string };
@@ -799,9 +1017,10 @@ registerComponent("Button", (comp: A2UIComponent, ctx: RenderContext) => {
   const resolvedLabel = labelComponent
     ? resolveComponent(labelComponent, ctx.surface.dataModel)
     : undefined;
-  const label = resolvedLabel?.component === "Text"
-    ? String(resolvedLabel.text ?? "")
-    : null;
+  const label =
+    resolvedLabel?.component === "Text"
+      ? String(resolvedLabel.text ?? "")
+      : null;
   const requiresValue = props.requires;
   const hasRequirement = Object.hasOwn(
     ctx.surface.components.get(props.id) ?? {},
@@ -811,16 +1030,20 @@ registerComponent("Button", (comp: A2UIComponent, ctx: RenderContext) => {
     ? requiresValue.length > 0 && requiresValue.every(Boolean)
     : Boolean(requiresValue);
   return (
-    <button data-ui-bespoke-reason="agent-rendered A2UI catalog"
+    <Button
       type="button"
       className={`work-a2ui-button is-${props.variant ?? "default"}`}
       disabled={hasRequirement && !requirementSatisfied}
-      onClick={() => event && ctx.onAction?.(props.id, event.name, event.context)}
+      onClick={() =>
+        event && ctx.onAction?.(props.id, event.name, event.context)
+      }
     >
-      {label !== null
-        ? <span className="work-a2ui-button-label">{label}</span>
-        : renderChildren(props.child ? [props.child] : [], ctx)}
+      {label !== null ? (
+        <span className="work-a2ui-button-label">{label}</span>
+      ) : (
+        renderChildren(props.child ? [props.child] : [], ctx)
+      )}
       <span aria-hidden="true">→</span>
-    </button>
+    </Button>
   );
 });

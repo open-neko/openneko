@@ -6,13 +6,13 @@ import { toast } from "sonner";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Field, Input, NativeSelect, Textarea } from "@/components/ui/Field";
-import { LocalDateTime } from "@/components/ui/LocalDateTime";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Field, Input, NativeSelect, Textarea } from "@/components/ui/field";
+import { LocalDateTime } from "@/components/ui/local-date-time";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import CustomPacksAdmin from "./CustomPacksAdmin";
 
 type PackStatus = {
@@ -232,7 +232,7 @@ function checkStatusLabel(id: string, status: string): string {
   return status.replaceAll("_", " ");
 }
 
-function checkTone(status: string): PillVariant {
+function checkTone(status: string): BadgeVariant {
   if (status === "ready") return "success";
   if (status === "optional") return "muted";
   return "danger";
@@ -268,7 +268,7 @@ function pausedRuleLabel(reason: string | null): string | null {
   return `Paused: ${reason.replaceAll("_", " ")}`;
 }
 
-function activityTone(outcome: ActivityItem["outcome"]): PillVariant {
+function activityTone(outcome: ActivityItem["outcome"]): BadgeVariant {
   if (outcome === "completed" || outcome === "reverted") return "success";
   if (outcome === "awaiting_approval" || outcome === "in_progress") return "watch";
   if (outcome === "needs_attention" || outcome === "failed") return "danger";
@@ -584,9 +584,9 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
                         className="shrink-0 whitespace-nowrap text-ui-caption font-semibold"
                         checked={control.enabled}
                         disabled={busy !== null}
-                        onChange={(event) => void updateStoreManagement(
+                        onCheckedChange={(checked) => void updateStoreManagement(
                           `domain-${control.domain}`,
-                          { action: "update_domain", domain: control.domain, enabled: event.target.checked },
+                          { action: "update_domain", domain: control.domain, enabled: checked === true },
                           `${domainLabel(control.domain)} change access updated.`,
                         )}
                       />
@@ -596,9 +596,9 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
                       className="mt-4"
                       checked={control.autoExecute}
                       disabled={busy !== null || !control.enabled || !control.automationEligible}
-                      onChange={(event) => void updateStoreManagement(
+                      onCheckedChange={(checked) => void updateStoreManagement(
                         `auto-${control.domain}`,
-                        { action: "update_domain", domain: control.domain, autoExecute: event.target.checked },
+                        { action: "update_domain", domain: control.domain, autoExecute: checked === true },
                         `${domainLabel(control.domain)} automatic execution updated.`,
                       )}
                     />
@@ -741,7 +741,7 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
                           </Disclosure>
                         ) : null}
                       </div>
-                      <Pill variant={checkTone(check.status)} className="mt-1">{checkStatusLabel(check.id, check.status)}</Pill>
+                      <Badge variant={checkTone(check.status)} className="mt-1">{checkStatusLabel(check.id, check.status)}</Badge>
                     </li>
                   );
                 })}
@@ -763,7 +763,7 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
                 className="mt-4"
                 checked={clearIntegrationToken}
                 disabled={Boolean(form.integrationToken)}
-                onChange={(event) => setClearIntegrationToken(event.target.checked)}
+                onCheckedChange={(checked) => setClearIntegrationToken(checked === true)}
               />
               <ActionGroup align="start" className="mt-5">
                 <Button type="submit" disabled={busy !== null}>{busy === "configure" ? "Testing and saving…" : "Save credentials"}</Button>
@@ -864,7 +864,7 @@ function ActivityList({ items }: { items: ActivityItem[] }) {
                 {item.currentState ? ` · ${item.currentState}` : ""}
               </p>
             </div>
-            <Pill variant={activityTone(item.outcome)}>{item.outcomeLabel}</Pill>
+            <Badge variant={activityTone(item.outcome)}>{item.outcomeLabel}</Badge>
           </div>
           <Disclosure title="View details" meta={item.technical.area} className="mt-3">
             <dl className="grid gap-x-5 gap-y-3 text-ui-caption sm:grid-cols-2">

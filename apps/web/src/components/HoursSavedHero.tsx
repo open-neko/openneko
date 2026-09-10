@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Clock } from "lucide-react";
 import { formatHours, formatSavedShort, sinceLabel } from "@/lib/hours-saved";
 import { Sparkline } from "@/components/Sparkline";
+import { Button } from "@/components/ui/button";
 
 export type HoursSavedValue = {
   windowHours: number;
@@ -40,7 +41,8 @@ export default function HoursSavedHero({
 
   return (
     <div className="mb-7" style={{ animation: "fadeUp 0.5s ease 0.12s both" }}>
-      <button data-ui-bespoke-reason="briefing card interaction"
+      <Button
+        variant="ghost"
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
@@ -51,16 +53,24 @@ export default function HoursSavedHero({
         </span>
         <span className="font-display text-[26px] font-extrabold tracking-[-0.03em] text-accent tabular-nums leading-none">
           {hero.value}
-          <span className="text-ui-body-sm font-bold ml-1 opacity-70">{hero.unit}</span>
+          <span className="text-ui-body-sm font-bold ml-1 opacity-70">
+            {hero.unit}
+          </span>
         </span>
         <span className="text-ui-body-sm leading-[1.4] text-text2">
           saved {sinceLabel(value.sinceISO)}
           {windowLabel ? (
             <>
               <br />
-              <b className="text-success-ink font-bold">+{windowLabel} in the last {value.windowHours}h</b>
+              <b className="text-success-ink font-bold">
+                +{windowLabel} in the last {value.windowHours}h
+              </b>
               {value.windowTasks > 0 && (
-                <> · {value.windowTasks} task{value.windowTasks === 1 ? "" : "s"} handled for you</>
+                <>
+                  {" "}
+                  · {value.windowTasks} task{value.windowTasks === 1 ? "" : "s"}{" "}
+                  handled for you
+                </>
               )}
             </>
           ) : null}
@@ -76,7 +86,7 @@ export default function HoursSavedHero({
         <span className="ml-1 font-mono text-ui-label font-semibold text-accent opacity-70 group-hover:opacity-100 whitespace-nowrap">
           how? {open ? "▾" : "→"}
         </span>
-      </button>
+      </Button>
 
       {open && (
         <div className="mt-2.5 max-w-[640px] bg-card border border-border rounded-2xl px-5 py-4 shadow-soft text-ui-body leading-[1.55] text-text2">
@@ -85,10 +95,13 @@ export default function HoursSavedHero({
           </div>
           <p className="m-0 mb-2.5">
             Each time OpenNeko does something for you — sends a message, files a
-            refund, pulls a report — it estimates how long that task would take a
-            person to do by hand, and records a one-line reason. We estimate
+            refund, pulls a report — it estimates how long that task would take
+            a person to do by hand, and records a one-line reason. We estimate
             conservatively and cap every task, so the total is a{" "}
-            <span className="text-text font-semibold">floor, not a flattering number</span>.
+            <span className="text-text font-semibold">
+              floor, not a flattering number
+            </span>
+            .
           </p>
           <p className="m-0">
             We only count work that actually happened: actions that fired and
@@ -102,7 +115,10 @@ export default function HoursSavedHero({
               </div>
               <ul className="list-none m-0 p-0 grid gap-1.5">
                 {detailed.map((item, i) => (
-                  <li key={i} className="flex items-baseline gap-2.5 text-ui-body-sm">
+                  <li
+                    key={i}
+                    className="flex items-baseline gap-2.5 text-ui-body-sm"
+                  >
                     <span className="font-mono text-accent tabular-nums flex-none w-[58px]">
                       {formatSavedShort(item.minutes)}
                     </span>

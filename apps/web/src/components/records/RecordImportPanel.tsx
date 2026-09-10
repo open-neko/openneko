@@ -5,7 +5,6 @@ import {
   Ban,
   CheckCircle2,
   FileSpreadsheet,
-  LoaderCircle,
   LockKeyhole,
   Upload,
 } from "lucide-react";
@@ -16,7 +15,18 @@ import type {
   RecordImportAdminObject,
   RecordImportRunSummary,
 } from "@/lib/records-imports";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type ApiResponse = {
   error?: string;
@@ -82,7 +92,9 @@ export function RecordImportPanel({
   const [cancelling, setCancelling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [actionRequestId, setActionRequestId] = useState<string | null>(null);
-  const [activeRun, setActiveRun] = useState<RecordImportRunSummary | null>(null);
+  const [activeRun, setActiveRun] = useState<RecordImportRunSummary | null>(
+    null,
+  );
 
   const selectedObject = useMemo(
     () => objects.find((object) => object.apiName === objectApiName) ?? null,
@@ -90,15 +102,23 @@ export function RecordImportPanel({
   );
   const duplicateOptions = useMemo(
     () =>
-      ["id", ...Object.values(mapping).filter((value): value is string => Boolean(value))]
-        .filter((value, index, all) => all.indexOf(value) === index),
+      [
+        "id",
+        ...Object.values(mapping).filter((value): value is string =>
+          Boolean(value),
+        ),
+      ].filter((value, index, all) => all.indexOf(value) === index),
     [mapping],
   );
   const activeRunId = activeRun?.id;
   const activeRunStatus = activeRun?.status;
 
   useEffect(() => {
-    if (!activeRunId || !activeRunStatus || !["planned", "running"].includes(activeRunStatus)) {
+    if (
+      !activeRunId ||
+      !activeRunStatus ||
+      !["planned", "running"].includes(activeRunStatus)
+    ) {
       return;
     }
     let cancelled = false;
@@ -131,10 +151,13 @@ export function RecordImportPanel({
     const body = new FormData(event.currentTarget);
     body.set("object", objectApiName);
     try {
-      const response = await fetch(`/api/a/${encodeURIComponent(appId)}/imports/preview`, {
-        method: "POST",
-        body,
-      });
+      const response = await fetch(
+        `/api/a/${encodeURIComponent(appId)}/imports/preview`,
+        {
+          method: "POST",
+          body,
+        },
+      );
       const payload = (await response.json()) as ApiResponse;
       if (!response.ok || !payload.plan) {
         setMessage(payload.error ?? "The CSV could not be inspected.");
@@ -143,7 +166,10 @@ export function RecordImportPanel({
       setPlan(payload.plan);
       setMapping(
         Object.fromEntries(
-          payload.plan.columns.map((column) => [column.sourceColumn, column.targetField]),
+          payload.plan.columns.map((column) => [
+            column.sourceColumn,
+            column.targetField,
+          ]),
         ),
       );
       setDuplicateKey(payload.plan.duplicateKey);
@@ -157,7 +183,11 @@ export function RecordImportPanel({
   function changeMapping(sourceColumn: string, target: string) {
     const value = target || null;
     setMapping((current) => ({ ...current, [sourceColumn]: value }));
-    if (duplicateKey !== "id" && duplicateKey === mapping[sourceColumn] && value !== duplicateKey) {
+    if (
+      duplicateKey !== "id" &&
+      duplicateKey === mapping[sourceColumn] &&
+      value !== duplicateKey
+    ) {
       setDuplicateKey("id");
     }
   }
@@ -168,22 +198,27 @@ export function RecordImportPanel({
     setMessage(null);
     setActionRequestId(null);
     try {
-      const response = await fetch(`/api/a/${encodeURIComponent(appId)}/imports/start`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          object: plan.objectApiName,
-          sourcePath: plan.source.path,
-          sourceName: plan.source.name,
-          mapping,
-          duplicateKey,
-          batchSize: plan.batchSize,
-        }),
-      });
+      const response = await fetch(
+        `/api/a/${encodeURIComponent(appId)}/imports/start`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            object: plan.objectApiName,
+            sourcePath: plan.source.path,
+            sourceName: plan.source.name,
+            mapping,
+            duplicateKey,
+            batchSize: plan.batchSize,
+          }),
+        },
+      );
       const payload = (await response.json()) as ApiResponse;
       setActionRequestId(payload.actionRequestId ?? null);
       if (!response.ok) {
-        setMessage(payload.error ?? "The governed import could not be started.");
+        setMessage(
+          payload.error ?? "The governed import could not be started.",
+        );
         return;
       }
       if (!payload.importRunId) {
@@ -197,10 +232,13 @@ export function RecordImportPanel({
         { cache: "no-store" },
       );
       const statusPayload = (await statusResponse.json()) as ApiResponse;
-      if (statusResponse.ok && statusPayload.run) setActiveRun(statusPayload.run);
+      if (statusResponse.ok && statusPayload.run)
+        setActiveRun(statusPayload.run);
       setMessage("The approved import is running in the worker.");
     } catch {
-      setMessage("The import service could not be reached. No success was assumed.");
+      setMessage(
+        "The import service could not be reached. No success was assumed.",
+      );
     } finally {
       setStarting(false);
     }
@@ -235,7 +273,7 @@ export function RecordImportPanel({
       setMessage(
         response.ok
           ? "Cancellation was approved. The worker will stop at a batch boundary."
-          : payload.error ?? "The import could not be cancelled.",
+          : (payload.error ?? "The import could not be cancelled."),
       );
     } catch {
       setMessage("The cancellation service could not be reached.");
@@ -248,14 +286,18 @@ export function RecordImportPanel({
   const report = activeRun?.report;
   const processed = count(progress?.processed);
   const total = count(progress?.total) || activeRun?.sourceRows || 0;
-  const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const percent =
+    total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   const artifactValidation = record(artifactImport?.validation);
   const artifactRows = recordList(artifactValidation?.rows);
   const artifactSamples = recordList(artifactValidation?.sampledChecksums);
   const artifactDangling = recordList(artifactValidation?.danglingReferences);
   const artifactPermissions = record(artifactValidation?.permissionCollapse);
   const artifactRoles = recordList(artifactPermissions?.roles);
-  const artifactLiveRows = artifactRows.reduce((sum, row) => sum + count(row.live), 0);
+  const artifactLiveRows = artifactRows.reduce(
+    (sum, row) => sum + count(row.live),
+    0,
+  );
   const artifactVerifiedSamples = artifactSamples.reduce(
     (sum, sample) => sum + count(sample.verified),
     0,
@@ -271,48 +313,58 @@ export function RecordImportPanel({
       <section className="records-import-main">
         {importsEnabled ? (
           <form className="records-import-upload" onSubmit={preview}>
-          <div>
-            <span className="records-eyebrow">Step 1 · Inspect</span>
-            <h2>Choose a destination and CSV</h2>
-            <p>The file is staged privately, parsed as RFC-4180, and hashed before review.</p>
-          </div>
-          <label>
-            Destination object
-            <select data-ui-bespoke-reason="records import mapping"
-              name="object"
-              value={objectApiName}
-              onChange={(event) => {
-                setObjectApiName(event.target.value);
-                setPlan(null);
-              }}
+            <div>
+              <span className="records-eyebrow">Step 1 · Inspect</span>
+              <h2>Choose a destination and CSV</h2>
+              <p>
+                The file is staged privately, parsed as RFC-4180, and hashed
+                before review.
+              </p>
+            </div>
+            <label>
+              Destination object
+              <NativeSelect
+                name="object"
+                value={objectApiName}
+                onChange={(event) => {
+                  setObjectApiName(event.target.value);
+                  setPlan(null);
+                }}
+              >
+                {objects.map((object) => (
+                  <option value={object.apiName} key={object.apiName}>
+                    {object.pluralLabel}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <label>
+              CSV file
+              <Input name="file" type="file" accept=".csv,text/csv" required />
+            </label>
+            <Button
+              className="records-primary-action"
+              variant="primary"
+              size="sm"
+              type="submit"
+              disabled={previewing || !objectApiName}
             >
-              {objects.map((object) => (
-                <option value={object.apiName} key={object.apiName}>
-                  {object.pluralLabel}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            CSV file
-            <input data-ui-bespoke-reason="records import mapping" name="file" type="file" accept=".csv,text/csv" required />
-          </label>
-          <Button
-            className="records-primary-action"
-            variant="primary"
-            size="sm"
-            type="submit"
-            disabled={previewing || !objectApiName}
-          >
-            {previewing ? <LoaderCircle className="records-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
-            {previewing ? "Inspecting…" : "Review mapping"}
-          </Button>
+              {previewing ? (
+                <Spinner className="records-spin" aria-hidden="true" />
+              ) : (
+                <Upload aria-hidden="true" />
+              )}
+              {previewing ? "Inspecting…" : "Review mapping"}
+            </Button>
           </form>
         ) : (
           <section className="records-import-principles">
             <Ban aria-hidden="true" />
             <h2>Imports paused</h2>
-            <p>The connector validation report needs attention. Import controls stay closed until the app returns to an active state.</p>
+            <p>
+              The connector validation report needs attention. Import controls
+              stay closed until the app returns to an active state.
+            </p>
           </section>
         )}
 
@@ -323,63 +375,88 @@ export function RecordImportPanel({
                 <span className="records-eyebrow">Step 2 · Review</span>
                 <h2>{plan.source.name}</h2>
                 <p>
-                  {plan.rowCount.toLocaleString("en")} rows · {plan.columns.length} columns · SHA-256 {plan.source.sha256.slice(0, 12)}…
+                  {plan.rowCount.toLocaleString("en")} rows ·{" "}
+                  {plan.columns.length} columns · SHA-256{" "}
+                  {plan.source.sha256.slice(0, 12)}…
                 </p>
               </div>
               <FileSpreadsheet aria-hidden="true" />
             </header>
             <div className="records-import-mapping-scroll">
-              <table className="records-import-mapping">
-                <thead>
-                  <tr>
-                    <th>CSV column</th>
-                    <th>Sample</th>
-                    <th>Detected</th>
-                    <th>Destination field</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="records-import-mapping">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CSV column</TableHead>
+                    <TableHead>Sample</TableHead>
+                    <TableHead>Detected</TableHead>
+                    <TableHead>Destination field</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {plan.columns.map((column) => (
-                    <tr key={column.sourceColumn}>
-                      <td>{column.sourceColumn}</td>
-                      <td>{plan.sampleRows[0]?.[column.sourceColumn] || <span className="records-null">Empty</span>}</td>
-                      <td><span className="records-import-kind">{column.inferredKind}</span></td>
-                      <td>
-                        <select data-ui-bespoke-reason="records import mapping"
+                    <TableRow key={column.sourceColumn}>
+                      <TableCell>{column.sourceColumn}</TableCell>
+                      <TableCell>
+                        {plan.sampleRows[0]?.[column.sourceColumn] || (
+                          <span className="records-null">Empty</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="records-import-kind">
+                          {column.inferredKind}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <NativeSelect
                           value={mapping[column.sourceColumn] ?? ""}
-                          onChange={(event) => changeMapping(column.sourceColumn, event.target.value)}
+                          onChange={(event) =>
+                            changeMapping(
+                              column.sourceColumn,
+                              event.target.value,
+                            )
+                          }
                           aria-label={`Destination for ${column.sourceColumn}`}
                         >
                           <option value="">Ignore this column</option>
                           <option value="id">Record ID</option>
                           {selectedObject.fields.map((field) => (
                             <option value={field.apiName} key={field.apiName}>
-                              {field.label}{field.required ? " · required" : ""}
+                              {field.label}
+                              {field.required ? " · required" : ""}
                             </option>
                           ))}
-                        </select>
-                        {!mapping[column.sourceColumn] && column.suggestedField && (
-                          <small>
-                            Suggested new field: {column.suggestedField.label} ({column.suggestedField.kind}); ignored until added to the schema.
-                          </small>
-                        )}
-                      </td>
-                    </tr>
+                        </NativeSelect>
+                        {!mapping[column.sourceColumn] &&
+                          column.suggestedField && (
+                            <small>
+                              Suggested new field: {column.suggestedField.label}{" "}
+                              ({column.suggestedField.kind}); ignored until
+                              added to the schema.
+                            </small>
+                          )}
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             <footer className="records-import-review-footer">
               <label>
                 Duplicate key
-                <select data-ui-bespoke-reason="records import mapping" value={duplicateKey} onChange={(event) => setDuplicateKey(event.target.value)}>
+                <NativeSelect
+                  value={duplicateKey}
+                  onChange={(event) => setDuplicateKey(event.target.value)}
+                >
                   {duplicateOptions.map((field) => (
-                    <option value={field} key={field}>{field === "id" ? "Record ID" : field}</option>
+                    <option value={field} key={field}>
+                      {field === "id" ? "Record ID" : field}
+                    </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
               <p>
-                <LockKeyhole aria-hidden="true" /> Insert-only. Existing keys are reported, never overwritten.
+                <LockKeyhole aria-hidden="true" /> Insert-only. Existing keys
+                are reported, never overwritten.
               </p>
               <Button
                 className="records-primary-action"
@@ -388,8 +465,14 @@ export function RecordImportPanel({
                 onClick={startImport}
                 disabled={starting}
               >
-                {starting ? <LoaderCircle className="records-spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
-                {starting ? "Approving…" : `Approve and import ${plan.rowCount.toLocaleString("en")} rows`}
+                {starting ? (
+                  <Spinner className="records-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 aria-hidden="true" />
+                )}
+                {starting
+                  ? "Approving…"
+                  : `Approve and import ${plan.rowCount.toLocaleString("en")} rows`}
               </Button>
             </footer>
           </section>
@@ -398,14 +481,21 @@ export function RecordImportPanel({
         {message && (
           <div className="records-form-message" role="status">
             <span>{message}</span>
-            {actionRequestId && <Link href={`/actions/${actionRequestId}`}>View action request</Link>}
+            {actionRequestId && (
+              <Link href={`/actions/${actionRequestId}`}>
+                View action request
+              </Link>
+            )}
           </div>
         )}
       </section>
 
       <aside className="records-import-side">
         {artifactValidation && (
-          <section className="records-import-artifact-report" aria-label="Connector import report">
+          <section
+            className="records-import-artifact-report"
+            aria-label="Connector import report"
+          >
             <header>
               {artifactIntegrity === "passed" ? (
                 <CheckCircle2 aria-hidden="true" />
@@ -414,47 +504,95 @@ export function RecordImportPanel({
               )}
               <div>
                 <span className="records-eyebrow">Connector migration</span>
-                <h2>{artifactIntegrity === "passed" ? "Integrity verified" : "Needs attention"}</h2>
+                <h2>
+                  {artifactIntegrity === "passed"
+                    ? "Integrity verified"
+                    : "Needs attention"}
+                </h2>
               </div>
             </header>
             <dl className="records-import-report">
-              <div><dt>Objects</dt><dd>{artifactRows.length.toLocaleString("en")}</dd></div>
-              <div><dt>Live rows</dt><dd>{artifactLiveRows.toLocaleString("en")}</dd></div>
-              <div><dt>Samples verified</dt><dd>{artifactVerifiedSamples.toLocaleString("en")}</dd></div>
-              <div><dt>Dangling references</dt><dd>{artifactDanglingCount.toLocaleString("en")}</dd></div>
-              <div><dt>Unmatched users</dt><dd>{count(artifactValidation.unmatchedUsers).toLocaleString("en")}</dd></div>
+              <div>
+                <dt>Objects</dt>
+                <dd>{artifactRows.length.toLocaleString("en")}</dd>
+              </div>
+              <div>
+                <dt>Live rows</dt>
+                <dd>{artifactLiveRows.toLocaleString("en")}</dd>
+              </div>
+              <div>
+                <dt>Samples verified</dt>
+                <dd>{artifactVerifiedSamples.toLocaleString("en")}</dd>
+              </div>
+              <div>
+                <dt>Dangling references</dt>
+                <dd>{artifactDanglingCount.toLocaleString("en")}</dd>
+              </div>
+              <div>
+                <dt>Unmatched users</dt>
+                <dd>
+                  {count(artifactValidation.unmatchedUsers).toLocaleString(
+                    "en",
+                  )}
+                </dd>
+              </div>
             </dl>
             <p>
-              Permissions collapsed to {artifactRoles.map((role) => String(role.role)).join(" and ") || "admin and member"}.
+              Permissions collapsed to{" "}
+              {artifactRoles.map((role) => String(role.role)).join(" and ") ||
+                "admin and member"}
+              .
             </p>
           </section>
         )}
         {activeRun ? (
           <section className="records-import-status">
             <header>
-              <span className={`records-import-status-dot is-${activeRun.status}`} />
+              <span
+                className={`records-import-status-dot is-${activeRun.status}`}
+              />
               <div>
                 <span className="records-eyebrow">Import status</span>
                 <h2>{statusLabel(activeRun.status)}</h2>
               </div>
             </header>
             <strong>{activeRun.sourceName}</strong>
-            <span>{activeRun.objectApiName} · {activeRun.sourceRows.toLocaleString("en")} source rows</span>
+            <span>
+              {activeRun.objectApiName} ·{" "}
+              {activeRun.sourceRows.toLocaleString("en")} source rows
+            </span>
             {activeRun.status === "running" && (
               <div className="records-import-progress">
-                <div><span style={{ width: `${percent}%` }} /></div>
-                <small>{processed.toLocaleString("en")} of {total.toLocaleString("en")} processed</small>
+                <div>
+                  <span style={{ width: `${percent}%` }} />
+                </div>
+                <small>
+                  {processed.toLocaleString("en")} of{" "}
+                  {total.toLocaleString("en")} processed
+                </small>
               </div>
             )}
-            {(activeRun.status === "succeeded" || activeRun.status === "cancelled") && (
+            {(activeRun.status === "succeeded" ||
+              activeRun.status === "cancelled") && (
               <dl className="records-import-report">
-                <div><dt>Inserted</dt><dd>{count(report?.inserted).toLocaleString("en")}</dd></div>
-                <div><dt>Not inserted</dt><dd>{count(report?.rejected).toLocaleString("en")}</dd></div>
-                <div><dt>Duplicates</dt><dd>{count(report?.duplicates).toLocaleString("en")}</dd></div>
+                <div>
+                  <dt>Inserted</dt>
+                  <dd>{count(report?.inserted).toLocaleString("en")}</dd>
+                </div>
+                <div>
+                  <dt>Not inserted</dt>
+                  <dd>{count(report?.rejected).toLocaleString("en")}</dd>
+                </div>
+                <div>
+                  <dt>Duplicates</dt>
+                  <dd>{count(report?.duplicates).toLocaleString("en")}</dd>
+                </div>
               </dl>
             )}
             {activeRun.error && (
-              <p className="records-import-error">{String(activeRun.error.message ?? "Import failed.")}</p>
+              <p className="records-import-error">
+                {String(activeRun.error.message ?? "Import failed.")}
+              </p>
             )}
             {["planned", "running"].includes(activeRun.status) && (
               <Button
@@ -463,7 +601,11 @@ export function RecordImportPanel({
                 onClick={cancelImport}
                 disabled={cancelling}
               >
-                {cancelling ? <LoaderCircle className="records-spin" aria-hidden="true" /> : <Ban aria-hidden="true" />}
+                {cancelling ? (
+                  <Spinner className="records-spin" aria-hidden="true" />
+                ) : (
+                  <Ban aria-hidden="true" />
+                )}
                 {cancelling ? "Cancelling…" : "Cancel at batch boundary"}
               </Button>
             )}
@@ -472,7 +614,10 @@ export function RecordImportPanel({
           <section className="records-import-principles">
             <LockKeyhole aria-hidden="true" />
             <h2>One approval, durable batches</h2>
-            <p>Rows move through the service-only GraphJin path. Every committed batch carries an audit entry and a same-transaction receipt.</p>
+            <p>
+              Rows move through the service-only GraphJin path. Every committed
+              batch carries an audit entry and a same-transaction receipt.
+            </p>
           </section>
         )}
 
@@ -480,10 +625,17 @@ export function RecordImportPanel({
           <section className="records-import-recent">
             <span className="records-eyebrow">Recent imports</span>
             {recentRuns.map((run) => (
-              <button data-ui-bespoke-reason="records import mapping" type="button" onClick={() => openRun(run.id)} key={run.id}>
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => openRun(run.id)}
+                key={run.id}
+              >
                 <span>{run.sourceName}</span>
-                <small>{run.objectApiName} · {statusLabel(run.status)}</small>
-              </button>
+                <small>
+                  {run.objectApiName} · {statusLabel(run.status)}
+                </small>
+              </Button>
             ))}
           </section>
         )}

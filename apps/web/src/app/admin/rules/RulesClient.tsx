@@ -6,11 +6,11 @@ import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
-import { SearchInput } from "@/components/ui/SearchInput";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/cn";
 import { matchesListSearch } from "@/lib/list-search";
 import SkillLearnCard from "./SkillLearnCard";
@@ -50,7 +50,7 @@ function describeMode(mode: string): string {
   }
 }
 
-function modePillVariant(mode: string): PillVariant {
+function modePillVariant(mode: string): BadgeVariant {
   switch (mode) {
     case "auto_approve":
       return "success";
@@ -304,9 +304,9 @@ function PolicyCard({
     <Disclosure
       title={policy.name}
       meta={
-        <Pill variant={modePillVariant(policy.mode)}>
+        <Badge variant={modePillVariant(policy.mode)}>
           {describeMode(policy.mode)}
-        </Pill>
+        </Badge>
       }
       className={cn(!policy.enabled && "opacity-60")}
     >
@@ -478,9 +478,9 @@ function InstalledPluginsSection({
                           </span>
                         </div>
                         <div className="flex min-w-0 items-center justify-end gap-2 flex-wrap max-[640px]:justify-start">
-                          <Pill variant={modePillVariant(mode)}>
+                          <Badge variant={modePillVariant(mode)}>
                             {describeMode(mode)}
-                          </Pill>
+                          </Badge>
                           <span className="min-w-0 text-ui-label text-text3 [overflow-wrap:anywhere]">
                             {describeDefaultMode(descriptor.default_mode)}
                           </span>

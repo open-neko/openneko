@@ -29,8 +29,8 @@ import HoursSavedHero, {
   type HoursSavedValue,
 } from "@/components/HoursSavedHero";
 import AgentLauncher from "@/components/AgentLauncher";
-import { Button } from "@/components/ui/Button";
-import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { cn } from "@/lib/cn";
 import {

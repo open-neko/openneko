@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Archive, Pin } from "lucide-react";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
-import { Button, IconButton } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { SearchInput } from "@/components/ui/SearchInput";
+import { Button, IconButton } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
 
 type MemoryRow = {

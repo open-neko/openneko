@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/Checkbox";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type GraphjinConfigSettings = {
   sourceConfigEnabled: boolean;
@@ -29,9 +29,9 @@ export default function GraphjinConfigControls({
         body: JSON.stringify({ sourceConfigEnabled: next }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(body?.error ?? `HTTP ${res.status}`);
       }
       toast.success(
@@ -54,8 +54,8 @@ export default function GraphjinConfigControls({
         <div>
           <h2 className="settings-card-title">Ask-based config</h2>
           <p className="settings-card-copy">
-            Admin Ask sessions can inspect GraphJin source mode and file approved
-            source, role, and access updates.
+            Admin Ask sessions can inspect GraphJin source mode and file
+            approved source, role, and access updates.
           </p>
         </div>
         <span
@@ -71,7 +71,7 @@ export default function GraphjinConfigControls({
         <Checkbox
           checked={enabled}
           disabled={saving}
-          onChange={(e) => void toggle(e.target.checked)}
+          onCheckedChange={(checked) => void toggle(checked === true)}
           label="Enable GraphJin config tools for admin Ask sessions and approved MCP action execution."
         />
       </div>

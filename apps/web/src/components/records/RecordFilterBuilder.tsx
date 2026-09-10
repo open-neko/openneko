@@ -7,9 +7,9 @@ import type {
   RecordFilterExpression,
   RecordListFilter,
 } from "@neko/records";
-import { Button } from "@/components/ui/Button";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Input, NativeSelect } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Input, NativeSelect } from "@/components/ui/field";
 
 export type RecordFilterField = {
   apiName: string;

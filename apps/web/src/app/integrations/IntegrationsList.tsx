@@ -6,9 +6,9 @@ import { toast } from "sonner";
 import { Plug } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
-import { Button, ButtonLink } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { SearchInput } from "@/components/ui/SearchInput";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
 
 type Row = {

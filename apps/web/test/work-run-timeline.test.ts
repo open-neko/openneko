@@ -85,7 +85,7 @@ describe("work run action timeline", () => {
       fileURLToPath(new URL("../src/app/(work)/work/work-screen.tsx", import.meta.url)),
       "utf8",
     );
-    expect(source).toContain('import { Disclosure } from "@/components/ui/Disclosure";');
+    expect(source).toContain('import { Disclosure } from "@/components/ui/disclosure";');
     expect(source).toContain('className="work-progress-disclosure"');
     expect(source).toContain('function splitProgressSections');
     expect(source).not.toContain('meta={live && index === sections.length - 1 ? "Live" : undefined}');

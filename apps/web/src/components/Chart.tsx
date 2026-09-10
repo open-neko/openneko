@@ -1,10 +1,21 @@
 "use client";
 
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line,
-  PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
 } from "recharts";
+import { ChartContainer } from "@/components/ui/chart";
 import type { ChartDataPoint } from "@/a2ui/catalog";
 export type { ChartDataPoint } from "@/a2ui/catalog";
 import { formatCompact } from "@/lib/format-number";
@@ -16,8 +27,20 @@ const MUTED_FILL = "var(--text2)";
 const BASELINE_STROKE = "var(--text)";
 const DEFAULT_ACCENT = "var(--accent)";
 
-const axisProps = { tick: { fontSize: "var(--type-label)", fill: AXIS_FILL }, axisLine: false, tickLine: false } as const;
-const tooltipStyle = { contentStyle: { borderRadius: 10, border: "none", boxShadow: "var(--shadow-h)", fontSize: "var(--type-body-sm)" }, itemStyle: { color: MUTED_FILL } };
+const axisProps = {
+  tick: { fontSize: "var(--type-label)", fill: AXIS_FILL },
+  axisLine: false,
+  tickLine: false,
+} as const;
+const tooltipStyle = {
+  contentStyle: {
+    borderRadius: 10,
+    border: "none",
+    boxShadow: "var(--shadow-h)",
+    fontSize: "var(--type-body-sm)",
+  },
+  itemStyle: { color: MUTED_FILL },
+};
 
 function donutFills(accent: string) {
   return [
@@ -30,7 +53,15 @@ function donutFills(accent: string) {
   ];
 }
 
-export default function Chart({ type, accent = DEFAULT_ACCENT, h = 130, data, centerLabel, valueLabel, baselineLabel }: {
+export default function Chart({
+  type,
+  accent = DEFAULT_ACCENT,
+  h = 130,
+  data,
+  centerLabel,
+  valueLabel,
+  baselineLabel,
+}: {
   type: string;
   accent?: string;
   h?: number;
@@ -64,12 +95,21 @@ export default function Chart({ type, accent = DEFAULT_ACCENT, h = 130, data, ce
   if (resolvedType === "donut") {
     const colors = donutFills(accent);
     const total = data.reduce((s, d) => s + d.v, 0);
-    const donutFormatter = (value: number | string | undefined, name: string | number | undefined) => [
-      `${((Number(value ?? 0) / total) * 100).toFixed(0)}%`,
-      String(name ?? ""),
-    ] as [string, string];
+    const donutFormatter = (
+      value: number | string | undefined,
+      name: string | number | undefined,
+    ) =>
+      [
+        `${((Number(value ?? 0) / total) * 100).toFixed(0)}%`,
+        String(name ?? ""),
+      ] as [string, string];
     return (
-      <ResponsiveContainer width="100%" height={h}>
+      <ChartContainer
+        config={{}}
+        className="aspect-auto w-full"
+        style={{ height: h }}
+        initialDimension={{ width: 320, height: h }}
+      >
         <PieChart>
           <Pie
             data={data}
@@ -87,29 +127,43 @@ export default function Chart({ type, accent = DEFAULT_ACCENT, h = 130, data, ce
             ))}
           </Pie>
           <Tooltip {...tooltipStyle} formatter={donutFormatter as never} />
-          <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle"
-            style={{ fontSize: "var(--type-body-sm)", fill: MUTED_FILL }}>
+          <text
+            x="50%"
+            y="50%"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            style={{ fontSize: "var(--type-body-sm)", fill: MUTED_FILL }}
+          >
             {centerLabel ?? formatCompact(total)}
           </text>
         </PieChart>
-      </ResponsiveContainer>
+      </ChartContainer>
     );
   }
 
-  const seriesFormatter = (value: number | string | undefined, name: string | number | undefined) => [
-    formatCompact(Number(value ?? 0)),
-    name === "v"
-      ? (valueLabel ?? "Value")
-      : name === "t"
-        ? (baselineLabel ?? "Prior")
-        : String(name),
-  ] as [string, string];
+  const seriesFormatter = (
+    value: number | string | undefined,
+    name: string | number | undefined,
+  ) =>
+    [
+      formatCompact(Number(value ?? 0)),
+      name === "v"
+        ? (valueLabel ?? "Value")
+        : name === "t"
+          ? (baselineLabel ?? "Prior")
+          : String(name),
+    ] as [string, string];
   const yTickFormatter = (v: number) => formatCompact(v);
 
   if (resolvedType === "area") {
     const gradientId = "chart-area-fill";
     return (
-      <ResponsiveContainer width="100%" height={h}>
+      <ChartContainer
+        config={{}}
+        className="aspect-auto w-full"
+        style={{ height: h }}
+        initialDimension={{ width: 320, height: h }}
+      >
         <AreaChart data={data}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -121,37 +175,81 @@ export default function Chart({ type, accent = DEFAULT_ACCENT, h = 130, data, ce
           <XAxis dataKey="d" {...axisProps} />
           <YAxis {...axisProps} width={32} tickFormatter={yTickFormatter} />
           <Tooltip {...tooltipStyle} formatter={seriesFormatter as never} />
-          <Area type="monotone" dataKey="v" name={valueLabel ?? "Value"} stroke={accent} strokeWidth={2} fill={`url(#${gradientId})`} dot={{ r: 3, fill: CARD_FILL, stroke: accent, strokeWidth: 1.5 }} />
+          <Area
+            type="monotone"
+            dataKey="v"
+            name={valueLabel ?? "Value"}
+            stroke={accent}
+            strokeWidth={2}
+            fill={`url(#${gradientId})`}
+            dot={{ r: 3, fill: CARD_FILL, stroke: accent, strokeWidth: 1.5 }}
+          />
         </AreaChart>
-      </ResponsiveContainer>
+      </ChartContainer>
     );
   }
 
   if (resolvedType === "bar") {
     return (
-      <ResponsiveContainer width="100%" height={h}>
+      <ChartContainer
+        config={{}}
+        className="aspect-auto w-full"
+        style={{ height: h }}
+        initialDimension={{ width: 320, height: h }}
+      >
         <BarChart data={data} barSize={16} barGap={3}>
           <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
           <XAxis dataKey="d" {...axisProps} />
           <YAxis {...axisProps} width={32} tickFormatter={yTickFormatter} />
           <Tooltip {...tooltipStyle} formatter={seriesFormatter as never} />
-          <Bar dataKey="v" name={valueLabel ?? "Value"} fill={accent} radius={[5, 5, 0, 0]} />
-          <Bar dataKey="t" name={baselineLabel ?? "Prior"} fill={`color-mix(in srgb, ${accent} 33%, transparent)`} radius={[5, 5, 0, 0]} />
+          <Bar
+            dataKey="v"
+            name={valueLabel ?? "Value"}
+            fill={accent}
+            radius={[5, 5, 0, 0]}
+          />
+          <Bar
+            dataKey="t"
+            name={baselineLabel ?? "Prior"}
+            fill={`color-mix(in srgb, ${accent} 33%, transparent)`}
+            radius={[5, 5, 0, 0]}
+          />
         </BarChart>
-      </ResponsiveContainer>
+      </ChartContainer>
     );
   }
 
   return (
-    <ResponsiveContainer width="100%" height={h}>
+    <ChartContainer
+      config={{}}
+      className="aspect-auto w-full"
+      style={{ height: h }}
+      initialDimension={{ width: 320, height: h }}
+    >
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
         <XAxis dataKey="d" {...axisProps} />
         <YAxis {...axisProps} width={32} tickFormatter={yTickFormatter} />
         <Tooltip {...tooltipStyle} formatter={seriesFormatter as never} />
-        <Line type="monotone" dataKey="v" name={valueLabel ?? "Value"} stroke={accent} strokeWidth={2.5} dot={{ r: 3, fill: CARD_FILL, stroke: accent, strokeWidth: 2 }} />
-        <Line type="monotone" dataKey="t" name={baselineLabel ?? "Prior"} stroke={BASELINE_STROKE} strokeOpacity={0.55} strokeWidth={1.75} strokeDasharray="5 4" dot={false} />
+        <Line
+          type="monotone"
+          dataKey="v"
+          name={valueLabel ?? "Value"}
+          stroke={accent}
+          strokeWidth={2.5}
+          dot={{ r: 3, fill: CARD_FILL, stroke: accent, strokeWidth: 2 }}
+        />
+        <Line
+          type="monotone"
+          dataKey="t"
+          name={baselineLabel ?? "Prior"}
+          stroke={BASELINE_STROKE}
+          strokeOpacity={0.55}
+          strokeWidth={1.75}
+          strokeDasharray="5 4"
+          dot={false}
+        />
       </LineChart>
-    </ResponsiveContainer>
+    </ChartContainer>
   );
 }

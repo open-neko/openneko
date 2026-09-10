@@ -23,15 +23,15 @@ describe("Magento pack administration copy", () => {
   it("uses shared controls and typography for Magento settings", async () => {
     const source = await readFile(adminSource, "utf8");
 
-    expect(source).toContain('from "@/components/ui/Checkbox"');
-    expect(source).toContain('from "@/components/ui/Field"');
-    expect(source).toContain('from "@/components/ui/Disclosure"');
-    expect(source).toContain('from "@/components/ui/Pill"');
+    expect(source).toContain('from "@/components/ui/checkbox"');
+    expect(source).toContain('from "@/components/ui/field"');
+    expect(source).toContain('from "@/components/ui/disclosure"');
+    expect(source).toContain('from "@/components/ui/badge"');
     expect(source).toContain("<Checkbox");
     expect(source).toContain("<Field");
     expect(source).toContain("<Input");
     expect(source).toContain("<Disclosure");
-    expect(source).toContain("<Pill");
+    expect(source).toContain("<Badge");
     expect(source).not.toMatch(/<(?:button|input|select|textarea|details|summary)\b/);
     expect(source).not.toMatch(/\bconst\s+(?:FIELD|LABEL|HELP|INPUT)\b/);
     expect(source).toContain("font-display text-ui-body font-bold text-text");

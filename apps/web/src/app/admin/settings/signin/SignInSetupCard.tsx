@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Input, NativeSelect } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Input, NativeSelect } from "@/components/ui/field";
 
 const MAGIC_LINK_PLUGIN = "@open-neko/plugin-magic-link";
 

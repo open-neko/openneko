@@ -18,10 +18,10 @@ import {
   parseRecordUpdatePayload,
   RecordActionDiff,
 } from "@/components/records/RecordActionDiff";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { SearchInput } from "@/components/ui/SearchInput";
-import { Tab, Tabs } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { SearchInput } from "@/components/ui/search-input";
+import { Tab, Tabs } from "@/components/ui/tabs";
 import { matchesListSearch } from "@/lib/list-search";
 
 type Filter = "awaiting" | "fired" | "rejected" | "all";

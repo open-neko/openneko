@@ -3,12 +3,19 @@
 // Lean briefing card tuned for findings (workflow_outputs) and approvals.
 // Distinct from the existing BriefingCard which is heavy/KPI-shaped.
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Card } from "@/components/ui/Card";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/cn";
 import { workflowDisplayName } from "@/lib/workflow-label";
 
@@ -46,23 +53,30 @@ function formatRelative(iso: string): string {
   });
 }
 
-function moodVariant(mood?: string | null): PillVariant {
+function moodVariant(mood?: string | null): BadgeVariant {
   switch (mood) {
-    case "good": return "success";
-    case "watch": return "watch";
-    case "act": return "danger";
-    default: return "muted";
+    case "good":
+      return "success";
+    case "watch":
+      return "watch";
+    case "act":
+      return "danger";
+    default:
+      return "muted";
   }
 }
 
-function riskVariant(risk?: string | null): PillVariant {
+function riskVariant(risk?: string | null): BadgeVariant {
   switch (risk) {
-    case "low": return "muted";
-    case "medium": return "watch";
+    case "low":
+      return "muted";
+    case "medium":
+      return "watch";
     case "high":
     case "critical":
       return "danger";
-    default: return "muted";
+    default:
+      return "muted";
   }
 }
 
@@ -79,13 +93,9 @@ export default function FindingCard({
   onMuted?: () => void;
 }) {
   const router = useRouter();
-  const [muteMenu, setMuteMenu] = useState<{ x: number; y: number } | null>(
-    null,
-  );
   const isApproval = data.kind === "approval";
 
   const muteScope = async (duration: (typeof MUTE_DURATIONS)[number]) => {
-    setMuteMenu(null);
     if (!data.scope) return;
     try {
       await fetch("/api/briefing/mute", {
@@ -99,8 +109,8 @@ export default function FindingCard({
     }
   };
   const pillLabel = isApproval
-    ? data.riskLevel ?? "pending"
-    : data.mood ?? "watch";
+    ? (data.riskLevel ?? "pending")
+    : (data.mood ?? "watch");
   const pillVariant = isApproval
     ? riskVariant(data.riskLevel)
     : moodVariant(data.mood);
@@ -114,128 +124,110 @@ export default function FindingCard({
   };
 
   return (
-    <Card
-      as="article"
-      className={cn(
-        "group px-5 py-4 cursor-pointer transition-[border-color,transform] duration-200",
-        "hover:border-text3 hover:-translate-y-px",
-        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
-      )}
-      style={{ animation: `fadeUp 0.4s ease ${index * 0.04}s both` }}
-      onClick={onDrillIn}
-      onContextMenu={(e) => {
-        if (!onMuted || !data.scope) return;
-        e.preventDefault();
-        setMuteMenu({ x: e.clientX, y: e.clientY });
-      }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onDrillIn();
-        }
-      }}
-    >
-      <div className="flex items-start justify-between gap-3 mb-1.5">
-        <h3 className="min-w-0 font-display text-ui-subsection font-bold tracking-[-0.01em] text-text leading-snug m-0 [overflow-wrap:anywhere]">
-          {data.title}
-        </h3>
-        <Pill variant={pillVariant} className="flex-shrink-0">
-          {pillLabel}
-        </Pill>
-      </div>
-
-      {data.body && (
-        <div className="work-markdown mb-2.5 text-sm leading-[1.55] text-text">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.body}</ReactMarkdown>
-        </div>
-      )}
-
-      {isApproval && data.target && (
-        <div className="mb-2">
-          <span className="font-mono text-xs text-text2">{data.target}</span>
-        </div>
-      )}
-
-      <div className="flex items-center gap-1.5 text-xs text-text3 flex-wrap">
-        <span>
-          from{" "}
-          <span className="text-text2 font-medium">
-            {workflowDisplayName(data.workflow)}
-          </span>
-        </span>
-        <span className="opacity-50">·</span>
-        <span className="font-mono text-xs text-text2">{formatRelative(data.createdAt)}</span>
-        {(data.seenCount ?? 1) > 1 && (
-          <>
-            <span className="opacity-50">·</span>
-            <span
-              className="font-mono text-xs text-text2"
-              title={
-                data.lastSeenAt
-                  ? `last seen ${formatRelative(data.lastSeenAt)}`
-                  : undefined
-              }
-            >
-              {data.seenCount}× today
-            </span>
-          </>
-        )}
-        {data.pinId && onUnpin && (
-          <button data-ui-bespoke-reason="briefing card interaction"
-            type="button"
-            className="bg-transparent border-0 text-text3 font-[inherit] text-ui-caption p-0 cursor-pointer hover:text-danger hover:underline underline-offset-2"
-            onClick={(e) => {
-              e.stopPropagation();
-              onUnpin(data.pinId as string);
-            }}
-            title="Unpin from briefing"
-          >
-            unpin
-          </button>
-        )}
-        <span className="ml-auto text-xs text-accent group-hover:underline underline-offset-2">
-          {isApproval ? "open approvals →" : "drill in →"}
-        </span>
-      </div>
-
-      {muteMenu && (
-        <div
-          className="fixed inset-0 z-50"
-          onClick={(e) => {
-            e.stopPropagation();
-            setMuteMenu(null);
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setMuteMenu(null);
+    <ContextMenu>
+      <ContextMenuTrigger asChild disabled={!onMuted || !data.scope}>
+        <Card
+          as="article"
+          className={cn(
+            "group px-5 py-4 cursor-pointer transition-[border-color,transform] duration-200",
+            "hover:border-text3 hover:-translate-y-px",
+            "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+          )}
+          style={{ animation: `fadeUp 0.4s ease ${index * 0.04}s both` }}
+          onClick={onDrillIn}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onDrillIn();
+            }
           }}
         >
-          <div
-            className="absolute bg-bg border-[1.5px] border-border rounded-xl py-1.5 shadow-lg min-w-[180px]"
-            style={{ left: muteMenu.x, top: muteMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-3 py-1 text-ui-label text-text3">
-              Mute <span className="font-mono">{data.scope}</span>
+          <div className="flex items-start justify-between gap-3 mb-1.5">
+            <h3 className="min-w-0 font-display text-ui-subsection font-bold tracking-[-0.01em] text-text leading-snug m-0 [overflow-wrap:anywhere]">
+              {data.title}
+            </h3>
+            <Badge variant={pillVariant} className="flex-shrink-0">
+              {pillLabel}
+            </Badge>
+          </div>
+
+          {data.body && (
+            <div className="work-markdown mb-2.5 text-sm leading-[1.55] text-text">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {data.body}
+              </ReactMarkdown>
             </div>
-            {MUTE_DURATIONS.map((d) => (
-              <button data-ui-bespoke-reason="briefing card interaction"
-                key={d}
+          )}
+
+          {isApproval && data.target && (
+            <div className="mb-2">
+              <span className="font-mono text-xs text-text2">
+                {data.target}
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 text-xs text-text3 flex-wrap">
+            <span>
+              from{" "}
+              <span className="text-text2 font-medium">
+                {workflowDisplayName(data.workflow)}
+              </span>
+            </span>
+            <span className="opacity-50">·</span>
+            <span className="font-mono text-xs text-text2">
+              {formatRelative(data.createdAt)}
+            </span>
+            {(data.seenCount ?? 1) > 1 && (
+              <>
+                <span className="opacity-50">·</span>
+                <span
+                  className="font-mono text-xs text-text2"
+                  title={
+                    data.lastSeenAt
+                      ? `last seen ${formatRelative(data.lastSeenAt)}`
+                      : undefined
+                  }
+                >
+                  {data.seenCount}× today
+                </span>
+              </>
+            )}
+            {data.pinId && onUnpin && (
+              <Button
+                variant="ghost"
                 type="button"
-                className="block w-full text-left bg-transparent border-0 px-3 py-1.5 text-ui-body-sm text-text cursor-pointer hover:bg-bg2 font-[inherit]"
+                className="bg-transparent border-0 text-text3 font-[inherit] text-ui-caption p-0 cursor-pointer hover:text-danger hover:underline underline-offset-2"
                 onClick={(e) => {
                   e.stopPropagation();
-                  void muteScope(d);
+                  onUnpin(data.pinId as string);
                 }}
+                title="Unpin from briefing"
               >
-                for {d}
-              </button>
-            ))}
+                unpin
+              </Button>
+            )}
+            <span className="ml-auto text-xs text-accent group-hover:underline underline-offset-2">
+              {isApproval ? "open approvals →" : "drill in →"}
+            </span>
           </div>
-        </div>
-      )}
-    </Card>
+        </Card>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[180px] rounded-inner border border-border bg-card p-1.5 shadow-lift">
+        <ContextMenuLabel>
+          Mute <span className="font-mono">{data.scope}</span>
+        </ContextMenuLabel>
+        {MUTE_DURATIONS.map((duration) => (
+          <ContextMenuItem
+            key={duration}
+            onSelect={() => void muteScope(duration)}
+          >
+            for {duration}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
