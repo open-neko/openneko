@@ -99,7 +99,6 @@ export default function SecurityForm({ initial }: { initial: InstallPolicyPayloa
         </AppHeader>
 
         <PageHeading
-          eyebrow="Settings · Trust"
           title="Security"
           description="Set the trust floor for plugin and skill installs. Every exception widens the agent’s install surface."
         />

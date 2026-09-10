@@ -162,7 +162,6 @@ export default async function SettingsPage() {
         <SectionNav current="admin" />
       </AppHeader>
       <PageHeading
-        eyebrow="Administration"
         title="Workspace settings"
         description="Configure the agent runtime, data access, research, and trust policy."
       />

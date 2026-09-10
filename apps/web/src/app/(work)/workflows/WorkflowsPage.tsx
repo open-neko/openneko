@@ -287,7 +287,6 @@ export default function WorkflowsPage() {
   return (
     <>
       <PageHeading
-        eyebrow="Agent operations"
         title="Workflows"
         meta={
           workflows === null

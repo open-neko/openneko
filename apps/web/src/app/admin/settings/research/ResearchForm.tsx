@@ -110,7 +110,6 @@ export default function ResearchForm({ initial }: { initial: SettingsPayload }) 
     <div className="root">
       <AppHeader back={{ href: "/admin/settings", label: "All settings" }} />
       <PageHeading
-        eyebrow="Settings · Enrichment"
         title="Industry research"
         description="Optionally enrich the business profile with current industry context during onboarding."
       />

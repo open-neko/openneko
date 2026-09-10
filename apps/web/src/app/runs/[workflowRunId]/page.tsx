@@ -430,7 +430,6 @@ export default function RunPage() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Run"
           title={workflow?.name ?? "Run"}
           meta={run.status.replace(/_/g, " ")}
           description={`${formatRunTimestamp(run.startedAt ?? run.createdAt)} · ${formatTrigger(run.triggerKind, run.executionMode)} · ${formatDuration(durationMs)}`}

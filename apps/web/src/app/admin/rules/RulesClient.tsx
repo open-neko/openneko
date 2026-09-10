@@ -196,7 +196,6 @@ export default function RulesClient() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Agent governance"
           title="Rules"
           description="Control skill learning and what agents may execute automatically, queue for review, or never run."
           actions={

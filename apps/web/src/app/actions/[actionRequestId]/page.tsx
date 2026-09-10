@@ -246,7 +246,6 @@ export default function ActionPage() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Action request"
           title={ar.summary || ar.kind}
           meta={statusLabel(ar.status)}
           description={[

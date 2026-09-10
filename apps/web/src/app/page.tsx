@@ -496,24 +496,6 @@ export default function Dashboard() {
     [router],
   );
 
-  // Render the formatted date only after mount. toLocaleDateString depends
-  // on the runtime's ICU data, which can differ between Node and the
-  // browser — an empty initial value keeps server + first client render
-  // in agreement, and useEffect populates the real string after hydration.
-  const [ds, setDs] = useState("");
-  useEffect(() => {
-    const dateId = window.setTimeout(() => {
-      setDs(
-        new Date().toLocaleDateString("en-IN", {
-          weekday: "short",
-          month: "long",
-          day: "numeric",
-        }),
-      );
-    }, 0);
-    return () => window.clearTimeout(dateId);
-  }, []);
-
   return (
     <>
       <div className="root dash-root">
@@ -559,7 +541,6 @@ export default function Dashboard() {
               </Link>
             )}
             <PageHeading
-              eyebrow={personalMode ? "Personal workspace" : "Workspace brief"}
               title="Briefing"
               description={
                 awaiting && awaiting.count > 0
@@ -588,17 +569,6 @@ export default function Dashboard() {
 
             <AgentLauncher />
 
-            <div
-              className="greet-eyebrow"
-              style={{ animation: "fadeUp 0.5s ease both" }}
-            >
-              <span className="greet-eyebrow-rule" aria-hidden="true" />
-              <span className="greet-eyebrow-accent">
-                {role && role !== "__overview__" ? `${role} briefing` : "Business signals"}
-              </span>
-              {ds && <span aria-hidden="true">·</span>}
-              {ds && <span>{ds}</span>}
-            </div>
             {/* Legacy greeting + subtitle from the KPI-only briefing API.
                 When the live summary is present, it's the canonical
                 read-on-the-business; the legacy greeting goes silent so the

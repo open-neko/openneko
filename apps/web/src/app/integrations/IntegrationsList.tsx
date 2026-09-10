@@ -109,7 +109,6 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
     <div className="root">
       <AppHeader />
       <PageHeading
-        eyebrow="Workspace connections"
         title="Integrations"
         description="Connect external accounts for agent actions. Credentials remain in this deployment."
       />

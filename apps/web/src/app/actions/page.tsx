@@ -242,7 +242,6 @@ function ActionsPageInner() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Human review"
           title="Review queue"
           description="Approve, reject, and inspect the external actions proposed by your agents."
           meta={

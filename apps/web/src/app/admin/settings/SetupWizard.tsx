@@ -392,7 +392,6 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   return (
     <EntryShell
       className="setup-entry-shell"
-      eyebrow="System setup"
       title="Connect the operating system."
       description="Configure storage, data access, and the agent runtime. Business onboarding begins when this infrastructure check is complete."
       steps={STEPS}

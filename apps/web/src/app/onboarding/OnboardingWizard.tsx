@@ -144,7 +144,6 @@ export default function OnboardingWizard({
 
   return (
     <EntryShell
-      eyebrow="Business onboarding"
       title="Build the business model."
       description="Define what the agent should monitor, prioritize, and explain."
       steps={onboardingSteps}

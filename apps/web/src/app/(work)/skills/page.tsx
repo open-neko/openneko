@@ -96,7 +96,6 @@ export default function SkillsPage() {
   return (
     <div className="library-page skills-library">
       <PageHeading
-        eyebrow="Knowledge"
         title="Skills"
         actions={
           <div className="library-head-stats" aria-label="Skill inventory">

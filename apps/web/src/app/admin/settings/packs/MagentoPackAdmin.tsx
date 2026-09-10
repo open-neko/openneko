@@ -501,7 +501,6 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
         <SectionNav current="admin" />
       </AppHeader>
       <PageHeading
-        eyebrow="Settings · Packs"
         title="Packs"
         description="Install and manage packs for your business."
       />

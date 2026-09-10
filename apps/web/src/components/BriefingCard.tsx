@@ -66,7 +66,6 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
   const state: BriefingCardState = ins.state ?? "ok";
   const moodKey = MOOD_LABELS[ins.mood] ? ins.mood : "good";
   const moodLabel = MOOD_LABELS[moodKey];
-  const numeral = String(index + 1).padStart(2, "0");
 
   const refreshing = retrying || state === "pending";
 
@@ -88,7 +87,6 @@ export default function BriefingCard({ ins, index, onDismiss, onRetry, onDeepDiv
       style={{ animation: `fadeUp 0.5s ease ${index * 0.07}s both` }}
     >
       <div className="itop">
-        <div className="inum">{numeral}</div>
         <div className="icontent">
           <div className="ieyebrow">
             <span className="ieyebrow-dot" aria-hidden="true" />

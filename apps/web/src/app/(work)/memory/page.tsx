@@ -154,7 +154,6 @@ export default function MemoryPage() {
   return (
     <div className="library-page memory-library">
       <PageHeading
-        eyebrow="Knowledge"
         title="Memory"
         actions={
           <div className="library-head-stats" aria-label="Memory status">

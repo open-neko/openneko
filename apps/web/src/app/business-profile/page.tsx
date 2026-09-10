@@ -242,7 +242,6 @@ export default function ProcessingPage() {
           <SectionNav current="business-profile" />
         </AppHeader>
         <PageHeading
-          eyebrow="Knowledge · Business model"
           title="Building the profile"
           description="OpenNeko is turning your onboarding brief into operating context for future answers and monitoring."
           meta="in progress"
@@ -267,7 +266,6 @@ export default function ProcessingPage() {
         <SectionNav current="business-profile" />
       </AppHeader>
       <PageHeading
-        eyebrow="Knowledge · Business model"
         title="Business profile"
         description="Review and refine the operating context OpenNeko uses in briefings, answers, and agent runs."
         meta={insightsPending ? "research running" : "ready"}

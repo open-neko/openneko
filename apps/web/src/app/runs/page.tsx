@@ -179,7 +179,6 @@ function RunsPageInner() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Agent operations"
           title="Run history"
           description="Inspect recent workflow runs, findings, and proposed actions."
           meta={data ? `${data.runs.length} shown` : undefined}

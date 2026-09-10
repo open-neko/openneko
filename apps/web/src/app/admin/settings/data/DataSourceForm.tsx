@@ -86,7 +86,6 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
     <div className="root">
       <AppHeader back={{ href: "/admin/settings", label: "All settings" }} />
       <PageHeading
-        eyebrow="Settings · Data"
         title="Data source"
         description="Set the GraphJin endpoint OpenNeko uses for business queries and agent tools."
       />

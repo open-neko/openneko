@@ -440,7 +440,6 @@ export default function LibraryPage() {
   return (
     <div className="library-page document-library">
       <PageHeading
-        eyebrow="Knowledge"
         title="Library"
         actions={
           <div className="library-head-stats" aria-label="Library status">

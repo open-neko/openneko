@@ -3,7 +3,7 @@ import Image from "next/image";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 
 type EntryShellProps = {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description: string;
   children: React.ReactNode;
@@ -40,7 +40,7 @@ export default function EntryShell({
       <div className="entry-canvas">
         <aside className="entry-orientation">
           <div>
-            <p className="entry-eyebrow">{eyebrow}</p>
+            {eyebrow ? <p className="entry-eyebrow">{eyebrow}</p> : null}
             <h1>{title}</h1>
             <p className="entry-description">{description}</p>
           </div>

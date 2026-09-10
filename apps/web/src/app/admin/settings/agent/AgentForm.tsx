@@ -126,7 +126,6 @@ export default function AgentForm({
     <div className="root">
       <AppHeader back={{ href: "/admin/settings", label: "All settings" }} />
       <PageHeading
-        eyebrow="Settings · Runtime"
         title="Agent"
         description="Configure the model provider and worker concurrency used by the Hermes agent runtime."
       />

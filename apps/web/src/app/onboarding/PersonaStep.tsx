@@ -47,7 +47,6 @@ export default function PersonaStep({
 
   return (
     <EntryShell
-      eyebrow="Personal setup"
       title="Define your role."
       description="This context belongs to your account. It shapes your agent runs without changing another person’s workspace."
     >

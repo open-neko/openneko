@@ -14,7 +14,6 @@ export default function OnboardingUnavailable({
   if (mode === "workspace") {
     return (
       <EntryShell
-        eyebrow="Workspace setup"
         title="An admin needs to finish setup."
         description="Your personal workspace will open after the organization model has been created."
       >
@@ -37,7 +36,6 @@ export default function OnboardingUnavailable({
 
   return (
     <EntryShell
-      eyebrow="Recovery"
       title="Setup needs a connection."
       description="OpenNeko keeps failure states explicit so configuration problems are recoverable."
     >

@@ -48,7 +48,6 @@ function SignInBody() {
 
   return (
     <EntryShell
-      eyebrow="Secure workspace"
       title="Return to the work."
       description="Sign in to your OpenNeko deployment and resume the briefings, decisions, and agent runs waiting for you."
     >

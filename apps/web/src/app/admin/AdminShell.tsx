@@ -25,7 +25,6 @@ export function AdminShell({
         <SectionNav current="admin" />
       </AppHeader>
       <PageHeading
-        eyebrow="Workspace control"
         title={title}
         description={subtitle}
       />

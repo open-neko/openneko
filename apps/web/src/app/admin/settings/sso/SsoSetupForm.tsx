@@ -328,7 +328,6 @@ export default function SsoSetupForm({
         </AppHeader>
 
         <PageHeading
-          eyebrow="Settings · SSO"
           title="Single sign-on"
           description="Connect your identity provider (Okta, Entra ID, and others) through Scalekit. The agent fetches the environment URL and client id for you; you paste the client secret once."
         />

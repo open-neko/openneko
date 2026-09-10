@@ -73,7 +73,6 @@ export default function PolicyDetailClient({ policyId }: { policyId: string }) {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Approval rule"
           title={policy?.name ?? "Loading rule"}
           description={policy?.description}
           meta={
