@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { buttonClassName } from "@/components/ui/button";
+import PageHeading from "@/components/PageHeading";
 import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
 import type { RecordAppNavItem } from "@/lib/records";
@@ -50,30 +51,27 @@ export function AppsOverview({
 
   return (
     <main className="apps-overview-root">
-      <header className="apps-overview-header">
-        <div>
-          <h1>Your workspaces</h1>
-          <p>
-            Governed record systems available to you. Access follows your app,
-            object, and field permissions.
-          </p>
-        </div>
-        {canCreate && !unavailable && (
-          <Link
-            className={buttonClassName({
-              variant: "primary",
-              className: "apps-overview-create",
-            })}
-            href={createHref}
-          >
-            <Plus aria-hidden="true" />
-            Create app
-          </Link>
-        )}
-      </header>
+      <PageHeading
+        title="Apps"
+        description="Governed record systems available to you. Access follows your app, object, and field permissions."
+        actions={
+          canCreate && !unavailable ? (
+            <Link
+              className={buttonClassName({
+                variant: "primary",
+                className: "apps-overview-create",
+              })}
+              href={createHref}
+            >
+              <Plus aria-hidden="true" />
+              Create app
+            </Link>
+          ) : undefined
+        }
+      />
 
       {apps.length > 0 && !unavailable ? (
-        <div className="mb-6 max-w-[520px]">
+        <div className="mb-5 max-w-[520px]">
           <SearchInput
             label="Search apps"
             value={query}

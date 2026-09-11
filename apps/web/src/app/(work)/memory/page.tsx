@@ -176,6 +176,7 @@ export default function MemoryPage() {
     <div className="library-page memory-library">
       <PageHeading
         title="Memory"
+        description="Facts OpenNeko saved about your business and uses in briefings, answers, and runs."
         actions={
           <div className="library-head-stats" aria-label="Memory status">
             <div>
@@ -196,7 +197,7 @@ export default function MemoryPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search saved memories"
-          className="bg-card"
+          className="bg-card max-w-[520px]"
         />
 
         {error ? (

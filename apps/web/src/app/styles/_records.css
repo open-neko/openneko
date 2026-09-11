@@ -5,7 +5,7 @@
   width: min(100%, 1080px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: clamp(34px, 6vw, 76px) clamp(22px, 5vw, 64px) 72px;
+  padding: clamp(16px, 3vw, 26px) clamp(22px, 5vw, 64px) 72px;
   color: var(--text);
   animation: records-enter 0.28s ease-out both;
 }

@@ -545,6 +545,7 @@ export default function LibraryPage() {
     <div className="library-page document-library">
       <PageHeading
         title="Library"
+        description="Documents OpenNeko reads for context in briefings, answers, and runs."
         actions={
           <div className="library-head-stats" aria-label="Library status">
             <div>
@@ -565,7 +566,7 @@ export default function LibraryPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search documents and concepts"
-          className="bg-card"
+          className="bg-card max-w-[520px]"
         />
 
         {error ? (

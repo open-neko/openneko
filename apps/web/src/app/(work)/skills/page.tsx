@@ -107,6 +107,7 @@ export default function SkillsPage() {
     <div className="library-page skills-library">
       <PageHeading
         title="Skills"
+        description="Capabilities your agents can call while they work a run."
         actions={
           <div className="library-head-stats" aria-label="Skill inventory">
             <div>
@@ -127,7 +128,7 @@ export default function SkillsPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search installed skills"
-          className="bg-card"
+          className="bg-card max-w-[520px]"
         />
 
         {error ? (

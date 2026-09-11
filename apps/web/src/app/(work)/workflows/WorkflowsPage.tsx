@@ -310,6 +310,7 @@ export default function WorkflowsPage() {
     <>
       <PageHeading
         title="Workflows"
+        description="Routes OpenNeko runs on your systems to surface findings and propose actions."
         meta={
           workflows === null
             ? "loading"

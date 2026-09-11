@@ -272,7 +272,7 @@ function ActionsPageInner() {
           }
         />
 
-        <div className="mb-4 max-w-[520px]">
+        <div className="mb-5 max-w-[520px]">
           <SearchInput
             label="Search actions"
             value={query}
