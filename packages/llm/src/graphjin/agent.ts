@@ -1,3 +1,4 @@
+import { packUserConnectionHeaders } from "./pack-user-connections";
 export type GraphjinAgentTurn = {
   role: "user" | "assistant";
   content: string;
@@ -107,11 +108,13 @@ export async function askGraphjinAgent(input: {
 }): Promise<GraphjinAgentResponse> {
   const res = await fetch(graphjinAgentEndpoint(input.baseUrl), {
     method: "POST",
-    headers: {
+    headers: await packUserConnectionHeaders(input.baseUrl, {
       accept: "application/json",
       "content-type": "application/json",
       authorization: `Bearer ${input.token}`,
-    },
+    }),
+    redirect: "error",
+    cache: "no-store",
     body: JSON.stringify(input.request),
     signal: input.signal,
   });

@@ -1,6 +1,10 @@
+import { packUserConnectionHeaders, type ConnectionBinding } from "./pack-user-connections";
 import { randomUUID } from "node:crypto";
 
 export type GraphjinQueryOptions = {
+  connectionBindings?: ConnectionBinding[];
+  /** Trusted configuration-only requests must never attach personal tokens. */
+  configurationOnly?: boolean;
   /** Full GraphJin GraphQL endpoint URL, e.g. `http://host:8080/api/v1/graphql`. */
   baseUrl: string;
   query: string;
@@ -27,7 +31,9 @@ export async function graphjinQuery<T = unknown>(
   };
   const res = await fetch(opts.baseUrl, {
     method: "POST",
-    headers,
+    headers: opts.configurationOnly ? headers : await packUserConnectionHeaders(opts.baseUrl, headers, opts.connectionBindings),
+    redirect: "error",
+    cache: "no-store",
     body: JSON.stringify({
       query: opts.query,
       variables: opts.variables ?? {},

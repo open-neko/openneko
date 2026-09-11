@@ -1085,10 +1085,12 @@ export class InProcessControlPlane implements AgentControlPlane {
     let token = "openneko-read-only";
     if (src.authMode === "jwt") {
       const { mintGraphjinToken } = await import("../graphjin/token");
+      const { getWorkRunActor } = await import("./personas");
+      const principal = input.runId ? graphjinReadPrincipal(await getWorkRunActor(input.runId, input.orgId)) : { userId: null, role: "service" as const };
       token = mintGraphjinToken({
         orgId: input.orgId,
-        userId: null,
-        role: "service",
+        userId: principal.userId,
+        role: principal.role,
       });
     }
     const source = {

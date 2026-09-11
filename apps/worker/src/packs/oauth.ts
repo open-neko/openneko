@@ -1,5 +1,5 @@
 import type { SolutionPackBundle } from "@neko/packs";
-import { and, db, eq, pack_install } from "@neko/db";
+import { and, db, eq, pack_install, pool } from "@neko/db";
 import { readSecretsStore, writeSecretsStore } from "@open-neko/plugin-install/secrets";
 import {
   buildPackAuthorizationUrl,
@@ -58,8 +58,10 @@ export class PackOAuthService {
   async status(packId: string, connectionKey: string): Promise<Record<string, unknown>> {
     const connection = await this.connection(packId, connectionKey);
     const secrets = (await readSecretsStore())[packSecretSection(packId)] ?? {};
-    const binding = packOAuthBinding(connection, secrets);
+    const binding = connection.scope === "user" ? null : packOAuthBinding(connection, secrets);
     return {
+      scope: connection.scope,
+      configured: Boolean(secrets[oauthStateKey(connection.key, "CLIENT_ID")] && secrets[secretEnvKey(connection.clientSecret)]),
       key: connection.key,
       providerLabel: connection.providerLabel,
       clientId: secrets[oauthStateKey(connection.key, "CLIENT_ID")] ?? null,
@@ -70,8 +72,25 @@ export class PackOAuthService {
     };
   }
 
+  async configure(packId: string, connectionKey: string, input: Record<string, unknown>) {
+    const connection = await this.connection(packId, connectionKey);
+    if (connection.scope === "user" && !await this.isInstalled(packId)) throw new Error("Install this pack before configuring its OAuth client");
+    const current = await readSecretsStore();
+    const section = packSecretSection(packId);
+    const saved = current[section] ?? {};
+    const clientId = typeof input.clientId === "string" ? input.clientId.trim() : "";
+    const clientSecret = (typeof input.clientSecret === "string" ? input.clientSecret.trim() : "") || saved[secretEnvKey(connection.clientSecret)];
+    if (!clientId || !clientSecret) throw new Error("OAuth client ID and client secret are required");
+    if (connection.scope === "user" && (clientId !== saved[oauthStateKey(connection.key, "CLIENT_ID")] || clientSecret !== saved[secretEnvKey(connection.clientSecret)])) {
+      await pool().query("delete from pack_user_connection c using pack_install i where c.pack_install_id=i.id and c.org_id=$1 and i.org_id=$1 and i.pack_id=$2 and c.connection_key=$3", [this.orgId, packId, connectionKey]);
+    }
+    await writeSecretsStore({ ...current, [section]: { ...saved, [oauthStateKey(connection.key, "CLIENT_ID")]: clientId, [secretEnvKey(connection.clientSecret)]: clientSecret } });
+    return this.status(packId, connectionKey);
+  }
+
   async begin(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<{ authorizationUrl: string }> {
     const connection = await this.connection(packId, connectionKey);
+    if (connection.scope === "user") throw new Error("Connect your personal account on Integrations");
     const current = await readSecretsStore();
     const section = packSecretSection(packId);
     const saved = current[section] ?? {};
@@ -100,6 +119,7 @@ export class PackOAuthService {
 
   async complete(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
     const connection = await this.connection(packId, connectionKey);
+    if (connection.scope === "user") throw new Error("Connect your personal account on Integrations");
     const code = typeof input.code === "string" ? input.code : "";
     const codeVerifier = typeof input.codeVerifier === "string" ? input.codeVerifier : "";
     const redirectUri = typeof input.redirectUri === "string" ? input.redirectUri : "";
@@ -143,6 +163,7 @@ export class PackOAuthService {
 
   async disconnect(packId: string, connectionKey: string): Promise<boolean> {
     const connection = await this.connection(packId, connectionKey);
+    if (connection.scope === "user") throw new Error("Connect your personal account on Integrations");
     const current = await readSecretsStore();
     const section = packSecretSection(packId);
     const secrets = current[section];
@@ -197,6 +218,7 @@ export class PackOAuthService {
       try {
         const bundle = await this.options.loadBundle(installation.pack_id, installation.source === "uploaded" ? installation.version : undefined);
         for (const connection of bundle.manifest.oauth) {
+          if (connection.scope === "user") continue;
           const store = await readSecretsStore();
           const section = packSecretSection(installation.pack_id);
           const secrets = store[section] ?? {};

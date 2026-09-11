@@ -12,7 +12,12 @@ vi.mock("@neko/llm/graphjin", async (importOriginal) => ({
   resolvePackSource: vi.fn(async (_orgId, source) => source),
 }));
 
-import { graphjinQuery } from "@neko/llm/graphjin";
+vi.mock("@neko/llm/graphjin/pack-user-connections", async original => ({
+  ...await original<typeof import("@neko/llm/graphjin/pack-user-connections")>(),
+  packConnectionBindings: vi.fn(),
+}));
+import { packConnectionBindings } from "@neko/llm/graphjin/pack-user-connections";
+import { graphjinQuery, mintGraphjinToken } from "@neko/llm/graphjin";
 import { declarativePackActionAdapter } from "../src/packs/declarative-action-runtime.js";
 
 const request = {
@@ -21,6 +26,7 @@ const request = {
   kind: "google_workspace.sheets",
   status: "approved",
   approvedByUserId: "admin-1",
+  actorUserId: "member-1",
   payload: {
     operation: "update_values",
     path: { spreadsheetId: "sheet-1", range: "Prices!A2:B2" },
@@ -32,6 +38,7 @@ const request = {
 beforeEach(() => {
   vi.clearAllMocks();
   query.mockResolvedValue({ rows: [{
+    id: "install-1", pack_id: "fixture", config: {},
     definition: {
       adapter: {
         kind: "graphjin_api_operation",
@@ -62,12 +69,28 @@ describe("declarative pack action runtime", () => {
       commandOrOperation: "updateSpreadsheetValues",
       result: { operation: "update_values", statusCode: 200 },
     });
+    expect(mintGraphjinToken).toHaveBeenCalledWith(expect.objectContaining({ userId: "member-1" }));
     expect(vi.mocked(graphjinQuery).mock.calls[0]![0]).toMatchObject({
       role: "pack_api_executor",
       variables: { call: { path: request.payload.path, query: request.payload.query, body: request.payload.body } },
     });
   });
 
+  it("binds the requester account despite JSONB key ordering and rejects a reconnect", async () => {
+    const row = (await query()).rows[0];
+    row.config = { _userOAuth: [{ key: "account" }] };
+    query.mockResolvedValue({ rows: [row] });
+    vi.mocked(packConnectionBindings).mockResolvedValue([{ installId: "install-1", connectionKey: "account", revision: "r1" }]);
+    vi.mocked(graphjinQuery).mockResolvedValue({ data: { gws_sheets_update_values: { ok: true, status_code: 200 } } });
+    const bound = { ...request, payload: { ...request.payload, _packConnections: [{ revision: "r1", connectionKey: "account", installId: "install-1" }] } };
+    await declarativePackActionAdapter({ request: bound });
+    expect(packConnectionBindings).toHaveBeenCalledWith({ orgId: "org-1", userId: "member-1" }, "install-1");
+    expect(vi.mocked(graphjinQuery).mock.calls[0]?.[0].connectionBindings).toEqual([{ installId: "install-1", connectionKey: "account", revision: "r1" }]);
+    vi.mocked(graphjinQuery).mockClear();
+    vi.mocked(packConnectionBindings).mockResolvedValue([{ installId: "install-1", connectionKey: "account", revision: "r2" }]);
+    await expect(declarativePackActionAdapter({ request: bound })).rejects.toThrow("changed");
+    expect(graphjinQuery).not.toHaveBeenCalled();
+  });
   it("rejects an operation that the installed pack did not declare", async () => {
     await expect(declarativePackActionAdapter({
       request: { ...request, payload: { ...request.payload, operation: "delete_spreadsheet" } },

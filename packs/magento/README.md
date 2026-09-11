@@ -4,7 +4,7 @@ The Magento pack connects OpenNeko to Magento Open Source or Adobe Commerce
 2.4.x. Analytics use a dedicated SELECT-only MariaDB/MySQL account. Governed
 writes use a Magento Integration token through GraphJin's curated REST adapter.
 
-The complete pack is installed every time. GraphJin 3.20.75 provides isolated
+Install the included pack in one click from Admin, Settings, Packs, then fill in its manifest-declared connection settings. Review and apply the configuration to activate the complete pack. GraphJin 3.20.77 provides isolated
 executor roles for curated Magento REST operations. A missing or insufficient
 Integration token leaves the affected domains view-only without producing a
 partial installation.

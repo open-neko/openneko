@@ -1,3 +1,4 @@
+import { pool } from "@neko/db";
 import type { AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
@@ -82,16 +83,19 @@ export async function prepareWorkflowRun(
     throw new Error(`Workflow ${workflow.name} is disabled.`);
   }
   const backend = await resolveAgentBackend(opts.orgId);
+  let actor: { userId: string | null; role: "admin" | "member" | "service" } = { userId: null, role: "service" };
+  if (workflow.ownerUserId) {
+    const owner = await pool().query<{ role: string }>("select role from app_user where org_id=$1 and id=$2 and disabled_at is null", [opts.orgId, workflow.ownerUserId]);
+    if (!owner.rows[0]) throw new Error("The workflow owner is no longer active");
+    actor = { userId: workflow.ownerUserId, role: owner.rows[0].role === "admin" ? "admin" : "member" };
+  }
   // Trigger threads live on the "workflow" channel, never "web", so they can't
   // surface in the human Ask sidebar — even as an orphan whose work_run never
   // persisted (the sidebar lists only "web" threads).
   const threadId =
     opts.threadId ??
     (await createWorkThread(opts.orgId, workflow.name, "workflow")).id;
-  const created = await createWorkRun(opts.orgId, threadId, backend.id, {
-    userId: null,
-    role: "service",
-  });
+  const created = await createWorkRun(opts.orgId, threadId, backend.id, actor);
   const workflowRun = await createWorkflowRun({
     orgId: opts.orgId,
     workflowId: opts.workflowId,

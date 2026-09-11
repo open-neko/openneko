@@ -54,6 +54,7 @@ blocklist:
   - encrypted
   - token
   - llm_provider_config
+  - pack_user_connection
 
 databases:
   neko:

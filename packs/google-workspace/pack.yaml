@@ -3,15 +3,15 @@ kind: SolutionPack
 metadata:
   id: google-workspace
   name: Google Workspace
-  version: 0.1.0
+  version: 0.2.0
   publisher: openneko
   category: productivity
 
 compatibility:
   openneko: ">=2.40.0 <3.0.0"
   graphjin:
-    analytics: ">=3.20.75 <4.0.0"
-    operator: ">=3.20.75 <4.0.0"
+    analytics: ">=3.20.77 <4.0.0"
+    operator: ">=3.20.77 <4.0.0"
   applications:
     - id: google-workspace
       editions: [workspace]
@@ -21,20 +21,28 @@ compatibility:
 inputs:
   - key: google-workspace.oauth_client_id
     type: string
-    required: true
+    required: false
     description: OAuth client ID from the customer's Google Cloud project.
 
 secrets:
   - key: google-workspace.oauth_client_secret
     purpose: pack_oauth_client
+    required: false
   - key: google-workspace.access_token
     purpose: pack_oauth_token
+    required: false
   - key: google-workspace.refresh_token
     purpose: pack_oauth_token
+    required: false
 
 oauth:
   - key: workspace
     providerLabel: Google Workspace
+    scope: user
+    experience:
+      description: Connect Gmail, Drive, Calendar, Sheets, Docs, and Slides for your work and automations.
+      setupInstructions: Create a Web application OAuth client in your Google Cloud project. Enable the APIs used by this pack and configure the consent screen. Add the redirect URI below, then save the client ID and client secret. Each user connects their own Google account on Integrations.
+      helpUrl: https://developers.google.com/identity/protocols/oauth2/web-server
     authorizationUrl: https://accounts.google.com/o/oauth2/v2/auth
     tokenUrl: https://oauth2.googleapis.com/token
     userInfoUrl: https://openidconnect.googleapis.com/v1/userinfo

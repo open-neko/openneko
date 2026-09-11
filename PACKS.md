@@ -16,7 +16,7 @@ For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
 - [Magento](packs/magento/pack.yaml) is the first-party commerce pack. Its
   [README](packs/magento/README.md) explains application-specific prerequisites.
 - [Google Workspace](packs/google-workspace/pack.yaml) shows customer-owned
-  OAuth, REST reads, and generic governed API actions.
+  per-user OAuth, REST reads, and generic governed API actions.
 
 Use the small example for read-only custom packs. Use Google Workspace as the
 reference for generic REST writes. Magento uses additional commerce-specific
@@ -76,7 +76,8 @@ Copy a working `pack.yaml` and edit these sections:
 | `compatibility` | OpenNeko and GraphJin versions, supported application editions/versions, and database engines/versions |
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
-| `oauth` | Pack-owned OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `oauth` | Connection scope, provider label, setup/help copy, OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `management` | Optional label and local path to an existing application management page |
 | `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
 | `health` | Required preflight checks, readiness groups, post-install steps, and post-write canaries |
@@ -133,12 +134,8 @@ purpose `graphjin_api_auth`. The installer supplies configuration and resolves
 secret references through the encrypted secret store. Keep credentials out of
 Git, archives, skills, and example payloads.
 
-For a user account connection, declare `oauth` in the manifest. The customer
-supplies the OAuth client ID and secret. OpenNeko calculates the callback URL,
-drives PKCE consent, encrypts the tokens, refreshes access before expiry, and
-binds the selected account to the installation. The OAuth endpoint hosts and API
-hosts must appear in `permissions.network`. See the
-[Google Workspace manifest](packs/google-workspace/pack.yaml) for an example.
+For OAuth, declare the connection and its credential references as described
+below. Packs do not implement callback handlers, token storage, or refresh code.
 
 API sources may request write or delete access. Each operation still needs a
 pack action and policy. Write policies install disabled, so installing a pack
@@ -154,6 +151,132 @@ operations are never exposed as mutations. See the
 Database source references require an existing read-only source binding and an
 organization GraphJin data source. See the [installation guide](docs/CUSTOM_PACKS.md)
 for `--source-id`, `--bind`, and secret-reference options.
+
+## Installation and configuration experience
+
+OpenNeko renders pack settings from `inputs`, `secrets`, and `oauth`; a new
+provider using these supported declarations needs no provider-specific settings
+component. Give inputs useful `description` values and declare defaults and enum
+choices where appropriate. Keep IDs and credential reference keys stable across
+versions.
+
+Built-in packs already ship with OpenNeko. Administrators select **Install** in
+**Admin → Settings → Packs**, without uploading an archive. This records the pack
+definition first; it does not activate external sources or install runtime
+artifacts. The installed pack then exposes its declared configuration. Reviewing
+and applying that configuration activates the pack through the shared lifecycle.
+In particular, an administrator cannot configure a personal OAuth client for an
+uninstalled pack. Custom packs retain the upload, review, and install flow.
+
+For an optional operations link, declare, for example:
+
+```yaml
+management:
+  label: Manage store operations
+  path: /admin/settings/packs/magento/operations
+```
+
+The link appears after installation and configuration. It must point to an
+existing local application route; declaring it does not create a page. Paths
+accept letters, digits, `/`, `_`, and `-`, and cannot be external URLs. Ordinary
+pack configuration needs no management route. Packs supply supported fields and
+copy; OpenNeko supplies shared controls, layout, accessibility, and account states.
+Packs cannot ship arbitrary UI components, HTML, or CSS.
+
+## Personal and deployment OAuth
+
+Choose the connection scope explicitly:
+
+| `oauth[].scope` | Account ownership and connection experience |
+| --- | --- |
+| `user` | An administrator saves the shared OAuth client configuration after installation. Each signed-in OpenNeko user, including non-admins, connects their own provider account on **Integrations**. |
+| `deployment` | An administrator connects a shared deployment account through pack settings. This is the default when `scope` is omitted, preserving older manifests. |
+
+SSO signs a user into OpenNeko; it does not connect their external provider
+account. Personal connections require GraphJin **3.20.77 or later**, a JWT-enabled
+organization GraphJin data source, and an authenticated OpenNeko user. Declare
+`>=3.20.77 <4.0.0` for the applicable GraphJin compatibility modes.
+
+The following is a manifest fragment for a personal connection. Replace the
+example endpoints and scopes with the provider's actual contract:
+
+```yaml
+inputs:
+  - key: my-pack.oauth_client_id
+    type: string
+    required: false
+    description: OAuth client ID from your provider application.
+secrets:
+  - key: my-pack.oauth_client_secret
+    purpose: pack_oauth_client
+    required: false
+  - key: my-pack.access_token
+    purpose: pack_oauth_token
+    required: false
+  - key: my-pack.refresh_token
+    purpose: pack_oauth_token
+    required: false
+oauth:
+  - key: account
+    providerLabel: Example Service
+    scope: user
+    experience:
+      description: Connect your account to read and update your work items.
+      setupInstructions: Create a web OAuth client and register the redirect URI shown below. Save the client ID and secret; each user then connects on Integrations.
+      helpUrl: https://developer.example.com/oauth
+    authorizationUrl: https://accounts.example.com/authorize
+    tokenUrl: https://accounts.example.com/token
+    userInfoUrl: https://api.example.com/me
+    clientIdInput: my-pack.oauth_client_id
+    clientSecret: my-pack.oauth_client_secret
+    accessToken: my-pack.access_token
+    refreshToken: my-pack.refresh_token
+    scopes: [openid, email, work.read, work.write]
+    accountIdField: sub
+    accountLabelField: email
+permissions:
+  network: [accounts.example.com, api.example.com]
+```
+
+Keep these client and token fields optional (`required: false`) to support
+installing before client setup and user consent. They are still required by the
+OAuth connection flow when used. `clientIdInput` must reference a declared input;
+`clientSecret`, `accessToken`, and `refreshToken` must reference declared secrets.
+Use `authorizationParams` for provider-specific consent parameters, such as
+requesting offline access. Account ID and label fields default to `sub` and
+`email`. All OAuth endpoints must use HTTPS, and their hosts and API source hosts
+must be declared in `permissions.network`.
+
+`experience` is optional. When present, `description` is required (up to 500
+characters) and appears on Integrations. `setupInstructions` (up to 4,000
+characters) appears with the administrator's generated callback URI;
+`helpUrl` must be HTTPS and supplies the connection help link. `providerLabel`
+names the connection, and `scopes` supplies the permissions list. Do not hardcode
+a deployment URL or callback handler into the pack.
+
+In each personal API source, keep the normal bearer reference:
+
+```yaml
+auth:
+  type: bearer
+  token: "{{secret.my-pack.access_token}}"
+```
+
+OpenNeko recognizes the matching user-scoped OAuth declaration and generates
+GraphJin's request-credential binding. Do not author internal header names or
+embed a user's token in generated source configuration. OpenNeko supplies the
+acting user's access token for each authorized request and refreshes it as needed.
+
+OpenNeko owns personal token storage: encrypted credentials in its metadata
+PostgreSQL database (`neko` by default), table `pack_user_connection`, scoped by
+organization, user, pack installation, and connection key. The pack declares
+ownership through `scope: user`; it does not choose a database or table. Shared
+OAuth client credentials remain deployment configuration. Disconnecting removes
+that user's credentials and invalidates account-bound approvals; removing the
+pack deletes its personal connections. Changing shared client configuration
+invalidates existing personal connections. When upgrading from deployment to
+user scope, require each user to reconnect; shared tokens are not migrated into
+personal accounts.
 
 ## Validate and exercise the pack
 
@@ -174,12 +297,17 @@ compatibility or successful end-user execution. Before submitting a change:
 
 1. Add focused regression coverage for changed behavior, using the existing pack
    and worker test suites.
-2. Upload and install in an isolated stack; review the plan and readiness results.
+2. Install in an isolated stack: use one-click installation for built-ins or upload
+   a custom archive. Review configuration, the plan, and readiness results.
 3. Run affected saved queries, metrics, workflows, and watchers against the actual
    provider. Check persisted results, not just successful HTTP responses.
 4. For supported writes, check the provider state, applied receipt, approval,
    reconciliation, and any advertised undo behavior. Use dedicated test records.
-5. Exercise upgrade behavior, including locally modified installed artifacts.
+5. For personal OAuth, verify admin-only client setup and two separate non-admin
+   accounts. Check account isolation, refresh, reconnect, disconnect, callback
+   replay rejection, and stale approval rejection after account changes. Verify
+   installed-but-unconfigured and uninstalled states on Integrations.
+6. Exercise upgrade behavior, including locally modified installed artifacts.
 
 Relevant suites include `pnpm --filter @neko/packs test` and the worker's
 `pack-declarative`, `pack-connector.integration`, `pack-lifecycle.integration`, and

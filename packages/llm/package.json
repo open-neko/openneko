@@ -21,6 +21,7 @@
     "./workflows/fence-schemas": "./src/workflows/fence-schemas.ts",
     "./graphjin": "./src/graphjin/index.ts",
     "./graphjin/sources-config": "./src/graphjin/sources-config.ts",
+    "./graphjin/pack-user-connections": "./src/graphjin/pack-user-connections.ts",
     "./graphjin/client": "./src/graphjin/client.ts",
     "./graphjin/file-source-assets": "./src/graphjin/file-source-assets.ts",
     "./graphjin/openapi-assets": "./src/graphjin/openapi-assets.ts",
@@ -46,7 +47,8 @@
     "google-auth-library": "^10.6.2",
     "pg": "^8.20.0",
     "yaml": "^2.8.1",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@neko/packs": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",

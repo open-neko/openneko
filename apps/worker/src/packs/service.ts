@@ -33,6 +33,7 @@ import {
   pack_operation,
   processing_job,
   pool,
+  sql,
   watcher,
   workflow_definition,
 } from "@neko/db";
@@ -89,6 +90,7 @@ export { resolveInputs } from "./configuration.js";
 
 const PACK_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 type PackInstallRequest = {
+  deferConfiguration?: boolean;
   version?: string;
   reviewHash?: string;
   inputs?: Record<string, unknown>;
@@ -112,7 +114,7 @@ type PackStatus = {
   readiness: Record<string, { status: string; reason: string | null }>;
   installedAt: string | null;
   lastError: string | null;
-  configuration: { inputs: Record<string, unknown>; dataSourceId?: string; sourceBindings: Record<string, string> };
+  configuration: { required?: boolean; inputs: Record<string, unknown>; dataSourceId?: string; sourceBindings: Record<string, string> };
 };
 
 type PackDoctorResult = {
@@ -187,6 +189,10 @@ export class PackService {
       if (!bundle.upload || bundle.upload.contentHash !== pinned?.contentHash) throw new Error("installed pack contents do not match the approved version");
     }
     return bundle;
+  }
+
+  configureOAuth(packId: string, connectionKey: string, input: Record<string, unknown>) {
+    return this.oauth.configure(packId, connectionKey, input);
   }
 
   oauthStatus(packId: string, connectionKey: string): Promise<Record<string, unknown>> {
@@ -324,13 +330,16 @@ export class PackService {
     let source: PackSourceSelection;
     if (!request.dataSourceId && prior?.source) source = await resolvePackSource(this.orgId, prior.source);
     else {
-      if (!request.dataSourceId && bundle.manifest.metadata.id !== "magento") throw new Error("select an enabled organization dataSourceId before installing a custom pack");
-      const [selected] = await db().select({ id: data_source.id, graphqlUrl: data_source.graphql_url, authMode: data_source.auth_mode }).from(data_source)
+      if (!request.dataSourceId && (bundle as AvailablePack).upload) throw new Error("select an enabled organization dataSourceId before installing a custom pack");
+      const available = await db().select({ id: data_source.id, graphqlUrl: data_source.graphql_url, authMode: data_source.auth_mode, isDefault: data_source.is_default }).from(data_source)
         .where(and(eq(data_source.org_id, this.orgId), eq(data_source.enabled, true), ...(request.dataSourceId ? [eq(data_source.id, request.dataSourceId)] : [])))
-        .orderBy(desc(data_source.is_default), data_source.created_at).limit(1);
+        .orderBy(desc(data_source.is_default), data_source.created_at).limit(2);
+      const selected = available[0];
+      if (!request.dataSourceId && available.length > 1 && !selected?.isDefault) throw new Error("Choose a default data connection before installing this pack");
       if (!selected) throw new Error("selected pack data source is unavailable in this organization");
-      source = selected;
+      source = { id: selected.id, graphqlUrl: selected.graphqlUrl, authMode: selected.authMode };
     }
+    if (bundle.manifest.oauth.some(connection => connection.scope === "user") && source.authMode !== "jwt") throw new Error("Personal connections require a GraphJin data connection with JWT authentication");
     const bindingHashes: Record<string, string> = {};
     const references = bundle.artifacts.filter(artifact => artifact.kind === "source" && artifact.targetRef.startsWith(`${bundle.manifest.metadata.id}.binding.`));
     const bindings = request.sourceBindings ?? Object.fromEntries(Object.entries(prior?.bindings ?? {}).filter(([key]) => references.some(artifact => artifact.key === key)));
@@ -340,7 +349,7 @@ export class PackService {
       if (!configFile) throw new Error("GraphJin configuration is unavailable");
       const config = parseYaml(await readFile(configFile, "utf8")) as { sources?: Array<Record<string, unknown>> };
       const live = await graphjinQuery<{ gj_config?: { sources?: Array<Record<string, unknown>> } }>({
-        baseUrl: graphjinEndpoint(source.graphqlUrl), headers: { authorization: `Bearer ${mintGraphjinToken({ orgId: this.orgId, userId: "pack-binding", role: "admin", ttlSeconds: 60 })}` },
+        baseUrl: graphjinEndpoint(source.graphqlUrl), configurationOnly: true, headers: { authorization: `Bearer ${mintGraphjinToken({ orgId: this.orgId, userId: "pack-binding", role: "admin", ttlSeconds: 60 })}` },
         query: "query { gj_config(id: \"current\") { sources } }", signal: AbortSignal.timeout(30_000),
       });
       if (live.errors?.length || !Array.isArray(live.data?.gj_config?.sources)) throw new Error("cannot verify selected GraphJin sources");
@@ -396,7 +405,7 @@ export class PackService {
     throw new Error(`the ${packId} operation for this idempotency key is still ${prior.status}`);
   }
 
-  async list(): Promise<Array<{ id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null }>> {
+  async list(): Promise<Array<{ id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null; source: "embedded" | "uploaded" }>> {
     const entries = await readdir(this.embeddedRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
     const installations = await db()
       .select({ packId: pack_install.pack_id, status: pack_install.status, lastError: pack_install.last_error })
@@ -418,6 +427,7 @@ export class PackService {
       const installation = installationByPack.get(bundle.manifest.metadata.id);
       return {
         id: bundle.manifest.metadata.id,
+        source: bundle.upload ? "uploaded" as const : "embedded" as const,
         name: bundle.manifest.metadata.name,
         version: bundle.manifest.metadata.version,
         installed: installation?.status === "installed",
@@ -542,7 +552,7 @@ export class PackService {
       .select({ readiness: pack_artifact.readiness, reason: pack_artifact.readiness_reason })
       .from(pack_artifact)
       .where(eq(pack_artifact.pack_install_id, installation.id));
-    const readiness: PackStatus["readiness"] = {};
+    const readiness: PackStatus["readiness"] = installation.config._definitionOnly ? { setup: { status: "blocked", reason: "configuration_required" } } : {};
     for (const artifact of artifacts) {
       if (!artifact.reason?.startsWith("operator:")) continue;
       const operatorMatch = /^operator:([^:]+):(.*)$/.exec(artifact.reason ?? "");
@@ -565,6 +575,7 @@ export class PackService {
       installedAt: installation.installed_at?.toISOString() ?? null,
       lastError: installation.last_error,
       configuration: {
+        required: installation.config._definitionOnly === true,
         inputs: Object.fromEntries(Object.entries(installation.config).filter(([key]) => !key.startsWith("_"))),
         dataSourceId: storedRuntime(installation.config)?.source?.id,
         sourceBindings: storedRuntime(installation.config)?.bindings ?? {},
@@ -774,7 +785,7 @@ export class PackService {
     }
 
     const bundle = await this.installedBundle(installation);
-    const usesGraphjin = Boolean(bundle.manifest.artifacts.graphjin || storedRuntime(installation.config)?.source);
+    let usesGraphjin = Boolean(bundle.manifest.artifacts.graphjin || storedRuntime(installation.config)?.source);
     const client = await pool().connect();
     let operationId: string | null = null;
     let graphjinRestore: (() => Promise<void>) | null = null;
@@ -800,6 +811,7 @@ export class PackService {
       if (["installing", "upgrading", "removing"].includes(installation.status)) {
         throw new Error(`pack ${packId} already has an operation in progress`);
       }
+      usesGraphjin = usesGraphjin && !installation.config._definitionOnly;
       const plan = await this.planBundle(bundle);
       const conflicts = plan.entries.filter((entry) => entry.action === "conflict");
       if (conflicts.length > 0) {
@@ -1010,6 +1022,7 @@ export class PackService {
             updated_at: new Date(),
           }).where(eq(pack_artifact.id, artifact.id));
         }
+        await tx.execute(sql`delete from pack_user_connection where org_id=${this.orgId} and pack_install_id=${installation.id}`);
         await tx.update(pack_install).set({
           status: "removed",
           removed_at: new Date(),
@@ -1110,6 +1123,27 @@ export class PackService {
         snapshot.bundle.artifacts.forEach(artifact => { artifact.targetRef = authoredBundle.artifacts.find(value => value.kind === artifact.kind && value.key === artifact.key)!.targetRef; });
         authoredBundle = snapshot.bundle;
         cleanupBundle = snapshot.cleanup;
+      }
+      if (request.deferConfiguration) {
+        if (operationType !== "install" || authoredBundle.upload) throw new Error("Only built-in packs support installation before configuration");
+        if (request.version && request.version !== authoredBundle.manifest.metadata.version) throw new Error("The built-in pack version changed; reload the pack list");
+        if (existing?.status === "installed") return (await this.status(packId))!;
+        if (existing && existing.status !== "removed") throw new Error("Resolve the previous pack operation before installing again");
+        await db().transaction(async tx => {
+          const [created] = await tx.insert(pack_install).values({
+            org_id: this.orgId, pack_id: packId, version: authoredBundle.manifest.metadata.version,
+            manifest_hash: authoredBundle.manifestHash, source: "embedded", status: "installed",
+            installed_by_user_id: request.actorUserId ?? null, installed_at: new Date(),
+            config: { _definitionOnly: true, _userOAuth: authoredBundle.manifest.oauth.filter(connection => connection.scope === "user") },
+          }).returning({ id: pack_install.id });
+          await tx.insert(pack_operation).values({
+            org_id: this.orgId, pack_install_id: created!.id, operation_type: "install",
+            actor_user_id: request.actorUserId ?? null, status: "succeeded", phase: "definition_installed",
+            requested_version: authoredBundle.manifest.metadata.version, idempotency_key: request.idempotencyKey ?? randomUUID(),
+            plan_hash: authoredBundle.manifestHash, completed_at: new Date(),
+          });
+        });
+        return (await this.status(packId))!;
       }
       let bundle: SolutionPackBundle = authoredBundle;
       const runtime = await this.runtime(bundle, request, storedRuntime(existing?.config ?? {}));
@@ -1769,14 +1803,16 @@ export class PackService {
             },
           });
         }
+        await tx.execute(sql`delete from pack_user_connection where org_id=${this.orgId} and pack_install_id=${installationId!}`);
         await tx.update(pack_install).set({
           status: "installed",
           config: {
             ...inputs,
             _runtime: runtime,
+            _userOAuth: bundle.manifest.oauth.filter(connection => connection.scope === "user"),
             ...(bundle.manifest.oauth.length > 0 ? {
               _oauth: Object.fromEntries(bundle.manifest.oauth.flatMap((connection) => {
-                const binding = packOAuthBinding(connection, nextPackSecrets);
+                const binding = connection.scope === "user" ? null : packOAuthBinding(connection, nextPackSecrets);
                 return binding ? [[connection.key, binding]] : [];
               })),
             } : {}),

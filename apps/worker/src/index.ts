@@ -91,7 +91,7 @@ import {
   type DataSourceContext,
   type PluginActionSeed,
 } from "@neko/llm/workflows";
-import { resolveDeclarativePackActionAdapter } from "./packs/declarative-action-runtime.js";
+import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
 import { ensureOrgWorkspace, reportDeploymentProfile } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
@@ -593,6 +593,7 @@ const server = createServer(
       configure: (packId, input) => packService.configure(packId, input),
       upgrade: (packId, input) => packService.upgrade(packId, input),
       uninstall: (packId, input) => packService.uninstall(packId, input),
+      configureOAuth: (packId, connectionKey, input) => packService.configureOAuth(packId, connectionKey, input),
       oauthStatus: (packId, connectionKey) => packService.oauthStatus(packId, connectionKey),
       beginOAuth: (packId, connectionKey, input) => packService.beginOAuth(packId, connectionKey, input),
       completeOAuth: (packId, connectionKey, input) => packService.completeOAuth(packId, connectionKey, input),
@@ -765,6 +766,7 @@ const unregisterRecordArtifactImportPreflight = registerRecordArtifactImportActi
     }),
 });
 const unregisterPackActionPreflight = registerPackActionPreflight();
+const unregisterPackConnectionPreflight = registerPackConnectionPreflight();
 const unregisterMagentoV2Runtime = registerMagentoV2Runtime();
 // Only now may the web process create action requests through this worker:
 // every worker-owned preflight hook is registered and will finish before the
@@ -1642,6 +1644,7 @@ const shutdown = async (signal: string) => {
   unregisterRecordArtifactImportPreflight();
   unregisterRecordSalesforcePreflight();
   unregisterPackActionPreflight();
+  unregisterPackConnectionPreflight();
   server.close();
   const cancelled = cancelAllAgents();
   if (cancelled > 0) {

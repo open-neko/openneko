@@ -1,3 +1,4 @@
+import { packConnectionHeader } from "@neko/packs/oauth-client";
 import { resolveWatcherVariables } from "@neko/llm/workflows";
 import { Kind, parse, print, visit, type FieldNode, type SelectionSetNode } from "graphql";
 import { basename, extname } from "node:path";
@@ -170,7 +171,8 @@ export function declarativeGraphjinUpdate(
         throw new Error("pack credentials must use declared secret references");
       }
     }
-    const source = packValue(authored, inputs, secrets) as Record<string, unknown>;
+    const personal = bundle.manifest.oauth.find(c => c.scope === "user" && authoredAuth?.token === `{{secret.${c.accessToken}}}`);
+    const source = packValue(personal ? { ...authored, auth: { ...authoredAuth, token: "request-bound" } } : authored, inputs, secrets) as Record<string, unknown>;
     if (source.kind === "database") {
       if (source.read_only === false) throw new Error("custom pack database sources must be read-only");
       if (!source.host || !source.dbname || !source.type) throw new Error("database source requires an explicit connection; select an existing-source binding for a source without connection settings");
@@ -216,7 +218,7 @@ export function declarativeGraphjinUpdate(
       specs_dir: "/config/specs",
       specs: { [basename(spec.path, extname(spec.path))]: {
         base_url: url.toString().replace(/\/$/, ""),
-        ...(auth ? { auth: { scheme: "bearer", token: auth.token } } : {}),
+        ...(auth ? { auth: { scheme: "bearer", ...(personal ? { token_from_request: { header: packConnectionHeader(bundle.manifest.metadata.id, personal.key) } } : { token: auth.token }) } } : {}),
         ...(operationExposures.get(String(source.name))?.size
           ? { operations: Object.fromEntries(operationExposures.get(String(source.name))!) }
           : {}),

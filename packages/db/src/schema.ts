@@ -2666,6 +2666,20 @@ export const pack_install = pgTable(
   }),
 );
 
+export const pack_user_connection = pgTable("pack_user_connection", {
+  org_id: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => app_user.id, { onDelete: "cascade" }),
+  pack_install_id: uuid("pack_install_id").notNull().references(() => pack_install.id, { onDelete: "cascade" }),
+  connection_key: text("connection_key").notNull(),
+  revision: uuid("revision").notNull().defaultRandom(),
+  account_id: text("account_id"),
+  account_label: text("account_label"),
+  credentials: text("credentials"),
+  pending_state_hash: text("pending_state_hash"),
+  pending_expires_at: ts("pending_expires_at"),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+}, t => ({ pk: primaryKey({ columns: [t.org_id, t.user_id, t.pack_install_id, t.connection_key] }) }));
+
 export const pack_artifact = pgTable(
   "pack_artifact",
   {

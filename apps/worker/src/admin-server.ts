@@ -241,6 +241,7 @@ export interface PacksHandlerSurface {
   configure(packId: string, input: Record<string, unknown>): Promise<unknown>;
   upgrade(packId: string, input: Record<string, unknown>): Promise<unknown>;
   uninstall(packId: string, input: Record<string, unknown>): Promise<unknown>;
+  configureOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
   oauthStatus(packId: string, connectionKey: string): Promise<unknown>;
   beginOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
   completeOAuth(packId: string, connectionKey: string, input: Record<string, unknown>): Promise<unknown>;
@@ -633,7 +634,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       return;
     }
     const packPath = (req.url ?? "").split(/[?#]/, 1)[0] ?? "";
-    const packOAuthRoute = /^\/admin\/packs\/([^/]+)\/oauth\/([^/]+)\/(status|begin|complete|disconnect)$/.exec(packPath);
+    const packOAuthRoute = /^\/admin\/packs\/([^/]+)\/oauth\/([^/]+)\/(status|configure|begin|complete|disconnect)$/.exec(packPath);
     if (packOAuthRoute) {
       let packId: string;
       let connectionKey: string;
@@ -717,13 +718,15 @@ async function handlePackOAuth(
   packs: PacksHandlerSurface | null,
   packId: string,
   connectionKey: string,
-  action: "status" | "begin" | "complete" | "disconnect",
+  action: "status" | "configure" | "begin" | "complete" | "disconnect",
   input: Record<string, unknown>,
 ): Promise<void> {
   if (!packs) { json(res, 503, { error: "solution-pack service unavailable" }); return; }
   try {
     const result = action === "status"
       ? await packs.oauthStatus(packId, connectionKey)
+      : action === "configure"
+        ? await packs.configureOAuth(packId, connectionKey, input)
       : action === "begin"
         ? await packs.beginOAuth(packId, connectionKey, input)
         : action === "complete"

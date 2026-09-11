@@ -7,7 +7,7 @@ import { nativeArtifactStateHash } from "../src/packs/artifact-state.js";
 
 function bundle(): SolutionPackBundle {
   const artifact = (kind: PackArtifact["kind"], content: unknown, path = ""): PackArtifact => ({ kind, content, path, key: `${kind}.health`, targetRef: "health", hash: "fixture" });
-  return { manifest: { metadata: { id: "fixture" }, health: { requiredPreflight: [], postInstall: [], postWriteCanary: [], readiness: {} } }, artifacts: [
+  return { manifest: { oauth: [], metadata: { id: "fixture" }, health: { requiredPreflight: [], postInstall: [], postWriteCanary: [], readiness: {} } }, artifacts: [
     artifact("source", { name: "service_health", kind: "api", base_url: "{{service.base_url}}", openapi: "graphjin/specs/service-health.yaml", auth: { type: "bearer", token: "{{secret.service.api_token}}" } }),
     artifact("spec", { openapi: "3.0.3", paths: { "/health-summary": { get: { operationId: "getHealthSummary" } } } }, "graphjin/specs/service-health.yaml"),
     artifact("relationships", { source: "service_health", relationships: [] }),
@@ -33,6 +33,8 @@ describe("declarative pack configuration", () => {
       allowed_roles: ["pack_api_executor"],
       expose_as: "gws_gmail_send_message",
     });
+    expect(gmail.specs.gmail).toMatchObject({ auth: { scheme: "bearer", token_from_request: { header: expect.stringMatching(/^X-OpenNeko-Pack-/) } } });
+    expect(JSON.stringify(update)).not.toContain('"token":"token"');
     expect(gmail.specs.gmail.operations.getMessage).toEqual({ expose_top_level: true });
   });
 

@@ -12,6 +12,7 @@ import {
 
 type OverflowMenuProps = {
   label?: string;
+  size?: "icon-sm" | "icon";
   align?: "start" | "end";
   children: ReactNode;
   className?: string;
@@ -19,6 +20,7 @@ type OverflowMenuProps = {
 
 export function OverflowMenu({
   label = "More actions",
+  size = "icon-sm",
   align = "end",
   children,
   className,
@@ -28,7 +30,7 @@ export function OverflowMenu({
       <DropdownMenuTrigger asChild>
         <IconButton
           label={label}
-          size="icon-sm"
+          size={size}
           variant="ghost"
           className={className}
           data-ui-menu-trigger=""

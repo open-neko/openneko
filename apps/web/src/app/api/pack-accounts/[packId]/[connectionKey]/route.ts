@@ -28,3 +28,14 @@ export async function DELETE(_request: Request, context: Context) {
   const result = await requestPackWorker(`/admin/packs/${encodeURIComponent(value.packId)}/oauth/${encodeURIComponent(value.connectionKey)}/disconnect`, { method: "POST", body: "{}" });
   return NextResponse.json(result.body, { status: result.status });
 }
+
+export async function POST(request: Request, context: Context) {
+  const actor = await requireAdminActor();
+  if (isDenied(actor)) return actor;
+  const value = await params(context);
+  if (!value) return NextResponse.json({ error: "Invalid pack connection" }, { status: 400 });
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body.clientId !== "string") return NextResponse.json({ error: "Client ID is required" }, { status: 400 });
+  const result = await requestPackWorker(`/admin/packs/${encodeURIComponent(value.packId)}/oauth/${encodeURIComponent(value.connectionKey)}/configure`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: body.clientId, clientSecret: body.clientSecret }) });
+  return NextResponse.json(result.body, { status: result.status });
+}

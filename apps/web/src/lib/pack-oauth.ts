@@ -7,6 +7,10 @@ const COOKIE = "openneko_pack_oauth_state";
 const MAX_AGE = 10 * 60;
 
 export type PackOAuthState = {
+  personal?: boolean;
+  userId?: string;
+  orgId?: string;
+  expiresAt?: number;
   packId: string;
   connectionKey: string;
   state: string;
@@ -21,7 +25,7 @@ function secret(): string {
 }
 
 export async function writePackOAuthState(value: PackOAuthState): Promise<void> {
-  const body = Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+  const body = Buffer.from(JSON.stringify({ ...value, expiresAt: Date.now() + MAX_AGE * 1000 }), "utf8").toString("base64url");
   const mac = createHmac("sha256", secret()).update(body).digest("base64url");
   (await cookies()).set(COOKIE, `${body}.${mac}`, {
     httpOnly: true,
@@ -46,6 +50,8 @@ export async function readAndClearPackOAuthState(): Promise<PackOAuthState | nul
   try {
     const value = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Record<string, unknown>;
     if (["packId", "connectionKey", "state", "codeVerifier", "returnPath"].some((key) => typeof value[key] !== "string" || !value[key])) return null;
+    if (typeof value.expiresAt !== "number" || value.expiresAt <= Date.now()) return null;
+    if (value.personal && (typeof value.userId !== "string" || typeof value.orgId !== "string")) return null;
     return value as PackOAuthState;
   } catch {
     return null;

@@ -209,6 +209,7 @@ export async function applyPackGraphjinConfig(input: {
         gj_config?: { catalog_revision?: string; sources?: unknown; tables?: unknown; relationships?: unknown };
       }>({
         baseUrl: input.endpoint,
+        configurationOnly: true,
         headers,
         query: `query ${revisionOperation} { gj_config(id: "current") { catalog_revision sources tables relationships } }`,
       });
@@ -284,6 +285,7 @@ export async function applyPackGraphjinConfig(input: {
       try {
         preview = await graphjinQuery({
           baseUrl: input.endpoint,
+        configurationOnly: true,
           headers,
           query: `mutation${previewInput.variableDefinitions} { gj_config(id: "current", update: ${previewInput.literal}) { valid preview_id errors_json } }`,
           variables: previewInput.variables,
@@ -325,6 +327,7 @@ export async function applyPackGraphjinConfig(input: {
       try {
         applied = await graphjinQuery({
           baseUrl: input.endpoint,
+        configurationOnly: true,
           headers,
           query: `mutation${applyInput.variableDefinitions} { gj_config(id: "current", update: ${applyInput.literal}) { applied catalog_revision errors_json } }`,
           variables: applyInput.variables,

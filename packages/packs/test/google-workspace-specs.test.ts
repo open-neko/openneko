@@ -17,6 +17,8 @@ describe("Google Workspace curated REST specifications", () => {
     expect(bundle.manifest.oauth).toEqual([
       expect.objectContaining({
         key: "workspace",
+        scope: "user",
+        experience: expect.objectContaining({ description: expect.any(String), setupInstructions: expect.any(String) }),
         clientIdInput: "google-workspace.oauth_client_id",
         clientSecret: "google-workspace.oauth_client_secret",
         accessToken: "google-workspace.access_token",
