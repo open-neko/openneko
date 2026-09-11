@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Archive, Pin } from "lucide-react";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
-import { Button, IconButton } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { Button, IconButton } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { SearchInput } from "@/components/ui/search-input";
+import { matchesListSearch } from "@/lib/list-search";
 
 type MemoryRow = {
   id: string;
@@ -54,6 +56,7 @@ export default function MemoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -150,12 +153,30 @@ export default function MemoryPage() {
   );
 
   const active = memories.filter((memory) => !memory.archivedAt);
+  const visibleActive = active.filter((memory) =>
+    matchesListSearch(
+      query,
+      memory.kind,
+      memory.scope,
+      memory.scopeId,
+      memory.text,
+    ),
+  );
+  const visiblePending = pending.filter((item) =>
+    matchesListSearch(
+      query,
+      item.draftKind,
+      item.draftScope,
+      item.draftText,
+      item.reasoning,
+    ),
+  );
 
   return (
     <div className="library-page memory-library">
       <PageHeading
-        eyebrow="Knowledge"
         title="Memory"
+        description="Facts OpenNeko saved about your business and uses in briefings, answers, and runs."
         actions={
           <div className="library-head-stats" aria-label="Memory status">
             <div>
@@ -171,6 +192,13 @@ export default function MemoryPage() {
       />
 
       <main className="library-main">
+        <SearchInput
+          label="Search memory"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search saved memories"
+        />
+
         {error ? (
           <div className="library-error" role="alert">
             <div>
@@ -188,17 +216,17 @@ export default function MemoryPage() {
           </div>
         ) : null}
 
-        {pending.length > 0 ? (
+        {visiblePending.length > 0 ? (
           <section className="library-section memory-review">
             <header className="library-section-head">
               <div>
                 <span>Review queue</span>
                 <h2>Pending suggestions</h2>
               </div>
-              <strong>{String(pending.length).padStart(2, "0")}</strong>
+              <strong>{String(visiblePending.length).padStart(2, "0")}</strong>
             </header>
             <ol className="memory-review-list">
-              {pending.map((item, index) => (
+              {visiblePending.map((item, index) => (
                 <li key={item.id} className="memory-review-row">
                   <span className="library-index">
                     {String(index + 1).padStart(2, "0")}
@@ -241,7 +269,7 @@ export default function MemoryPage() {
               <span>Agent context</span>
               <h2>Saved memories</h2>
             </div>
-            <strong>{String(active.length).padStart(2, "0")}</strong>
+            <strong>{String(visibleActive.length).padStart(2, "0")}</strong>
           </header>
 
           {loading ? (
@@ -250,11 +278,15 @@ export default function MemoryPage() {
               <span />
               <span />
             </div>
-          ) : active.length === 0 ? (
+          ) : visibleActive.length === 0 ? (
             <EmptyState
               className="library-empty"
-              title="No saved memory"
-              body="Stable facts and instructions appear here after you ask OpenNeko to remember them."
+              title={query ? "No matching memories" : "No saved memory"}
+              body={
+                query
+                  ? "Try another fact, kind, or scope."
+                  : "Stable facts and instructions appear here after you ask OpenNeko to remember them."
+              }
             />
           ) : (
             <>
@@ -267,7 +299,7 @@ export default function MemoryPage() {
                 <span />
               </div>
               <ol className="memory-index">
-                {active.map((memory, index) => (
+                {visibleActive.map((memory, index) => (
                   <li key={memory.id} className="memory-index-row">
                     <span className="library-index">
                       {String(index + 1).padStart(2, "0")}

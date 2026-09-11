@@ -4,7 +4,7 @@ const port = 3322;
 
 export default defineConfig({
   testDir: "./test/visual",
-  testMatch: "magento-design-system.spec.ts",
+  testMatch: ["magento-design-system.spec.ts", "ui-polish.spec.ts", "library-browser.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

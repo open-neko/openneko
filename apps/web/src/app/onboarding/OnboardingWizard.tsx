@@ -5,7 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import EntryShell from "@/components/EntryShell";
 import { toast } from "sonner";
 import Select from "@/components/Select";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // Quick-pick suggestions only — seats are free text (CV3 personas). A
 // custom role flows through metrics, briefing tabs, and the persona
@@ -13,11 +16,28 @@ import { Button } from "@/components/ui/Button";
 const SUGGESTED_SEATS = ["CEO", "CFO", "CRO", "COO", "CIO", "CPO"];
 const MAX_SEAT_LENGTH = 40;
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
-const MONTH_OPTIONS = MONTHS.map((label, i) => ({ value: String(i + 1), label }));
-const SOLO_ONBOARDING_STEPS = ["Business", "Briefing views", "Priorities"] as const;
+const MONTH_OPTIONS = MONTHS.map((label, i) => ({
+  value: String(i + 1),
+  label,
+}));
+const SOLO_ONBOARDING_STEPS = [
+  "Business",
+  "Briefing views",
+  "Priorities",
+] as const;
 const TEAM_ONBOARDING_STEPS = ["Business", "Priorities"] as const;
 
 export type WizardInitial = {
@@ -52,10 +72,14 @@ export default function OnboardingWizard({
   const [seats, setSeats] = useState<string[]>(
     teamMode
       ? ["Organization"]
-      : (initial.activeSeats.length > 0 ? initial.activeSeats : ["CEO"]),
+      : initial.activeSeats.length > 0
+        ? initial.activeSeats
+        : ["CEO"],
   );
   const [customSeat, setCustomSeat] = useState("");
-  const [prioritiesText, setPrioritiesText] = useState(initial.priorities.join("\n"));
+  const [prioritiesText, setPrioritiesText] = useState(
+    initial.priorities.join("\n"),
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,20 +104,18 @@ export default function OnboardingWizard({
         if (!cancelled) router.replace("/onboarding");
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, router]);
-
-  const toggleSeat = (s: string) => {
-    setSeats((prev) =>
-      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
-    );
-  };
 
   const addCustomSeat = () => {
     const s = customSeat.trim().slice(0, MAX_SEAT_LENGTH);
     if (!s) return;
     setSeats((prev) =>
-      prev.some((x) => x.toLowerCase() === s.toLowerCase()) ? prev : [...prev, s],
+      prev.some((x) => x.toLowerCase() === s.toLowerCase())
+        ? prev
+        : [...prev, s],
     );
     setCustomSeat("");
   };
@@ -144,7 +166,6 @@ export default function OnboardingWizard({
 
   return (
     <EntryShell
-      eyebrow="Business onboarding"
       title="Build the business model."
       description="Define what the agent should monitor, prioritize, and explain."
       steps={onboardingSteps}
@@ -155,11 +176,14 @@ export default function OnboardingWizard({
           <div className="entry-section-head">
             <p className="entry-section-kicker">01 · Business</p>
             <h2>Map the business</h2>
-            <p>Start with enough context for useful answers, not a company biography.</p>
+            <p>
+              Start with enough context for useful answers, not a company
+              biography.
+            </p>
           </div>
           <div className="entry-fields">
             <Field label="Company name">
-              <input data-ui-bespoke-reason="onboarding entry fields"
+              <Input
                 className="entry-control"
                 type="text"
                 value={companyName}
@@ -172,7 +196,7 @@ export default function OnboardingWizard({
             </Field>
 
             <Field label="What does the company do?">
-              <textarea data-ui-bespoke-reason="onboarding entry fields"
+              <Textarea
                 className="entry-control"
                 value={companyNote}
                 onChange={(event) => setCompanyNote(event.target.value)}
@@ -181,7 +205,8 @@ export default function OnboardingWizard({
                 aria-label="Company operating context"
               />
               <span className="entry-field-help">
-                Include customers, regions, business model, and the current operating constraint.
+                Include customers, regions, business model, and the current
+                operating constraint.
               </span>
             </Field>
 
@@ -212,28 +237,37 @@ export default function OnboardingWizard({
           <div className="entry-section-head">
             <p className="entry-section-kicker">02 · Briefing views</p>
             <h2>Which shared views do you need?</h2>
-            <p>These are organization-level lenses for a solo workspace, not user accounts.</p>
+            <p>
+              These are organization-level lenses for a solo workspace, not user
+              accounts.
+            </p>
           </div>
           <fieldset className="entry-field">
             <legend className="sr-only">Active decision-maker seats</legend>
-            <div className="entry-chip-grid">
-              {[...SUGGESTED_SEATS, ...seats.filter((seat) => !SUGGESTED_SEATS.includes(seat))].map((seat) => {
+            <ToggleGroup
+              type="multiple"
+              value={seats}
+              onValueChange={setSeats}
+              className="entry-chip-grid"
+            >
+              {[
+                ...SUGGESTED_SEATS,
+                ...seats.filter((seat) => !SUGGESTED_SEATS.includes(seat)),
+              ].map((seat) => {
                 const selected = seats.includes(seat);
                 return (
-                  <button data-ui-bespoke-reason="onboarding entry fields"
+                  <ToggleGroupItem
                     key={seat}
-                    type="button"
-                    onClick={() => toggleSeat(seat)}
+                    value={seat}
                     className={`entry-chip${selected ? " is-selected" : ""}`}
-                    aria-pressed={selected}
                   >
                     {seat}
-                  </button>
+                  </ToggleGroupItem>
                 );
               })}
-            </div>
+            </ToggleGroup>
             <div className="entry-inline">
-              <input data-ui-bespoke-reason="onboarding entry fields"
+              <Input
                 className="entry-control"
                 value={customSeat}
                 maxLength={MAX_SEAT_LENGTH}
@@ -278,16 +312,21 @@ export default function OnboardingWizard({
               {teamMode ? "02 · Priorities" : "03 · Priorities"}
             </p>
             <h2>Set the first watchlist</h2>
-            <p>OpenNeko will use these priorities to rank signals while it learns from your work.</p>
+            <p>
+              OpenNeko will use these priorities to rank signals while it learns
+              from your work.
+            </p>
           </div>
           <div className="entry-fields">
             <Field label="What needs attention this quarter?">
-              <textarea data-ui-bespoke-reason="onboarding entry fields"
+              <Textarea
                 className="entry-control"
                 value={prioritiesText}
                 onChange={(event) => setPrioritiesText(event.target.value)}
                 rows={5}
-                placeholder={"Defend wholesale margins\nReduce stock-outs on top SKUs\nGrow direct sales in Europe"}
+                placeholder={
+                  "Defend wholesale margins\nReduce stock-outs on top SKUs\nGrow direct sales in Europe"
+                }
                 aria-label="Quarterly priorities"
               />
               <span className="entry-field-help">
@@ -324,7 +363,13 @@ export default function OnboardingWizard({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="entry-field">
       <span>{label}</span>

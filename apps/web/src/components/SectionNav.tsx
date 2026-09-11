@@ -26,7 +26,7 @@ export default function SectionNav({
         href="/"
         className={`topbar-nav-link${current === "dashboard" ? " is-active" : ""}`}
       >
-        Dashboard
+        Briefing
       </Link>
       <Link
         href="/work"
@@ -53,7 +53,7 @@ export default function SectionNav({
         href="/business-profile"
         className={`topbar-nav-link${current === "business-profile" ? " is-active" : ""}`}
       >
-        Business Profile
+        Business profile
       </Link>
       <Link
         href="/admin"

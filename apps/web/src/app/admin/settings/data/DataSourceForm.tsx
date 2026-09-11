@@ -4,8 +4,8 @@ import { useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/field";
 
 type DataSourcePayload = {
   source: "org" | "unset";
@@ -86,7 +86,6 @@ export default function DataSourceForm({ initial }: { initial: DataSourcePayload
     <div className="root">
       <AppHeader back={{ href: "/admin/settings", label: "All settings" }} />
       <PageHeading
-        eyebrow="Settings · Data"
         title="Data source"
         description="Set the GraphJin endpoint OpenNeko uses for business queries and agent tools."
       />

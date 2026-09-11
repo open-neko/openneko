@@ -1,14 +1,16 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { Button } from "@/components/ui/Button";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
-import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
+import { matchesListSearch } from "@/lib/list-search";
 
 type StatusFilter = "active" | "completed" | "failed" | "all";
 
@@ -75,7 +77,7 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, " ");
 }
 
-function statusVariant(status: string): PillVariant {
+function statusVariant(status: string): BadgeVariant {
   switch (status) {
     case "completed":
       return "success";
@@ -130,6 +132,7 @@ function RunsPageInner() {
   );
   const [data, setData] = useState<RunsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -170,6 +173,21 @@ function RunsPageInner() {
     else url.searchParams.set("status", next);
     window.history.replaceState({}, "", url.toString());
   }, []);
+  const visibleRuns = useMemo(
+    () =>
+      (data?.runs ?? []).filter((run) =>
+        matchesListSearch(
+          query,
+          run.workflow.name,
+          run.triggerKind,
+          run.executionMode,
+          run.status,
+          run.summary,
+          run.error,
+        ),
+      ),
+    [data?.runs, query],
+  );
 
   return (
     <>
@@ -179,11 +197,19 @@ function RunsPageInner() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Agent operations"
           title="Run history"
           description="Inspect recent workflow runs, findings, and proposed actions."
-          meta={data ? `${data.runs.length} shown` : undefined}
+          meta={data ? `${visibleRuns.length} shown` : undefined}
         />
+
+        <div className="mb-5 max-w-[520px]">
+          <SearchInput
+            label="Search run history"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search workflows, triggers, and results"
+          />
+        </div>
 
         <SegmentedControl aria-label="Run status filter" className="mb-5">
           {TABS.map((tab) => (
@@ -205,13 +231,13 @@ function RunsPageInner() {
           <div className="py-[50px] text-center text-sm text-text3">
             Loading…
           </div>
-        ) : data.runs.length === 0 ? (
+        ) : visibleRuns.length === 0 ? (
           <div className="py-[50px] text-center text-sm text-text3">
-            No workflow runs yet.
+            {query ? "No runs match this search." : "No workflow runs yet."}
           </div>
         ) : (
           <ul className="list-none p-0 m-0 flex flex-col gap-2.5">
-            {data.runs.map((run) => (
+            {visibleRuns.map((run) => (
               <li key={run.id}>
                 <Button
                   variant="secondary"
@@ -219,65 +245,69 @@ function RunsPageInner() {
                   className="!min-h-0 w-full !items-stretch !justify-start !whitespace-normal !rounded-2xl px-4 py-3.5 text-left hover:shadow-soft"
                   onClick={() => router.push(`/runs/${run.id}`)}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-text">
-                          {run.workflow.name}
-                        </span>
-                        <span className="font-mono text-ui-caption text-text3">
-                          {run.triggerKind}
-                          {run.chainDepth > 0
-                            ? ` · chain ${run.chainDepth}`
-                            : ""}
-                        </span>
-                        {run.triggerKind === "api" && run.executionMode ? (
-                          <Pill
-                            variant={
-                              run.executionMode === "batch" ? "success" : "muted"
-                            }
-                          >
-                            {run.executionMode}
-                          </Pill>
-                        ) : null}
+                  <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-text">
+                            {run.workflow.name}
+                          </span>
+                          <span className="font-mono text-ui-caption text-text3">
+                            {run.triggerKind}
+                            {run.chainDepth > 0
+                              ? ` · chain ${run.chainDepth}`
+                              : ""}
+                          </span>
+                          {run.triggerKind === "api" && run.executionMode ? (
+                            <Badge
+                              variant={
+                                run.executionMode === "batch"
+                                  ? "success"
+                                  : "muted"
+                              }
+                            >
+                              {run.executionMode}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1.5 mb-0 text-ui-body-sm leading-[1.45] text-text2 line-clamp-2">
+                          {describeRun(run)}
+                        </p>
                       </div>
-                      <p className="mt-1.5 mb-0 text-ui-body-sm leading-[1.45] text-text2 line-clamp-2">
-                        {describeRun(run)}
-                      </p>
+                      <Badge variant={statusVariant(run.status)}>
+                        {statusLabel(run.status)}
+                      </Badge>
                     </div>
-                    <Pill variant={statusVariant(run.status)}>
-                      {statusLabel(run.status)}
-                    </Pill>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5 text-ui-caption text-text3">
-                    <span className="font-mono">
-                      {formatRelative(run.createdAt)}
-                    </span>
-                    <span className="text-text3/70">·</span>
-                    <span className="font-mono">
-                      {formatDuration(run.durationMs)}
-                    </span>
-                    <span className="text-text3/70">·</span>
-                    <span>
-                      {run.outputCount}{" "}
-                      {run.outputCount === 1 ? "finding" : "findings"}
-                    </span>
-                    <span className="text-text3/70">·</span>
-                    <span>
-                      {run.actionCount}{" "}
-                      {run.actionCount === 1 ? "action" : "actions"}
-                    </span>
-                    {run.pendingActionCount > 0 && (
-                      <>
-                        <span className="text-text3/70">·</span>
-                        <span className="text-warn-ink font-semibold">
-                          {run.pendingActionCount} awaiting you
-                        </span>
-                      </>
-                    )}
-                    <span className="ml-auto font-mono text-ui-caption text-text3">
-                      →
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 text-ui-caption text-text3">
+                      <span className="font-mono">
+                        {formatRelative(run.createdAt)}
+                      </span>
+                      <span className="text-text3/70">·</span>
+                      <span className="font-mono">
+                        {formatDuration(run.durationMs)}
+                      </span>
+                      <span className="text-text3/70">·</span>
+                      <span>
+                        {run.outputCount}{" "}
+                        {run.outputCount === 1 ? "finding" : "findings"}
+                      </span>
+                      <span className="text-text3/70">·</span>
+                      <span>
+                        {run.actionCount}{" "}
+                        {run.actionCount === 1 ? "action" : "actions"}
+                      </span>
+                      {run.pendingActionCount > 0 && (
+                        <>
+                          <span className="text-text3/70">·</span>
+                          <span className="text-warn-ink font-semibold">
+                            {run.pendingActionCount} awaiting you
+                          </span>
+                        </>
+                      )}
+                      <span className="ml-auto font-mono text-ui-caption text-text3">
+                        →
+                      </span>
+                    </div>
                   </div>
                 </Button>
               </li>

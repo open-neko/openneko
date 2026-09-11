@@ -6,9 +6,9 @@ import AppHeader from "@/components/AppHeader";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, Input } from "@/components/ui/field";
 
 type InstallPolicy = {
   allowUnverified: boolean;
@@ -24,12 +24,19 @@ type InstallPolicyPayload = {
 const OFFICIAL_MARKETPLACE_URL =
   "https://open-neko.github.io/plugins/marketplace.json";
 
-export default function SecurityForm({ initial }: { initial: InstallPolicyPayload }) {
+export default function SecurityForm({
+  initial,
+}: {
+  initial: InstallPolicyPayload;
+}) {
   const [policy, setPolicy] = useState<InstallPolicy>(initial.policy);
   const [newMarketplace, setNewMarketplace] = useState("");
   const [saving, setSaving] = useState(false);
 
-  function toggle<K extends keyof InstallPolicy>(key: K, value: InstallPolicy[K]) {
+  function toggle<K extends keyof InstallPolicy>(
+    key: K,
+    value: InstallPolicy[K],
+  ) {
     setPolicy((p) => ({ ...p, [key]: value }));
   }
 
@@ -77,7 +84,9 @@ export default function SecurityForm({ initial }: { initial: InstallPolicyPayloa
         body: JSON.stringify(policy),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(body?.error ?? `HTTP ${res.status}`);
       }
       toast.success("Install policy saved.");
@@ -99,7 +108,6 @@ export default function SecurityForm({ initial }: { initial: InstallPolicyPayloa
         </AppHeader>
 
         <PageHeading
-          eyebrow="Settings · Trust"
           title="Security"
           description="Set the trust floor for plugin and skill installs. Every exception widens the agent’s install surface."
         />
@@ -107,11 +115,11 @@ export default function SecurityForm({ initial }: { initial: InstallPolicyPayloa
         <section className="flex flex-col gap-6 mt-2">
           <Toggle
             label="Allow unverified installs"
-            help="Lets operators run `openneko install <pkg> --unverified` (bypasses every marketplace). Use only for plugin authoring or emergency hotfixes — integrity comes from npm on trust."
+            help="Lets operators run `openneko install <pkg> --unverified` (bypasses every marketplace). Use only for plugin authoring or emergency hotfixes. Integrity comes from npm on trust."
             checked={policy.allowUnverified}
             onChange={(v) => toggle("allowUnverified", v)}
           />
-  
+
           <Toggle
             label="Allow community-skill installs from git URLs"
             help="Lets operators run `openneko install <git-url>` to pull a skill directly from GitHub / GitLab / Codeberg. Skills are procedural knowledge the agent follows; any shell blocks run inside the agent's OpenShell sandbox."
@@ -130,7 +138,9 @@ export default function SecurityForm({ initial }: { initial: InstallPolicyPayloa
                   key={url}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-bg"
                 >
-                  <code className="flex-1 truncate text-ui-body-sm text-text2">{url}</code>
+                  <code className="flex-1 truncate text-ui-body-sm text-text2">
+                    {url}
+                  </code>
                   {url === OFFICIAL_MARKETPLACE_URL ? (
                     <span className="text-ui-caption text-text3">official</span>
                   ) : (
@@ -156,12 +166,16 @@ export default function SecurityForm({ initial }: { initial: InstallPolicyPayloa
                 className="flex-1"
                 spellCheck={false}
               />
-              <Button type="button" onClick={addMarketplace} variant="secondary">
+              <Button
+                type="button"
+                onClick={addMarketplace}
+                variant="secondary"
+              >
                 Add
               </Button>
             </div>
           </Field>
-  
+
           <div className="flex justify-end mt-2">
             <Button type="button" onClick={save} disabled={saving}>
               {saving ? "Saving…" : "Save"}
@@ -191,9 +205,11 @@ function Toggle({
       <Checkbox
         label={label}
         checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
+        onCheckedChange={(checked) => onChange(checked === true)}
       />
-      <p className="pl-6 text-ui-caption leading-[var(--leading-compact)] text-text3">{help}</p>
+      <p className="pl-6 text-ui-caption leading-[var(--leading-compact)] text-text3">
+        {help}
+      </p>
     </div>
   );
 }

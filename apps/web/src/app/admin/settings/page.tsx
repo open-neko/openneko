@@ -98,14 +98,14 @@ export default async function SettingsPage() {
     {
       href: "/admin/settings/data",
       title: "Data source",
-      copy: "Graphjin server endpoint OpenNeko should connect to.",
+      copy: "GraphJin server endpoint OpenNeko should connect to.",
       status: dataReady ? "Configured" : "Not set",
       statusTone: dataReady ? "success" : "watch",
     },
     {
       href: "/admin/settings/agent",
       title: "Agent",
-      copy: "Hermes — works with any supported primary provider.",
+      copy: "The Hermes runtime works with any supported primary provider.",
       status: primaryReady ? "Hermes runtime" : "Primary provider not set",
       statusTone: primaryReady ? "success" : "watch",
     },
@@ -148,12 +148,12 @@ export default async function SettingsPage() {
   cards.push({
     href: "/admin/settings/signin",
     title: "Email-link sign-in",
-    copy: "Passwordless magic-link sign-in for provisioned users — email delivery, first admins, and gate status.",
+    copy: "Passwordless magic-link sign-in for provisioned users: email delivery, first admins, and gate status.",
   });
   cards.push({
     href: "/admin/settings/security",
     title: "Security",
-    copy: "Trust floor for plugin and skill installs — which marketplaces are allowed, whether unverified or community installs are permitted.",
+    copy: "Trust floor for plugin and skill installs: which marketplaces are allowed, and whether unverified or community installs are permitted.",
   });
 
   return (
@@ -162,7 +162,6 @@ export default async function SettingsPage() {
         <SectionNav current="admin" />
       </AppHeader>
       <PageHeading
-        eyebrow="Administration"
         title="Workspace settings"
         description="Configure the agent runtime, data access, research, and trust policy."
       />

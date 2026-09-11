@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Input, NativeSelect } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Input, NativeSelect } from "@/components/ui/field";
 
 const MAGIC_LINK_PLUGIN = "@open-neko/plugin-magic-link";
 
@@ -88,7 +88,7 @@ export default function SignInSetupCard() {
             <h2 className="settings-card-title">No auth plugin installed</h2>
             <p className="settings-card-copy">
               Install the magic-link plugin from a shell on the deployment
-              host, then return here — everything else happens on this page.
+              host, then return here. Everything else happens on this page.
             </p>
           </div>
         </div>
@@ -174,7 +174,7 @@ function StatusBanner({ status }: { status: Status }) {
           <h2 className="settings-card-title">Sign-in is not live yet</h2>
           <p className="settings-card-copy">
             The deployment stays in single-operator mode until setup is
-            complete — nobody can be locked out by a half-finished
+            complete. Nobody can be locked out by a half-finished
             configuration. Remaining:{" "}
             {blockers.length > 0 ? blockers.join(" · ") : "finishing up…"}
           </p>
@@ -245,7 +245,7 @@ function DeliverySection({
           <h2 className="settings-card-title">Email delivery</h2>
           <p className="settings-card-copy">
             The sign-in link is emailed through one provider. The signing
-            secret is generated and stored automatically — you never handle
+            secret is generated and stored automatically. You never handle
             it.
           </p>
         </div>
@@ -365,7 +365,7 @@ function UsersSection({
         <div>
           <h2 className="settings-card-title">Who can sign in</h2>
           <p className="settings-card-copy">
-            Only users listed here can request a link — everyone else gets
+            Only users listed here can request a link. Everyone else gets
             silently ignored. {status.users.total} provisioned,{" "}
             {status.users.activeAdmins} active admin
             {status.users.activeAdmins === 1 ? "" : "s"}. Full management on
@@ -384,7 +384,7 @@ function UsersSection({
           style={{ background: "var(--warn-soft)", color: "var(--warn-ink)" }}
           role="alert"
         >
-          Add <strong>your own email as admin first</strong> — sign-in stays
+          Add <strong>your own email as admin first</strong>. Sign-in stays
           off until an admin exists, so you cannot lock yourself out.
         </div>
       ) : null}
@@ -454,7 +454,7 @@ function TestSection({ status }: { status: Status }) {
       if (!res.ok) throw new Error(body?.error ?? `test failed (${res.status})`);
       setResult({
         ok: true,
-        text: `Test email sent to ${email} — check the inbox. Its link is deliberately unusable; real sign-in happens at /signin.`,
+        text: `Test email sent to ${email}. Check the inbox. Its link is deliberately unusable; real sign-in happens at /signin.`,
       });
     } catch (err) {
       setResult({

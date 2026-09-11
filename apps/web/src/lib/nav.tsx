@@ -62,7 +62,7 @@ export const PRIMARY_NAV: NavDestination[] = [
 export const SECONDARY_NAV: NavDestination[] = [
   {
     href: "/business-profile",
-    label: "Business Profile",
+    label: "Business profile",
     shortLabel: "Profile",
     description: "How your business runs",
     icon: BookOpen,

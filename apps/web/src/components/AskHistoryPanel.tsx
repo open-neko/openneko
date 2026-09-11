@@ -5,7 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { confirmDialog } from "@/components/ConfirmModal";
+import { SearchInput } from "@/components/ui/search-input";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { matchesListSearch } from "@/lib/list-search";
 
 type ThreadSummary = {
   id: string;
@@ -30,6 +33,10 @@ export default function AskHistoryPanel({
   }, [pathname]);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const visibleThreads = threads.filter((thread) =>
+    matchesListSearch(query, displayThreadTitle(thread.title)),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +73,9 @@ export default function AskHistoryPanel({
       destructive: true,
     });
     if (!ok) return;
-    const res = await fetch(`/api/work/threads/${threadId}`, { method: "DELETE" });
+    const res = await fetch(`/api/work/threads/${threadId}`, {
+      method: "DELETE",
+    });
     if (!res.ok) return;
     const remaining = threads.filter((t) => t.id !== threadId);
     setThreads(remaining);
@@ -81,23 +90,40 @@ export default function AskHistoryPanel({
       <div className="ask-history-head">
         <span className="ask-history-title">History</span>
         <span className="ask-history-count font-mono">{threads.length}</span>
-        <button data-ui-bespoke-reason="ask history drawer"
+        <Button
+          variant="ghost"
           type="button"
           className="ask-history-new"
           onClick={createThread}
         >
           <Plus size={13} strokeWidth={2.25} aria-hidden="true" />
           <span>New work</span>
-        </button>
+        </Button>
       </div>
+
+      {threads.length > 0 ? (
+        <div className="px-2.5 pt-2.5">
+          <SearchInput
+            label="Search work history"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search history"
+            className="min-h-8 py-1.5 text-ui-body-sm"
+          />
+        </div>
+      ) : null}
 
       <div className="ask-history-list">
         {loading ? (
           <div className="ask-history-empty">Loading threads...</div>
-        ) : threads.length === 0 ? (
-          <div className="ask-history-empty">Start a thread to see it here.</div>
+        ) : visibleThreads.length === 0 ? (
+          <div className="ask-history-empty">
+            {query
+              ? "No threads match this search."
+              : "Start a thread to see it here."}
+          </div>
         ) : (
-          threads.map((thread) => {
+          visibleThreads.map((thread) => {
             const active = thread.id === activeThreadId;
             return (
               <div
@@ -121,7 +147,8 @@ export default function AskHistoryPanel({
                     </span>
                   </span>
                 </Link>
-                <button data-ui-bespoke-reason="ask history drawer"
+                <Button
+                  variant="ghost"
                   type="button"
                   className="ask-history-delete"
                   title="Delete thread"
@@ -133,7 +160,7 @@ export default function AskHistoryPanel({
                   }}
                 >
                   <Trash2 size={13} strokeWidth={2} aria-hidden="true" />
-                </button>
+                </Button>
               </div>
             );
           })
@@ -156,7 +183,7 @@ function formatDate(value: string): string {
     mod100 >= 11 && mod100 <= 13
       ? "th"
       : (({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ??
-          "th");
+        "th");
   const month = d.toLocaleDateString(undefined, { month: "short" });
   const time = d
     .toLocaleTimeString(undefined, {

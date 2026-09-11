@@ -16,6 +16,7 @@ import { getOrgId } from "@/lib/db";
 import { getSetupCompleteAt } from "@/lib/org-state";
 import { getPluginStatus } from "@/lib/auth";
 import { AdminDenied, AdminShell } from "./AdminShell";
+import { Card } from "@/components/ui/card";
 
 export default async function AdminPage() {
   await connection();
@@ -96,7 +97,7 @@ export default async function AdminPage() {
       title: "Users",
       copy: authProviderInstalled
         ? "Admin and member accounts from the installed auth plugin."
-        : "No auth plugin installed; this dashboard runs with solo admin access.",
+        : "No auth plugin installed; this deployment runs with solo admin access.",
       status: authProviderInstalled
         ? `${activeUserCount} active - ${adminCount} admin`
         : "Solo admin",
@@ -155,7 +156,7 @@ export default async function AdminPage() {
   return (
     <AdminShell
       title="Administration"
-      subtitle="OpenNeko configuration, users, plugins, and data-source RBAC."
+      subtitle="OpenNeko configuration, users, plugins, and data access."
       wide
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -213,24 +214,23 @@ function AdminCardGroup({
 }) {
   return (
     <section className="mt-7">
-      <div className="mb-3 text-ui-label font-bold uppercase tracking-[0.14em] text-text3">
+      <h2 className="mb-4 text-ui-subsection font-semibold text-text2">
         {title}
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      </h2>
+      <div className="grid gap-4 md:grid-cols-2">
         {cards.map((card) => (
-          <Link
+          <Card
+            as={Link}
             key={card.href}
             href={card.href}
-            className="settings-card block no-underline"
+            className="flex flex-col gap-4 no-underline transition-[border-color] hover:border-accent"
           >
-            <div className="settings-card-head mb-0">
-              <div className="min-w-0">
-                <h2 className="settings-card-title">{card.title}</h2>
+              <div className="min-w-0 flex-1">
+                <h3 className="settings-card-title">{card.title}</h3>
                 <p className="settings-card-copy">{card.copy}</p>
               </div>
               <StatusText value={card.status} ok={card.ok} />
-            </div>
-          </Link>
+          </Card>
         ))}
       </div>
     </section>
@@ -239,14 +239,12 @@ function AdminCardGroup({
 
 function StatusText({ value, ok }: { value: string; ok: boolean }) {
   return (
-    <div className="min-w-[128px] text-right text-xs font-semibold leading-snug text-text2">
-      <span
-        className={`inline-block h-1.5 w-1.5 rounded-full align-middle ${
-          ok ? "bg-success-ink" : "bg-danger"
-        }`}
-        aria-hidden="true"
-      />{" "}
-      <span>{value}</span>
+    <div
+      className={`text-ui-caption font-semibold leading-snug ${
+        ok ? "text-success-mid" : "text-danger"
+      }`}
+    >
+      {value}
     </div>
   );
 }
@@ -269,14 +267,14 @@ function SummaryStat({
         ? "text-danger"
         : "text-text";
   return (
-    <div className="rounded-[14px] border border-border bg-card px-4 py-3 shadow-soft">
-      <div className="text-ui-label font-bold uppercase tracking-[0.12em] text-text3">
+    <Card className="p-4">
+      <div className="text-ui-caption font-semibold text-text2">
         {label}
       </div>
       <div className={`mt-2 font-display text-2xl font-bold ${toneClass}`}>
         {value}
       </div>
       {detail ? <div className="mt-1 text-xs text-text2">{detail}</div> : null}
-    </div>
+    </Card>
   );
 }

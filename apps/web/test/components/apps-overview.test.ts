@@ -52,6 +52,7 @@ describe("AppsOverview", () => {
     expect(html).toContain("Describe the workflow");
     expect(html).toContain("Approve and launch");
     expect(html).toContain("Describe an app");
+    expect(html.split(`href="${createAppHref()}"`)).toHaveLength(2);
   });
 
   it("shows assignment guidance without a creation action to members", () => {

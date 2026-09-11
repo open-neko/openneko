@@ -88,6 +88,27 @@ test("Magento settings use the shared visual language and plain activity copy", 
   expect(sharedStyles.headingFont).toContain("Archivo");
   expect(sharedStyles.documentWidth).toBeLessThanOrEqual(sharedStyles.viewportWidth + 1);
 
+  // A shared-component import alone cannot catch mismatched rendered sizes.
+  const formGeometry = await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>("#pack-archive")!;
+    const submit = input.closest("form")!.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const heading = document.querySelector<HTMLElement>(".page-heading")!;
+    const inputRect = input.getBoundingClientRect();
+    const submitRect = submit.getBoundingClientRect();
+    return {
+      inputHeight: inputRect.height,
+      submitHeight: submitRect.height,
+      topDifference: Math.abs(inputRect.top - submitRect.top),
+      headerBackground: getComputedStyle(heading).backgroundColor,
+      headerShadow: getComputedStyle(heading).boxShadow,
+    };
+  });
+  expect(formGeometry.inputHeight).toBe(40);
+  expect(formGeometry.submitHeight).toBe(40);
+  expect(formGeometry.topDifference).toBeLessThanOrEqual(1);
+  expect(formGeometry.headerBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(formGeometry.headerShadow).toBe("none");
+
   await verifyScreenshot(page, testInfo, "magento-design-system-desktop.png");
 
   await page.getByText("View details", { exact: true }).first().click();

@@ -1,5 +1,5 @@
 type PageHeadingProps = {
-  eyebrow: React.ReactNode;
+  eyebrow?: React.ReactNode;
   title: string;
   description?: string;
   meta?: React.ReactNode;
@@ -16,11 +16,13 @@ export default function PageHeading({
   return (
     <header className="page-heading">
       <div className="page-heading-copy">
-        <div className="page-heading-eyebrow">
-          <span className="page-heading-mark" aria-hidden="true" />
-          {eyebrow}
-          {meta ? <span className="page-heading-meta">{meta}</span> : null}
-        </div>
+        {eyebrow || meta ? (
+          <div className="page-heading-eyebrow">
+            {eyebrow ? <span className="page-heading-mark" aria-hidden="true" /> : null}
+            {eyebrow}
+            {meta ? <span className="page-heading-meta">{meta}</span> : null}
+          </div>
+        ) : null}
         <h1>{title}</h1>
         {description ? <p>{description}</p> : null}
       </div>

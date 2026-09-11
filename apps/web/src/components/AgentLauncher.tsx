@@ -2,7 +2,10 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Spinner } from "@/components/ui/spinner";
 
 const STARTERS = [
   {
@@ -69,9 +72,7 @@ export default function AgentLauncher() {
       <div className="agent-launcher-intro">
         <div>
           <h2 id="agent-launcher-title">Start a task</h2>
-          <p>
-            Ask a question, investigate a change, or build a workflow.
-          </p>
+          <p>Ask a question, investigate a change, or build a workflow.</p>
         </div>
       </div>
 
@@ -79,7 +80,7 @@ export default function AgentLauncher() {
         <label className="sr-only" htmlFor="agent-objective">
           Objective for OpenNeko
         </label>
-        <textarea data-ui-bespoke-reason="ask composer"
+        <Textarea
           id="agent-objective"
           value={prompt}
           onChange={(event) => {
@@ -90,32 +91,36 @@ export default function AgentLauncher() {
           rows={2}
           disabled={submitting}
         />
-        <button data-ui-bespoke-reason="ask composer"
+        <Button
+          variant="ghost"
+          size="icon"
           type="submit"
           className="agent-launcher-submit"
           disabled={!prompt.trim() || submitting}
           aria-label={submitting ? "Starting task" : "Start task"}
         >
           {submitting ? (
-            <Loader2 className="agent-launcher-spinner" aria-hidden="true" />
+            <Spinner className="agent-launcher-spinner" aria-hidden="true" />
           ) : (
             <ArrowUp aria-hidden="true" />
           )}
-        </button>
+        </Button>
       </form>
 
       <div className="agent-launcher-foot">
         <span>Start with</span>
         <div className="agent-starters">
           {STARTERS.map((starter) => (
-            <button data-ui-bespoke-reason="ask composer"
+            <Button
+              variant="ghost"
+              size="sm"
               key={starter.label}
               type="button"
               onClick={() => setPrompt(starter.prompt)}
               disabled={submitting}
             >
               {starter.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

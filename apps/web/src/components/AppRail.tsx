@@ -14,6 +14,7 @@ import {
   Table2,
 } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
+import { Button } from "@/components/ui/button";
 import {
   ALL_NAV,
   hideAppChrome,
@@ -21,11 +22,10 @@ import {
   useApprovalsCount,
   type NavDestination,
 } from "@/lib/nav";
-import {
-  buildRecordNavSections,
-  type RecordNavObject,
-} from "@/lib/record-nav";
+import { buildRecordNavSections, type RecordNavObject } from "@/lib/record-nav";
 import { RECORDS_VISUAL_NAV_APPS } from "@/lib/records-visual-nav";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 const VERSION_POLL_MS = 60_000;
@@ -69,7 +69,9 @@ function RecordObjectNavigation({
   const pathObject = pathname.split("/")[3];
   const activeObjectApiName = app.objects.some(
     (object) => object.apiName === pathObject,
-  ) ? pathObject : null;
+  )
+    ? pathObject
+    : null;
   const favoritesKey = `openneko.record-favorites.${app.appId}`;
   const recentsKey = `openneko.record-recents.${app.appId}`;
   const [query, setQuery] = useState("");
@@ -88,7 +90,10 @@ function RecordObjectNavigation({
     const id = window.setTimeout(() => {
       const stored = storedObjectIds(recentsKey);
       const next = activeObjectApiName
-        ? [activeObjectApiName, ...stored.filter((value) => value !== activeObjectApiName)].slice(0, 8)
+        ? [
+            activeObjectApiName,
+            ...stored.filter((value) => value !== activeObjectApiName),
+          ].slice(0, 8)
         : stored;
       setRecents(next);
       window.localStorage.setItem(recentsKey, JSON.stringify(next));
@@ -97,14 +102,15 @@ function RecordObjectNavigation({
   }, [activeObjectApiName, recentsKey]);
 
   const navigation = useMemo(
-    () => buildRecordNavSections({
-      objects: app.objects,
-      favorites,
-      recents,
-      activeObjectApiName: RECORDS_VISUAL_TEST ? null : activeObjectApiName,
-      query,
-      expanded,
-    }),
+    () =>
+      buildRecordNavSections({
+        objects: app.objects,
+        favorites,
+        recents,
+        activeObjectApiName: RECORDS_VISUAL_TEST ? null : activeObjectApiName,
+        query,
+        expanded,
+      }),
     [activeObjectApiName, app.objects, expanded, favorites, query, recents],
   );
 
@@ -123,7 +129,7 @@ function RecordObjectNavigation({
       <label className="app-rail-record-search">
         <Search aria-hidden="true" strokeWidth={2} />
         <span className="sr-only">Search {app.label} objects</span>
-        <input data-ui-bespoke-reason="navigation rail"
+        <Input
           type="search"
           value={query}
           onChange={(event) => {
@@ -133,7 +139,10 @@ function RecordObjectNavigation({
           placeholder="Find an object"
         />
       </label>
-      <div className="app-rail-record-objects" aria-label={`${app.label} objects`}>
+      <div
+        className="app-rail-record-objects"
+        aria-label={`${app.label} objects`}
+      >
         {navigation.sections.map((section) => (
           <section className="app-rail-record-section" key={section.id}>
             <div className="app-rail-record-section-label">{section.label}</div>
@@ -142,7 +151,10 @@ function RecordObjectNavigation({
               const active = isActive(pathname, href);
               const favorite = favorites.includes(object.apiName);
               return (
-                <div className="app-rail-record-object-wrap" key={object.apiName}>
+                <div
+                  className="app-rail-record-object-wrap"
+                  key={object.apiName}
+                >
                   <Link
                     href={href}
                     className={`app-rail-record-object${active ? " is-active" : ""}`}
@@ -162,41 +174,51 @@ function RecordObjectNavigation({
                       </span>
                     )}
                   </Link>
-                  <button data-ui-bespoke-reason="navigation rail"
+                  <Button
+                    variant="ghost"
                     type="button"
                     className={`app-rail-record-favorite${favorite ? " is-favorite" : ""}`}
                     aria-label={`${favorite ? "Remove" : "Add"} ${object.pluralLabel} ${favorite ? "from" : "to"} favorites`}
                     aria-pressed={favorite}
                     onClick={() => toggleFavorite(object.apiName)}
                   >
-                    <Star aria-hidden="true" fill={favorite ? "currentColor" : "none"} />
-                  </button>
+                    <Star
+                      aria-hidden="true"
+                      fill={favorite ? "currentColor" : "none"}
+                    />
+                  </Button>
                 </div>
               );
             })}
           </section>
         ))}
         {navigation.sections.length === 0 && (
-          <div className="app-rail-record-empty">No objects match “{query}”.</div>
+          <div className="app-rail-record-empty">
+            No objects match “{query}”.
+          </div>
         )}
         {navigation.hiddenCount > 0 && (
-          <button data-ui-bespoke-reason="navigation rail"
+          <Button
+            variant="ghost"
             type="button"
             className="app-rail-record-more"
             onClick={() => setExpanded(true)}
           >
             Show {navigation.hiddenCount} more
-          </button>
+          </Button>
         )}
-        {expanded && navigation.hiddenCount === 0 && app.objects.length > 12 && (
-          <button data-ui-bespoke-reason="navigation rail"
-            type="button"
-            className="app-rail-record-more"
-            onClick={() => setExpanded(false)}
-          >
-            Show less
-          </button>
-        )}
+        {expanded &&
+          navigation.hiddenCount === 0 &&
+          app.objects.length > 12 && (
+            <Button
+              variant="ghost"
+              type="button"
+              className="app-rail-record-more"
+              onClick={() => setExpanded(false)}
+            >
+              Show less
+            </Button>
+          )}
         {canAdmin && (
           <section className="app-rail-record-section is-admin">
             <div className="app-rail-record-section-label">Manage</div>
@@ -204,7 +226,9 @@ function RecordObjectNavigation({
               <Link
                 href={`${appHref}/admin`}
                 className={`app-rail-record-object${isActive(pathname, `${appHref}/admin`) ? " is-active" : ""}`}
-                aria-current={isActive(pathname, `${appHref}/admin`) ? "page" : undefined}
+                aria-current={
+                  isActive(pathname, `${appHref}/admin`) ? "page" : undefined
+                }
                 title={`${app.label} admin`}
               >
                 <Settings2 aria-hidden="true" strokeWidth={1.8} />
@@ -220,12 +244,14 @@ function RecordObjectNavigation({
 
 function initials(user: SessionUser | null) {
   const source = user?.name || user?.email || "A";
-  return source
-    .split(/[\s@._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "A";
+  return (
+    source
+      .split(/[\s@._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "A"
+  );
 }
 
 function RailLink({
@@ -252,7 +278,10 @@ function RailLink({
         <span className="app-rail-label">{item.label}</span>
         <span className="app-rail-short">{item.shortLabel}</span>
         {isActions && pending > 0 && (
-          <span className="app-rail-badge font-mono" aria-label={`${pending} pending`}>
+          <span
+            className="app-rail-badge font-mono"
+            aria-label={`${pending} pending`}
+          >
             {pending}
           </span>
         )}
@@ -402,9 +431,8 @@ export default function AppRail() {
 
   const updateAvailable =
     latestVersion !== null && latestVersion !== APP_VERSION;
-  const activeRecordApp = recordApps.find((app) =>
-    isActive(pathname, `/a/${app.appId}`),
-  ) ?? null;
+  const activeRecordApp =
+    recordApps.find((app) => isActive(pathname, `/a/${app.appId}`)) ?? null;
 
   return (
     <aside className="app-rail-wrap" aria-label="Primary navigation">
@@ -416,20 +444,25 @@ export default function AppRail() {
           rel="noopener noreferrer"
           aria-label="OpenNeko — open website in a new tab"
         >
-          <Image className="app-rail-logo" src="/cat.png" alt="" width={26} height={27} />
-          <span className="app-rail-name">
-            OpenNeko
-          </span>
+          <Image
+            className="app-rail-logo"
+            src="/cat.png"
+            alt=""
+            width={26}
+            height={27}
+          />
+          <span className="app-rail-name">OpenNeko</span>
         </a>
         {RECORDS_VISUAL_TEST ? null : updateAvailable ? (
-          <button data-ui-bespoke-reason="navigation rail"
+          <Button
+            variant="ghost"
             type="button"
             className="app-rail-version is-update"
             onClick={() => window.location.reload()}
             title={`v${latestVersion} available; reload`}
           >
             v{latestVersion}
-          </button>
+          </Button>
         ) : (
           <span className="app-rail-version">{APP_VERSION}</span>
         )}
@@ -464,56 +497,67 @@ export default function AppRail() {
             </div>
           </div>
           {recordAppsUnavailable ? (
-            <span className="app-rail-record-status">Temporarily unavailable</span>
+            <span className="app-rail-record-status">
+              Temporarily unavailable
+            </span>
           ) : recordApps.length > 0 ? (
             <>
-            <label className="app-rail-record-switcher">
-              <span className="sr-only">Choose an app</span>
-              <Database aria-hidden="true" strokeWidth={2} />
-              <select data-ui-bespoke-reason="navigation rail"
-                value={activeRecordApp?.appId ?? ""}
-                onChange={(event) => {
-                  if (event.target.value) router.push(`/a/${event.target.value}`);
-                }}
-              >
-                <option value="">Choose an app</option>
-                {recordApps.map((app) => (
-                  <option key={app.appId} value={app.appId}>{app.label}</option>
-                ))}
-              </select>
-            </label>
-            <div className="app-rail-record-compact-apps">
-            {recordApps.map((app) => {
-              const appHref = `/a/${app.appId}`;
-              const appActive = isActive(pathname, appHref);
-              return (
-                <div className="app-rail-record-app" key={app.appId}>
-                  <div className="app-rail-group">
-                    <div className="app-rail-link-wrap">
-                      <Link
-                        href={appHref}
-                        className={`app-rail-link app-rail-record-link${appActive ? " is-active" : ""}`}
-                        aria-current={pathname === appHref ? "page" : undefined}
-                        title={app.label}
-                      >
-                        <Database aria-hidden="true" strokeWidth={2} />
-                        <span className="app-rail-label">{app.label}</span>
-                        <span className="app-rail-short">{app.label.slice(0, 7)}</span>
-                      </Link>
+              <label className="app-rail-record-switcher">
+                <span className="sr-only">Choose an app</span>
+                <Database aria-hidden="true" strokeWidth={2} />
+                <NativeSelect
+                  value={activeRecordApp?.appId ?? ""}
+                  onChange={(event) => {
+                    if (event.target.value)
+                      router.push(`/a/${event.target.value}`);
+                  }}
+                >
+                  <option value="">Choose an app</option>
+                  {recordApps.map((app) => (
+                    <option key={app.appId} value={app.appId}>
+                      {app.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+              <div className="app-rail-record-compact-apps">
+                {recordApps.map((app) => {
+                  const appHref = `/a/${app.appId}`;
+                  const appActive = isActive(pathname, appHref);
+                  return (
+                    <div className="app-rail-record-app" key={app.appId}>
+                      <div className="app-rail-group">
+                        <div className="app-rail-link-wrap">
+                          <Link
+                            href={appHref}
+                            className={`app-rail-link app-rail-record-link${appActive ? " is-active" : ""}`}
+                            aria-current={
+                              pathname === appHref ? "page" : undefined
+                            }
+                            title={app.label}
+                          >
+                            <Database aria-hidden="true" strokeWidth={2} />
+                            <span className="app-rail-label">{app.label}</span>
+                            <span className="app-rail-short">
+                              {app.label.slice(0, 7)}
+                            </span>
+                          </Link>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-            {activeRecordApp && (
-              <RecordObjectNavigation
-                key={activeRecordApp.appId}
-                app={activeRecordApp}
-                pathname={pathname}
-                canAdmin={sessionMode !== "member" && sessionMode !== "loading"}
-              />
-            )}
+                  );
+                })}
+              </div>
+              {activeRecordApp && (
+                <RecordObjectNavigation
+                  key={activeRecordApp.appId}
+                  app={activeRecordApp}
+                  pathname={pathname}
+                  canAdmin={
+                    sessionMode !== "member" && sessionMode !== "loading"
+                  }
+                />
+              )}
             </>
           ) : null}
         </>
@@ -565,13 +609,16 @@ export default function AppRail() {
                 {initials(user)}
               </span>
               <span className="app-rail-user-copy">
-                <span className="app-rail-user-name">{user.name || user.email}</span>
+                <span className="app-rail-user-name">
+                  {user.name || user.email}
+                </span>
                 <span className="app-rail-user-email">
                   {user.name ? user.email : "Profile"}
                 </span>
               </span>
             </Link>
-            <button data-ui-bespoke-reason="navigation rail"
+            <Button
+              variant="ghost"
               type="button"
               className="app-rail-signout"
               onClick={handleSignOut}
@@ -579,7 +626,7 @@ export default function AppRail() {
               title={`Sign out ${user.email}`}
             >
               <LogOut aria-hidden="true" strokeWidth={2} />
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>

@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import EntryShell from "@/components/EntryShell";
 import { toast } from "sonner";
 import Select from "@/components/Select";
-import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, Input } from "@/components/ui/field";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -31,9 +31,18 @@ type ProviderConfig = {
 type SettingsPayload = {
   primary: ProviderConfig;
   research: ProviderConfig;
-  options: { primary: readonly ProviderOption[]; research: readonly ProviderOption[] };
-  defaults: { primary: Record<string, string>; research: Record<string, string> };
-  fields: { primary: Record<string, ProviderField[]>; research: Record<string, ProviderField[]> };
+  options: {
+    primary: readonly ProviderOption[];
+    research: readonly ProviderOption[];
+  };
+  defaults: {
+    primary: Record<string, string>;
+    research: Record<string, string>;
+  };
+  fields: {
+    primary: Record<string, ProviderField[]>;
+    research: Record<string, ProviderField[]>;
+  };
 };
 
 type AgentSettingsPayload = {
@@ -82,21 +91,26 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
     if (initial.passwordChanged) {
       return (["data", "agent", "research"] as const)[step] ?? "data";
     }
-    return (["password", "data", "agent", "research"] as const)[step] ?? "password";
+    return (
+      (["password", "data", "agent", "research"] as const)[step] ?? "password"
+    );
   })();
 
   // Step 1: data source — one root URL, /api/v1/{graphql,mcp} derived on save.
   // Pre-fill a saved data source when one exists. Without a seed row, local dev
   // falls back to localhost and Docker installs can enter the Compose service URL.
   const [data, setData] = useState({
-    rootUrl: deriveRoot(initial.dataSource.graphqlUrl) || "http://localhost:8080",
+    rootUrl:
+      deriveRoot(initial.dataSource.graphqlUrl) || "http://localhost:8080",
     label: initial.dataSource.label || "primary",
   });
   const [savingData, setSavingData] = useState(false);
   const [testingData, setTestingData] = useState(false);
 
   // Step 2: Hermes + primary provider
-  const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
+  const [concurrentJobs, setConcurrentJobs] = useState(
+    String(initial.agent.agent.globalCap),
+  );
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
     model: initial.providers.primary.model,
@@ -107,17 +121,19 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
 
   // Step 3: research
   const [researchEnabled, setResearchEnabled] = useState(
-    initial.providers.research.enabled && initial.providers.research.provider !== "disabled",
+    initial.providers.research.enabled &&
+      initial.providers.research.provider !== "disabled",
   );
   const initialResearchProvider =
     initial.providers.research.provider === "disabled"
-      ? initial.providers.options.research.find((o) => o.value !== "disabled")?.value ?? "perplexity"
+      ? (initial.providers.options.research.find((o) => o.value !== "disabled")
+          ?.value ?? "perplexity")
       : initial.providers.research.provider;
   const [research, setResearch] = useState({
     provider: initialResearchProvider,
     model:
       initial.providers.research.provider === "disabled"
-        ? initial.providers.defaults.research[initialResearchProvider] ?? ""
+        ? (initial.providers.defaults.research[initialResearchProvider] ?? "")
         : initial.providers.research.model,
     config: stringRecord(initial.providers.research.config),
     secrets: {} as Record<string, string>,
@@ -224,7 +240,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       if (!res.ok) throw new Error(body.error ?? "Save failed");
       toast.success(
         testBody.mcpOk === false
-          ? "Data source saved. (MCP unreachable — fine for the agent path.)"
+          ? "Data source saved. (MCP unreachable, fine for the agent path.)"
           : "Data source saved.",
       );
       setStep(step + 1);
@@ -392,7 +408,6 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
   return (
     <EntryShell
       className="setup-entry-shell"
-      eyebrow="System setup"
       title="Connect the operating system."
       description="Configure storage, data access, and the agent runtime. Business onboarding begins when this infrastructure check is complete."
       steps={STEPS}
@@ -401,9 +416,12 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       {stepName === "password" && (
         <Step
           title="Choose a database password"
-          description="OpenNeko's storage ships with a default password. Pick something only you know — you won't need to enter it again."
+          description="OpenNeko's storage ships with a default password. Pick something only you know. You won't need to enter it again."
         >
-          <Field label="New password (min 8 chars)" htmlFor="setup-new-password">
+          <Field
+            label="New password (min 8 chars)"
+            htmlFor="setup-new-password"
+          >
             <Input
               id="setup-new-password"
               type="password"
@@ -470,7 +488,9 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               id="setup-data-label"
               value={data.label}
               placeholder="primary"
-              onChange={(e) => setData((p) => ({ ...p, label: e.target.value }))}
+              onChange={(e) =>
+                setData((p) => ({ ...p, label: e.target.value }))
+              }
             />
           </Field>
           <InlineError message={dataError} />
@@ -510,7 +530,9 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               <Input
                 id="setup-primary-model"
                 value={primary.model}
-                onChange={(e) => setPrimary((p) => ({ ...p, model: e.target.value }))}
+                onChange={(e) =>
+                  setPrimary((p) => ({ ...p, model: e.target.value }))
+                }
               />
             </Field>
           </div>
@@ -521,14 +543,20 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
               field={field}
               value={
                 field.kind === "secret"
-                  ? primary.secrets[field.key] ?? ""
-                  : (primary.config[field.key] as string) ?? ""
+                  ? (primary.secrets[field.key] ?? "")
+                  : ((primary.config[field.key] as string) ?? "")
               }
               onChange={(v) => {
                 if (field.kind === "secret") {
-                  setPrimary((p) => ({ ...p, secrets: { ...p.secrets, [field.key]: v } }));
+                  setPrimary((p) => ({
+                    ...p,
+                    secrets: { ...p.secrets, [field.key]: v },
+                  }));
                 } else {
-                  setPrimary((p) => ({ ...p, config: { ...p.config, [field.key]: v } }));
+                  setPrimary((p) => ({
+                    ...p,
+                    config: { ...p.config, [field.key]: v },
+                  }));
                 }
               }}
             />
@@ -575,7 +603,9 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
             <Checkbox
               label="Enable industry research"
               checked={researchEnabled}
-              onChange={(e) => setResearchEnabled(e.target.checked)}
+              onCheckedChange={(checked) =>
+                setResearchEnabled(checked === true)
+              }
             />
           </div>
 
@@ -603,7 +633,9 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
                   <Input
                     id="setup-research-model"
                     value={research.model}
-                    onChange={(e) => setResearch((p) => ({ ...p, model: e.target.value }))}
+                    onChange={(e) =>
+                      setResearch((p) => ({ ...p, model: e.target.value }))
+                    }
                   />
                 </Field>
               </div>
@@ -614,8 +646,8 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
                   field={field}
                   value={
                     field.kind === "secret"
-                      ? research.secrets[field.key] ?? ""
-                      : (research.config[field.key] as string) ?? ""
+                      ? (research.secrets[field.key] ?? "")
+                      : ((research.config[field.key] as string) ?? "")
                   }
                   onChange={(v) => {
                     if (field.kind === "secret") {
@@ -638,7 +670,10 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
           <InlineError message={researchError} />
 
           <div className="flex justify-end gap-2.5 mt-5 max-[720px]:flex-col max-[720px]:items-stretch [&>button]:max-[720px]:w-full">
-            <Button onClick={() => setStep(step - 1)} disabled={finishing || savingResearch}>
+            <Button
+              onClick={() => setStep(step - 1)}
+              disabled={finishing || savingResearch}
+            >
               Back
             </Button>
             <Button
@@ -727,9 +762,15 @@ function stringRecord(input: Record<string, unknown>): Record<string, string> {
 const GRAPHQL_SUFFIX = "/api/v1/graphql";
 const MCP_SUFFIX = "/api/v1/mcp";
 
-function deriveEndpoints(rootUrl: string): { graphqlUrl: string; mcpUrl: string } {
+function deriveEndpoints(rootUrl: string): {
+  graphqlUrl: string;
+  mcpUrl: string;
+} {
   const root = deriveRoot(rootUrl);
-  return { graphqlUrl: `${root}${GRAPHQL_SUFFIX}`, mcpUrl: `${root}${MCP_SUFFIX}` };
+  return {
+    graphqlUrl: `${root}${GRAPHQL_SUFFIX}`,
+    mcpUrl: `${root}${MCP_SUFFIX}`,
+  };
 }
 
 // Accept whatever the user pastes — bare root, trailing slash, or a full

@@ -1,13 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { FieldInput } from "@/components/ui/Field";
-import { LocalDateTime } from "@/components/ui/LocalDateTime";
-import { Segment, SegmentedControl, Tab, Tabs } from "@/components/ui/Tabs";
+import { Button, IconButton } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Disclosure } from "@/components/ui/disclosure";
+import { EmptyState } from "@/components/ui/empty";
+import { FieldInput } from "@/components/ui/field";
+import { LocalDateTime } from "@/components/ui/local-date-time";
+import { Segment, SegmentedControl, Tab, Tabs } from "@/components/ui/tabs";
 
 describe("shared UI contracts", () => {
   it("keeps button hierarchy and icon actions machine-readable", () => {
@@ -38,8 +38,9 @@ describe("shared UI contracts", () => {
         createElement(Tab, { selected: true }, "Overview"),
       ),
     );
-    expect(tabs).toContain('role="tablist"');
-    expect(tabs).toContain('aria-selected="true"');
+    expect(tabs).toContain('role="radiogroup"');
+    expect(tabs).toContain('aria-checked="true"');
+    expect(tabs).toContain('data-state="on"');
     expect(tabs).toContain('data-ui-tab=""');
 
     const segments = renderToStaticMarkup(
@@ -49,7 +50,7 @@ describe("shared UI contracts", () => {
         createElement(Segment, { selected: true }, "Active"),
       ),
     );
-    expect(segments).toContain('aria-pressed="true"');
+    expect(segments).toContain('aria-checked="true"');
     expect(segments).toContain('data-ui-segment=""');
   });
 
@@ -58,7 +59,6 @@ describe("shared UI contracts", () => {
       createElement(Checkbox, {
         checked: true,
         label: "Allow routine changes to run automatically",
-        readOnly: true,
       }),
     );
 
@@ -66,7 +66,7 @@ describe("shared UI contracts", () => {
     expect(checkbox).toContain('data-ui-checkbox-control=""');
     expect(checkbox).toContain('type="checkbox"');
     expect(checkbox).toContain("font-body");
-    expect(checkbox).toContain("accent-accent");
+    expect(checkbox).toContain("data-[state=checked]:bg-accent");
   });
 
   it("preserves labelled fields and native disclosure semantics", () => {

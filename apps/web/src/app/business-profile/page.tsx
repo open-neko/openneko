@@ -6,8 +6,8 @@ import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
 import EditableMarkdown from "@/components/EditableMarkdown";
-import { Button } from "@/components/ui/Button";
-import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { StageKind } from "@/lib/db";
 
@@ -242,7 +242,6 @@ export default function ProcessingPage() {
           <SectionNav current="business-profile" />
         </AppHeader>
         <PageHeading
-          eyebrow="Knowledge · Business model"
           title="Building the profile"
           description="OpenNeko is turning your onboarding brief into operating context for future answers and monitoring."
           meta="in progress"
@@ -267,7 +266,6 @@ export default function ProcessingPage() {
         <SectionNav current="business-profile" />
       </AppHeader>
       <PageHeading
-        eyebrow="Knowledge · Business model"
         title="Business profile"
         description="Review and refine the operating context OpenNeko uses in briefings, answers, and agent runs."
         meta={insightsPending ? "research running" : "ready"}
@@ -285,7 +283,7 @@ export default function ProcessingPage() {
             setTab("profile");
           }}
         >
-          Business Profile
+          Business profile
         </Segment>
         <Segment
           selected={tab === "insights"}
@@ -294,7 +292,7 @@ export default function ProcessingPage() {
             setTab("insights");
           }}
         >
-          Industry Insights
+          Industry insights
           {insightsPending && (
             <span
               style={{

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp, LoaderCircle, MessageCircle } from "lucide-react";
+import { ArrowUp, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import {
   buildRecordAskSeed,
@@ -11,6 +11,9 @@ import {
 } from "@/lib/record-ask";
 import type { PendingRecordAction } from "@/lib/records-pending";
 import { RecordActionDiff } from "./RecordActionDiff";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 
 export type RecordAskPendingAction = {
   recordId: string;
@@ -37,7 +40,8 @@ export function RecordAskBox({
   const [request, setRequest] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const detail = context.surface === "detail" || context.surface === "recycle_detail";
+  const detail =
+    context.surface === "detail" || context.surface === "recycle_detail";
   const subject = detail ? "this record" : "these records";
 
   async function openAsk(event: FormEvent<HTMLFormElement>) {
@@ -59,14 +63,17 @@ export function RecordAskBox({
       const payload = (await response.json()) as { thread?: { id?: string } };
       if (!payload.thread?.id) throw new Error("Ask did not return a thread");
       const seed = buildRecordAskSeed(context, message);
-      router.push(`/work/${payload.thread.id}?seed=${encodeURIComponent(seed)}`);
+      router.push(
+        `/work/${payload.thread.id}?seed=${encodeURIComponent(seed)}`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not open Ask");
       setSubmitting(false);
     }
   }
 
-  const listSurface = context.surface === "list" || context.surface === "recycle_list";
+  const listSurface =
+    context.surface === "list" || context.surface === "recycle_list";
   return (
     <aside
       className={`records-ask${listSurface ? " is-list-panel" : ""}`}
@@ -88,33 +95,39 @@ export function RecordAskBox({
           {scenario && (
             <>
               <p className="records-ask-message is-user">{scenario.request}</p>
-              <p className="records-ask-message is-agent">{scenario.response}</p>
+              <p className="records-ask-message is-agent">
+                {scenario.response}
+              </p>
             </>
           )}
-          {pendingActions.slice(0, 3).map(({ recordId, recordLabel, action }) => (
-            <article className="records-ask-action" key={action.id}>
-              <header>
-                <span>Approval needed</span>
-                <code>{action.kind}</code>
-              </header>
-              <div>
-                <strong>{recordLabel}</strong>
-                <small>{context.objectLabel} · {recordId}</small>
-                <RecordActionDiff
-                  compact
-                  kind={action.kind}
-                  payload={{
-                    app: context.appId,
-                    object: context.objectApiName,
-                    id: recordId,
-                    fields: action.fields,
-                    expected: action.expected,
-                  }}
-                />
-              </div>
-              <Link href={`/actions/${action.id}`}>Review change</Link>
-            </article>
-          ))}
+          {pendingActions
+            .slice(0, 3)
+            .map(({ recordId, recordLabel, action }) => (
+              <article className="records-ask-action" key={action.id}>
+                <header>
+                  <span>Approval needed</span>
+                  <code>{action.kind}</code>
+                </header>
+                <div>
+                  <strong>{recordLabel}</strong>
+                  <small>
+                    {context.objectLabel} · {recordId}
+                  </small>
+                  <RecordActionDiff
+                    compact
+                    kind={action.kind}
+                    payload={{
+                      app: context.appId,
+                      object: context.objectApiName,
+                      id: recordId,
+                      fields: action.fields,
+                      expected: action.expected,
+                    }}
+                  />
+                </div>
+                <Link href={`/actions/${action.id}`}>Review change</Link>
+              </article>
+            ))}
           {scenario?.autoAction && (
             <p className="records-ask-auto">
               <span aria-hidden="true">✓</span>
@@ -133,7 +146,7 @@ export function RecordAskBox({
         <label className="sr-only" htmlFor={`records-ask-${context.surface}`}>
           Ask OpenNeko about {subject}
         </label>
-        <input data-ui-bespoke-reason="records ask composer"
+        <Input
           id={`records-ask-${context.surface}`}
           value={request}
           onChange={(event) => {
@@ -148,19 +161,25 @@ export function RecordAskBox({
           maxLength={2_000}
           disabled={submitting}
         />
-        <button data-ui-bespoke-reason="records ask composer"
+        <Button
+          variant="ghost"
+          size="icon"
           type="submit"
           disabled={!request.trim() || submitting}
           aria-label={submitting ? "Opening Ask" : "Open Ask"}
         >
           {submitting ? (
-            <LoaderCircle className="records-spin" aria-hidden="true" />
+            <Spinner className="records-spin" aria-hidden="true" />
           ) : (
             <ArrowUp aria-hidden="true" />
           )}
-        </button>
+        </Button>
       </form>
-      {error && <span className="records-ask-error" role="alert">{error}</span>}
+      {error && (
+        <span className="records-ask-error" role="alert">
+          {error}
+        </span>
+      )}
     </aside>
   );
 }

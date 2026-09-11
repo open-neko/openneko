@@ -2,74 +2,51 @@
    _tokens.css; this layer only gives the existing colors clearer jobs. */
 
 .page-heading {
-  --page-heading-top: 0px;
-  position: sticky;
-  top: var(--page-heading-top);
-  z-index: var(--page-head-z);
+  position: relative;
   min-height: var(--page-head-height);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
-  gap: clamp(16px, 3vw, 36px);
+  gap: 24px;
   margin: 0 0 24px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--page-head-bg);
-  box-shadow: 0 -10px 0 var(--page-head-bg);
+  padding: 0;
+  background: transparent;
 }
 
 .page-heading-copy {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    "eyebrow title"
-    "description description";
-  align-items: center;
-  column-gap: 13px;
-  row-gap: 3px;
+  gap: 6px;
 }
 
 .page-heading-eyebrow {
-  grid-area: eyebrow;
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--text2);
-  font-family: var(--font-display), "Archivo", sans-serif;
-  font-size: var(--type-label);
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-family: var(--font-body), "Manrope", sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 600;
+  line-height: var(--leading-compact);
   white-space: nowrap;
 }
 
 .page-heading-mark {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--accent);
+  display: none;
 }
 
 .page-heading-meta {
   display: inline-flex;
   align-items: center;
-  min-height: 19px;
-  margin-left: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--neutral);
+  min-height: 18px;
   color: var(--text3);
-  font-family: var(--font-mono);
-  font-size: var(--type-label);
+  font-size: var(--type-caption);
   letter-spacing: 0;
   text-transform: none;
 }
 
 .page-heading h1 {
-  grid-area: title;
   min-width: 0;
   margin: 0;
   overflow: visible;
@@ -82,33 +59,27 @@
   overflow-wrap: anywhere;
   text-overflow: clip;
   white-space: normal;
+  text-wrap: balance;
 }
 
 .page-heading p {
-  grid-area: description;
   min-width: 0;
   max-width: 76ch;
   margin: 0;
-  overflow: hidden;
   color: var(--text2);
   font-size: var(--type-body-sm);
-  line-height: var(--leading-compact);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .page-heading-actions {
   min-width: 0;
-  min-height: 44px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.page-heading-actions :where(button, a) {
-  min-height: 44px;
+  flex-wrap: wrap;
 }
 
 .page-heading-eyebrow a {
@@ -123,41 +94,18 @@
   color: var(--accent);
 }
 
-.root > .app-header + .page-heading {
-  --page-heading-top: 62px;
-}
-
-@media (max-width: 768px) {
-  .root > .app-header + .page-heading {
-    --page-heading-top: 57px;
-  }
-}
-
-@media (min-width: 960px) {
-  body:has(> .app-rail-wrap)
-    .root
-    > .app-header.is-nav-only
-    + .page-heading {
-    --page-heading-top: 0px;
-  }
-}
-
 @media (max-width: 680px) {
   .page-heading {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    min-height: 62px;
-    gap: 8px;
-    margin-bottom: 18px;
-    padding-block: 8px;
+    min-height: 0;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding-block: 0;
   }
 
   .page-heading-copy {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "title"
-      "eyebrow";
-    row-gap: 5px;
+    gap: 6px;
   }
 
   .page-heading-eyebrow {
@@ -168,10 +116,6 @@
     white-space: normal;
   }
 
-  .page-heading p {
-    display: none;
-  }
-
   .page-heading-meta {
     max-width: min(100%, 220px);
   }
@@ -180,14 +124,7 @@
     width: 100%;
     min-height: 0;
     justify-content: flex-start;
-    gap: 4px;
-    overflow-x: auto;
-    padding: 1px 2px 3px;
-    scrollbar-width: none;
-  }
-
-  .page-heading-actions::-webkit-scrollbar {
-    display: none;
+    gap: 8px;
   }
 }
 
@@ -308,14 +245,6 @@
     );
   box-shadow: var(--shadow);
   animation: fadeUp 0.5s ease 0.08s both;
-}
-
-.agent-launcher::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--accent);
 }
 
 .agent-launcher-intro {

@@ -24,7 +24,7 @@ export type BundleFile = { path: string; content: string };
 export async function collectLibraryBundleFiles(
   orgId: string,
 ): Promise<BundleFile[]> {
-  const concepts = await listLibraryConcepts({ orgId, userId: null, limit: 500 });
+  const concepts = await listLibraryConcepts({ orgId, userId: null, limit: null });
   const dir = await mkdtemp(join(tmpdir(), "neko-okf-export-"));
   try {
     for (const concept of concepts) {

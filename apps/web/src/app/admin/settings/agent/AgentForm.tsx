@@ -5,8 +5,8 @@ import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
 import Select from "@/components/Select";
-import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/field";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -126,7 +126,6 @@ export default function AgentForm({
     <div className="root">
       <AppHeader back={{ href: "/admin/settings", label: "All settings" }} />
       <PageHeading
-        eyebrow="Settings · Runtime"
         title="Agent"
         description="Configure the model provider and worker concurrency used by the Hermes agent runtime."
       />

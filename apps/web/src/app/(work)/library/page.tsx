@@ -1,174 +1,130 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, RefreshCw, Share2, Trash2, Upload } from "lucide-react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, FileText, RefreshCw, Share2, Trash2, Upload } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
+import type { browseLibrary, LibraryConcept, LibraryDocument } from "@neko/llm/work";
+import { LIBRARY_UPLOAD_ACCEPT } from "@neko/llm/library/formats";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
-import { ActionGroup } from "@/components/ui/ActionGroup";
-import { Button } from "@/components/ui/Button";
-import { MenuItem, OverflowMenu } from "@/components/ui/OverflowMenu";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Button } from "@/components/ui/button";
+import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
+import { EmptyState } from "@/components/ui/empty";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
+import { Field, Input, NativeSelect, Textarea } from "@/components/ui/field";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, Tab } from "@/components/ui/tabs";
+import { LocalDateTime } from "@/components/ui/local-date-time";
 import { validateLibraryUploadBatch } from "@/lib/library-upload-contract";
-import { LIBRARY_UPLOAD_ACCEPT } from "@neko/llm/library/formats";
 
-type DocumentRow = {
-  id: string;
-  filename: string;
-  relativePath: string;
-  sizeBytes: number;
-  status: string;
-  skipReason: string | null;
-  error: string | null;
-  createdAt: string;
-};
+type LibraryData = Awaited<ReturnType<typeof browseLibrary>>;
+type PackRow = { id: string; title: string; description: string; concepts: number };
+type Detail = { concept?: LibraryConcept; document?: LibraryDocument };
 
-type ConceptRow = {
-  id: string;
-  path: string;
-  type: string;
-  title: string;
-  description: string | null;
-  body: string;
-  status: string;
-  sources: Array<{ resource: string }>;
-  verified: Array<{ by: string; at: string }>;
-  updatedAt: string;
-};
-
-type PackRow = {
-  id: string;
-  title: string;
-  description: string;
-  concepts: number;
-};
-
-type LibraryData = {
-  isAdmin: boolean;
-  documents: DocumentRow[];
-  personal: ConceptRow[];
-  team: ConceptRow[];
-  pending: ConceptRow[];
-};
-
-async function fetchLibraryData(signal?: AbortSignal): Promise<LibraryData> {
-  const response = await fetch("/api/library", { cache: "no-store", signal });
-  if (!response.ok) throw new Error("Library could not be loaded.");
-  const data = (await response.json()) as Partial<LibraryData>;
-  return {
-    isAdmin: data.isAdmin === true,
-    documents: data.documents ?? [],
-    personal: data.personal ?? [],
-    team: data.team ?? [],
-    pending: data.pending ?? [],
-  };
-}
-
-function statusVariant(status: string): PillVariant {
-  if (["cataloged", "stable", "approved", "ready"].includes(status)) {
-    return "success";
-  }
-  if (["failed", "declined", "deprecated"].includes(status)) {
-    return "danger";
-  }
-  if (
-    [
-      "pending",
-      "processing",
-      "review",
-      "extracting",
-      "extracted",
-      "distilling",
-    ].includes(status)
-  ) {
-    return "watch";
-  }
+function statusVariant(status: string): BadgeVariant {
+  if (["cataloged", "stable", "approved", "ready"].includes(status)) return "success";
+  if (["failed", "declined", "deprecated"].includes(status)) return "danger";
+  if (["draft", "pending", "uploaded", "processing", "review", "extracting", "extracted", "distilling"].includes(status)) return "watch";
   return "muted";
 }
 
 export default function LibraryPage() {
+  return <Suspense fallback={<p role="status">Loading library…</p>}><LibraryBrowser /></Suspense>;
+}
+
+function LibraryBrowser() {
+  const params = useSearchParams();
+  const view = params.get("view") ?? "documents";
+  const q = params.get("q") ?? "";
+  const selectedId = params.get("id");
+  const listParams = new URLSearchParams(params.toString());
+  listParams.delete("id");
+  const requestKey = listParams.toString();
   const [data, setData] = useState<LibraryData>({
-    isAdmin: false,
-    documents: [],
-    personal: [],
-    team: [],
-    pending: [],
+    isAdmin: false, documents: [], concepts: [], counts: { documents: 0, concepts: 0, review: 0 },
+    total: 0, page: 1, pageSize: 50, types: [], searchMode: "browse",
   });
-  const [loading, setLoading] = useState(true);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [queryDraft, setQueryDraft] = useState({ url: q, value: q });
+  const query = queryDraft.url === q ? queryDraft.value : q;
+  const [version, setVersion] = useState(0);
+  const [detailState, setDetailState] = useState<{ key: string; data: Detail | null; error: string | null } | null>(null);
+  const loadKey = `${requestKey}:${version}`;
+  const detailKey = `${view}:${selectedId}:${version}`;
+  const loading = loadedKey !== loadKey;
+  const detail = detailState?.key === detailKey ? detailState.data : null;
+  const detailError = detailState?.key === detailKey ? detailState.error : null;
   const [uploading, setUploading] = useState(false);
   const [packs, setPacks] = useState<PackRow[]>([]);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [editingConcept, setEditingConcept] = useState<LibraryConcept | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const queryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detailRef = useRef<HTMLElement | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setData(await fetchLibraryData());
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Library could not be loaded.");
-    } finally {
-      setLoading(false);
+  const change = useCallback((changes: Record<string, string | null>, replace = false) => {
+    setError(null);
+    const next = new URLSearchParams(window.location.search);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value); else next.delete(key);
     }
+    const href = `/library?${next}`;
+    if (replace) window.history.replaceState(null, "", href);
+    else window.history.pushState(null, "", href);
   }, []);
+  const refresh = useCallback(async () => { setError(null); setVersion(value => value + 1); }, []);
+
+  useEffect(() => {
+    return () => { if (queryTimer.current) clearTimeout(queryTimer.current); };
+  }, [q]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchLibraryData(controller.signal)
-      .then((loaded) => {
-        setData(loaded);
-        setError(null);
+    void fetch(`/api/library?${requestKey}`, { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "Library could not be loaded. Try again.");
+        return payload as LibraryData;
       })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(
-          cause instanceof Error ? cause.message : "Library could not be loaded.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+      .then(loaded => { if (!controller.signal.aborted) setData(loaded); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Library could not be loaded. Try again."); })
+      .finally(() => { if (!controller.signal.aborted) setLoadedKey(loadKey); });
     return () => controller.abort();
-  }, []);
+  }, [requestKey, loadKey]);
 
-  const hasActiveDocuments = data.documents.some((document) =>
-    ["uploaded", "extracting", "extracted", "distilling"].includes(
-      document.status,
-    ),
-  );
+  const hasActiveDocuments = data.documents.some(document =>
+    ["uploaded", "extracting", "extracted", "distilling"].includes(document.status));
+  useEffect(() => {
+    if (!hasActiveDocuments || view !== "documents") return;
+    const timer = setInterval(() => setVersion(value => value + 1), 3_000);
+    return () => clearInterval(timer);
+  }, [hasActiveDocuments, view]);
 
   useEffect(() => {
-    if (!hasActiveDocuments) return;
+    if (!selectedId) return;
     const controller = new AbortController();
-    let timer: number;
-    const tick = async () => {
-      try {
-        const loaded = await fetchLibraryData(controller.signal);
-        setData(loaded);
-        setError(null);
-      } catch (cause) {
-        if (!controller.signal.aborted) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Library could not be loaded.",
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          timer = window.setTimeout(() => void tick(), 3_000);
-        }
-      }
-    };
-    timer = window.setTimeout(() => void tick(), 3_000);
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [hasActiveDocuments]);
+    void fetch(`/api/library/${view === "documents" ? "documents" : "concepts"}/${encodeURIComponent(selectedId)}`,
+      { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error(response.status === 404
+          ? "This item is no longer available. Close it and refresh the list."
+          : "Details could not be loaded. Try again.");
+        return response.json() as Promise<Detail>;
+      })
+      .then(loaded => { if (!controller.signal.aborted) { setDetailState({ key: detailKey, data: loaded, error: null }); detailRef.current?.focus({ preventScroll: true }); } })
+      .catch(cause => { if (!controller.signal.aborted) setDetailState({ key: detailKey, data: null, error: cause instanceof Error ? cause.message : "Details could not be loaded. Try again." }); });
+    return () => controller.abort();
+  }, [selectedId, view, detailKey]);
 
   const upload = useCallback(
     async (files: FileList | null) => {
@@ -191,10 +147,12 @@ export default function LibraryPage() {
           body,
         });
         if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(payload?.error ?? "The documents could not be imported.");
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(
+            payload?.error ?? "The documents could not be imported.",
+          );
         }
         setError(null);
         await refresh();
@@ -312,7 +270,10 @@ export default function LibraryPage() {
   useEffect(() => {
     if (!data.isAdmin) return;
     const controller = new AbortController();
-    fetch("/api/library/packs", { cache: "no-store", signal: controller.signal })
+    fetch("/api/library/packs", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (res) => (res.ok ? res.json() : { packs: [] }))
       .then((payload: { packs?: PackRow[] }) => setPacks(payload.packs ?? []))
       .catch(() => {});
@@ -347,9 +308,9 @@ export default function LibraryPage() {
           body: JSON.stringify(parsed),
         });
         if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const payload = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(payload?.error ?? "Import failed.");
         }
         setError(null);
@@ -376,404 +337,230 @@ export default function LibraryPage() {
     [act],
   );
 
-  const { isAdmin, documents, personal, team, pending } = data;
 
-  const conceptRow = (
-    concept: ConceptRow,
-    index: number,
-    actions: React.ReactNode,
-  ) => (
-    <li key={concept.id} className="memory-review-row">
-      <span className="library-index">{String(index + 1).padStart(2, "0")}</span>
-      <div className="memory-review-copy">
-        <div className="memory-review-meta">
-          <span>{concept.type}</span>
-          <span>{concept.path}</span>
-          <span>{formatDate(concept.updatedAt)}</span>
-        </div>
-        <p>
-          <button
-            data-ui-bespoke-reason="inline concept detail toggle"
-            type="button"
-            className="library-concept-title"
-            onClick={() =>
-              setExpandedId(expandedId === concept.id ? null : concept.id)
-            }
-          >
-            {concept.title}
-          </button>
-        </p>
-        {concept.description ? <small>{concept.description}</small> : null}
-        {expandedId === concept.id ? (
-          <div className="library-concept-detail">
-            <pre>{concept.body}</pre>
-            {concept.sources.length > 0 ? (
-              <small>
-                Sources:{" "}
-                {concept.sources.map((source, i) => (
-                  <span key={source.resource}>
-                    {i > 0 ? ", " : ""}
-                    <a
-                      href={`/api/work/files/${source.resource.replace(/^\//, "")}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {source.resource.split("/").pop()}
-                    </a>
-                  </span>
-                ))}
-              </small>
-            ) : null}
-            {concept.verified.length > 0 ? (
-              <small>
-                Verified by {concept.verified[concept.verified.length - 1].by} on{" "}
-                {formatDate(concept.verified[concept.verified.length - 1].at)}
-              </small>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-      <ActionGroup className="memory-review-actions">{actions}</ActionGroup>
-    </li>
-  );
+  const filter = (key: string, value: string) => change({ [key]: value, page: null, id: null });
+  const rowHref = (id: string) => {
+    const next = new URLSearchParams(params.toString());
+    next.set("id", id);
+    return `/library?${next}`;
+  };
+  const closeDetail = () => change({ id: null });
+  const selectedConcept = detail?.concept;
+  const selectedDocument = detail?.document;
+  const isDocuments = view === "documents";
+  const pageCount = Math.max(1, Math.ceil(data.total / data.pageSize));
+  const searching = loading || query.trim() !== q;
+  const conceptActions = (concept: { id: string; title: string; layer: "personal" | "team" }) =>
+    <OverflowMenu label={`Actions for ${concept.title}`}>
+      {concept.layer === "personal" ? <>
+        <MenuItem disabled={busyId === concept.id} onClick={() => void share(concept.id)}><Share2 aria-hidden="true" />Share with team</MenuItem>
+        <MenuItem danger disabled={busyId === concept.id} onClick={() => void archiveConcept(concept.id)}><Trash2 aria-hidden="true" />Archive concept</MenuItem>
+      </> : data.isAdmin ? view === "review" ? <>
+        <MenuItem disabled={busyId === concept.id} onClick={() => void decide(concept.id, "approve")}>Approve for team</MenuItem>
+        <MenuItem danger disabled={busyId === concept.id} onClick={() => void decide(concept.id, "decline")}>Decline concept</MenuItem>
+      </> : <MenuItem danger disabled={busyId === concept.id} onClick={() => void decide(concept.id, "deprecate")}>Deprecate concept</MenuItem> : null}
+    </OverflowMenu>;
 
   return (
     <div className="library-page document-library">
-      <PageHeading
-        eyebrow="Knowledge"
-        title="Library"
-        actions={
-          <div className="library-head-stats" aria-label="Library status">
-            <div>
-              <strong>{String(documents.length).padStart(2, "0")}</strong>
-              <span>documents</span>
-            </div>
-            <div data-state={pending.length > 0 ? "attention" : "clear"}>
-              <strong>{String(pending.length).padStart(2, "0")}</strong>
-              <span>pending</span>
-            </div>
+      <PageHeading title="Library" description="Source documents and the knowledge OpenNeko learns from them."
+        actions={<ActionGroup>
+          {data.isAdmin && <OverflowMenu label="Library tools">
+            <MenuItem onClick={() => setToolsOpen(value => !value)}>Starter packs</MenuItem>
+            <MenuItem onClick={() => void exportBundle()}>Export library</MenuItem>
+            <MenuItem onClick={() => importInputRef.current?.click()}>Import library</MenuItem>
+          </OverflowMenu>}
+          <Button variant="primary" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+            <Upload aria-hidden="true" />{uploading ? "Uploading…" : "Upload documents"}
+          </Button>
+        </ActionGroup>} />
+      <Input ref={fileInputRef} type="file" multiple accept={LIBRARY_UPLOAD_ACCEPT} hidden onChange={event => void upload(event.target.files)} />
+      <Input ref={importInputRef} type="file" accept=".json,application/json" hidden onChange={event => void importBundle(event.target.files)} />
+      <div className="library-browser">
+        <Tabs aria-label="Library views">
+          {(["documents", "concepts", ...(data.isAdmin ? ["review"] : [])] as const).map(tab =>
+            <Tab key={tab} selected={view === tab} aria-label={tab === "review" ? "Needs review" : humanize(tab)}
+              onClick={() => change({ view: tab, page: null, id: null, type: null, status: null, layer: null, documentId: null })}>
+              {tab === "review" ? "Needs review" : tab === "documents" ? "Documents" : "Concepts"}
+              <span className="tabular-nums">{data.counts[tab as keyof typeof data.counts].toLocaleString()}</span>
+            </Tab>)}
+        </Tabs>
+        <div className="library-browser-toolbar">
+          <Field label="Search" htmlFor="library-search" className="library-browser-search">
+            <SearchInput id="library-search" label="Search library" value={query} maxLength={200}
+              placeholder={isDocuments ? "Find a document or describe what you need" : "Find a concept or describe what you need"}
+              onChange={event => {
+                const value = event.target.value;
+                setQueryDraft({ url: q, value });
+                if (queryTimer.current) clearTimeout(queryTimer.current);
+                queryTimer.current = setTimeout(() => change({ q: value.trim() || null, page: null, id: null, sort: value.trim() ? "relevance" : null }, true), 350);
+              }} />
+          </Field>
+          <Button className="library-browser-filter-toggle" aria-expanded={filtersOpen} aria-controls="library-filters" onClick={() => setFiltersOpen(value => !value)}>Filters</Button>
+          <div id="library-filters" className="library-browser-filters" data-open={filtersOpen}>
+          {view === "concepts" && <Field label="Visibility" htmlFor="library-layer">
+            <NativeSelect id="library-layer" value={params.get("layer") ?? "all"} onChange={event => filter("layer", event.target.value)}>
+              <option value="all">All visible</option><option value="personal">Personal</option><option value="team">Team</option>
+            </NativeSelect>
+          </Field>}
+          {!isDocuments && <Field label="Category" htmlFor="library-type">
+            <NativeSelect id="library-type" value={params.get("type") ?? ""} onChange={event => filter("type", event.target.value)}>
+              <option value="">All categories</option>{data.types.map(type => <option key={type} value={type}>{humanize(type)}</option>)}
+            </NativeSelect>
+          </Field>}
+          {isDocuments && <Field label="Status" htmlFor="library-status">
+            <NativeSelect id="library-status" value={params.get("status") ?? ""} onChange={event => filter("status", event.target.value)}>
+              <option value="">All statuses</option>{["uploaded", "extracting", "extracted", "distilling", "cataloged", "skipped", "failed"].map(status =>
+                <option key={status} value={status}>{humanize(status)}</option>)}
+            </NativeSelect>
+          </Field>}
+          <Field label="Sort" htmlFor="library-sort">
+            <NativeSelect id="library-sort" value={params.get("sort") ?? (q ? "relevance" : "recent")} onChange={event => filter("sort", event.target.value)}>
+              {q && <option value="relevance">Most relevant</option>}<option value="recent">Most recent</option><option value="name">Name</option>
+            </NativeSelect>
+          </Field>
           </div>
-        }
-      />
-
-      <main className="library-main">
-        {error ? (
-          <div className="library-error" role="alert">
-            <div>
-              <strong>Library unavailable</strong>
-              <span>{error}</span>
-            </div>
-            <Button
-              variant="danger"
-              size="sm"
-              className="shrink-0"
-              onClick={() => void refresh()}
-            >
-              Retry
-            </Button>
-          </div>
-        ) : null}
-
-        {pending.length > 0 ? (
-          <section className="library-section memory-review">
-            <header className="library-section-head">
-              <div>
-                <span>Review queue</span>
-                <h2>Shared with the team</h2>
-              </div>
-              <strong>{String(pending.length).padStart(2, "0")}</strong>
+        </div>
+        {params.get("documentId") && <div className="flex flex-wrap items-center gap-2"><span className="text-ui-body-sm text-text2">Concepts from the selected document</span><Button size="sm" variant="ghost" onClick={() => filter("documentId", "")}>Clear document filter</Button></div>}
+        {error && <div className="library-error" role="alert"><span>{error}</span><Button size="sm" onClick={() => void refresh()}>Retry</Button></div>}
+        {q && data.searchMode === "keyword" && !loading && <p role="status" className="text-ui-body-sm text-text2">Meaning-based search is unavailable. Showing keyword matches.</p>}
+        <div className="library-browser-workspace" data-detail-open={Boolean(selectedId)}>
+          <section className="library-browser-results" aria-label={isDocuments ? "Documents" : "Concepts"} aria-busy={searching}>
+            <header className="library-browser-results-head">
+              <span role="status">{searching ? "Searching library…" : `${data.total.toLocaleString()} ${isDocuments ? "documents" : "concepts"}${q ? " found" : ""}`}</span>
+              <span>{isDocuments ? "Private to you" : "Personal knowledge and approved team concepts"}</span>
             </header>
-            <ol className="memory-review-list">
-              {pending.map((concept, index) =>
-                conceptRow(
-                  concept,
-                  index,
-                  <>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={busyId === concept.id}
-                      onClick={() => void decide(concept.id, "approve")}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={busyId === concept.id}
-                      onClick={() => void decide(concept.id, "decline")}
-                    >
-                      Decline
-                    </Button>
-                  </>,
-                ),
-              )}
-            </ol>
-          </section>
-        ) : null}
-
-        <section className="library-section">
-          <header className="library-section-head">
-            <div>
-              <span>Uploads</span>
-              <h2>Your documents</h2>
-              <small id="library-upload-limit" className="library-upload-limit">
-                Digital PDF, Word, PowerPoint, Excel, CSV, Markdown, or text;
-                up to 100 MB at once.
-              </small>
-            </div>
-            <ActionGroup className="memory-review-actions library-upload-actions">
-              <input
-                data-ui-bespoke-reason="library file picker"
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={LIBRARY_UPLOAD_ACCEPT}
-                hidden
-                aria-describedby="library-upload-limit"
-                onChange={(event) => void upload(event.target.files)}
-              />
-              <Button
-                variant="primary"
-                disabled={uploading}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload aria-hidden="true" strokeWidth={2} />
-                {uploading ? "Uploading…" : "Upload"}
-              </Button>
-            </ActionGroup>
-          </header>
-          {loading ? (
-            <div className="library-loading" role="status" aria-label="Loading library">
-              <span />
-              <span />
-              <span />
-            </div>
-          ) : documents.length === 0 ? (
-            <EmptyState
-              className="library-empty"
-              title="No documents yet"
-              body="Upload a document above, or attach one in a conversation. OpenNeko distills durable knowledge into concepts it can cite."
-            />
-          ) : (
-            <ol className="memory-review-list">
-              {documents.map((doc, index) => (
-                <li key={doc.id} className="memory-review-row">
-                  <span className="library-index">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div className="memory-review-copy">
-                    <div className="memory-review-meta">
-                      <span>
-                        <FileText aria-hidden="true" strokeWidth={2} size={12} />{" "}
-                        {doc.filename}
-                      </span>
-                      <span>{formatSize(doc.sizeBytes)}</span>
-                      <span>{formatDate(doc.createdAt)}</span>
-                    </div>
-                    {doc.status === "skipped" && doc.skipReason ? (
-                      <small>{doc.skipReason}</small>
-                    ) : null}
-                    {doc.status === "failed" && doc.error ? (
-                      <small>{doc.error}</small>
-                    ) : null}
+            {searching ? <p className="library-browser-message" role="status">Loading results…</p> : error ? null : data.total === 0 ?
+              <EmptyState className="library-empty" title={q ? "No matches" : isDocuments ? "No documents yet" : view === "review" ? "Nothing to review" : "No concepts yet"}
+                body={q ? "Try another phrase or clear the filters." : isDocuments ? "Upload a document to start building your library." : "Concepts distilled from your documents will appear here."}
+                action={q || params.get("type") || params.get("status") || params.get("layer") ? <Button onClick={() => change({ q: null, type: null, status: null, layer: null, page: null, sort: null })}>Clear filters</Button> : undefined} />
+              : <ul className="library-browser-list">
+                {isDocuments ? data.documents.map(doc => <li key={doc.id} data-selected={doc.id === selectedId}>
+                  <FileText aria-hidden="true" size={18} />
+                  <div className="library-browser-row-copy">
+                    <Link href={rowHref(doc.id)} prefetch={false} onNavigate={event => { event.preventDefault(); change({ id: doc.id }); }} aria-current={doc.id === selectedId ? "true" : undefined}>{doc.filename}</Link>
+                    <span>{formatSize(doc.sizeBytes)} · <LocalDateTime value={doc.createdAt} /></span>
                   </div>
-                  <ActionGroup className="memory-review-actions">
-                    <Pill variant={statusVariant(doc.status)}>
-                      {humanize(doc.status)}
-                    </Pill>
-                    {doc.status === "failed" || doc.status === "skipped" ? (
-                      <Button
-                        size="sm"
-                        disabled={busyId === doc.id}
-                        onClick={() => void retryDocument(doc.id)}
-                        title="Retry extracting and distilling this document"
-                      >
-                        <RefreshCw aria-hidden="true" strokeWidth={2} />
-                        Retry
-                      </Button>
-                    ) : null}
-                    <OverflowMenu label={`Actions for ${doc.filename}`}>
-                      <MenuItem
-                        danger
-                        disabled={busyId === doc.id}
-                        onClick={() => void removeDocument(doc.id)}
-                      >
-                        <Trash2 aria-hidden="true" strokeWidth={2} />
-                        Remove from library
-                      </MenuItem>
-                    </OverflowMenu>
-                  </ActionGroup>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-
-        <section className="library-section">
-          <header className="library-section-head">
-            <div>
-              <span>Personal layer</span>
-              <h2>Your concepts</h2>
-            </div>
-            <strong>{String(personal.length).padStart(2, "0")}</strong>
-          </header>
-          {personal.length === 0 && !loading ? (
-            <EmptyState
-              className="library-empty"
-              title="No personal concepts"
-              body="Distilled concepts stay private here until you share them with the team."
-            />
-          ) : (
-            <ol className="memory-review-list">
-              {personal.map((concept, index) =>
-                conceptRow(
-                  concept,
-                  index,
-                  <>
-                    <Button
-                      size="sm"
-                      disabled={busyId === concept.id}
-                      onClick={() => void share(concept.id)}
-                    >
-                      <Share2 aria-hidden="true" strokeWidth={2} />
-                      Share with team
-                    </Button>
-                    <OverflowMenu label={`Actions for ${concept.title}`}>
-                      <MenuItem
-                        danger
-                        disabled={busyId === concept.id}
-                        onClick={() => void archiveConcept(concept.id)}
-                      >
-                        <Trash2 aria-hidden="true" strokeWidth={2} />
-                        Archive concept
-                      </MenuItem>
-                    </OverflowMenu>
-                  </>,
-                ),
-              )}
-            </ol>
-          )}
-        </section>
-
-        <section className="library-section">
-          <header className="library-section-head">
-            <div>
-              <span>Team layer</span>
-              <h2>Team library</h2>
-            </div>
-            <strong>{String(team.length).padStart(2, "0")}</strong>
-          </header>
-          {team.length === 0 && !loading ? (
-            <EmptyState
-              className="library-empty"
-              title="No team concepts"
-              body="Shared concepts appear here after an admin approves them for the workspace."
-            />
-          ) : (
-            <ol className="memory-review-list">
-              {team.map((concept, index) =>
-                conceptRow(
-                  concept,
-                  index,
-                  <>
-                    <Pill variant={statusVariant(concept.status)}>
-                      {humanize(concept.status)}
-                    </Pill>
-                    {isAdmin && concept.status === "stable" ? (
-                      <OverflowMenu label={`Actions for ${concept.title}`}>
-                        <MenuItem
-                          danger
-                          disabled={busyId === concept.id}
-                          onClick={() => void decide(concept.id, "deprecate")}
-                          title="Retire from the assistant's knowledge"
-                        >
-                          <Trash2 aria-hidden="true" strokeWidth={2} />
-                          Deprecate concept
-                        </MenuItem>
-                      </OverflowMenu>
-                    ) : null}
-                  </>,
-                ),
-              )}
-            </ol>
-          )}
-        </section>
-        {isAdmin ? (
-          <section className="library-section">
-            <header className="library-section-head">
-              <div>
-                <span>Admin</span>
-                <h2>Portability &amp; starter packs</h2>
-              </div>
-            </header>
-            <ActionGroup
-              align="start"
-              className="memory-review-actions library-portability"
-            >
-              <Button size="sm" onClick={() => void exportBundle()}>
-                Export OKF bundle
-              </Button>
-              <input data-ui-bespoke-reason="library file picker"
-                ref={importInputRef}
-                type="file"
-                accept=".json,application/json"
-                hidden
-                onChange={(event) => void importBundle(event.target.files)}
-              />
-              <Button
-                size="sm"
-                onClick={() => importInputRef.current?.click()}
-              >
-                Import bundle
-              </Button>
-            </ActionGroup>
-            {packs.length > 0 ? (
-              <ol className="memory-review-list">
-                {packs.map((pack, index) => (
-                  <li key={pack.id} className="memory-review-row">
-                    <span className="library-index">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <div className="memory-review-copy">
-                      <div className="memory-review-meta">
-                        <span>{pack.id}</span>
-                        <span>{pack.concepts} concepts</span>
-                      </div>
-                      <p>{pack.title}</p>
-                      {pack.description ? <small>{pack.description}</small> : null}
-                    </div>
-                    <ActionGroup className="memory-review-actions">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        disabled={busyId === pack.id}
-                        onClick={() => void installPack(pack.id)}
-                      >
-                        Install
-                      </Button>
-                    </ActionGroup>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
+                  <Badge variant={statusVariant(doc.status)}>{humanize(doc.status)}</Badge>
+                  <OverflowMenu label={`Actions for ${doc.filename}`}>
+                    {["failed", "skipped"].includes(doc.status) && <MenuItem disabled={busyId === doc.id} onClick={() => void retryDocument(doc.id)}><RefreshCw aria-hidden="true" />Retry extraction</MenuItem>}
+                    <MenuItem danger disabled={busyId === doc.id} onClick={() => void removeDocument(doc.id)}><Trash2 aria-hidden="true" />Remove from library</MenuItem>
+                  </OverflowMenu>
+                </li>) : data.concepts.map(concept => <li key={concept.id} data-selected={concept.id === selectedId}>
+                  <div className="library-browser-row-copy">
+                    <Link href={rowHref(concept.id)} prefetch={false} onNavigate={event => { event.preventDefault(); change({ id: concept.id }); }} aria-current={concept.id === selectedId ? "true" : undefined}>{concept.title}</Link>
+                    <span>{concept.description || concept.path}</span>
+                    <small>{humanize(concept.type)} · {concept.layer === "personal" ? "Personal" : "Team"} · <LocalDateTime value={concept.updatedAt} /></small>
+                  </div>
+                  <Badge variant={statusVariant(concept.status)}>{humanize(concept.status)}</Badge>
+                  {(concept.layer === "personal" || data.isAdmin) && conceptActions(concept)}
+                </li>)}
+              </ul>}
+            <footer className="library-browser-pagination">
+              <span>{data.total ? `${(data.page - 1) * data.pageSize + 1}–${Math.min(data.page * data.pageSize, data.total)} of ${data.total.toLocaleString()}` : "0 results"}</span>
+              <ActionGroup><Button size="sm" disabled={searching || data.page <= 1} onClick={() => change({ page: String(data.page - 1), id: null })}>Previous</Button>
+                <span className="tabular-nums">{data.page} / {pageCount}</span>
+                <Button size="sm" disabled={searching || data.page >= pageCount} onClick={() => change({ page: String(data.page + 1), id: null })}>Next</Button></ActionGroup>
+            </footer>
           </section>
-        ) : null}
-      </main>
+          {selectedId && <section className="library-browser-detail" aria-label="Library details" ref={detailRef} tabIndex={-1}
+            onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); closeDetail(); } }}>
+            <Button variant="ghost" size="sm" onClick={closeDetail}><ArrowLeft aria-hidden="true" />Back to list</Button>
+            {detailError ? <div role="alert"><p>{detailError}</p><Button size="sm" onClick={() => void refresh()}>Retry details</Button></div>
+              : !detail ? <p role="status">Loading details…</p>
+              : selectedConcept ? <>
+                <div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(selectedConcept.status)}>{humanize(selectedConcept.status)}</Badge><span className="text-ui-body-sm text-text2">{humanize(selectedConcept.type)}</span></div>
+                <h2>{selectedConcept.title}</h2>
+                {(selectedConcept.userId !== null || data.isAdmin) && <Button onClick={() => setEditingConcept(selectedConcept)}>Edit concept</Button>}
+                <p className="text-ui-body-sm text-text2">{selectedConcept.description}</p>
+                <article className="library-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ h1: "h3", h2: "h4", h3: "h5" }}>{selectedConcept.body}</ReactMarkdown></article>
+                {selectedConcept.sources.length > 0 && <div><h3>Sources</h3><ul>{selectedConcept.sources.map((source, index) =>
+                  <li key={index}>{source.resource}</li>)}</ul></div>}
+                {selectedConcept.verified.length > 0 && <p className="text-ui-body-sm text-text2">Verified by {selectedConcept.verified.at(-1)!.by} · <LocalDateTime value={selectedConcept.verified.at(-1)!.at} /></p>}
+                {(selectedConcept.userId !== null || data.isAdmin) && conceptActions({ ...selectedConcept, layer: selectedConcept.userId === null ? "team" : "personal" })}
+              </> : selectedDocument ? <>
+                <h2>{selectedDocument.filename}</h2>
+                <Badge variant={statusVariant(selectedDocument.status)}>{humanize(selectedDocument.status)}</Badge>
+                <p>{formatSize(selectedDocument.sizeBytes)} · <LocalDateTime value={selectedDocument.createdAt} /></p>
+                <p className="text-ui-body-sm text-text2">{selectedDocument.status === "failed" ? "Extraction failed. Retry it, or remove this document and upload it again."
+                  : selectedDocument.skipReason || "OpenNeko uses this document to build concepts it can cite."}</p>
+                <ActionGroup align="start"><Button asChild><Link href={`/library?view=concepts&documentId=${selectedDocument.id}`} scroll={false}>View concepts</Link></Button>
+                  {["failed", "skipped"].includes(selectedDocument.status) && <Button disabled={busyId === selectedDocument.id} onClick={() => void retryDocument(selectedDocument.id)}>Retry extraction</Button>}
+                </ActionGroup>
+              </> : null}
+          </section>}
+        </div>
+        {toolsOpen && data.isAdmin && <section className="library-section">
+          <header className="library-section-head"><h2>Starter packs</h2><Button variant="ghost" size="sm" onClick={() => setToolsOpen(false)}>Close</Button></header>
+          <ul className="library-browser-list">{packs.map(pack => <li key={pack.id}><div className="library-browser-row-copy"><strong>{pack.title}</strong><span>{pack.description}</span><small>{pack.concepts} concepts</small></div>
+            <Button size="sm" disabled={busyId === pack.id} onClick={() => void installPack(pack.id)}>Install</Button></li>)}</ul>
+        </section>}
+      </div>
+      {editingConcept && <ConceptEditor concept={editingConcept} categories={data.types} onClose={() => setEditingConcept(null)} onSaved={() => { setEditingConcept(null); void refresh(); }} />}
     </div>
   );
 }
 
-function humanize(value: string): string {
-  return value.replace(/_/g, " ");
+function ConceptEditor({ concept, categories, onClose, onSaved }: { concept: LibraryConcept; categories: string[]; onClose: () => void; onSaved: () => void }) {
+  const categoryOptions = [...new Map(["Policy", "Contract", "SOP", "Report", "Notes", "Metric definition", "Playbook", ...categories, concept.type]
+    .map(value => [value.toLowerCase(), value])).values()].sort((a, b) => a.localeCompare(b));
+  const [title, setTitle] = useState(concept.title);
+  const [description, setDescription] = useState(concept.description ?? "");
+  const [type, setType] = useState(concept.type);
+  const [body, setBody] = useState(concept.body);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dirty = title !== concept.title || description !== (concept.description ?? "") || type !== concept.type || body !== concept.body;
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  const close = async () => {
+    if (saving) return;
+    if (dirty && !(await confirmDialog({ title: "Discard unsaved changes?", description: "Your changes to this concept have not been saved.", confirmLabel: "Discard changes", destructive: true }))) return;
+    onClose();
+  };
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/library/concepts/${concept.id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title, description, type, body, updatedAt: concept.updatedAt }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Changes could not be saved. Try again.");
+      toast.success("Concept updated", { description: result.searchIndexed === false ? "Keyword search is ready. Meaning-based search is temporarily unavailable for this revision." : undefined });
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Changes could not be saved. Try again.");
+    } finally { setSaving(false); }
+  };
+  return <Sheet open onOpenChange={open => { if (!open) void close(); }}>
+    <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+      <SheetHeader><SheetTitle>Edit concept</SheetTitle><SheetDescription>
+        {concept.userId !== null ? "Update your personal knowledge. Sharing with the team is a separate action."
+          : concept.status === "draft" ? "This team draft will still need approval after saving."
+            : "Changes to this approved team concept will be available to the workspace after saving."}
+      </SheetDescription></SheetHeader>
+      <form onSubmit={event => void save(event)} className="grid gap-5 px-4 pb-6">
+        <Field label="Title" htmlFor="concept-title"><Input autoFocus id="concept-title" value={title} onChange={event => setTitle(event.target.value)} required maxLength={240} disabled={saving} /></Field>
+        <Field label="Category" htmlFor="concept-type"><NativeSelect id="concept-type" value={type} onChange={event => setType(event.target.value)} disabled={saving}>
+          {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
+        </NativeSelect></Field>
+        <Field label="Description" htmlFor="concept-description"><Textarea id="concept-description" value={description} onChange={event => setDescription(event.target.value)} maxLength={2000} disabled={saving} rows={3} /></Field>
+        <Field label="Content" htmlFor="concept-body" hint="Markdown is supported. Sources and document links are preserved."><Textarea id="concept-body" value={body} onChange={event => setBody(event.target.value)} required maxLength={200_000} disabled={saving} rows={16} /></Field>
+        {error && <p role="alert" className="text-ui-body-sm text-danger">{error}</p>}
+        <ActionGroup><Button disabled={saving} onClick={() => void close()}>Cancel</Button><Button type="submit" variant="primary" disabled={saving || !dirty}>{saving ? "Saving…" : "Save concept"}</Button></ActionGroup>
+      </form>
+    </SheetContent>
+  </Sheet>;
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-IN", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
+function humanize(value: string): string { return value.replace(/_/g, " "); }
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;

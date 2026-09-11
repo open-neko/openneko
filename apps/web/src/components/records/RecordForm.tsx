@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CheckCircle2, LoaderCircle, LockKeyhole } from "lucide-react";
+import { CheckCircle2, LockKeyhole } from "lucide-react";
 import type { RecordViewColumn } from "@neko/records";
-import { Button, buttonClassName } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Input, NativeSelect, Textarea } from "@/components/ui/Field";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input, NativeSelect, Textarea } from "@/components/ui/field";
 
 type SubmitResponse = {
   status?: "executed" | "queued";
@@ -18,7 +19,9 @@ type SubmitResponse = {
   issues?: Array<{ field: string; message: string }>;
 };
 
-function picklistOptions(column: RecordViewColumn): Array<{ value: string; label: string }> {
+function picklistOptions(
+  column: RecordViewColumn,
+): Array<{ value: string; label: string }> {
   return (column.picklistValues ?? []).flatMap((option) => {
     if (typeof option === "string") return [{ value: option, label: option }];
     if (option && typeof option === "object" && !Array.isArray(option)) {
@@ -73,18 +76,22 @@ function FieldControl({
     required: column.required,
   };
   if (column.readOnly || column.kind === "readonly_formula") {
-    return <Input {...common} type="text" value={stringValue(value)} disabled readOnly />;
+    return (
+      <Input
+        {...common}
+        type="text"
+        value={stringValue(value)}
+        disabled
+        readOnly
+      />
+    );
   }
   if (column.kind === "textarea") {
     return <Textarea {...common} defaultValue={stringValue(value)} rows={5} />;
   }
   if (column.kind === "boolean") {
     return (
-      <Checkbox
-        {...common}
-        label="Enabled"
-        defaultChecked={value === true}
-      />
+      <Checkbox {...common} label="Enabled" defaultChecked={value === true} />
     );
   }
   if (column.kind === "picklist") {
@@ -101,7 +108,12 @@ function FieldControl({
   }
   if (column.kind === "multipicklist") {
     return (
-      <NativeSelect {...common} multiple defaultValue={multiValue(value)} size={Math.min(5, Math.max(3, picklistOptions(column).length))}>
+      <NativeSelect
+        {...common}
+        multiple
+        defaultValue={multiValue(value)}
+        size={Math.min(5, Math.max(3, picklistOptions(column).length))}
+      >
         {picklistOptions(column).map((option) => (
           <option value={option.value} key={option.value}>
             {option.label}
@@ -121,7 +133,9 @@ function FieldControl({
             ? "date"
             : column.kind === "datetime"
               ? "datetime-local"
-              : ["integer", "decimal", "currency", "percent"].includes(column.kind)
+              : ["integer", "decimal", "currency", "percent"].includes(
+                    column.kind,
+                  )
                 ? "number"
                 : "text";
   return (
@@ -129,7 +143,9 @@ function FieldControl({
       {...common}
       type={type}
       defaultValue={
-        column.kind === "datetime" ? datetimeLocalValue(value) : stringValue(value)
+        column.kind === "datetime"
+          ? datetimeLocalValue(value)
+          : stringValue(value)
       }
       {...(column.kind === "integer" ? { step: 1 } : {})}
       {...(["decimal", "currency", "percent"].includes(column.kind)
@@ -168,12 +184,15 @@ function ReferenceControl({
         `/api/a/${encodeURIComponent(appId)}/references/${encodeURIComponent(target)}?q=${encodeURIComponent(search)}`,
         { signal: controller.signal },
       )
-        .then(async (response) => response.ok
-          ? (await response.json()) as { options?: ReferenceOption[] }
-          : { options: [] })
+        .then(async (response) =>
+          response.ok
+            ? ((await response.json()) as { options?: ReferenceOption[] })
+            : { options: [] },
+        )
         .then((payload) => setOptions(payload.options ?? []))
         .catch((error: unknown) => {
-          if (!(error instanceof DOMException && error.name === "AbortError")) setOptions([]);
+          if (!(error instanceof DOMException && error.name === "AbortError"))
+            setOptions([]);
         });
     }, 180);
     return () => {
@@ -194,7 +213,11 @@ function ReferenceControl({
             setOptions([]);
           }}
         >
-          {targets.map((candidate) => <option value={candidate} key={candidate}>{candidate}</option>)}
+          {targets.map((candidate) => (
+            <option value={candidate} key={candidate}>
+              {candidate}
+            </option>
+          ))}
         </NativeSelect>
       )}
       <Input
@@ -217,17 +240,16 @@ function ReferenceControl({
       />
       <datalist id={listId}>
         {options.map((option) => (
-          <option value={option.id} key={option.id}>{option.label}</option>
+          <option value={option.id} key={option.id}>
+            {option.label}
+          </option>
         ))}
       </datalist>
     </div>
   );
 }
 
-function submittedValue(
-  formData: FormData,
-  column: RecordViewColumn,
-): unknown {
+function submittedValue(formData: FormData, column: RecordViewColumn): unknown {
   if (column.kind === "boolean") return formData.has(column.apiName);
   if (column.kind === "multipicklist") {
     return formData.getAll(column.apiName).map(String);
@@ -297,7 +319,9 @@ export function RecordForm({
         const issueText = payload.issues
           ?.map((issue) => `${issue.field}: ${issue.message}`)
           .join(" · ");
-        setMessage(issueText || payload.error || "The record could not be submitted.");
+        setMessage(
+          issueText || payload.error || "The record could not be submitted.",
+        );
         setActionRequestId(payload.actionRequestId ?? null);
         return;
       }
@@ -310,14 +334,18 @@ export function RecordForm({
       }
       const destinationId = payload.recordId ?? recordId;
       if (!destinationId) {
-        setMessage("The action executed, but the worker did not return a record ID.");
+        setMessage(
+          "The action executed, but the worker did not return a record ID.",
+        );
         setActionRequestId(payload.actionRequestId ?? null);
         return;
       }
       router.push(`${base}/${encodeURIComponent(destinationId)}`);
       router.refresh();
     } catch {
-      setMessage("The records service could not be reached. The form was not reported as successful.");
+      setMessage(
+        "The records service could not be reached. The form was not reported as successful.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -342,13 +370,21 @@ export function RecordForm({
                 value={initialRow?.[column.columnName]}
               />
             ) : (
-              <FieldControl column={column} value={initialRow?.[column.columnName]} />
+              <FieldControl
+                column={column}
+                value={initialRow?.[column.columnName]}
+              />
             )}
             {column.kind === "reference" && (
-              <small>Search the permitted target object by name; the selected record ID is submitted.</small>
+              <small>
+                Search the permitted target object by name; the selected record
+                ID is submitted.
+              </small>
             )}
             {(column.readOnly || column.kind === "readonly_formula") && (
-              <small>Calculated or source-managed value; shown for context only.</small>
+              <small>
+                Calculated or source-managed value; shown for context only.
+              </small>
             )}
             {column.kind === "multipicklist" && (
               <small>Use Ctrl or Command to select more than one value.</small>
@@ -357,20 +393,25 @@ export function RecordForm({
         ))}
       </div>
       {fields.length === 0 && (
-        <div className="records-form-empty">This object has no editable fields.</div>
+        <div className="records-form-empty">
+          This object has no editable fields.
+        </div>
       )}
       {message && (
         <div className="records-form-message" role="status">
           <span>{message}</span>
           {actionRequestId && (
-            <Link href={`/actions/${actionRequestId}`}>View action request</Link>
+            <Link href={`/actions/${actionRequestId}`}>
+              View action request
+            </Link>
           )}
         </div>
       )}
       <footer className="records-form-footer">
         <p>
           <LockKeyhole aria-hidden="true" />
-          Submitted through action policy, registry validation, and durable audit history.
+          Submitted through action policy, registry validation, and durable
+          audit history.
         </p>
         <Link
           className={buttonClassName({
@@ -389,11 +430,13 @@ export function RecordForm({
           disabled={submitting || fields.length === 0}
         >
           {submitting ? (
-            <LoaderCircle className="records-spin" aria-hidden="true" />
+            <Spinner className="records-spin" aria-hidden="true" />
           ) : (
             <CheckCircle2 aria-hidden="true" />
           )}
-          {submitting ? "Submitting…" : `${operation === "create" ? "Create" : "Save"} ${objectLabel.toLowerCase()}`}
+          {submitting
+            ? "Submitting…"
+            : `${operation === "create" ? "Create" : "Save"} ${objectLabel.toLowerCase()}`}
         </Button>
       </footer>
     </form>

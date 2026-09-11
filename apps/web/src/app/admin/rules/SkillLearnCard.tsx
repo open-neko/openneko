@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { Disclosure } from "@/components/ui/Disclosure";
-import { Pill } from "@/components/ui/Pill";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Badge } from "@/components/ui/badge";
 
 type Payload = {
   enabled: boolean;
@@ -31,7 +31,9 @@ export default function SkillLearnCard() {
       .catch((cause: unknown) => {
         if (cancelled) return;
         setError(
-          cause instanceof Error ? cause.message : "Skill learning could not be loaded.",
+          cause instanceof Error
+            ? cause.message
+            : "Skill learning could not be loaded.",
         );
       });
     return () => {
@@ -50,7 +52,9 @@ export default function SkillLearnCard() {
         body: JSON.stringify({ enabled: next }),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(body?.error ?? `HTTP ${response.status}`);
       }
       toast.success(next ? "Skill learning is on." : "Skill learning is off.");
@@ -58,7 +62,9 @@ export default function SkillLearnCard() {
     } catch (cause) {
       setEnabled(previous);
       const message =
-        cause instanceof Error ? cause.message : "Skill learning could not be saved.";
+        cause instanceof Error
+          ? cause.message
+          : "Skill learning could not be saved.";
       setError(message);
       toast.error(message);
     } finally {
@@ -72,14 +78,14 @@ export default function SkillLearnCard() {
         <div className="min-w-0">
           <h2 className="settings-card-title">Skill learning</h2>
           <p className="settings-card-copy">
-            When on, OpenNeko records a lesson from repeated skill use and
-            adds it to the skill. Authored skill files stay as written.
+            When on, OpenNeko records a lesson from repeated skill use and adds
+            it to the skill. Authored skill files stay as written.
           </p>
         </div>
         {enabled === null ? null : (
-          <Pill variant={enabled ? "success" : "muted"} className="self-start">
+          <Badge variant={enabled ? "success" : "muted"} className="self-start">
             {enabled ? "On" : "Off"}
-          </Pill>
+          </Badge>
         )}
       </div>
       {error ? (
@@ -92,14 +98,14 @@ export default function SkillLearnCard() {
           label="Learn from skill use"
           checked={enabled === true}
           disabled={saving || enabled === null}
-          onChange={(event) => void onChange(event.target.checked)}
+          onCheckedChange={(checked) => void onChange(checked === true)}
         />
       )}
       <Disclosure title="What this changes" className="mt-4">
         <p className="m-0 text-ui-body-sm leading-[1.55] text-text2">
-          OpenNeko writes a LEARNED.md overlay after the same lesson shows
-          up enough times. The overlay does not store customer data. A
-          decision log records each apply, skip, and reject. Off by default.
+          OpenNeko writes a LEARNED.md overlay after the same lesson shows up
+          enough times. The overlay does not store customer data. A decision log
+          records each apply, skip, and reject. Off by default.
         </p>
       </Disclosure>
     </section>

@@ -1,12 +1,12 @@
 .profile-card {
-  background: var(--card); border-radius: var(--radius); padding: 32px 36px;
+  background: var(--card); border-radius: var(--radius); padding: var(--panel-padding);
   margin-top: 28px; box-shadow: var(--shadow); border: 1px solid var(--border);
 }
 .settings-card {
-  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.88));
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 26px 28px;
+  padding: var(--panel-padding);
   box-shadow: var(--shadow);
   margin-top: 18px;
 }
@@ -29,6 +29,46 @@
   color: var(--text2);
   line-height: var(--leading-body);
   font-size: var(--type-body);
+}
+
+/* Grouped settings sections: a Level-2 header that separates distinct
+   concerns (e.g. installed packs vs installing one vs pack settings) so a
+   long screen reads as ordered groups, not one flat stack of cards. */
+.settings-group {
+  margin-top: 44px;
+}
+.settings-group:first-of-type {
+  margin-top: 26px;
+}
+.settings-group-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-group-kicker {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.settings-group-title {
+  margin: 0;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text);
+}
+.settings-group-copy {
+  margin: 6px 0 0;
+  max-width: 70ch;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-body);
 }
 .settings-source {
   color: var(--text3);
@@ -85,20 +125,16 @@
   min-height: 172px;
   display: flex;
   flex-direction: column;
-  padding: 23px 24px 21px;
-  border-radius: 18px;
+  padding: var(--panel-padding);
+  border-radius: var(--radius);
   background: var(--card);
   box-shadow: var(--shadow);
   transition:
-    border-color 0.18s ease,
-    box-shadow 0.22s ease,
-    transform 0.22s ease;
+    border-color 0.18s ease;
 }
 
 .settings-index-card:hover {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  box-shadow: var(--shadow-h);
-  transform: translateY(-2px);
 }
 
 .settings-index-card:focus-visible {
@@ -214,7 +250,7 @@
 .dskel { display: flex; flex-direction: column; gap: 6px; }
 .skel {
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--border) 0%, #F5F2EC 50%, var(--border) 100%);
+  background: linear-gradient(90deg, var(--border) 0%, var(--neutral-soft) 50%, var(--border) 100%);
   background-size: 200% 100%;
   animation: skel-shimmer 1.4s ease-in-out infinite;
 }

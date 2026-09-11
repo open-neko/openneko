@@ -300,6 +300,93 @@ export async function deleteWorkSkill(orgId: string, name: string): Promise<bool
   return true;
 }
 
+// Cap for reading a skill file into the browser editor. Files above this are
+// shown truncated and locked from editing, so a save never drops the tail.
+export const MAX_SKILL_EDIT_SIZE = 1024 * 1024;
+
+export type SkillFileContent = {
+  path: string;
+  bytes: number;
+  binary: boolean;
+  editable: boolean;
+  truncated: boolean;
+  text: string | null;
+};
+
+export type SkillWriteResult =
+  | { ok: true; bytes: number }
+  | { ok: false; reason: "invalid" | "not-found" | "too-large" | "binary" };
+
+function resolveSkillFilePath(
+  skillsRoot: string,
+  name: string,
+  relPath: string,
+): { abs: string; skillDir: string } | null {
+  const safeName = basename(name);
+  if (safeName !== name || !/^[a-zA-Z0-9._-]+$/.test(safeName)) return null;
+  if (typeof relPath !== "string" || relPath.length === 0) return null;
+  const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
+  const parts = normalized.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) return null;
+  const skillDir = resolve(skillsRoot, safeName);
+  const abs = resolve(skillDir, normalized);
+  if (!isWithin(skillDir, abs)) return null;
+  return { abs, skillDir };
+}
+
+/** A NUL byte in the first chunk marks a file as binary, whatever its name. */
+function looksBinary(buffer: Buffer): boolean {
+  return buffer.subarray(0, Math.min(buffer.length, 8192)).includes(0);
+}
+
+/** Read one file inside a skill directory for the web viewer. */
+export async function readWorkSkillFile(
+  orgId: string,
+  name: string,
+  relPath: string,
+): Promise<SkillFileContent | null> {
+  const roots = await ensureOrgWorkspace(orgId);
+  const resolved = resolveSkillFilePath(roots.skillsRoot, name, relPath);
+  if (!resolved) return null;
+  const meta = await stat(resolved.abs).catch(() => null);
+  if (!meta || !meta.isFile()) return null;
+  const buffer = await readFile(resolved.abs);
+  if (looksBinary(buffer)) {
+    return { path: relPath, bytes: meta.size, binary: true, editable: false, truncated: false, text: null };
+  }
+  const truncated = buffer.byteLength > MAX_SKILL_EDIT_SIZE;
+  const slice = truncated ? buffer.subarray(0, MAX_SKILL_EDIT_SIZE) : buffer;
+  return {
+    path: relPath,
+    bytes: meta.size,
+    binary: false,
+    editable: !truncated,
+    truncated,
+    text: slice.toString("utf8"),
+  };
+}
+
+/** Write text back to an existing text file inside a skill directory. */
+export async function writeWorkSkillFile(
+  orgId: string,
+  name: string,
+  relPath: string,
+  content: string,
+): Promise<SkillWriteResult> {
+  if (typeof content !== "string") return { ok: false, reason: "invalid" };
+  const buffer = Buffer.from(content, "utf8");
+  if (buffer.byteLength > MAX_SKILL_EDIT_SIZE) return { ok: false, reason: "too-large" };
+  const roots = await ensureOrgWorkspace(orgId);
+  const resolved = resolveSkillFilePath(roots.skillsRoot, name, relPath);
+  if (!resolved) return { ok: false, reason: "invalid" };
+  const meta = await stat(resolved.abs).catch(() => null);
+  if (!meta || !meta.isFile()) return { ok: false, reason: "not-found" };
+  const existing = await readFile(resolved.abs);
+  if (looksBinary(existing)) return { ok: false, reason: "binary" };
+  await writeFile(resolved.abs, buffer);
+  return { ok: true, bytes: buffer.byteLength };
+}
+
 export async function getWorkSkillDetail(orgId: string, name: string): Promise<WorkSkillDetail | null> {
   const safeName = basename(name);
   if (safeName !== name || !/^[a-zA-Z0-9._-]+$/.test(safeName)) return null;

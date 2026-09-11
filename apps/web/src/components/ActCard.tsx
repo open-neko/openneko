@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Textarea } from "@/components/ui/Field";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/field";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { RecordActionDiff } from "@/components/records/RecordActionDiff";
@@ -50,7 +50,7 @@ const STATE_LABEL: Record<ActCardData["state"], string> = {
   rejected: "Rejected",
 };
 
-const STATE_PILL_VARIANT: Record<ActCardData["state"], PillVariant> = {
+const STATE_PILL_VARIANT: Record<ActCardData["state"], BadgeVariant> = {
   live: "live",
   awaiting: "watch",
   rejected: "muted",
@@ -102,9 +102,9 @@ export default function ActCard({
       style={{ animation: `fadeUp 0.4s ease ${index * 0.04}s both` }}
     >
       <header className="flex items-center justify-between gap-3">
-        <Pill variant={STATE_PILL_VARIANT[data.state]}>
+        <Badge variant={STATE_PILL_VARIANT[data.state]}>
           {STATE_LABEL[data.state]}
-        </Pill>
+        </Badge>
         <span className="font-mono text-ui-label font-bold uppercase tracking-[0.08em] text-text3">
           {formatTime(data.runAt)}
         </span>

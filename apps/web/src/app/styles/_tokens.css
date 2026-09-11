@@ -20,12 +20,19 @@
   --watch-soft: #FFF1D8;
   --warn: #F0D97A;
   --warn-soft: #FFF4CC;
-  --warn-ink: #8A6D00;
+  /* Amber text token. Meets WCAG AA on card, bg, watch-soft, and warn-soft. */
+  --warn-ink: #7E6200;
   --danger: #A53535;
   --danger-soft: #FEECEC;
+  /* Danger text for dark surfaces (heroes, inspector head), where the base
+     --danger red drops below AA. Mirrors bright --success and --watch. */
+  --danger-bright: #F58A8A;
   --accent-hover: #5A4CD1;
   --danger-hover: #852626;
   --on-accent: #FFFFFF;
+  /* Warm-paper text tones for the dark hero surfaces. Both meet AA on --text. */
+  --on-dark-2: #CDCCC9;
+  --on-dark-3: #B4B3AF;
   --hover-wash: rgba(20,18,12,0.04);
   --backdrop: rgba(20,18,12,0.45);
   --radius: 20px;
@@ -34,6 +41,8 @@
   --control-sm: 32px;
   --control-md: 40px;
   --control-touch: 44px;
+  --page-gutter: 32px;
+  --panel-padding: 24px;
   --phone-dock-offset: 86px;
   --shadow: 0 1px 3px rgba(20,18,12,0.04), 0 4px 16px rgba(20,18,12,0.03);
   --shadow-h: 0 2px 8px rgba(20,18,12,0.06), 0 12px 36px -8px rgba(20,18,12,0.07);
@@ -61,8 +70,15 @@
   --page-head-height: 68px;
   --page-head-title-size: var(--type-page);
   --page-head-z: 45;
-  --page-head-bg: color-mix(in srgb, var(--bg) 96%, var(--card));
+  --page-head-bg: var(--bg);
   --focus-ring: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --page-gutter: 16px;
+    --panel-padding: 18px;
+  }
 }
 
 /* Live inside @layer base so Tailwind utilities (which live in @layer
@@ -81,6 +97,16 @@
     color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
+
+  /* Browser surfaces take the palette, not the platform defaults. The shared
+     controls set their own focus ring over outline:none, so the :focus-visible
+     outline here only reaches links and native elements that lack one. */
+  ::selection { background: var(--accent-soft); color: var(--accent-hover); }
+  :root { accent-color: var(--accent); caret-color: var(--accent); scrollbar-color: var(--border) transparent; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); border-width: 2px; }
 
   :where(h1, h2, h3, h4) {
     color: var(--text);

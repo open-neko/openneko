@@ -10,10 +10,13 @@ import { describeSchedule } from "@/lib/cron-english";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { Sparkline } from "@/components/Sparkline";
 import PageHeading from "@/components/PageHeading";
-import { Button, IconButton } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Pill, type PillVariant } from "@/components/ui/Pill";
+import { Button, IconButton } from "@/components/ui/button";
+import { ActionGroup } from "@/components/ui/action-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty";
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { SearchInput } from "@/components/ui/search-input";
+import { matchesListSearch } from "@/lib/list-search";
 import { WorkflowApiAccessPanel } from "./WorkflowApiAccessPanel";
 
 type WorkflowListItem = {
@@ -131,11 +134,13 @@ function formatCompactNumber(value: number): string {
 function recentRunTelemetry(run: RecentRun): string | null {
   const parts: string[] = [];
   const tokens = run.telemetry?.usage?.totalTokens;
-  if (typeof tokens === "number") parts.push(`${formatCompactNumber(tokens)} tokens`);
+  if (typeof tokens === "number")
+    parts.push(`${formatCompactNumber(tokens)} tokens`);
   const cost =
     run.telemetry?.usage?.billedCostUsd ??
     run.telemetry?.usage?.estimatedCostUsd;
-  if (typeof cost === "number") parts.push(`$${cost.toFixed(cost < 0.01 ? 4 : 2)}`);
+  if (typeof cost === "number")
+    parts.push(`$${cost.toFixed(cost < 0.01 ? 4 : 2)}`);
   if (run.triggerKind === "api" && run.queueAttempts > 1) {
     parts.push(`${run.queueAttempts} queue attempts`);
   }
@@ -179,6 +184,7 @@ export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sparklines, setSparklines] = useState<Record<string, number[]>>({});
+  const [query, setQuery] = useState("");
   const inspectorRef = useRef<HTMLElement | null>(null);
 
   const fetchList = useCallback(async () => {
@@ -236,12 +242,24 @@ export default function WorkflowsPage() {
     const paused: WorkflowListItem[] = [];
     const broken: WorkflowListItem[] = [];
     for (const w of workflows ?? []) {
+      if (
+        !matchesListSearch(
+          query,
+          w.name,
+          w.description,
+          w.goal,
+          w.status,
+          w.steps.map((step) => step.description).join(" "),
+        )
+      ) {
+        continue;
+      }
       if (w.status === "broken") broken.push(w);
       else if (!w.enabled) paused.push(w);
       else active.push(w);
     }
     return { active, paused, broken };
-  }, [workflows]);
+  }, [query, workflows]);
 
   const recordSparkline = useCallback((id: string, values: number[]) => {
     setSparklines((prev) =>
@@ -254,13 +272,13 @@ export default function WorkflowsPage() {
 
   const totalCount =
     grouped.active.length + grouped.paused.length + grouped.broken.length;
+  const visibleWorkflows = [
+    ...grouped.active,
+    ...grouped.paused,
+    ...grouped.broken,
+  ];
   const selectedWorkflow =
-    workflows?.find((workflow) => workflow.id === selectedId) ?? null;
-  const selectedPosition = selectedWorkflow
-    ? [...grouped.active, ...grouped.paused, ...grouped.broken].findIndex(
-        (workflow) => workflow.id === selectedWorkflow.id,
-      ) + 1
-    : null;
+    visibleWorkflows.find((workflow) => workflow.id === selectedId) ?? null;
 
   useEffect(() => {
     if (!selectedId) return;
@@ -287,13 +305,8 @@ export default function WorkflowsPage() {
   return (
     <>
       <PageHeading
-        eyebrow="Agent operations"
         title="Workflows"
-        meta={
-          workflows === null
-            ? "loading"
-            : `${String(totalCount).padStart(2, "0")} routes`
-        }
+        description="Automations that monitor your systems, surface findings, and propose actions."
         actions={
           <div className="workflows-ops-status" aria-label="Workflow status">
             <div>
@@ -323,6 +336,15 @@ export default function WorkflowsPage() {
         }
       />
 
+      <div className="workflows-search">
+        <SearchInput
+          label="Search workflows"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search workflows and steps"
+        />
+      </div>
+
       {error ? (
         <div className="workflow-page-state is-error" role="alert">
           <strong>Workflows could not be loaded</strong>
@@ -337,22 +359,28 @@ export default function WorkflowsPage() {
           <span className="workflow-loading-line" />
           <span className="workflow-loading-line is-short" />
         </div>
-      ) : workflows.length === 0 ? (
+      ) : workflows.length === 0 || (query && totalCount === 0) ? (
         <EmptyState
           className="workflow-page-state is-empty"
-          title="No workflows"
-          body="Ask OpenNeko to create the first recurring task."
+          title={query ? "No matching workflows" : "No workflows"}
+          body={
+            query
+              ? "Try another workflow name, status, goal, or step."
+              : "Ask OpenNeko to create the first recurring task."
+          }
           action={
-            <Button
-              variant="primary"
-              onClick={() =>
-                router.push(
-                  `/work?seed=${encodeURIComponent("Set up a new workflow that ")}`,
-                )
-              }
-            >
-              Create a workflow
-            </Button>
+            query ? null : (
+              <Button
+                variant="primary"
+                onClick={() =>
+                  router.push(
+                    `/work?seed=${encodeURIComponent("Set up a new workflow that ")}`,
+                  )
+                }
+              >
+                Create a workflow
+              </Button>
+            )
           }
         />
       ) : (
@@ -429,9 +457,6 @@ export default function WorkflowsPage() {
                 }
               >
                 <header className="workflow-inspector-head">
-                  <span className="workflow-inspector-index" aria-hidden="true">
-                    {String(selectedPosition ?? 0).padStart(2, "0")}
-                  </span>
                   <div className="workflow-inspector-heading">
                     <span
                       className="workflow-inspector-state"
@@ -463,7 +488,7 @@ export default function WorkflowsPage() {
                   <IconButton
                     label="Close workflow controls"
                     size="icon"
-                    className="workflow-inspector-close"
+                    className="self-start"
                     onClick={() => select(null)}
                   >
                     <X aria-hidden="true" />
@@ -587,24 +612,29 @@ function WorkflowRow({
             {String(position).padStart(2, "0")}
           </span>
           <div className="workflows-row-copy">
-          <div className="workflows-row-title">
-            <span>{w.name}</span>
-            <ArrowUpRight className="workflows-row-arrow" aria-hidden="true" />
-          </div>
-          {w.description && (
-            <div className="text-ui-body-sm text-text2 mt-1 leading-[1.45]">{w.description}</div>
-          )}
-          <div className="workflows-row-meta">
-            <span>
-              {describeSchedule(w.cron, w.cronTimezone, w.cronEnabled)}
-            </span>
-            {hasActivity && (
-              <>
-                <span className="opacity-60">·</span>
-                <Sparkline values={sparkline ?? []} />
-              </>
+            <div className="workflows-row-title">
+              <span>{w.name}</span>
+              <ArrowUpRight
+                className="workflows-row-arrow"
+                aria-hidden="true"
+              />
+            </div>
+            {w.description && (
+              <div className="text-ui-body-sm text-text2 mt-1 leading-[1.45]">
+                {w.description}
+              </div>
             )}
-          </div>
+            <div className="workflows-row-meta">
+              <span>
+                {describeSchedule(w.cron, w.cronTimezone, w.cronEnabled)}
+              </span>
+              {hasActivity && (
+                <>
+                  <span className="opacity-60">·</span>
+                  <Sparkline values={sparkline ?? []} />
+                </>
+              )}
+            </div>
           </div>
         </button>
         <IconButton
@@ -667,7 +697,11 @@ function WorkflowDetail({
     void fetch("/api/policies", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { policies: PolicySummary[] }) =>
-        setPolicies((d.policies ?? []).filter((p) => (p as unknown as { enabled?: boolean }).enabled !== false)),
+        setPolicies(
+          (d.policies ?? []).filter(
+            (p) => (p as unknown as { enabled?: boolean }).enabled !== false,
+          ),
+        ),
       )
       .catch(() => setPolicies([]));
   }, []);
@@ -779,9 +813,8 @@ function WorkflowDetail({
 
   return (
     <div className="workflow-detail">
-      <div className="workflow-drawer-actions">
+      <ActionGroup className="px-[var(--panel-padding)] pb-5">
         <Button
-          size="sm"
           variant="primary"
           onClick={runNow}
           disabled={busy || !workflow.enabled}
@@ -793,16 +826,11 @@ function WorkflowDetail({
         >
           Run now
         </Button>
-        <Button
-          size="sm"
-          onClick={togglePause}
-          disabled={busy}
-        >
+        <Button onClick={togglePause} disabled={busy}>
           {workflow.enabled ? "Pause" : "Resume"}
         </Button>
         {workflow.enabled && (
           <Button
-            size="sm"
             onClick={pauseForToday}
             disabled={busy}
             title="Pause until midnight UTC; resumes automatically"
@@ -810,7 +838,7 @@ function WorkflowDetail({
             Pause for today
           </Button>
         )}
-      </div>
+      </ActionGroup>
 
       {workflow.minutesSaved30d > 0 && (
         <Section title="Hours saved (30d)">
@@ -819,7 +847,8 @@ function WorkflowDetail({
               {formatSavedShort(workflow.minutesSaved30d)}
             </span>{" "}
             <span>
-              of human time, estimated across this workflow&apos;s runs and actions.
+              of human time, estimated across this workflow&apos;s runs and
+              actions.
             </span>
           </p>
         </Section>
@@ -857,7 +886,10 @@ function WorkflowDetail({
         ) : (
           <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
             {subscriptions.map((s) => (
-              <li key={s.id} className="flex items-baseline gap-2 leading-[1.45]">
+              <li
+                key={s.id}
+                className="flex items-baseline gap-2 leading-[1.45]"
+              >
                 <span
                   className={cn(
                     "inline-block w-1.5 h-1.5 rounded-full flex-none -translate-y-px",
@@ -884,7 +916,7 @@ function WorkflowDetail({
           {workflow.cron && (
             <Checkbox
               checked={workflow.cronEnabled}
-              onChange={toggleCron}
+              onCheckedChange={() => void toggleCron()}
               disabled={busy}
               label={workflow.cronEnabled ? "Enabled" : "Disabled"}
               className="text-xs text-text3"
@@ -902,7 +934,9 @@ function WorkflowDetail({
           ) : (
             <>
               <div className="workflow-budget-copy">
-                <span>{budgetUsed} / {budgetCap} runs used today</span>
+                <span>
+                  {budgetUsed} / {budgetCap} runs used today
+                </span>
                 <strong data-state={budgetPct >= 80 ? "watch" : "normal"}>
                   {budgetPct}%
                 </strong>
@@ -925,19 +959,24 @@ function WorkflowDetail({
         ) : (
           <ul className="list-none p-0 mt-0 mb-1.5 flex flex-col gap-1.5">
             {policies.map((p) => (
-              <li key={p.id} className="flex min-w-0 items-start gap-2 text-ui-body-sm">
-                <span className="min-w-0 flex-1 font-mono text-ui-caption text-text2 [overflow-wrap:anywhere]">{p.name}</span>
-                <Pill
-                  variant={policyModeVariant(p.mode)}
-                  className="ml-auto"
-                >
+              <li
+                key={p.id}
+                className="flex min-w-0 items-start gap-2 text-ui-body-sm"
+              >
+                <span className="min-w-0 flex-1 font-mono text-ui-caption text-text2 [overflow-wrap:anywhere]">
+                  {p.name}
+                </span>
+                <Badge variant={policyModeVariant(p.mode)} className="ml-auto">
                   {describePolicyMode(p.mode)}
-                </Pill>
+                </Badge>
               </li>
             ))}
           </ul>
         )}
-        <Link className="inline-block mt-1 text-xs text-accent no-underline hover:underline hover:underline-offset-2" href="/admin/rules">
+        <Link
+          className="inline-block mt-1 text-xs text-accent no-underline hover:underline hover:underline-offset-2"
+          href="/admin/rules"
+        >
           see all rules →
         </Link>
       </Section>
@@ -948,7 +987,10 @@ function WorkflowDetail({
         ) : (
           <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
             {recentRuns.map((r) => (
-              <li key={r.id} className="flex items-baseline gap-2 text-ui-body-sm">
+              <li
+                key={r.id}
+                className="flex items-baseline gap-2 text-ui-body-sm"
+              >
                 <Button
                   variant="ghost"
                   size="sm"
@@ -970,11 +1012,18 @@ function WorkflowDetail({
                     {recentRunTelemetry(r) ? ` · ${recentRunTelemetry(r)}` : ""}
                   </span>
                   {r.executionMode ? (
-                    <Pill variant={r.executionMode === "batch" ? "success" : "muted"}>
+                    <Badge
+                      variant={
+                        r.executionMode === "batch" ? "success" : "muted"
+                      }
+                    >
                       {r.executionMode}
-                    </Pill>
+                    </Badge>
                   ) : null}
-                  <span className="workflow-drawer-run-arrow ml-auto text-text3 font-mono text-ui-caption transition-[color,transform] duration-[0.18s]" aria-hidden="true">
+                  <span
+                    className="workflow-drawer-run-arrow ml-auto text-text3 font-mono text-ui-caption transition-[color,transform] duration-[0.18s]"
+                    aria-hidden="true"
+                  >
                     →
                   </span>
                 </Button>
@@ -994,16 +1043,14 @@ function WorkflowDetail({
                 <div className="workflow-action-head">
                   <span className="workflow-action-kind">{a.kind}</span>
                   {a.target && (
-                    <span className="workflow-action-target">
-                      {a.target}
-                    </span>
+                    <span className="workflow-action-target">{a.target}</span>
                   )}
-                  <Pill
+                  <Badge
                     variant={actionPillVariant(a.status)}
                     className="ml-auto"
                   >
                     {actionStatusLabel(a.status)}
-                  </Pill>
+                  </Badge>
                 </div>
                 <div className="workflow-action-meta">
                   {formatRelative(a.createdAt)}
@@ -1062,7 +1109,7 @@ function Section({
   );
 }
 
-function policyModeVariant(mode: string): PillVariant {
+function policyModeVariant(mode: string): BadgeVariant {
   switch (mode) {
     case "auto_approve":
       return "success";
@@ -1089,7 +1136,7 @@ function runStatusColor(status: string): string {
   }
 }
 
-function actionPillVariant(status: string): PillVariant {
+function actionPillVariant(status: string): BadgeVariant {
   switch (status) {
     case "executed":
       return "success";

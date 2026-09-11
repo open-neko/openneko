@@ -106,10 +106,10 @@ jobs:
       - name: Install Chromium
         run: pnpm --filter @neko/web exec playwright install --with-deps chromium
 
-      - name: Verify Magento design-system rendering
+      - name: Verify shared UI layouts, overlays and Magento rendering
         run: pnpm --filter @neko/web test:visual:design
 
-      - name: Upload Magento design-system renders
+      - name: Upload design-system browser results
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -286,6 +286,7 @@ jobs:
 
       - name: Test
         env:
+          LIBRARY_BROWSE_REQUIRE_DB: "1"
           NEKO_PG_HOST: localhost
           NEKO_PG_PORT: "5432"
           NEKO_PG_USER: neko

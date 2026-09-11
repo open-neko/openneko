@@ -47,7 +47,7 @@ export default async function AdminUsersPage() {
       subtitle={
         pluginStatus.authProvider
           ? `Multi-user mode via ${pluginStatus.authProvider}.`
-          : "Solo mode: the userless dashboard is admin by default."
+          : "Solo mode: this deployment grants admin access by default."
       }
       back={{ href: "/admin", label: "Admin" }}
       wide

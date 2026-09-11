@@ -358,14 +358,15 @@
 }
 .work-capability-recovery button {
   width: 100%;
-  border: 1px solid var(--text);
-  border-radius: 2px 11px 2px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
   background: var(--success);
   cursor: pointer;
 }
 .work-capability-recovery button:hover {
-  box-shadow: 3px 3px 0 var(--text);
-  transform: translate(-1px, -1px);
+  border-color: var(--text3);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
 }
 .work-capability-recovery a {
   padding-inline: 0;
@@ -653,9 +654,9 @@
   overflow: auto;
 }
 .work-tool-row-pre-error {
-  color: #8a2a2a;
-  background: #fdf5f5;
-  border-color: #f3d8d8;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 18%, var(--border));
 }
 .work-surface-frame {
   background: rgba(255,255,255,0.7);
@@ -706,7 +707,7 @@
   height: 17px;
   border-radius: 50%;
   background: var(--success-mid);
-  color: #fff;
+  color: var(--on-accent);
   flex-shrink: 0;
 }
 .work-confirm-check svg {
@@ -1237,7 +1238,7 @@ textarea.work-a2ui-input { resize: vertical; }
 .work-a2ui-button .work-a2ui-text { color: inherit; font: inherit; }
 .work-a2ui-button:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .work-a2ui-button.is-primary {
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
 }
@@ -1269,7 +1270,7 @@ textarea.work-a2ui-input { resize: vertical; }
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 .work-openapi-file { padding-block: 6px; }
-.work-openapi-error { color: var(--danger, #b42318); font-size: var(--type-caption); }
+.work-openapi-error { color: var(--danger); font-size: var(--type-caption); }
 .work-openapi-summary {
   padding: 12px;
   background: var(--card);
@@ -1280,7 +1281,7 @@ textarea.work-a2ui-input { resize: vertical; }
 .work-openapi-summary-head > div { min-width: 0; }
 .work-openapi-summary-head strong { display: block; color: var(--text); font-size: var(--type-body-sm); overflow-wrap: anywhere; }
 .work-openapi-summary-head span { color: var(--text3); font-size: var(--type-label); }
-.work-openapi-summary-head .work-openapi-ready { color: var(--good, #067647); font-weight: 700; }
+.work-openapi-summary-head .work-openapi-ready { color: var(--success-mid); font-weight: 700; }
 .work-openapi-summary dl { display: grid; gap: 7px; margin: 12px 0 0; }
 .work-openapi-summary dl > div { display: grid; grid-template-columns: minmax(90px, 0.3fr) 1fr; gap: 10px; }
 .work-openapi-summary dt { color: var(--text3); font-size: var(--type-label); }

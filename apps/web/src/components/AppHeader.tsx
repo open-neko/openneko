@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
+import { Button } from "@/components/ui/button";
 
 const MARKETING_URL = "https://openneko.app";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
@@ -87,28 +88,42 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
           rel="noreferrer"
           aria-label="OpenNeko — open marketing site in a new tab"
         >
-          <Image className="topbar-logo" src="/cat.png" alt="" width={22} height={23} />
+          <Image
+            className="topbar-logo"
+            src="/cat.png"
+            alt=""
+            width={22}
+            height={23}
+          />
           <span className="topbar-name">OpenNeko</span>
         </a>
 
         {updateAvailable ? (
-          <button data-ui-bespoke-reason="top bar chrome"
+          <Button
+            variant="ghost"
             type="button"
             className="topbar-ver is-update"
             onClick={() => window.location.reload()}
             aria-label={`Update available: v${latestVersion}. Reload to apply.`}
             title={`v${latestVersion} available — reload`}
           >
-            <span className="topbar-ver-dot" aria-hidden="true" />
-            v{latestVersion} · reload
-          </button>
+            <span className="topbar-ver-dot" aria-hidden="true" />v
+            {latestVersion} · reload
+          </Button>
         ) : (
-          <span className="topbar-ver" title="OpenNeko version">{APP_VERSION}</span>
+          <span className="topbar-ver" title="OpenNeko version">
+            {APP_VERSION}
+          </span>
         )}
 
         {back && (
           <Link className="settings-backlink" href={back.href}>
-            <ArrowLeft size={14} strokeWidth={2.25} aria-hidden="true" className="settings-backlink-arrow" />
+            <ArrowLeft
+              size={14}
+              strokeWidth={2.25}
+              aria-hidden="true"
+              className="settings-backlink-arrow"
+            />
             <span>{back.label}</span>
           </Link>
         )}
@@ -129,7 +144,8 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
         </a>
 
         {user && (
-          <button data-ui-bespoke-reason="top bar chrome"
+          <Button
+            variant="ghost"
             type="button"
             onClick={handleSignOut}
             aria-label={`Sign out ${user.email}`}
@@ -137,7 +153,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
             className="topbar-signout"
           >
             Sign out
-          </button>
+          </Button>
         )}
       </div>
     </header>

@@ -3,9 +3,13 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Plug } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
-import { Button, ButtonLink } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { SearchInput } from "@/components/ui/search-input";
+import { matchesListSearch } from "@/lib/list-search";
 
 type Row = {
   pluginId: string;
@@ -24,7 +28,30 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
   const [workspace, setWorkspace] = useState<Row[]>(initial.workspace);
   const [connectors, setConnectors] = useState<Row[]>(initial.connectors);
   const [busy, setBusy] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const params = useSearchParams();
+  const visibleWorkspace = workspace.filter((row) =>
+    matchesListSearch(
+      query,
+      row.pluginId,
+      row.pluginName,
+      row.providerLabel,
+      row.flow,
+      row.credentialScope,
+      ...row.scopes,
+    ),
+  );
+  const visibleConnectors = connectors.filter((row) =>
+    matchesListSearch(
+      query,
+      row.pluginId,
+      row.pluginName,
+      row.providerLabel,
+      row.flow,
+      row.credentialScope,
+      ...row.scopes,
+    ),
+  );
 
   useEffect(() => {
     const err = params.get("error");
@@ -109,12 +136,22 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
     <div className="root">
       <AppHeader />
       <PageHeading
-        eyebrow="Workspace connections"
         title="Integrations"
         description="Connect external accounts for agent actions. Credentials remain in this deployment."
       />
 
-      {workspace.length > 0 && (
+      {workspace.length + connectors.length > 0 ? (
+        <div className="mt-6 max-w-[520px]">
+          <SearchInput
+            label="Search integrations"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search integrations and scopes"
+          />
+        </div>
+      ) : null}
+
+      {visibleWorkspace.length > 0 && (
         <>
           <h2 className="mt-6 mb-2 font-display text-ui-section font-bold text-text">
             Workspace connections
@@ -125,14 +162,14 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
             names the scopes and the endpoint.
           </p>
           <ul className="flex flex-col gap-3">
-            {workspace.map((row) => (
+            {visibleWorkspace.map((row) => (
               <RowView key={row.pluginName} row={row} isDeployment />
             ))}
           </ul>
         </>
       )}
 
-      {connectors.length > 0 && (
+      {visibleConnectors.length > 0 && (
         <>
           <h2 className="mt-6 mb-2 font-display text-ui-section font-bold text-text">
             Per-operator connectors
@@ -141,7 +178,7 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
             Each operator authorizes independently with their own account.
           </p>
           <ul className="flex flex-col gap-3">
-            {connectors.map((row) => (
+            {visibleConnectors.map((row) => (
               <RowView key={row.pluginName} row={row} isDeployment={false} />
             ))}
           </ul>
@@ -149,11 +186,23 @@ export default function IntegrationsList({ initial }: { initial: InitialState })
       )}
 
       {workspace.length === 0 && connectors.length === 0 && (
-        <p className="text-ui-body text-text3 mt-4">
-          No connect-capable plugins installed. Install one with{" "}
-          <code>openneko install &lt;name&gt;</code>.
-        </p>
+        <EmptyState
+          className="py-20"
+          icon={<Plug aria-hidden="true" />}
+          title="No integrations available"
+          body="Install a plugin that provides a connection, then return here to authorize it."
+          action={<ButtonLink href="/admin/plugins">Review plugins</ButtonLink>}
+        />
       )}
+
+      {query && visibleWorkspace.length === 0 && visibleConnectors.length === 0 ? (
+        <EmptyState
+          className="py-20"
+          icon={<Plug aria-hidden="true" />}
+          title="No matching integrations"
+          body="Try another provider, plugin, or scope."
+        />
+      ) : null}
     </div>
   );
 }

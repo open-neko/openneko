@@ -1,7 +1,7 @@
 "use client";
 
 import { useDensity } from "@/components/DensityProvider";
-import { Segment, SegmentedControl } from "@/components/ui/Tabs";
+import { Segment, SegmentedControl } from "@/components/ui/tabs";
 
 // Comfortable / Compact segmented control. Lives in the app header; flips the
 // `data-density` attribute that the whole UI keys off.

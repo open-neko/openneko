@@ -32,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-density="compact">
+    <html lang="en" data-density="compact" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: DENSITY_INIT }} />
       </head>

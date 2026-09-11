@@ -5,8 +5,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, FileText, Trash2 } from "lucide-react";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
-import { Button, IconButton } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/button";
+import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
+import { EmptyState } from "@/components/ui/empty";
+import { SearchInput } from "@/components/ui/search-input";
+import { matchesListSearch } from "@/lib/list-search";
 
 type SkillSummary = {
   name: string;
@@ -30,6 +33,7 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -92,12 +96,19 @@ export default function SkillsPage() {
     () => skills.reduce((total, skill) => total + skill.fileCount, 0),
     [skills],
   );
+  const visibleSkills = useMemo(
+    () =>
+      skills.filter((skill) =>
+        matchesListSearch(query, skill.name, skill.description),
+      ),
+    [query, skills],
+  );
 
   return (
     <div className="library-page skills-library">
       <PageHeading
-        eyebrow="Knowledge"
         title="Skills"
+        description="Capabilities your agents can call while they work a run."
         actions={
           <div className="library-head-stats" aria-label="Skill inventory">
             <div>
@@ -113,6 +124,13 @@ export default function SkillsPage() {
       />
 
       <main className="library-main">
+        <SearchInput
+          label="Search skills"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search installed skills"
+        />
+
         {error ? (
           <div className="library-error" role="alert">
             <div>
@@ -136,7 +154,7 @@ export default function SkillsPage() {
               <span>Runtime inventory</span>
               <h2>Installed skills</h2>
             </div>
-            <strong>{String(skills.length).padStart(2, "0")}</strong>
+            <strong>{String(visibleSkills.length).padStart(2, "0")}</strong>
           </header>
 
           {loading ? (
@@ -145,11 +163,15 @@ export default function SkillsPage() {
               <span />
               <span />
             </div>
-          ) : skills.length === 0 ? (
+          ) : visibleSkills.length === 0 ? (
             <EmptyState
               className="library-empty"
-              title="No installed skills"
-              body="Skills appear here when OpenNeko saves a reusable capability or one is installed into the organization workspace."
+              title={query ? "No matching skills" : "No installed skills"}
+              body={
+                query
+                  ? "Try another skill name or trigger phrase."
+                  : "Skills appear here when OpenNeko saves a reusable capability or one is installed into the organization workspace."
+              }
             />
           ) : (
             <>
@@ -162,7 +184,7 @@ export default function SkillsPage() {
                 <span />
               </div>
               <ol className="skills-index">
-                {skills.map((skill, index) => (
+                {visibleSkills.map((skill, index) => (
                   <li key={skill.name} className="skill-index-row">
                     <Link
                       href={`/skills/${encodeURIComponent(skill.name)}`}
@@ -184,15 +206,15 @@ export default function SkillsPage() {
                         strokeWidth={1.9}
                       />
                     </Link>
-                    <IconButton
-                      label={`Delete skill ${skill.name}`}
-                      variant="danger"
+                    <OverflowMenu
+                      label={`Actions for ${skill.name}`}
                       className="skill-delete-control"
-                      disabled={busyName === skill.name}
-                      onClick={() => void remove(skill.name)}
                     >
-                      <Trash2 aria-hidden="true" strokeWidth={1.9} />
-                    </IconButton>
+                      <MenuItem danger disabled={busyName === skill.name} onSelect={() => void remove(skill.name)}>
+                        <Trash2 aria-hidden="true" strokeWidth={1.9} />
+                        Delete skill
+                      </MenuItem>
+                    </OverflowMenu>
                   </li>
                 ))}
               </ol>

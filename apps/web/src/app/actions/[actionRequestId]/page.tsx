@@ -11,7 +11,8 @@ import {
   parseRecordUpdatePayload,
   RecordActionDiff,
 } from "@/components/records/RecordActionDiff";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 function actionStatusClasses(status: string): string {
   switch (status) {
@@ -62,7 +63,11 @@ type ActionDetailPayload = {
   }>;
   workflow: { id: string; name: string } | null;
   policy: { id: string; name: string; mode: string } | null;
-  upstreamOutput: { id: string; title: string; workflowRunId: string | null } | null;
+  upstreamOutput: {
+    id: string;
+    title: string;
+    workflowRunId: string | null;
+  } | null;
   approverKind: "operator" | "policy" | "auto" | null;
 };
 
@@ -80,8 +85,10 @@ function statusLabel(s: string): string {
 
 function backToActionsHref(status: string): string {
   if (status === "pending_approval") return "/actions?filter=awaiting";
-  if (status === "rejected" || status === "failed") return "/actions?filter=rejected";
-  if (status === "executed" || status === "approved") return "/actions?filter=fired";
+  if (status === "rejected" || status === "failed")
+    return "/actions?filter=rejected";
+  if (status === "executed" || status === "approved")
+    return "/actions?filter=fired";
   return "/actions";
 }
 
@@ -228,7 +235,14 @@ export default function ActionPage() {
     );
   }
 
-  const { actionRequest: ar, executions, workflow, policy, upstreamOutput, approverKind } = data;
+  const {
+    actionRequest: ar,
+    executions,
+    workflow,
+    policy,
+    upstreamOutput,
+    approverKind,
+  } = data;
   const isPending = ar.status === "pending_approval";
   const latestExecution = executions[0] ?? null;
   const recordUpdate = parseRecordUpdatePayload(ar.kind, ar.payload);
@@ -246,7 +260,6 @@ export default function ActionPage() {
         </AppHeader>
 
         <PageHeading
-          eyebrow="Action request"
           title={ar.summary || ar.kind}
           meta={statusLabel(ar.status)}
           description={[
@@ -274,7 +287,9 @@ export default function ActionPage() {
             <RecordActionDiff
               kind={ar.kind}
               payload={ar.payload}
-              policyContext={isPending && policy ? `rule "${policy.name}"` : null}
+              policyContext={
+                isPending && policy ? `rule "${policy.name}"` : null
+              }
             />
           </Section>
         )}
@@ -288,7 +303,8 @@ export default function ActionPage() {
                   <span className="text-text3/70"> · </span>
                   <span>
                     by workflow{" "}
-                    <button data-ui-bespoke-reason="action receipt controls"
+                    <Button
+                      variant="ghost"
                       type="button"
                       className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
@@ -297,7 +313,7 @@ export default function ActionPage() {
                       }
                     >
                       {workflow.name}
-                    </button>
+                    </Button>
                   </span>
                 </>
               )}
@@ -336,10 +352,12 @@ export default function ActionPage() {
                 <>
                   <span className="font-mono">{latestExecution.executor}</span>
                   <span className="text-text3/70"> · </span>
-                  <span className={cn(
-                    "inline-block px-2 py-0.5 rounded-full text-ui-caption font-semibold tracking-[0.04em] uppercase",
-                    actionStatusClasses(latestExecution.status),
-                  )}>
+                  <span
+                    className={cn(
+                      "inline-block px-2 py-0.5 rounded-full text-ui-caption font-semibold tracking-[0.04em] uppercase",
+                      actionStatusClasses(latestExecution.status),
+                    )}
+                  >
                     {latestExecution.status}
                   </span>
                   {latestExecution.finishedAt && (
@@ -351,7 +369,9 @@ export default function ActionPage() {
                     </>
                   )}
                   {latestExecution.error && (
-                    <div className="mt-1.5 px-2.5 py-2 bg-danger-soft text-danger rounded-lg font-mono text-ui-body-sm">{latestExecution.error}</div>
+                    <div className="mt-1.5 px-2.5 py-2 bg-danger-soft text-danger rounded-lg font-mono text-ui-body-sm">
+                      {latestExecution.error}
+                    </div>
                   )}
                 </>
               ) : (
@@ -360,13 +380,14 @@ export default function ActionPage() {
             </Field>
 
             <Field label="Payload">
-              <button data-ui-bespoke-reason="action receipt controls"
+              <Button
+                variant="ghost"
                 type="button"
                 className="bg-transparent border-0 p-0 font-inherit text-accent underline underline-offset-2 cursor-pointer"
                 onClick={() => setShowPayload((s) => !s)}
               >
                 {showPayload ? "hide" : "show"} JSON
-              </button>
+              </Button>
               {showPayload && (
                 <pre className="mt-2 px-3.5 py-3 bg-card border border-border rounded-[10px] font-mono text-ui-body-sm text-text2 whitespace-pre-wrap break-words overflow-x-auto">
                   {JSON.stringify(ar.payload, null, 2)}
@@ -381,24 +402,26 @@ export default function ActionPage() {
             {workflow && ar.workflowRunId && (
               <p className="m-0 mb-2 text-ui-body text-text2 leading-[1.55]">
                 Proposed by workflow{" "}
-                <button data-ui-bespoke-reason="action receipt controls"
+                <Button
+                  variant="ghost"
                   type="button"
                   className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                   onClick={() => router.push(`/runs/${ar.workflowRunId}`)}
                 >
                   {workflow.name}
-                </button>{" "}
+                </Button>{" "}
                 — open the run →
               </p>
             )}
             {upstreamOutput && (
               <p className="m-0 mb-2 text-ui-body text-text2 leading-[1.55]">
-                Triggered by finding{" "}
-                <em>{upstreamOutput.title}</em>
+                Triggered by finding <em>{upstreamOutput.title}</em>
                 {upstreamOutput.workflowRunId && (
                   <>
-                    {" "}in{" "}
-                    <button data-ui-bespoke-reason="action receipt controls"
+                    {" "}
+                    in{" "}
+                    <Button
+                      variant="ghost"
                       type="button"
                       className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
@@ -406,7 +429,7 @@ export default function ActionPage() {
                       }
                     >
                       its run
-                    </button>
+                    </Button>
                   </>
                 )}
               </p>
@@ -421,7 +444,7 @@ export default function ActionPage() {
                 <label className="text-ui-label font-bold tracking-[0.13em] uppercase text-text3">
                   Why are you rejecting this? (optional)
                 </label>
-                <textarea data-ui-bespoke-reason="action receipt controls"
+                <Textarea
                   className="border border-border rounded-[10px] px-3 py-2 font-body text-ui-body-sm text-text bg-card resize-y min-h-[50px] outline-none focus:border-accent"
                   value={rejectReason}
                   placeholder="e.g. wrong channel, retry tomorrow…"
@@ -488,7 +511,9 @@ function Section({
 }) {
   return (
     <div className="mb-7">
-      <div className="text-ui-label font-bold tracking-[0.13em] uppercase text-text3 mb-2.5">{title}</div>
+      <div className="text-ui-label font-bold tracking-[0.13em] uppercase text-text3 mb-2.5">
+        {title}
+      </div>
       {children}
     </div>
   );
@@ -503,7 +528,9 @@ function Field({
 }) {
   return (
     <div className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5 items-baseline">
-      <dt className="text-ui-caption font-bold tracking-[0.13em] uppercase text-text3 m-0">{label}</dt>
+      <dt className="text-ui-caption font-bold tracking-[0.13em] uppercase text-text3 m-0">
+        {label}
+      </dt>
       <dd className="m-0 text-ui-body text-text2 leading-[1.55]">{children}</dd>
     </div>
   );

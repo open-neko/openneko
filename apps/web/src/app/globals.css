@@ -19,15 +19,63 @@
 @import "./styles/_records.css";
 @import "./styles/_responsive.css";
 @import "./styles/_dock.css";
+@import "tw-animate-css";
+
+@custom-variant data-open {
+  &:where([data-state="open"]), &:where([data-open]:not([data-open="false"])) { @slot; }
+}
+@custom-variant data-closed {
+  &:where([data-state="closed"]), &:where([data-closed]:not([data-closed="false"])) { @slot; }
+}
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]), &:where([data-disabled]:not([data-disabled="false"])) { @slot; }
+}
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) { @slot; }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) { @slot; }
+}
 
 :root {
   --font-display: "Archivo Variable";
   --font-body: "Manrope Variable";
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card-foreground: var(--text);
+  --popover: var(--card);
+  --popover-foreground: var(--text);
+  --primary: var(--text);
+  --primary-foreground: var(--bg);
+  --secondary: var(--card);
+  --secondary-foreground: var(--text2);
+  --muted: var(--neutral-soft);
+  --muted-foreground: var(--text2);
+  --accent-foreground: var(--on-accent);
+  --destructive: var(--danger);
+  --input: var(--border);
+  --ring: var(--accent);
+  --chart-1: var(--accent);
+  --chart-2: var(--success-mid);
+  --chart-3: var(--warn-ink);
+  --chart-4: var(--danger);
+  --chart-5: var(--text2);
 }
 
 @theme {
   --color-bg: var(--bg);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
   --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
   --color-text: var(--text);
   --color-text2: var(--text2);
   --color-text3: var(--text3);
@@ -35,6 +83,7 @@
   --color-neutral: var(--neutral);
   --color-neutral-soft: var(--neutral-soft);
   --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-accent-soft: var(--accent-soft);
   --color-success: var(--success);
   --color-success-ink: var(--success-ink);
@@ -47,6 +96,14 @@
   --color-warn-ink: var(--warn-ink);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 
   --radius-card: var(--radius);
   --radius-inner: var(--radius-inner);
@@ -121,7 +178,6 @@ html[data-density="comfortable"] {
 
 .dash-root {
   --page-width: var(--d-dash-width);
-  transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .dash-root .greet { font-size: var(--d-greet); }
 
@@ -186,7 +242,7 @@ html[data-density="compact"] .triage-pane {
 .wcr-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); transform: translateY(-1px); }
 .wcr-source { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: var(--type-body-sm); color: var(--text2); }
 .wcr-source-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: 0.7; flex: none; }
-.wcr-memo { background: var(--bg); border: 1px solid var(--border); border-left: 2px solid var(--accent); border-radius: 11px; padding: 9px 11px; font-size: var(--type-caption); line-height: var(--leading-compact); color: var(--text2); }
+.wcr-memo { background: var(--bg); border: 1px solid var(--border); border-radius: 11px; padding: 9px 11px; font-size: var(--type-caption); line-height: var(--leading-compact); color: var(--text2); }
 .wcr-empty-text { margin: 0; font-size: var(--type-caption); line-height: var(--leading-body); color: var(--text3); }
 .wcr-vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .wcr-vital { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 9px 10px; }
@@ -261,4 +317,3 @@ html[data-density="compact"] .triage-pane {
   .topbar-spacer { display: none; }
   .topbar-nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
 }
-

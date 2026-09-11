@@ -353,7 +353,7 @@
   border: 1px solid color-mix(in srgb, var(--success-mid) 35%, var(--success));
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--success) 92%, white) 0%,
+    color-mix(in srgb, var(--success) 92%, var(--card)) 0%,
     var(--success) 100%
   );
   color: var(--success-ink);
@@ -524,7 +524,7 @@
 
 .idetail {
   max-height: 0; overflow: hidden; opacity: 0; margin-top: 0;
-  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease, margin 0.3s ease;
+  transition: opacity 0.18s ease;
 }
 .idetail { position: relative; z-index: 1; }
 .idetail.open { max-height: 480px; opacity: 1; margin-top: 16px; }
