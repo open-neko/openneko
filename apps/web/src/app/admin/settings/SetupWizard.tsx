@@ -240,7 +240,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       if (!res.ok) throw new Error(body.error ?? "Save failed");
       toast.success(
         testBody.mcpOk === false
-          ? "Data source saved. (MCP unreachable — fine for the agent path.)"
+          ? "Data source saved. (MCP unreachable, fine for the agent path.)"
           : "Data source saved.",
       );
       setStep(step + 1);
@@ -416,7 +416,7 @@ export default function SetupWizard({ initial }: { initial: Initial }) {
       {stepName === "password" && (
         <Step
           title="Choose a database password"
-          description="OpenNeko's storage ships with a default password. Pick something only you know — you won't need to enter it again."
+          description="OpenNeko's storage ships with a default password. Pick something only you know. You won't need to enter it again."
         >
           <Field
             label="New password (min 8 chars)"

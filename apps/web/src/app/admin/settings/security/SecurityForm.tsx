@@ -115,7 +115,7 @@ export default function SecurityForm({
         <section className="flex flex-col gap-6 mt-2">
           <Toggle
             label="Allow unverified installs"
-            help="Lets operators run `openneko install <pkg> --unverified` (bypasses every marketplace). Use only for plugin authoring or emergency hotfixes — integrity comes from npm on trust."
+            help="Lets operators run `openneko install <pkg> --unverified` (bypasses every marketplace). Use only for plugin authoring or emergency hotfixes. Integrity comes from npm on trust."
             checked={policy.allowUnverified}
             onChange={(v) => toggle("allowUnverified", v)}
           />

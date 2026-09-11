@@ -96,7 +96,7 @@ export default function SsoSetupForm({
       };
       setEnvironmentUrl(out.environmentUrl);
       setClientId(out.clientId);
-      toast.success("Environment URL and client id filled in — paste the secret.");
+      toast.success("Environment URL and client id filled in. Now paste the secret.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -222,7 +222,7 @@ export default function SsoSetupForm({
       setStatus((s) => ({ ...(s ?? emptyStatus()), signInConfigured: true }));
       setClientSecret("");
       setEditingStep(null);
-      toast.success("Credentials saved — sign-in is now live.");
+      toast.success("Credentials saved. Sign-in is now live.");
       // The login gate engages the moment credentials are saved. Send the
       // admin to /signin (back here afterwards) so they finish setup in a
       // real session — the first sign-in becomes the admin.
@@ -289,7 +289,7 @@ export default function SsoSetupForm({
       if (out.status === "connected") {
         toast.success("SSO is live.");
       } else if (out.status === "awaiting_portal") {
-        toast.info("No connection yet — finish the IdP setup in the portal.");
+        toast.info("No connection yet. Finish the IdP setup in the portal.");
       } else if (out.status === "failed") {
         toast.error(out.lastError ?? "Connection check failed.");
       } else {
@@ -308,7 +308,7 @@ export default function SsoSetupForm({
       await navigator.clipboard.writeText(status.portalLink);
       toast.success("Link copied.");
     } catch {
-      toast.error("Could not copy — select the link and copy manually.");
+      toast.error("Could not copy. Select the link and copy manually.");
     }
   }
 
@@ -354,7 +354,7 @@ export default function SsoSetupForm({
             />
             {step1Done ? (
               <p className={copyClass}>
-                Connected — the agent manages your Scalekit workspace
+                Connected. The agent manages your Scalekit workspace
                 (environments, organizations, users, connections) with this
                 org-wide authorization.
               </p>
@@ -406,7 +406,7 @@ export default function SsoSetupForm({
                   {pickerBusy
                     ? "Loading your Scalekit environments…"
                     : envOptions.length > 0
-                      ? "These are the environments in your workspace. Development is the free trial — switch to Production when you go live. Environments are isolated, so you re-run the IdP setup there."
+                      ? "These are the environments in your workspace. Development is the free trial. Switch to Production when you go live. Environments are isolated, so you re-run the IdP setup there."
                       : workspaceConnected
                         ? "Couldn't load the environment list. Paste the ids from the Scalekit dashboard instead."
                         : "Connect the workspace in step 1 and the list loads automatically."}
@@ -429,7 +429,7 @@ export default function SsoSetupForm({
                       {envOptions.map((e) => (
                         <option key={e.id} value={e.id}>
                           {e.name ?? e.id} ({e.tier === "PRD" ? "Production" : "Development"})
-                          {e.domain ? ` — ${e.domain}` : ""}
+                          {e.domain ? ` · ${e.domain}` : ""}
                         </option>
                       ))}
                     </NativeSelect>
@@ -512,7 +512,7 @@ export default function SsoSetupForm({
               <>
                 <p className={copyClass}>
                   The agent fetches the environment URL and client id for you.
-                  The client secret is shown only once — in Scalekit, under
+                  The client secret is shown only once, in Scalekit, under
                   Settings → API Credentials for the selected environment.
                   Pasting it here stores it straight in the vault, never through
                   chat.
@@ -589,13 +589,13 @@ export default function SsoSetupForm({
                 SSO is live
                 {status?.provider ? ` via ${status.provider}` : ""}
                 {status?.setupCompletedAt
-                  ? ` — connected ${new Date(status.setupCompletedAt).toLocaleString()}`
+                  ? ` · connected ${new Date(status.setupCompletedAt).toLocaleString()}`
                   : ""}
               </p>
             ) : (
               <>
                 <p className={copyClass}>
-                  Optional for the trial — sign-in already works through
+                  Optional for the trial. Sign-in already works through
                   Scalekit’s hosted login. Generate a portal link to connect
                   your company’s own IdP (Okta, Entra ID…): open it, follow the
                   guided setup, and the agent polls the connection until it’s
@@ -604,8 +604,8 @@ export default function SsoSetupForm({
                 {status?.portalLink ? (
                   <div className="flex flex-col gap-2">
                     <p className={copyClass}>
-                      The link is single-use and expires in about a minute —
-                      once opened it stays valid for the session.
+                      The link is single-use and expires in about a minute.
+                      Once opened it stays valid for the session.
                     </p>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 truncate text-ui-body-sm text-text2">
