@@ -30,7 +30,7 @@ export default function WorkHistoryDrawer({
         <SheetHeader className="work-history-drawer-head">
           <div>
             <span>OpenNeko / Work</span>
-            <SheetTitle id="work-history-title">Past work</SheetTitle>
+            <SheetTitle>Past work</SheetTitle>
             <SheetDescription>Resume one of your threads.</SheetDescription>
           </div>
           <SheetClose asChild>

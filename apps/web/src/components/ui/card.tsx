@@ -16,7 +16,7 @@ export function Card<T extends ElementType = "div">({
     <Component
       data-slot="card"
       className={cn(
-        "rounded-card border border-border bg-card px-4 py-3.5 shadow-soft",
+        "rounded-card border border-border bg-card p-[var(--panel-padding)] shadow-soft",
         className,
       )}
       {...props}

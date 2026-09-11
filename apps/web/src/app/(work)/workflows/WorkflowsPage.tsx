@@ -11,6 +11,7 @@ import { formatSavedShort } from "@/lib/hours-saved";
 import { Sparkline } from "@/components/Sparkline";
 import PageHeading from "@/components/PageHeading";
 import { Button, IconButton } from "@/components/ui/button";
+import { ActionGroup } from "@/components/ui/action-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
@@ -278,11 +279,6 @@ export default function WorkflowsPage() {
   ];
   const selectedWorkflow =
     visibleWorkflows.find((workflow) => workflow.id === selectedId) ?? null;
-  const selectedPosition = selectedWorkflow
-    ? visibleWorkflows.findIndex(
-        (workflow) => workflow.id === selectedWorkflow.id,
-      ) + 1
-    : null;
 
   useEffect(() => {
     if (!selectedId) return;
@@ -310,12 +306,7 @@ export default function WorkflowsPage() {
     <>
       <PageHeading
         title="Workflows"
-        description="Routes OpenNeko runs on your systems to surface findings and propose actions."
-        meta={
-          workflows === null
-            ? "loading"
-            : `${String(totalCount).padStart(2, "0")} routes`
-        }
+        description="Automations that monitor your systems, surface findings, and propose actions."
         actions={
           <div className="workflows-ops-status" aria-label="Workflow status">
             <div>
@@ -345,7 +336,7 @@ export default function WorkflowsPage() {
         }
       />
 
-      <div className="mb-5 max-w-[520px]">
+      <div className="workflows-search">
         <SearchInput
           label="Search workflows"
           value={query}
@@ -466,9 +457,6 @@ export default function WorkflowsPage() {
                 }
               >
                 <header className="workflow-inspector-head">
-                  <span className="workflow-inspector-index" aria-hidden="true">
-                    {String(selectedPosition ?? 0).padStart(2, "0")}
-                  </span>
                   <div className="workflow-inspector-heading">
                     <span
                       className="workflow-inspector-state"
@@ -500,7 +488,7 @@ export default function WorkflowsPage() {
                   <IconButton
                     label="Close workflow controls"
                     size="icon"
-                    className="workflow-inspector-close"
+                    className="self-start"
                     onClick={() => select(null)}
                   >
                     <X aria-hidden="true" />
@@ -825,9 +813,8 @@ function WorkflowDetail({
 
   return (
     <div className="workflow-detail">
-      <div className="workflow-drawer-actions">
+      <ActionGroup className="px-[var(--panel-padding)] pb-5">
         <Button
-          size="sm"
           variant="primary"
           onClick={runNow}
           disabled={busy || !workflow.enabled}
@@ -839,12 +826,11 @@ function WorkflowDetail({
         >
           Run now
         </Button>
-        <Button size="sm" onClick={togglePause} disabled={busy}>
+        <Button onClick={togglePause} disabled={busy}>
           {workflow.enabled ? "Pause" : "Resume"}
         </Button>
         {workflow.enabled && (
           <Button
-            size="sm"
             onClick={pauseForToday}
             disabled={busy}
             title="Pause until midnight UTC; resumes automatically"
@@ -852,7 +838,7 @@ function WorkflowDetail({
             Pause for today
           </Button>
         )}
-      </div>
+      </ActionGroup>
 
       {workflow.minutesSaved30d > 0 && (
         <Section title="Hours saved (30d)">

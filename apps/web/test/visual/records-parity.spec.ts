@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-08-03T12:00:00.000Z"));
 });
 
-test("CRM generated content and complete Meridian scenario match the pinned baseline", async ({
+test("CRM generated records and toolbar match the pinned baseline", async ({
   page,
 }) => {
   await page.goto("/a/crm/opportunity", { waitUntil: "networkidle" });
@@ -15,12 +15,20 @@ test("CRM generated content and complete Meridian scenario match the pinned base
   await expect(page.getByText("Pending change", { exact: true })).toBeVisible();
   await expect(page.getByText("SF: j.keller")).toBeVisible();
   await expect(page.getByText("Unlinked", { exact: true })).toBeVisible();
-  await expect(page.getByText("Approval needed", { exact: true })).toBeVisible();
-  await expect(page.getByText("Activity — call with Dana Okafor logged · auto per rule")).toBeVisible();
-  await expect(page.locator(".records-ask input")).toHaveAttribute(
-    "placeholder",
-    "Find, compare, or change a record…",
-  );
+  // Contextual chat now lives in AppChatSidebar, outside this list fixture.
+  await expect(page.getByRole("searchbox", { name: "Search Opportunities" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Records substrate status" })).toContainText("Healthy");
+  const controls = await page.locator(".records-object-header").evaluate((header) => {
+    const search = header.querySelector("[data-slot=input-group]")!;
+    const action = header.querySelector(".records-primary-action")!;
+    return [search, action].map((element) => {
+      const { height, top } = element.getBoundingClientRect();
+      return { height, top };
+    });
+  });
+  expect(controls[0].height).toBe(40);
+  expect(controls[1].height).toBe(40);
+  expect(Math.abs(controls[0].top - controls[1].top)).toBeLessThan(1);
 
   await expect(page.locator(".records-list-main")).toHaveScreenshot(
     "crm-generated-content.png",

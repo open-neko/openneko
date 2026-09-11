@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Plus, Search, Trash2, Upload } from "lucide-react";
+import { Plus, Trash2, Upload } from "lucide-react";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 import {
@@ -15,7 +15,7 @@ import { RecordViewBar } from "@/components/records/RecordViewBar";
 import { RecordsUnavailable } from "@/components/records/RecordsNotice";
 import { SubstrateStrip } from "@/components/records/SubstrateStrip";
 import { buttonClassName } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   normalizeRecordSavedViewDefinition,
   type RecordFilterExpression,
@@ -237,13 +237,11 @@ export default async function RecordObjectPage({
           </span>
         </div>
         <form className="records-search" action={base} method="get">
-          <Search aria-hidden="true" />
-          <Input
-            type="search"
+          <SearchInput
             name="q"
             defaultValue={query.q}
             placeholder={`Search ${result.view.object.pluralLabel.toLowerCase()}`}
-            aria-label={`Search ${result.view.object.pluralLabel}`}
+            label={`Search ${result.view.object.pluralLabel}`}
           />
           {query.sort && (
             <input
@@ -290,7 +288,6 @@ export default async function RecordObjectPage({
           <Link
             className={buttonClassName({
               variant: "primary",
-              size: "sm",
               className: "records-primary-action",
             })}
             href={`${base}/new`}
@@ -302,7 +299,6 @@ export default async function RecordObjectPage({
         {actor.role === "admin" && (
           <Link
             className={buttonClassName({
-              size: "sm",
               className: "records-secondary-action",
             })}
             href={`/a/${result.app.appId}/admin?object=${encodeURIComponent(result.view.object.apiName)}`}
@@ -312,7 +308,6 @@ export default async function RecordObjectPage({
         )}
         <Link
           className={buttonClassName({
-            size: "sm",
             className: "records-secondary-action",
           })}
           href={`${base}/recycle`}

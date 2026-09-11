@@ -197,7 +197,6 @@ export default function MemoryPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search saved memories"
-          className="bg-card max-w-[520px]"
         />
 
         {error ? (

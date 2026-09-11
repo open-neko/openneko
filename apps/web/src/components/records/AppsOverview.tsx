@@ -55,7 +55,7 @@ export function AppsOverview({
         title="Apps"
         description="Governed record systems available to you. Access follows your app, object, and field permissions."
         actions={
-          canCreate && !unavailable ? (
+          canCreate && !unavailable && apps.length > 0 ? (
             <Link
               className={buttonClassName({
                 variant: "primary",

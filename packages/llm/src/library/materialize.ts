@@ -46,6 +46,7 @@ export async function materializeTeamLibrary(orgId: string): Promise<void> {
       orgId,
       userId: null,
       status: "stable",
+      limit: null,
     });
     const bundleRoot = teamLibraryBundleRoot(orgId);
     await rm(bundleRoot, { recursive: true, force: true });

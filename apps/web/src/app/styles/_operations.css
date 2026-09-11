@@ -42,10 +42,7 @@ html[data-density="compact"] .operations-root .operations-layout {
   justify-content: center;
   gap: 8px;
   padding: clamp(36px, 6vw, 84px);
-  background:
-    linear-gradient(90deg, transparent calc(100% - 1px), rgba(45, 42, 36, 0.055) calc(100% - 1px)),
-    var(--bg);
-  background-size: 74px 100%;
+  background: transparent;
 }
 
 .work-gate-mark {
@@ -68,9 +65,9 @@ html[data-density="compact"] .operations-root .operations-layout {
 .work-gate-state strong {
   color: var(--text);
   font-family: var(--font-display), "Archivo", sans-serif;
-  font-size: clamp(28px, 4vw, 48px);
-  font-weight: 900;
-  letter-spacing: -0.05em;
+  font-size: var(--type-section);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .work-gate-state p {
@@ -81,17 +78,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-gate-state button {
-  min-height: 42px;
   margin-top: 12px;
-  padding: 8px 18px;
-  border: 1px solid var(--text);
-  border-radius: 0;
-  background: var(--text);
-  color: var(--bg);
-  font: inherit;
-  font-size: var(--type-caption);
-  font-weight: 800;
-  cursor: pointer;
 }
 
 .work-gate-state.is-error .work-gate-mark::after {
@@ -1131,9 +1118,8 @@ html[data-density="compact"] .operations-root .operations-layout {
 .operations-root.is-workflows .workflow-page-state {
   min-height: 420px;
   margin: 0;
-  padding-inline: clamp(28px, 5vw, 74px);
+  padding-inline: var(--page-gutter);
   border: 0;
-  border-bottom: 1px solid var(--text);
   background: var(--bg);
 }
 
@@ -1147,8 +1133,8 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 .operations-root.is-workflows .workflows-master {
   min-width: 0;
-  padding: 40px clamp(24px, 3.6vw, 54px) 72px;
-  border-right: 1px solid var(--text);
+  padding: 0 var(--page-gutter) 72px;
+  border-right: 1px solid var(--border);
 }
 
 .operations-root.is-workflows .workflow-group {
@@ -1329,7 +1315,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .operations-root.is-workflows .workflow-inspector-head {
-  position: sticky;
+  position: relative;
   top: 0;
   min-height: 226px;
   display: grid;
@@ -1337,9 +1323,10 @@ html[data-density="compact"] .operations-root .operations-layout {
   gap: 18px;
   padding: 38px clamp(26px, 4vw, 58px) 32px;
   border: 0;
-  border-bottom: 1px solid var(--text);
-  background: var(--text);
-  color: var(--bg);
+  background: var(--card);
+  color: var(--text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .workflow-inspector-index {
@@ -1352,7 +1339,12 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .operations-root.is-workflows .workflow-inspector-state {
-  color: var(--success);
+  color: var(--success-mid);
+  font-family: var(--font-body), Manrope, sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .operations-root.is-workflows .workflow-inspector-state[data-state="paused"] {
@@ -1360,12 +1352,12 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .operations-root.is-workflows .workflow-inspector-state[data-state="broken"] {
-  color: var(--danger-bright);
+  color: var(--danger);
 }
 
 .operations-root.is-workflows .workflow-inspector-head h2 {
   max-width: 16ch;
-  color: var(--bg);
+  color: var(--text);
   font-size: clamp(32px, 4.4vw, 58px);
   letter-spacing: -0.06em;
   line-height: 0.9;
@@ -1489,11 +1481,11 @@ html[data-density="compact"] .operations-root .operations-layout {
   margin: 0;
   color: var(--text2);
   font-family: var(--font-display), "Archivo", sans-serif;
-  font-size: var(--type-label);
-  font-weight: 800;
-  letter-spacing: 0.13em;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  letter-spacing: 0;
   line-height: 1.45;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .workflow-detail-section-body {
@@ -1649,7 +1641,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 /* ─── ACCESSIBILITY / BREAKPOINTS ─── */
 
 .work-empty-prompt:focus-visible,
-.work-command-surface :where(button, textarea, a):focus-visible,
+.work-command-surface :where(button, textarea:not(.work-input), a):focus-visible,
 .workflows-ops-head button:focus-visible,
 .operations-root.is-workflows :where(button, a, input):focus-visible {
   outline: 2px solid var(--accent);
@@ -1721,9 +1713,9 @@ html[data-density="compact"] .operations-root .operations-layout {
 
   .operations-root.is-workflows .workflow-inspector {
     position: fixed;
-    inset: auto 0 0;
+    inset: auto 0 0 var(--rail-w);
     z-index: 150;
-    width: 100%;
+    width: auto;
     max-height: min(88svh, 820px);
     padding: 0;
     border: 0;
@@ -1734,7 +1726,7 @@ html[data-density="compact"] .operations-root .operations-layout {
   }
 
   .operations-root.is-workflows .workflow-inspector-head {
-    position: sticky;
+    position: relative;
     min-height: 184px;
     grid-template-columns: 38px minmax(0, 1fr) auto;
     padding: 28px 22px 24px;
@@ -1743,7 +1735,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 
   .operations-root.is-workflows .workflow-inspector-head::before {
     top: 8px;
-    background: rgba(250, 250, 247, 0.28);
+    background: var(--border);
   }
 
   .operations-root.is-workflows .workflow-inspector-head h2 {
@@ -2092,10 +2084,11 @@ html[data-density="compact"] .operations-root .operations-layout {
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 300px) auto;
   align-items: center;
   gap: clamp(20px, 3vw, 42px);
-  padding: 10px clamp(20px, 3vw, 40px);
+  padding: 16px var(--page-gutter);
   overflow: visible;
-  background: color-mix(in srgb, var(--bg) 96%, var(--card));
+  background: var(--bg);
   background-size: auto;
+  border-bottom: 1px solid var(--border);
 }
 
 .work-command-head::before {
@@ -2105,14 +2098,20 @@ html[data-density="compact"] .operations-root .operations-layout {
 .work-command-copy {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 13px;
+  gap: 6px;
 }
 
 .work-command-eyebrow {
   margin: 0;
   white-space: nowrap;
+  order: 1;
+  font-family: var(--font-body), "Manrope", sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .work-command-eyebrow > span:first-child,
@@ -2155,73 +2154,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-command-action {
-  min-height: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--card);
-  color: var(--text2);
-  font: inherit;
-  font-size: var(--type-caption);
-  font-weight: 750;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.work-command-action:not(.is-primary) {
-  border-color: var(--text2);
-  background: var(--card);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text2) 12%, transparent);
-}
-
-.work-command-action:not(.is-primary):hover:not(:disabled),
-.work-command-action:not(.is-primary)[aria-expanded="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.work-command-action svg {
-  width: 15px;
-  height: 15px;
-}
-
-.work-command-action:hover:not(:disabled) {
-  border-color: var(--text);
-  color: var(--text);
-  transform: translateY(-1px);
-}
-
-.work-command-action:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.work-command-action.is-primary {
-  border-color: var(--text);
-  background: var(--text);
-  color: var(--bg);
-}
-
-.work-command-action.is-primary:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.work-command-action:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
+  flex: 0 0 auto;
 }
 
 .work-transcript {
@@ -2235,14 +2168,16 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-empty {
-  grid-template-columns: minmax(220px, 0.58fr) minmax(360px, 1.42fr);
-  gap: clamp(34px, 5vw, 64px);
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 48px;
 }
 
 .work-empty h2 {
-  max-width: 8ch;
+  max-width: 12ch;
   font-size: var(--type-display);
   line-height: var(--leading-display);
+  letter-spacing: -0.035em;
+  word-spacing: 0.08em;
 }
 
 .work-empty-statement p {
@@ -2267,14 +2202,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 /* History is temporary navigation, never a permanent third column. */
-.work-history-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 180;
-}
-
 .work-history-scrim {
-  position: absolute;
   inset: 0;
   border: 0;
   background: rgba(24, 22, 18, 0.34);
@@ -2283,7 +2211,6 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 .work-history-drawer {
-  position: absolute;
   inset: 0 0 0 auto;
   width: min(420px, calc(100vw - var(--rail-w)));
   display: flex;
@@ -2701,7 +2628,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 .operations-root.is-workflows .workflows-workspace {
   min-height: calc(100svh - 76px);
-  grid-template-columns: minmax(390px, 0.82fr) minmax(500px, 1.18fr);
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
 }
 
 .operations-root.is-workflows .workflows-master {
@@ -2736,10 +2663,10 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 .operations-root.is-workflows .workflow-inspector-head {
   min-height: 112px;
-  grid-template-columns: 36px minmax(0, 1fr) 38px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 14px;
-  padding: 20px clamp(22px, 3vw, 38px) 18px;
+  padding: var(--panel-padding);
 }
 
 .workflow-inspector-index {
@@ -2751,8 +2678,8 @@ html[data-density="compact"] .operations-root .operations-layout {
   max-width: none;
   margin-top: 7px;
   font-size: var(--type-section);
-  letter-spacing: -0.045em;
-  line-height: 1;
+  letter-spacing: -0.025em;
+  line-height: var(--leading-page);
 }
 
 .operations-root.is-workflows .workflow-inspector-head p {
@@ -2815,6 +2742,10 @@ html[data-density="compact"] .operations-root .operations-layout {
 }
 
 @media (max-width: 900px) {
+  body:has(.workflow-inspector) .cdock {
+    visibility: hidden;
+  }
+
   .workflows-ops-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -2845,8 +2776,8 @@ html[data-density="compact"] .operations-root .operations-layout {
 
   .operations-root.is-workflows .workflow-inspector-head {
     min-height: 124px;
-    grid-template-columns: 30px minmax(0, 1fr) 36px;
-    padding: 22px 18px 18px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 24px var(--panel-padding) 18px;
     border-radius: 18px 18px 0 0;
   }
 
@@ -2855,7 +2786,7 @@ html[data-density="compact"] .operations-root .operations-layout {
   }
 
   .operations-root.is-workflows .workflow-inspector-head h2 {
-    font-size: 28px;
+    font-size: var(--type-page);
   }
 
   .operations-root.is-workflows .workflow-drawer-actions {
@@ -2928,7 +2859,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 .operations-root.is-workflows .is-overview .workflows-master {
   width: 100%;
   border-right: 0;
-  padding-inline: clamp(28px, 5vw, 72px);
+  padding-inline: var(--page-gutter);
 }
 
 .operations-root.is-workflows .is-overview .wf-grid {
@@ -2964,7 +2895,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 @media (max-width: 680px) {
   .operations-root.is-workflows .is-overview .workflows-master {
-    padding-inline: 14px;
+    padding-inline: var(--page-gutter);
   }
 
   .operations-root.is-workflows .is-overview .wf-grid {
@@ -2985,14 +2916,19 @@ html[data-density="compact"] .operations-root .operations-layout {
 /* Canonical page header: Workflows now shares Ask's compact command-bar
    hierarchy. The status counts remain controls, not a second dashboard. */
 .operations-root.is-workflows .page-heading {
-  margin-bottom: 0;
-  padding-right: clamp(16px, 3vw, 40px);
-  padding-left: clamp(16px, 3vw, 40px);
+  margin: 0;
+  padding: 28px var(--page-gutter) 24px;
+}
+
+.workflows-search {
+  max-width: calc(520px + 2 * var(--page-gutter));
+  padding-inline: var(--page-gutter);
+  margin-bottom: 24px;
 }
 
 .operations-root.is-workflows .page-heading .workflows-ops-status {
   min-width: 0;
-  align-self: stretch;
+  align-self: center;
   display: flex;
   grid-template-columns: none;
   grid-template-rows: none;
@@ -3033,7 +2969,10 @@ html[data-density="compact"] .operations-root .operations-layout {
   > div
   span {
   color: var(--text3);
-  font-size: var(--type-label);
+  font-size: var(--type-caption);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .operations-root.is-workflows
@@ -3082,8 +3021,7 @@ html[data-density="compact"] .operations-root .operations-layout {
 
 @media (max-width: 760px) {
   .operations-root.is-workflows .page-heading {
-    padding-right: 14px;
-    padding-left: 14px;
+    padding: 24px var(--page-gutter);
   }
 
   .operations-root.is-workflows
@@ -3137,11 +3075,6 @@ html[data-density="compact"] .operations-root .operations-layout {
 @media (max-width: 480px) {
   .operations-root.is-workflows .page-heading-eyebrow {
     display: none;
-  }
-
-  .operations-root.is-workflows .page-heading-copy {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "title";
   }
 
   .operations-root.is-workflows

@@ -133,9 +133,7 @@
   }
 
   .cdock-scrim {
-    position: fixed;
     inset: 0;
-    z-index: 1;
     border: 0;
     background: rgba(31, 28, 23, 0.3);
     backdrop-filter: blur(2px);
@@ -144,8 +142,6 @@
   }
 
   .cdock-sheet {
-    position: fixed;
-    z-index: 3;
     left: max(12px, calc((100vw - 480px) / 2));
     right: max(12px, calc((100vw - 480px) / 2));
     bottom: calc(90px + env(safe-area-inset-bottom, 0px));

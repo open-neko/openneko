@@ -11,7 +11,6 @@ export const buttonVariants = cva(
   [
     "ui-button inline-flex items-center justify-center whitespace-nowrap rounded-control border-[1.5px] font-body font-semibold cursor-pointer",
     "transition-[color,background-color,border-color,transform,box-shadow,opacity] duration-150",
-    "hover:-translate-y-px active:translate-y-0",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0",
     "aria-disabled:pointer-events-none aria-disabled:opacity-50",
@@ -21,9 +20,9 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "border-text bg-text text-bg shadow-[0_2px_10px_rgba(20,18,12,0.16)] hover:border-accent hover:bg-accent hover:text-white",
+          "border-text bg-text text-bg hover:border-accent hover:bg-accent hover:text-white",
         secondary:
-          "border-border bg-card/85 text-text2 shadow-soft hover:border-accent hover:bg-accent-soft hover:text-accent",
+          "border-border bg-card text-text2 hover:border-accent hover:bg-accent-soft hover:text-accent",
         ghost:
           "border-transparent bg-transparent text-text2 hover:bg-neutral-soft hover:text-text",
         danger:

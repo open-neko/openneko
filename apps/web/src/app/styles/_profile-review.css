@@ -1,12 +1,12 @@
 .profile-card {
-  background: var(--card); border-radius: var(--radius); padding: 32px 36px;
+  background: var(--card); border-radius: var(--radius); padding: var(--panel-padding);
   margin-top: 28px; box-shadow: var(--shadow); border: 1px solid var(--border);
 }
 .settings-card {
-  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.88));
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 26px 28px;
+  padding: var(--panel-padding);
   box-shadow: var(--shadow);
   margin-top: 18px;
 }
@@ -125,20 +125,16 @@
   min-height: 172px;
   display: flex;
   flex-direction: column;
-  padding: 23px 24px 21px;
-  border-radius: 18px;
+  padding: var(--panel-padding);
+  border-radius: var(--radius);
   background: var(--card);
   box-shadow: var(--shadow);
   transition:
-    border-color 0.18s ease,
-    box-shadow 0.22s ease,
-    transform 0.22s ease;
+    border-color 0.18s ease;
 }
 
 .settings-index-card:hover {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  box-shadow: var(--shadow-h);
-  transform: translateY(-2px);
 }
 
 .settings-index-card:focus-visible {

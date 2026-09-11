@@ -230,10 +230,11 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
     <Card as="section" className="grid gap-4">
       <div><h2>Custom packs</h2><p className="text-ui-body-sm text-text2">Upload a pack, review its configuration and changes, then choose when to install it.</p></div>
       <form onSubmit={upload} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-        <Field label="Pack archive" htmlFor="pack-archive" hint="ZIP format, up to 16 MiB. Uploading does not install the pack.">
-          <Input id="pack-archive" name="archive" ref={fileInput} type="file" accept=".zip,application/zip" disabled={busy !== null} />
+        <Field label="Pack archive" htmlFor="pack-archive">
+          <Input id="pack-archive" name="archive" ref={fileInput} type="file" accept=".zip,application/zip" aria-describedby="pack-archive-hint" disabled={busy !== null} />
         </Field>
         <Button type="submit" variant="primary" disabled={busy !== null}>{busy === "upload" ? "Uploading…" : "Upload pack"}</Button>
+        <p id="pack-archive-hint" className="text-ui-caption text-text3 sm:col-span-2">ZIP format, up to 16 MiB. Uploading does not install the pack.</p>
       </form>
       {error ? <p ref={errorText} tabIndex={-1} role="alert" className="break-words text-ui-body-sm text-danger">{error}</p> : null}
       {error && errorDetail ? <Disclosure title="Error details"><p className="break-words text-ui-body-sm">{errorDetail}</p></Disclosure> : null}

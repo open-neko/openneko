@@ -14,7 +14,18 @@ These are custom shadcn components, not untouched registry copies. `components.j
 
 Use `Button`, `IconButton`, `ButtonLink`, or `buttonClassName` instead of creating page-local button chrome. Desktop sizes are intentionally compact; all shared controls expand to a 44px minimum target on phone widths and coarse pointers.
 
+Use the default 40px button size beside inputs and selects. Reserve 32px actions for compact rows, not form toolbars. Put hints below the whole form row when they would otherwise misalign adjacent controls.
+
+## Surface and spacing
+
+- Use `PageHeading` without a tinted background, shadow, or sticky panel. Titles and content share `--page-gutter` (32px desktop, 16px phone).
+- Use `Card` or the existing family panel with the shared radius, white surface, and `--panel-padding` (24px desktop, 18px phone). Do not add a second decorated background inside a panel without a semantic reason.
+- Search groups and composers own their outer focus treatment; do not draw a second outline on their inner field. Standalone fields and buttons retain visible keyboard focus.
+- Keep metadata in sentence case. Counts must remain fully readable rather than shrink or truncate.
+
 ## Selection and input
+
+Portalled sheets and confirmations own viewport positioning; shared overlay/menu stacking lives in `_ui.css`, above the rail, header, and workflow inspector. Consumer classes must not override their `position` or `z-index`. Never position or stack every `body > *`: Radix appends portals there. Scroll locking must preserve the responsive rail offset. The design-system browser gate checks these contracts at desktop, tablet, and phone widths, including nested confirmation and navigation sheets.
 
 - Use `Tabs` for switching content views.
 - Use `SegmentedControl` for filters or a choice within one view.

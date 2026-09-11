@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, FileText, Trash2 } from "lucide-react";
 import { confirmDialog } from "@/components/ConfirmModal";
 import PageHeading from "@/components/PageHeading";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
@@ -128,7 +129,6 @@ export default function SkillsPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search installed skills"
-          className="bg-card max-w-[520px]"
         />
 
         {error ? (
@@ -206,15 +206,15 @@ export default function SkillsPage() {
                         strokeWidth={1.9}
                       />
                     </Link>
-                    <IconButton
-                      label={`Delete skill ${skill.name}`}
-                      variant="danger"
+                    <OverflowMenu
+                      label={`Actions for ${skill.name}`}
                       className="skill-delete-control"
-                      disabled={busyName === skill.name}
-                      onClick={() => void remove(skill.name)}
                     >
-                      <Trash2 aria-hidden="true" strokeWidth={1.9} />
-                    </IconButton>
+                      <MenuItem danger disabled={busyName === skill.name} onSelect={() => void remove(skill.name)}>
+                        <Trash2 aria-hidden="true" strokeWidth={1.9} />
+                        Delete skill
+                      </MenuItem>
+                    </OverflowMenu>
                   </li>
                 ))}
               </ol>

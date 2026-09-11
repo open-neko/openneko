@@ -1,8 +1,46 @@
 /* Shared interaction contracts. Visual composition stays with components;
    this file owns only cross-page behavior that must not drift. */
 
+/* Portalled overlays sit above app chrome (rail 130, workflow sheet 150).
+   Menus inside those overlays remain above their containing surface. */
+:is([data-slot="alert-dialog-overlay"], [data-slot="alert-dialog-content"],
+    [data-slot="sheet-overlay"], [data-slot="sheet-content"]) {
+  z-index: 200;
+}
+
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"],
+    [data-slot="select-content"]) {
+  z-index: 210;
+}
+
 [data-ui-field-control] {
   min-height: var(--control-md);
+}
+
+/* The group owns the outline; its input must fit inside that outline. */
+[data-slot="input-group"] {
+  min-height: var(--control-md);
+  height: auto;
+  border-radius: var(--radius-control);
+  background: var(--card);
+}
+
+[data-slot="input-group"] > [data-ui-field-control] {
+  min-height: 0;
+  height: calc(var(--control-md) - 3px);
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-slot="input-group"] > textarea[data-ui-field-control] {
+  height: auto;
+  min-height: 96px;
+}
+
+[data-slot="input-group"]:has(:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 [data-ui-action-group] {
@@ -54,9 +92,17 @@
   [data-ui-menu-item],
   [data-ui-disclosure],
   [data-ui-field-control],
+  [data-slot="input-group"],
+  [data-slot="select-trigger"],
+  [data-slot="select-item"],
   [data-ui-checkbox],
   [data-ui-stat-link] {
     min-height: var(--control-touch);
+  }
+
+  [data-slot="input-group"] > input[data-ui-field-control] {
+    min-height: 0;
+    height: calc(var(--control-touch) - 3px);
   }
 
   :where([data-ui-button], .ui-button)[data-size="icon-sm"],

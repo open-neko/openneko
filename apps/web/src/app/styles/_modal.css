@@ -3,14 +3,6 @@
    ConfirmModal.tsx as utility classes. These keyframes stay here because
    utility arbitrary-value animations (animate-[modal-fade_...]) reference
    them by name. */
-.confirm-modal-root {
-  /* body > * establishes the app's base stacking context. The portal root
-     needs its own higher layer so a dialog opened from the mobile dock is
-     not trapped underneath that dock's sheet and scrim. */
-  position: relative;
-  z-index: 1000;
-}
-
 @keyframes modal-fade {
   from { opacity: 0; }
   to { opacity: 1; }

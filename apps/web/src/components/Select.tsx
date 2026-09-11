@@ -34,8 +34,6 @@ export default function Select({
       <SelectTrigger
         id={id}
         aria-label={ariaLabel}
-        data-ui-field-control=""
-        className="min-h-10 w-full rounded-control border-[1.5px] border-border bg-card px-3.5 py-2.5 font-body text-ui-body text-text shadow-none hover:border-text3 focus-visible:border-accent focus-visible:ring-[3px] focus-visible:ring-[var(--focus-ring)]"
       >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

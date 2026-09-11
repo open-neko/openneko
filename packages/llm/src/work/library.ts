@@ -8,6 +8,7 @@
 
 import {
   and,
+  asc,
   db,
   desc,
   eq,
@@ -88,6 +89,161 @@ export type LibraryConcept = {
 
 type DocumentRow = typeof library_document.$inferSelect;
 type ConceptRow = typeof library_concept.$inferSelect;
+
+export type LibraryBrowseOptions = {
+  view: "documents" | "concepts" | "review";
+  query: string;
+  layer: "all" | "personal" | "team";
+  type: string;
+  status: string;
+  documentId: string;
+  sort: "recent" | "name" | "relevance";
+  page: number;
+  pageSize: number;
+};
+
+type LibraryReader = { orgId: string; userId: string | null; isAdmin: boolean };
+
+// Browser search intentionally does not depend on embeddings: filenames,
+// partial terms and newly distilled concepts must remain discoverable.
+export function parseLibraryBrowseOptions(params: URLSearchParams): LibraryBrowseOptions {
+  const view = params.get("view") ?? "documents";
+  const layer = params.get("layer") ?? "all";
+  const query = (params.get("q") ?? "").trim();
+  const sort = params.get("sort") ?? (query ? "relevance" : "recent");
+  const type = params.get("type") ?? "";
+  const status = params.get("status") ?? "";
+  const documentId = params.get("documentId") ?? "";
+  const page = Number(params.get("page") ?? 1);
+  const pageSize = Number(params.get("pageSize") ?? 50);
+  if (!["documents", "concepts", "review"].includes(view)
+    || !["all", "personal", "team"].includes(layer)
+    || !["recent", "name", "relevance"].includes(sort)
+    || query.length > 200 || type.length > 100
+    || (documentId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(documentId))
+    || !Number.isSafeInteger(page) || page < 1 || page > 1_000_000
+    || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100
+    || (status && !(view === "documents" ? LIBRARY_DOCUMENT_STATUSES : LIBRARY_CONCEPT_STATUSES).some(value => value === status))) {
+    throw new Error("Invalid library filters.");
+  }
+  return { view, layer, sort, query, type, status, documentId, page, pageSize } as LibraryBrowseOptions;
+}
+
+function visibleLibraryConcepts(reader: LibraryReader, review = false, layer = "all") {
+  const personal = reader.userId && layer !== "team"
+    ? eq(library_concept.user_id, reader.userId) : sql`false`;
+  const team = layer !== "personal"
+    ? and(isNull(library_concept.user_id), eq(library_concept.status, "stable")) : sql`false`;
+  return and(eq(library_concept.org_id, reader.orgId), isNull(library_concept.archived_at),
+    review ? (reader.isAdmin ? and(isNull(library_concept.user_id), eq(library_concept.status, "draft")) : sql`false`)
+      : or(personal, team));
+}
+
+export async function browseLibrary(reader: LibraryReader, options: LibraryBrowseOptions) {
+  const documentsVisible = and(eq(library_document.org_id, reader.orgId), userLayerCondition(library_document.user_id, reader.userId));
+  const conceptsVisible = visibleLibraryConcepts(reader);
+  const reviewVisible = visibleLibraryConcepts(reader, true);
+  const count = sql<number>`count(*)::int`;
+  const [documentsCount, conceptsCount, reviewCount, types] = await Promise.all([
+    db().select({ count }).from(library_document).where(documentsVisible),
+    db().select({ count }).from(library_concept).where(conceptsVisible),
+    db().select({ count }).from(library_concept).where(reviewVisible),
+    db().selectDistinct({ type: library_concept.type }).from(library_concept)
+      .where(options.view === "review" ? reviewVisible : visibleLibraryConcepts(reader, false, options.layer))
+      .orderBy(asc(library_concept.type)),
+  ]);
+  const counts = { documents: documentsCount[0].count, concepts: conceptsCount[0].count, review: reviewCount[0].count };
+  // Escape LIKE metacharacters; a user's '%' or '_' is text, not a wildcard.
+  const words = options.query.split(/\s+/).filter(Boolean).map(word => `%${word.replace(/[\\%_]/g, "\\$&")}%`);
+  const isDocuments = options.view === "documents";
+  const conceptText = sql`concat_ws(' ', ${library_concept.title}, ${library_concept.description}, ${library_concept.path}, ${library_concept.type}, ${library_concept.tags}::text, ${library_concept.body})`;
+  const documentText = sql`concat_ws(' ', ${library_document.filename}, ${library_document.relative_path}, ${library_document.status})`;
+  const queryVec = options.query ? await tryEmbed(options.query) : null;
+  const conceptKeywords = words.length ? and(...words.map(word => sql`${conceptText} ilike ${word}`))! : sql`false`;
+  const documentKeywords = words.length ? and(...words.map(word => sql`${documentText} ilike ${word}`))! : sql`false`;
+  const similarity = queryVec ? sql`greatest(coalesce(1 - (${library_concept.embedding} <=> ${queryVec}::vector), 0), 0)` : sql`0`;
+  const conceptScore = sql`(case when ${conceptKeywords} then 1 else 0 end + ${similarity})`;
+  // Documents reuse the concepts distilled from them; no second embedding store.
+  const score = isDocuments
+    ? sql`(case when ${documentKeywords} then 1 else 0 end + coalesce((select max(${conceptScore}) from ${library_concept}
+        where ${visibleLibraryConcepts(reader)} and ${library_concept.source_document_id} = ${library_document.id}), 0))`
+    : conceptScore;
+  const where = and(
+    isDocuments ? documentsVisible : visibleLibraryConcepts(reader, options.view === "review", options.layer),
+    // Same cosine relevance floor as memory similarity search; exact text wins
+    // even without an embedding. Unrelated vectors must not fill every page.
+    options.query ? sql`${score} >= 0.3` : undefined,
+    options.status ? eq(isDocuments ? library_document.status : library_concept.status, options.status) : undefined,
+    !isDocuments && options.type ? eq(library_concept.type, options.type) : undefined,
+    !isDocuments && options.documentId ? eq(library_concept.source_document_id, options.documentId) : undefined,
+  );
+  const totalRows = isDocuments
+    ? await db().select({ count }).from(library_document).where(where)
+    : await db().select({ count }).from(library_concept).where(where);
+  const total = totalRows[0].count;
+  const page = Math.min(options.page, Math.max(1, Math.ceil(total / options.pageSize)));
+  const offset = (page - 1) * options.pageSize;
+  const documents = isDocuments ? await db().select({
+    id: library_document.id, filename: library_document.filename, relativePath: library_document.relative_path,
+    sizeBytes: library_document.size_bytes, status: library_document.status, createdAt: library_document.created_at,
+    skipReason: library_document.skip_reason,
+  }).from(library_document).where(where)
+    .orderBy(options.sort === "name" ? asc(library_document.filename) : options.sort === "relevance" && options.query ? desc(score) : desc(library_document.created_at), asc(library_document.id))
+    .limit(options.pageSize).offset(offset) : [];
+  const concepts = !isDocuments ? await db().select({
+    id: library_concept.id, title: library_concept.title, description: library_concept.description,
+    path: library_concept.path, type: library_concept.type, status: library_concept.status,
+    updatedAt: library_concept.updated_at, userId: library_concept.user_id,
+  }).from(library_concept).where(where)
+    .orderBy(options.sort === "name" ? asc(library_concept.title) : options.sort === "relevance" && options.query ? desc(score) : desc(library_concept.updated_at), asc(library_concept.id))
+    .limit(options.pageSize).offset(offset) : [];
+  return { isAdmin: reader.isAdmin, counts, total, page, pageSize: options.pageSize,
+    searchMode: options.query ? queryVec ? "hybrid" as const : "keyword" as const : "browse" as const,
+    types: types.map(row => row.type),
+    documents: documents.map(row => ({ ...row, createdAt: row.createdAt.toISOString() })),
+    concepts: concepts.map(({ userId, ...row }) => ({ ...row, updatedAt: row.updatedAt.toISOString(), layer: userId === null ? "team" as const : "personal" as const })),
+  };
+}
+
+/** Detail uses the same visibility as browsing, including admin-only review. */
+export async function readLibraryConcept(reader: LibraryReader, id: string) {
+  const rows = await db().select().from(library_concept).where(and(
+    eq(library_concept.id, id), or(visibleLibraryConcepts(reader), visibleLibraryConcepts(reader, true)),
+  )).limit(1);
+  return rows[0] ? rowToConcept(rows[0]) : null;
+}
+
+export async function editLibraryConcept(reader: LibraryReader, input: {
+  id: string; title: string; description: string; type: string; body: string; updatedAt: string;
+}) {
+  const concept = await readLibraryConcept(reader, input.id);
+  const writable = concept && (concept.userId !== null ? concept.userId === reader.userId : reader.isAdmin);
+  if (!writable) return { status: "not_found" as const };
+  if (concept.updatedAt !== input.updatedAt) return { status: "conflict" as const };
+  const vector = await tryEmbed(embeddingText(input.title, input.description, input.body));
+  const now = new Date(Math.max(Date.now(), Date.parse(concept.updatedAt) + 1));
+  return db().transaction(async tx => {
+    const rows = await tx.update(library_concept).set({
+      title: input.title, description: input.description || null, type: input.type, body: input.body,
+      // A failed refresh must not leave an old embedding describing new text.
+      embedding: vector ? sql`${vector}::vector` : null,
+      verified: concept.userId === null && concept.status === "stable"
+        ? [{ by: `human:${reader.userId ?? "admin"}`, at: now.toISOString() }] : [],
+      updated_at: now,
+    }).where(and(eq(library_concept.org_id, reader.orgId), eq(library_concept.id, input.id),
+      isNull(library_concept.archived_at),
+      // JS dates expose millisecond precision; Postgres defaults can include microseconds.
+      sql`date_trunc('milliseconds', ${library_concept.updated_at}) = ${input.updatedAt}::timestamptz`,
+      concept.userId !== null ? eq(library_concept.user_id, reader.userId!) : isNull(library_concept.user_id),
+    )).returning();
+    if (!rows[0]) return { status: "conflict" as const };
+    await tx.insert(library_event).values({
+      org_id: reader.orgId, concept_id: input.id, user_id: reader.userId, action: "concept_edited",
+      payload: { path: concept.path, previous: { title: concept.title, description: concept.description, type: concept.type, body: concept.body, verified: concept.verified } },
+    });
+    return { status: "saved" as const, concept: rowToConcept(rows[0]), searchIndexed: Boolean(vector) };
+  });
+}
 
 export async function createLibraryDocument(input: {
   orgId: string;
@@ -505,7 +661,8 @@ export async function listLibraryConcepts(input: {
   orgId: string;
   userId: string | null;
   status?: LibraryConceptStatus;
-  limit?: number;
+  /** null is reserved for complete server-side export/materialization. */
+  limit?: number | null;
 }): Promise<LibraryConcept[]> {
   const conditions = [
     eq(library_concept.org_id, input.orgId),
@@ -513,12 +670,12 @@ export async function listLibraryConcepts(input: {
     isNull(library_concept.archived_at),
   ];
   if (input.status) conditions.push(eq(library_concept.status, input.status));
-  const rows = await db()
+  const query = db()
     .select()
     .from(library_concept)
     .where(and(...conditions))
-    .orderBy(desc(library_concept.updated_at))
-    .limit(clampLimit(input.limit ?? 200, 500));
+    .orderBy(desc(library_concept.updated_at), asc(library_concept.id));
+  const rows = await (input.limit === null ? query : query.limit(clampLimit(input.limit ?? 200, 500)));
   return rows.map(rowToConcept);
 }
 

@@ -1213,8 +1213,7 @@ export default function WorkScreen() {
         </ol>
         <div className="work-command-actions">
           <Button
-            size="sm"
-            variant="ghost"
+            variant="secondary"
             className="work-command-action"
             onClick={() => setHistoryOpen(true)}
             aria-expanded={historyOpen}
@@ -1224,7 +1223,6 @@ export default function WorkScreen() {
             <span>History</span>
           </Button>
           <Button
-            size="sm"
             variant="primary"
             className="work-command-action is-primary"
             onClick={() => router.push("/work")}
@@ -1686,7 +1684,7 @@ function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="work-empty">
       <div className="work-empty-statement">
-        <h2>Give OpenNeko a job.</h2>
+        <h2>Give<br />OpenNeko<br />a&nbsp;job.</h2>
         <p>
           Ask for an answer, investigation, file, or recurring workflow.
           OpenNeko shows its work while it runs.

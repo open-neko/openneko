@@ -180,6 +180,11 @@ body {
     padding-left: var(--rail-w);
   }
 
+  /* Scroll locking must not reset the navigation offset to zero. */
+  body[data-scroll-locked]:has(> .app-rail-wrap) {
+    padding-left: var(--rail-w);
+  }
+
   .app-rail-wrap {
     position: fixed;
     inset: 0 auto 0 0;

@@ -144,7 +144,7 @@ export default function CommandDock() {
           <div className="cdock-sheet-grab" aria-hidden="true" />
           <SheetHeader className="cdock-sheet-head">
             <div>
-              <SheetTitle id={`cdock-${openSheet}-title`}>More</SheetTitle>
+              <SheetTitle>More</SheetTitle>
               <SheetDescription>
                 Knowledge, connections, and workspace settings.
               </SheetDescription>

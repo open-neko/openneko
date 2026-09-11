@@ -564,7 +564,7 @@ export function RecordImportPanel({
             {activeRun.status === "running" && (
               <div className="records-import-progress">
                 <div>
-                  <span style={{ width: `${percent}%` }} />
+                  <span style={{ transform: `scaleX(${percent / 100})` }} />
                 </div>
                 <small>
                   {processed.toLocaleString("en")} of{" "}

@@ -5,7 +5,7 @@
   width: min(100%, 1080px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: clamp(16px, 3vw, 26px) clamp(22px, 5vw, 64px) 72px;
+  padding: 28px var(--page-gutter) 72px;
   color: var(--text);
   animation: records-enter 0.28s ease-out both;
 }
@@ -97,7 +97,7 @@
   gap: 16px;
   color: inherit;
   text-decoration: none;
-  transition: background 150ms ease, padding 150ms ease;
+  transition: background 150ms ease;
 }
 
 .apps-overview-row + .apps-overview-row {
@@ -105,7 +105,6 @@
 }
 
 .apps-overview-row:hover {
-  padding-inline: 14px;
   background: var(--neutral-soft);
 }
 
@@ -308,7 +307,6 @@
   border-left: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 97%, var(--bg));
   box-shadow: -12px 0 36px color-mix(in srgb, var(--text) 4%, transparent);
-  transition: width 180ms ease;
 }
 
 .app-chat-sidebar button {
@@ -701,7 +699,7 @@
   align-items: center;
   gap: 14px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card) 96%, var(--bg));
+  background: transparent;
 }
 
 .records-object-title {
@@ -738,37 +736,7 @@
 
 .records-search {
   width: min(280px, 28vw);
-  min-height: 36px;
   margin-left: auto;
-  padding: 0 11px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--neutral-soft);
-  color: var(--text3);
-}
-
-.records-search:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft) 80%, transparent);
-}
-
-.records-search svg {
-  width: 15px;
-  height: 15px;
-  flex: none;
-}
-
-.records-search input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--type-body);
 }
 
 .records-viewbar {
@@ -3119,11 +3087,13 @@
 }
 
 .records-import-progress > div span {
+  width: 100%;
   height: 100%;
   display: block;
   border-radius: inherit;
   background: var(--accent);
-  transition: width 0.2s ease-out;
+  transform-origin: left;
+  transition: transform 0.2s ease-out;
 }
 
 .records-import-progress small {
@@ -3246,7 +3216,7 @@
   .apps-overview-open svg { transition: none; }
   .records-root { animation: none; }
   .records-spin { animation: none; }
-  .app-chat-sidebar { transition: none; }
+  .records-import-progress > div span { transition: none; }
   .app-chat-thinking i { animation: none; }
   .records-switch,
   .records-switch span { transition: none; }
