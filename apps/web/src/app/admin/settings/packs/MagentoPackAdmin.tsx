@@ -505,12 +505,15 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
         description="Install and manage packs for your business."
       />
 
-      <CustomPacksAdmin initialPack={initialCustomPack} connected={connected} />
-
       {loading && !status ? (
         <section className="settings-card"><p className="settings-card-copy">Checking Magento…</p></section>
       ) : installed ? (
-        <div className="flex flex-col gap-4">
+        <>
+        <PackGroup
+          kicker="Installed"
+          title="Installed packs"
+          description="The packs running in this workspace right now."
+        >
           <section className="settings-card">
             <div className="settings-card-head">
               <div>
@@ -551,6 +554,13 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
             </div>
           </section>
 
+        </PackGroup>
+
+        <PackGroup
+          kicker="Configure"
+          title="Settings for installed packs"
+          description="Change access, automations, health, and credentials for what's installed."
+        >
           {management ? (
             <section className="settings-card">
               <div className="settings-card-head">
@@ -781,8 +791,20 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
               <Button type="button" variant="danger" disabled={busy !== null} onClick={() => void runAction("uninstall")}>{busy === "uninstall" ? "Removing…" : "Remove"}</Button>
             </div>
           </section>
-        </div>
-      ) : (
+        </PackGroup>
+        </>
+      ) : null}
+
+      <PackGroup
+        kicker="Add"
+        title="Install a pack"
+        description={
+          installed
+            ? "Add another pack. Upload a custom pack built to the OpenNeko spec."
+            : "Connect the Magento pack, or upload a custom pack built to the OpenNeko spec."
+        }
+      >
+        {!installed && !(loading && !status) ? (
         <form className="settings-card" onSubmit={install}>
           <div className="settings-card-head">
             <div>
@@ -845,8 +867,33 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
             <Button type="submit" disabled={busy !== null || !form.analyticsPassword}>{busy === "install" ? "Connecting and installing…" : "Connect and install"}</Button>
           </div>
         </form>
-      )}
+        ) : null}
+        <CustomPacksAdmin initialPack={initialCustomPack} connected={connected} />
+      </PackGroup>
     </div>
+  );
+}
+
+function PackGroup({
+  kicker,
+  title,
+  description,
+  children,
+}: {
+  kicker: string;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="settings-group">
+      <div className="settings-group-head">
+        <span className="settings-group-kicker">{kicker}</span>
+        <h2 className="settings-group-title">{title}</h2>
+        {description ? <p className="settings-group-copy">{description}</p> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 

@@ -80,7 +80,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
     try {
       const result = await api<{ packs: CatalogPack[] }>("/api/admin/packs");
       setCatalog(result.packs.filter(pack => pack.id !== "magento"));
-    } catch (error) { fail(error); }
+    } catch (error) { fail(error, "The pack list could not be loaded. Try again."); }
   }, [fail]);
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => clearTimeout(timer); }, [refresh]);
   useEffect(() => {

@@ -30,6 +30,46 @@
   line-height: var(--leading-body);
   font-size: var(--type-body);
 }
+
+/* Grouped settings sections: a Level-2 header that separates distinct
+   concerns (e.g. installed packs vs installing one vs pack settings) so a
+   long screen reads as ordered groups, not one flat stack of cards. */
+.settings-group {
+  margin-top: 44px;
+}
+.settings-group:first-of-type {
+  margin-top: 26px;
+}
+.settings-group-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-group-kicker {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.settings-group-title {
+  margin: 0;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text);
+}
+.settings-group-copy {
+  margin: 6px 0 0;
+  max-width: 70ch;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  line-height: var(--leading-body);
+}
 .settings-source {
   color: var(--text3);
   font-size: var(--type-caption);
