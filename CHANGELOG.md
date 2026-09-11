@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.44.0](https://github.com/open-neko/openneko/compare/v2.43.0...v2.44.0) (2026-09-11)
+
+
+### Features
+
+* **packs:** add personal OAuth connections and declarative setup ([5155867](https://github.com/open-neko/openneko/commit/51558670cfe6808c480887eee2f318500387472d))
+* **packs:** personal OAuth connections and declarative pack setup ([50b1bea](https://github.com/open-neko/openneko/commit/50b1bea5d63a03f82a61ef9aff165d3fa0f4c859))
+
 ## [2.43.0](https://github.com/open-neko/openneko/compare/v2.42.0...v2.43.0) (2026-09-11)
 
 
