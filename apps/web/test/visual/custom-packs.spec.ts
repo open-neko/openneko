@@ -11,8 +11,9 @@ test("uploads, reviews, corrects a failed install, and installs through Admin Pa
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/admin/settings/packs");
   await expect(page.getByRole("heading", { name: "Packs", exact: true })).toBeVisible();
-  const section = page.getByRole("region", { name: "Custom packs", exact: true });
+  const section = page.getByRole("region", { name: "Solution packs", exact: true });
   await expect(section.getByText("Loading packs…")).toBeHidden();
+  await page.getByText("Upload a custom pack", { exact: true }).click();
   await page.getByLabel("Pack archive", { exact: true }).setInputFiles({ name: "bad.zip", mimeType: "application/zip", buffer: Buffer.from("invalid ZIP") });
   await section.getByRole("button", { name: "Upload pack", exact: true }).click();
   await expect(section.getByRole("alert")).toBeVisible();
@@ -70,7 +71,7 @@ test("uploads, reviews, corrects a failed install, and installs through Admin Pa
   await expect(section.getByText("Installed", { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByLabel("Service api token", { exact: true })).toHaveValue("");
   await page.reload();
-  await page.getByLabel("Available pack", { exact: true }).selectOption("service-health");
+  await page.getByLabel("Uploaded pack", { exact: true }).selectOption("service-health");
   await expect(section.getByText("Installed", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Service timezone", { exact: true })).toHaveValue("Asia/Kolkata");
   await section.screenshot({ path: testInfo.outputPath("pack-installed-phone.png") });

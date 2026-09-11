@@ -11,7 +11,8 @@
     ".": "./src/index.ts",
     "./manifest": "./src/manifest.ts",
     "./bundle": "./src/bundle.ts",
-    "./planner": "./src/planner.ts"
+    "./planner": "./src/planner.ts",
+    "./oauth-client": "./src/oauth-client.ts"
   },
   "scripts": {
     "test": "vitest run",

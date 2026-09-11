@@ -9,13 +9,13 @@ test("configures a skills-only pack without requesting data sources", async ({ p
     source: "uploaded", bundleHash: "fixture",
     manifest: {
       metadata: { id: "skills-only", name: "Skills only", version: "1.0.0", publisher: "fixture" },
-      inputs: [], secrets: [], artifacts: { skills: ["skills/review"] },
+      inputs: [], secrets: [], oauth: [], artifacts: { skills: ["skills/review"] },
     }, bindingRequirements: [], permissions: { database: "none", apiWrite: "blocked" },
   };
   await page.route("**/api/settings/data-sources", route => { dataRequests++; return route.fulfill({ status: 503, json: { error: "No data service" } }); });
   await page.route(url => url.pathname.startsWith("/api/admin/packs"), async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/admin/packs") return route.fulfill({ json: { packs: [{ id: "skills-only", name: "Skills only", version: "1.0.0", installed }] } });
+    if (path === "/api/admin/packs") return route.fulfill({ json: { packs: [{ source: "uploaded", id: "skills-only", name: "Skills only", version: "1.0.0", installed }] } });
     if (path.endsWith("/inspect")) return route.fulfill({ json: inspection });
     if (path.endsWith("/status")) return route.fulfill({ status: installed ? 200 : 404, json: { status: "installed", version: "1.0.0", configuration: { inputs: {}, sourceBindings: {} } } });
     if (path.endsWith("/review")) {
@@ -31,8 +31,8 @@ test("configures a skills-only pack without requesting data sources", async ({ p
     return route.fulfill({ status: 404, json: {} });
   });
   await page.goto("/admin/settings/packs");
-  const section = page.getByRole("region", { name: "Custom packs", exact: true });
-  await page.getByLabel("Available pack", { exact: true }).selectOption("skills-only");
+  const section = page.getByRole("region", { name: "Solution packs", exact: true });
+  await page.getByLabel("Uploaded pack", { exact: true }).selectOption("skills-only");
   await expect(section.getByRole("heading", { name: "Skills only", exact: true })).toBeVisible();
   await expect(page.getByLabel("Data connection", { exact: true })).toHaveCount(0);
   for (const width of [1280, 390]) {

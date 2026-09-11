@@ -108,9 +108,15 @@ export async function resolveSecrets(
     if (!declared.has(key)) throw new Error(`unknown pack secret ${key}`);
   }
 
+  const personalTokens = new Set(bundle.manifest.oauth.filter(c => c.scope === "user").flatMap(c => [c.accessToken, c.refreshToken]));
   const values: Record<string, string> = {};
   const cleared = new Set<string>();
   for (const secret of bundle.manifest.secrets) {
+    if (personalTokens.has(secret.key)) {
+      if (request.secrets?.[secret.key] || request.secretRefs?.[secret.key]) throw new Error("Personal OAuth tokens must be connected on Integrations");
+      cleared.add(secret.key);
+      continue;
+    }
     const direct = request.secrets?.[secret.key];
     const ref = request.secretRefs?.[secret.key];
     if (direct !== undefined && typeof direct !== "string") {

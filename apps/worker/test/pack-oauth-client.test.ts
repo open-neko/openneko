@@ -17,6 +17,7 @@ const connection: PackOAuthConnection = {
   clientSecret: "workspace.client_secret",
   accessToken: "workspace.access_token",
   refreshToken: "workspace.refresh_token",
+  scope: "deployment",
   scopes: ["openid", "mail.read"],
   authorizationParams: { access_type: "offline", prompt: "consent" },
   accountIdField: "sub",

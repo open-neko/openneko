@@ -7,11 +7,15 @@ metadata:
   publisher: openneko
   category: commerce
 
+management:
+  label: Manage store operations
+  path: /admin/settings/packs/magento/operations
+
 compatibility:
   openneko: ">=2.27.0 <3.0.0"
   graphjin:
     analytics: ">=3.18.42 <4.0.0"
-    operator: ">=3.20.75 <4.0.0"
+    operator: ">=3.20.77 <4.0.0"
   applications:
     - id: magento
       editions: [open-source, adobe-commerce]

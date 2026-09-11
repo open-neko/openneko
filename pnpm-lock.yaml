@@ -37,6 +37,9 @@ importers:
       '@neko/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@neko/packs':
+        specifier: workspace:*
+        version: link:../../packages/packs
       '@neko/records':
         specifier: workspace:*
         version: link:../../packages/records
@@ -88,6 +91,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
     devDependencies:
       '@playwright/test':
         specifier: 1.51.1
@@ -291,6 +297,9 @@ importers:
       '@neko/interaction':
         specifier: workspace:*
         version: link:../interaction
+      '@neko/packs':
+        specifier: workspace:*
+        version: link:../packs
       '@neko/records':
         specifier: workspace:*
         version: link:../records

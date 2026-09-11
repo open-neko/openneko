@@ -1,3 +1,5 @@
+import { packConnectionBindings, personalConnections, type ConnectionBinding } from "@neko/llm/graphjin/pack-user-connections";
+import { registerActionRequestCreatedHook, updateActionRequestPayload } from "@neko/llm/workflows";
 import { pool } from "@neko/db";
 import {
   graphjinQuery,
@@ -14,6 +16,9 @@ type ApiOperation = {
 };
 
 type InstalledAction = {
+  id: string;
+  pack_id: string;
+  config: Record<string, unknown>;
   definition: {
     adapter?: {
       kind?: string;
@@ -57,7 +62,7 @@ function assertSafePayload(value: unknown): void {
 
 async function installedAction(request: ActionRequestRecord): Promise<InstalledAction> {
   const result = await pool().query<InstalledAction>(
-    `select d.definition,
+    `select i.id,i.pack_id,i.config,d.definition,
             d.enabled,
             d.readiness,
             d.readiness_reason as "readinessReason",
@@ -122,10 +127,11 @@ export const declarativePackActionAdapter: ActionAdapter = async ({ request }) =
     response_json?: unknown;
   }>>({
     baseUrl: source.graphqlUrl,
+    connectionBindings: await approvedConnections(request, action),
     headers: {
       authorization: `Bearer ${mintGraphjinToken({
         orgId: request.orgId,
-        userId: request.approvedByUserId ?? request.actorUserId ?? "pack-executor",
+        userId: request.actorUserId,
         role: "pack_api_executor",
         ttlSeconds: 60,
       })}`,
@@ -166,3 +172,24 @@ export const resolveDeclarativePackActionAdapter: ActionAdapterResolver = async 
   );
   return result.rows[0]?.owned ? declarativePackActionAdapter : null;
 };
+
+async function approvedConnections(request: ActionRequestRecord, action: InstalledAction): Promise<ConnectionBinding[] | undefined> {
+  if (!personalConnections(action).length) return undefined;
+  if (!request.actorUserId) throw new Error("A personal pack action requires a requesting user");
+  const saved = request.payload._packConnections;
+  const current = await packConnectionBindings({ orgId: request.orgId, userId: request.actorUserId }, action.id);
+  if (!Array.isArray(saved) || saved.length !== current.length || current.some(binding => !saved.some(value => value && typeof value === "object" && value.installId === binding.installId && value.connectionKey === binding.connectionKey && value.revision === binding.revision))) throw new Error("The account connection changed; request approval again");
+  return current;
+}
+
+export function registerPackConnectionPreflight() {
+  return registerActionRequestCreatedHook(async request => {
+    const owned = await pool().query("select 1 from pack_action_definition where org_id=$1 and kind=$2", [request.orgId, request.kind]);
+    if (!owned.rowCount) return;
+    const action = await installedAction(request);
+    if (action.definition.adapter?.kind !== "graphjin_api_operation" || !personalConnections(action).length) return;
+    if (!request.actorUserId) throw new Error("A personal pack action requires a requesting user");
+    const bindings = await packConnectionBindings({ orgId: request.orgId, userId: request.actorUserId }, action.id);
+    return updateActionRequestPayload({ id: request.id, orgId: request.orgId, payload: { ...request.payload, _packConnections: bindings } });
+  });
+}

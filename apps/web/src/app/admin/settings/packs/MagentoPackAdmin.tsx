@@ -7,13 +7,12 @@ import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
 import { ActionGroup } from "@/components/ui/action-group";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/field";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
-import CustomPacksAdmin from "./CustomPacksAdmin";
 
 type PackStatus = {
   packId: string;
@@ -100,36 +99,6 @@ export type StoreManagement = {
   activity: ActivityItem[];
   handoffOnly: { executePath: false; handoffKinds: string[] };
 };
-
-type FormState = {
-  baseUrl: string;
-  databaseHost: string;
-  databasePort: string;
-  databaseName: string;
-  analyticsUsername: string;
-  analyticsPassword: string;
-  storeCode: string;
-  tablePrefix: string;
-  integrationToken: string;
-};
-
-const initialForm: FormState = {
-  baseUrl: "http://host.docker.internal:8080",
-  databaseHost: "host.docker.internal",
-  databasePort: "3306",
-  databaseName: "magento",
-  analyticsUsername: "magento_analytics",
-  analyticsPassword: "",
-  storeCode: "all",
-  tablePrefix: "",
-  integrationToken: "",
-};
-
-const REPORTING_LOGIN_REQUEST = `Please create a dedicated read-only MariaDB/MySQL login for OpenNeko analytics on our Magento database.
-
-Grant only SELECT and SHOW VIEW on the Magento database. Do not grant INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, ALL PRIVILEGES, or GRANT OPTION.
-
-Please send me the database hostname, port, database name, username, and password, and allow connections from the server running OpenNeko.`;
 
 const CAP_LABELS: Record<string, string> = {
   maxRowsPerChangeset: "Items per change",
@@ -281,15 +250,12 @@ export type MagentoPackAdminFixture = {
   management: StoreManagement;
 };
 
-export default function MagentoPackAdmin({ fixture, initialCustomPack, connected }: { fixture?: MagentoPackAdminFixture; initialCustomPack?: string; connected?: string }) {
+export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdminFixture }) {
   const [status, setStatus] = useState<PackStatus | null>(fixture?.status ?? null);
   const [doctor, setDoctor] = useState<DoctorResult | null>(fixture?.doctor ?? null);
   const [management, setManagement] = useState<StoreManagement | null>(fixture?.management ?? null);
   const [loading, setLoading] = useState(!fixture);
   const [busy, setBusy] = useState<string | null>(null);
-  const [rotateCredentials, setRotateCredentials] = useState(false);
-  const [clearIntegrationToken, setClearIntegrationToken] = useState(false);
-  const [form, setForm] = useState<FormState>(initialForm);
   const [rule, setRule] = useState({
     name: "",
     instruction: "",
@@ -330,53 +296,6 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
     return () => window.clearTimeout(initial);
   }, [fixture, refresh]);
 
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  async function install(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy("install");
-    try {
-      await api<PackStatus>("/api/admin/packs/magento/install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inputs: {
-            "magento.base_url": form.baseUrl,
-            "magento.store_code": form.storeCode || "all",
-            "magento.table_prefix": form.tablePrefix,
-            "database.connectivity_mode": form.databaseHost === "host.docker.internal" ? "host_gateway" : "remote",
-            "database.host": form.databaseHost,
-            "database.port": Number(form.databasePort),
-            "database.name": form.databaseName,
-          },
-          secrets: {
-            "database.analytics_username": form.analyticsUsername,
-            "database.analytics_password": form.analyticsPassword,
-            ...(form.integrationToken ? { "magento.integration_token": form.integrationToken } : {}),
-          },
-        }),
-      });
-      setForm((current) => ({ ...current, analyticsPassword: "", integrationToken: "" }));
-      toast.success("Magento is connected. Metrics are refreshing now.");
-      await refresh(true);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function copyReportingLoginRequest() {
-    try {
-      await navigator.clipboard.writeText(REPORTING_LOGIN_REQUEST);
-      toast.success("Request copied. Send it to your Magento host or database administrator.");
-    } catch {
-      toast.error("Could not copy automatically. Select and copy the request manually.");
-    }
-  }
-
   async function runAction(action: "doctor" | "upgrade" | "uninstall") {
     if (action === "uninstall" && !window.confirm("Remove the Magento pack? Historical metrics and operation records will be kept.")) return;
     setBusy(action);
@@ -393,48 +312,6 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
         toast.success(action === "upgrade" ? "Magento pack updated." : "Magento pack removed safely.");
         await refresh(action === "upgrade");
       }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function saveCredentials(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (form.analyticsPassword && !form.analyticsUsername) {
-      toast.error("Enter the reporting username that belongs to this password.");
-      return;
-    }
-    if (!form.analyticsPassword && !form.integrationToken && !clearIntegrationToken) {
-      toast.error("Enter a new reporting password, an API token, or choose to remove the API token.");
-      return;
-    }
-    setBusy("configure");
-    try {
-      const secrets = {
-        ...(form.analyticsPassword
-          ? {
-              "database.analytics_username": form.analyticsUsername,
-              "database.analytics_password": form.analyticsPassword,
-            }
-          : {}),
-        ...(form.integrationToken
-          ? { "magento.integration_token": form.integrationToken }
-          : clearIntegrationToken
-            ? { "magento.integration_token": "" }
-            : {}),
-      };
-      await api<PackStatus>("/api/admin/packs/magento/configure", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secrets }),
-      });
-      setForm((current) => ({ ...current, analyticsPassword: "", integrationToken: "" }));
-      setRotateCredentials(false);
-      setClearIntegrationToken(false);
-      toast.success("Credentials updated and verified.");
-      await refresh(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -501,8 +378,8 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
         <SectionNav current="admin" />
       </AppHeader>
       <PageHeading
-        title="Packs"
-        description="Install and manage packs for your business."
+        title="Store operations"
+        description="Manage the installed pack’s operational controls."
       />
 
       {loading && !status ? (
@@ -528,7 +405,7 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
             <ActionGroup align="start" className="mt-5">
               <Button type="button" disabled={busy !== null} onClick={() => void runAction("doctor")}>{busy === "doctor" ? "Checking…" : "Check health"}</Button>
               <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void runAction("upgrade")}>{busy === "upgrade" ? "Updating…" : "Update pack"}</Button>
-              <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => setRotateCredentials((value) => !value)}>Change credentials</Button>
+              <ButtonLink href="/admin/settings/packs?pack=magento">Configure pack</ButtonLink>
             </ActionGroup>
           </section>
 
@@ -759,29 +636,6 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
             </section>
           ) : null}
 
-          {rotateCredentials ? (
-            <form className="settings-card" onSubmit={saveCredentials}>
-              <div className="settings-card-head">
-                <div>
-                  <h2 className="settings-card-title">Change credentials</h2>
-                  <p className="settings-card-copy">Only enter credentials you want to change. New values are tested before replacing the saved ones.</p>
-                </div>
-              </div>
-              <CredentialFields form={form} update={update} includeToken required={false} />
-              <Checkbox
-                label="Remove the saved Magento API token"
-                className="mt-4"
-                checked={clearIntegrationToken}
-                disabled={Boolean(form.integrationToken)}
-                onCheckedChange={(checked) => setClearIntegrationToken(checked === true)}
-              />
-              <ActionGroup align="start" className="mt-5">
-                <Button type="submit" disabled={busy !== null}>{busy === "configure" ? "Testing and saving…" : "Save credentials"}</Button>
-                <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => setRotateCredentials(false)}>Cancel</Button>
-              </ActionGroup>
-            </form>
-          ) : null}
-
           <section className="settings-card">
             <div className="settings-card-head">
               <div>
@@ -795,81 +649,7 @@ export default function MagentoPackAdmin({ fixture, initialCustomPack, connected
         </>
       ) : null}
 
-      <PackGroup
-        kicker="Add"
-        title="Install a pack"
-        description={
-          installed
-            ? "Add another pack. Upload a custom pack built to the OpenNeko spec."
-            : "Connect the Magento pack, or upload a custom pack built to the OpenNeko spec."
-        }
-      >
-        {!installed && !(loading && !status) ? (
-        <form className="settings-card" onSubmit={install}>
-          <div className="settings-card-head">
-            <div>
-              <h2 className="settings-card-title">Connect Magento</h2>
-              <p className="settings-card-copy">Use a read-only reporting login. OpenNeko discovers the store settings and installs the complete pack automatically.</p>
-            </div>
-            <div className="settings-source"><strong>About 2 minutes</strong></div>
-          </div>
 
-          <Disclosure title="I do not have a read-only reporting login" className="mt-5 bg-bg2">
-            <p className="text-ui-body-sm leading-[var(--leading-body)] text-text2">Send this request to your Magento hosting provider or database administrator. OpenNeko never needs your Magento administrator password or Adobe Marketplace keys.</p>
-            <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-bg px-3 py-3 text-xs leading-[1.5] text-text2">{REPORTING_LOGIN_REQUEST}</pre>
-            <Button type="button" variant="secondary" className="mt-3" onClick={() => void copyReportingLoginRequest()}>Copy request</Button>
-          </Disclosure>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Magento address"
-              htmlFor="magento-address"
-              hint="The storefront URL as seen from OpenNeko. The default works when Magento is another local Docker or OrbStack stack."
-              className="sm:col-span-2"
-            >
-              <Input id="magento-address" required type="url" value={form.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} />
-            </Field>
-            <Field label="Database address" htmlFor="magento-database-address">
-              <Input id="magento-database-address" required value={form.databaseHost} onChange={(event) => update("databaseHost", event.target.value)} />
-            </Field>
-            <Field label="Database name" htmlFor="magento-database-name">
-              <Input id="magento-database-name" required value={form.databaseName} onChange={(event) => update("databaseName", event.target.value)} />
-            </Field>
-          </div>
-
-          <CredentialFields form={form} update={update} required />
-
-          <Disclosure title="Advanced settings" className="mt-5">
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Database port" htmlFor="magento-database-port">
-                <Input id="magento-database-port" required type="number" min="1" max="65535" value={form.databasePort} onChange={(event) => update("databasePort", event.target.value)} />
-              </Field>
-              <Field label="Store code" htmlFor="magento-store-code">
-                <Input id="magento-store-code" value={form.storeCode} onChange={(event) => update("storeCode", event.target.value)} />
-              </Field>
-              <Field label="Table prefix" htmlFor="magento-table-prefix">
-                <Input id="magento-table-prefix" value={form.tablePrefix} onChange={(event) => update("tablePrefix", event.target.value)} />
-              </Field>
-              <Field
-                label="Magento API token (optional)"
-                htmlFor="magento-api-token"
-                hint="This token is only for specific Magento changes that OpenNeko supports. Each change must be enabled by an administrator and still requires approval."
-              >
-                <Input id="magento-api-token" type="password" autoComplete="off" value={form.integrationToken} onChange={(event) => update("integrationToken", event.target.value)} />
-              </Field>
-            </div>
-          </Disclosure>
-
-          <div className="mt-6 rounded-xl border border-border bg-bg2 px-4 py-3 text-ui-body-sm leading-[1.5] text-text2">
-            OpenNeko starts in view-only mode: it can analyze the store but cannot change Magento data. Any supported change is enabled separately by an administrator and requires approval.
-          </div>
-          <div className="mt-5">
-            <Button type="submit" disabled={busy !== null || !form.analyticsPassword}>{busy === "install" ? "Connecting and installing…" : "Connect and install"}</Button>
-          </div>
-        </form>
-        ) : null}
-        <CustomPacksAdmin initialPack={initialCustomPack} connected={connected} />
-      </PackGroup>
     </div>
   );
 }
@@ -948,42 +728,5 @@ function ActivityList({ items }: { items: ActivityItem[] }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function CredentialFields({
-  form,
-  update,
-  includeToken = false,
-  required,
-}: {
-  form: FormState;
-  update: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
-  includeToken?: boolean;
-  required: boolean;
-}) {
-  return (
-    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-      <Field label="Read-only reporting username" htmlFor="magento-reporting-username">
-        <Input id="magento-reporting-username" required={required} autoComplete="username" value={form.analyticsUsername} onChange={(event) => update("analyticsUsername", event.target.value)} />
-      </Field>
-      <Field
-        label="Read-only reporting password"
-        htmlFor="magento-reporting-password"
-        hint={!required ? "Leave blank to keep the saved reporting login." : undefined}
-      >
-        <Input id="magento-reporting-password" required={required} type="password" autoComplete="new-password" value={form.analyticsPassword} onChange={(event) => update("analyticsPassword", event.target.value)} />
-      </Field>
-      {includeToken ? (
-        <Field
-          label="Magento API token (optional)"
-          htmlFor="magento-replacement-api-token"
-          hint="Leave blank to keep the saved token. A token alone does not allow OpenNeko to change Magento."
-          className="sm:col-span-2"
-        >
-          <Input id="magento-replacement-api-token" type="password" autoComplete="off" value={form.integrationToken} onChange={(event) => update("integrationToken", event.target.value)} />
-        </Field>
-      ) : null}
-    </div>
   );
 }

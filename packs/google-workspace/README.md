@@ -14,20 +14,27 @@ a connector executable.
 1. In Google Cloud, enable the Workspace APIs listed in `pack.yaml`.
 2. Configure the OAuth consent screen.
 3. Create a Web application OAuth client.
-4. Open Admin, Settings, Packs and select Google Workspace.
-5. Copy the redirect URI shown under Google Cloud setup into the OAuth client.
-6. Enter the client ID and client secret, then choose Connect account.
-7. Select the Google account and grant the listed permissions.
-8. Review and install the pack.
+4. Open Admin, Settings, Packs and click Install on Google Workspace. Its configuration then becomes available.
+5. Copy the redirect URI shown under Provider setup into the OAuth client.
+6. Enter the client ID and client secret, then choose Save setup.
+7. Review and apply the configuration to activate the pack.
+8. Each signed-in user opens Integrations, finds My connections, and connects their own Google account.
 
 OpenNeko calculates the redirect URI from `OPENNEKO_PUBLIC_URL`. If that setting
 is absent, it uses the URL that opened the Admin page. This supports custom
 ports and hosted domains without a fixed callback address.
 
-The client secret, access token, and refresh token are encrypted in the pack's
-secret store. OpenNeko refreshes the access token before it expires and updates
-the installed GraphJin sources. Disconnecting blocks those sources. Removing
-the pack deletes its stored credentials.
+The OAuth client secret remains in the deployment secret store. Access and
+refresh tokens are encrypted in separate database rows for each user and pack
+installation. Tokens refresh on use without rewriting the GraphJin configuration.
+Disconnecting removes only that user's credentials and invalidates their pending
+account-bound approvals. Removing the pack deletes its personal credentials.
+
+Version 0.2.0 replaces the old shared-account model. Upgrade explicitly, then
+reconnect each user on Integrations; old shared access tokens are not adopted.
+Personal connections require GraphJin 3.20.77 or later, which includes the
+request-credential bridge for multi-user OAuth (dosco/graphjin PR #638).
+OpenNeko pins GraphJin to 3.20.77, and this pack declares that minimum version.
 
 The upstream Google Workspace CLI skill catalog is used as a task-coverage
 reference. Its CLI commands are not copied into this pack. Each adopted task is
@@ -40,7 +47,7 @@ rules.
 - Read skill for service-specific requests.
 - Cross-application research skill for evidence gathering and handoff to other
   installed packs.
-- Gmail account profile query used as the installation check.
+- Gmail account profile query for account-specific validation.
 - Read workflows for cross-application research and Gmail plus Calendar briefings.
 - Governed Gmail, Calendar, Drive, and Sheets actions. Their write policy installs disabled and an administrator must enable it before use.
 

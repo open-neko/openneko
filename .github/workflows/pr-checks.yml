@@ -149,8 +149,8 @@ jobs:
           --health-retries 10
 
     env:
-      GRAPHJIN_VERSION: "3.20.75"
-      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.20.75
+      GRAPHJIN_VERSION: "3.20.77"
+      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.20.77
       REQUIRE_GRAPHJIN_INTEGRATION: "1"
       OPENNEKO_PG_ENV_OVERRIDE: "1"
       RECORDS_PG_HOST: localhost
@@ -253,7 +253,7 @@ jobs:
 
       - name: Install graphjin CLI
         env:
-          GRAPHJIN_VERSION: "3.20.75"
+          GRAPHJIN_VERSION: "3.20.77"
         run: |
           curl -fsSL -o /tmp/graphjin.tgz \
             "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"

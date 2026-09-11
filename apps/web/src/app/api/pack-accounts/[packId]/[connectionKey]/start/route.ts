@@ -1,3 +1,4 @@
+import { getOrgId } from "@neko/db";
 import { NextRequest, NextResponse } from "next/server";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { newPkceVerifier, newStateToken, pkceChallenge } from "@/lib/integrations";
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pa
   const returnPath = typeof body?.returnTo === "string" && body.returnTo.startsWith("/") && !body.returnTo.startsWith("//")
     ? body.returnTo : "/admin/settings/packs";
   const redirectUri = packOAuthCallbackUri(request, packId, connectionKey);
-  await writePackOAuthState({ packId, connectionKey, state, codeVerifier, returnPath });
+  await writePackOAuthState({ packId, connectionKey, state, codeVerifier, returnPath, userId: actor.userId ?? undefined, orgId: await getOrgId() });
   const result = await requestPackWorker(`/admin/packs/${encodeURIComponent(packId)}/oauth/${encodeURIComponent(connectionKey)}/begin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

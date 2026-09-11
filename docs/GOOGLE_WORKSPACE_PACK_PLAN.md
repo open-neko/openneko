@@ -53,7 +53,7 @@ Google-specific API definitions and skills under `packs/google-workspace/`.
 3. Complete the declarative Google Workspace read pack.
    Add the manifest, OAuth requirements, reviewed scopes, saved queries, read
    workflows and setup instructions. Validate every current operation against
-   GraphJin 3.20.75 and a real Google account. Verify installation, reads, token
+   GraphJin 3.20.77 and a real Google account. Verify installation, reads, token
    refresh, restart and uninstall. Do not claim unsupported services work.
 
 4. Add governed Google REST writes.

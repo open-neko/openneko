@@ -1,3 +1,4 @@
+import { packUserConnectionHeaders } from "./pack-user-connections";
 import {
   CallToolResultSchema,
   ListToolsResultSchema,
@@ -182,7 +183,7 @@ async function graphjinMcpRequest(
   const id = ++requestSequence;
   const response = await fetch(opts.baseUrl, {
     method: "POST",
-    headers: {
+    headers: await packUserConnectionHeaders(opts.baseUrl, {
       accept: "application/json, text/event-stream",
       "content-type": "application/json",
       "MCP-Protocol-Version": GRAPHJIN_MCP_PROTOCOL_VERSION,
@@ -191,7 +192,9 @@ async function graphjinMcpRequest(
         ? { "Mcp-Name": params.name }
         : {}),
       ...(opts.headers ?? {}),
-    },
+    }),
+    redirect: "error",
+    cache: "no-store",
     body: JSON.stringify({
       jsonrpc: "2.0",
       id,

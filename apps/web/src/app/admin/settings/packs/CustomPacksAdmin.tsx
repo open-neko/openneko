@@ -4,29 +4,29 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { toast } from "sonner";
 import { confirmDialog } from "@/components/ConfirmModal";
 import { ActionGroup } from "@/components/ui/action-group";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Disclosure } from "@/components/ui/disclosure";
-import { EmptyState } from "@/components/ui/empty";
 import { Field, Input, NativeSelect } from "@/components/ui/field";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { Badge } from "@/components/ui/badge";
 
 type Value = string | number | boolean;
 type Operation = "install" | "configure" | "upgrade";
-type CatalogPack = { id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null };
+type CatalogPack = { source: "embedded" | "uploaded"; id: string; name: string; version: string; installed: boolean; status: string; lastError: string | null };
 type Source = { id: string; name: string; label: string | null; enabled: boolean; graphqlUrl: string };
-type Configuration = { inputs: Record<string, Value>; dataSourceId?: string; sourceBindings: Record<string, string> };
+type Configuration = { required?: boolean; inputs: Record<string, Value>; dataSourceId?: string; sourceBindings: Record<string, string> };
 type Status = { version: string; status: string; lastError: string | null; installedAt: string | null; configuration?: Configuration };
-type OAuthStatus = { key: string; providerLabel: string; clientId: string | null; connected: boolean; account: { id: string; label: string } | null; scopes: string[]; expiresAt: string | null; callbackUrl: string };
+type OAuthStatus = { configured?: boolean; scope?: "user" | "deployment"; key: string; providerLabel: string; clientId: string | null; connected: boolean; account: { id: string; label: string } | null; scopes: string[]; expiresAt: string | null; callbackUrl: string };
 type Inspection = {
   source: string; bundleHash: string;
   manifest: {
+    management?: { label: string; path: string };
     metadata: { id: string; name: string; version: string; publisher: string };
     inputs: Array<{ key: string; type: string; required?: boolean; default?: Value; description?: string; values?: Value[] }>;
     secrets: Array<{ key: string; purpose: string; required?: boolean }>;
-    oauth: Array<{ key: string; providerLabel: string; clientIdInput: string; clientSecret: string; scopes: string[] }>;
+    oauth: Array<{ experience?: { description: string; setupInstructions?: string; helpUrl?: string }; scope?: "user" | "deployment"; key: string; providerLabel: string; clientIdInput: string; clientSecret: string; scopes: string[] }>;
     artifacts: { graphjin?: unknown };
   };
   bindingRequirements: Array<{ key: string; name: string }>;
@@ -57,6 +57,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
   const [operation, setOperation] = useState<Operation>("install");
   const [inputs, setInputs] = useState<Record<string, Value>>({});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [clearedSecrets, setClearedSecrets] = useState<string[]>([]);
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const [sourceId, setSourceId] = useState("");
   const [oauth, setOauth] = useState<Record<string, OAuthStatus>>({});
@@ -79,7 +80,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
   const refresh = useCallback(async () => {
     try {
       const result = await api<{ packs: CatalogPack[] }>("/api/admin/packs");
-      setCatalog(result.packs.filter(pack => pack.id !== "magento"));
+      setCatalog(result.packs);
     } catch (error) { fail(error, "The pack list could not be loaded. Try again."); }
   }, [fail]);
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => clearTimeout(timer); }, [refresh]);
@@ -93,7 +94,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
   const loadPack = useCallback(async (id: string, mode?: Operation) => {
     const trigger = document.activeElement as HTMLElement | null;
     if (dirty && !await confirmDialog({ title: "Discard pack changes?", description: "The current configuration has not been applied.", confirmLabel: "Discard changes" })) { trigger?.focus(); return; }
-    setBusy("loading"); setError(""); setReview(null); setDetail(null); setDirty(false); setSecrets({}); setOauth({}); setSelected(id);
+    setBusy("loading"); setError(""); setReview(null); setDetail(null); setDirty(false); setSecrets({}); setClearedSecrets([]); setOauth({}); setSelected(id);
     try {
       const path = `/api/admin/packs/${encodeURIComponent(id)}`;
       const response = await fetch(`${path}/status`, { cache: "no-store" });
@@ -137,12 +138,20 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
   async function connectOAuth(connection: Inspection["manifest"]["oauth"][number]) {
     const clientId = String(inputs[connection.clientIdInput] ?? "");
     const clientSecret = secrets[connection.clientSecret] ?? "";
-    if (!clientId || (!clientSecret && !oauth[connection.key]?.connected)) {
+    if (!clientId || (!clientSecret && !oauth[connection.key]?.configured)) {
       setError(`Enter the ${connection.providerLabel} client ID and client secret first.`);
       return;
     }
     setBusy(`oauth-${connection.key}`); setError("");
     try {
+      if (connection.scope === "user") {
+        const result = await api<OAuthStatus>(`/api/pack-accounts/${encodeURIComponent(selected)}/${encodeURIComponent(connection.key)}`, { clientId, clientSecret });
+        setOauth(current => ({ ...current, [connection.key]: { ...current[connection.key], ...result } }));
+        setSecrets(current => ({ ...current, [connection.clientSecret]: "" }));
+        toast.success("Setup saved. Each user can connect on Integrations.");
+        setBusy(null);
+        return;
+      }
       const result = await api<{ authorizationUrl: string }>(
         `/api/pack-accounts/${encodeURIComponent(selected)}/${encodeURIComponent(connection.key)}/start`,
         { clientId, clientSecret, returnTo: `/admin/settings/packs` },
@@ -189,7 +198,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
     event.preventDefault();
     if (!detail) return;
     setBusy("review"); setReview(null); setError("");
-    const request = { operation, version: detail.manifest.metadata.version, inputs: Object.fromEntries(Object.entries(inputs).filter(([, value]) => value !== "")), secrets: Object.fromEntries(Object.entries(secrets).filter(([, value]) => value !== "")), sourceBindings: bindings, ...(sourceId ? { dataSourceId: sourceId } : {}) };
+    const request = { operation, version: detail.manifest.metadata.version, inputs: Object.fromEntries(Object.entries(inputs).filter(([, value]) => value !== "")), secrets: { ...Object.fromEntries(Object.entries(secrets).filter(([, value]) => value !== "")), ...Object.fromEntries(clearedSecrets.map(key => [key, ""])) }, sourceBindings: bindings, ...(sourceId ? { dataSourceId: sourceId } : {}) };
     try {
       const result = await api<Review>(`/api/admin/packs/${selected}/review`, request);
       setReview({ result, request });
@@ -226,23 +235,36 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
     finally { setBusy(null); }
   }
 
-  return <section className="grid gap-4 mb-6" aria-label="Custom packs" aria-busy={busy !== null}>
+  async function installBuiltin(pack: CatalogPack) {
+    setBusy(`install-${pack.id}`); setError("");
+    try {
+      await api<Status>(`/api/admin/packs/${encodeURIComponent(pack.id)}/install`, { version: pack.version, deferConfiguration: true, idempotencyKey: crypto.randomUUID() });
+      toast.success(`${pack.name} installed. Configure its connections when ready.`);
+      await refresh();
+      await loadPack(pack.id);
+    } catch (error) {
+      await loadPack(pack.id);
+      fail(error, "The pack needs configuration before it can be installed. Complete the fields below and try again.");
+    } finally { setBusy(null); }
+  }
+
+  return <section className="grid gap-4 mb-6" aria-label="Solution packs" aria-busy={busy !== null}>
     <Card as="section" className="grid gap-4">
-      <div><h2>Custom packs</h2><p className="text-ui-body-sm text-text2">Upload a pack, review its configuration and changes, then choose when to install it.</p></div>
-      <form onSubmit={upload} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-        <Field label="Pack archive" htmlFor="pack-archive">
-          <Input id="pack-archive" name="archive" ref={fileInput} type="file" accept=".zip,application/zip" aria-describedby="pack-archive-hint" disabled={busy !== null} />
-        </Field>
-        <Button type="submit" variant="primary" disabled={busy !== null}>{busy === "upload" ? "Uploading…" : "Upload pack"}</Button>
-        <p id="pack-archive-hint" className="text-ui-caption text-text3 sm:col-span-2">ZIP format, up to 16 MiB. Uploading does not install the pack.</p>
-      </form>
+      <div><h2>Built-in packs</h2><p className="text-ui-body-sm text-text2">These packs are included with OpenNeko. Install them here, then configure their connections.</p></div>
+      {catalog === null ? (!error && <p role="status">Loading packs…</p>) : <ul className="grid gap-3">{catalog.filter(pack => pack.source === "embedded").map(pack => <li key={pack.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+        <div><h3 className="font-display text-ui-subsection font-bold">{pack.name}</h3><p className="text-ui-caption text-text2">Version {pack.version}</p><Badge variant={pack.installed ? "success" : "muted"}>{pack.installed ? "Installed" : "Available"}</Badge></div>
+        <Button variant={pack.installed ? "secondary" : "primary"} disabled={busy !== null} onClick={() => void (pack.installed ? loadPack(pack.id) : installBuiltin(pack))}>{busy === `install-${pack.id}` ? "Installing…" : pack.installed ? "Manage" : "Install"}</Button>
+      </li>)}</ul>}
+      <Disclosure title="Upload a custom pack">
+        <form onSubmit={upload} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Field label="Pack archive" htmlFor="pack-archive"><Input id="pack-archive" name="archive" ref={fileInput} type="file" accept=".zip,application/zip" aria-describedby="pack-archive-hint" disabled={busy !== null} /></Field>
+          <Button type="submit" variant="secondary" disabled={busy !== null}>{busy === "upload" ? "Uploading…" : "Upload pack"}</Button>
+          <p id="pack-archive-hint" className="text-ui-caption text-text3 sm:col-span-2">ZIP format, up to 16 MiB. Uploading does not install the pack.</p>
+        </form>
+      </Disclosure>
+        {catalog?.some(pack => pack.source === "uploaded") ? <Field label="Uploaded pack" htmlFor="custom-pack"><NativeSelect id="custom-pack" value={selected} disabled={busy !== null} onChange={event => { if (event.target.value) void loadPack(event.target.value); }}><option value="">Choose a pack</option>{catalog.filter(pack => pack.source === "uploaded").map(pack => <option key={pack.id} value={pack.id}>{pack.name} · {pack.version}</option>)}</NativeSelect></Field> : null}
       {error ? <p ref={errorText} tabIndex={-1} role="alert" className="break-words text-ui-body-sm text-danger">{error}</p> : null}
       {error && errorDetail ? <Disclosure title="Error details"><p className="break-words text-ui-body-sm">{errorDetail}</p></Disclosure> : null}
-      {catalog === null ? <p role="status">Loading packs…</p> : catalog.length === 0 ? <EmptyState title="No custom packs yet" body="Choose a pack archive above to review your first pack." className="py-4" /> :
-        <Field label="Available pack" htmlFor="custom-pack"><NativeSelect id="custom-pack" value={selected} disabled={busy !== null} onChange={event => { if (event.target.value) void loadPack(event.target.value); }}>
-          <option value="">Choose a pack</option>
-          {catalog.map(pack => <option key={pack.id} value={pack.id}>{pack.name} · {pack.version}{pack.installed ? " · Installed" : pack.status === "failed" ? " · Install failed" : ""}</option>)}
-        </NativeSelect></Field>}
       {error && !detail ? <Button variant="secondary" onClick={() => { setError(""); void (selected ? loadPack(selected) : refresh()); }} disabled={busy !== null}>Retry loading packs</Button> : null}
       {busy === "loading" ? <p role="status">Loading pack configuration…</p> : null}
     </Card>
@@ -254,10 +276,12 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
       </div>
       {status?.lastError ? <div className="grid gap-2"><p role="alert" className="text-ui-body-sm text-danger">The last installation attempt failed. Use the error details to correct the pack or its configuration, then review it again.</p><Disclosure title="Pack author error details"><p className="break-words text-ui-body-sm">{status.lastError}</p></Disclosure></div> : null}
       {status?.status === "installed" ? <ActionGroup align="start">
+        {!status.configuration?.required && detail.manifest.management && <ButtonLink href={detail.manifest.management.path}>{detail.manifest.management.label}</ButtonLink>}
         <Button variant="secondary" disabled={busy !== null} onClick={() => void loadPack(selected, operation === "upgrade" ? "configure" : "upgrade")}>{operation === "upgrade" ? "Edit installed version" : "Review available update"}</Button>
         <Button ref={removeButton} variant="danger" disabled={busy !== null} onClick={() => void remove()}>{busy === "uninstall" ? "Removing…" : "Remove pack"}</Button>
       </ActionGroup> : null}
-      <form onSubmit={prepare} className="grid gap-4">
+      {detail.source !== "embedded" || status?.status === "installed" ? <form onSubmit={prepare} className="grid gap-4">
+        {status?.configuration?.required && <p className="text-ui-body-sm text-text2">Installed. Complete and apply the configuration below to activate this pack.</p>}
         <fieldset disabled={busy !== null} className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-3 font-display text-ui-subsection font-bold">{operation === "upgrade" ? "Update configuration" : "Pack configuration"}</legend>
           {detail.manifest.artifacts.graphjin ? <Field label="Data connection" htmlFor="pack-source" hint="Choose an enabled connection from Data settings.">
@@ -266,31 +290,32 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
               {sources.map(source => <option key={source.id} value={source.id}>{source.label || source.name || source.id}</option>)}
             </NativeSelect>
           </Field> : null}
-          {detail.manifest.inputs.map(input => input.type === "boolean" ? <Checkbox key={input.key} label={label(input.key)} checked={Boolean(inputs[input.key])} onCheckedChange={checked => { changed(); setInputs({ ...inputs, [input.key]: checked === true }); }} /> :
+          {detail.manifest.inputs.filter(input => status?.status === "installed" || !detail.manifest.oauth.some(connection => connection.scope === "user" && connection.clientIdInput === input.key)).map(input => input.type === "boolean" ? <Checkbox key={input.key} label={label(input.key)} checked={Boolean(inputs[input.key])} onCheckedChange={checked => { changed(); setInputs({ ...inputs, [input.key]: checked === true }); }} /> :
             <Field key={input.key} label={label(input.key)} hint={input.description} htmlFor={`pack-${input.key}`}>
-              {input.type === "enum" ? <NativeSelect id={`pack-${input.key}`} value={String(inputs[input.key] ?? "")} required={input.required} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: input.values?.find(value => String(value) === event.target.value) ?? "" }); }}>
+              {input.type === "enum" ? <NativeSelect id={`pack-${input.key}`} name={input.key} value={String(inputs[input.key] ?? "")} required={input.required} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: input.values?.find(value => String(value) === event.target.value) ?? "" }); }}>
                 <option value="">Choose a value</option>{input.values?.map(value => <option key={String(value)} value={String(value)}>{String(value)}</option>)}
               </NativeSelect> : <Input id={`pack-${input.key}`} name={input.key} type={input.type === "url" ? "url" : input.type === "integer" ? "number" : "text"} step={input.type === "integer" ? 1 : undefined} required={input.required} value={String(inputs[input.key] ?? "")} onChange={event => { changed(); setInputs({ ...inputs, [input.key]: input.type === "integer" && event.target.value !== "" ? Number(event.target.value) : event.target.value }); }} />}
             </Field>)}
           {(detail.bindingRequirements ?? []).map(binding => <Field key={binding.key} label={`${label(binding.name)} source`} htmlFor={`binding-${binding.key}`} hint="Existing read-only source name in this connection."><Input id={`binding-${binding.key}`} required value={bindings[binding.key] ?? ""} onChange={event => { changed(); setBindings({ ...bindings, [binding.key]: event.target.value }); }} /></Field>)}
-          {detail.manifest.secrets.filter(secret => secret.purpose !== "pack_oauth_token").map(secret => <Field key={secret.key} label={label(secret.key)} htmlFor={`secret-${secret.key}`} hint={status?.status === "installed" ? "Leave blank to keep the saved credential." : "Stored securely after installation."}>
-            <Input id={`secret-${secret.key}`} name={secret.key} type="password" autoComplete="new-password" spellCheck={false} required={secret.required !== false && status?.status !== "installed" && !detail.manifest.oauth.some(connection => connection.clientSecret === secret.key && oauth[connection.key]?.connected)} value={secrets[secret.key] ?? ""} onChange={event => { changed(); setSecrets({ ...secrets, [secret.key]: event.target.value }); }} />
+          {detail.manifest.secrets.filter(secret => secret.purpose !== "pack_oauth_token" && (status?.status === "installed" || !detail.manifest.oauth.some(connection => connection.scope === "user" && connection.clientSecret === secret.key))).map(secret => <Field key={secret.key} label={label(secret.key)} htmlFor={`secret-${secret.key}`} hint={status?.status === "installed" ? "Leave blank to keep the saved credential." : "Stored securely after installation."}>
+            <Input id={`secret-${secret.key}`} name={secret.key} type="password" autoComplete="new-password" spellCheck={false} disabled={clearedSecrets.includes(secret.key)} required={secret.required !== false && status?.status !== "installed" && !detail.manifest.oauth.some(connection => connection.clientSecret === secret.key && oauth[connection.key]?.configured)} value={secrets[secret.key] ?? ""} onChange={event => { changed(); setSecrets({ ...secrets, [secret.key]: event.target.value }); }} />
+            {status?.status === "installed" && secret.required === false && !detail.manifest.oauth.some(connection => connection.clientSecret === secret.key) ? <Checkbox label="Remove saved credential" checked={clearedSecrets.includes(secret.key)} onCheckedChange={checked => { changed(); setClearedSecrets(current => checked ? [...current, secret.key] : current.filter(key => key !== secret.key)); }} /> : null}
           </Field>)}
         </fieldset>
-        {detail.manifest.oauth.map(connection => <Card key={connection.key} as="section" className="grid gap-3">
+        {detail.manifest.oauth.filter(connection => connection.scope !== "user" || status?.status === "installed").map(connection => <Card key={connection.key} as="section" className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h3>{connection.providerLabel}</h3><p className="text-ui-body-sm text-text2">{oauth[connection.key]?.account?.label ?? "Connect the account this pack will use."}</p></div>
-            <Badge variant={oauth[connection.key]?.connected ? "success" : "muted"}>{oauth[connection.key]?.connected ? "Connected" : "Not connected"}</Badge>
+            <div><h3>{connection.providerLabel}</h3><p className="text-ui-body-sm text-text2">{connection.scope === "user" ? "Each user connects their own account on Integrations." : oauth[connection.key]?.account?.label ?? "Connect the account this pack will use."}</p></div>
+            <Badge variant={oauth[connection.key]?.connected ? "success" : "muted"}>{connection.scope === "user" ? (oauth[connection.key]?.configured ? "Setup saved" : "Setup required") : oauth[connection.key]?.connected ? "Connected" : "Not connected"}</Badge>
           </div>
           <p className="text-ui-caption text-text2">The account grants {connection.scopes.length} reviewed permissions. Access and refresh tokens are encrypted.</p>
-          {oauth[connection.key]?.callbackUrl ? <Disclosure title="Google Cloud setup"><p className="text-ui-body-sm">Add this authorized redirect URI to the OAuth client:</p><code className="break-all text-ui-caption">{oauth[connection.key].callbackUrl}</code></Disclosure> : null}
+          {oauth[connection.key]?.callbackUrl ? <Disclosure title="Provider setup">{connection.experience?.setupInstructions ? <p className="text-ui-body-sm whitespace-pre-line">{connection.experience.setupInstructions}</p> : null}<p className="text-ui-body-sm">Add this authorized redirect URI to the OAuth client:</p><code className="break-all text-ui-caption">{oauth[connection.key].callbackUrl}</code></Disclosure> : null}
           <ActionGroup align="start">
-            <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void connectOAuth(connection)}>{busy === `oauth-${connection.key}` ? "Connecting…" : oauth[connection.key]?.connected ? "Reconnect account" : "Connect account"}</Button>
-            {oauth[connection.key]?.connected ? <Button type="button" variant="danger" disabled={busy !== null} onClick={() => void disconnectOAuth(connection)}>Disconnect</Button> : null}
+            <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void connectOAuth(connection)}>{busy === `oauth-${connection.key}` ? "Saving…" : connection.scope === "user" ? "Save setup" : oauth[connection.key]?.connected ? "Reconnect account" : "Connect account"}</Button>
+            {connection.scope !== "user" && oauth[connection.key]?.connected ? <Button type="button" variant="danger" disabled={busy !== null} onClick={() => void disconnectOAuth(connection)}>Disconnect</Button> : null}
           </ActionGroup>
         </Card>)}
         <ActionGroup align="start"><Button type="submit" variant={review ? "secondary" : "primary"} disabled={busy !== null}>{busy === "review" ? "Reviewing…" : "Review changes"}</Button></ActionGroup>
-      </form>
+      </form> : <p className="text-ui-body-sm text-text2">Install this built-in pack above to enable its configuration.</p>}
       {review ? <section className="grid gap-3" aria-label="Reviewed changes" aria-live="polite">
         <h3>Review before applying</h3>
         <p className="text-ui-body-sm">{review.result.manifest.metadata.name} · Version {review.result.manifest.metadata.version}. Applying these changes enables the pack&apos;s configured automations and reads.</p>

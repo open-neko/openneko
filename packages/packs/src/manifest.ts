@@ -92,6 +92,12 @@ const oauthConnectionSchema = z
   .object({
     key: slug,
     providerLabel: z.string().min(1),
+    scope: z.enum(["deployment", "user"]).default("deployment"),
+    experience: z.object({
+      description: z.string().min(1).max(500),
+      setupInstructions: z.string().min(1).max(4000).optional(),
+      helpUrl: z.string().url().refine(value => new URL(value).protocol === "https:", "help URL must use HTTPS").optional(),
+    }).strict().optional(),
     authorizationUrl: z.string().url(),
     tokenUrl: z.string().url(),
     userInfoUrl: z.string().url(),
@@ -149,6 +155,7 @@ export const solutionPackManifestSchema = z
     apiVersion: z.literal("openneko.app/v1"),
     kind: z.literal("SolutionPack"),
     metadata: metadataSchema,
+    management: z.object({ label: z.string().min(1), path: z.string().regex(/^\/(?!\/)[a-zA-Z0-9/_-]*$/, "management path must be a local application path") }).strict().optional(),
     compatibility: compatibilitySchema,
     inputs: z.array(inputSchema),
     secrets: z.array(secretSchema),

@@ -39,8 +39,12 @@ test("pack catalog has loading and empty states at desktop and phone widths", as
     await expect(page.getByText("Loading packs…", { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`pack-loading-${width}.png`) });
     release();
-    await expect(page.getByRole("heading", { name: "No custom packs yet" })).toBeVisible();
+    await expect(page.getByText("Upload a custom pack", { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`pack-empty-${width}.png`) });
+    await page.getByText("Upload a custom pack", { exact: true }).click();
+    await expect(page.getByLabel("Pack archive", { exact: true })).toBeVisible();
+    const controlHeight = await page.getByLabel("Pack archive", { exact: true }).evaluate(el => el.getBoundingClientRect().height);
+    expect(controlHeight).toBeGreaterThanOrEqual(width === 390 ? 44 : 40);
     await page.unroute("**/api/admin/packs");
   }
 });
@@ -49,9 +53,9 @@ test("Magento settings use the shared visual language and plain activity copy", 
   page,
 }, testInfo) => {
   const browserErrors = captureBrowserErrors(page);
-  await page.goto("/admin/settings/packs", { waitUntil: "domcontentloaded" });
+  await page.goto("/admin/settings/packs/magento/operations", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByRole("heading", { name: "Packs", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Store operations", exact: true })).toBeVisible();
   await expect(page.getByText(/Version 2\.0\.0 · installed Aug 27, 2026/)).toBeVisible();
   await expect(page.getByText("Prices restored", { exact: true })).toBeVisible();
   await expect(page.getByText("Restored the original prices for 2 products.")).toBeVisible();
@@ -88,27 +92,6 @@ test("Magento settings use the shared visual language and plain activity copy", 
   expect(sharedStyles.headingFont).toContain("Archivo");
   expect(sharedStyles.documentWidth).toBeLessThanOrEqual(sharedStyles.viewportWidth + 1);
 
-  // A shared-component import alone cannot catch mismatched rendered sizes.
-  const formGeometry = await page.evaluate(() => {
-    const input = document.querySelector<HTMLInputElement>("#pack-archive")!;
-    const submit = input.closest("form")!.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    const heading = document.querySelector<HTMLElement>(".page-heading")!;
-    const inputRect = input.getBoundingClientRect();
-    const submitRect = submit.getBoundingClientRect();
-    return {
-      inputHeight: inputRect.height,
-      submitHeight: submitRect.height,
-      topDifference: Math.abs(inputRect.top - submitRect.top),
-      headerBackground: getComputedStyle(heading).backgroundColor,
-      headerShadow: getComputedStyle(heading).boxShadow,
-    };
-  });
-  expect(formGeometry.inputHeight).toBe(40);
-  expect(formGeometry.submitHeight).toBe(40);
-  expect(formGeometry.topDifference).toBeLessThanOrEqual(1);
-  expect(formGeometry.headerBackground).toBe("rgba(0, 0, 0, 0)");
-  expect(formGeometry.headerShadow).toBe("none");
-
   await verifyScreenshot(page, testInfo, "magento-design-system-desktop.png");
 
   await page.getByText("View details", { exact: true }).first().click();
@@ -120,8 +103,8 @@ test("Magento settings use the shared visual language and plain activity copy", 
 test("Magento controls keep phone geometry and do not overflow", async ({ page }, testInfo) => {
   const browserErrors = captureBrowserErrors(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/admin/settings/packs", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Packs", exact: true })).toBeVisible();
+  await page.goto("/admin/settings/packs/magento/operations", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Store operations", exact: true })).toBeVisible();
   await expect(page.getByText(/Version 2\.0\.0 · installed Aug 27, 2026/)).toBeVisible();
   await page.getByText("Edit limits", { exact: true }).first().click();
 
