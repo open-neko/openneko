@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.43.0](https://github.com/open-neko/openneko/compare/v2.42.0...v2.43.0) (2026-09-11)
+
+
+### Features
+
+* **web:** drop decorative kicker on Ask, fix briefing em-dash ([cd69329](https://github.com/open-neko/openneko/commit/cd6932995f2d1053dbb04e8a9c3939b13d6bc41b))
+* **web:** drop decorative section numbers in the workflow inspector ([285dfa6](https://github.com/open-neko/openneko/commit/285dfa6376ff4aa0f51ff14a9c54d6f99d9ffcf0))
+* **web:** drop eyebrow kickers app-wide, open briefing on the read ([67a36d1](https://github.com/open-neko/openneko/commit/67a36d11cdc336c8b07fa27537d7c9affcbc2ab6))
+* **web:** drop the stray Apps page eyebrow ([e5d5c45](https://github.com/open-neko/openneko/commit/e5d5c45e99775a9c5580c9f4e4d5b6e082821eeb))
+* **web:** give the briefing a dark command strip ([ba1031e](https://github.com/open-neko/openneko/commit/ba1031ea97f9e7e09cd6fb58870734dc6179c275))
+* **web:** give the briefing read a lede treatment ([ff2565f](https://github.com/open-neko/openneko/commit/ff2565f3bb6d97b6513af2f560fae4b97ff232f3))
+* **web:** group the packs admin into installed, settings, and install ([85b1e1e](https://github.com/open-neko/openneko/commit/85b1e1ea15c768df17242d4f9a90f8e0241c175a))
+* **web:** let admins view and edit skill files ([03e3695](https://github.com/open-neko/openneko/commit/03e3695efdb2d076064998619dc7be989e112349))
+* **web:** migrate shared UI to shadcn primitives ([07d5807](https://github.com/open-neko/openneko/commit/07d5807e53de5decaebafa0852ba82d0c52de071))
+* **web:** move the briefing composer below the read ([db818cd](https://github.com/open-neko/openneko/commit/db818cd2b943fc69d83050f30c115c507716faa7))
+* **web:** polish hierarchy and add instant search ([ec75112](https://github.com/open-neko/openneko/commit/ec7511250d6db654e32361381fbfd95eaec5d9a7))
+* **web:** rebuild the briefing hours-saved block as a full-width bar ([37a66b5](https://github.com/open-neko/openneko/commit/37a66b5f50112f0853eb28d0451131c1883293cf))
+* **web:** unify list-page headers and search width ([28b5809](https://github.com/open-neko/openneko/commit/28b580996c84c23c502ba52fbae69a5b7c624d84))
+
+
+### Bug Fixes
+
+* **web:** align run history card badges and arrows ([fba352c](https://github.com/open-neko/openneko/commit/fba352c21cbb005a2aabe80b61e79b4e1a760b4d))
+* **web:** clean admin settings copy ([10a974b](https://github.com/open-neko/openneko/commit/10a974b3756494ef929d6c0f90b34b3b5ffd2cb6))
+* **web:** drop the density max-width transition and the memo side-tab ([f4717b5](https://github.com/open-neko/openneko/commit/f4717b516be0688c0d847cb18eba2bea73ba7b86))
+* **web:** meet WCAG AA on status text colors ([17aabd1](https://github.com/open-neko/openneko/commit/17aabd1470a3136cbd447dee22da9c0b794dd706))
+
 ## [2.42.0](https://github.com/open-neko/openneko/compare/v2.41.0...v2.42.0) (2026-09-10)
 
 
