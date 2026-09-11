@@ -656,21 +656,51 @@ section.library-empty [data-ui-empty-state-body] {
 }
 
 .skill-manifest li {
+  border-bottom: 1px solid var(--border);
+}
+
+.skill-file-btn {
+  width: 100%;
   min-height: 42px;
   display: grid;
   grid-template-columns: 26px 15px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 5px 8px 5px 4px;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.skill-manifest li > svg {
+.skill-file-btn:hover {
+  background: var(--hover-wash);
+}
+
+.skill-file-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.skill-file-btn[aria-pressed="true"] {
+  background: var(--card);
+  box-shadow: inset 2.5px 0 0 var(--accent);
+}
+
+.skill-file-btn > svg {
   width: 13px;
   height: 13px;
   color: var(--text3);
 }
 
-.skill-manifest li > span:nth-child(3) {
+.skill-file-btn[aria-pressed="true"] > svg {
+  color: var(--accent);
+}
+
+.skill-file-btn > span:nth-child(3) {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
@@ -681,11 +711,109 @@ section.library-empty [data-ui-empty-state-body] {
   white-space: nowrap;
 }
 
-.skill-manifest li small {
+.skill-file-btn small {
   color: var(--text3);
   font-family: var(--font-mono);
   font-size: var(--type-label);
   font-variant-numeric: tabular-nums;
+}
+
+/* Viewer / editor pane */
+.skill-file-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 920px;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid var(--text);
+}
+
+.skill-file-id {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.skill-file-kicker {
+  flex-basis: 100%;
+  color: var(--text3);
+  font-family: var(--font-display), "Archivo", sans-serif;
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.skill-file-id > strong {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-subsection);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.skill-file-id > small {
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.skill-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-code {
+  max-width: 100%;
+  margin: 0;
+  padding: 18px 20px;
+  overflow-x: auto;
+  background: var(--neutral-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  font-family: var(--font-mono);
+  font-size: var(--type-body-sm);
+  line-height: 1.6;
+  color: var(--text);
+  tab-size: 2;
+}
+
+.skill-code code {
+  font: inherit;
+  white-space: pre;
+}
+
+.skill-editor {
+  width: 100%;
+  min-height: min(60vh, 520px);
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.skill-file-note {
+  padding: 28px 4px;
+  color: var(--text3);
+  font-size: var(--type-body-sm);
+  line-height: 1.55;
+}
+
+.skill-save-error {
+  margin-bottom: 16px;
+  color: var(--danger);
+  font-size: var(--type-body-sm);
+  font-weight: 600;
 }
 
 .skill-instructions {
@@ -1114,11 +1242,11 @@ section.library-empty [data-ui-empty-state-body] {
       ". usage usage";
   }
 
-  .skill-manifest li {
+  .skill-file-btn {
     grid-template-columns: 24px 14px minmax(0, 1fr);
   }
 
-  .skill-manifest li small {
+  .skill-file-btn small {
     grid-column: 3;
     padding-bottom: 8px;
   }

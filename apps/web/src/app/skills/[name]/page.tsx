@@ -2,14 +2,24 @@
 
 import { use as usePromise, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft, FileText, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import PageHeading from "@/components/PageHeading";
 import { Button, buttonClassName } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 function stripFrontmatter(markdown: string): string {
   return markdown.replace(/^---\n[\s\S]*?\n---\n?/, "").trimStart();
 }
+
+type SkillFile = {
+  path: string;
+  bytes: number;
+  binary: boolean;
+  editable: boolean;
+  truncated: boolean;
+  text: string | null;
+};
 
 type SkillDetail = {
   name: string;
@@ -46,7 +56,6 @@ export default function SkillDetailPage({ params }: PageProps) {
   );
 
   const load = useCallback(async () => {
-    setState("loading");
     try {
       const nextSkill = await fetchSkill(name);
       if (!nextSkill) {
@@ -151,39 +160,247 @@ export default function SkillDetailPage({ params }: PageProps) {
         }
       />
 
-      <main className="skill-detail-workspace">
-        <aside className="skill-manifest">
-          <section>
-            <span className="skill-detail-label">Files</span>
-            <ol>
-              {skill.files.map((file, index) => (
-                <li key={file.path}>
+      <SkillWorkspace skill={skill} skillName={name} onReload={load} />
+    </div>
+  );
+}
+
+function SkillWorkspace({
+  skill,
+  skillName,
+  onReload,
+}: {
+  skill: SkillDetail;
+  skillName: string;
+  onReload: () => Promise<void>;
+}) {
+  const defaultPath = skill.files.some((f) => f.path === "SKILL.md")
+    ? "SKILL.md"
+    : (skill.files[0]?.path ?? "SKILL.md");
+  const [selected, setSelected] = useState(defaultPath);
+  const [file, setFile] = useState<SkillFile | null>(null);
+  const [fileState, setFileState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const loadFile = useCallback(
+    async (path: string, signal?: AbortSignal) => {
+      try {
+        const res = await fetch(
+          `/api/work/skills/${encodeURIComponent(skillName)}/file?path=${encodeURIComponent(path)}`,
+          { cache: "no-store", signal },
+        );
+        if (!res.ok) {
+          setFileState("error");
+          return;
+        }
+        const data = (await res.json()) as { file: SkillFile };
+        setFile(data.file);
+        setFileState("ready");
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setFileState("error");
+        }
+      }
+    },
+    [skillName],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const id = window.setTimeout(() => {
+      void loadFile(selected, controller.signal);
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      controller.abort();
+    };
+  }, [selected, loadFile]);
+
+  const selectFile = (path: string) => {
+    if (path === selected) return;
+    setEditing(false);
+    setSaveError(null);
+    setFileState("loading");
+    setSelected(path);
+  };
+
+  const retry = () => {
+    setFileState("loading");
+    void loadFile(selected);
+  };
+
+  const isSkillMd = selected === "SKILL.md";
+  const size = file ? formatBytes(file.bytes) : "";
+
+  const beginEdit = () => {
+    if (!file || file.text === null) return;
+    setDraft(file.text);
+    setSaveError(null);
+    setEditing(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(
+        `/api/work/skills/${encodeURIComponent(skillName)}/file?path=${encodeURIComponent(selected)}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: draft }),
+        },
+      );
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setSaveError(data.error ?? `Save failed (HTTP ${res.status}).`);
+        return;
+      }
+      setEditing(false);
+      await loadFile(selected);
+      if (isSkillMd) await onReload();
+    } catch {
+      setSaveError("Save failed. Check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <main className="skill-detail-workspace">
+      <aside className="skill-manifest">
+        <section>
+          <span className="skill-detail-label">Files</span>
+          <ol>
+            {skill.files.map((f, index) => (
+              <li key={f.path}>
+                <button
+                  type="button"
+                  data-ui-bespoke-reason="Skill file picker selects a file and drives the adjacent viewer"
+                  className="skill-file-btn"
+                  aria-pressed={selected === f.path}
+                  onClick={() => selectFile(f.path)}
+                >
                   <span className="library-index">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <FileText aria-hidden="true" strokeWidth={1.9} />
-                  <span>{file.path}</span>
-                  <small>{formatBytes(file.bytes)}</small>
-                </li>
-              ))}
-            </ol>
-          </section>
-        </aside>
+                  <span>{f.path}</span>
+                  <small>{formatBytes(f.bytes)}</small>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      </aside>
 
-        <article className="skill-instructions">
-          {skill.description ? (
-            <p className="skill-detail-summary">{skill.description}</p>
-          ) : null}
-          <header>
-            <span>Primary instruction</span>
-            <h2>SKILL.md</h2>
-          </header>
-          <div className="library-markdown">
-            <ReactMarkdown>{stripFrontmatter(skill.skillMarkdown)}</ReactMarkdown>
+      <article className="skill-instructions">
+        <div className="skill-file-bar">
+          <div className="skill-file-id">
+            {isSkillMd ? (
+              <span className="skill-file-kicker">Primary instruction</span>
+            ) : null}
+            <strong>{selected}</strong>
+            {file && !editing ? (
+              <small>
+                {size}
+                {file.truncated ? " · truncated" : ""}
+              </small>
+            ) : null}
           </div>
-        </article>
-      </main>
-    </div>
+          <div className="skill-file-actions">
+            {editing ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditing(false)}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => void save()}
+                  disabled={saving}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+              </>
+            ) : file && file.editable ? (
+              <Button size="sm" onClick={beginEdit}>
+                <Pencil aria-hidden="true" strokeWidth={2} size={14} />
+                Edit
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        {saveError ? (
+          <p className="skill-save-error" role="alert">
+            {saveError}
+          </p>
+        ) : null}
+
+        {fileState === "loading" ? (
+          <div className="library-loading" role="status" aria-label="Loading file">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : fileState === "error" ? (
+          <div className="skill-file-note">
+            This file could not be loaded.{" "}
+            <Button variant="ghost" size="sm" onClick={retry}>
+              Retry
+            </Button>
+          </div>
+        ) : editing ? (
+          <Textarea
+            aria-label={`Edit ${selected}`}
+            className="skill-editor font-mono"
+            value={draft}
+            spellCheck={false}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        ) : !file ? null : file.binary ? (
+          <p className="skill-file-note">
+            This is a binary file ({size}). OpenNeko can’t preview or edit it here.
+          </p>
+        ) : isSkillMd ? (
+          <>
+            {skill.description ? (
+              <p className="skill-detail-summary">{skill.description}</p>
+            ) : null}
+            <div className="library-markdown">
+              <ReactMarkdown>{stripFrontmatter(file.text ?? "")}</ReactMarkdown>
+            </div>
+            {file.truncated ? (
+              <p className="skill-file-note">
+                Shown truncated. The full file is larger than the editor limit.
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <pre className="skill-code">
+              <code>{file.text}</code>
+            </pre>
+            {file.truncated ? (
+              <p className="skill-file-note">
+                Shown truncated. The full file is larger than the editor limit.
+              </p>
+            ) : null}
+          </>
+        )}
+      </article>
+    </main>
   );
 }
 
