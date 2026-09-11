@@ -202,7 +202,7 @@ function RunsPageInner() {
           meta={data ? `${visibleRuns.length} shown` : undefined}
         />
 
-        <div className="mb-4 max-w-[520px]">
+        <div className="mb-5 max-w-[520px]">
           <SearchInput
             label="Search run history"
             value={query}
@@ -245,65 +245,69 @@ function RunsPageInner() {
                   className="!min-h-0 w-full !items-stretch !justify-start !whitespace-normal !rounded-2xl px-4 py-3.5 text-left hover:shadow-soft"
                   onClick={() => router.push(`/runs/${run.id}`)}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-text">
-                          {run.workflow.name}
-                        </span>
-                        <span className="font-mono text-ui-caption text-text3">
-                          {run.triggerKind}
-                          {run.chainDepth > 0
-                            ? ` · chain ${run.chainDepth}`
-                            : ""}
-                        </span>
-                        {run.triggerKind === "api" && run.executionMode ? (
-                          <Badge
-                            variant={
-                              run.executionMode === "batch" ? "success" : "muted"
-                            }
-                          >
-                            {run.executionMode}
-                          </Badge>
-                        ) : null}
+                  <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-text">
+                            {run.workflow.name}
+                          </span>
+                          <span className="font-mono text-ui-caption text-text3">
+                            {run.triggerKind}
+                            {run.chainDepth > 0
+                              ? ` · chain ${run.chainDepth}`
+                              : ""}
+                          </span>
+                          {run.triggerKind === "api" && run.executionMode ? (
+                            <Badge
+                              variant={
+                                run.executionMode === "batch"
+                                  ? "success"
+                                  : "muted"
+                              }
+                            >
+                              {run.executionMode}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1.5 mb-0 text-ui-body-sm leading-[1.45] text-text2 line-clamp-2">
+                          {describeRun(run)}
+                        </p>
                       </div>
-                      <p className="mt-1.5 mb-0 text-ui-body-sm leading-[1.45] text-text2 line-clamp-2">
-                        {describeRun(run)}
-                      </p>
+                      <Badge variant={statusVariant(run.status)}>
+                        {statusLabel(run.status)}
+                      </Badge>
                     </div>
-                    <Badge variant={statusVariant(run.status)}>
-                      {statusLabel(run.status)}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5 text-ui-caption text-text3">
-                    <span className="font-mono">
-                      {formatRelative(run.createdAt)}
-                    </span>
-                    <span className="text-text3/70">·</span>
-                    <span className="font-mono">
-                      {formatDuration(run.durationMs)}
-                    </span>
-                    <span className="text-text3/70">·</span>
-                    <span>
-                      {run.outputCount}{" "}
-                      {run.outputCount === 1 ? "finding" : "findings"}
-                    </span>
-                    <span className="text-text3/70">·</span>
-                    <span>
-                      {run.actionCount}{" "}
-                      {run.actionCount === 1 ? "action" : "actions"}
-                    </span>
-                    {run.pendingActionCount > 0 && (
-                      <>
-                        <span className="text-text3/70">·</span>
-                        <span className="text-warn-ink font-semibold">
-                          {run.pendingActionCount} awaiting you
-                        </span>
-                      </>
-                    )}
-                    <span className="ml-auto font-mono text-ui-caption text-text3">
-                      →
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 text-ui-caption text-text3">
+                      <span className="font-mono">
+                        {formatRelative(run.createdAt)}
+                      </span>
+                      <span className="text-text3/70">·</span>
+                      <span className="font-mono">
+                        {formatDuration(run.durationMs)}
+                      </span>
+                      <span className="text-text3/70">·</span>
+                      <span>
+                        {run.outputCount}{" "}
+                        {run.outputCount === 1 ? "finding" : "findings"}
+                      </span>
+                      <span className="text-text3/70">·</span>
+                      <span>
+                        {run.actionCount}{" "}
+                        {run.actionCount === 1 ? "action" : "actions"}
+                      </span>
+                      {run.pendingActionCount > 0 && (
+                        <>
+                          <span className="text-text3/70">·</span>
+                          <span className="text-warn-ink font-semibold">
+                            {run.pendingActionCount} awaiting you
+                          </span>
+                        </>
+                      )}
+                      <span className="ml-auto font-mono text-ui-caption text-text3">
+                        →
+                      </span>
+                    </div>
                   </div>
                 </Button>
               </li>
