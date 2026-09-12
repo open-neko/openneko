@@ -1,3 +1,4 @@
+import { startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { enqueue, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import {
   expireWorkflowApiResults,
@@ -75,7 +76,10 @@ export async function runWorkflowApiDispatcherTick(input: {
         queueAttempt: admission.attempts,
       };
       try {
-        const queueJobId = await deps.enqueue(payload, admission);
+        const queueJobId = await withStartupTrace({ workflowRunId: admission.workflowRunId, runId: admission.workRunId, threadId: admission.threadId }, () => {
+          startupEvent("workflow.admission_wait", { durationMs: Math.max(0, now.getTime() - admission.admittedAt.getTime()) });
+          return startupPhase("workflow.enqueue", () => deps.enqueue(payload, admission));
+        });
         if (!queueJobId) throw new Error("queue_rejected");
         await deps.markEnqueued(admission.id, queueJobId, now);
         dispatched += 1;

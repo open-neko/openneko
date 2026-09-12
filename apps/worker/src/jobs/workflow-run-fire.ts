@@ -1,3 +1,4 @@
+import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import type { WorkflowRunFirePayload } from "@neko/db/jobs";
 import {
   ensureHostConfigProvisioned,
@@ -173,7 +174,7 @@ async function emitRunTelemetry(input: {
   }
   if (input.apiClaim) {
     await persistWorkflowApiTelemetry({
-      admissionId: input.apiClaim.id,
+      admissionId: input.apiClaim!.id,
       workflowRunId: input.prepared.workflowRun.id,
       summary,
     });
@@ -269,7 +270,7 @@ async function runApiBatch(input: {
   });
   const finalText = `Processed ${result.progress.finalRows} batch records into one CSV artifact.`;
   await input.emit({ type: "message", role: "assistant", content: finalText });
-  await finishWorkflowApiAdmission({
+  await startupPhase("workflow.api_finalize", async () => finishWorkflowApiAdmission({
     admissionId: input.claim.id,
     workflowRunId: input.claim.workflowRunId,
     workRunId: input.claim.workRunId,
@@ -282,21 +283,25 @@ async function runApiBatch(input: {
     },
     artifactPath: result.artifactPath,
     progress: result.progress,
-  });
+  }));
   await input.emit({ type: "done", result: { status: "completed" } });
   return { status: "completed", finalText };
 }
 
-export async function runWorkflowRunFire(
+export function runWorkflowRunFire(payload: WorkflowRunFirePayload): Promise<void> {
+  return withStartupTrace({ requestId: payload.apiAdmissionId ?? payload.scheduleFiringId, workflowRunId: payload.workflowRunId }, () => startupPhase("workflow.dispatch", () => runWorkflowRunFireTraced(payload)));
+}
+
+async function runWorkflowRunFireTraced(
   payload: WorkflowRunFirePayload,
 ): Promise<void> {
   const scheduleFiringId = payload.scheduleFiringId;
   if (scheduleFiringId) {
-    const claimed = await claimWorkflowScheduleFiring({
+    const claimed = await startupPhase("workflow.claim_schedule", async () => claimWorkflowScheduleFiring({
       firingId: scheduleFiringId,
       orgId: payload.orgId,
       workflowId: payload.workflowId,
-    });
+    }));
     if (!claimed) {
       console.log(
         `[workflow-run-fire] duplicate delivery ignored firing=${scheduleFiringId}`,
@@ -315,16 +320,16 @@ export async function runWorkflowRunFire(
 
   try {
     if (payload.triggerKind === "api") {
-      apiClaim = await claimApiPayload(payload);
+      apiClaim = await startupPhase("workflow.claim_api", async () => claimApiPayload(payload));
       if (!apiClaim) return;
-      prepared = await loadPreparedWorkflowRun({
+      prepared = await startupPhase("workflow.load_prepared", async () => loadPreparedWorkflowRun({
         orgId: payload.orgId,
         workflowId: payload.workflowId,
-        workflowRunId: apiClaim.workflowRunId,
-      });
+        workflowRunId: apiClaim!.workflowRunId,
+      }));
     } else {
-      await ensureHostConfigProvisioned(payload.orgId);
-      prepared = await prepareWorkflowRun({
+      await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
+      prepared = await startupPhase("workflow.prepare", async () => prepareWorkflowRun({
         orgId: payload.orgId,
         workflowId: payload.workflowId,
         triggerKind: payload.triggerKind,
@@ -334,7 +339,7 @@ export async function runWorkflowRunFire(
         triggeredBySubscriptionId: payload.triggeredBySubscriptionId,
         triggeredByOutputId: payload.triggeredByOutputId,
         triggeredByObservationId: payload.triggeredByObservationId,
-      });
+      }));
     }
 
     if (scheduleFiringId) {
@@ -356,11 +361,11 @@ export async function runWorkflowRunFire(
 
     telemetry = createWorkerHarnessObserver(prepared.workRunId);
     const operationId = `workflow:${prepared.workRunId}`;
-    const queueDurationMs = Math.max(
+    const queueDurationMs = !apiClaim && !Number.isFinite(payload.queuedAt) ? undefined : Math.max(
       0,
       startedAt -
         (apiClaim?.admittedAt.getTime() ??
-          prepared.workflowRun.createdAt.getTime()),
+          (payload.queuedAt ?? startedAt)),
     );
     await observeSafely(telemetry.observer, {
       kind: "run.start",
@@ -373,7 +378,7 @@ export async function runWorkflowRunFire(
         "openneko.workflow_run.id": prepared.workflowRun.id,
         "openneko.trigger.kind": payload.triggerKind,
         ...(apiClaim
-          ? { "openneko.api.execution_mode": apiClaim.mode }
+          ? { "openneko.api.execution_mode": apiClaim!.mode }
           : {}),
       },
       measurements: {
@@ -383,28 +388,31 @@ export async function runWorkflowRunFire(
       },
     });
 
+    await bindStartupRun(prepared.workRunId, telemetry.observer, operationId);
+    startupEvent("workflow.execution", { workflowRunId: prepared.workflowRun.id, triggerKind: payload.triggerKind, queueTimingAvailable: Boolean(apiClaim || payload.queuedAt), queueDurationMs: apiClaim || payload.queuedAt ? queueDurationMs : undefined });
+
     let result: {
       status: "completed" | "failed" | "cancelled" | "needs_input";
       finalText: string;
       error?: string;
     };
     if (apiClaim?.mode === "batch") {
-      result = await runApiBatch({
-        claim: apiClaim,
-        prepared,
-        emit,
-        observer: telemetry.observer,
-      });
+      result = await startupPhase("workflow.batch", async () => runApiBatch({
+        claim: apiClaim!,
+        prepared: prepared!,
+        emit: emit!,
+        observer: telemetry!.observer,
+      }));
     } else {
-      const agentRuntime = await ensureHostConfigProvisioned(payload.orgId);
+      const agentRuntime = await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
       const pluginActions = includeRecordActionDescriptors(
         getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
       );
-      const broker = await ensureAgentBroker();
+      const broker = await startupPhase("broker.ready", async () => ensureAgentBroker());
       const abort = new AbortController();
       const unregister = registerAgentCanceller(() => abort.abort());
       const ceilingGuard = apiClaim
-        ? createApiCeilingGuard({ claim: apiClaim, abort, emit })
+        ? createApiCeilingGuard({ claim: apiClaim!, abort, emit })
         : null;
       const maxRuntimeTimer = apiClaim && ceilingGuard
         ? setTimeout(
@@ -415,7 +423,7 @@ export async function runWorkflowRunFire(
                   "The API run exceeded its runtime ceiling.",
                 ),
               ),
-            apiClaim.limits.maxRuntimeSeconds * 1_000,
+            apiClaim!.limits.maxRuntimeSeconds * 1_000,
           )
         : null;
       maxRuntimeTimer?.unref();
@@ -429,7 +437,7 @@ export async function runWorkflowRunFire(
           {
             prepared,
             userMessage: apiClaim
-              ? apiInputMessage(apiClaim.requestPayload)
+              ? apiInputMessage(apiClaim!.requestPayload)
               : payload.userMessage,
             mode: "headless",
             emit: guardedEmit,
@@ -447,21 +455,21 @@ export async function runWorkflowRunFire(
         unregister();
       }
       if (apiClaim) {
-        await finishWorkflowApiAdmission({
-          admissionId: apiClaim.id,
-          workflowRunId: apiClaim.workflowRunId,
-          workRunId: apiClaim.workRunId,
+        await startupPhase("workflow.api_finalize", async () => finishWorkflowApiAdmission({
+          admissionId: apiClaim!.id,
+          workflowRunId: apiClaim!.workflowRunId,
+          workRunId: apiClaim!.workRunId,
           status: result.status,
           summary: result.finalText.slice(0, 4_000) || null,
           terminalResult: boundedWorkflowApiResult(
             result.finalText,
-            apiClaim.limits.maxResultBytes,
+            apiClaim!.limits.maxResultBytes,
           ),
           error: result.error ?? null,
           errorCode:
             result.status === "completed" ? null : `workflow_${result.status}`,
           progress: { stage: result.status },
-        });
+        }));
       }
     }
 
@@ -516,8 +524,8 @@ export async function runWorkflowRunFire(
         measurements: {
           durationMs: Date.now() - startedAt,
           queueDurationMs: apiClaim
-            ? Math.max(0, startedAt - apiClaim.admittedAt.getTime())
-            : 0,
+            ? Math.max(0, startedAt - apiClaim!.admittedAt.getTime())
+            : Number.isFinite(payload.queuedAt) ? Math.max(0, startedAt - payload.queuedAt!) : undefined,
           coverage: "unavailable",
         },
       });
@@ -529,10 +537,10 @@ export async function runWorkflowRunFire(
         error instanceof WorkflowApiRunCeilingExceeded
           ? error.code
           : "workflow_failed";
-      await finishWorkflowApiAdmission({
-        admissionId: apiClaim.id,
-        workflowRunId: apiClaim.workflowRunId,
-        workRunId: apiClaim.workRunId,
+      await startupPhase("workflow.api_finalize", async () => finishWorkflowApiAdmission({
+        admissionId: apiClaim!.id,
+        workflowRunId: apiClaim!.workflowRunId,
+        workRunId: apiClaim!.workRunId,
         status: "failed",
         error:
           error instanceof Error
@@ -540,7 +548,7 @@ export async function runWorkflowRunFire(
             : "Workflow API execution failed.",
         errorCode: code,
         progress: { stage: "failed" },
-      }).catch((finishError) => {
+      })).catch((finishError) => {
         console.error(
           `[workflow-run-fire] could not finalize API run=${apiClaim?.workflowRunId}: ${finishError instanceof Error ? finishError.message : String(finishError)}`,
         );

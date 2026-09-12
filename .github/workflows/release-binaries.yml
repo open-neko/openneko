@@ -146,6 +146,10 @@ jobs:
         id: tag
         run: echo "value=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve built source commit
+        id: source-commit
+        run: echo "value=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Compute arch-safe platform key (amd64 / arm64)
         id: archkey
         run: echo "value=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}" >> "$GITHUB_OUTPUT"
@@ -166,6 +170,9 @@ jobs:
         with:
           context: .
           file: ${{ matrix.file || './Dockerfile' }}
+          build-args: |
+            OPENNEKO_VERSION=${{ steps.tag.outputs.value }}
+            OPENNEKO_COMMIT=${{ steps.source-commit.outputs.value }}
           target: ${{ matrix.target }}
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/open-neko/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true

@@ -10,8 +10,7 @@ export function adminOnlyJson(): NextResponse {
 /**
  * Admin gate for OpenNeko-native administration routes.
  *
- * getCurrentActor preserves solo/userless mode as admin while SSO is NOT
- * configured. Once SSO sign-in is live (a provider is ready on
+ * Solo resolves its persisted local admin automatically. Once SSO sign-in is live (a provider is ready on
  * /admin/auth/status), a request without a valid session is NOT the solo
  * operator — it's an unauthenticated visitor — and is denied. The proxy
  * exempts the SSO setup surfaces from the session gate precisely so this

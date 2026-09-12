@@ -54,6 +54,7 @@ describeIfDb("getOrgId bootstrap", () => {
         domain text,
         status text not null default 'active',
         setup_complete_at timestamptz,
+        solo_admin_user_id text,
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now()
       )`);

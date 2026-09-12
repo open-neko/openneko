@@ -6,10 +6,11 @@ const mocks = vi.hoisted(() => ({
   selectResults: [] as Row[][],
   inserted: [] as Row[],
   updates: [] as Row[],
+  actorId: "admin-1" as string | null,
 }));
 
 vi.mock("@/lib/admin-auth", () => ({
-  requireAdminActor: async () => ({ userId: "admin-1", role: "admin" }),
+  requireAdminActor: async () => ({ userId: mocks.actorId, role: "admin" }),
   isDenied: () => false,
 }));
 
@@ -26,6 +27,8 @@ vi.mock("@neko/db", () => {
     }),
   });
   return {
+    organization: { solo_admin_user_id: "owner" },
+    isUnclaimedSoloEmail: (email: string) => email.endsWith("@solo.openneko.invalid"),
     app_user: {
       id: "id",
       org_id: "org_id",
@@ -35,6 +38,11 @@ vi.mock("@neko/db", () => {
       $inferInsert: {},
     },
     db: () => ({
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
+        execute: async () => {}, select: chain,
+        update: () => ({ set: (value: Row) => ({ where: async () => { mocks.updates.push(value); } }) }),
+        insert: () => ({ values: async (values: Row) => { mocks.inserted.push(values); } }),
+      }),
       select: chain,
       insert: () => ({
         values: async (values: Row) => {
@@ -84,6 +92,18 @@ describe("POST /api/admin/users", () => {
     mocks.selectResults = [];
     mocks.inserted = [];
     mocks.updates = [];
+    mocks.actorId = "admin-1";
+  });
+
+  it("adds the solo owner's email in place without creating another account", async () => {
+    mocks.selectResults = [[], [{ owner: "admin-1" }], [{ email: "local@solo.openneko.invalid", sub: null }]];
+    const res = await POST(postRequest({ email: "owner@example.com", role: "admin", updateSoloAccount: true }) as never);
+    expect(res.status).toBe(200);
+    expect((await res.json()).user.id).toBe("admin-1");
+    expect(mocks.updates[0]).toMatchObject({ email: "owner@example.com" });
+    expect(mocks.inserted).toEqual([]);
+    mocks.selectResults = [[], [{ owner: "someone-else" }], [{ email: "local@solo.openneko.invalid", sub: null }]];
+    expect((await POST(postRequest({ email: "another@example.com", role: "admin", updateSoloAccount: true }) as never)).status).toBe(409);
   });
 
   it("provisions a user with a lowercased email and no sub", async () => {
@@ -130,6 +150,7 @@ describe("PATCH /api/admin/users/[userId]", () => {
     mocks.selectResults = [];
     mocks.inserted = [];
     mocks.updates = [];
+    mocks.actorId = "admin-1";
   });
 
   it("refuses to demote the last active admin", async () => {

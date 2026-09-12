@@ -1,10 +1,12 @@
+import { withStartupTrace, startupPhase, startupEvent } from "@neko/telemetry/startup";
+import { soloAdminNeedsEmail } from "@neko/db";
 import { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "@neko/llm";
 import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import pg from "pg";
 import type PgBoss from "pg-boss";
 import {
@@ -93,7 +95,7 @@ import {
   type PluginActionSeed,
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
-import { ensureOrgWorkspace, reportDeploymentProfile } from "@neko/llm/work";
+import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile } from "@neko/llm/work";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
 import { setPluginRegistryInstance } from "./plugins/registry-instance.js";
@@ -346,19 +348,20 @@ function makeHandler<P extends ProcessingJobPayload>(
 ) {
   return async (jobs: PgBoss.Job<P>[]) => {
     const results = await Promise.allSettled(
-      jobs.map(async (job) => {
+      jobs.map(job => withStartupTrace({ jobId: job.data.processingJobId, runId: job.data.processingJobId }, () => startupPhase("job.dispatch", async () => {
+        if (Number.isFinite(job.data.queuedAt)) startupEvent("queue.wait", { durationMs: Math.max(0, Date.now() - job.data.queuedAt!), basis: "since_enqueue_including_retries", jobKind: job.name });
         const { processingJobId, orgId } = job.data;
         console.log(
           `[worker] running ${job.name} job=${processingJobId} org=${orgId}`,
         );
-        await markRunning(processingJobId);
+        await startupPhase("job.mark_running", () => markRunning(processingJobId));
         try {
           await fn(processingJobId, orgId, job.data);
-          await markSucceeded(processingJobId);
+          await startupPhase("job.mark_succeeded", () => markSucceeded(processingJobId));
           console.log(`[worker] job ${processingJobId} succeeded`);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          await markFailed(processingJobId, msg);
+          await startupPhase("job.mark_failed", () => markFailed(processingJobId, msg));
           if (e instanceof UpstreamProviderError) {
             console.warn(
               `[worker] job ${processingJobId} upstream provider unavailable; skipping pg-boss retry: ${msg}`,
@@ -371,7 +374,7 @@ function makeHandler<P extends ProcessingJobPayload>(
           if (e instanceof Error && e.stack) console.warn(e.stack);
           throw e;
         }
-      }),
+      }))),
     );
     const firstFailure = results.find((r) => r.status === "rejected");
     if (firstFailure && firstFailure.status === "rejected") {
@@ -493,6 +496,7 @@ const server = createServer(
         pluginRegistry?.getAuthConfiguredEnvKeys() ?? [],
       getAuthDeclaredEnvKeys: () =>
         pluginRegistry?.getAuthDeclaredEnvKeys() ?? [],
+      soloAdminNeedsEmail: async () => soloAdminNeedsEmail(await getOrgId()),
       hasProvisionedAdmin: async () => {
         const [row] = await db()
           .select({ id: app_user.id })
@@ -907,6 +911,26 @@ await seedOpenNekoOpsWorkflow(ADMIN_ORG_ID);
     );
   }
 }
+
+// Web and worker share the agent-home volume. Only this sweep checks revisions;
+// warm turns read the last complete snapshot without waiting on GraphJin.
+let knowledgeRefreshRunning = false;
+const refreshKnowledgeCaches = async () => {
+  if (knowledgeRefreshRunning) return;
+  knowledgeRefreshRunning = true;
+  try {
+    const sources = await db().selectDistinct({ orgId: data_source.org_id })
+      .from(data_source).where(eq(data_source.auth_mode, "jwt"));
+    for (const { orgId } of sources) {
+      const result = await withStartupTrace({ requestId: `knowledge-refresh:${orgId}:${Date.now()}` }, () => startupPhase("knowledge.background_refresh", () => prefetchKnowledgeForOrg(orgId, join(getOrgAgentRoot(orgId), "knowledge"), { refresh: true })));
+      if (!result.ok) console.warn(`[worker] knowledge cache refresh failed for ${orgId}: ${result.error}`);
+    }
+  } catch (error) {
+    console.warn("[worker] knowledge cache sweep failed:", error);
+  } finally { knowledgeRefreshRunning = false; }
+};
+const knowledgeRefreshTimer = setInterval(() => { void refreshKnowledgeCaches(); }, 60_000);
+knowledgeRefreshTimer.unref();
 
 const concurrency = await resolveAgentConcurrency(ADMIN_ORG_ID);
 console.log(
@@ -1646,6 +1670,7 @@ const shutdown = async (signal: string) => {
   clearInterval(libraryCleanupTimer);
   clearInterval(libraryRecoveryTimer);
   clearInterval(packOAuthRefreshTimer);
+  clearInterval(knowledgeRefreshTimer);
   workflowScheduler.stop();
   workflowApiDispatcher.stop();
   channelInbound.stop();

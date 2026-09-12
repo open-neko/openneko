@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { app_user, asc, db, eq } from "@neko/db";
+import { app_user, asc, db, eq, isUnclaimedSoloEmail } from "@neko/db";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 import { getPluginStatus } from "@/lib/auth";
@@ -30,9 +30,10 @@ export default async function AdminUsersPage() {
     getPluginStatus(),
   ]);
 
+  const identitySetup = users.some((user) => user.id === actor.userId && isUnclaimedSoloEmail(user.email));
   const rows: AdminUserRow[] = users.map((user) => ({
     id: user.id,
-    email: user.email,
+    email: isUnclaimedSoloEmail(user.email) ? "Email not set" : user.email,
     name: user.name,
     role: user.role,
     disabled: Boolean(user.disabledAt),
@@ -47,7 +48,7 @@ export default async function AdminUsersPage() {
       subtitle={
         pluginStatus.authProvider
           ? `Multi-user mode via ${pluginStatus.authProvider}.`
-          : "Solo mode: this deployment grants admin access by default."
+          : "Solo mode uses your local admin account."
       }
       back={{ href: "/admin", label: "Admin" }}
       wide
@@ -55,11 +56,11 @@ export default async function AdminUsersPage() {
       <section className="settings-card">
         <div className="settings-card-head">
           <div>
-            <h2 className="settings-card-title">Users</h2>
+            <h2 className="settings-card-title">{identitySetup ? "Your admin email" : "Users"}</h2>
             <p className="settings-card-copy">
-              Provision users before their first sign-in, assign roles, and
-              disable accounts. Providers without automatic provisioning
-              (e.g. magic link) only ever sign in users listed here.
+              {identitySetup
+                ? "Your local account is ready to use. Add your email before enabling SSO; your work stays with this account."
+                : "Provision users before their first sign-in, assign roles, and disable accounts. Providers without automatic provisioning (e.g. magic link) only ever sign in users listed here."}
             </p>
           </div>
           <div className="settings-source">
@@ -67,7 +68,7 @@ export default async function AdminUsersPage() {
           </div>
         </div>
 
-        <UsersClient users={rows} />
+        <UsersClient users={rows} identitySetup={identitySetup} />
       </section>
     </AdminShell>
   );

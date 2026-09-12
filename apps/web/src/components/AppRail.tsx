@@ -338,11 +338,12 @@ export default function AppRail() {
         if (cancelled || !res.ok) return;
         const data = (await res.json()) as {
           user: { id: string; email: string; name: string | null } | null;
+          authEnabled?: boolean;
           role: "admin" | "member" | null;
         };
         if (data.user) {
           setUser({ email: data.user.email, name: data.user.name });
-          setSessionMode(data.role === "member" ? "member" : "admin");
+          setSessionMode(data.authEnabled === false ? "solo" : data.role === "member" ? "member" : "admin");
         } else {
           setSessionMode("solo");
         }
@@ -617,7 +618,7 @@ export default function AppRail() {
                 </span>
               </span>
             </Link>
-            <Button
+            {sessionMode !== "solo" && <Button
               variant="ghost"
               type="button"
               className="app-rail-signout"
@@ -626,7 +627,7 @@ export default function AppRail() {
               title={`Sign out ${user.email}`}
             >
               <LogOut aria-hidden="true" strokeWidth={2} />
-            </Button>
+            </Button>}
           </div>
         ) : null}
       </div>

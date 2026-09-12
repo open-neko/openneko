@@ -10,8 +10,8 @@ type WorkRunRow = NonNullable<Awaited<ReturnType<typeof getWorkRun>>>;
 /**
  * Web Ask history is personal for every human role. Being an admin grants
  * configuration authority, not access to another person's conversation. The
- * solo profile has a null user id, so it can access only its own null-owned
- * local threads. Channel threads never use these web routes.
+ * solo profile has a persisted owner ID; its legacy null-owned web threads
+ * are assigned to that owner during the automatic upgrade. Channel threads never use these web routes.
  */
 export function canAccessWorkThread(
   actor: RunActor,

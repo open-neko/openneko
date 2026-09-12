@@ -1,3 +1,4 @@
+import { bindStartupRun, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import {
   and,
   data_source,
@@ -37,14 +38,18 @@ import {
  *      (slug, title, why, chartHint, role). Creates a metric row with
  *      source='chat', active=false, then writes the snapshot against it.
  */
-export async function runMetricRefresh(jobId: string, orgId: string) {
-  await updateProgress(jobId, "Loading card");
+export function runMetricRefresh(jobId: string, orgId: string) {
+  return withStartupTrace({ runId: jobId, jobId, rootOperationId: `metric:${jobId}` }, () => startupPhase("metric.refresh", () => runMetricRefreshTraced(jobId, orgId)));
+}
 
-  const jobRows = await db()
+async function runMetricRefreshTraced(jobId: string, orgId: string) {
+  await startupPhase("job.progress", async () => updateProgress(jobId, "Loading card"));
+
+  const jobRows = await startupPhase("metric.db_read", async () => db()
     .select({ trigger_payload: processing_job.trigger_payload })
     .from(processing_job)
     .where(and(eq(processing_job.id, jobId), eq(processing_job.org_id, orgId)))
-    .limit(1);
+    .limit(1));
   const payload = jobRows[0]?.trigger_payload as
     | {
         metricId?: string;
@@ -74,7 +79,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
 
   if (payload.metricId) {
     // Path 1: bootstrap card — load from metric table.
-    const cards = await db()
+    const cards = await startupPhase("metric.db_read", async () => db()
       .select({
         id: metric.id,
         role: metric.role,
@@ -87,8 +92,8 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
         definition_hash: metric.definition_hash,
       })
       .from(metric)
-      .where(and(eq(metric.id, payload.metricId), eq(metric.org_id, orgId)))
-      .limit(1);
+      .where(and(eq(metric.id, payload.metricId!), eq(metric.org_id, orgId)))
+      .limit(1));
     const card = cards[0];
     if (!card) throw new Error(`metric ${payload.metricId} not found`);
     metricRowId = card.id;
@@ -115,7 +120,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
     const why = payload.why || payload.question;
     const chartHint = (payload.chartHint ?? "bar") as MetricAgentInput["chartHint"];
 
-    const existingRows = await db()
+    const existingRows = await startupPhase("metric.db_read", async () => db()
       .select({ id: metric.id })
       .from(metric)
       .where(
@@ -125,7 +130,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
           eq(metric.slug, slug),
         ),
       )
-      .limit(1);
+      .limit(1));
     const existingId = existingRows[0]?.id;
 
     if (existingId) {
@@ -136,7 +141,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
       // at the first job's id, and the status route returns payload=null. The
       // last_refresh_status reset moves the card back to "pending" so the
       // dashboard re-skeletons while the new run is in flight.
-      await db()
+      await startupPhase("metric.persist", async () => db()
         .update(metric)
         .set({
           created_by_job: jobId,
@@ -144,9 +149,9 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
           last_refresh_error: null,
           last_refresh_job_id: jobId,
         })
-        .where(eq(metric.id, existingId));
+        .where(eq(metric.id, existingId)));
     } else {
-      const ins = await db()
+      const ins = await startupPhase("metric.persist", async () => db()
         .insert(metric)
         .values({
           org_id: orgId,
@@ -161,7 +166,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
           last_refresh_status: "pending",
           last_refresh_job_id: jobId,
         })
-        .returning({ id: metric.id });
+        .returning({ id: metric.id }));
       const newId = ins[0]?.id;
       if (!newId) throw new Error("failed to insert chat metric row");
       metricRowId = newId;
@@ -194,7 +199,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
     return;
   }
 
-  await updateProgress(jobId, "Running agent");
+  await startupPhase("job.progress", async () => updateProgress(jobId, "Running agent"));
   // Stamp metric.last_refresh_status on BOTH the success and failure paths
   // so the briefing API can render a Retry button without joining
   // processing_job (which only knows the job id, not the metric id). The
@@ -207,6 +212,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
   try {
     let result: MetricAgentResult;
     runTelemetry = createWorkerHarnessObserver(jobId);
+    await bindStartupRun(jobId, runTelemetry.observer, `metric:${jobId}`);
     if (payload.classification) {
       await observeSafely(runTelemetry.observer, {
         kind: "model.request",
@@ -242,15 +248,15 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
         },
       });
     }
-    await ensureHostConfigProvisioned(orgId);
-    result = await runMetricAgent({
+    await startupPhase("config.provision", async () => ensureHostConfigProvisioned(orgId));
+    result = await startupPhase("metric.agent", async () => runMetricAgent({
       ...input,
       jobId,
-      observer: runTelemetry.observer,
+      observer: runTelemetry!.observer,
       observationAttributes: {
         "openneko.job.kind": "metric_refresh",
       },
-    });
+    }));
 
     const validationError = validateResult(result);
     await observeSafely(runTelemetry.observer, {
@@ -265,15 +271,15 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
       throw new Error(`metric agent output invalid: ${validationError}`);
     }
 
-    await updateProgress(jobId, "Saving snapshot");
+    await startupPhase("job.progress", async () => updateProgress(jobId, "Saving snapshot"));
 
-    await db().insert(metric_snapshot).values({
+    await startupPhase("metric.persist", async () => db().insert(metric_snapshot).values({
       metric_id: metricRowId,
       status: result.mood,
       payload: result,
-    });
+    }));
 
-    await db()
+    await startupPhase("metric.persist", async () => db()
       .update(metric)
       .set({
         last_refresh_status: "ok",
@@ -281,7 +287,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
         last_refresh_job_id: jobId,
         updated_at: new Date(),
       })
-      .where(eq(metric.id, metricRowId));
+      .where(eq(metric.id, metricRowId)));
 
     console.log(
       `[metric_refresh] org=${orgId} metric=${input.slug} mood=${result.mood} "${result.headlineMetric}"`,
@@ -298,7 +304,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
       });
     }
     const msg = e instanceof Error ? e.message : String(e);
-    await db()
+    await startupPhase("metric.persist", async () => db()
       .update(metric)
       .set({
         last_refresh_status: "failed",
@@ -306,7 +312,7 @@ export async function runMetricRefresh(jobId: string, orgId: string) {
         last_refresh_job_id: jobId,
         updated_at: new Date(),
       })
-      .where(eq(metric.id, metricRowId));
+      .where(eq(metric.id, metricRowId)));
     throw e;
   } finally {
     if (runTelemetry) {
@@ -366,11 +372,12 @@ async function runDeterministicMetricRefresh(input: {
       "openneko.metric.execution_mode": "saved_query",
     },
   });
+  await bindStartupRun(input.jobId, telemetry.observer, `metric:${input.jobId}`);
   try {
     const definition = parseMetricDefinition(input.definition);
-    await updateProgress(input.jobId, "Running reviewed saved query");
-    const boundSource = await packArtifactSource(input.orgId, "metric", input.metricId);
-    const [fallbackSource] = boundSource ? [] : await db()
+    await startupPhase("job.progress", async () => updateProgress(input.jobId, "Running reviewed saved query"));
+    const boundSource = await startupPhase("metric.source", async () => packArtifactSource(input.orgId, "metric", input.metricId));
+    const [fallbackSource] = boundSource ? [] : await startupPhase("metric.db_read", async () => db()
       .select({
         graphqlUrl: data_source.graphql_url,
         authMode: data_source.auth_mode,
@@ -378,22 +385,22 @@ async function runDeterministicMetricRefresh(input: {
       .from(data_source)
       .where(and(eq(data_source.org_id, input.orgId), eq(data_source.enabled, true)))
       .orderBy(desc(data_source.is_default), data_source.created_at)
-      .limit(1);
+      .limit(1));
     const source = boundSource ?? fallbackSource;
     if (!source?.graphqlUrl) throw new Error("saved-query metric has no enabled GraphJin source");
 
-    const [previous] = await db()
+    const [previous] = await startupPhase("metric.db_read", async () => db()
       .select({ value: metric_snapshot.value })
       .from(metric_snapshot)
       .where(eq(metric_snapshot.metric_id, input.metricId))
       .orderBy(desc(metric_snapshot.captured_at))
-      .limit(1);
+      .limit(1));
     const previousValue = previous?.value === null || previous?.value === undefined
       ? null
       : Number(previous.value);
     const baseline = previousValue !== null && Number.isFinite(previousValue) ? previousValue : null;
     const now = new Date();
-    const response = await graphjinQuery<Record<string, unknown>>({
+    const response = await startupPhase("metric.saved_query", async () => graphjinQuery<Record<string, unknown>>({
       baseUrl: graphjinEndpoint(source.graphqlUrl),
       query: definition.execution.document,
       variables: buildSavedQueryVariables(input.definition, now),
@@ -410,7 +417,7 @@ async function runDeterministicMetricRefresh(input: {
           }
         : {}),
       signal: AbortSignal.timeout(30_000),
-    });
+    }));
     if (response.errors?.length) {
       throw new Error(`saved-query metric failed: ${response.errors.map((error) => error.message).join("; ")}`);
     }
@@ -432,9 +439,9 @@ async function runDeterministicMetricRefresh(input: {
     });
     if (validationError) throw new Error(`saved-query metric output invalid: ${validationError}`);
 
-    await updateProgress(input.jobId, "Saving deterministic snapshot");
+    await startupPhase("job.progress", async () => updateProgress(input.jobId, "Saving deterministic snapshot"));
     const durationMs = Date.now() - startedAt;
-    await db().insert(metric_snapshot).values({
+    await startupPhase("metric.persist", async () => db().insert(metric_snapshot).values({
       metric_id: input.metricId,
       value: mapped.value === null ? null : String(mapped.value),
       value_json: mapped.valueJson,
@@ -446,8 +453,8 @@ async function runDeterministicMetricRefresh(input: {
       source_freshness_at: mapped.sourceFreshnessAt,
       duration_ms: durationMs,
       error_class: null,
-    });
-    await db()
+    }));
+    await startupPhase("metric.persist", async () => db()
       .update(metric)
       .set({
         last_refresh_status: "ok",
@@ -455,14 +462,14 @@ async function runDeterministicMetricRefresh(input: {
         last_refresh_job_id: input.jobId,
         updated_at: new Date(),
       })
-      .where(eq(metric.id, input.metricId));
+      .where(eq(metric.id, input.metricId)));
     console.log(
       `[metric_refresh] org=${input.orgId} metric=${input.slug} mode=saved_query mood=${mapped.result.mood} durationMs=${durationMs}`,
     );
   } catch (error) {
     failure = error;
     const message = error instanceof Error ? error.message : String(error);
-    await db()
+    await startupPhase("metric.persist", async () => db()
       .update(metric)
       .set({
         last_refresh_status: "failed",
@@ -470,7 +477,7 @@ async function runDeterministicMetricRefresh(input: {
         last_refresh_job_id: input.jobId,
         updated_at: new Date(),
       })
-      .where(eq(metric.id, input.metricId));
+      .where(eq(metric.id, input.metricId)));
     await observeSafely(telemetry.observer, {
       kind: "error",
       operationId: `metric:${input.jobId}:saved-query-error`,

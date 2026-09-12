@@ -24,6 +24,7 @@ export type HarnessRunSummary = {
     queueMs?: number;
     firstOutputMs?: number;
   };
+  phases?: Array<{ name: string; durationMs: number; ok: boolean }>;
   io?: {
     inputBytes?: number;
     outputBytes?: number;
@@ -80,6 +81,12 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
 
   emit(observation: HarnessObservation): void {
     const attrs = observation.attributes;
+    const phase = attrs["openneko.stage"];
+    if (observation.kind === "stage.end" && typeof phase === "string" && phase.startsWith("startup.") && observation.measurements?.durationMs !== undefined) {
+      this.value.phases ??= [];
+      if (this.value.phases.length < 128) this.value.phases.push({ name: phase.slice(8), durationMs: observation.measurements.durationMs, ok: observation.status !== "error" });
+    }
+    this.value.durations.queueMs ??= observation.measurements?.queueDurationMs;
     this.value.traceId ??= observation.traceId;
     this.value.backend ??= asString(attrs["openneko.backend"]);
     this.value.provider ??= asString(attrs["gen_ai.provider.name"]);
@@ -198,7 +205,7 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
     if (observation.kind === "run.end") {
       this.value.finishedAt = observation.timestamp;
       this.value.durations.wallMs = observation.measurements?.durationMs;
-      this.value.durations.queueMs = observation.measurements?.queueDurationMs;
+      this.value.durations.queueMs = observation.measurements?.queueDurationMs ?? this.value.durations.queueMs;
       const outcome = asString(attrs["openneko.outcome"]);
       this.value.status =
         outcome === "cancelled"

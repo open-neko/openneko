@@ -1,3 +1,4 @@
+import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { data_source, db, desc, eq } from "@neko/db";
 import { observeSafely, type HarnessObserver } from "@neko/telemetry";
 import {
@@ -110,11 +111,16 @@ export type MetricAgentResult = {
 };
 
 
-export async function runMetricAgent(
+export function runMetricAgent(input: MetricAgentInput): Promise<MetricAgentResult> {
+  return withStartupTrace({ runId: input.jobId ?? input.slug, rootOperationId: `metric:${input.jobId ?? input.slug}`, observer: input.observer }, () => runMetricAgentTraced(input));
+}
+
+async function runMetricAgentTraced(
   input: MetricAgentInput,
 ): Promise<MetricAgentResult> {
+  const observedStartedAt = Date.now();
   const graphjinPath = input.graphjinPath ?? "direct";
-  const sources = await db()
+  const sources = await startupPhase("metric.db_read", async () => db()
     .select({
       graphql_url: data_source.graphql_url,
       mcp_url: data_source.mcp_url,
@@ -122,7 +128,7 @@ export async function runMetricAgent(
     .from(data_source)
     .where(eq(data_source.org_id, input.orgId))
     .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
+    .limit(1));
   const source = sources[0];
   const requiredUrl =
     graphjinPath === "agent" ? source?.graphql_url : source?.mcp_url;
@@ -136,15 +142,15 @@ export async function runMetricAgent(
     `[metric-agent] org=${input.orgId} role=${input.role} slug=${input.slug} graphjinPath=${graphjinPath}`,
   );
 
-  const knowledgeWorkspace = await ensureWorkWorkspace(
+  const knowledgeWorkspace = await startupPhase("workspace.prepare", async () => ensureWorkWorkspace(
     input.orgId,
     "metric-agent",
     input.jobId ?? input.slug,
-  );
-  const refreshResult = await prefetchKnowledgeForOrg(
+  ));
+  const refreshResult = await startupPhase("knowledge.prefetch", async () => prefetchKnowledgeForOrg(
     input.orgId,
     knowledgeWorkspace.knowledgeRoot,
-  );
+  ));
   if (refreshResult.ok) {
     const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
     console.log(
@@ -155,17 +161,16 @@ export async function runMetricAgent(
       `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refresh failed (${refreshResult.error}); proceeding with on-disk pack`,
     );
   }
-  const knowledge = await readKnowledgePack(
+  const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
     knowledgePackPaths(knowledgeWorkspace.knowledgeRoot),
-  );
+  ));
 
-  const backend = await resolveAgentBackend(input.orgId);
+  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(input.orgId));
   const debug = input.debug === true;
-  const isolated = await ensureIsolatedJobWorkspace(
+  const isolated = await startupPhase("workspace.isolate", async () => ensureIsolatedJobWorkspace(
     `metric-${input.jobId ?? input.slug}`,
-  );
+  ));
   const operationId = `metric:${input.jobId ?? input.slug}`;
-  const observedStartedAt = Date.now();
   const observe = async (
     event: Parameters<HarnessObserver["observe"]>[0],
   ): Promise<void> => observeSafely(input.observer, event);
@@ -178,6 +183,7 @@ export async function runMetricAgent(
   const toolCalls: Record<string, number> = {};
   await observe({
     kind: "run.start",
+    timestamp: new Date(observedStartedAt).toISOString(),
     operationId,
     attributes: {
       "openneko.run.kind": "production",
@@ -192,9 +198,9 @@ export async function runMetricAgent(
     // Preload the top-5 global memories so pinned operator rules show up
     // verbatim. Anything narrower (per-card semantic match) is reachable
     // through the sandbox's search-only memory broker capability.
-    const memoryContext = await formatGlobalMemoryPromptContext(input.orgId);
+    const memoryContext = await startupPhase("context.memory", async () => formatGlobalMemoryPromptContext(input.orgId));
     const supportsMemorySearch = backend.capabilities.mcpTools;
-    const sandboxedBackend = await sandboxAgentBackendForJob({
+    const sandboxedBackend = await startupPhase("sandbox.backend", async () => sandboxAgentBackendForJob({
       backend,
       orgId: input.orgId,
       runId: input.jobId ?? input.slug,
@@ -204,7 +210,7 @@ export async function runMetricAgent(
         graphjinAgent: graphjinPath === "agent",
         memorySearch: supportsMemorySearch,
       },
-    });
+    }));
 
     const basePrompt = buildMetricPrompt({
       input,

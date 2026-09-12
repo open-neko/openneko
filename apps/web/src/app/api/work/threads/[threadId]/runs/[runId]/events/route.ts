@@ -1,3 +1,4 @@
+import { startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { NextRequest } from "next/server";
 import type { AgentEvent } from "@neko/llm";
 import { createNotifyClient, type NotifyClient } from "@neko/db";
@@ -36,6 +37,11 @@ function comment(text: string): Uint8Array {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const { threadId, runId } = await context.params;
+  return withStartupTrace({ threadId, runId }, () => startupPhase("sse.subscribe", () => getEvents(request, context)));
+}
+
+async function getEvents(request: NextRequest, context: RouteContext) {
+  const { threadId, runId } = await context.params;
   const url = new URL(request.url);
   const lastEventIdHeader = request.headers.get("last-event-id");
   // Accept both `afterId` (new) and `afterSeq` (legacy) to keep older
@@ -60,6 +66,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const t0 = Date.now();
+      const started = performance.now();
+      let firstEvent = true;
+      let firstOutput = true;
       let closed = false;
       let lastSentId = afterId;
       const sentIds = new Set<number>();
@@ -77,7 +86,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         if (id <= afterId) return;
         if (sentIds.has(id)) return;
         sentIds.add(id);
+        if (closed) return;
         safeEnqueue(frame(event, id));
+        if (firstEvent) { firstEvent = false; startupEvent("sse.first_event", { durationMs: performance.now() - started, afterId }); }
+        if (firstOutput && ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface")) { firstOutput = false; startupEvent("sse.first_output", { durationMs: performance.now() - started, afterId }); }
         if (id > lastSentId) lastSentId = id;
       };
 
@@ -104,7 +116,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       let listenClient: NotifyClient | null = null;
       try {
-        listenClient = await createNotifyClient("work_run_event");
+        listenClient = await startupPhase("sse.listen", () => createNotifyClient("work_run_event"));
         listenClient.on((channel, payload) => {
           if (channel === "work_run_event" && payload === runId) {
             wakeFromNotify();
@@ -124,15 +136,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
         }),
       );
 
+      startupEvent("sse.hello", { durationMs: performance.now() - started, afterId });
+      let firstRead = true;
       let keepaliveTimer = Date.now();
 
       try {
         while (!closed) {
-          const newEvents = await getWorkRunEventsAfter(
-            orgId,
-            runId,
-            lastSentId,
-          );
+          const read = () => getWorkRunEventsAfter(orgId, runId, lastSentId);
+          const newEvents = firstRead ? await startupPhase("sse.initial_db_read", read) : await read();
+          firstRead = false;
           for (const { id, event } of newEvents) {
             sendIfNew(event, id);
           }

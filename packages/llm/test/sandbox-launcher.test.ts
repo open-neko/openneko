@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -14,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import type { RunAgentBackendInput } from "../src/work/agent-core";
 import { GRAPHJIN_DIRECT_GOVERNED_POLICY } from "../src/work/graphjin-tool-policy";
+import { KNOWLEDGE_FILES, refreshKnowledgeSnapshot } from "../src/knowledge-cache";
 import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
 
 /**
@@ -388,6 +390,22 @@ describe("buildSandboxPolicy", () => {
 });
 
 describe("stageSandboxWorkspace", () => {
+  it("materializes one cached snapshot without old files or cache metadata", async () => {
+    const root = await mkdtemp(join(tmpdir(), "knowledge-stage-test-"));
+    try {
+      const workspace = fullWorkspace(join(root, "org"));
+      await refreshKnowledgeSnapshot({ root: workspace.knowledgeRoot, source: "source", mode: "agentic",
+        revision: async () => "r1", build: async dir => {
+          await Promise.all(KNOWLEDGE_FILES.map(file => writeFile(join(dir, file), file === "INDEX.md" ? "index" : '{"current":true}')));
+          return { ok: true, files: [] };
+        },
+      });
+      await writeFile(join(workspace.knowledgeRoot, "tables.json"), '{"obsolete":true}');
+      const staged = await stageSandboxWorkspace(workspace, join(root, "stage"));
+      expect((await readdir(staged.workspace.knowledgeRoot)).sort()).toEqual([...KNOWLEDGE_FILES].sort());
+      expect(await readFile(join(staged.workspace.knowledgeRoot, "tables.json"), "utf8")).toBe('{"current":true}');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   it("exposes only the current run, current thread uploads, knowledge, and skill overrides", async () => {
     const root = await mkdtemp(join(tmpdir(), "sandbox-stage-source-"));
     const stage = await mkdtemp(join(tmpdir(), "sandbox-stage-dest-"));

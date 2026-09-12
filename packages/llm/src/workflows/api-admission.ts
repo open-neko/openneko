@@ -1,3 +1,4 @@
+import { startupPhase } from "@neko/telemetry/startup";
 import { randomUUID } from "node:crypto";
 import {
   mkdir,
@@ -490,10 +491,10 @@ export async function admitWorkflowApiRun(input: {
 }): Promise<WorkflowApiAdmissionResult> {
   const now = input.now ?? new Date();
   const idempotencyKey = validateWorkflowApiIdempotencyKey(input.idempotencyKey);
-  const verified = await verifyWorkflowApiAccessToken(
+  const verified = await startupPhase("workflow.api_authenticate", async () => verifyWorkflowApiAccessToken(
     input.workflowId,
     input.token,
-  );
+  ));
   if (!verified) {
     throw new WorkflowApiError(
       "invalid_credentials",
@@ -517,16 +518,16 @@ export async function admitWorkflowApiRun(input: {
   const admissionId = randomUUID();
   let stagedPath: string | null = null;
   if (input.mode === "batch") {
-    stagedPath = await stageBatchInput({
+    stagedPath = await startupPhase("workflow.api_stage_input", async () => stageBatchInput({
       orgId: verified.orgId,
       workRunId,
       records: initialValidation.records ?? [],
-    });
+    }));
   }
 
   let created = false;
   try {
-    const result = await withSerializableTransaction(async (client) => {
+    const result = await startupPhase("workflow.api_transaction", async () => withSerializableTransaction(async (client) => {
       const access = await lockWorkflowApiAccess(client, input.workflowId);
       const tokenMatches = verifyWorkflowApiTokenDigest(
         input.token,
@@ -729,7 +730,7 @@ export async function admitWorkflowApiRun(input: {
         statusUrl: `/api/v1/workflows/${access.workflow_id}/runs/${workflowRunId}`,
         expiresAt,
       } satisfies WorkflowApiAdmissionResult;
-    });
+    }));
 
     if (created) {
       await recordAuditEvent({

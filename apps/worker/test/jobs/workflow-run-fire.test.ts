@@ -124,7 +124,7 @@ describe("workflow schedule firing consumer", () => {
     expect(mocks.release).not.toHaveBeenCalled();
     expect(mocks.persistRunTelemetry).toHaveBeenCalledWith(
       prepared.workflowRun.id,
-      expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({ status: "completed", phases: expect.arrayContaining([expect.objectContaining({ name: "workflow.prepare", ok: true }), expect.objectContaining({ name: "config.provision", ok: true })]) }),
     );
   });
 

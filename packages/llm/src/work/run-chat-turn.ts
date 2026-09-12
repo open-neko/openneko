@@ -1,3 +1,4 @@
+import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
 import { getGraphjinConfigSettingsForOrg } from "@neko/db";
 import type {
   AgentChatMessage,
@@ -40,6 +41,7 @@ import {
   buildOperatorProfileSection,
   getOperatorProfile,
   getWorkRunActor,
+  getSoloSandboxUser,
 } from "./personas";
 import { buildWorkPrompt } from "./prompt";
 import { compactIfNeeded, type ThreadCompaction } from "./compact-transcript";
@@ -118,7 +120,7 @@ export type RunChatTurnOptions = {
 // Tests can substitute any of these without touching the call site. Production
 // callers pass nothing and get the real implementations.
 export type RunChatTurnDeps = {
-  /** Trusted authorization service hook. Omit to disable assigned sandbox reuse.
+  /** Trusted authorization service hook. Without it, only solo admins reuse sandboxes.
    * Revision must cover sources, packs/plugins, memories and library grants. */
   sandboxAuthorizationRevision?: (input: {
     orgId: string; threadId: string; userId: string; role: string | null;
@@ -228,7 +230,11 @@ export function extractNetworkPolicyDenial(
   };
 }
 
-export async function runChatTurn(
+export function runChatTurn(opts: RunChatTurnOptions, deps: Partial<RunChatTurnDeps> = {}): Promise<RunChatTurnResult> {
+  return withStartupTrace({ runId: opts.runId, threadId: opts.threadId, observer: opts.observer }, () => runChatTurnTraced(opts, deps));
+}
+
+async function runChatTurnTraced(
   opts: RunChatTurnOptions,
   deps: Partial<RunChatTurnDeps> = {},
 ): Promise<RunChatTurnResult> {
@@ -244,9 +250,9 @@ export async function runChatTurn(
     deps.listInstalledSkills ?? defaultListInstalledSkills;
   const runCore = deps.runCore ?? runAgentBackend;
 
-  await markWorkRunRunning(runId);
+  await startupPhase("run.mark_running", () => markWorkRunRunning(runId));
 
-  const bundle = await getWorkThreadBundle(orgId, threadId);
+  const bundle = await startupPhase("run.load_thread", () => getWorkThreadBundle(orgId, threadId));
   if (!bundle) {
     const errMsg = "Thread deleted before run start.";
     await finishWorkRun(runId, "failed", errMsg);
@@ -265,13 +271,13 @@ export async function runChatTurn(
     ? "records"
     : "customer";
 
-  const backend = await resolveAgentBackend(orgId);
-  const workspace = await ensureWorkWorkspace(orgId, threadId, runId);
+  const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
+  const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
 
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
   // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
   if (dataSurface === "customer") {
-    const refresh = await prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot);
+    const refresh = await startupPhase("knowledge.prefetch", () => prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot));
     if (!refresh.ok) {
       console.warn(
         `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
@@ -280,9 +286,10 @@ export async function runChatTurn(
   }
   const knowledge = dataSurface === "records"
     ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
-    : await readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot));
+    : await startupPhase("knowledge.read_pack", () => readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot)));
 
   let assistantText = "";
+  let firstOutputLogged = false;
   let needsInputEvent: Extract<
     AgentEvent,
     { type: "needs_input" }
@@ -320,6 +327,10 @@ export async function runChatTurn(
     toolRecorder.observe(event);
     await eventTelemetry.observeEvent(event);
     await emit(event);
+    if (((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") && !firstOutputLogged) {
+      firstOutputLogged = true;
+      startupEvent("run.first_assistant_output", {});
+    }
     const denial = extractNetworkPolicyDenial(event);
     if (denial) {
       const key = `${denial.host}:${denial.port ?? 443}`;
@@ -353,7 +364,7 @@ export async function runChatTurn(
 
   // K1 actor drives the brokered GraphJin identity, persona (CV3), and
   // memory layer (CV2). GraphJin credentials never enter the agent sandbox.
-  const actor = await getWorkRunActor(runId);
+  const actor = await startupPhase("identity.resolve", () => getWorkRunActor(runId));
 
   try {
     if (dataSurface === "customer" && !backend.capabilities.mcpTools) {
@@ -383,7 +394,7 @@ export async function runChatTurn(
     const supportsPluginManagerTool =
       customerSurface && backend.capabilities.mcpTools;
     const sourceConfigSettings = dataSurface === "customer"
-      ? await getGraphjinConfigSettingsForOrg(orgId)
+      ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
       : { sourceConfigEnabled: false };
     const supportsSourceConfigTool =
       backend.capabilities.mcpTools &&
@@ -403,12 +414,12 @@ export async function runChatTurn(
         bundle.thread.backendState as { compaction?: ThreadCompaction }
       ).compaction;
       retainedCompaction = prior;
-      const compacted = await compactIfNeeded({
+      const compacted = await startupPhase("context.compaction", () => compactIfNeeded({
         messages: bundle.messages,
         prior,
         orgId,
         now: new Date().toISOString(),
-      });
+      }));
       priorSummary = compacted.summary;
       transcriptRows = compacted.kept;
       newCompaction = compacted.newCompaction;
@@ -429,7 +440,7 @@ export async function runChatTurn(
 
     const [memoryContext, installedSkills, profile] = await Promise.all([
       customerSurface
-        ? formatWorkMemoryPromptContext(
+        ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
             {
               orgId,
               threadId,
@@ -439,14 +450,14 @@ export async function runChatTurn(
             // Use the latest user message as the retrieval query so we pull
             // memories semantically close to what the operator just asked.
             { contextQuery: message, contextLimit: 5 },
-          )
+          ))
         : Promise.resolve(""),
-      listInstalledSkills(workspace.skillsRoot).then((skills) =>
+      startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then((skills) =>
         customerSurface
           ? skills
           : skills.filter((skill) => skill.name === "records"),
       ),
-      getOperatorProfile(orgId, actor.userId),
+      startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
     const operatorProfile = buildOperatorProfileSection(profile);
     let pluginCatalog: PluginCatalog | undefined;
@@ -460,9 +471,7 @@ export async function runChatTurn(
       mayNeedCapabilityRecovery
     ) {
       try {
-        pluginCatalog = await (opts.controlPlane ?? inProcessControlPlane).listPlugins({
-          orgId,
-        });
+        pluginCatalog = await startupPhase("context.plugin_catalog", () => (opts.controlPlane ?? inProcessControlPlane).listPlugins({ orgId }));
       } catch (error) {
         console.warn(
           `[work-run] marketplace lookup failed: ${error instanceof Error ? error.message : error}`,
@@ -506,12 +515,15 @@ export async function runChatTurn(
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
     const authorizationRevision = actor.userId && deps.sandboxAuthorizationRevision
-      ? await deps.sandboxAuthorizationRevision({ orgId, threadId, userId: actor.userId, role: actor.role })
+      ? await startupPhase("identity.authorization_revision", () => deps.sandboxAuthorizationRevision!({ orgId, threadId, userId: actor.userId!, role: actor.role }))
       : null;
+    const sandboxUser = deps.sandboxAuthorizationRevision
+      ? actor.userId && authorizationRevision
+        ? { principalId: actor.userId, authorizationRevision }
+        : null
+      : await startupPhase("identity.sandbox", () => getSoloSandboxUser(orgId, actor));
     const result = await runCore({
-      ...(actor.userId && authorizationRevision ? {
-        sandboxUser: { principalId: actor.userId, authorizationRevision },
-      } : {}),
+      ...(sandboxUser ? { sandboxUser } : {}),
       backend,
       prompt,
       userMessage: message,

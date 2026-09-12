@@ -1,3 +1,5 @@
+import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db, eq, workflow_run } from "@neko/db";
 import { ensureHostConfigProvisioned } from "@neko/llm";
@@ -31,22 +33,31 @@ type RouteContext = {
 };
 
 export async function POST(request: NextRequest, context: RouteContext) {
+  return withStartupTrace({ requestId: randomUUID() }, () => startupPhase("workflow.http_submit", async () => {
+    const response = await postWorkflow(request, context);
+    startupEvent("workflow.http_response", { statusCode: response.status });
+    return response;
+  }));
+}
+
+async function postWorkflow(request: NextRequest, context: RouteContext) {
+  const telemetryStartedAt = Date.now();
   const { workflowId } = await context.params;
   const body = await request.json().catch(() => ({}));
   const userMessage =
     typeof body.userMessage === "string" ? body.userMessage.trim() : undefined;
 
   const orgId = await getOrgId();
-  const agentRuntime = await ensureHostConfigProvisioned(orgId);
+  const agentRuntime = await startupPhase("config.provision", async () => ensureHostConfigProvisioned(orgId));
 
   let prepared;
   try {
-    prepared = await prepareWorkflowRun({
+    prepared = await startupPhase("workflow.prepare", async () => prepareWorkflowRun({
       orgId,
       workflowId,
       triggerKind: "manual",
       triggerPayload: { userMessage: userMessage ?? null },
-    });
+    }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 400 });
@@ -69,9 +80,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const runTelemetry = createWebHarnessObserver(prepared.workRunId);
   const telemetryOperationId = `workflow:${prepared.workRunId}`;
-  const telemetryStartedAt = Date.now();
   await observeSafely(runTelemetry.observer, {
     kind: "run.start",
+    timestamp: new Date(telemetryStartedAt).toISOString(),
     operationId: telemetryOperationId,
     attributes: {
       "openneko.run.kind": "production",
@@ -88,11 +99,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     },
   });
 
+  await bindStartupRun(prepared.workRunId, runTelemetry.observer, telemetryOperationId);
+  startupEvent("workflow.link", { workflowRunId: prepared.workflowRun.id, threadId: prepared.threadId });
+
   void (async () => {
     let unregisterBrokerEvents: () => void = () => undefined;
     try {
-      const pluginActions = await getPluginActionDescriptors();
-      const broker = await ensureAgentBroker();
+      const pluginActions = await startupPhase("context.plugin_actions", async () => getPluginActionDescriptors());
+      const broker = await startupPhase("broker.ready", async () => ensureAgentBroker());
       unregisterBrokerEvents = registerAgentBrokerEventSink(
         prepared.workRunId,
         emit,
