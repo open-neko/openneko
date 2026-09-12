@@ -87,3 +87,82 @@ it('keeps assignments private, expires idle slots, and destroys changed/failed s
   expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ reason: "assigned_idle_timeout" }));
   await pool.close();
 });
+it('shares startup preparation with first admission instead of creating a second sandbox', async () => {
+  let finish!: (slot: WarmSlot) => void;
+  const slot = { name: 'prepared', alive: () => true, destroy: vi.fn(async () => {}) };
+  const create = vi.fn(() => new Promise<WarmSlot>(resolve => { finish = resolve; }));
+  const pool = new SandboxPool({ size: 1, idleMs: 1000, create, onError: vi.fn() });
+  const ready = pool.ready();
+  const admission = pool.acquire({ key: 'alice', scope: 'v1' });
+  expect(create).toHaveBeenCalledTimes(1);
+  finish(slot);
+  await ready;
+  const lease = await admission;
+  expect(lease.slot).toBe(slot);
+  expect(create).toHaveBeenCalledTimes(2); // Only now replenish the consumed spare.
+  finish({ ...slot, name: 'replacement' });
+  await lease.release(slot, true);
+  await pool.close();
+});
+it('cancels a waiter without leaking its user assignment or cancelling shared preparation', async () => {
+  let finish!: (slot: WarmSlot) => void;
+  const create = vi.fn(() => new Promise<WarmSlot>(resolve => { finish = resolve; }));
+  const pool = new SandboxPool({ size: 1, idleMs: 1000, create, onError: vi.fn() });
+  const controller = new AbortController();
+  const session = { key: 'alice', scope: 'v1' };
+  const cancelled = pool.acquire(session, controller.signal);
+  controller.abort(new Error('cancelled'));
+  await expect(cancelled).rejects.toThrow('cancelled');
+  const waiting = pool.acquire(session);
+  const slot = { name: 'ready', alive: () => true, destroy: vi.fn(async () => {}) };
+  finish(slot);
+  const lease = await waiting;
+  finish({ ...slot, name: 'spare' });
+  await lease.release(slot, true);
+  const reused = await pool.acquire(session);
+  expect(reused.reused).toBe(true);
+  await reused.release(slot, true);
+  await pool.close();
+});
+it('fails admission on preparation failure and retries without a new request', async () => {
+  vi.useFakeTimers();
+  const slot = { name: 'recovered', alive: () => true, destroy: vi.fn(async () => {}) };
+  const create = vi.fn().mockRejectedValueOnce(new Error('gateway unavailable')).mockResolvedValue(slot);
+  const pool = new SandboxPool({ size: 1, idleMs: 1000, create, onError: vi.fn() });
+  await expect(pool.acquire({ key: 'alice', scope: 'v1' })).rejects.toThrow('gateway unavailable');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(create).toHaveBeenCalledTimes(2);
+  const lease = await pool.acquire({ key: 'alice', scope: 'v1' });
+  await lease.release(slot, true);
+  await pool.close();
+});
+it('destroys a slot that becomes ready during shutdown and rejects the waiting admission', async () => {
+  let finish!: (slot: WarmSlot) => void;
+  const slot = { name: 'late', alive: () => true, destroy: vi.fn(async () => {}) };
+  const pool = new SandboxPool({ size: 1, idleMs: 1000,
+    create: () => new Promise(resolve => { finish = resolve; }), onError: vi.fn() });
+  const admission = pool.acquire({ key: 'alice', scope: 'v1' });
+  const rejected = expect(admission).rejects.toThrow('closed');
+  const closing = pool.close();
+  finish(slot);
+  await closing; await rejected;
+  expect(slot.destroy).toHaveBeenCalledTimes(1);
+  await expect(pool.acquire()).rejects.toThrow('closed');
+});
+it('gives simultaneous waiters distinct slots while sharing pending preparation', async () => {
+  const finishes: Array<(slot: WarmSlot) => void> = [];
+  const create = vi.fn(() => new Promise<WarmSlot>(resolve => finishes.push(resolve)));
+  const pool = new SandboxPool({ size: 1, idleMs: 1000, create, onError: vi.fn() });
+  const alice = pool.acquire({ key: 'alice', scope: 'v1' });
+  const bob = pool.acquire({ key: 'bob', scope: 'v1' });
+  expect(create).toHaveBeenCalledTimes(1);
+  const slot = (name: string) => ({ name, alive: () => true, destroy: vi.fn(async () => {}) });
+  finishes.shift()!(slot('one'));
+  const a = await alice;
+  await vi.waitFor(() => expect(finishes).toHaveLength(1));
+  finishes.shift()!(slot('two'));
+  const b = await bob;
+  expect(a.slot).not.toBe(b.slot);
+  finishes.shift()!(slot('spare'));
+  await a.release(a.slot, true); await b.release(b.slot, true); await pool.close();
+});

@@ -1,5 +1,6 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
 import { createHash, randomUUID } from "node:crypto";
+import { RECONCILE_COMMAND, syncSandboxDirectory } from "./sandbox-sync";
 import { SandboxPool, type WarmSlot } from "./sandbox-pool";
 import { spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -443,7 +444,16 @@ export async function sandboxAgentBackendForJob(opts: {
   };
 }
 
-const warmPools = new Map<string, SandboxPool>();
+// Next instrumentation and route bundles must see the same process-local pool.
+const poolHost = globalThis as typeof globalThis & { __opennekoWarmPools?: Map<string, SandboxPool> };
+const warmPools = poolHost.__opennekoWarmPools ??= new Map<string, SandboxPool>();
+
+export async function prepareSandboxCapacity(opts = sandboxLauncherOptionsFromEnv()): Promise<void> {
+  makeSandboxRunCore(opts);
+  await startupPhase("sandbox.prewarm", async () => {
+    await Promise.all([...warmPools.values()].map(pool => pool.ready()));
+  });
+}
 
 /** Explicit shutdown hook for hosts/tests; sandbox-side idle expiry also survives host loss. */
 export async function closeSandboxPools(): Promise<void> {
@@ -667,7 +677,7 @@ function makeSandboxCore(
       const hermesStage = opts.hermesHomeHostPath
         ? await stageKeylessHermesHome(
             opts.hermesHomeHostPath,
-            path.join(stageRuntimeRoot, "hermes-home"),
+            pool ? path.join(stageDir, "hermes-home") : path.join(stageRuntimeRoot, "hermes-home"),
           )
         : null;
       const policyFile = path.join(stageDir, "policy.json");
@@ -708,14 +718,15 @@ function makeSandboxCore(
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
           ])).digest("hex"),
         } : undefined;
-        lease = await startupPhase("sandbox.acquire", () => pool!.acquire(session));
-        warmSlot = lease.slot ?? await timed("warm_miss", newWarmSlot);
+        lease = await startupPhase("sandbox.acquire", () => pool!.acquire(session, signal));
+        warmSlot = lease.slot;
+        if (!warmSlot) throw new Error("Warm sandbox admission returned no slot");
         name = warmSlot.name;
         sandboxCreated = true;
         if (signal?.aborted) throw abortError();
         await timed("warm_bind", async () => {
-          await run(["sandbox", "exec", "-n", name, "--no-tty", "--",
-            "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "checkout"], 15_000);
+          await timed("warm_checkout", () => run(["sandbox", "exec", "-n", name, "--no-tty", "--",
+            "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "checkout"], 15_000));
           // Replace rather than merge policy. A failed update must never run
           // the agent with the previous turn's permissions.
           if (!lease!.reused) {
@@ -724,13 +735,25 @@ function makeSandboxCore(
             }
             await timed("warm_policy", () => run(["policy", "set", name, "--policy", policyFile, "--wait", "--timeout", "60"], 65_000));
           }
-          await run(["sandbox", "exec", "-n", name, "--no-tty", "--", "sh", "-c",
-            `rm -rf -- ${shellQuote(boxOrgRoot)} /sandbox/.hermes-warm/home; mkdir -p /sandbox/.hermes-warm/home`], 30_000);
-          await run(["sandbox", "upload", name, staged.orgRoot, "/sandbox", "--no-git-ignore"], 120_000);
-          if (hermesStage) {
-            await run(["sandbox", "exec", "-n", name, "--no-tty", "--", "sh", "-c",
-              `cp -R ${shellQuote(path.posix.join(boxWorkspace.runRoot, SANDBOX_RUNTIME_DIR, "hermes-home"))}/. /sandbox/.hermes-warm/home/`], 30_000);
-          }
+          const sync = async (source: string, destination: string, phase: string) => {
+            const result = await timed(`${phase}_sync`, () => syncSandboxDirectory({
+              source, destination, deltaRoot: path.join(stageDir, `delta-${phase}`),
+              reconcile: manifest => timed(`${phase}_reconcile`, () => run([
+                "sandbox", "exec", "-n", name, "--no-tty", "--",
+                "/usr/local/uv/tools/hermes-agent/bin/python", "-c", RECONCILE_COMMAND,
+                destination, manifest,
+              ], 30_000)),
+              upload: directory => timed(`${phase}_upload`, () => run([
+                "sandbox", "upload", name, directory, path.posix.dirname(destination), "--no-git-ignore",
+              ], 120_000)).then(() => {}),
+            }));
+            startupEvent(`sandbox.${phase}_delta`, result);
+          };
+          await sync(staged.orgRoot, boxOrgRoot, "workspace");
+          // Empty desired home also removes any config/cache left by the previous turn.
+          const desiredHome = hermesStage ?? path.join(stageDir, "empty-home");
+          await mkdir(desiredHome, { recursive: true });
+          await sync(desiredHome, sandboxHermesHome, "config");
         });
         log(JSON.stringify({ type: "sandbox_warm", runId: input.runId, sandboxName: name,
           mode: lease.reused ? "user" : lease.slot ? "generic" : "miss" }));
