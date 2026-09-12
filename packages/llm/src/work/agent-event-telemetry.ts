@@ -1,3 +1,4 @@
+import { startupElapsedMs } from "@neko/telemetry/startup";
 import type { HarnessObserver } from "@neko/telemetry";
 import { observeSafely } from "@neko/telemetry";
 import type { AgentEvent } from "../agent-backend";
@@ -56,6 +57,7 @@ export function createAgentEventTelemetry(input: {
       const firstOutputMs = Date.now() - agentStartedAt;
       await observe({
         kind: "model.first_chunk",
+        attributes: { "openneko.timing.basis": "agent_first_output", "openneko.timing.provider_ttft": false },
         operationId: modelOperationId,
         parentOperationId: stageOperationId,
         measurements: { firstOutputMs, coverage: "unavailable" },
@@ -63,7 +65,7 @@ export function createAgentEventTelemetry(input: {
       await observe({
         kind: "run.first_output",
         operationId: input.operationId,
-        measurements: { firstOutputMs, coverage: "unavailable" },
+        measurements: { firstOutputMs: startupElapsedMs() ?? firstOutputMs, coverage: "unavailable" },
       });
     }
     if (event.type === "tool_start") {

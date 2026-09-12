@@ -34,11 +34,11 @@ export interface AdminUserRow {
  * change roles, and disable/enable accounts. The API enforces the
  * last-active-admin guard; errors from it surface inline.
  */
-export function UsersClient({ users }: { users: AdminUserRow[] }) {
+export function UsersClient({ users, identitySetup = false }: { users: AdminUserRow[]; identitySetup?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"member" | "admin">("member");
+  const [role, setRole] = useState<"member" | "admin">(identitySetup ? "admin" : "member");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -83,6 +83,7 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         email,
         name: name.trim().length > 0 ? name : undefined,
         role,
+        ...(identitySetup ? { updateSoloAccount: true } : {}),
       }),
     });
     if (ok) {
@@ -116,15 +117,16 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         </div>
       ) : null}
 
-      <div className="mb-4 max-w-[520px]">
+      {!identitySetup && <div className="mb-4 max-w-[520px]">
         <SearchInput
           label="Search users"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search users by name, email, role, or status"
         />
-      </div>
+      </div>}
 
+      {identitySetup && <p className="mb-4 text-sm text-text2">Use the email you will sign in with if you enable SSO later.</p>}
       <form
         onSubmit={createUser}
         className="mb-6 grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1fr)_minmax(130px,0.6fr)_auto] items-end gap-3 max-[820px]:grid-cols-2 max-[520px]:grid-cols-1"
@@ -132,6 +134,9 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         <Field label="Email" htmlFor="new-user-email">
           <Input
             id="new-user-email"
+            name="email"
+            autoComplete="email"
+            spellCheck={false}
             type="email"
             required
             value={email}
@@ -142,6 +147,8 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         <Field label="Name (optional)" htmlFor="new-user-name">
           <Input
             id="new-user-name"
+            name="name"
+            autoComplete="name"
             type="text"
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -151,6 +158,7 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         <Field label="Role" htmlFor="new-user-role">
           <NativeSelect
             id="new-user-role"
+            disabled={identitySetup}
             value={role}
             onChange={(event) =>
               setRole(event.target.value === "admin" ? "admin" : "member")
@@ -161,7 +169,7 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
           </NativeSelect>
         </Field>
         <Button type="submit" variant="primary" disabled={busy === "create"}>
-          {busy === "create" ? "Adding…" : "Add user"}
+          {busy === "create" ? "Saving…" : identitySetup ? "Save email" : "Add user"}
         </Button>
       </form>
 
@@ -169,7 +177,7 @@ export function UsersClient({ users }: { users: AdminUserRow[] }) {
         <p className="text-sm text-text2">
           {query
             ? "No users match this search."
-            : "No users yet. Add one above to allow them to sign in."}
+            : identitySetup ? "Your account already exists. Adding an email is optional until you enable SSO." : "No users yet. Add one above to allow them to sign in."}
         </p>
       ) : (
         <div className="overflow-x-auto">

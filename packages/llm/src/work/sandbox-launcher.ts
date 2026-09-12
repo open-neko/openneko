@@ -1,3 +1,4 @@
+import { startupEvent, startupPhase } from "@neko/telemetry/startup";
 import { createHash, randomUUID } from "node:crypto";
 import { SandboxPool, type WarmSlot } from "./sandbox-pool";
 import { spawn } from "node:child_process";
@@ -21,6 +22,7 @@ import { VENDORED_HERMES_MODEL_BINARY } from "../agent-runtime-contract";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { copySkillOverrides } from "./workspace";
+import { KNOWLEDGE_FILES, readKnowledgeSnapshot } from "../knowledge-cache";
 
 // Wire protocol shared with the in-image entrypoint. The agent runs in a
 // separate container, so these can't share a module at runtime — they MUST
@@ -306,11 +308,13 @@ export async function stageSandboxWorkspace(
   ) as AgentWorkspace;
 
   await mkdir(stageOrgRoot, { recursive: true });
+  const knowledge = await readKnowledgeSnapshot(workspace.knowledgeRoot);
   await Promise.all([
-    copyDirectoryIfPresent(
-      workspace.knowledgeRoot,
-      stagedWorkspace.knowledgeRoot,
-    ),
+    knowledge
+      ? mkdir(stagedWorkspace.knowledgeRoot, { recursive: true }).then(() => Promise.all(
+        KNOWLEDGE_FILES.map(file => writeFile(path.join(stagedWorkspace.knowledgeRoot, file), knowledge.files[file])),
+      ))
+      : copyDirectoryIfPresent(workspace.knowledgeRoot, stagedWorkspace.knowledgeRoot),
     copyDirectoryIfPresent(
       workspace.threadUploadsRoot,
       stagedWorkspace.threadUploadsRoot,
@@ -483,6 +487,7 @@ function makeSandboxCore(
   let pool = warmSize > 0 && kind === "work" ? warmPools.get(poolKey) : undefined;
   if (warmSize > 0 && kind === "work" && !pool) {
     pool = new SandboxPool({ size: warmSize, idleMs,
+      onEvent: attributes => startupEvent("sandbox.pool", { poolId: createHash("sha256").update(poolKey).digest("hex").slice(0, 16), ...attributes }),
       create: newWarmSlot, onError: () => log("warm sandbox preparation failed") });
     warmPools.set(poolKey, pool);
     pool.replenish();
@@ -505,7 +510,7 @@ function makeSandboxCore(
       const start = performance.now();
       let ok = false;
       try {
-        const value = await operation();
+        const value = await startupPhase(`sandbox.${phase}`, operation);
         ok = true;
         return value;
       } finally {
@@ -692,6 +697,8 @@ function makeSandboxCore(
         // derive it from a prompt, agent backendState, or a browser claim.
         const session = reuse?.principalId && reuse.authorizationRevision ? {
           key: JSON.stringify([input.orgId, reuse.principalId]),
+          modelScope: createHash("sha256").update(JSON.stringify([opts.modelProvider, input.backend.id, input.backend.configuredIdentity])).digest("hex"),
+          authorizationScope: createHash("sha256").update(reuse.authorizationRevision).digest("hex"),
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
@@ -701,7 +708,7 @@ function makeSandboxCore(
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
           ])).digest("hex"),
         } : undefined;
-        lease = await pool.acquire(session);
+        lease = await startupPhase("sandbox.acquire", () => pool!.acquire(session));
         warmSlot = lease.slot ?? await timed("warm_miss", newWarmSlot);
         name = warmSlot.name;
         sandboxCreated = true;
@@ -1427,7 +1434,7 @@ async function createWarmSandbox(o: {
     "--", "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "serve",
     String(Math.ceil(o.idleMs / 1000))], { stdio: ["ignore", "pipe", "pipe"] });
   let alive = true;
-  child.on("close", () => { alive = false; });
+  const closed = new Promise<void>(resolve => child.on("close", () => { alive = false; resolve(); }));
   child.stderr.resume();
   const destroy = async () => {
     try {
@@ -1450,7 +1457,7 @@ async function createWarmSandbox(o: {
       child.once("close", () => done(new Error("warm sandbox exited before readiness")));
     });
     child.stdout.resume();
-    return { name, alive: () => alive, destroy };
+    return { name, alive: () => alive, destroy, closed };
   } catch (error) {
     await destroy().catch(() => {});
     throw error;

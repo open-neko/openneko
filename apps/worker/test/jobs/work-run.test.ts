@@ -25,6 +25,8 @@ import {
 } from "@neko/db/test-helpers";
 import {
   action_policy,
+  app_user,
+  organization,
   and,
   asc,
   db,
@@ -150,6 +152,33 @@ describeIfDb("runChatTurn", () => {
 
   afterAll(async () => {
     await pool().end();
+  });
+
+  it.each([false, true])("passes the solo admin identity to runCore with a local user row=%s", async (hasLocalUser) => {
+    vi.stubEnv("OPENNEKO_PROFILE", "solo");
+    try {
+      const localUserId = `${orgId}-admin`;
+      if (hasLocalUser) await db().insert(app_user).values({
+        id: localUserId, org_id: orgId, email: "admin@example.test", role: "admin",
+      });
+      if (hasLocalUser) await db().update(organization).set({ solo_admin_user_id: localUserId }).where(eq(organization.id, orgId));
+      const thread = await insertWorkThread(orgId);
+      const run = await insertWorkRun({ orgId, threadId: thread.id });
+      await db().update(work_run).set({ actor_role: "admin" }).where(eq(work_run.id, run.id));
+      const runCore = vi.fn(async () => ({ status: "completed" as const, finalText: "Done." }));
+      await runChatTurn({
+        orgId, threadId: thread.id, runId: run.id, message: "Hello", emit: async () => {},
+      }, makeDeps({ runCore }));
+      if (hasLocalUser) expect(runCore).toHaveBeenCalledWith(expect.objectContaining({
+        sandboxUser: {
+          principalId: localUserId,
+          authorizationRevision: "solo-admin-v1",
+        },
+      }));
+      else expect((runCore.mock.calls as unknown[][])[0][0]).not.toHaveProperty("sandboxUser");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("happy path: writes events in id-monotonic order, finalizes work_run completed, emits done", async () => {
@@ -415,7 +444,10 @@ describeIfDb("runChatTurn", () => {
       }),
     );
 
-    expect(memory.observations.map((item) => item.kind)).toEqual([
+    const startup = memory.observations.filter(item => String(item.attributes["openneko.stage"]).startsWith("startup."));
+    expect(startup.filter(item => item.kind === "stage.end").map(item => item.attributes["openneko.stage"])).toEqual(expect.arrayContaining(["startup.run.mark_running", "startup.run.load_thread", "startup.workspace.prepare", "startup.context.skills", "startup.identity.sandbox"]));
+    expect(startup.filter(item => item.kind === "stage.start")).toHaveLength(startup.filter(item => item.kind === "stage.end").length);
+    expect(memory.observations.filter(item => !String(item.attributes["openneko.stage"]).startsWith("startup.")).map((item) => item.kind)).toEqual([
       "stage.start",
       "model.request",
       "tool.start",

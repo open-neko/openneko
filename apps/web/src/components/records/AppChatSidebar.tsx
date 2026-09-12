@@ -1,5 +1,7 @@
 "use client";
 
+import { acknowledgeWorkStartup, markWorkStartup } from "@/lib/work-startup-timing";
+
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -232,6 +234,7 @@ export function AppChatSidebar({
         `/api/work/threads/${threadId}/runs/${runId}/events`,
       );
       eventSourceRef.current = source;
+      source.onopen = () => markWorkStartup(runId, "streamOpenMs");
       source.onmessage = (messageEvent) => {
         let event: ChatEvent;
         try {
@@ -240,6 +243,9 @@ export function AppChatSidebar({
           return;
         }
         if (event.type === "hello") return;
+        markWorkStartup(runId, "firstEventMs");
+        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
+        if (event.type === "done") markWorkStartup(runId, "doneMs");
         if (
           event.type === "message" &&
           event.role === "assistant" &&
@@ -423,6 +429,7 @@ export function AppChatSidebar({
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
+    const submittedAt = performance.now();
     event.preventDefault();
     const message = draft.trim();
     if (!message || sending) return;
@@ -480,6 +487,7 @@ export function AppChatSidebar({
         throw new Error(payload.error ?? "Could not send the message");
       }
       const payload = (await response.json()) as { runId: string };
+      acknowledgeWorkStartup(threadId, payload.runId, submittedAt);
       const now = new Date().toISOString();
       setBundle((current) =>
         current

@@ -43,6 +43,7 @@ export const QUEUE = {
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 
 export type ProcessingJobPayload = {
+  queuedAt?: number;
   processingJobId: string;
   orgId: string;
 };
@@ -52,6 +53,7 @@ export type MetricRefreshPayload = ProcessingJobPayload & {
 };
 
 export type WorkRunPayload = ProcessingJobPayload & {
+  queuedAt?: number;
   /** work_run.id — the row the worker will update. */
   runId: string;
   /** work_thread.id this run belongs to. */
@@ -85,6 +87,7 @@ export type ChannelDeliverPayload = {
 };
 
 export type WorkflowRunFirePayload = {
+  queuedAt?: number;
   orgId: string;
   workflowId: string;
   triggerKind: "manual" | "cron" | "subscription" | "watcher" | "api";
@@ -236,7 +239,7 @@ export async function enqueue<T extends object>(
 ): Promise<string | null> {
   await ensureQueue(queue);
   const b = await boss();
-  return b.send(queue, data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
+  return b.send(queue, (queue === QUEUE.WORK_RUN || queue === QUEUE.METRIC_REFRESH || queue === QUEUE.WORKFLOW_RUN_FIRE) ? { ...(data as object), queuedAt: Date.now() } : data as object, { ...DEFAULT_SEND_OPTS, ...(opts ?? {}) });
 }
 
 export async function stopBoss(): Promise<void> {

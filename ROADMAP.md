@@ -6,14 +6,17 @@ have stale implementation status; verify them against current source.
 
 ## RBAC-1: connect effective access revisions to warm sandbox reuse
 
-**Pending — required before normal user-scoped sandbox reuse can be enabled.**
+**Pending — required for reuse with fine-grained or multi-user access. Solo admin reuse is enabled.**
 Updated 12 September 2026 alongside the warm sandbox implementation.
 
 Generic prewarming defaults to one slot. Assigned reuse is scoped to
 **organisation + user**, across chats, with a **three-minute idle timeout**.
 Every turn gets a fresh Hermes child/session, current staged context and a fresh
-broker token. Missing access revisions currently disable assigned reuse; they do
-not disable generic prewarming.
+broker token. Solo deployments retain their sole active admin's sandbox, using
+their persisted local admin account ID. Solo upgrades adopt or create that account
+automatically; email is required only before enabling SSO, which links the same ID. Their idle timeout starts after the turn finishes. Other actors require an access revision; generic
+prewarming remains available without one. Expired generic spares replenish
+automatically while the host is alive.
 
 ### Revision contract
 

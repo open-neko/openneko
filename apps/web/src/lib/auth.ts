@@ -35,6 +35,8 @@ import { cookies } from "next/headers";
 import {
   and,
   app_user,
+  getOrCreateSoloAdmin,
+  isUnclaimedSoloEmail,
   db,
   eq,
   inArray,
@@ -436,7 +438,7 @@ export async function upsertUserFromIdentity(
         role: app_user.role,
       })
       .from(app_user)
-      .where(and(eq(app_user.org_id, orgId), eq(app_user.email, identity.email)))
+      .where(and(eq(app_user.org_id, orgId), sql`lower(${app_user.email}) = ${identity.email.trim().toLowerCase()}`))
       .limit(1);
     if (byEmail[0] && !byEmail[0].sub) {
       const role = mapped.role ?? byEmail[0].role;
@@ -783,7 +785,7 @@ function decodeReturnPath(encoded: string): string {
 }
 
 /**
- * Resolve the current session (cookie → DB lookup → user). Returns
+ * Resolve the local solo account, or the SSO session (cookie → DB lookup → user). Returns
  * null when no session, an expired session, or a session whose user
  * row has been deleted (IT deprovisioned them in the IdP and a
  * background sweep deleted the row). Pages calling this can choose
@@ -794,6 +796,12 @@ export async function getCurrentUser(): Promise<{
   email: string;
   name: string | null;
 } | null> {
+  // Solo authentication still resolves to a real account. Never infer a
+  // another user as the operator once SSO is live.
+  if (!(await getAuthProvider())) {
+    const owner = await getOrCreateSoloAdmin(await getOrgId());
+    return owner ? { id: owner.id, email: isUnclaimedSoloEmail(owner.email) ? "" : owner.email, name: owner.name } : null;
+  }
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;

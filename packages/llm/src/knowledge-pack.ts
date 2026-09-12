@@ -1,5 +1,7 @@
+import { startupPhase } from "@neko/telemetry/startup";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { clearKnowledgeSnapshot, readKnowledgeSnapshot, refreshKnowledgeSnapshot, removeKnowledgeSnapshot } from "./knowledge-cache";
 
 export const KNOWLEDGE_SECTIONS = [
   { section: "tables?limit=500", file: "tables.json", label: "tables" },
@@ -120,12 +122,15 @@ async function readOrEmpty(path: string): Promise<string> {
 export async function readKnowledgePack(
   knowledge: KnowledgePackPaths,
 ): Promise<KnowledgePackContents> {
+  const snapshot = await readKnowledgeSnapshot(knowledge.knowledgeRoot);
+  const read = (file: keyof NonNullable<typeof snapshot>["files"], fallback: string) =>
+    snapshot ? Promise.resolve(snapshot.files[file]) : readOrEmpty(fallback);
   const [tables, namespaces, insights, syntax, modeRaw] = await Promise.all([
-    readOrEmpty(knowledge.files.tables),
-    readOrEmpty(knowledge.files.namespaces),
-    readOrEmpty(knowledge.files.insights),
-    readOrEmpty(knowledge.files.syntax),
-    readOrEmpty(knowledge.files.mode),
+    read("tables.json", knowledge.files.tables),
+    read("namespaces.json", knowledge.files.namespaces),
+    read("insights.json", knowledge.files.insights),
+    read("syntax.json", knowledge.files.syntax),
+    read("mode.json", knowledge.files.mode),
   ]);
   let mode: KnowledgeMode = "legacy";
   try {
@@ -303,7 +308,7 @@ export async function prefetchAgenticKnowledgePack(args: {
   fetchImpl?: typeof fetch;
 }): Promise<PrefetchKnowledgeResult> {
   const doFetch = args.fetchImpl ?? fetch;
-  const query: CatalogQueryFn = async (q) => {
+  const query: CatalogQueryFn = async (q) => startupPhase("knowledge.catalog_request", async () => {
     const res = await doFetch(args.graphqlUrl, {
       method: "POST",
       headers: {
@@ -311,13 +316,14 @@ export async function prefetchAgenticKnowledgePack(args: {
         authorization: `Bearer ${args.token}`,
       },
       body: JSON.stringify({ query: q }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`gj_catalog HTTP ${res.status}`);
     return (await res.json()) as {
       data: unknown;
       errors?: Array<{ message: string }>;
     };
-  };
+  });
 
   await mkdir(args.destDir, { recursive: true });
   try {
@@ -598,10 +604,12 @@ export async function prefetchAgenticKnowledgePack(args: {
 export async function prefetchKnowledgeForOrg(
   orgId: string,
   destDir: string,
+  options: { refresh?: boolean } = {},
 ): Promise<PrefetchKnowledgeResult & { mode: KnowledgeMode }> {
   const { data_source, db, desc, eq } = await import("@neko/db");
   const [src] = await db()
     .select({
+      id: data_source.id,
       authMode: data_source.auth_mode,
       mcpUrl: data_source.mcp_url,
       graphqlUrl: data_source.graphql_url,
@@ -611,21 +619,44 @@ export async function prefetchKnowledgeForOrg(
     .orderBy(desc(data_source.is_default), data_source.created_at)
     .limit(1);
   if (!src?.mcpUrl && !src?.graphqlUrl) {
+    await clearKnowledgeSnapshot(destDir, "none", "legacy");
     return { ok: false, files: [], error: "no data source configured", mode: "legacy" };
   }
   if (src.authMode === "jwt") {
     const { mintGraphjinToken } = await import("./graphjin/token");
-    const result = await prefetchAgenticKnowledgePack({
-      graphqlUrl:
-        src.graphqlUrl || graphqlUrlFromMcpUrl(src.mcpUrl as string),
-      token: mintGraphjinToken({ orgId, userId: null, role: "service" }),
-      destDir,
+    const graphqlUrl = src.graphqlUrl || graphqlUrlFromMcpUrl(src.mcpUrl as string);
+    const result = await refreshKnowledgeSnapshot({
+      root: destDir, mode: "agentic", refresh: options.refresh,
+      source: JSON.stringify([orgId, src.id, graphqlUrl, src.authMode, "service", 1]),
+      revision: async () => {
+        // Revision metadata is admin-only; knowledge content remains service-scoped.
+        const response = await fetch(graphqlUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${mintGraphjinToken({ orgId, userId: null, role: "admin" })}` },
+          body: JSON.stringify({ query: 'query { gj_config(id: "current") { catalog_revision } }' }),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        const body = await response.json();
+        if (!response.ok || body.errors?.length) throw new Error("GraphJin catalog revision unavailable");
+        const row = Array.isArray(body.data?.gj_config) ? body.data.gj_config[0] : body.data?.gj_config;
+        if (typeof row?.catalog_revision !== "string") throw new Error("GraphJin returned no catalog revision");
+        return row.catalog_revision;
+      },
+      build: directory => prefetchAgenticKnowledgePack({
+        graphqlUrl, token: mintGraphjinToken({ orgId, userId: null, role: "service" }), destDir: directory,
+      }),
     });
     return { ...result, mode: "agentic" };
+  }
+  // Legacy discovery has no revision contract. Clear a previous JWT snapshot
+  // before writing its legacy replacement so readers never use the old source.
+  if (await readKnowledgeSnapshot(destDir)) {
+    await clearKnowledgeSnapshot(destDir, "legacy", "legacy");
   }
   const result = await prefetchKnowledgePack({
     discoveryUrl: discoveryUrlFromMcpUrl((src.mcpUrl ?? src.graphqlUrl) as string),
     destDir,
   });
+  if (result.ok) await removeKnowledgeSnapshot(destDir);
   return { ...result, mode: "legacy" };
 }

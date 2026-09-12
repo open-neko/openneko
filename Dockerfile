@@ -390,6 +390,10 @@ CMD ["--listen", ":5003", "--upstream", "http://127.0.0.1:5004", "--", "node", "
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 # Web remains a trusted OpenShell control plane; the agent runtime is not here.
 FROM runtime-base AS web
+ARG OPENNEKO_VERSION=unknown
+ARG OPENNEKO_COMMIT=unknown
+ENV OPENNEKO_VERSION=$OPENNEKO_VERSION OPENNEKO_COMMIT=$OPENNEKO_COMMIT
+LABEL org.opencontainers.image.revision=$OPENNEKO_COMMIT org.opencontainers.image.version=$OPENNEKO_VERSION
 WORKDIR /app
 # Writable HOME under /tmp so the entrypoint can materialize config on
 # read-only container filesystems. PORT=8080 matches the common PaaS
@@ -442,6 +446,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 # and approved schema diff/sync require the shared pinned GraphJin CLI; this
 # parent supplies it without inheriting Hermes or the document toolchain.
 FROM graphjin-node-runtime AS worker
+ARG OPENNEKO_VERSION=unknown
+ARG OPENNEKO_COMMIT=unknown
+ENV OPENNEKO_VERSION=$OPENNEKO_VERSION OPENNEKO_COMMIT=$OPENNEKO_COMMIT
+LABEL org.opencontainers.image.revision=$OPENNEKO_COMMIT org.opencontainers.image.version=$OPENNEKO_VERSION
 WORKDIR /app
 # Minimal extraction toolchain for the library distiller ("the librarian"),
 # which shells out to the bundled document-extraction script on this host:

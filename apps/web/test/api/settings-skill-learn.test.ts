@@ -1,7 +1,7 @@
 /**
  * /api/settings/skill-learn contract tests.
  *
- * Covers: solo/userless admin => 200 default off, non-admin => 403,
+ * Covers: persisted solo admin => 200 default off, non-admin => 403,
  * admin => 200 read + write, persist across GET, reject non-boolean.
  */
 
@@ -21,7 +21,7 @@ import {
   deleteTestOrg,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { app_user, db, eq, pool, skill_learn_org } from "@neko/db";
+import { app_user, getOrCreateSoloAdmin, db, eq, pool, skill_learn_org } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockGetCurrentUser } = vi.hoisted(() => ({
@@ -86,7 +86,7 @@ describeIfDb("/api/settings/skill-learn", () => {
   });
 
   it("GET returns learning off when no org row exists", async () => {
-    mockGetCurrentUser.mockResolvedValue(null);
+    mockGetCurrentUser.mockResolvedValue(await getOrCreateSoloAdmin(orgId));
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ enabled: false, source: "default" });

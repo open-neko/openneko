@@ -203,3 +203,14 @@ describe("public workflow API routes", () => {
     });
   });
 });
+
+it("correlates admission phases without exposing credentials or input", async () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await POST(postRequest(), postContext);
+    const entries = log.mock.calls.map(call => JSON.parse(String(call[0])));
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ phase: "workflow.api_admitted", workflowRunId: "run-a", replay: false }), expect.objectContaining({ phase: "workflow.api_admit", ok: true, durationMs: expect.any(Number) })]));
+    expect(new Set(entries.map(entry => entry.requestId)).size).toBe(1);
+    expect(JSON.stringify(entries)).not.toMatch(/workflow-token|request-0001|orderId/);
+  } finally { log.mockRestore(); }
+});

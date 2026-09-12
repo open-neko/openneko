@@ -52,8 +52,9 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
         if (cancelled || !res.ok) return;
         const data = (await res.json()) as {
           user: { id: string; email: string; name: string | null } | null;
+          authEnabled?: boolean;
         };
-        if (data.user) setUser({ email: data.user.email });
+        if (data.user && data.authEnabled !== false) setUser({ email: data.user.email });
       } catch {
         // best-effort
       }

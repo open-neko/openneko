@@ -21,6 +21,7 @@ export {
   type RecordsMigrationResult,
 } from "./records-migrate";
 export { createNotifyClient, type NotifyClient } from "./notify";
+export { getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail } from "./solo-admin";
 export { getOrgId, _resetOrgIdCacheForTesting } from "./org";
 export {
   readLocalConfig,

@@ -1,3 +1,4 @@
+import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { ensureHostConfigProvisioned, type AgentEvent } from "@neko/llm";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { db, eq, skill_usage } from "@neko/db";
@@ -24,10 +25,15 @@ import {
 } from "../telemetry.js";
 import { observeSafely } from "@neko/telemetry";
 
-export async function runWorkRun(
+export async function runWorkRun(jobId: string, orgId: string, payload: Parameters<typeof runWorkRunTraced>[2]): Promise<void> {
+  return withStartupTrace({ runId: payload.runId, threadId: payload.threadId }, () => runWorkRunTraced(jobId, orgId, payload));
+}
+
+async function runWorkRunTraced(
   jobId: string,
   orgId: string,
   payload: {
+    queuedAt?: number;
     runId: string;
     threadId: string;
     message: string;
@@ -39,7 +45,8 @@ export async function runWorkRun(
   const { runId, threadId, message, channel, channelPlugin, recipient } =
     payload;
 
-  const run = await getWorkRun(orgId, runId);
+  if (Number.isFinite(payload.queuedAt)) startupEvent("queue.wait", { durationMs: Math.max(0, Date.now() - payload.queuedAt!), execution: "worker_queue", basis: "since_enqueue_including_retries" });
+  const run = await startupPhase("run.lookup", () => getWorkRun(orgId, runId));
   if (!run) {
     console.warn(
       `[work-run] run ${runId} not found for thread ${threadId}; skipping stale job`,
@@ -51,6 +58,7 @@ export async function runWorkRun(
   const startedAt = Date.now();
   await observeSafely(runTelemetry.observer, {
     kind: "run.start",
+    measurements: { coverage: "unavailable", ...(Number.isFinite(payload.queuedAt) ? { queueDurationMs: Math.max(0, Date.now() - payload.queuedAt!) } : {}) },
     operationId,
     attributes: {
       "openneko.run.kind": "production",
@@ -59,6 +67,8 @@ export async function runWorkRun(
       "openneko.delivery.channel": channel ?? "web",
     },
   });
+
+  await bindStartupRun(runId, runTelemetry.observer);
 
   // Snapshot the scrubber once per run. fs.watch on the secrets file
   // rebuilds the registry's scrubber, so a future run picks up rotated
@@ -84,21 +94,22 @@ export async function runWorkRun(
     await appendWorkRunEvent({ orgId, threadId, runId, event: scrubbed });
   };
 
-  const pluginActions = includeRecordActionDescriptors(
-    getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
-  );
-  const packActions = await listPackActionDescriptors(orgId);
-
-  // Same gate the workflow job runs: if the boot-time provider sync lost a
-  // race with a gateway restart, this is the retry — memoized on success, so
-  // the healthy path costs nothing. Without it, channel-triggered runs
-  // stayed broken until a settings save or a worker restart.
-  const agentRuntime = await ensureHostConfigProvisioned(orgId);
-
-  const broker = await ensureAgentBroker();
-  const unregisterBrokerEvents = registerAgentBrokerEventSink(runId, emit);
+  let unregisterBrokerEvents = () => {};
   let result;
   try {
+    const pluginActions = includeRecordActionDescriptors(
+      getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
+    );
+    const packActions = await startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId));
+
+    // Same gate the workflow job runs: if the boot-time provider sync lost a
+    // race with a gateway restart, this is the retry — memoized on success, so
+    // the healthy path costs nothing. Without it, channel-triggered runs
+    // stayed broken until a settings save or a worker restart.
+    const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
+
+    const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
+    unregisterBrokerEvents = registerAgentBrokerEventSink(runId, emit);
     result = await runChatTurn(
       {
         orgId,

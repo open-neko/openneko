@@ -192,6 +192,7 @@ describeIfDb("runMetricRefresh", () => {
           schemaVersion: "openneko.harness-run-summary/v1",
           runId: jobId,
           status: "completed",
+          phases: expect.arrayContaining([expect.objectContaining({ name: "metric.db_read", ok: true }), expect.objectContaining({ name: "metric.persist", ok: true })]),
         },
       });
     });

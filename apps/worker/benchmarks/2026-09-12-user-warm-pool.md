@@ -25,7 +25,7 @@ real launcher, `runChatTurn`, broker, Hermes and Gemini 3.5 Flash Lite.
 - Each turn still uses `session/new`; OpenNeko already supplies conversation
   history in its prompt. This does not retain an ACP conversation between chats.
 
-The generic pool is replenished on demand, not continuously after idle expiry.
+The generic pool now replenishes automatically after idle expiry while the host is alive.
 It is local to each host process. Web and worker processes therefore have separate
 pools, and generic misses can still incur preparation work. Assigned idle slots
 are not evicted early to make room: memory planning must include the number of
@@ -38,8 +38,9 @@ queue or a ten-user capacity certification.
 principal comes from the stored run actor, never the browser or agent. The future
 authorization service must return a revision covering every effective source,
 pack/plugin, memory and library grant. Returning null disables assigned reuse.
-No production caller supplies this hook yet, so enabling generic prewarming alone
-does not enable cross-chat reuse in the web UI.
+No production caller supplies this hook yet. Solo deployments now enable reuse
+for their recorded solo owner without it, using the persisted app-user ID. Web
+requests automatically adopt or create this owner during upgrade. Multi-user deployments still require the hook.
 
 The live demo has an admin actor with no user ID. The benchmark supplies explicit
 synthetic cache principals and revisions to test reuse/invalidation while running
@@ -145,5 +146,6 @@ the feature in the normal web process or supply a production authorization hook.
 
 Runtime defaults: `OPENNEKO_AGENT_WARM_POOL_SIZE=1` and
 `OPENNEKO_AGENT_WARM_IDLE_MS=180000`. Set the pool size to zero to disable generic
-prewarming. Assigned user reuse still requires the trusted authorization-revision
-hook described above. The running demo web process was left unchanged.
+prewarming. Solo admin reuse is enabled by default; other actors require the
+trusted authorization-revision hook described above. The benchmark itself left
+the running demo web process unchanged.

@@ -87,6 +87,8 @@ export interface AuthHandlerSurface {
    * gate with zero provisioned admins locks everyone out.
    */
   hasProvisionedAdmin?(): Promise<boolean>;
+  /** A bootstrapped solo owner must supply a real email before sign-in activates. */
+  soloAdminNeedsEmail?(): Promise<boolean>;
   /** Write (string) or delete (null) one auth-plugin env value. */
   setAuthSecret?(key: string, value: string | null): Promise<void>;
   beginAuth(params: {
@@ -1017,15 +1019,15 @@ async function handleAuthStatus(
   // that the deployment stays in single-operator mode so the admin can
   // reach the setup UI. Usable means: every required env var is set,
   // AND (for manual-provisioning providers like magic link) at least
-  // one active admin user is provisioned — otherwise flipping the gate
+  // one active admin user is provisioned. Any bootstrapped solo owner must
+  // also have a real email before switching to sign-in — otherwise the gate
   // would lock everyone out with no way back in.
   const missingEnv =
     auth.getAuthEnvGaps?.() ?? (auth.authSignInReady() ? [] : null);
   const envComplete = missingEnv !== null && missingEnv.length === 0;
   const manual = (info.provisioning ?? "automatic") === "manual";
-  const needsAdminUser = manual
-    ? !(await (auth.hasProvisionedAdmin?.() ?? Promise.resolve(true)))
-    : false;
+  const needsAdminUser = (await auth.soloAdminNeedsEmail?.()) === true ||
+    (manual && !(await (auth.hasProvisionedAdmin?.() ?? Promise.resolve(true))));
   const ready = envComplete && !needsAdminUser;
   const summary = {
     pluginName: info.pluginName,

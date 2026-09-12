@@ -1,5 +1,7 @@
 "use client";
 
+import { acknowledgeWorkStartup, markWorkStartup } from "@/lib/work-startup-timing";
+
 import "@/a2ui/components";
 import {
   ArrowUp,
@@ -760,6 +762,7 @@ export default function WorkScreen() {
   }
 
   async function sendMessage() {
+    const submittedAt = performance.now();
     const trimmed = draft.trim();
     if (!trimmed && files.length === 0) return;
 
@@ -805,7 +808,7 @@ export default function WorkScreen() {
     setDraftMentions([]);
     setMention(null);
 
-    await postAndStreamRun(threadId, message);
+    await postAndStreamRun(threadId, message, submittedAt);
   }
 
   // Submit a follow-up turn directly (no composer round-trip) — the landing
@@ -888,7 +891,7 @@ export default function WorkScreen() {
     await postAndStreamRun(threadId, text);
   }
 
-  async function postAndStreamRun(threadId: string, message: string) {
+  async function postAndStreamRun(threadId: string, message: string, submittedAt = performance.now()) {
     // Every entry point must expose the live-run controls. Retry/edit reloads
     // the truncated thread first, and that reload clears `sending` when no
     // earlier run remains in flight.
@@ -911,6 +914,7 @@ export default function WorkScreen() {
       runId: string;
       actorRole?: RunRecord["actorRole"];
     };
+    acknowledgeWorkStartup(threadId, runId, submittedAt);
     if (!mountedRef.current) return;
 
     updateActiveRunId(runId);
@@ -1039,6 +1043,7 @@ export default function WorkScreen() {
         close: () => settle("closed"),
       };
 
+      es.onopen = () => markWorkStartup(runId, "streamOpenMs");
       es.onmessage = (msgEvent) => {
         let event: WorkEvent;
         try {
@@ -1048,6 +1053,9 @@ export default function WorkScreen() {
         }
         if (event.type === "hello") return;
         applyIncomingEvent(runId, event);
+        markWorkStartup(runId, "firstEventMs");
+        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
+        if (event.type === "done") markWorkStartup(runId, "doneMs");
         if (event.type === "done") settle("done");
       };
       es.onerror = () => {

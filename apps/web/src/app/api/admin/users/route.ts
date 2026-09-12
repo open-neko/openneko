@@ -12,7 +12,7 @@
 
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { and, app_user, db, eq, sql } from "@neko/db";
+import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
 
-  let body: { email?: unknown; name?: unknown; role?: unknown };
+  let body: { email?: unknown; name?: unknown; role?: unknown; updateSoloAccount?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -67,16 +67,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const id = `usr_${randomBytes(9).toString("base64url")}`;
+  let id = `usr_${randomBytes(9).toString("base64url")}`;
   try {
-    await db().insert(app_user).values({
-      id,
-      sub: null,
-      email,
-      name,
-      org_id: orgId,
-      role,
+    const created = await db().transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"openneko.app_user:" + orgId}))`);
+      if (body.updateSoloAccount === true) {
+        const [org] = await tx.select({ owner: organization.solo_admin_user_id }).from(organization)
+          .where(eq(organization.id, orgId)).limit(1);
+        const [owner] = await tx.select({ email: app_user.email, sub: app_user.sub }).from(app_user)
+          .where(and(eq(app_user.org_id, orgId), eq(app_user.id, actor.userId!))).limit(1);
+        if (org?.owner !== actor.userId || !owner || owner.sub || !isUnclaimedSoloEmail(owner.email) || role !== "admin") return false;
+        id = actor.userId!;
+        await tx.update(app_user).set({ email, name, updated_at: new Date() }).where(eq(app_user.id, id));
+        return true;
+      }
+      await tx.insert(app_user).values({
+        id,
+        sub: null,
+        email,
+        name,
+        org_id: orgId,
+        role,
+      });
+      return true;
     });
+    if (!created) return NextResponse.json({ error: "This account cannot be updated here. Reload the page." }, { status: 409 });
   } catch (e) {
     // app_user_org_email_unique: a concurrent provision (double-click,
     // second admin tab) won the race between our lookup and this insert.
@@ -93,6 +108,6 @@ export async function POST(request: NextRequest) {
   }
   return NextResponse.json(
     { user: { id, email, name, role } },
-    { status: 201 },
+    { status: body.updateSoloAccount === true ? 200 : 201 },
   );
 }

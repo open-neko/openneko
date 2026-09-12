@@ -652,7 +652,7 @@ describe("worker admin /admin/auth/*", () => {
     }
   });
 
-  it("GET /admin/auth/status keeps a manual-provisioning provider pending until an admin user exists", async () => {
+  it.each(["manual", "automatic"] as const)("GET /admin/auth/status keeps %s setup pending until the admin is ready", async (provisioning) => {
     let hasAdmin = false;
     const handler = createAdminHandler({
       auth: {
@@ -660,10 +660,11 @@ describe("worker admin /admin/auth/*", () => {
         getAuthEnvGaps: () => [],
         getAuthConfiguredEnvKeys: () => ["MAGIC_LINK_FROM", "RESEND_API_KEY"],
         hasProvisionedAdmin: async () => hasAdmin,
+        soloAdminNeedsEmail: async () => provisioning === "automatic" && !hasAdmin,
         getAuthProvider: () => ({
           pluginName: "@open-neko/plugin-magic-link",
           providerLabel: "Email link",
-          provisioning: "manual",
+          provisioning,
           loginHintRequired: true,
         }),
         beginAuth: async () => ({ authorizationUrl: "https://x" }),

@@ -1,3 +1,5 @@
+import { startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
+import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 import {
   WorkflowApiError,
@@ -32,9 +34,17 @@ function parseMode(request: NextRequest): WorkflowApiExecutionMode {
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
+  return withStartupTrace({ requestId: randomUUID() }, () => startupPhase("workflow.http_submit", async () => {
+    const response = await postWorkflow(request, context);
+    startupEvent("workflow.http_response", { statusCode: response.status });
+    return response;
+  }));
+}
+
+async function postWorkflow(request: NextRequest, context: RouteContext) {
   const fingerprint = workflowApiFingerprint(request);
   try {
-    await enforceWorkflowApiEdgeThrottle(fingerprint);
+    await startupPhase("workflow.api_throttle", async () => enforceWorkflowApiEdgeThrottle(fingerprint));
     const { workflowId } = await context.params;
     const mode = parseMode(request);
     const contentType = request.headers.get("content-type")?.split(";")[0]?.trim();
@@ -45,17 +55,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
         415,
       );
     }
-    const value = await readWorkflowApiJsonBody(request);
+    const value = await startupPhase("workflow.api_read_body", async () => readWorkflowApiJsonBody(request));
     const token = parseWorkflowApiBearer(request.headers.get("authorization"));
     const idempotencyKey = request.headers.get("idempotency-key");
-    const admitted = await admitWorkflowApiRun({
+    const admitted = await startupPhase("workflow.api_admit", async () => admitWorkflowApiRun({
       workflowId,
       token: token ?? "",
       idempotencyKey: idempotencyKey ?? "",
       mode,
       value,
       clientFingerprint: fingerprint,
-    });
+    }));
+    startupEvent("workflow.api_admitted", { workflowRunId: admitted.runId, mode: admitted.mode, replay: admitted.replay, outcome: admitted.status });
     return workflowApiJson(
       {
         runId: admitted.runId,

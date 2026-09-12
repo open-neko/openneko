@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigserial,
   boolean,
   check,
@@ -42,6 +43,7 @@ export const organization = pgTable(
     domain: text("domain"),
     status: text("status").notNull().default("active"),
     setup_complete_at: ts("setup_complete_at"),
+    solo_admin_user_id: text("solo_admin_user_id").references((): AnyPgColumn => app_user.id, { onDelete: "set null" }),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveAgentBackend,
@@ -46,15 +48,25 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { threadId } = await context.params;
+  return withStartupTrace({ requestId: randomUUID(), threadId }, () => startupPhase("http.submit", async () => {
+    const response = await postRun(request, context);
+    startupEvent("http.response", { statusCode: response.status });
+    return response;
+  }));
+}
+
+async function postRun(request: NextRequest, context: RouteContext) {
+  const telemetryStartedAt = Date.now();
+  const { threadId } = await context.params;
   const body = await request.json().catch(() => ({}));
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
 
-  const orgId = await getOrgId();
-  const actor = await getCurrentActor();
-  const thread = await getAuthorizedWorkThread(orgId, threadId, actor);
+  const orgId = await startupPhase("http.organization", () => getOrgId());
+  const actor = await startupPhase("http.identity", () => getCurrentActor());
+  const thread = await startupPhase("http.authorize", () => getAuthorizedWorkThread(orgId, threadId, actor));
   if (!thread) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
@@ -94,19 +106,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   // Memory writes are agent-driven through the brokered memory MCP tool.
-  const backend = await resolveAgentBackend(orgId);
+  const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
 
   // Derive the agent-sandbox env (model egress, gateway provider, key alias)
   // before creating the run. If gateway sync is temporarily unavailable, the
   // memoized provision attempt is cleared and the caller can retry cleanly.
-  const agentRuntime = await ensureHostConfigProvisioned(orgId);
+  const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
 
-  const run = await createWorkRun(orgId, threadId, backend.id, actor);
+  const [pluginActions, packActions] = await Promise.all([
+    startupPhase("context.plugin_actions", () => getPluginActionDescriptors()),
+    startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId)),
+  ]);
+
+  // The agent loop runs in an OpenShell sandbox (SEC9: the only runtime).
+  // The web server stays the control plane, launches the box, and relays
+  // events over the existing SSE.
+  const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
+
+  const run = await startupPhase("run.create", () => createWorkRun(orgId, threadId, backend.id, actor));
   const runTelemetry = createWebHarnessObserver(run.id);
   const telemetryOperationId = `work:${run.id}`;
-  const telemetryStartedAt = Date.now();
   await observeSafely(runTelemetry.observer, {
     kind: "run.start",
+    timestamp: new Date(telemetryStartedAt).toISOString(),
     operationId: telemetryOperationId,
     attributes: {
       "openneko.run.kind": "production",
@@ -117,16 +139,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
     },
   });
 
+  await bindStartupRun(run.id, runTelemetry.observer);
+
   if (!thread.title) {
     await touchWorkThread(threadId, { title: suggestWorkThreadTitle(message) });
   }
-  await createWorkMessage({
+  await startupPhase("run.save_user_message", () => createWorkMessage({
     orgId,
     threadId,
     runId: run.id,
     role: "user",
     content: message,
-  });
+  }));
 
   const abortController = new AbortController();
   registerRun({
@@ -143,15 +167,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     runId: run.id,
   });
 
-  const [pluginActions, packActions] = await Promise.all([
-    getPluginActionDescriptors(),
-    listPackActionDescriptors(orgId),
-  ]);
-
-  // The agent loop runs in an OpenShell sandbox (SEC9: the only runtime).
-  // The web server stays the control plane, launches the box, and relays
-  // events over the existing SSE.
-  const broker = await ensureAgentBroker();
   const unregisterBrokerEvents = registerAgentBrokerEventSink(run.id, emit);
 
   void runChatTurn(
@@ -236,6 +251,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       unregisterRun(run.id);
     });
 
+  startupEvent("http.ack_ready", { durationMs: Date.now() - telemetryStartedAt, execution: "in_process" });
   return NextResponse.json({
     runId: run.id,
     threadId,

@@ -1,3 +1,4 @@
+import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { pool } from "@neko/db";
 import type { AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
@@ -75,14 +76,14 @@ export async function prepareWorkflowRun(
 ): Promise<PreparedWorkflowRun> {
   const resolveAgentBackend =
     deps.resolveAgentBackend ?? defaultResolveAgentBackend;
-  const workflow = await getWorkflow(opts.orgId, opts.workflowId);
+  const workflow = await startupPhase("workflow.load", async () => getWorkflow(opts.orgId, opts.workflowId));
   if (!workflow) {
     throw new Error(`Workflow ${opts.workflowId} not found for org ${opts.orgId}.`);
   }
   if (!workflow.enabled) {
     throw new Error(`Workflow ${workflow.name} is disabled.`);
   }
-  const backend = await resolveAgentBackend(opts.orgId);
+  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(opts.orgId));
   let actor: { userId: string | null; role: "admin" | "member" | "service" } = { userId: null, role: "service" };
   if (workflow.ownerUserId) {
     const owner = await pool().query<{ role: string }>("select role from app_user where org_id=$1 and id=$2 and disabled_at is null", [opts.orgId, workflow.ownerUserId]);
@@ -94,9 +95,9 @@ export async function prepareWorkflowRun(
   // persisted (the sidebar lists only "web" threads).
   const threadId =
     opts.threadId ??
-    (await createWorkThread(opts.orgId, workflow.name, "workflow")).id;
-  const created = await createWorkRun(opts.orgId, threadId, backend.id, actor);
-  const workflowRun = await createWorkflowRun({
+    (await startupPhase("workflow.create_thread", async () => createWorkThread(opts.orgId, workflow.name, "workflow"))).id;
+  const created = await startupPhase("workflow.create_work_run", async () => createWorkRun(opts.orgId, threadId, backend.id, actor));
+  const workflowRun = await startupPhase("workflow.create_run", async () => createWorkflowRun({
     orgId: opts.orgId,
     workflowId: opts.workflowId,
     threadId,
@@ -109,7 +110,7 @@ export async function prepareWorkflowRun(
     triggeredBySubscriptionId: opts.triggeredBySubscriptionId,
     triggeredByOutputId: opts.triggeredByOutputId,
     triggeredByObservationId: opts.triggeredByObservationId,
-  });
+  }));
   return {
     workflow,
     workflowRun,
@@ -198,7 +199,11 @@ function synthesizeSeedMessage(
   return `Begin executing the "${workflow.name}" workflow.`;
 }
 
-export async function runWorkflowTurn(
+export function runWorkflowTurn(opts: RunWorkflowTurnOptions, deps: Partial<RunWorkflowTurnDeps> = {}): Promise<RunWorkflowTurnResult> {
+  return withStartupTrace({ runId: opts.prepared.workRunId, threadId: opts.prepared.threadId, workflowRunId: opts.prepared.workflowRun.id, rootOperationId: `workflow:${opts.prepared.workRunId}`, observer: opts.observer }, () => runWorkflowTurnTraced(opts, deps));
+}
+
+async function runWorkflowTurnTraced(
   opts: RunWorkflowTurnOptions,
   deps: Partial<RunWorkflowTurnDeps> = {},
 ): Promise<RunWorkflowTurnResult> {
@@ -213,8 +218,8 @@ export async function runWorkflowTurn(
     deps.formatGlobalMemoryPromptContext ?? defaultFormatGlobalMemoryPromptContext;
   const runCore = deps.runCore ?? defaultRunWorkflowAgentBackend;
 
-  const backend = await resolveAgentBackend(orgId);
-  await markWorkRunRunning(workRunId);
+  const backend = await startupPhase("config.backend", async () => resolveAgentBackend(orgId));
+  await startupPhase("run.mark_running", async () => markWorkRunRunning(workRunId));
 
   let assistantText = "";
   let needsInput = false;
@@ -233,7 +238,7 @@ export async function runWorkflowTurn(
     await emit(event);
   };
 
-  const workspace = await ensureWorkWorkspace(orgId, threadId, workRunId);
+  const workspace = await startupPhase("workspace.prepare", async () => ensureWorkWorkspace(orgId, threadId, workRunId));
 
   try {
     if (!backend.capabilities.mcpTools) {
@@ -246,11 +251,11 @@ export async function runWorkflowTurn(
       message: `Starting workflow "${workflow.name}" (${triggerKind})…`,
     });
 
-    const memoryContext = await formatGlobalMemoryPromptContext(orgId);
+    const memoryContext = await startupPhase("context.memory", async () => formatGlobalMemoryPromptContext(orgId));
 
-    const knowledge = await readKnowledgePack(
+    const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
       knowledgePackPaths(workspace.knowledgeRoot),
-    );
+    ));
 
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
@@ -329,12 +334,12 @@ export async function runWorkflowTurn(
       (result.status === "completed"
         ? "Looked at the data; nothing to flag."
         : null);
-    await finishWorkflowRun({
+    await startupPhase("workflow.persist_result", async () => finishWorkflowRun({
       workflowRunId: workflowRun.id,
       status: result.status,
       summary,
       error: result.error ?? null,
-    });
+    }));
 
     if (persistedText) {
       await saveAssistantWorkMessage({
@@ -366,12 +371,12 @@ export async function runWorkflowTurn(
         usageMissingReason: "workflow paused for operator input",
       });
       await finishWorkRun(workRunId, "failed", null);
-      await finishWorkflowRun({
+      await startupPhase("workflow.persist_result", async () => finishWorkflowRun({
         workflowRunId: workflowRun.id,
         status: "needs_input",
         summary: assistantText.slice(0, 4000) || null,
         error: null,
-      });
+      }));
       await wrappedEmit({ type: "done", result: { status: "needs_input" } });
       return {
         status: "needs_input",
@@ -402,12 +407,12 @@ export async function runWorkflowTurn(
 
     await wrappedEmit({ type: "error", message: errMsg });
     await finishWorkRun(workRunId, status, aborted ? null : errMsg);
-    await finishWorkflowRun({
+    await startupPhase("workflow.persist_result", async () => finishWorkflowRun({
       workflowRunId: workflowRun.id,
       status,
       summary: assistantText.slice(0, 4000) || null,
       error: aborted ? null : errMsg,
-    });
+    }));
     await wrappedEmit({ type: "done", result: { status } });
     if (!aborted) throw error;
     return {
