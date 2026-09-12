@@ -11,6 +11,7 @@ import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card"
 import { OverflowMenu, MenuItem } from "@/components/ui/overflow-menu";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Badge } from "@/components/ui/badge";
+import { LocalDateTime } from "@/components/ui/local-date-time";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -69,7 +70,17 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     if (ok) toast.success(`Connected ${ok}`);
   }, [params]);
 
-  async function disconnect(pluginName: string, isDeployment: boolean) {
+  async function disconnect(row: Row, isDeployment: boolean) {
+    if (preview || busy !== null || (isDeployment && !isAdmin)) return;
+    if (!await confirmDialog({
+      title: `Disconnect ${row.providerLabel}?`,
+      description: isDeployment
+        ? "This removes the shared connection for everyone in the workspace. Automations using it will need the connection restored."
+        : "Your automations will lose access to this account until you reconnect it.",
+      confirmLabel: "Disconnect",
+      destructive: true,
+    })) return;
+    const { pluginName } = row;
     setBusy(pluginName);
     try {
       const res = await fetch(
@@ -88,9 +99,11 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         );
       if (isDeployment) setWorkspace(update);
       else setConnectors(update);
-      toast.success(`Disconnected ${pluginName}`);
+      toast.success(`Disconnected ${row.providerLabel}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(`Could not disconnect ${row.providerLabel}. Try again.`, {
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setBusy(null);
     }
@@ -111,48 +124,44 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     finally { setBusy(null); }
   }
 
-  function RowView({
-    row,
-    isDeployment,
-  }: {
-    row: Row;
-    isDeployment: boolean;
-  }) {
+  function renderPluginConnection(row: Row, isDeployment: boolean) {
+    const disabled = preview || busy !== null || (isDeployment && !isAdmin);
     return (
-      <li
+      <Card as="li"
         key={row.pluginName}
-        className="flex items-center gap-4 p-4 rounded-xl border border-border bg-bg max-[480px]:items-stretch max-[480px]:flex-col"
+        className="grid min-w-0 gap-4"
+        aria-busy={busy === row.pluginName}
       >
-        <div className="flex-1 min-w-0">
-          <div className="font-display text-ui-subsection font-bold text-text">{row.providerLabel}</div>
-          <div className="text-ui-caption text-text3 truncate">
-            {row.pluginName}
-          </div>
-          <div className="text-ui-caption text-text3 mt-1 truncate">
-            Scopes: {row.scopes.join(", ")}
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-display text-ui-subsection font-bold text-text break-words">{row.providerLabel}</h3>
+            <Badge variant={row.connected ? "success" : "muted"}>{row.connected ? "Connected" : "Not connected"}</Badge>
           </div>
           {row.connected && row.connectedAt && (
-            <div className="text-ui-caption text-text2 mt-1">
-              Connected {new Date(row.connectedAt).toLocaleString()}
-            </div>
+            <p className="text-ui-body-sm text-text2">
+              Connected <LocalDateTime value={row.connectedAt} fallback="recently" />
+            </p>
           )}
-        </div>
-        {row.connected ? (
-          <Button
-            variant="secondary"
-            disabled={busy === row.pluginName}
-            onClick={() => disconnect(row.pluginName, isDeployment)}
-          >
-            {busy === row.pluginName ? "…" : "Disconnect"}
-          </Button>
-        ) : (
-          <ButtonLink
-            href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start`}
-          >
-            Connect
-          </ButtonLink>
-        )}
-      </li>
+          {!row.connected && <p className="text-ui-body-sm text-text2">{isDeployment && !isAdmin ? "An admin can connect this workspace account." : "Connect your account to get started."}</p>}
+        </CardHeader>
+        <CardFooter>
+          <ActionGroup align="start">
+            {row.connected ? (
+              <Button variant="danger" disabled={disabled} onClick={() => void disconnect(row, isDeployment)}>
+                {busy === row.pluginName ? "Disconnecting…" : "Disconnect"}
+              </Button>
+            ) : disabled ? <Button disabled>Connect account</Button> : (
+              <ButtonLink variant="primary" href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start`}>Connect account</ButtonLink>
+            )}
+          </ActionGroup>
+        </CardFooter>
+        <Disclosure title="Permissions and details">
+          <div className="grid min-w-0 gap-3 text-ui-caption text-text2">
+            <p className="break-all">Plugin: {row.pluginName}</p>
+            {row.scopes.length > 0 ? <ul className="break-all">{row.scopes.map(scope => <li key={scope}>{scope}</li>)}</ul> : <p>No additional permissions requested.</p>}
+          </div>
+        </Disclosure>
+      </Card>
     );
   }
 
@@ -205,13 +214,12 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
             Workspace connections
           </h2>
           <p className="text-ui-body-sm text-text3 mb-2">
-            One org-wide authorization, consented once by an admin and shared
-            by every operator. Authorizing opens a browser consent screen that
-            names the scopes and the endpoint.
+            An admin connects these accounts for everyone in the workspace.
+            Review the requested permissions before connecting.
           </p>
           <ul className="flex flex-col gap-3">
             {visibleWorkspace.map((row) => (
-              <RowView key={row.pluginName} row={row} isDeployment />
+              renderPluginConnection(row, true)
             ))}
           </ul>
         </>
@@ -220,14 +228,14 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
       {visibleConnectors.length > 0 && (
         <>
           <h2 className="mt-6 mb-2 font-display text-ui-section font-bold text-text">
-            Per-operator connectors
+            Personal plugin connections
           </h2>
           <p className="text-ui-body-sm text-text3 mb-2">
-            Each operator authorizes independently with their own account.
+            These plugin accounts are connected only for you. Other users connect separately.
           </p>
           <ul className="flex flex-col gap-3">
             {visibleConnectors.map((row) => (
-              <RowView key={row.pluginName} row={row} isDeployment={false} />
+              renderPluginConnection(row, false)
             ))}
           </ul>
         </>
