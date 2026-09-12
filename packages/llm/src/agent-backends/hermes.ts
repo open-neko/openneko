@@ -457,7 +457,9 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
   // releases (v2026.5 passes allow_permanent to an older ACP callback), so
   // bypass it instead of letting headless jobs hang on approval prompts.
   env.HERMES_YOLO_MODE = "1";
-  const child = spawn("hermes", ["--yolo", "acp"], {
+  const warm = process.env.OPENNEKO_HERMES_WARM === "1";
+  const child = spawn(warm ? "/usr/local/uv/tools/hermes-agent/bin/python" : "hermes",
+    warm ? ["/app/hermes-warm.py", "client"] : ["--yolo", "acp"], {
     stdio: ["pipe", "pipe", "pipe"],
     cwd,
     env,

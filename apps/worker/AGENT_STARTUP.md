@@ -86,6 +86,14 @@ empty output, and cleanup. Real gateway/model acceptance remains the opt-in
 
 Embedding computation now runs in the shared embedding service. Both it and
 Docling use the [lazy processing listener](../lazy-service/README.md), releasing
-model memory after idle time. Sandbox pools and incremental upload caches remain
-out of scope: fresh boxes have no upload baseline and unchanged built-in skills
-are already omitted.
+model memory after idle time. Incremental upload caches remain out of scope:
+fresh boxes have no upload baseline and unchanged built-in skills are already omitted.
+
+The [user-scoped warm pool experiment](benchmarks/2026-09-12-user-warm-pool.md)
+implements generic prewarming enabled by default (one slot), user reuse, and a
+three-minute idle timeout. Set `OPENNEKO_AGENT_WARM_POOL_SIZE=0` to disable it.
+
+Future RBAC work must complete [RBAC-1 in the roadmap](../../ROADMAP.md#rbac-1-connect-effective-access-revisions-to-warm-sandbox-reuse)
+before wiring assigned user reuse into normal web and worker runs. It documents
+the opaque revision string, the separate SHA-256 fingerprint, invalidation rules
+and acceptance checks.

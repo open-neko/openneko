@@ -514,6 +514,8 @@ RUN cd apps/worker && pnpm exec esbuild \
 
 FROM cli AS agent
 USER root
+# Late-bound warm slots must observe policy/provider revisions promptly.
+ENV OPENSHELL_POLICY_POLL_INTERVAL_SECS=1
 # OpenNeko pre-installs the ACP/MCP feature set. Never let a sandbox spend its
 # startup budget trying a lazy install through the restricted egress policy.
 ENV HERMES_DISABLE_LAZY_INSTALLS=1
@@ -527,6 +529,7 @@ RUN groupadd -g 1000660000 sandbox \
     && install -d -o sandbox -g sandbox /sandbox
 # Only the two bundles and built-in skills enter the agent filesystem.
 COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
+COPY --chown=1000660000:1000660000 apps/worker/src/agent-sandbox/hermes-warm.py /app/hermes-warm.py
 # Fail the image build if bundles or filesystem assets cannot boot without
 # workspace node_modules. These checks also run on each release architecture.
 RUN cd /app && node entry.js --preflight \

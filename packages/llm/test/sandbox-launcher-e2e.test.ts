@@ -51,6 +51,7 @@ d("agent-in-sandbox e2e (opt-in)", () => {
       const workspace = await ensureWorkWorkspace(orgId, "e2e-thread", runId);
 
       const runCore = makeSandboxRunCore({
+        warmPoolSize: 0, // This suite explicitly exercises disposable cold creation.
         agentImage: process.env.OPENNEKO_AGENT_IMAGE!,
         gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
         gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
@@ -102,6 +103,7 @@ d("agent-in-sandbox e2e (opt-in)", () => {
       const marker = `CHILD_OK_${runId}`;
 
       const runCore = makeSandboxRunCore({
+        warmPoolSize: 0, // This suite explicitly exercises disposable cold creation.
         agentImage: process.env.OPENNEKO_AGENT_IMAGE!,
         gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
         gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,

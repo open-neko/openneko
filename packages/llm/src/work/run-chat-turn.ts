@@ -118,6 +118,11 @@ export type RunChatTurnOptions = {
 // Tests can substitute any of these without touching the call site. Production
 // callers pass nothing and get the real implementations.
 export type RunChatTurnDeps = {
+  /** Trusted authorization service hook. Omit to disable assigned sandbox reuse.
+   * Revision must cover sources, packs/plugins, memories and library grants. */
+  sandboxAuthorizationRevision?: (input: {
+    orgId: string; threadId: string; userId: string; role: string | null;
+  }) => Promise<string | null>;
   resolveAgentBackend: typeof defaultResolveAgentBackend;
   ensureWorkWorkspace: typeof defaultEnsureWorkWorkspace;
   formatWorkMemoryPromptContext: typeof defaultFormatWorkMemoryPromptContext;
@@ -500,7 +505,13 @@ export async function runChatTurn(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
+    const authorizationRevision = actor.userId && deps.sandboxAuthorizationRevision
+      ? await deps.sandboxAuthorizationRevision({ orgId, threadId, userId: actor.userId, role: actor.role })
+      : null;
     const result = await runCore({
+      ...(actor.userId && authorizationRevision ? {
+        sandboxUser: { principalId: actor.userId, authorizationRevision },
+      } : {}),
       backend,
       prompt,
       userMessage: message,

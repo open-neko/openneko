@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+import { SandboxPool, type WarmSlot } from "./sandbox-pool";
 import { spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -72,6 +74,9 @@ export interface SandboxLauncherOptions {
   brokerTokenFor?: (binding: RunBinding) => string;
   /** Release the run's token after it finishes (called in the run's finally). */
   brokerRelease?: (runId: string) => void;
+  /** Process-local generic slots; defaults to one. Zero disables prewarming. */
+  warmPoolSize?: number;
+  warmIdleMs?: number;
   execTimeoutMs?: number;
   onLog?: (line: string) => void;
 }
@@ -434,6 +439,14 @@ export async function sandboxAgentBackendForJob(opts: {
   };
 }
 
+const warmPools = new Map<string, SandboxPool>();
+
+/** Explicit shutdown hook for hosts/tests; sandbox-side idle expiry also survives host loss. */
+export async function closeSandboxPools(): Promise<void> {
+  await Promise.all([...warmPools.values()].map(pool => pool.close()));
+  warmPools.clear();
+}
+
 function makeSandboxCore(
   opts: SandboxLauncherOptions,
   kind: SandboxRunKind,
@@ -457,6 +470,23 @@ function makeSandboxCore(
 
   const runCleanup = (args: string[], timeoutMs: number): Promise<string> =>
     runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs);
+
+  const warmSize = opts.warmPoolSize ?? 1;
+  const idleMs = opts.warmIdleMs ?? 180_000;
+  if (!Number.isInteger(warmSize) || warmSize < 0 || warmSize > 10 ||
+      !Number.isInteger(idleMs) || idleMs < 1_000 || idleMs > 3_600_000) {
+    throw new Error("Invalid warm sandbox limits");
+  }
+  const newWarmSlot = () => createWarmSandbox({ cli, gatewayArgs,
+    image: opts.agentImage, cpu, memory, idleMs, runCleanup });
+  const poolKey = JSON.stringify([cli, gatewayArgs, opts.agentImage, cpu, memory, warmSize, idleMs]);
+  let pool = warmSize > 0 && kind === "work" ? warmPools.get(poolKey) : undefined;
+  if (warmSize > 0 && kind === "work" && !pool) {
+    pool = new SandboxPool({ size: warmSize, idleMs,
+      create: newWarmSlot, onError: () => log("warm sandbox preparation failed") });
+    warmPools.set(poolKey, pool);
+    pool.replenish();
+  }
 
   return async function sandboxRunCore(
     input: SandboxRunInput,
@@ -492,7 +522,7 @@ function makeSandboxCore(
       runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal);
     const inputPrompt = jobInput?.run.prompt ??
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
-    const name = `${isJob ? "job" : "work"}-${input.runId}`
+    let name = `${isJob ? "job" : "work"}-${input.runId}`
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "")
       .slice(0, 60);
@@ -607,6 +637,9 @@ function makeSandboxCore(
 
     const stageDir = await mkdtemp(path.join(tmpdir(), "oss-agent-"));
     let sandboxCreated = false;
+    let lease: Awaited<ReturnType<SandboxPool["acquire"]>> | undefined;
+    let warmSlot: WarmSlot | undefined;
+    let healthy = false;
     // Unknown (old image, timeout, crash) must preserve partial artifacts.
     let artifactsPresent: boolean | undefined;
     try {
@@ -642,7 +675,7 @@ function makeSandboxCore(
         SANDBOX_RUNTIME_DIR,
         "job.json",
       );
-      const sandboxHermesHome = path.posix.join(
+      const sandboxHermesHome = pool ? "/sandbox/.hermes-warm/home" : path.posix.join(
         boxWorkspace.runRoot,
         SANDBOX_RUNTIME_DIR,
         "hermes-home",
@@ -652,75 +685,119 @@ function makeSandboxCore(
         type: "status",
         message: "Starting secure agent sandbox…",
       });
-      const createArgs = [
-        "sandbox",
-        "create",
-        "--name",
-        name,
-        "--from",
-        opts.agentImage,
-        "--cpu",
-        cpu,
-        "--memory",
-        memory,
-        "--no-tty",
-        "--no-auto-providers",
-        ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
-        "--policy",
-        policyFile,
-        "--upload",
-        // OpenShell nests basename(LOCAL_PATH) under SANDBOX_PATH.
-        `${staged.orgRoot}:${path.posix.dirname(boxOrgRoot)}`,
-        "--no-git-ignore",
-        "--",
-        "/bin/sh",
-        "-lc",
-        "true",
-      ];
-      const reclaimAndCreate = async () => {
-        // Run names are deterministic so a durable queue retry can collide
-        // with an OpenShell sandbox orphaned by a worker restart or deploy.
-        // Replace only that exact run sandbox, then let the normal finally
-        // path own cleanup for the newly created instance.
-        log(`replacing stale agent sandbox after name collision: ${name}`);
-        await runCleanup(["sandbox", "delete", name], 60_000);
-        await timed("create_upload", () => run(createArgs, 180_000));
-      };
-      try {
-        await timed("create_upload", () => run(createArgs, 180_000));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("already exists")) {
-          await reclaimAndCreate();
-        } else {
-          // Not a name collision: a transient gateway hiccup (restart mid
-          // deploy) or a first-use image pull that outran the timeout — the
-          // gateway-side pull keeps going, so a second attempt usually rides
-          // its cache. Retry once before surfacing the real error; a timed-out
-          // first attempt may have half-registered the name, which the retry
-          // then reclaims.
-          log(
-            `agent sandbox create failed (${message.slice(0, 200)}); retrying once`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, 3_000));
-          try {
-            await timed("create_upload", () => run(createArgs, 180_000));
-          } catch (retryError) {
-            const retryMessage =
-              retryError instanceof Error ? retryError.message : String(retryError);
-            if (!retryMessage.includes("already exists")) throw retryError;
+      if (pool) {
+        const workInput = input as RunAgentBackendInput;
+        const reuse = workInput.sandboxUser;
+        // The host supplies an opaque CURRENT authorization revision. Never
+        // derive it from a prompt, agent backendState, or a browser claim.
+        const session = reuse?.principalId && reuse.authorizationRevision ? {
+          key: JSON.stringify([input.orgId, reuse.principalId]),
+          scope: createHash("sha256").update(JSON.stringify([
+            reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
+            opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled,
+            workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
+            workInput.backendState, opts.brokerUrl,
+            hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
+          ])).digest("hex"),
+        } : undefined;
+        lease = await pool.acquire(session);
+        warmSlot = lease.slot ?? await timed("warm_miss", newWarmSlot);
+        name = warmSlot.name;
+        sandboxCreated = true;
+        if (signal?.aborted) throw abortError();
+        await timed("warm_bind", async () => {
+          await run(["sandbox", "exec", "-n", name, "--no-tty", "--",
+            "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "checkout"], 15_000);
+          // Replace rather than merge policy. A failed update must never run
+          // the agent with the previous turn's permissions.
+          if (!lease!.reused) {
+            if (opts.modelProvider) {
+              await timed("warm_provider", () => run(["sandbox", "provider", "attach", name, opts.modelProvider!], 60_000));
+            }
+            await timed("warm_policy", () => run(["policy", "set", name, "--policy", policyFile, "--wait", "--timeout", "60"], 65_000));
+          }
+          await run(["sandbox", "exec", "-n", name, "--no-tty", "--", "sh", "-c",
+            `rm -rf -- ${shellQuote(boxOrgRoot)} /sandbox/.hermes-warm/home; mkdir -p /sandbox/.hermes-warm/home`], 30_000);
+          await run(["sandbox", "upload", name, staged.orgRoot, "/sandbox", "--no-git-ignore"], 120_000);
+          if (hermesStage) {
+            await run(["sandbox", "exec", "-n", name, "--no-tty", "--", "sh", "-c",
+              `cp -R ${shellQuote(path.posix.join(boxWorkspace.runRoot, SANDBOX_RUNTIME_DIR, "hermes-home"))}/. /sandbox/.hermes-warm/home/`], 30_000);
+          }
+        });
+        log(JSON.stringify({ type: "sandbox_warm", runId: input.runId, sandboxName: name,
+          mode: lease.reused ? "user" : lease.slot ? "generic" : "miss" }));
+      } else {
+        const createArgs = [
+          "sandbox",
+          "create",
+          "--name",
+          name,
+          "--from",
+          opts.agentImage,
+          "--cpu",
+          cpu,
+          "--memory",
+          memory,
+          "--no-tty",
+          "--no-auto-providers",
+          ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
+          "--policy",
+          policyFile,
+          "--upload",
+          // OpenShell nests basename(LOCAL_PATH) under SANDBOX_PATH.
+          `${staged.orgRoot}:${path.posix.dirname(boxOrgRoot)}`,
+          "--no-git-ignore",
+          "--",
+          "/bin/sh",
+          "-lc",
+          "true",
+        ];
+        const reclaimAndCreate = async () => {
+          // Run names are deterministic so a durable queue retry can collide
+          // with an OpenShell sandbox orphaned by a worker restart or deploy.
+          // Replace only that exact run sandbox, then let the normal finally
+          // path own cleanup for the newly created instance.
+          log(`replacing stale agent sandbox after name collision: ${name}`);
+          await runCleanup(["sandbox", "delete", name], 60_000);
+          await timed("create_upload", () => run(createArgs, 180_000));
+        };
+        try {
+          await timed("create_upload", () => run(createArgs, 180_000));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.includes("already exists")) {
             await reclaimAndCreate();
+          } else {
+            // Not a name collision: a transient gateway hiccup (restart mid
+            // deploy) or a first-use image pull that outran the timeout — the
+            // gateway-side pull keeps going, so a second attempt usually rides
+            // its cache. Retry once before surfacing the real error; a timed-out
+            // first attempt may have half-registered the name, which the retry
+            // then reclaims.
+            log(
+              `agent sandbox create failed (${message.slice(0, 200)}); retrying once`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 3_000));
+            try {
+              await timed("create_upload", () => run(createArgs, 180_000));
+            } catch (retryError) {
+              const retryMessage =
+                retryError instanceof Error ? retryError.message : String(retryError);
+              if (!retryMessage.includes("already exists")) throw retryError;
+              await reclaimAndCreate();
+            }
           }
         }
+        sandboxCreated = true;
       }
-      sandboxCreated = true;
 
       log(
         `agent sandbox ready: ${name} (backend=${input.backend.id}, kind=${kind}, ` +
           `graphjin=brokered, skill_overrides=${staged.skillOverrides.length})`,
       );
       await input.emit({ type: "status", message: "Agent is working…" });
-      return await timed("exec", () => execAndStream(
+      const result = await timed("exec", () => execAndStream(
         cli,
         gatewayArgs,
         name,
@@ -739,6 +816,7 @@ function makeSandboxCore(
                 }
               : {}),
             ...(opts.env ?? {}),
+            ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
           keyAliases: opts.keyAliases,
@@ -752,6 +830,8 @@ function makeSandboxCore(
         signal,
         (present) => { artifactsPresent = present; },
       ));
+      healthy = result.status === "completed" && !signal?.aborted;
+      return result;
     } finally {
       opts.brokerRelease?.(input.runId);
       // Pull artifacts the agent wrote in the box back to the host run dir
@@ -777,7 +857,9 @@ function makeSandboxCore(
       // The sandbox is the process-tree boundary. Deleting it terminates the
       // backend plus every child/sub-agent, and cleanup must not inherit the
       // already-aborted run signal.
-      if (sandboxCreated) {
+      if (lease) {
+        await lease.release(warmSlot, healthy && !signal?.aborted);
+      } else if (sandboxCreated) {
         await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       }
       await rm(stageDir, { recursive: true, force: true });
@@ -890,6 +972,8 @@ export function sandboxLauncherOptionsFromConfig(
     gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
     cpu: process.env.OPENNEKO_AGENT_CPUS || undefined,
     memory: process.env.OPENNEKO_AGENT_MEMORY || undefined,
+    warmPoolSize: Number(process.env.OPENNEKO_AGENT_WARM_POOL_SIZE ?? 1),
+    warmIdleMs: Number(process.env.OPENNEKO_AGENT_WARM_IDLE_MS ?? 180_000),
     ...config,
     brokerUrl: broker?.url,
     brokerTokenFor: broker?.tokenFor,
@@ -1150,7 +1234,7 @@ function runProcessOnce(
       if (settled) return;
       settled = true;
       cleanup();
-      if (code !== 0 && !stdout.trim()) {
+      if (code !== 0) {
         // Redact secret-bearing values (--credential name=value) — this
         // message reaches console logs.
         const shown = args
@@ -1325,4 +1409,52 @@ function abortError(): Error {
   const err = new Error("aborted");
   err.name = "AbortError";
   return err;
+}
+
+/** Keep the creation command attached: --no-keep deletes the box when the
+ * clean parent exits on its own idle timeout. */
+async function createWarmSandbox(o: {
+  cli: string; gatewayArgs: string[]; image: string; cpu: string; memory: string; idleMs: number;
+  runCleanup: (args: string[], timeout: number) => Promise<string>;
+}): Promise<WarmSlot> {
+  const name = `warm-${randomUUID()}`;
+  const dir = await mkdtemp(path.join(tmpdir(), "oss-warm-"));
+  const policy = path.join(dir, "policy.json");
+  await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));
+  const child = spawn(o.cli, [...o.gatewayArgs, "sandbox", "create", "--name", name,
+    "--from", o.image, "--cpu", o.cpu, "--memory", o.memory,
+    "--no-tty", "--no-keep", "--no-auto-providers", "--policy", policy,
+    "--", "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "serve",
+    String(Math.ceil(o.idleMs / 1000))], { stdio: ["ignore", "pipe", "pipe"] });
+  let alive = true;
+  child.on("close", () => { alive = false; });
+  child.stderr.resume();
+  const destroy = async () => {
+    try {
+      await o.runCleanup(["sandbox", "delete", name], 60_000);
+    } catch (error) {
+      if (!/not found|does not exist/i.test(String(error))) throw error;
+    } finally {
+      alive = false;
+      child.kill("SIGTERM");
+    }
+  };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const lines = createInterface({ input: child.stdout });
+      const timer = setTimeout(() => reject(new Error("warm sandbox readiness timeout")), 180_000);
+      timer.unref();
+      const done = (error?: Error) => { clearTimeout(timer); lines.close(); error ? reject(error) : resolve(); };
+      lines.on("line", line => { if (line.trim() === "__openneko_warm_ready__") done(); });
+      child.once("error", error => done(error));
+      child.once("close", () => done(new Error("warm sandbox exited before readiness")));
+    });
+    child.stdout.resume();
+    return { name, alive: () => alive, destroy };
+  } catch (error) {
+    await destroy().catch(() => {});
+    throw error;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
