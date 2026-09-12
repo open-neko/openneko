@@ -33,6 +33,7 @@ import {
   importLibraryBundleFiles,
 } from "../../src/library/bundle";
 import { installLibraryPack, listLibraryPacks } from "../../src/library/packs";
+import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
 import {
   listLibraryConcepts,
   searchLibraryByContext,
@@ -108,7 +109,10 @@ describeIfDb("library OKF bundle round trip", () => {
       const draft = imported.find((c) => c.path === "notes/pending-idea.md");
       expect(draft?.status).toBe("draft");
 
-      // Embeddings were recomputed on import — search works in org B.
+      // Import leaves durable indexing work; process it before semantic search.
+      for (const concept of imported) {
+        await runEmbeddingIndexJob({ kind: "concept", orgId: orgB, id: concept.id });
+      }
       const found = await searchLibraryByContext({
         orgId: orgB,
         userId: null,

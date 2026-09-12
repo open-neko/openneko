@@ -40,6 +40,7 @@ import {
   searchWorkMemoryByContext,
 } from "../../src/work/memory";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
+import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -314,6 +315,9 @@ describeIfDb("CV2 memory fork overlay", () => {
       kind: "company_context",
       scope: "global",
     });
+    for (const memory of [team, personal]) {
+      await runEmbeddingIndexJob({ kind: "memory", orgId, id: memory.id });
+    }
 
     const teamResults = await searchWorkMemoryByContext({
       orgId,
