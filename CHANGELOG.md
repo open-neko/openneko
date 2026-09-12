@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.44.2](https://github.com/open-neko/openneko/compare/v2.44.1...v2.44.2) (2026-09-12)
+
+
+### Bug Fixes
+
+* cache startup knowledge, preserve solo identity, and trace run phases ([71f2423](https://github.com/open-neko/openneko/commit/71f242300c76b599304ba5da53738da9a7000280))
+* cache startup knowledge, preserve solo identity, and trace run phases ([0e58810](https://github.com/open-neko/openneko/commit/0e5881022e1efa0878ff17860ae9b27000c2a712))
+
 ## [2.44.1](https://github.com/open-neko/openneko/compare/v2.44.0...v2.44.1) (2026-09-12)
 
 
