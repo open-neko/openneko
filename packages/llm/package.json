@@ -26,7 +26,8 @@
     "./graphjin/file-source-assets": "./src/graphjin/file-source-assets.ts",
     "./graphjin/openapi-assets": "./src/graphjin/openapi-assets.ts",
     "./graphjin/openapi-spec": "./src/graphjin/openapi-spec.ts",
-    "./graphjin/persist-source-config": "./src/graphjin/persist-source-config.ts"
+    "./graphjin/persist-source-config": "./src/graphjin/persist-source-config.ts",
+    "./work/sandbox-launcher": "./src/work/sandbox-launcher.ts"
   },
   "scripts": {
     "test": "vitest run",

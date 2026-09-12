@@ -29,6 +29,7 @@ const h = vi.hoisted(() => {
   const state = {
     holdExec: false,
     failPolicy: false,
+    failReconcile: false,
     deleteMissing: false,
     collideOnNextCreate: false,
     execLines: undefined as string[] | undefined,
@@ -57,13 +58,15 @@ const h = vi.hoisted(() => {
         ? ["Error: × sandbox 'work-run-1' already exists\n"]
         : [],
     );
-    const lines = warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
+    const reconciliation = args.findIndex(arg => arg.startsWith("exec(__import__('base64')"));
+    const syncLines = reconciliation < 0 ? undefined : state.failReconcile ? ["invalid reconciliation\n"] : ["__openneko_sync__" + JSON.stringify(Object.entries(JSON.parse(args[reconciliation + 2]!)).filter(([, value]) => value !== null).map(([key]) => key)) + "\n"];
+    const lines = syncLines ?? (warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
       ? state.execLines ?? [
           'noise before\n',
           `\n__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "hi" })}\n`,
           `\n__openneko_agent_result__${JSON.stringify({ status: "completed", finalText: "hi there", backendState: { t: 1 } })}\n`,
         ]
-      : [];
+      : []);
     let closed = false;
     const closeOnce = () => {
       if (closed) return;
@@ -129,6 +132,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 const {
   makeSandboxRunCore,
+  prepareSandboxCapacity,
   closeSandboxPools,
   makeSandboxJobRunCore,
   makeSandboxWorkflowRunCore,
@@ -482,6 +486,7 @@ describe("makeSandboxRunCore", () => {
     h.calls.length = 0;
     h.state.holdExec = false;
     h.state.failPolicy = false;
+    h.state.failReconcile = false;
     h.state.deleteMissing = false;
     h.state.collideOnNextCreate = false;
     h.state.execLines = undefined;
@@ -490,6 +495,19 @@ describe("makeSandboxRunCore", () => {
     jobCapture.hermesEnvs.length = 0;
   });
   afterEach(async () => { await closeSandboxPools(); vi.restoreAllMocks(); });
+
+  it("prepares capacity before the first turn and reuses the startup pool", async () => {
+    const logs: string[] = [];
+    const options = { agentImage: "startup-test", onLog: (line: string) => logs.push(line) };
+    await prepareSandboxCapacity(options);
+    expect(h.calls.filter(call => call.args.includes("create"))).toHaveLength(1);
+    await makeSandboxRunCore({ ...options, modelProvider: "configured-after-startup" })(fakeInput(async () => {}));
+    expect(logs.some(line => line.includes('"mode":"generic"'))).toBe(true);
+    expect(logs.some(line => line.includes('"phase":"warm_miss"'))).toBe(false);
+    for (const phase of ["warm_checkout", "workspace_reconcile", "workspace_upload", "config_reconcile"]) {
+      expect(logs.some(line => line.includes(`"phase":"${phase}"`))).toBe(true);
+    }
+  });
 
   it("prewarms by default without an explicit pool option", async () => {
     const logs: string[] = [];
@@ -513,6 +531,15 @@ describe("makeSandboxRunCore", () => {
     expect(policies).toHaveLength(2);
     expect(commands.findIndex(args => args.includes("attach"))).toBeLessThan(commands.findIndex(args => args.includes("set")));
     expect(commands.filter(args => args.includes("create")).every(args => !args.includes("--provider"))).toBe(true);
+  });
+
+  it("discards the slot without executing the agent when file reconciliation fails", async () => {
+    h.state.failReconcile = true;
+    const logs: string[] = [];
+    const core = makeSandboxRunCore({ agentImage: "sync-failure-test", onLog: line => logs.push(line) });
+    await expect(core(fakeInput(async () => {}))).rejects.toThrow(/reconciliation/);
+    expect(logs.some(line => line.includes('"phase":"exec"'))).toBe(false);
+    expect(h.calls.some(call => call.args.includes("delete"))).toBe(true);
   });
 
   it("fails closed on a rejected policy even when the CLI printed stdout", async () => {

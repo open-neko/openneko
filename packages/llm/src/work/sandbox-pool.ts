@@ -15,7 +15,8 @@ type IdleSlot = {
 
 export class SandboxPool {
   private generic: WarmSlot[] = [];
-  private pending = 0;
+  private pending = new Set<Promise<void>>();
+  private retry?: ReturnType<typeof setTimeout>;
   private idle = new Map<string, IdleSlot>();
   private busy = new Set<string>();
   private stopped = false;
@@ -35,10 +36,9 @@ export class SandboxPool {
   replenish(): void {
     if (this.stopped) return;
     this.generic = this.generic.filter(slot => slot.alive());
-    while (this.generic.length + this.pending < this.options.size) {
-      this.pending++;
+    while (this.generic.length + this.pending.size < this.options.size) {
       const started = performance.now();
-      void this.options.create().then(async slot => {
+      const preparation = this.options.create().then(async slot => {
         this.event({ outcome: "spare_ready", background: true, slot: slot.name, durationMs: performance.now() - started });
         if (this.stopped) await slot.destroy();
         else {
@@ -51,15 +51,48 @@ export class SandboxPool {
             this.replenish();
           });
         }
-      }).catch(error => { this.event({ outcome: "spare_failed", background: true, durationMs: performance.now() - started }); this.options.onError(error); }).finally(() => { this.pending--; });
+      }).finally(() => {
+        this.pending.delete(preparation);
+      });
+      this.pending.add(preparation);
+      void preparation.catch(error => {
+        this.event({ outcome: "spare_failed", background: true, durationMs: performance.now() - started });
+        this.options.onError(error);
+        if (!this.stopped && !this.retry) {
+          this.retry = setTimeout(() => { this.retry = undefined; this.replenish(); }, 1_000);
+          this.retry.unref();
+        }
+      });
     }
   }
 
-  async acquire(user?: { key: string; scope: string; modelScope?: string; authorizationScope?: string }): Promise<{
+  /** Startup readiness and admission share the same in-flight preparation. */
+  async ready(signal?: AbortSignal): Promise<void> {
+    while (!this.generic.some(slot => slot.alive())) {
+      if (this.stopped) throw new Error("Sandbox pool is closed");
+      signal?.throwIfAborted();
+      this.replenish();
+      if (!this.pending.size) throw new Error("Sandbox pool has no capacity");
+      const preparation = Promise.race(this.pending);
+      if (!signal) { await preparation; continue; }
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        preparation.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+        if (signal.aborted) abort();
+      });
+    }
+    if (this.stopped) throw new Error("Sandbox pool is closed");
+    signal?.throwIfAborted();
+  }
+
+  async acquire(user?: { key: string; scope: string; modelScope?: string; authorizationScope?: string }, signal?: AbortSignal): Promise<{
     slot?: WarmSlot;
     reused: boolean;
     release: (slot: WarmSlot | undefined, healthy: boolean) => Promise<void>;
   }> {
+    if (this.stopped) throw new Error("Sandbox pool is closed");
+    signal?.throwIfAborted();
     // Concurrent turns for the same user get independent disposable slots.
     const retain = user && !this.busy.has(user.key) ? user : undefined;
     if (retain) this.busy.add(retain.key);
@@ -84,11 +117,20 @@ export class SandboxPool {
         }
       }
     }
-    while (!slot && this.generic.length) {
-      const candidate = this.generic.shift()!;
-      if (candidate.alive()) slot = candidate;
+    try {
+      while (!slot) {
+        if (!this.generic.some(candidate => candidate.alive())) {
+          this.event({ outcome: "waiting", reason, pending: this.pending.size });
+          await this.ready(signal);
+        }
+        const candidate = this.generic.shift();
+        if (candidate?.alive()) slot = candidate;
+      }
+    } catch (error) {
+      if (retain) this.busy.delete(retain.key);
+      throw error;
     }
-    this.event({ outcome: reused ? "assigned_hit" : slot ? "generic_hit" : "cold", reason: reused ? "scope_match" : reason, slot: slot?.name });
+    this.event({ outcome: reused ? "assigned_hit" : "generic_hit", reason: reused ? "scope_match" : reason, slot: slot?.name });
     this.replenish();
     let released = false;
     return {
@@ -119,12 +161,13 @@ export class SandboxPool {
 
   async close(): Promise<void> {
     this.stopped = true;
+    clearTimeout(this.retry);
     const slots = [...this.generic, ...[...this.idle.values()].map(value => {
       clearTimeout(value.timer);
       return value.slot;
     })];
     this.generic = [];
     this.idle.clear();
-    await Promise.all(slots.map(slot => slot.destroy()));
+    await Promise.all([...slots.map(slot => slot.destroy()), ...[...this.pending].map(p => p.catch(() => {}))]);
   }
 }
