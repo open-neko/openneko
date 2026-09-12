@@ -12,6 +12,9 @@ checks run during the image build on both release architectures.
 Measured image sizes, restart/readiness timings, single-agent and three-session
 results, and lazy document-service memory are recorded in the
 [12 September 2026 demo benchmark](benchmarks/2026-09-12-agent-startup.md).
+The follow-up [latency and warmed-session profile](benchmarks/2026-09-12-latency-profile.md)
+separates Hermes/ACP initialization, MCP setup, provider chunks, client delivery,
+and the memory cost of an initialized idle sandbox.
 
 ## Resource limits
 
