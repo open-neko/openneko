@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.44.1](https://github.com/open-neko/openneko/compare/v2.44.0...v2.44.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* map embedding queues to search semantics ([19eec69](https://github.com/open-neko/openneko/commit/19eec693495849bfb10ea99e3b468c733ced4b7f))
+* **web:** unify plugin connection UI and guard disconnect actions ([ffaab53](https://github.com/open-neko/openneko/commit/ffaab5335b334305d2ef9eb6853fd5cacdf18453))
+
+
+### Performance Improvements
+
+* prewarm Hermes sandboxes with user-scoped reuse ([3b13d1e](https://github.com/open-neko/openneko/commit/3b13d1e3501dd567880d45c2267de65a1fb3b98c))
+* slim agent startup and queue lazy document processing ([186383e](https://github.com/open-neko/openneko/commit/186383eaa2598f88416a349117769d335995fde4))
+* slim agent startup, queue document processing, and prewarm Hermes ([a823a92](https://github.com/open-neko/openneko/commit/a823a92967c3ed3d492c1696e62418f8b14fcf1c))
+
 ## [2.44.0](https://github.com/open-neko/openneko/compare/v2.43.0...v2.44.0) (2026-09-11)
 
 
