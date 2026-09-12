@@ -1,5 +1,37 @@
 import { expect, test } from "@playwright/test";
 
+test("plugin connections use shared cards, readable permissions and safe preview actions", async ({ page }, testInfo) => {
+  let requests = 0;
+  await page.route("**/api/integrations/**", route => { requests++; return route.abort(); });
+  await page.goto("/integrations?state=plugins");
+  const cards = page.locator('[data-slot="card"]');
+  await expect(cards).toHaveCount(2);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 960 });
+    for (const card of await cards.all()) {
+      const disclosure = card.locator("details");
+      await disclosure.evaluate(el => { (el as HTMLDetailsElement).open = true; });
+      const geometry = await card.evaluate(el => {
+        const title = el.querySelector("h3")!.getBoundingClientRect();
+        const action = el.querySelector("button")!.getBoundingClientRect();
+        return { titleX: title.x, actionX: action.x, height: action.height, radius: getComputedStyle(el).borderRadius, overflow: el.scrollWidth > el.clientWidth || document.documentElement.scrollWidth > innerWidth };
+      });
+      expect(geometry.overflow).toBe(false);
+      expect(geometry.radius).toBe("20px");
+      expect(geometry.titleX).toBe(geometry.actionX);
+      expect(geometry.height).toBeGreaterThanOrEqual(width <= 720 ? 44 : 40);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`plugin-connections-${width}.png`), fullPage: true });
+  }
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Connect account", exact: true })).toBeDisabled();
+  await expect(page.locator("time")).toHaveAttribute("datetime", "2026-09-01T10:00:00.000Z");
+  await page.getByRole("searchbox").fill("calendar.events.readonly");
+  await expect(cards).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Google Workspace", exact: true })).toBeVisible();
+  expect(requests).toBe(0);
+});
+
 test("personal connection cards keep aligned controls and accessible account actions", async ({ page }, testInfo) => {
   let accountRequests = 0;
   await page.route("**/api/my/pack-accounts/**", route => { accountRequests++; return route.abort(); });

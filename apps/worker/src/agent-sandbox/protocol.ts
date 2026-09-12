@@ -7,3 +7,4 @@
  */
 export const EVENT_MARKER = "__openneko_event__";
 export const RESULT_MARKER = "__openneko_agent_result__";
+export const ARTIFACTS_MARKER = "__openneko_artifacts__";

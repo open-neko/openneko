@@ -132,7 +132,7 @@ if (!reachable && process.env.LIBRARY_BROWSE_REQUIRE_DB === "1") throw new Error
     if (saved.status !== "saved") throw new Error("Expected saved concept");
     expect(saved.concept.sourceDocumentId).toBe(documentId);
     expect(saved.concept.path).toBe(original.path);
-    expect(saved.searchIndexed).toBe(true);
+    expect(saved.searchIndexed).toBe(false);
     expect((await editLibraryConcept(reader, input)).status).toBe("conflict");
     const events = await db().select().from(library_event).where(eq(library_event.concept_id, semanticId));
     expect(events.some(event => event.action === "concept_edited" && event.user_id === alice)).toBe(true);

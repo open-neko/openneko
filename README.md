@@ -129,6 +129,7 @@ to the customer GraphJin config at runtime.
 
 ## Docs
 
+- [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including RBAC and warm sandbox access revisions
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
 - [PLUGINS.md](PLUGINS.md) — plugin capabilities, sandbox/security model, marketplaces, install policy, host support

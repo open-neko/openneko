@@ -81,6 +81,15 @@ function extractionDependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("runLibraryExtractJob", () => {
+  it("queues capacity waits without exhausting transient retries", async () => {
+    const deps = extractionDependencies({
+      submit: vi.fn(async () => { throw new RetryableLibraryExtractionError("busy", false, true); }),
+    });
+    await runLibraryExtractJob({ ...payload, attempt: 7 }, deps);
+    expect(deps.enqueue).toHaveBeenCalledWith("library_extract",
+      expect.objectContaining({ attempt: 7 }), expect.objectContaining({ startAfter: 30 }));
+    expect(deps.markStatus).not.toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+  });
   it("extracts agent-generated Markdown in-process and queues distillation", async () => {
     const deps = extractionDependencies({
       getDocument: vi.fn(async () => document({ filename: "agent-note.md" })),

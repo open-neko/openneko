@@ -254,6 +254,7 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY patches patches
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
+COPY apps/embedding/package.json apps/embedding/package.json
 COPY packages/channels/package.json packages/channels/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/evals/package.json packages/evals/package.json
@@ -362,22 +363,29 @@ COPY evals/environment/adventureworks/api/server.mjs /app/server.mjs
 EXPOSE 8090
 ENTRYPOINT ["node", "/app/server.mjs"]
 
-# ─── 4b. embedding-model prewarm ───────────────────────────────────────
-# Download Xenova/all-MiniLM-L6-v2 (q8 quantized, ~22MB) into a stable
-# cache that both web and worker stages copy into their final images.
-# Without this, the first save: command in the running container blocks
-# on a HuggingFace download (and would fail in air-gapped deployments).
-FROM deps AS embedding-prewarm
+# Shared listener used by the embedding and Docling service images.
+FROM golang:1.25-bookworm AS lazy-service-build
+WORKDIR /src
+COPY apps/lazy-service .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
+
+FROM source AS embedding-deploy
+ARG TARGETARCH
+RUN pnpm --filter @neko/embedding deploy --prod /out/embedding \
+    && sh scripts/prune-node-runtime.sh /out/embedding "$TARGETARCH"
+# Bake and test the model. Offline readiness is a build requirement.
+RUN cd /out/embedding && NEKO_TRANSFORMERS_CACHE=/out/embedding/models node model.mjs --prewarm
+
+FROM node-runtime AS embedding
+RUN useradd --system --create-home --uid 10001 embedding
+COPY --from=embedding-deploy --chown=embedding:embedding /out/embedding /app
+COPY --from=lazy-service-build /out/lazy-service /usr/local/bin/lazy-service
+ENV NEKO_TRANSFORMERS_CACHE=/app/models
 WORKDIR /app
-# The script imports @huggingface/transformers, which pnpm installs under
-# /app/packages/llm/node_modules/ (isolated workspace deps, not hoisted
-# to /app/node_modules). Running from the package directory lets Node's
-# resolver find it. Same path packages/llm's `models:warm` script uses
-# in dev, so behavior matches.
-COPY packages/llm/scripts/prewarm-embedding.mjs /app/packages/llm/scripts/prewarm-embedding.mjs
-ENV NODE_ENV=production
-RUN mkdir -p /app/.transformers-cache && \
-    cd /app/packages/llm && node scripts/prewarm-embedding.mjs
+USER embedding
+EXPOSE 5003
+ENTRYPOINT ["lazy-service"]
+CMD ["--listen", ":5003", "--upstream", "http://127.0.0.1:5004", "--", "node", "/app/server.mjs"]
 
 # ─── 5a. web runtime ───────────────────────────────────────────────────
 # Web remains a trusted OpenShell control plane; the agent runtime is not here.
@@ -406,13 +414,6 @@ COPY --from=web-deploy --chown=neko:neko /app/packages/llm/assets ./packages/llm
 # Blueprint JSON is read through the trusted records control plane at runtime;
 # Next's file tracer cannot discover fs-relative assets automatically.
 COPY --from=web-deploy --chown=neko:neko /app/packages/records/blueprints ./packages/records/blueprints
-# Next.js standalone tracing also misses the onnxruntime-node native .so
-# libraries (they're loaded by @huggingface/transformers at runtime via
-# dlopen, not via require()). Without these copies, /settings and every
-# other route that touches the embedding model 500s with
-# "libonnxruntime.so.1: cannot open shared object file".
-COPY --from=web-deploy --chown=neko:neko /app/node_modules/.pnpm/onnxruntime-node@1.24.3/node_modules/onnxruntime-node ./node_modules/.pnpm/onnxruntime-node@1.24.3/node_modules/onnxruntime-node
-COPY --from=web-deploy --chown=neko:neko /app/node_modules/.pnpm/onnxruntime-common@1.24.3/node_modules/onnxruntime-common ./node_modules/.pnpm/onnxruntime-common@1.24.3/node_modules/onnxruntime-common
 COPY --chown=neko:neko entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 # Vendor the openneko Go binary so the entrypoint can run `openneko migrate`
@@ -420,10 +421,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # worker image and the host install.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
-# Vendored embedding model (see embedding-prewarm stage above). Ships the
-# ~22MB model files inside the image so save:/auto-context never blocks
-# on a network download at runtime.
-COPY --from=embedding-prewarm --chown=neko:neko /app/.transformers-cache /app/.transformers-cache
 USER neko
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
@@ -431,7 +428,7 @@ CMD ["node", "apps/web/server.js"]
 
 # ─── 5b. worker runtime ────────────────────────────────────────────────
 # Trimmed prod closure of @neko/worker: drops devDeps + other apps' sources +
-# web/Next, keeps src + tsx + @neko/llm (with assets) + onnxruntime. Same
+# web/Next, keeps src + tsx + @neko/llm (with assets). Same
 # mechanism as agent-deploy; rooted at /app, so the entry is /app/src/index.ts.
 FROM source AS worker-deploy
 ARG TARGETARCH
@@ -497,38 +494,28 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # extra install step. Same binary operators install on their host.
 COPY --from=go-build --chown=neko:neko /out/openneko /usr/local/bin/openneko
 RUN chmod +x /usr/local/bin/openneko
-# Vendored embedding model (see embedding-prewarm stage above). Ships the
-# ~22MB model files inside the image so worker auto-memory and metric-agent
-# context retrieval never block on a network fetch.
-COPY --from=embedding-prewarm --chown=neko:neko /app/.transformers-cache /app/.transformers-cache
 USER neko
 EXPOSE 4100
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "--import", "tsx/esm", "src/index.ts"]
 
 # ─── 5d. agent sandbox runtime (OpenShell) ─────────────────────────────
-# The agent loop running as a child inside an OpenShell sandbox (Phase 3,
-# OPENNEKO_AGENT_RUNTIME=openshell), reaching the control plane only through the
-# broker. Restore the v2.28 runtime architecture: deploy the worker workspace's
-# production dependency closure, including tsx, @neko/llm, its assets, and every
-# runtime file addressed through the normal Node workspace layout. This avoids
-# maintaining a second, bundle-specific filesystem contract.
+# Compile the sandbox-only entry and multiplexed bridge. Ship their assets,
+# not the worker's dependency closure (DB, ONNX, transformers, tsx).
 FROM source AS agent-deploy
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm --filter @neko/worker deploy --prod /out/agent-app
-# Keep the v2.28 multiplexed bridge optimization. The entrypoint itself remains
-# workspace source executed through tsx; the bridge is path-stable for clean
-# Hermes child environments and does not load embedding dependencies.
-RUN cd apps/worker && pnpm exec esbuild src/agent-sandbox/mcp-bridge.ts \
+RUN cd apps/worker && pnpm exec esbuild \
+      src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts \
       --bundle --platform=node --format=esm \
-      --external:onnxruntime-node --external:@huggingface/transformers \
       --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
-      --outfile=/out/agent-app/dist/agent-sandbox/mcp-bridge.js \
-    && rm -rf /out/agent-app/scripts \
-    && test ! -e /out/agent-app/scripts
+      --outdir=/out/agent-app \
+    && printf '{"type":"module"}\n' > /out/agent-app/package.json \
+    && mkdir -p /out/agent-app/assets \
+    && cp -R ../../packages/llm/assets/builtin-skills /out/agent-app/assets/
 
 FROM cli AS agent
 USER root
+# Late-bound warm slots must observe policy/provider revisions promptly.
+ENV OPENSHELL_POLICY_POLL_INTERVAL_SECS=1
 # OpenNeko pre-installs the ACP/MCP feature set. Never let a sandbox spend its
 # startup budget trying a lazy install through the restricted egress policy.
 ENV HERMES_DISABLE_LAZY_INSTALLS=1
@@ -540,14 +527,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftabl
 RUN groupadd -g 1000660000 sandbox \
     && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
     && install -d -o sandbox -g sandbox /sandbox
-# The deployed workspace is readable by the sandbox user and contains the
-# runtime source, production node_modules closure, built-in assets, and bridge.
-# Worker operational/eval scripts are pruned in agent-deploy so candidates
-# cannot inspect benchmark prompts, sentinels, or oracle implementation.
+# Only the two bundles and built-in skills enter the agent filesystem.
 COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
+COPY --chown=1000660000:1000660000 apps/worker/src/agent-sandbox/hermes-warm.py /app/hermes-warm.py
+# Fail the image build if bundles or filesystem assets cannot boot without
+# workspace node_modules. These checks also run on each release architecture.
+RUN cd /app && node entry.js --preflight \
+    && node --input-type=module -e "await import('./mcp-bridge.js')"
 WORKDIR /sandbox
-# Supervisor-replaced; launcher runs:
-#   cd /app && node --import tsx/esm /app/src/agent-sandbox/entry.ts
+# Supervisor-replaced; launcher runs: cd /app && node /app/entry.js
 CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────

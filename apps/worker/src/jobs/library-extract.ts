@@ -358,6 +358,10 @@ async function handleExtractionError(
   error: unknown,
 ): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof RetryableLibraryExtractionError && error.capacityBusy) {
+    await scheduleExtract(deps, payload, payload.attempt ?? 0, 30);
+    return;
+  }
   const terminal = error instanceof TerminalLibraryExtractionError;
   const attempt = payload.attempt ?? 0;
   if (!terminal && attempt + 1 < MAX_TRANSIENT_ATTEMPTS) {

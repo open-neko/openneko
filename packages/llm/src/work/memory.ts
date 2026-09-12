@@ -253,20 +253,6 @@ function dropTampered(memories: WorkMemory[]): WorkMemory[] {
   return ok;
 }
 
-async function tryEmbed(text: string): Promise<string | null> {
-  // Embed up front so search-by-context can find it on the very next query.
-  // Failure here is not fatal — we'd rather store the memory than lose it.
-  try {
-    return vectorLiteral(await embedText(text));
-  } catch (err) {
-    console.error(
-      "[work-memory] embedding failed; storing memory without vector:",
-      err instanceof Error ? err.message : err,
-    );
-    return null;
-  }
-}
-
 export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promise<WorkMemory> {
   assertKind(input.kind);
   const scope = normalizeNewWorkMemoryScope(input.scope, {
@@ -280,7 +266,6 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
     input.userId !== undefined
       ? input.userId
       : await resolveRunMemoryLayer(input.runId ?? null);
-  const embedding = await tryEmbed(text);
   const id = randomUUID();
   const rows = await db()
     .insert(work_memory)
@@ -307,7 +292,8 @@ export async function rememberWorkMemory(input: RememberWorkMemoryInput): Promis
         text,
       }),
       expires_at: expiryForKind(input.kind, now),
-      ...(embedding ? { embedding: sql`${embedding}::vector` } : {}),
+      // Atomically mark content for the durable embedding dispatcher.
+      embedding: null,
       created_at: now,
       updated_at: now,
     })
@@ -702,8 +688,8 @@ export async function overrideWorkMemoryForUser(input: {
           scopeId: target.scopeId,
           text,
         }),
-        ...(input.text && !suppress
-          ? { embedding: await embeddingValue(text) }
+        ...(input.text
+          ? { embedding: null }
           : {}),
         updated_at: now,
       })
@@ -750,8 +736,8 @@ export async function overrideWorkMemoryForUser(input: {
         text,
         suppressed: suppress,
         integrity_hmac: overrideHmac,
-        ...(input.text && !suppress
-          ? { embedding: await embeddingValue(text) }
+        ...(input.text
+          ? { embedding: null }
           : {}),
         updated_at: now,
       })
@@ -779,7 +765,7 @@ export async function overrideWorkMemoryForUser(input: {
         overrides_origin_id: target.originId ?? target.id,
         suppressed: suppress,
         integrity_hmac: overrideHmac,
-        ...(suppress ? {} : { embedding: await embeddingValue(text) }),
+        ...(suppress ? {} : { embedding: null }),
         created_at: now,
         updated_at: now,
       })
@@ -859,7 +845,7 @@ export async function promoteWorkMemoryToOrg(input: {
         scopeId: source.scopeId,
         text: source.text,
       }),
-      embedding: await embeddingValue(source.text),
+      embedding: null,
       created_at: now,
       updated_at: now,
     })
@@ -904,11 +890,6 @@ export async function promoteWorkMemoryToOrg(input: {
     );
   }
   return memory;
-}
-
-async function embeddingValue(text: string) {
-  const literal = await tryEmbed(text);
-  return literal ? sql`${literal}::vector` : null;
 }
 
 async function ensureMemoryFork(orgId: string, userId: string): Promise<void> {

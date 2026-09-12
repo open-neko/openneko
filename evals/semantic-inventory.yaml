@@ -49,6 +49,8 @@ worker_queues:
   channel_deliver: [CHANNEL-DELIVERY]
   library_extract: [LIBRARY-DISTILL]
   library_distill: [LIBRARY-DISTILL, LIBRARY-LAYERS]
+  embedding_index: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
+  embedding_sweep: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
   skill_learn: [WORK-SKILLS]
 
 observation_kinds:

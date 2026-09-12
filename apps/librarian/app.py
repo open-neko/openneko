@@ -1,8 +1,8 @@
 """OpenNeko's small, offline Docling extraction service.
 
 Only digital-text PDF, DOCX, PPTX, XLSX and CSV are accepted. OCR is disabled
-by construction. Task state is intentionally disposable: OpenNeko persists the
-task id and resubmits after this container restarts.
+by construction. Completed results live in a bounded disk spool. In-flight
+tasks are disposable: the durable host job resubmits after a child crash.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
+import result_store
 
 TaskState = Literal["pending", "started", "success", "failure"]
 SUPPORTED = {"pdf", "docx", "pptx", "xlsx", "csv"}
@@ -43,7 +44,6 @@ class Task:
     source: Path
     input_format: str
     state: TaskState = "pending"
-    result_path: Path | None = None
     error: str | None = None
     created_at: float = field(default_factory=time.monotonic)
     completed_at: float | None = None
@@ -58,6 +58,7 @@ worker_task: asyncio.Task[None] | None = None
 async def lifespan(_: FastAPI):
     global queue, worker_task
     TASK_ROOT.mkdir(parents=True, exist_ok=True)
+    result_store.ROOT.mkdir(parents=True, exist_ok=True)
     queue = asyncio.Queue(maxsize=MAX_PENDING_TASKS)
     tasks.clear()
     worker_task = asyncio.create_task(_conversion_worker())
@@ -79,6 +80,29 @@ app = FastAPI(
 )
 
 
+# Admission precedes FastAPI multipart parsing, so simultaneous uploads cannot
+# exhaust tmpfs before the endpoint checks its queue. Completed results live on disk.
+admitting = 0
+
+
+@app.middleware("http")
+async def admit_conversion(request, call_next):
+    global admitting
+    conversion = request.method == "POST" and request.url.path == "/v1/convert/file/async"
+    if not conversion:
+        return await call_next(request)
+    _expire_results()
+    if admitting + len(tasks) >= 2:
+        return JSONResponse(status_code=429, content={"detail": "extraction capacity is full"})
+    if not result_store.has_capacity(admitting + len(tasks)):
+        return JSONResponse(status_code=429, content={"detail": "result disk quota is full"})
+    admitting += 1
+    try:
+        return await call_next(request)
+    finally:
+        admitting -= 1
+
+
 @app.get("/health/ready")
 async def ready() -> dict[str, object]:
     models_ready = all((MODEL_ROOT / path).is_file() for path in REQUIRED_MODEL_FILES)
@@ -90,6 +114,13 @@ async def ready() -> dict[str, object]:
         "formats": sorted(SUPPORTED),
         "queue_depth": queue.qsize(),
     }
+
+
+@app.get("/health/idle")
+async def idle() -> dict[str, bool]:
+    # Completed results are served from disk by the listener while we sleep.
+    _expire_results()
+    return {"idle": not tasks and queue.empty()}
 
 
 @app.post("/v1/convert/file/async", status_code=status.HTTP_202_ACCEPTED)
@@ -132,17 +163,28 @@ async def convert_file_async(
         shutil.rmtree(task_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="file is empty")
 
+    try:
+        queue.put_nowait(task_id)
+    except asyncio.QueueFull:
+        shutil.rmtree(task_dir, ignore_errors=True)
+        raise HTTPException(status_code=429, detail="conversion queue is full")
     tasks[task_id] = Task(task_id=task_id, source=source, input_format=extension)
-    await queue.put(task_id)
     return {"task_id": task_id, "task_status": "pending", "task_position": queue.qsize()}
 
 
 @app.get("/v1/status/poll/{task_id}")
 async def poll(task_id: str) -> dict[str, object]:
+    cached = result_store.read(task_id, "status.json")
+    if cached is not None:
+        return cached
     _expire_results()
     task = tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
+    # Poll delivers the complete failure to the durable host job. Release its
+    # admission slot now; two bad files must not stall later work for the TTL.
+    if task.state == "failure":
+        tasks.pop(task_id, None)
     return {
         "task_id": task_id,
         "task_status": task.state,
@@ -152,6 +194,9 @@ async def poll(task_id: str) -> dict[str, object]:
 
 @app.get("/v1/result/{task_id}")
 async def result(task_id: str) -> JSONResponse:
+    cached = result_store.read(task_id, "result.json")
+    if cached is not None:
+        return JSONResponse(content=cached)
     _expire_results()
     task = tasks.get(task_id)
     if task is None:
@@ -162,6 +207,7 @@ async def result(task_id: str) -> JSONResponse:
             content={"status": task.state, "document": None, "errors": []},
         )
     if task.state == "failure":
+        tasks.pop(task_id, None)
         return JSONResponse(
             content={
                 "status": "failure",
@@ -169,18 +215,7 @@ async def result(task_id: str) -> JSONResponse:
                 "errors": [{"error_message": task.error or "conversion failed"}],
             }
         )
-    if task.result_path is None or not task.result_path.is_file():
-        raise HTTPException(status_code=503, detail="conversion result is unavailable")
-    markdown = await asyncio.to_thread(task.result_path.read_text, encoding="utf-8")
-    tasks.pop(task_id, None)
-    shutil.rmtree(task.source.parent, ignore_errors=True)
-    return JSONResponse(
-        content={
-            "status": "success",
-            "document": {"md_content": markdown},
-            "errors": [],
-        }
-    )
+    raise HTTPException(status_code=503, detail="conversion result is unavailable")
 
 
 async def _conversion_worker() -> None:
@@ -197,24 +232,21 @@ async def _conversion_worker() -> None:
                 raise ValueError(
                     "No embedded text was found. Scanned and handwritten documents are not supported yet."
                 )
-            # Release the input before spooling the result so the bounded tmpfs
-            # does not need to hold both complete copies at the same time.
-            task.source.unlink(missing_ok=True)
-            task.result_path = task.source.parent / "result.md"
-            await asyncio.to_thread(
-                task.result_path.write_text,
-                markdown,
-                encoding="utf-8",
-            )
-            task.state = "success"
+            await asyncio.to_thread(result_store.save, task_id, markdown)
+            tasks.pop(task_id, None)
         except Exception as exc:  # surfaced through the result contract
             task.state = "failure"
             task.error = str(exc)[:2_000]
+            try:
+                await asyncio.to_thread(result_store.save, task_id, error=task.error)
+                tasks.pop(task_id, None)
+            except Exception:
+                # Disk failure: retain a small error until the host observes it.
+                # Never claim success or evict work before durable publication.
+                pass
         finally:
             task.completed_at = time.monotonic()
-            task.source.unlink(missing_ok=True)
-            if task.state == "failure":
-                shutil.rmtree(task.source.parent, ignore_errors=True)
+            shutil.rmtree(task.source.parent, ignore_errors=True)
             queue.task_done()
 
 

@@ -67,6 +67,7 @@ published_port() {
 }
 
 worker_container="${container_prefix}-worker-1"
+embedding_container="${container_prefix}-embedding-1"
 records_graphjin_container="${container_prefix}-records-graphjin-1"
 metadata_db_container="${container_prefix}-neko-db-1"
 records_db_container="${container_prefix}-records-db-1"
@@ -74,6 +75,7 @@ metadata_graphjin_container="${container_prefix}-neko-graphjin-1"
 
 for required_container in \
   "$worker_container" \
+  "$embedding_container" \
   "$records_graphjin_container" \
   "$metadata_db_container" \
   "$records_db_container" \
@@ -112,6 +114,7 @@ export RECORDS_PG_HOST=127.0.0.1
 export RECORDS_PG_PORT="$(published_port "$records_db_container" 5432)"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 
+export NEKO_EMBEDDING_URL="http://$(container_ip "$embedding_container"):5003"
 export WORKER_ADMIN_URL="http://$(container_ip "$worker_container"):4100"
 export OPENNEKO_RECORDS_GRAPHJIN_URL="http://$(container_ip "$records_graphjin_container"):8090"
 export OPENNEKO_GRAPHJIN_URL="http://127.0.0.1:$(published_port "$metadata_graphjin_container" 8089)"

@@ -43,6 +43,7 @@ import {
   sweepStaleLibraryConcepts,
   upsertLibraryConcept,
 } from "../../src/work/library";
+import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -143,7 +144,7 @@ describeIfDb("library layering and search", () => {
 
   it("keeps personal concepts invisible to other members and to the team layer", async () => {
     try {
-      await upsertLibraryConcept({
+      const { concept } = await upsertLibraryConcept({
         orgId,
         userId: alice(),
         path: "policies/refund-policy.md",
@@ -151,6 +152,7 @@ describeIfDb("library layering and search", () => {
         title: "Refund policy",
         body: "Refunds within 30 days need CFO approval over $500.",
       });
+      await runEmbeddingIndexJob({ kind: "concept", orgId, id: concept.id });
 
       const aliceView = await searchLibraryByContext({
         orgId,
@@ -206,6 +208,7 @@ describeIfDb("library layering and search", () => {
       });
       expect(approved.status).toBe("stable");
       expect(approved.verified.at(-1)?.by).toBe(`human:${alice()}`);
+      await runEmbeddingIndexJob({ kind: "concept", orgId, id: draft.id });
 
       const bobView = await searchLibraryByContext({
         orgId,
@@ -302,6 +305,7 @@ describeIfDb("library layering and search", () => {
         status: "stable",
         staleAfter: "2020-01-01",
       });
+      await runEmbeddingIndexJob({ kind: "concept", orgId, id: concept.id });
       const swept = await sweepStaleLibraryConcepts();
       expect(swept.deprecated).toBeGreaterThanOrEqual(1);
       expect(swept.orgIds).toContain(orgId);

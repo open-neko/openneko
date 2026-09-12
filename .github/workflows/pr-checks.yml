@@ -10,6 +10,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lazy-service:
+    name: Lazy service lifecycle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: false
+      - run: go test -race ./...
+        working-directory: apps/lazy-service
+
+  embedding-image:
+    name: Offline embedding service
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build --target embedding -t openneko-embedding:pr .
+      - run: docker run --rm --network none --memory 1g --cpus 1 --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=64m --entrypoint node openneko-embedding:pr /app/smoke.mjs
+
   librarian-image:
     name: Librarian image
     runs-on: ubuntu-22.04
@@ -24,48 +45,8 @@ jobs:
       - name: Build image with vendored models
         run: docker build --target librarian -t openneko-librarian:pr -f apps/librarian/Dockerfile .
 
-      - name: Prove offline readiness and model presence
-        run: |
-          set -euo pipefail
-          docker run -d --name neko-librarian-pr --network none openneko-librarian:pr
-          trap 'docker rm -f neko-librarian-pr >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 30); do
-            if docker exec neko-librarian-pr python -c \
-              "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:5001/health/ready')); assert data['ok'] and data['ocr'] is False"; then
-              break
-            fi
-            test "$attempt" != 30
-            sleep 2
-          done
-          docker exec neko-librarian-pr python -c \
-            "from pathlib import Path; root=Path('/opt/docling/models'); assert any(root.rglob('*'))"
-          docker exec -i neko-librarian-pr python - <<'PY'
-          from pathlib import Path
-          from app import _convert
-
-          phrase = "OpenNeko offline vendored model smoke"
-          stream = f"BT /F1 16 Tf 72 720 Td ({phrase}) Tj ET".encode()
-          objects = [
-              b"<< /Type /Catalog /Pages 2 0 R >>",
-              b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-              b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-              b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
-              b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-          ]
-          pdf = bytearray(b"%PDF-1.4\n")
-          offsets = []
-          for number, body in enumerate(objects, 1):
-              offsets.append(len(pdf))
-              pdf.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
-          xref = len(pdf)
-          pdf.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
-          for offset in offsets:
-              pdf.extend(f"{offset:010d} 00000 n \n".encode())
-          pdf.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
-          source = Path("/tmp/offline-smoke.pdf")
-          source.write_bytes(pdf)
-          assert phrase in _convert(source)
-          PY
+      - name: Verify lazy extraction and idle restart offline
+        run: docker run --rm --network none --memory 4g --cpus 1 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=512m --mount type=volume,target=/var/lib/neko-librarian/results --entrypoint python3 openneko-librarian:pr /app/smoke.py
 
   release-recovery-contract:
     name: Release recovery contract
@@ -260,6 +241,14 @@ jobs:
           sudo tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin
           graphjin version
 
+
+      - name: Verify durable embedding queue
+        env:
+          PGPASSWORD: secret
+          EMBEDDING_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/embedding_jobs_test
+        run: |
+          createdb -h 127.0.0.1 -U neko embedding_jobs_test
+          pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
 
       - name: Run migrations
         env:

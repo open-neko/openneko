@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
+FROM golang:1.25-bookworm AS lazy-service-build
+WORKDIR /src
+COPY apps/lazy-service .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lazy-service .
+
 FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7 AS dependencies
 
 ENV UV_LINK_MODE=copy
@@ -11,7 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 FROM dependencies AS librarian-test
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
-COPY apps/librarian/app.py apps/librarian/test_app.py ./
+COPY apps/librarian/app.py apps/librarian/result_store.py apps/librarian/test_app.py ./
 RUN uv run pytest -q test_app.py
 
 FROM dependencies AS model-builder
@@ -38,10 +43,11 @@ RUN find /app/.venv -type d -name __pycache__ -prune -exec rm -rf '{}' + \
 FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7 AS librarian
 
 ENV DOCLING_ARTIFACTS_PATH=/opt/docling/models \
+    NEKO_LIBRARIAN_RESULT_ROOT=/var/lib/neko-librarian/results \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
-    UVICORN_HOST=0.0.0.0 \
-    UVICORN_PORT=5001 \
+    UVICORN_HOST=127.0.0.1 \
+    UVICORN_PORT=5002 \
     PYTHONUNBUFFERED=1 \
     PATH=/app/.venv/bin:$PATH
 
@@ -50,12 +56,16 @@ LABEL org.openneko.librarian.docling-slim="2.124.0" \
       org.openneko.librarian.tableformer-revision="fc0f2d45e2218ea24bce5045f58a389aed16dc23" \
       org.openneko.librarian.ocr="disabled"
 
-RUN useradd --create-home --uid 10001 librarian
+RUN useradd --create-home --uid 10001 librarian \
+ && install -d -o librarian -g librarian -m 0700 /var/lib/neko-librarian/results
 WORKDIR /app
 COPY --from=model-builder --chown=librarian:librarian /app/.venv /app/.venv
 COPY --from=model-builder --chown=librarian:librarian /opt/docling/models /opt/docling/models
-COPY --chown=librarian:librarian apps/librarian/app.py /app/app.py
+COPY --chown=librarian:librarian apps/librarian/app.py apps/librarian/result_store.py apps/librarian/smoke.py /app/
+
+COPY --from=lazy-service-build /out/lazy-service /usr/local/bin/lazy-service
 
 USER librarian
 EXPOSE 5001
-CMD ["uvicorn", "app:app"]
+ENTRYPOINT ["lazy-service"]
+CMD ["--listen", ":5001", "--upstream", "http://127.0.0.1:5002", "--", "uvicorn", "app:app"]

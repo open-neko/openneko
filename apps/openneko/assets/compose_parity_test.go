@@ -77,6 +77,30 @@ func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
 		if !strings.Contains(fmt.Sprint(librarian.Healthcheck["test"]), "/health/ready") {
 			t.Fatalf("%s librarian healthcheck does not use readiness", label)
 		}
+		if librarian.Environment["OPENNEKO_SERVICE_IDLE_TIMEOUT"] != "${OPENNEKO_LIBRARIAN_IDLE_TIMEOUT:-5m}" {
+			t.Fatalf("%s librarian idle timeout is missing", label)
+		}
+		if !reflect.DeepEqual(librarian.Volumes, []string{"librarian-results:/var/lib/neko-librarian/results"}) {
+			t.Fatalf("%s librarian results must use a disk volume: %v", label, librarian.Volumes)
+		}
+		if librarian.Environment["NEKO_LIBRARIAN_RESULT_TTL_SECONDS"] != "${OPENNEKO_LIBRARIAN_RESULT_TTL_SECONDS:-900}" || librarian.Environment["NEKO_LIBRARIAN_RESULT_MAX_BYTES"] != "${OPENNEKO_LIBRARIAN_RESULT_MAX_BYTES:-536870912}" {
+			t.Fatalf("%s librarian result retention bounds are missing", label)
+		}
+		embedding := document.Services["embedding"]
+		if !embedding.ReadOnly || embedding.CPUs != "${OPENNEKO_EMBEDDING_CPUS:-1.0}" || embedding.MemLimit != "${OPENNEKO_EMBEDDING_MEMORY:-1g}" || len(embedding.Ports) != 0 {
+			t.Fatalf("%s embedding must be bounded and private: %+v", label, embedding)
+		}
+		if embedding.Environment["OPENNEKO_SERVICE_IDLE_TIMEOUT"] != "${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}" || !strings.Contains(fmt.Sprint(embedding.Healthcheck["test"]), "/health/ready") {
+			t.Fatalf("%s embedding lazy lifecycle configuration is missing", label)
+		}
+		if document.Services["worker"].DependsOn["embedding"].Condition != "service_healthy" {
+			t.Fatalf("%s worker must wait for the embedding listener", label)
+		}
+		for _, consumer := range []string{"web", "worker"} {
+			if document.Services[consumer].Environment["NEKO_EMBEDDING_URL"] != "http://embedding:5003" {
+				t.Fatalf("%s %s embedding endpoint is missing", label, consumer)
+			}
+		}
 	}
 
 	packaged := loadComposeParityDocument(t, packagedRaw).Services["librarian"]

@@ -39,9 +39,16 @@ vi.mock("../../src/embedding", async () => {
 
 import {
   formatWorkMemoryPromptContext,
-  rememberWorkMemory,
+  rememberWorkMemory as saveMemory,
   searchWorkMemoryByContext,
 } from "../../src/work/memory";
+
+import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
+async function rememberWorkMemory(input: Parameters<typeof saveMemory>[0]) {
+  const memory = await saveMemory(input);
+  await runEmbeddingIndexJob({ kind: "memory", orgId: input.orgId, id: memory.id });
+  return memory;
+}
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -94,7 +101,7 @@ describeIfDb("work memory context search (pgvector)", () => {
     }
   });
 
-  it("populates the embedding column on insert and finds the row by context", async () => {
+  it("indexes the saved memory through the background job and finds the row by context", async () => {
     try {
       const memory = await rememberWorkMemory({
         orgId,

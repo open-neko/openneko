@@ -48,6 +48,9 @@ export interface RunAgentBackendInput {
   runId: string;
   workspace: AgentWorkspace;
   backendState?: Record<string, unknown>;
+  /** Trusted host-only reuse boundary. Missing revision disables assigned reuse.
+   * Future RBAC must change this revision when ANY effective grant changes. */
+  sandboxUser?: { principalId: string; authorizationRevision: string };
   pluginActions: readonly PluginActionDescriptor[];
   /** Installed pack actions, discovered independently of plugins. */
   packActions?: readonly PackActionDescriptor[];

@@ -5,7 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { deriveSigningSecret } from "@neko/secret-crypt";
-import { canonicalJson } from "./audit-chain";
+import { canonicalJson } from "../canonical-json";
 
 export const WORKFLOW_API_TOKEN_PREFIX = "onk_wf";
 export const WORKFLOW_API_HARD_MAX_REQUEST_BYTES = 1024 * 1024;

@@ -153,27 +153,18 @@ describe("Hermes install contract", () => {
     expect(workerStage).not.toContain("COPY --from=npm-payload");
   });
 
-  it("ships the agent as the v2.28 production workspace closure", async () => {
+  it("ships standalone sandbox bundles with a build-time filesystem check", async () => {
     const dockerfile = await readFile(`${REPO_ROOT}Dockerfile`, "utf8");
     const agentDeploy = dockerfile.slice(
       dockerfile.indexOf("FROM source AS agent-deploy"),
       dockerfile.indexOf("FROM cli AS agent"),
     );
-    const agentStage = dockerfile.slice(
-      dockerfile.indexOf("FROM cli AS agent"),
-      dockerfile.indexOf("# ─── 5c."),
-    );
-
-    expect(agentDeploy).toContain(
-      "pnpm --filter @neko/worker deploy --prod /out/agent-app",
-    );
-    expect(agentDeploy).not.toContain("--outfile=/out/agent-app/agent-entry.js");
+    expect(agentDeploy).toContain("src/agent-sandbox/entry.ts src/agent-sandbox/mcp-bridge.ts");
+    expect(agentDeploy).toContain("assets/builtin-skills");
+    expect(agentDeploy).not.toContain("deploy --prod");
+    expect(dockerfile).toContain("node entry.js --preflight");
+    expect(dockerfile).toContain("await import('./mcp-bridge.js')");
     expect(dockerfile).toContain("FROM npm-runtime AS agent-base");
-    expect(dockerfile).not.toContain("FROM graphjin-node-runtime AS agent-base");
-    expect(agentStage).toContain(
-      "node --import tsx/esm /app/src/agent-sandbox/entry.ts",
-    );
-    expect(agentStage).not.toContain("/usr/local/bin/graphjin");
   });
 
   it("has no production GraphJin CLI execution fallback", async () => {
