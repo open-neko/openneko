@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.44.3](https://github.com/open-neko/openneko/compare/v2.44.2...v2.44.3) (2026-09-12)
+
+
+### Bug Fixes
+
+* preserve completed solo onboarding after identity upgrade ([45e5fa0](https://github.com/open-neko/openneko/commit/45e5fa0f02e7416043f0782e10d90839cd510d56))
+* preserve completed solo onboarding after identity upgrade ([fca784f](https://github.com/open-neko/openneko/commit/fca784f602de2e7fe3f607219a5388a46f65e51a))
+
 ## [2.44.2](https://github.com/open-neko/openneko/compare/v2.44.1...v2.44.2) (2026-09-12)
 
 
