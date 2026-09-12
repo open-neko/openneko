@@ -22,6 +22,8 @@ import {
 } from "@neko/db/test-helpers";
 import {
   customer_profile,
+  onboarding_wizard,
+  getOrCreateSoloAdmin,
   db,
   operator_profile,
   pool,
@@ -29,7 +31,8 @@ import {
 } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
-const { mockGetOrgId, mockGetCurrentActor } = vi.hoisted(() => ({
+const { mockGetOrgId, mockGetCurrentActor, mockGetAuthProvider } = vi.hoisted(() => ({
+  mockGetAuthProvider: vi.fn(),
   mockGetOrgId: vi.fn(),
   mockGetCurrentActor: vi.fn(),
 }));
@@ -42,6 +45,8 @@ vi.mock("@/lib/db", async () => {
 vi.mock("@/lib/actor", () => ({
   getCurrentActor: mockGetCurrentActor,
 }));
+
+vi.mock("@/lib/auth", () => ({ getAuthProvider: mockGetAuthProvider }));
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -92,6 +97,7 @@ describeIfDb("/api/onboarding/status GET (enriched)", () => {
   });
 
   beforeEach(async () => {
+    mockGetAuthProvider.mockResolvedValue(null);
     orgId = uniqueOrgId("api-onboarding-status");
     await createTestOrg(orgId);
     mockGetOrgId.mockResolvedValue(orgId);
@@ -223,7 +229,20 @@ describeIfDb("/api/onboarding/status GET (enriched)", () => {
     });
   });
 
+  it("preserves completed solo onboarding and role views after assigning a real identity", async () => {
+    await db().insert(customer_profile).values({ org_id: orgId, version: 1, is_current: true, business_profile: "existing installation" });
+    await db().insert(onboarding_wizard).values({ org_id: orgId, active_seats: ["CEO", "CFO", "COO", "HR"] });
+    const owner = await getOrCreateSoloAdmin(orgId);
+    expect(owner?.id).toBeTruthy();
+    mockGetCurrentActor.mockResolvedValue({ userId: owner!.id, role: "admin" });
+    expect((await callRoute(GET)).body).toMatchObject({ state: "ready", mode: "shared", seats: ["CEO", "CFO", "COO", "HR"] });
+    // The same owner must complete a personal persona only after SSO becomes active.
+    mockGetAuthProvider.mockResolvedValue({ pluginName: "sso" });
+    expect((await callRoute(GET)).body).toEqual({ state: "needs_persona" });
+  });
+
   it("requires an exact personal persona for an SSO user", async () => {
+    mockGetAuthProvider.mockResolvedValue({ pluginName: "sso" });
     await db().insert(customer_profile).values({
       org_id: orgId,
       version: 1,
@@ -240,6 +259,7 @@ describeIfDb("/api/onboarding/status GET (enriched)", () => {
   });
 
   it("removes shared role views after an SSO user defines their persona", async () => {
+    mockGetAuthProvider.mockResolvedValue({ pluginName: "sso" });
     await db().insert(customer_profile).values({
       org_id: orgId,
       version: 1,
