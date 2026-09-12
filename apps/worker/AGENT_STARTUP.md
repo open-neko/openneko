@@ -9,6 +9,10 @@ policy. Creation runs `true`; execution starts `/app/entry.js` once. The entry
 validates its bridge and skills before running the job. The same filesystem
 checks run during the image build on both release architectures.
 
+Measured image sizes, restart/readiness timings, single-agent and three-session
+results, and lazy document-service memory are recorded in the
+[12 September 2026 demo benchmark](benchmarks/2026-09-12-agent-startup.md).
+
 ## Resource limits
 
 `OPENNEKO_AGENT_CPUS` defaults to `2`; `OPENNEKO_AGENT_MEMORY` defaults to `1Gi`.
