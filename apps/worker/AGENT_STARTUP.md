@@ -15,6 +15,8 @@ results, and lazy document-service memory are recorded in the
 The follow-up [latency and warmed-session profile](benchmarks/2026-09-12-latency-profile.md)
 separates Hermes/ACP initialization, MCP setup, provider chunks, client delivery,
 and the memory cost of an initialized idle sandbox.
+The [request-independent preload experiment](benchmarks/2026-09-12-generic-prewarm.md)
+measures common Hermes/tool code before any model configuration or MCP attachment.
 
 ## Resource limits
 
