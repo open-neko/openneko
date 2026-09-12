@@ -1,7 +1,7 @@
 /**
  * /api/settings/install-policy contract tests.
  *
- * Covers: solo/userless admin => 200, non-admin => 403,
+ * Covers: persisted solo admin => 200, non-admin => 403,
  * admin => 200 read + write,
  * partial PATCH semantics, validation error on http: marketplace URL,
  * official marketplace is always preserved.
@@ -23,7 +23,7 @@ import {
   deleteTestOrg,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { app_user, db, pool } from "@neko/db";
+import { app_user, getOrCreateSoloAdmin, db, pool } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockGetCurrentUser } = vi.hoisted(() => ({
@@ -89,8 +89,8 @@ describeIfDb("/api/settings/install-policy", () => {
     await pool().end();
   });
 
-  it("GET returns DEFAULT_POLICY in solo/userless admin mode", async () => {
-    mockGetCurrentUser.mockResolvedValue(null);
+  it("GET returns DEFAULT_POLICY in persisted solo admin mode", async () => {
+    mockGetCurrentUser.mockResolvedValue(await getOrCreateSoloAdmin(orgId));
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     const body = res.body as {

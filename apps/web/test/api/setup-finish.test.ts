@@ -21,7 +21,7 @@ import {
   seedProvider,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { app_user, db, eq, organization, pool } from "@neko/db";
+import { app_user, getOrCreateSoloAdmin, db, eq, organization, pool } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockGetCurrentUser, mockRequireAgentRuntimeReady } = vi.hoisted(() => ({
@@ -78,7 +78,7 @@ describeIfDb("/settings/finish", () => {
     orgId = uniqueOrgId("api-finish");
     await createTestOrg(orgId);
     mockGetOrgId.mockResolvedValue(orgId);
-    mockGetCurrentUser.mockResolvedValue(null);
+    mockGetCurrentUser.mockResolvedValue(await getOrCreateSoloAdmin(orgId));
     mockRequireAgentRuntimeReady.mockResolvedValue(undefined);
   });
 
