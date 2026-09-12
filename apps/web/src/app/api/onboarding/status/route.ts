@@ -1,3 +1,4 @@
+import { getAuthProvider } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import {
   and,
@@ -202,14 +203,16 @@ export async function GET() {
   let status: OnboardingStatus;
   if (profileRows.length > 0) {
     const actor = await getCurrentActor();
-    if (actor.userId) {
+    // A persisted solo identity does not opt an existing workspace into SSO personas.
+    const personaUserId = (await getAuthProvider()) ? actor.userId : null;
+    if (personaUserId) {
       const ownPersona = await db()
         .select({ roleTemplate: operator_profile.role_template })
         .from(operator_profile)
         .where(
           and(
             eq(operator_profile.org_id, orgId),
-            eq(operator_profile.user_id, actor.userId),
+            eq(operator_profile.user_id, personaUserId),
           ),
         )
         .limit(1);
@@ -227,8 +230,8 @@ export async function GET() {
     status = {
       state: "ready",
       profileVersion: profileRows[0].version,
-      seats: actor.userId ? [] : (wizardRows[0]?.active_seats ?? []),
-      mode: actor.userId ? "personal" : "shared",
+      seats: personaUserId ? [] : (wizardRows[0]?.active_seats ?? []),
+      mode: personaUserId ? "personal" : "shared",
       ...(metricsProgress ? { metricsProgress } : {}),
     };
   } else if (jobRows.length > 0) {

@@ -1,3 +1,4 @@
+import { getAuthProvider } from "@/lib/auth";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -74,6 +75,7 @@ async function loadOnboarding(): Promise<OnboardingLoadResult> {
   }
 
   const actor = await getCurrentActor();
+  const personaUserId = (await getAuthProvider()) ? actor.userId : null;
 
   const [wizardRows, orgRows, currentProfiles, ownPersonas] = await Promise.all([
     db()
@@ -101,7 +103,7 @@ async function loadOnboarding(): Promise<OnboardingLoadResult> {
         ),
       )
       .limit(1),
-    actor.userId
+    personaUserId
       ? db()
           .select({
             roleTemplate: operator_profile.role_template,
@@ -111,7 +113,7 @@ async function loadOnboarding(): Promise<OnboardingLoadResult> {
           .where(
             and(
               eq(operator_profile.org_id, orgId),
-              eq(operator_profile.user_id, actor.userId),
+              eq(operator_profile.user_id, personaUserId),
             ),
           )
           .limit(1)
@@ -122,7 +124,7 @@ async function loadOnboarding(): Promise<OnboardingLoadResult> {
   // persona. Admins are included: an admin is a person, not the org-default
   // CEO view. Query the exact user row so an org fallback cannot silently
   // count as completed personal setup.
-  if (actor.userId && currentProfiles.length > 0) {
+  if (personaUserId && currentProfiles.length > 0) {
     return {
       kind: "persona",
       initialRoleTemplate: ownPersonas[0]?.roleTemplate ?? "",
@@ -147,5 +149,5 @@ async function loadOnboarding(): Promise<OnboardingLoadResult> {
     priorities: row?.priorities ?? [],
   };
 
-  return { kind: "wizard", initial, teamMode: actor.userId !== null };
+  return { kind: "wizard", initial, teamMode: personaUserId !== null };
 }
