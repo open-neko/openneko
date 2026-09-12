@@ -21,8 +21,9 @@ import {
   type RunAgentBackendInput,
 } from "@neko/llm/sandbox-runtime";
 import { BrokerControlPlane } from "./broker-client";
-import { EVENT_MARKER, RESULT_MARKER } from "./protocol";
+import { ARTIFACTS_MARKER, EVENT_MARKER, RESULT_MARKER } from "./protocol";
 import { configureAgentRuntime } from "./runtime-contract";
+import { hasArtifacts } from "./artifacts";
 
 /**
  * Runs INSIDE the agent's OpenShell sandbox (Phase 3). The launcher (work-run)
@@ -99,8 +100,7 @@ function loadJob(): SandboxJob {
   return JSON.parse(raw) as SandboxJob;
 }
 
-export async function main(): Promise<void> {
-  const job = loadJob();
+export async function main(job = loadJob()): Promise<void> {
   // The launcher transfers only custom or modified skill directories. Fill in
   // unchanged built-ins from the agent image. Skill bodies remain filesystem
   // resources and are read only when the agent chooses one.
@@ -270,7 +270,15 @@ async function run(): Promise<void> {
     );
     return;
   }
-  await main();
+  const job = loadJob();
+  try {
+    await main(job);
+  } finally {
+    // Report filesystem evidence even after an agent error. A crash/timeout or
+    // unreadable directory emits no hint, so the host still attempts recovery.
+    const present = await hasArtifacts(job.workspace.artifactRoot).catch(() => undefined);
+    if (present !== undefined) emitLine(ARTIFACTS_MARKER, present);
+  }
 }
 
 run().catch((err: unknown) => {

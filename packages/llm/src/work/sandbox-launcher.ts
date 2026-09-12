@@ -3,6 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { performance } from "node:perf_hooks";
 import {
   agentTurnTimeoutMs,
   type AgentBackend,
@@ -25,13 +26,12 @@ import { copySkillOverrides } from "./workspace";
 // asserts that). The launcher greps the exec's stdout for these markers.
 const EVENT_MARKER = "__openneko_event__";
 const RESULT_MARKER = "__openneko_agent_result__";
+const ARTIFACTS_MARKER = "__openneko_artifacts__";
 
 /**
- * Path of the workspace entrypoint inside the `agent` Docker stage. The image
- * uses the v2.28 production workspace closure so Node resolves runtime files
- * and dependencies from the same layout exercised by tests and the worker.
+ * Standalone bundle inside the `agent` Docker stage, beside its bridge/assets.
  */
-const AGENT_ENTRY = "/app/src/agent-sandbox/entry.ts";
+const AGENT_ENTRY = "/app/entry.js";
 const SANDBOX_RUNTIME_DIR = ".openneko";
 
 export interface SandboxLauncherOptions {
@@ -42,6 +42,9 @@ export interface SandboxLauncherOptions {
   gatewayEndpoint?: string;
   /** Agent image (the Dockerfile `agent` stage), e.g. ghcr.io/open-neko/agent:<ver>. */
   agentImage: string;
+  /** Per-sandbox limits, including Hermes and all tool children. */
+  cpu?: string;
+  memory?: string;
   /** OpenShell provider holding the model key — the proxy injects it; never in the box. */
   modelProvider?: string;
   /** Model endpoint egress; always scoped to the vendored Hermes executable. */
@@ -437,6 +440,14 @@ function makeSandboxCore(
 ): (input: SandboxRunInput) => Promise<AgentRunResult> {
   const cli = opts.cli ?? "openshell";
   const log = opts.onLog ?? ((l: string) => console.log(`[agent-sandbox] ${l}`));
+  const cpu = opts.cpu ?? "2";
+  const memory = opts.memory ?? "1Gi";
+  if (!/^(?:[1-9]\d*|\d+\.\d+|[1-9]\d*m)$/.test(cpu) || parseFloat(cpu) <= 0) {
+    throw new Error("Invalid agent sandbox CPU limit");
+  }
+  if (!/^[1-9]\d*(?:Ki|Mi|Gi|Ti|K|M|G|T)?$/.test(memory)) {
+    throw new Error("Invalid agent sandbox memory limit");
+  }
 
   const gatewayArgs = opts.gatewayName
     ? ["--gateway", opts.gatewayName]
@@ -456,6 +467,27 @@ function makeSandboxCore(
       ? undefined
       : (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).signal;
     if (signal?.aborted) throw abortError();
+    const started = performance.now();
+    const timed = async <T>(
+      phase: string,
+      operation: () => Promise<T>,
+    ): Promise<T> => {
+      const start = performance.now();
+      let ok = false;
+      try {
+        const value = await operation();
+        ok = true;
+        return value;
+      } finally {
+        log(JSON.stringify({
+          type: "sandbox_phase",
+          runId: input.runId,
+          phase,
+          durationMs: Math.round(performance.now() - start),
+          ok,
+        }));
+      }
+    };
     const run = (args: string[], timeoutMs: number): Promise<string> =>
       runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal);
     const inputPrompt = jobInput?.run.prompt ??
@@ -575,16 +607,18 @@ function makeSandboxCore(
 
     const stageDir = await mkdtemp(path.join(tmpdir(), "oss-agent-"));
     let sandboxCreated = false;
+    // Unknown (old image, timeout, crash) must preserve partial artifacts.
+    let artifactsPresent: boolean | undefined;
     try {
       await input.emit({
         type: "status",
         message: "Preparing secure agent workspace…",
       });
-      const staged = await stageSandboxWorkspace(input.workspace, stageDir, {
+      const staged = await timed("stage", () => stageSandboxWorkspace(input.workspace, stageDir, {
         // A records-scoped turn must remain functional during a rolling
         // upgrade even if the sandbox image predates the records skill.
         requiredSkillNames: recordsScoped ? ["records"] : [],
-      });
+      }));
       const stageRuntimeRoot = path.join(
         staged.workspace.runRoot,
         SANDBOX_RUNTIME_DIR,
@@ -625,6 +659,10 @@ function makeSandboxCore(
         name,
         "--from",
         opts.agentImage,
+        "--cpu",
+        cpu,
+        "--memory",
+        memory,
         "--no-tty",
         "--no-auto-providers",
         ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
@@ -637,7 +675,7 @@ function makeSandboxCore(
         "--",
         "/bin/sh",
         "-lc",
-        `cd /app && exec node --import tsx/esm ${AGENT_ENTRY} --preflight`,
+        "true",
       ];
       const reclaimAndCreate = async () => {
         // Run names are deterministic so a durable queue retry can collide
@@ -646,10 +684,10 @@ function makeSandboxCore(
         // path own cleanup for the newly created instance.
         log(`replacing stale agent sandbox after name collision: ${name}`);
         await runCleanup(["sandbox", "delete", name], 60_000);
-        await run(createArgs, 180_000);
+        await timed("create_upload", () => run(createArgs, 180_000));
       };
       try {
-        await run(createArgs, 180_000);
+        await timed("create_upload", () => run(createArgs, 180_000));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("already exists")) {
@@ -666,7 +704,7 @@ function makeSandboxCore(
           );
           await new Promise((resolve) => setTimeout(resolve, 3_000));
           try {
-            await run(createArgs, 180_000);
+            await timed("create_upload", () => run(createArgs, 180_000));
           } catch (retryError) {
             const retryMessage =
               retryError instanceof Error ? retryError.message : String(retryError);
@@ -682,7 +720,7 @@ function makeSandboxCore(
           `graphjin=brokered, skill_overrides=${staged.skillOverrides.length})`,
       );
       await input.emit({ type: "status", message: "Agent is working…" });
-      return await execAndStream(
+      return await timed("exec", () => execAndStream(
         cli,
         gatewayArgs,
         name,
@@ -712,7 +750,8 @@ function makeSandboxCore(
         opts.execTimeoutMs ??
           (jobInput?.run.timeoutMs ?? agentTurnTimeoutMs()) + 120_000,
         signal,
-      );
+        (present) => { artifactsPresent = present; },
+      ));
     } finally {
       opts.brokerRelease?.(input.runId);
       // Pull artifacts the agent wrote in the box back to the host run dir
@@ -720,11 +759,11 @@ function makeSandboxCore(
       // empty host dir and 404s the download. Best-effort, and runs even when
       // the turn errored or timed out (the box is still alive here), so a
       // partial artifact from a long run isn't lost.
-      if (sandboxCreated && !isJob && !signal?.aborted) {
+      if (sandboxCreated && !isJob && !signal?.aborted && artifactsPresent !== false) {
         await mkdir(input.workspace.artifactRoot, { recursive: true }).catch(
           () => {},
         );
-        await runCleanup(
+        await timed("download", () => runCleanup(
           [
             "sandbox",
             "download",
@@ -733,15 +772,21 @@ function makeSandboxCore(
             input.workspace.artifactRoot,
           ],
           120_000,
-        ).catch((e) => log(`artifact pull-back skipped: ${(e as Error).message}`));
+        )).catch((e) => log(`artifact pull-back skipped: ${(e as Error).message}`));
       }
       // The sandbox is the process-tree boundary. Deleting it terminates the
       // backend plus every child/sub-agent, and cleanup must not inherit the
       // already-aborted run signal.
       if (sandboxCreated) {
-        await runCleanup(["sandbox", "delete", name], 60_000).catch(() => {});
+        await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       }
       await rm(stageDir, { recursive: true, force: true });
+      log(JSON.stringify({
+        type: "sandbox_phase",
+        runId: input.runId,
+        phase: "total",
+        durationMs: Math.round(performance.now() - started),
+      }));
     }
   };
 }
@@ -843,6 +888,8 @@ export function sandboxLauncherOptionsFromConfig(
       process.env.OPENNEKO_AGENT_IMAGE ?? "ghcr.io/open-neko/agent:latest",
     gatewayName: process.env.OPENSHELL_GATEWAY || undefined,
     gatewayEndpoint: process.env.OPENSHELL_GATEWAY_ENDPOINT || undefined,
+    cpu: process.env.OPENNEKO_AGENT_CPUS || undefined,
+    memory: process.env.OPENNEKO_AGENT_MEMORY || undefined,
     ...config,
     brokerUrl: broker?.url,
     brokerTokenFor: broker?.tokenFor,
@@ -1056,7 +1103,7 @@ function buildInnerCommand(o: {
     exports,
     aliases,
     "cd /app",
-    `exec node --import tsx/esm ${AGENT_ENTRY}`,
+    `exec node ${AGENT_ENTRY}`,
   ];
   return parts.filter(Boolean).join("; ");
 }
@@ -1135,6 +1182,7 @@ function execAndStream(
   emit: (event: AgentEvent) => Promise<void>,
   timeoutMs: number,
   signal?: AbortSignal,
+  onArtifacts?: (present: boolean) => void,
 ): Promise<AgentRunResult> {
   return new Promise((resolve, reject) => {
     const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
@@ -1177,6 +1225,11 @@ function execAndStream(
     const onAbort = () => fail(abortError());
     const rl = createInterface({ input: child.stdout });
     rl.on("line", (line: string) => {
+      if (line.startsWith(ARTIFACTS_MARKER)) {
+        const value = line.slice(ARTIFACTS_MARKER.length);
+        if (value === "true" || value === "false") onArtifacts?.(value === "true");
+        return;
+      }
       const ev = line.indexOf(EVENT_MARKER);
       if (ev >= 0) {
         try {

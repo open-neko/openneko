@@ -155,6 +155,16 @@ describe("sandboxLauncherOptionsFromEnv", () => {
 });
 
 describe("sandboxLauncherOptionsFromConfig", () => {
+  it("forwards resource limits from the host environment", () => {
+    vi.stubEnv("OPENNEKO_AGENT_CPUS", "500m");
+    vi.stubEnv("OPENNEKO_AGENT_MEMORY", "2Gi");
+    try {
+      expect(sandboxLauncherOptionsFromConfig({})).toMatchObject({ cpu: "500m", memory: "2Gi" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("uses the run-local provider snapshot instead of stale process globals", () => {
     vi.stubEnv(
       "OPENNEKO_AGENT_MODEL_HOST",
@@ -509,6 +519,44 @@ describe("makeSandboxRunCore", () => {
     expect(jobCapture.jobs.at(-1)).not.toHaveProperty("graphjinClientConfig");
   });
 
+  it.each([
+    ["false", false],
+    ["true", true],
+    ["null", true],
+  ])("downloads only when artifacts are present or unknown (%s)", async (hint, download) => {
+    h.state.execLines = [
+      '__openneko_agent_result__{"status":"completed","finalText":"done"}\n',
+      `__openneko_artifacts__${hint}\n`,
+    ];
+    const logs: string[] = [];
+    await makeSandboxRunCore({ agentImage: "test", onLog: (line) => logs.push(line) })(fakeInput(async () => {}));
+    expect(h.calls.some((call) => call.args.includes("download"))).toBe(download);
+    expect(h.calls.at(-1)?.args).toContain("delete");
+    const phases = logs.filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+    expect(phases.map((p) => p.phase)).toEqual([
+      "stage", "create_upload", "exec", ...(download ? ["download"] : []), "delete", "total",
+    ]);
+    expect(phases.every((p) => p.durationMs >= 0)).toBe(true);
+  });
+
+  it("recovers partial artifacts when the agent fails without a filesystem hint", async () => {
+    h.state.execLines = [];
+    await expect(makeSandboxRunCore({ agentImage: "test", onLog: () => {} })(fakeInput(async () => {}))).rejects.toThrow();
+    expect(h.calls.some((call) => call.args.includes("download"))).toBe(true);
+    expect(h.calls.at(-1)?.args).toContain("delete");
+  });
+
+  it("applies configurable resource limits and rejects invalid quantities before spawning", async () => {
+    await makeSandboxRunCore({ agentImage: "test", cpu: "500m", memory: "2Gi", onLog: () => {} })(fakeInput(async () => {}));
+    expect(h.calls[0]?.args).toEqual(expect.arrayContaining(["--cpu", "500m", "--memory", "2Gi"]));
+    for (const cpu of ["0", "0.0", "-1", "unlimited", "1;exit"]) {
+      expect(() => makeSandboxRunCore({ agentImage: "test", cpu })).toThrow(/CPU limit/);
+    }
+    for (const memory of ["0", "-1Gi", "unlimited", "4Gi;exit"]) {
+      expect(() => makeSandboxRunCore({ agentImage: "test", memory })).toThrow(/memory limit/);
+    }
+  });
+
   it("creates, uploads, exec-streams, returns the result, and deletes", async () => {
     const events: AgentEvent[] = [];
     const runCore = makeSandboxRunCore({
@@ -535,8 +583,7 @@ describe("makeSandboxRunCore", () => {
     });
     // result parsed from the RESULT line:
     expect(result).toEqual({ status: "completed", finalText: "hi there", backendState: { t: 1 } });
-    // create used the agent image; preflight and exec ran the deployed
-    // workspace entry through its production tsx dependency:
+    // Creation does not boot Node; exec runs the standalone bundle:
     expect(h.calls[0]?.args).toContain("ghcr.io/open-neko/agent:test");
     expect(h.calls[0]?.args).toContain("--policy");
     expect(h.calls[0]?.args).toContain("--upload");
@@ -547,13 +594,14 @@ describe("makeSandboxRunCore", () => {
       >,
     ).find((policy) => policy.endpoints.some((endpoint) => endpoint.host === "m.example.com"));
     expect(modelPolicy?.binaries).toEqual([{ path: "/usr/bin/python3.11" }]);
-    expect(h.calls[0]?.args.join(" ")).toContain(
-      "node --import tsx/esm /app/src/agent-sandbox/entry.ts --preflight",
-    );
+    expect(h.calls[0]?.args.at(-1)).toBe("true");
+    expect(h.calls[0]?.args).toContain("--cpu");
+    expect(h.calls[0]?.args).toContain("--memory");
+    expect(h.calls[0]?.args).toContain("1Gi");
     const execCall = h.calls.find((c) => c.args.includes("exec"));
     const execCommand = execCall?.args.join(" ") ?? "";
     expect(execCommand).toContain(
-      "node --import tsx/esm /app/src/agent-sandbox/entry.ts",
+      "node /app/entry.js",
     );
     // The agent self-resolves immutable image assets; the OpenShell command
     // carries no ambient image environment across the security boundary.

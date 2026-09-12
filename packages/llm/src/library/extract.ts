@@ -9,11 +9,11 @@ import { dirname, join, resolve, sep } from "node:path";
 import { getOrgAgentRoot } from "../work/workspace";
 import { doclingInputFormat } from "./formats";
 
-const LIBRARIAN_REQUEST_TIMEOUT_MS = 30_000;
+const LIBRARIAN_REQUEST_TIMEOUT_MS = 150_000;
 export const LIBRARY_EXTRACTION_OPTIONS_VERSION = "digital-text-v1";
 
 export class RetryableLibraryExtractionError extends Error {
-  constructor(message: string, readonly taskMissing = false) {
+  constructor(message: string, readonly taskMissing = false, readonly capacityBusy = false) {
     super(message);
     this.name = "RetryableLibraryExtractionError";
   }
@@ -319,7 +319,10 @@ async function requestLibrarianJson<T>(
       true,
     );
   }
-  if (response.status === 429 || response.status >= 500) {
+  if (response.status === 429) {
+    throw new RetryableLibraryExtractionError("librarian capacity is full", false, true);
+  }
+  if (response.status >= 500) {
     throw new RetryableLibraryExtractionError(
       `librarian service returned HTTP ${response.status}`,
     );

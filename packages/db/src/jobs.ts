@@ -33,6 +33,8 @@ export const QUEUE = {
   RECORDS_WATCH_EVALUATE: "records_watch_evaluate",
   RECORDS_WATCH_SWEEP: "records_watch_sweep",
   CHANNEL_DELIVER: "channel_deliver",
+  EMBEDDING_INDEX: "embedding_index",
+  EMBEDDING_SWEEP: "embedding_sweep",
   LIBRARY_EXTRACT: "library_extract",
   LIBRARY_DISTILL: "library_distill",
   SKILL_LEARN: "skill_learn",

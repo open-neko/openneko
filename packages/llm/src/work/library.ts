@@ -220,13 +220,12 @@ export async function editLibraryConcept(reader: LibraryReader, input: {
   const writable = concept && (concept.userId !== null ? concept.userId === reader.userId : reader.isAdmin);
   if (!writable) return { status: "not_found" as const };
   if (concept.updatedAt !== input.updatedAt) return { status: "conflict" as const };
-  const vector = await tryEmbed(embeddingText(input.title, input.description, input.body));
   const now = new Date(Math.max(Date.now(), Date.parse(concept.updatedAt) + 1));
   return db().transaction(async tx => {
     const rows = await tx.update(library_concept).set({
       title: input.title, description: input.description || null, type: input.type, body: input.body,
-      // A failed refresh must not leave an old embedding describing new text.
-      embedding: vector ? sql`${vector}::vector` : null,
+      // A null vector atomically queues this revision for background indexing.
+      embedding: null,
       verified: concept.userId === null && concept.status === "stable"
         ? [{ by: `human:${reader.userId ?? "admin"}`, at: now.toISOString() }] : [],
       updated_at: now,
@@ -241,7 +240,7 @@ export async function editLibraryConcept(reader: LibraryReader, input: {
       org_id: reader.orgId, concept_id: input.id, user_id: reader.userId, action: "concept_edited",
       payload: { path: concept.path, previous: { title: concept.title, description: concept.description, type: concept.type, body: concept.body, verified: concept.verified } },
     });
-    return { status: "saved" as const, concept: rowToConcept(rows[0]), searchIndexed: Boolean(vector) };
+    return { status: "saved" as const, concept: rowToConcept(rows[0]), searchIndexed: false };
   });
 }
 
@@ -577,7 +576,6 @@ export async function upsertLibraryConcept(input: {
   verified?: OkfActorStamp[];
 }): Promise<{ concept: LibraryConcept; created: boolean }> {
   const now = new Date();
-  const embedding = await tryEmbed(embeddingText(input.title, input.description, input.body));
   const existing = await findActiveConceptByPath(input.orgId, input.userId, input.path);
   if (existing) {
     const rows = await db()
@@ -595,7 +593,7 @@ export async function upsertLibraryConcept(input: {
         ...(input.status ? { status: input.status } : {}),
         ...(input.staleAfter !== undefined ? { stale_after: input.staleAfter } : {}),
         ...(input.verified !== undefined ? { verified: input.verified } : {}),
-        ...(embedding ? { embedding: sql`${embedding}::vector` } : {}),
+        embedding: null,
         updated_at: now,
       })
       .where(
@@ -630,7 +628,7 @@ export async function upsertLibraryConcept(input: {
       source_document_id: input.sourceDocumentId ?? null,
       stale_after: input.staleAfter ?? null,
       verified: input.verified ?? [],
-      ...(embedding ? { embedding: sql`${embedding}::vector` } : {}),
+      embedding: null,
     })
     .returning();
   await insertLibraryEvent({
@@ -1037,14 +1035,6 @@ function clampLimit(value: number, max: number): number {
   return Math.max(1, Math.min(max, Math.floor(value)));
 }
 
-function embeddingText(
-  title: string,
-  description: string | null | undefined,
-  body: string,
-): string {
-  return [title, description ?? "", body].join("\n").slice(0, 4000);
-}
-
 function mergeSources(existing: OkfSource[], incoming: OkfSource[]): OkfSource[] {
   const byResource = new Map<string, OkfSource>();
   for (const source of [...existing, ...incoming]) {
@@ -1058,7 +1048,7 @@ async function tryEmbed(text: string): Promise<string | null> {
     return vectorLiteral(await embedText(text));
   } catch (err) {
     console.error(
-      "[library] embedding failed; storing concept without vector:",
+      "[library] query embedding unavailable:",
       err instanceof Error ? err.message : err,
     );
     return null;

@@ -30,12 +30,10 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest",
-    "models:warm": "node scripts/prewarm-embedding.mjs"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ax-llm/ax": "^20.0.0",
-    "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@neko/db": "workspace:*",
     "@neko/interaction": "workspace:*",

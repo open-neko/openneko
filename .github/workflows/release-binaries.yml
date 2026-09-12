@@ -50,6 +50,14 @@ jobs:
             target: worker
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+          - image: neko-embedding
+            target: embedding
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-embedding
+            target: embedding
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
           - image: neko-librarian
             file: apps/librarian/Dockerfile
             target: librarian
@@ -108,7 +116,7 @@ jobs:
             target: neko-backup
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          # Hermes sandbox image: v2.28-style deployed worker workspace closure
+          # Hermes sandbox image: standalone entry/bridge bundles and skills
           # plus the document toolchain, pulled by the OpenShell runtime.
           - image: agent
             target: agent
@@ -204,7 +212,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-librarian, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, plugin-base]
+        image: [neko-web, neko-worker, neko-embedding, neko-librarian, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, plugin-base]
     steps:
       - name: Resolve release tag
         id: tag
@@ -288,7 +296,7 @@ jobs:
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
-            neko-web neko-worker neko-librarian neko-graphjin records-graphjin neko-cli \
+            neko-web neko-worker neko-embedding neko-librarian neko-graphjin records-graphjin neko-cli \
             neko-db records-db neko-backup agent plugin-base \
             postgres:16-alpine busybox:latest \
             "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}"

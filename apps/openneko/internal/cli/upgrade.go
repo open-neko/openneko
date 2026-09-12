@@ -426,6 +426,7 @@ func openNekoImageRepos() map[string]bool {
 		"ghcr.io/open-neko/records-graphjin":    true,
 		"ghcr.io/open-neko/neko-web":            true,
 		"ghcr.io/open-neko/neko-worker":         true,
+		"ghcr.io/open-neko/neko-embedding":      true,
 		"ghcr.io/open-neko/neko-librarian":      true,
 		"ghcr.io/open-neko/agent":               true,
 		"ghcr.io/open-neko/plugin-base":         true,

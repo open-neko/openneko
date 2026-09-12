@@ -207,6 +207,8 @@ services:
     environment:
       OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
+      OPENNEKO_AGENT_CPUS: ${OPENNEKO_AGENT_CPUS:-2}
+      OPENNEKO_AGENT_MEMORY: ${OPENNEKO_AGENT_MEMORY:-1Gi}
       # Provider / egress host / key-env are derived from the
       # org's model config by provisionHostConfig — no per-deploy egress wiring.
       OPENSHELL_GATEWAY: openneko
@@ -233,6 +235,8 @@ services:
   web:
     environment:
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
+      OPENNEKO_AGENT_CPUS: ${OPENNEKO_AGENT_CPUS:-2}
+      OPENNEKO_AGENT_MEMORY: ${OPENNEKO_AGENT_MEMORY:-1Gi}
       OPENSHELL_GATEWAY: openneko
       OPENNEKO_SANDBOX_SHARED_NETWORK: "1"
       OPENNEKO_BROKER_PORT: ${OPENNEKO_WEB_BROKER_PORT:-4198}

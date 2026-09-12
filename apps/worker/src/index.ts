@@ -1,3 +1,4 @@
+import { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "@neko/llm";
 import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
@@ -1187,6 +1188,15 @@ await b.work(
     }
   },
 );
+
+await b.work(QUEUE.EMBEDDING_INDEX, { batchSize: 1, pollingIntervalSeconds: 0.5 },
+  async (jobs: PgBossLib.Job<EmbeddingIndexPayload>[]) => {
+    for (const job of jobs) await runEmbeddingIndexJob(job.data);
+  });
+await b.work(QUEUE.EMBEDDING_SWEEP, { batchSize: 1, pollingIntervalSeconds: 1 },
+  async () => { await dispatchEmbeddingJobs(); });
+await b.schedule(QUEUE.EMBEDDING_SWEEP, '* * * * *', {}, { retryLimit: 3, retryDelay: 15 });
+await b.send(QUEUE.EMBEDDING_SWEEP, {}, { singletonKey: 'boot', singletonSeconds: 60 });
 
 await b.work(
   QUEUE.LIBRARY_EXTRACT,
