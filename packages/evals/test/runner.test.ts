@@ -748,10 +748,10 @@ describe("durable eval execution", () => {
       expect(() => assertRequiredMetrics(invalid)).toThrow(/toolCalls/);
     }
     const summary = summarizeEpisodes(episodes);
-    const header = "| Backend / model | Source commit | Uncommitted changes | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
-    const readme = `| Fixture | [Report](result/summary.md) |\n${header}\n| Fixture | source | no | ${readmeMetricsCells(summary)}`;
+    const header = "| Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
+    const readme = `${header}\n| Fixture | v4 | 3 × 1 | 3/3 | 0 | 0 | source | [Report](result/summary.md) | ${readmeMetricsCells(summary)}`;
     expect(() => assertReadmeMetrics(readme, summary, "result/summary.md")).not.toThrow();
-    for (const removed of [header, "| Fixture | [Report](result/summary.md) |", ...readmeMetricsCells(summary).split("|").map(cell => cell.trim()).filter(Boolean)]) {
+    for (const removed of [header, "[Report](result/summary.md)", ...readmeMetricsCells(summary).split("|").map(cell => cell.trim()).filter(Boolean)]) {
       expect(() => assertReadmeMetrics(readme.replace(removed, ""), summary, "result/summary.md")).toThrow(/README/);
     }
     const scoreMissing = structuredClone(episodes);
