@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.44.4](https://github.com/open-neko/openneko/compare/v2.44.3...v2.44.4) (2026-09-13)
+
+
+### Bug Fixes
+
+* prepare warm capacity before work and sync only changed inputs ([b915c88](https://github.com/open-neko/openneko/commit/b915c88944dbe1755bb7e8699259d5908b4183a4))
+* prepare warm capacity before Work and sync only changed inputs ([c70b0dc](https://github.com/open-neko/openneko/commit/c70b0dc6514af439d3d5e1026f93cdeb2ce683cd))
+
 ## [2.44.3](https://github.com/open-neko/openneko/compare/v2.44.2...v2.44.3) (2026-09-12)
 
 
