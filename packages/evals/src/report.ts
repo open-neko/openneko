@@ -778,9 +778,8 @@ export function assertReadmeMetrics(
   const evidenceRow = readme.split("\n").find((line) => line.startsWith("| ") && line.includes(`](${reportLink})`));
   if (!evidenceRow) throw new Error(`README missing required result row: ${reportLink}`);
   const label = evidenceRow.split("|")[1]!.trim();
-  const header = "| Backend / model | Source commit | Uncommitted changes | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
-  if (!readme.includes(header) || !readme.split("\n").some((line) =>
-    line.startsWith(`| ${label} |`) && line.endsWith(readmeMetricsCells(summary)))) {
+  const header = "| Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
+  if (!readme.includes(header) || !evidenceRow.endsWith(readmeMetricsCells(summary))) {
     throw new Error(`README missing or incorrect required metrics: ${label}`);
   }
 }
