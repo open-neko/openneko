@@ -51,7 +51,8 @@ start_graphjin() {
 case "${1:-}" in
   up)
     stop_graphjin
-    compose build graphjin eval-api-fixture
+    compose build graphjin eval-api-fixture embedding
+    compose up --detach --wait embedding
     start_database
 
     set +e

@@ -6,6 +6,21 @@ name: openneko-backend-eval
 # compose.adventureworks.yml, so starting it cannot inherit the product demo's
 # databases, simulator, scenario injector, or GraphJin config volume.
 services:
+  embedding:
+    image: openneko-embedding:eval
+    build:
+      context: .
+      target: embedding
+    ports:
+      - "127.0.0.1:${OPENNEKO_EVAL_EMBEDDING_PORT:-15003}:5003"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5003/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks:
+      - eval-adventureworks
+
   adventureworks-db:
     image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     restart: unless-stopped

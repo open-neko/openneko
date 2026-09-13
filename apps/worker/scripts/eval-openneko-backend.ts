@@ -34,6 +34,7 @@ import {
   type WorkSemanticTraceEvent,
 } from "@neko/llm/work";
 import {
+  detectUpstreamError,
   gatewayProviderName,
   provisionHostConfig,
   resolveAgentBackend,
@@ -63,6 +64,7 @@ import {
 } from "@neko/llm";
 import { loadRecordAppBlueprint } from "@neko/records";
 import { callGraphjinMcpTool } from "@neko/llm/graphjin";
+import { closeSandboxPools } from "@neko/llm/work/sandbox-launcher";
 import {
   dbReachable,
   deleteTestOrg,
@@ -1351,6 +1353,15 @@ export function backendAgentFailureType(
   status: string,
   error?: string,
 ): string {
+  if (
+    error &&
+    (detectUpstreamError(error) ||
+      /\b(?:ECONNRESET|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|ENOTFOUND|ETIMEDOUT|APIConnectionError|APITimeoutError|RateLimitError|ServiceUnavailableError|InternalServerError)\b/iu.test(error) ||
+      /\b(?:HTTP|status(?: code)?|error code)\s*[:=]?\s*(?:429|500|502|503|504)\b|\b(?:429\s+RESOURCE_EXHAUSTED|503\s+UNAVAILABLE)\b/iu.test(error) ||
+      /\b(?:fetch failed|connection reset|connection refused|network is unreachable|temporary failure in name resolution)\b/iu.test(error))
+  ) {
+    return "agent_infrastructure_failure";
+  }
   return error
     ?.toLocaleLowerCase("en-US")
     .includes("response truncated due to output length limit")
@@ -3033,9 +3044,13 @@ export function createOpenNekoBackendDriver(context: {
           );
         }
         if (result.status !== "completed") {
+          const errorType = backendAgentFailureType(result.status, result.error);
+          if (errorType === "agent_infrastructure_failure") {
+            throw new EvalEnvironmentError(result.error!, errorType);
+          }
           throw new EvalTaskError(
             result.error || `agent ended with ${result.status}`,
-            backendAgentFailureType(result.status, result.error),
+            errorType,
             partialExecution(),
           );
         }
@@ -3199,6 +3214,7 @@ export function createOpenNekoBackendDriver(context: {
     },
     async close() {
       await oraclePool.end();
+      await closeSandboxPools();
       await shutdownAgentBroker();
       const providerCleanupFailures: string[] = [];
       for (const providerName of evalProviderNames) {
