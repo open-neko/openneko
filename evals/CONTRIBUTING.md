@@ -131,7 +131,8 @@ pnpm openneko eval rescore --config evals/configs/<config>.yaml --run <run-id>
 ## Submit a result
 
 Only the declared sanitized files in the promoted result directory belong in a
-PR. Legacy results contain four files; v4 results add `technical.md`:
+PR, together with a root README result row and its operational metrics. Every new
+report includes these five files:
 
 ```text
 evals/results/<config-id>/<run-id>/
@@ -139,7 +140,7 @@ evals/results/<config-id>/<run-id>/
   results.jsonl
   summary.json
   summary.md
-  technical.md  # v4 only
+  technical.md
 ```
 
 Run the verifier before committing:
@@ -158,9 +159,18 @@ digest, recomputes independent qualification and assertion-level capability
 coverage, and re-renders both Markdown reports byte-for-byte. Raw episodes,
 prompts, tool data,
 oracles, and traces remain under ignored `.openneko/evals/` paths.
-Missing token totals fail suites that declare the token-coverage gate. Missing
-pricing does not fail verification and is rendered as `unavailable`, while any
-reported estimated and provider-billed costs remain separate.
+Every new report requires per-episode tool-call counts, token totals, latency,
+score measurements, and explicit token/cost coverage. Missing, negative, or
+invalid counts block promotion and verification. `technical.md` lists those
+measurements per episode; `summary.md` includes aggregate tool calls and tokens.
+The root README must include latency p50/p95, total tool calls, total tokens,
+estimated cost, and coverage matching the evidence. CI fails if a required
+report row or README metric is missing or differs from the recorded results.
+Cost may be explicitly `unavailable` when no pricing is configured; it is never
+silently reported as zero. Estimated and provider-billed costs remain separate.
+Two existing historical reports retain their original incomplete measurements;
+CI pins their evidence digests. New submissions must use the v2 metrics report.
+No inference rerun is needed to regenerate presentation from complete evidence.
 The PR workflow regenerates the semantic registry and JSON Schemas, validates
 every configuration, checks that every semantic marked `eval` has configured
 coverage, and verifies every checked-in result including its deterministic suite

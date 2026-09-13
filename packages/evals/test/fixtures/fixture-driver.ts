@@ -58,6 +58,9 @@ export function createFixtureDriver(input: {
         output: { actual: Number(slot.case.input.expected) },
         measurements: {
           wallDurationMs: 1,
+          toolCalls: 0,
+          totalTokens: 0,
+          costCoverage: input.estimatedCostUsd === undefined ? "unavailable" : "complete",
           ...(input.estimatedCostUsd !== undefined
             ? { estimatedCostUsd: input.estimatedCostUsd }
             : {}),
@@ -66,7 +69,7 @@ export function createFixtureDriver(input: {
                 totalTokens: input.totalTokens,
                 usageCoverage: input.usageCoverage ?? "complete",
               }
-            : { usageCoverage: "unavailable" }),
+            : { usageCoverage: "complete" }),
         },
       };
     },

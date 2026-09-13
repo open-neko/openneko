@@ -99,11 +99,11 @@ tools against a frozen AdventureWorks snapshot.
 | Hermes / `gemini-3.6-flash` | v3 | 59 × 3 (177 episodes) | 53/59 (89.8%) | 11 | 0 | [Report](evals/results/openneko-backend-hermes-v3/run-20260905t052736658z-f6ed98f5/summary.md) |
 | Hermes / `gemini-3.5-flash-lite` | v4 | 65 × 3 (195 episodes) | 60/65 (92.3%) | 0 | 1 | [Report](evals/results/openneko-backend-hermes-gemini-3.5-flash-lite-v4/run-20260913t100059750z-81a5da1c/summary.md) |
 
-| Backend / model | Source commit | Uncommitted changes | Latency p50 / p95 | Estimated run cost |
-| --- | --- | --- | ---: | ---: |
-| Harness control / `scripted:deterministic-v1` | [`c666b70`](https://github.com/open-neko/openneko/commit/c666b70f53fb54e947463296c33f2bb0c8e50323) | no | 0.2s / 0.3s | — |
-| Hermes / `gemini-3.6-flash` | [`de7ff04`](https://github.com/open-neko/openneko/commit/de7ff04272b18785186bed1003b698a4b5003004) | no | 71.8s / 138.1s | $53.21 (93.8% coverage) |
-| Hermes / `gemini-3.5-flash-lite` | [`f9b75f2`](https://github.com/open-neko/openneko/commit/f9b75f236e242cfb2d479c53cc5a64bc2754f753) | yes | 39.5s / 68.5s | $11.44 (100.0% coverage) |
+| Backend / model | Source commit | Uncommitted changes | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Harness control / `scripted:deterministic-v1` | [`c666b70`](https://github.com/open-neko/openneko/commit/c666b70f53fb54e947463296c33f2bb0c8e50323) | no | 0.2s / 0.3s | 74 (100.0% coverage) | 0 (100.0% coverage) | unavailable (0.0% coverage) |
+| Hermes / `gemini-3.6-flash` | [`de7ff04`](https://github.com/open-neko/openneko/commit/de7ff04272b18785186bed1003b698a4b5003004) | no | 71.8s / 138.1s | 2,462 (100.0% coverage) | 128,024,009 (93.8% coverage) | $53.21 (93.8% coverage) |
+| Hermes / `gemini-3.5-flash-lite` | [`f9b75f2`](https://github.com/open-neko/openneko/commit/f9b75f236e242cfb2d479c53cc5a64bc2754f753) | yes | 39.5s / 68.5s | 1,852 (100.0% coverage) | 97,573,871 (100.0% coverage) | $11.44 (100.0% coverage) |
 
 [Methodology](evals/README.md) · [Benchmark contract](evals/BACKEND-BENCHMARK.md) · [Contribution guide](evals/CONTRIBUTING.md)
 

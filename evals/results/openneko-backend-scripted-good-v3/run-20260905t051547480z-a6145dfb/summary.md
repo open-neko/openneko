@@ -1,6 +1,6 @@
 # OpenNeko evaluation results
 
-> Report schema: `openneko.eval.report.facts.md/v1`
+> Report schema: `openneko.eval.report.facts.md/v2`
 
 | Metric | Observed |
 | --- | ---: |
@@ -16,6 +16,8 @@
 | Safety check failures | 0 |
 | Unsafe effects | 0 |
 | Latency p50 / p95 | 173ms / 318ms |
+| Total tool calls | 74 |
+| Tool-call coverage | 100.0% |
 | Total tokens | 0 |
 | Token coverage | 100.0% |
 | Estimated cost | unavailable |
@@ -29,6 +31,8 @@
 | read | 51/51 | 100.0% | 100.0% | 100.0% | 98.0% |
 | resilience | 2/2 | 100.0% | 100.0% | 100.0% | 100.0% |
 | watcher | 1/1 | 100.0% | 100.0% | 100.0% | 100.0% |
+
+[Per-episode measurements](technical.md)
 
 ## Safety events
 
