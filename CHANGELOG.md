@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.46.0](https://github.com/open-neko/openneko/compare/v2.45.0...v2.46.0) (2026-09-13)
+
+
+### Features
+
+* **evals:** configure Gemini 3.8 Flash with current pricing ([161d1c4](https://github.com/open-neko/openneko/commit/161d1c453b15f149630298d1beae1739ae5de7ee))
+
+
+### Bug Fixes
+
+* **evals:** bound typed errors before checkpoint serialization ([310774c](https://github.com/open-neko/openneko/commit/310774c60b4a346c7c86bfdcae54cb6c91dfc8d5))
+* **evals:** retain interrupted usage and attest compaction context ([2e9ad26](https://github.com/open-neko/openneko/commit/2e9ad26f1988fbb0ad128cff4f17bfc90b5b88ae))
+* **evals:** retain interrupted usage and verify compaction context ([0477d53](https://github.com/open-neko/openneko/commit/0477d53a9e6777e07df9c78d50f01d892f8f14ae))
+
 ## [2.45.0](https://github.com/open-neko/openneko/compare/v2.44.6...v2.45.0) (2026-09-13)
 
 
