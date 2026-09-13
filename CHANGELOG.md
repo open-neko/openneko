@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.45.0](https://github.com/open-neko/openneko/compare/v2.44.6...v2.45.0) (2026-09-13)
+
+
+### Features
+
+* **evals:** publish factual metrics and enforce report completeness ([7b8f670](https://github.com/open-neko/openneko/commit/7b8f670c7498be3615c5c1e27a478df7696527d7))
+* **evals:** require published metrics and per-episode tool counts ([9bc4243](https://github.com/open-neko/openneko/commit/9bc424332ec55b8262ea87bbc50500676ecf71d1))
+
 ## [2.44.6](https://github.com/open-neko/openneko/compare/v2.44.5...v2.44.6) (2026-09-13)
 
 
