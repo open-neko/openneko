@@ -1031,3 +1031,43 @@ describe("HermesBackend ACP behavior", () => {
     }
   });
 });
+
+
+it("delivers the compacted summary to ACP and retains usage before tool-boundary cancellation", async () => {
+  const { buildWorkPrompt } = await import("../src/work/prompt");
+  const { compactIfNeeded } = await import("../src/work/compact-transcript");
+  const summary = "The operator selected AW-RESUME-CODE-7Q4M as the exact resume code.";
+  const messages = [{ id: "watermark", role: "user" as const, content: "Earlier decision was compacted." },
+    ...Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, role: "user" as const, content: `Unrelated turn ${i}` }))];
+  const compacted = await compactIfNeeded({ messages, prior: { summary, throughMessageId: "watermark", version: 1, updatedAt: "2026-09-13" }, now: "2026-09-13" });
+  const prompt = buildWorkPrompt({ backend: "hermes", workspace: FAKE_WORKSPACE,
+    knowledge: { mode: "legacy", tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" },
+    messages: compacted.kept, priorSummary: compacted.summary,
+    currentUserMessage: "What exact resume code did we choose earlier?", inlineTranscript: true,
+    supportsCardTool: false, supportsSkillTool: false, supportsMemoryTool: false,
+    supportsWorkflowTool: false, supportsPolicyTool: false, supportsSourceConfigTool: false,
+    supportsNativeDelegation: false,
+  });
+  const abort = new AbortController();
+  const events: AgentEvent[] = [];
+  let receivedPrompt = "";
+  controller.setScript({ responders: {
+    "session/new": () => ({ sessionId: "s" }),
+    "session/prompt": (params, ctx) => {
+      receivedPrompt = JSON.stringify(params);
+      ctx.emitNotification({ jsonrpc: "2.0", method: "session/update", params: { sessionId: "s", update: {
+        sessionUpdate: "tool_call", toolCallId: "t", title: "terminal", kind: "execute",
+        _meta: { openneko: { usage: { input_tokens: 120, output_tokens: 30, total_tokens: 150 } } },
+      } } });
+      return NO_RESPONSE;
+    },
+  } });
+  await new HermesBackend().run({ prompt, userMessage: "What exact resume code did we choose earlier?", workspace: FAKE_WORKSPACE, signal: abort.signal,
+    onEvent: (event) => { events.push(event); if (event.type === "tool_start") abort.abort(); },
+  });
+  expect(receivedPrompt).toContain(summary);
+  expect(receivedPrompt).toContain("Unrelated turn 11");
+  expect(receivedPrompt).not.toContain("Earlier decision was compacted.");
+  expect(events.find(event => event.type === "tool_start")).toMatchObject({ usageSnapshot: { inputTokens: 120, outputTokens: 30, totalTokens: 150 } });
+  expect(events.filter(event => event.type === "usage")).toHaveLength(0);
+});

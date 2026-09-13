@@ -759,6 +759,8 @@ describe("durable eval execution", () => {
     const scoreMissing = structuredClone(episodes);
     delete scoreMissing[0]!.score;
     expect(() => assertRequiredMetrics(scoreMissing)).toThrow(/score metrics/);
+    scoreMissing[0]!.status = "failed";
+    expect(() => assertRequiredMetrics(scoreMissing)).not.toThrow();
     const costMissing = structuredClone(episodes);
     costMissing[0]!.measurements.costCoverage = "complete";
     expect(() => assertRequiredMetrics(costMissing)).toThrow(/estimatedCostUsd/);
