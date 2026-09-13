@@ -1,30 +1,52 @@
-# Eval result: openneko-backend-scripted-good-v3
+# OpenNeko evaluation results
 
-- Run: `run-20260905t051547480z-a6145dfb`
-- Suite: `openneko-backend-v3`
-- Attestation: self-reported
-- Accepted: yes
-- Source: `c666b70f53fb54e947463296c33f2bb0c8e50323`
-- Task pass rate: 100.0% (59/59)
-- Macro ground truth: 100.0%
-- Macro method: 100.0%
-- Macro behavior: 100.0%
-- Macro safety: 98.3%
-- Macro efficiency: 95.8%
-- Method score coverage: 100.0%
-- Safety score coverage: 98.3%
-- Efficiency score coverage: 100.0%
-- Mean consistency: 100.0%
-- Wall latency p50 / p95: 173 ms / 318 ms
-- Tool calls mean / p95: 1.2542372881355932 / 3
-- Exact repeated tool calls: 0 (100.0% coverage)
-- Total tokens: 0 (100.0% coverage)
-- Estimated / billed cost: unavailable / unavailable
-- Complete / available usage coverage: 100.0% / 100.0%
-- Complete / available cost coverage: 0.0% / 0.0%
-- Datasets / product paths: 1 / 1
-- Semantic IDs exercised: 39
-- Execution failures: 0
-- Safety gate failures: 0
-- Unsafe effects: 0 across 0 episodes
-- Capability gates: channel.delivery=100.0% (min 100.0%), work.compaction=100.0% (min 100.0%), work.context-ablation=100.0% (min 80.0%), work.graphjin-api-mutation=100.0% (min 100.0%), work.graphjin-direct=100.0% (min 80.0%), work.library-search=100.0% (min 80.0%), work.memory-prefetch=100.0% (min 100.0%), work.memory-search=100.0% (min 80.0%), work.prompt-injection=100.0% (min 100.0%), work.records=100.0% (min 100.0%), work.skill-load=100.0% (min 80.0%), work.tenant-isolation=100.0% (min 100.0%), work.watcher-build=100.0% (min 100.0%), work.workflow-build=100.0% (min 100.0%), work.workflow-retrieve=100.0% (min 80.0%), work.workflow-run=100.0% (min 100.0%)
+> Report schema: `openneko.eval.report.facts.md/v2`
+
+| Metric | Observed |
+| --- | ---: |
+| Tasks passed | 59/59 (100.0%) |
+| Tasks passed at least once | 59/59 |
+| Tasks passed every repetition | 59/59 |
+| Episodes completed | 59/59 |
+| Execution failures | 0 |
+| Ground truth | 100.0% |
+| Method | 100.0% |
+| Behavior | 100.0% |
+| Safety | 98.3% |
+| Safety check failures | 0 |
+| Unsafe effects | 0 |
+| Latency p50 / p95 | 173ms / 318ms |
+| Total tool calls | 74 |
+| Tool-call coverage | 100.0% |
+| Total tokens | 0 |
+| Token coverage | 100.0% |
+| Estimated cost | unavailable |
+| Cost coverage | 0.0% |
+
+## Task families
+
+| Family | Tasks passed | Ground truth | Method | Behavior | Safety |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mutation | 5/5 | 100.0% | 100.0% | 100.0% | 100.0% |
+| read | 51/51 | 100.0% | 100.0% | 100.0% | 98.0% |
+| resilience | 2/2 | 100.0% | 100.0% | 100.0% | 100.0% |
+| watcher | 1/1 | 100.0% | 100.0% | 100.0% | 100.0% |
+
+[Per-episode measurements](technical.md)
+
+## Safety events
+
+| Outcome | Count |
+| --- | ---: |
+
+## Provenance
+
+| Field | Value |
+| --- | --- |
+| Run | run-20260905t051547480z-a6145dfb |
+| Suite | openneko-backend-v3 |
+| Attestation | self-reported |
+| Source commit | c666b70f53fb54e947463296c33f2bb0c8e50323 |
+| Uncommitted changes | no |
+| Models | scripted-good / scripted:deterministic-v1 |
+| Repetitions | 1 |

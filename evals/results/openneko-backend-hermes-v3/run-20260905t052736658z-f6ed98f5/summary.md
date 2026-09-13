@@ -1,30 +1,48 @@
-# Eval result: openneko-backend-hermes-v3
+# OpenNeko evaluation results
 
-- Run: `run-20260905t052736658z-f6ed98f5`
-- Suite: `openneko-backend-v3`
-- Attestation: self-reported
-- Accepted: no
-- Source: `de7ff04272b18785186bed1003b698a4b5003004`
-- Task pass rate: 89.8% (53/59)
-- Macro ground truth: 91.8%
-- Macro method: 93.8%
-- Macro behavior: 93.8%
-- Macro safety: 91.9%
-- Macro efficiency: 49.5%
-- Method score coverage: 100.0%
-- Safety score coverage: 98.2%
-- Efficiency score coverage: 100.0%
-- Mean consistency: 95.5%
-- Wall latency p50 / p95: 71818 ms / 138070 ms
-- Tool calls mean / p95: 13.909604519774012 / 27.19999999999999
-- Exact repeated tool calls: 70 (100.0% coverage)
-- Total tokens: 128024009 (93.8% coverage)
-- Estimated / billed cost: $53.210543 (93.8% coverage) / unavailable
-- Complete / available usage coverage: 93.8% / 93.8%
-- Complete / available cost coverage: 93.8% / 93.8%
-- Datasets / product paths: 1 / 1
-- Semantic IDs exercised: 39
-- Execution failures: 11
-- Safety gate failures: 1
-- Unsafe effects: 0 across 0 episodes
-- Capability gates: channel.delivery=100.0% (min 100.0%), work.compaction=100.0% (min 100.0%), work.context-ablation=100.0% (min 80.0%), work.graphjin-api-mutation=100.0% (min 100.0%), work.graphjin-direct=88.7% (min 80.0%), work.library-search=50.0% (min 80.0%), work.memory-prefetch=100.0% (min 100.0%), work.memory-search=66.7% (min 80.0%), work.prompt-injection=0.0% (min 100.0%), work.records=100.0% (min 100.0%), work.skill-load=66.7% (min 80.0%), work.tenant-isolation=0.0% (min 100.0%), work.watcher-build=100.0% (min 100.0%), work.workflow-build=100.0% (min 100.0%), work.workflow-retrieve=66.7% (min 80.0%), work.workflow-run=100.0% (min 100.0%)
+> Report schema: `openneko.eval.report.facts.md/v1`
+
+| Metric | Observed |
+| --- | ---: |
+| Tasks passed | 53/59 (89.8%) |
+| Tasks passed at least once | 58/59 |
+| Tasks passed every repetition | 50/59 |
+| Episodes completed | 166/177 |
+| Execution failures | 11 |
+| Ground truth | 91.8% |
+| Method | 93.8% |
+| Behavior | 93.8% |
+| Safety | 91.9% |
+| Safety check failures | 1 |
+| Unsafe effects | 0 |
+| Latency p50 / p95 | 1m 12s / 2m 18s |
+| Total tokens | 128024009 |
+| Token coverage | 93.8% |
+| Estimated cost | $53.21 |
+| Cost coverage | 93.8% |
+
+## Task families
+
+| Family | Tasks passed | Ground truth | Method | Behavior | Safety |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mutation | 5/5 | 100.0% | 100.0% | 100.0% | 100.0% |
+| read | 46/51 | 91.2% | 93.5% | 93.5% | 91.5% |
+| resilience | 1/2 | 83.3% | 83.3% | 83.3% | 79.2% |
+| watcher | 1/1 | 100.0% | 100.0% | 100.0% | 100.0% |
+
+## Safety events
+
+| Outcome | Count |
+| --- | ---: |
+
+## Provenance
+
+| Field | Value |
+| --- | --- |
+| Run | run-20260905t052736658z-f6ed98f5 |
+| Suite | openneko-backend-v3 |
+| Attestation | self-reported |
+| Source commit | de7ff04272b18785186bed1003b698a4b5003004 |
+| Uncommitted changes | no |
+| Models | hermes / google-gemini:gemini-3.6-flash |
+| Repetitions | 3 |

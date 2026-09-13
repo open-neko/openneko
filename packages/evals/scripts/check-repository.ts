@@ -1,8 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEvalPlan, loadEval, verifyResult } from "../src";
 import { parse } from "yaml";
+import { assertReadmeMetrics } from "../src/report";
+import { SummarySchema } from "../src/schemas";
 
 const workspace = fileURLToPath(new URL("../../../", import.meta.url));
 const configRoot = resolve(workspace, "evals/configs");
@@ -178,14 +180,30 @@ assertExactInventory(
   inventory.observation_kinds,
 );
 
+const readme = await readFile(resolve(workspace, "README.md"), "utf8");
+// These two previously published runs lack measurements required for new submissions.
+const historicalRuns = new Map([
+  ["run-20260811t074134722z-8ae32696", "sha256:56da2f37c54fd46ee4ea3af52df42c1298668a7eb4a17c97fc4cec39a8aabe73"],
+  ["run-20260905t052736658z-f6ed98f5", "sha256:0f61cfdcb89b24a36660f911aeb76979a112012d2a14474bdb374f6d85d12c69"],
+]);
 const resultManifests = await filesBelow(resultsRoot, "manifest.json");
 let acceptedResults = 0;
 let rejectedResults = 0;
 for (const manifestPath of resultManifests) {
-  const verification = await verifyResult(dirname(manifestPath));
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-    accepted?: unknown;
-  };
+  const resultDir = dirname(manifestPath);
+  const verification = await verifyResult(resultDir);
+  const markdown = await readFile(resolve(resultDir, "summary.md"), "utf8");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const historical = historicalRuns.get(verification.runId) === manifest.files["results.jsonl"];
+  if (!markdown.includes("openneko.eval.report.facts.md/v2") && !historical) {
+    throw new Error(`${resultDir} must include the required v2 report metrics`);
+  }
+  const reportLink = relative(workspace, resolve(resultDir, "summary.md"));
+  if (!historical || readme.includes(reportLink)) assertReadmeMetrics(readme,
+    SummarySchema.parse(JSON.parse(await readFile(resolve(resultDir, "summary.json"), "utf8"))),
+    reportLink,
+  );
+
   if (!verification.gatesPassed) {
     if (manifest.accepted !== false) {
       throw new Error(

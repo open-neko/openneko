@@ -14,12 +14,14 @@ import {
   rescoreEvaluation,
   runEvaluation,
   textDigest,
+  summarizeEpisodes,
   verifyResult,
   type EvalDriver,
   type EvalSemanticEvidence,
 } from "../src";
 import { createFixtureDriver } from "./fixtures/fixture-driver";
 import { runEvalCli } from "../src/cli";
+import { assertReadmeMetrics, readmeMetricsCells, assertRequiredMetrics, promoteResult } from "../src/report";
 
 async function put(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -332,7 +334,7 @@ describe("durable eval execution", () => {
     expect(summary.byCapability["fixture.read"]?.tasks).toBe(3);
     expect(
       await readFile(join(result.resultDir!, "summary.md"), "utf8"),
-    ).toContain("Macro method: 0.0%");
+    ).toContain("| Method | 0.0% |");
     const manifestPath = join(result.resultDir!, "manifest.json");
     const artifactManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
       datasetFingerprint?: unknown;
@@ -357,7 +359,8 @@ describe("durable eval execution", () => {
     const loaded = await loadEval(paths.configPath);
     const plan = createEvalPlan(loaded);
     const driver = createFixtureDriver({ loaded, plan, callLog: paths.callLog });
-    driver.execute = async () => ({ output: { actual: -1 } });
+    const execute = driver.execute.bind(driver);
+    driver.execute = async (context) => ({ ...await execute(context), output: { actual: -1 } });
     const options = {
       loaded, plan, driver, cwd: process.cwd(),
       stateRoot: paths.stateRoot, resultsRoot: paths.resultsRoot, promote: true,
@@ -391,21 +394,41 @@ describe("durable eval execution", () => {
     const technicalPath = join(result.resultDir!, "technical.md");
     const technical = await readFile(technicalPath, "utf8");
     expect(friendly).toContain(
-      "Friendly report schema: `openneko.eval.report.friendly.md/v1`",
+      "Report schema: `openneko.eval.report.facts.md/v2`",
     );
-    expect(friendly).toContain("## Qualification: Accepted");
-    expect(friendly).toContain("## Why qualification failed");
+    expect(friendly).not.toMatch(/accepted|rejected|qualification/iu);
+    expect(friendly).toContain("## Safety events");
     expect(technical).toContain(
-      "Technical report schema: `openneko.eval.report.technical.md/v1`",
+      "Report schema: `openneko.eval.report.facts.md/v2`",
     );
-    expect(technical).toContain("## Assertion-level capabilities");
+    expect(technical).toContain("## Tasks");
     await expect(verifyResult(result.resultDir!)).resolves.toMatchObject({
       gatesPassed: true,
     });
 
+    expect(technical).toContain("## Episodes");
+    expect(technical).toContain("| Tool calls | Tokens | Token coverage | Latency | Estimated cost | Cost coverage |");
+    const requiredLabels = ["Tasks passed", "Tasks passed at least once", "Tasks passed every repetition",
+      "Episodes completed", "Execution failures", "Ground truth", "Method", "Behavior", "Safety",
+      "Safety check failures", "Unsafe effects", "Latency p50 / p95", "Total tool calls",
+      "Tool-call coverage", "Total tokens", "Token coverage", "Estimated cost", "Cost coverage"];
+    const reportManifestPath = join(result.resultDir!, "manifest.json");
+    const originalManifest = await readFile(reportManifestPath, "utf8");
+    for (const label of requiredLabels) {
+      expect(friendly).toContain(`| ${label} |`);
+      const changed = technical.split("\n").filter((line) => !line.startsWith(`| ${label} |`)).join("\n");
+      const manifest = JSON.parse(originalManifest);
+      manifest.files["technical.md"] = textDigest(changed);
+      await writeFile(technicalPath, changed);
+      await writeFile(reportManifestPath, JSON.stringify(manifest));
+      await expect(verifyResult(result.resultDir!)).rejects.toThrow(/technical.md/);
+    }
+    await writeFile(reportManifestPath, originalManifest);
+    await writeFile(technicalPath, technical);
+
     const tampered = technical.replace(
-      "production qualification: **pass**",
-      "production qualification: **fail**",
+      "| Tasks passed | 3/3 (100.0%) |",
+      "| Tasks passed | 0/3 (0.0%) |",
     );
     await writeFile(technicalPath, tampered, "utf8");
     const manifestPath = join(result.resultDir!, "manifest.json");
@@ -689,36 +712,59 @@ describe("durable eval execution", () => {
     expect(restoredLegacy?.treatment).toBeUndefined();
   });
 
-  it("requires token coverage when configured without requiring dollar cost", async () => {
-    const missingPaths = await fixture({ minTokenUsageCoverage: 1 });
-    const missingLoaded = await loadEval(missingPaths.configPath);
-    const missingPlan = createEvalPlan(missingLoaded);
-    const missing = await runEvaluation({
-      loaded: missingLoaded,
-      plan: missingPlan,
-      driver: createFixtureDriver({
-        loaded: missingLoaded,
-        plan: missingPlan,
-        callLog: missingPaths.callLog,
-      }),
-      cwd: process.cwd(),
-      stateRoot: missingPaths.stateRoot,
-      resultsRoot: missingPaths.resultsRoot,
+  it("blocks publication and verification when required episode metrics are missing", async () => {
+    const paths = await fixture({ v4Policy: true });
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const result = await runEvaluation({
+      loaded, plan, driver: createFixtureDriver({ loaded, plan, callLog: paths.callLog }),
+      cwd: process.cwd(), stateRoot: paths.stateRoot, resultsRoot: paths.resultsRoot,
       promote: true,
     });
-    expect(missing.gatesPassed).toBe(false);
-    await expect(verifyResult(missing.resultDir!)).resolves.toMatchObject({
-      gatesPassed: false,
-    });
-    expect(
-      JSON.parse(
-        await readFile(join(missing.resultDir!, "manifest.json"), "utf8"),
-      ),
-    ).toMatchObject({ accepted: false });
-    expect(
-      await readFile(join(missing.resultDir!, "summary.md"), "utf8"),
-    ).toContain("Accepted: no");
+    const episodes = await readStateEpisodes(paths.stateRoot, result.manifest);
+    for (const field of ["toolCalls", "totalTokens", "wallDurationMs", "usageCoverage", "costCoverage"]) {
+      const incomplete = structuredClone(episodes);
+      delete incomplete[0]!.measurements[field];
+      await expect(promoteResult({ manifest: result.manifest, episodes: incomplete, resultsRoot: paths.resultsRoot }))
+        .rejects.toThrow(new RegExp(field));
+      const file = join(result.resultDir!, "results.jsonl");
+      const original = await readFile(file, "utf8");
+      const lines = original.trim().split("\n").map((line) => JSON.parse(line));
+      delete lines[0].measurements[field];
+      const changed = lines.map((line) => JSON.stringify(line)).join("\n") + "\n";
+      const manifestPath = join(result.resultDir!, "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      manifest.files["results.jsonl"] = textDigest(changed);
+      await writeFile(file, changed);
+      await writeFile(manifestPath, JSON.stringify(manifest));
+      await expect(verifyResult(result.resultDir!)).rejects.toThrow();
+      await writeFile(file, original);
+      manifest.files["results.jsonl"] = textDigest(original);
+      await writeFile(manifestPath, JSON.stringify(manifest));
+    }
+    for (const value of [-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1, "12"]) {
+      const invalid = structuredClone(episodes);
+      invalid[0]!.measurements.toolCalls = value;
+      expect(() => assertRequiredMetrics(invalid)).toThrow(/toolCalls/);
+    }
+    const summary = summarizeEpisodes(episodes);
+    const header = "| Backend / model | Source commit | Uncommitted changes | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
+    const readme = `| Fixture | [Report](result/summary.md) |\n${header}\n| Fixture | source | no | ${readmeMetricsCells(summary)}`;
+    expect(() => assertReadmeMetrics(readme, summary, "result/summary.md")).not.toThrow();
+    for (const removed of [header, "| Fixture | [Report](result/summary.md) |", ...readmeMetricsCells(summary).split("|").map(cell => cell.trim()).filter(Boolean)]) {
+      expect(() => assertReadmeMetrics(readme.replace(removed, ""), summary, "result/summary.md")).toThrow(/README/);
+    }
+    const scoreMissing = structuredClone(episodes);
+    delete scoreMissing[0]!.score;
+    expect(() => assertRequiredMetrics(scoreMissing)).toThrow(/score metrics/);
+    const costMissing = structuredClone(episodes);
+    costMissing[0]!.measurements.costCoverage = "complete";
+    expect(() => assertRequiredMetrics(costMissing)).toThrow(/estimatedCostUsd/);
+    expect(() => assertRequiredMetrics([])).toThrow(/no episodes/);
+    await expect(verifyResult(result.resultDir!)).resolves.toMatchObject({ ok: true });
+  });
 
+  it("requires token coverage when configured without requiring dollar cost", async () => {
     const partialPaths = await fixture({ minTokenUsageCoverage: 1 });
     const partialLoaded = await loadEval(partialPaths.configPath);
     const partialPlan = createEvalPlan(partialLoaded);
@@ -764,8 +810,8 @@ describe("durable eval execution", () => {
       gatesPassed: true,
     });
     const markdown = await readFile(join(withTokens.resultDir!, "summary.md"), "utf8");
-    expect(markdown).toContain("Accepted: yes");
-    expect(markdown).toContain("Estimated / billed cost: unavailable / unavailable");
+    expect(markdown).not.toMatch(/accepted|rejected/iu);
+    expect(markdown).toContain("| Estimated cost | unavailable |");
   });
 
   it("closes adapter resources when setup or rescoring fails", async () => {

@@ -433,6 +433,71 @@ function policyCapabilityName(
     ?.display_name ?? id;
 }
 
+const FACTS_REPORT_VERSION = "openneko.eval.report.facts.md/v1";
+
+export function factsMarkdown(
+  summary: ReturnType<typeof summarizeEpisodes>,
+  manifest: ReportManifest,
+  detail = false,
+  episodes?: readonly EvalEpisode[],
+): string {
+  const measured = (value: { count: number; total: number }, money = false) =>
+    value.count ? (money ? `$${value.total.toFixed(2)}` : String(value.total)) : "unavailable";
+  let out = `# OpenNeko evaluation ${detail ? "details" : "results"}\n\n`;
+  out += `> Report schema: \`${episodes ? "openneko.eval.report.facts.md/v2" : FACTS_REPORT_VERSION}\`\n\n`;
+  out += "| Metric | Observed |\n| --- | ---: |\n";
+  out += `| Tasks passed | ${summary.passedTasks}/${summary.taskCount} (${pct(summary.taskPassRate)}) |\n`;
+  out += `| Tasks passed at least once | ${summary.tasks.filter((task) => task.passes > 0).length}/${summary.taskCount} |\n`;
+  out += `| Tasks passed every repetition | ${summary.tasks.filter((task) => task.passes === task.repetitions).length}/${summary.taskCount} |\n`;
+  out += `| Episodes completed | ${summary.expectedEpisodes - summary.executionFailures}/${summary.expectedEpisodes} |\n`;
+  out += `| Execution failures | ${summary.executionFailures} |\n`;
+  out += `| Ground truth | ${pct(summary.macro.groundTruth)} |\n`;
+  out += `| Method | ${pct(summary.macro.method)} |\n`;
+  out += `| Behavior | ${pct(summary.macro.behavior)} |\n`;
+  out += `| Safety | ${pct(summary.macro.safety)} |\n`;
+  out += `| Safety check failures | ${summary.safetyGateFailures} |\n`;
+  out += `| Unsafe effects | ${summary.unsafeEffects} |\n`;
+  out += `| Latency p50 / p95 | ${duration(summary.measurements.wallDurationMs.p50)} / ${duration(summary.measurements.wallDurationMs.p95)} |\n`;
+  if (episodes) {
+    out += `| Total tool calls | ${measured(summary.measurements.toolCalls)} |\n`;
+    out += `| Tool-call coverage | ${pct(summary.measurements.toolCalls.coverage)} |\n`;
+  }
+  out += `| Total tokens | ${measured(summary.measurements.totalTokens)} |\n`;
+  out += `| Token coverage | ${pct(episodes ? summary.measurements.usageCoverage.completeRate : summary.measurements.totalTokens.coverage)} |\n`;
+  out += `| Estimated cost | ${measured(summary.measurements.estimatedCostUsd, true)} |\n`;
+  out += `| Cost coverage | ${pct(episodes ? summary.measurements.costCoverage.completeRate : summary.measurements.estimatedCostUsd.coverage)} |\n\n`;
+  if (detail) {
+    out += "## Tasks\n\n| Task | Variant | Phase | Passed repetitions | Ground truth | Method | Behavior | Safety | Unsafe effects |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n";
+    for (const task of summary.tasks) {
+      out += `| ${mdCell(task.caseId)} | ${mdCell(task.variantId)} | ${mdCell(task.phase)} | ${task.passes}/${task.repetitions} | ${pct(task.vector.groundTruth)} | ${pct(task.vector.method)} | ${pct(task.vector.behavior)} | ${pct(task.vector.safety)} | ${task.unsafeEffects} |\n`;
+    }
+  } else {
+    out += "## Task families\n\n| Family | Tasks passed | Ground truth | Method | Behavior | Safety |\n| --- | ---: | ---: | ---: | ---: | ---: |\n";
+    for (const [name, family] of Object.entries(summary.byFamily).sort()) {
+      out += `| ${mdCell(name)} | ${family.passed}/${family.tasks} | ${pct(family.vector.groundTruth)} | ${pct(family.vector.method)} | ${pct(family.vector.behavior)} | ${pct(family.vector.safety)} |\n`;
+    }
+  }
+  if (episodes && detail) {
+    out += "\n## Episodes\n\n| Task | Variant | Phase | Repetition | Status | Tool calls | Tokens | Token coverage | Latency | Estimated cost | Cost coverage |\n| --- | --- | --- | ---: | --- | ---: | ---: | --- | ---: | ---: | --- |\n";
+    for (const episode of [...episodes].sort((a, b) => a.slotKey.localeCompare(b.slotKey))) {
+      const m = episode.measurements;
+      out += `| ${mdCell(episode.caseId)} | ${mdCell(episode.variantId)} | ${mdCell(episode.phase)} | ${episode.repetition} | ${mdCell(episode.status)} | ${m.toolCalls} | ${m.totalTokens} | ${mdCell(String(m.usageCoverage))} | ${duration(Number(m.wallDurationMs))} | ${typeof m.estimatedCostUsd === "number" ? `$${m.estimatedCostUsd.toFixed(6)}` : "unavailable"} | ${mdCell(String(m.costCoverage))} |\n`;
+    }
+  } else if (episodes) {
+    out += "\n[Per-episode measurements](technical.md)\n";
+  }
+  out += "\n## Safety events\n\n| Outcome | Count |\n| --- | ---: |\n";
+  for (const [outcome, count] of Object.entries(summary.securityOutcomes.byOutcome).sort()) {
+    out += `| ${mdCell(outcome.replace(/_/gu, " "))} | ${count} |\n`;
+  }
+  out += "\n## Provenance\n\n| Field | Value |\n| --- | --- |\n";
+  out += `| Run | ${mdCell(manifest.runId)} |\n| Suite | ${mdCell(manifest.suiteId)} |\n| Attestation | ${mdCell(manifest.attestation)} |\n`;
+  out += `| Source commit | ${mdCell(manifest.source.commit)} |\n| Uncommitted changes | ${manifest.source.dirty ? "yes" : "no"} |\n`;
+  out += `| Models | ${manifest.effectiveConfig.variants.map((variant) => mdCell(`${variant.backend} / ${variant.outer_model.provider}:${variant.outer_model.model}`)).join(", ")} |\n`;
+  out += `| Repetitions | ${manifest.effectiveConfig.defaults.repetitions} |\n`;
+  return out;
+}
+
 function failedGateRows(summary: EvalSummaryDocument): GateResult[] {
   return (summary.qualification?.gateResults ?? []).filter(
     (gate) => gate.enforcement === "required" && gate.status !== "pass",
@@ -696,6 +761,54 @@ function publicEpisode(episode: EvalEpisode): unknown {
   };
 }
 
+export function readmeMetricsCells(summary: ReturnType<typeof summarizeEpisodes>): string {
+  const m = summary.measurements;
+  const seconds = (value: number | null) => value === null ? "unavailable" : `${(value / 1000).toFixed(1)}s`;
+  return `${seconds(m.wallDurationMs.p50)} / ${seconds(m.wallDurationMs.p95)} | ` +
+    `${m.toolCalls.total.toLocaleString("en-US")} (${pct(m.toolCalls.coverage)} coverage) | ` +
+    `${m.totalTokens.total.toLocaleString("en-US")} (${pct(m.usageCoverage.completeRate)} coverage) | ` +
+    `${m.estimatedCostUsd.count ? `$${m.estimatedCostUsd.total.toFixed(2)}` : "unavailable"} (${pct(m.costCoverage.completeRate)} coverage) |`;
+}
+
+export function assertReadmeMetrics(
+  readme: string,
+  summary: ReturnType<typeof summarizeEpisodes>,
+  reportLink: string,
+): void {
+  const evidenceRow = readme.split("\n").find((line) => line.startsWith("| ") && line.includes(`](${reportLink})`));
+  if (!evidenceRow) throw new Error(`README missing required result row: ${reportLink}`);
+  const label = evidenceRow.split("|")[1]!.trim();
+  const header = "| Backend / model | Source commit | Uncommitted changes | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
+  if (!readme.includes(header) || !readme.split("\n").some((line) =>
+    line.startsWith(`| ${label} |`) && line.endsWith(readmeMetricsCells(summary)))) {
+    throw new Error(`README missing or incorrect required metrics: ${label}`);
+  }
+}
+
+export function assertRequiredMetrics(episodes: readonly EvalEpisode[]): void {
+  if (!episodes.length) throw new Error("missing required metrics: no episodes");
+  for (const episode of episodes) {
+    for (const field of ["toolCalls", "totalTokens", "wallDurationMs"] as const) {
+      const value = episode.measurements[field];
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0 ||
+          (field !== "wallDurationMs" && !Number.isSafeInteger(value))) {
+        throw new Error(`missing or invalid required metric ${field}: ${episode.slotKey}`);
+      }
+    }
+    if (!episode.score) throw new Error(`missing required score metrics: ${episode.slotKey}`);
+    for (const field of ["usageCoverage", "costCoverage"] as const) {
+      if (!["complete", "partial", "unavailable"].includes(String(episode.measurements[field]))) {
+        throw new Error(`missing required metric ${field}: ${episode.slotKey}`);
+      }
+    }
+    const cost = episode.measurements.estimatedCostUsd;
+    if ((cost !== undefined || episode.measurements.costCoverage !== "unavailable") &&
+        (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0)) {
+      throw new Error(`missing or invalid required metric estimatedCostUsd: ${episode.slotKey}`);
+    }
+  }
+}
+
 export async function promoteResult(input: {
   manifest: EvalManifest;
   episodes: readonly EvalEpisode[];
@@ -707,6 +820,7 @@ export async function promoteResult(input: {
     scorerDigest: string;
   };
 }): Promise<string> {
+  assertRequiredMetrics(input.episodes);
   const resultDir = resolve(input.resultsRoot, input.manifest.configId, input.manifest.runId);
   await mkdir(resultDir, { recursive: true });
   const sorted = [...input.episodes].sort((left, right) =>
@@ -718,12 +832,8 @@ export async function promoteResult(input: {
     input.manifest,
   );
   const summaryText = `${JSON.stringify(summary, null, 2)}\n`;
-  const markdownText = input.manifest.thresholdPolicy
-    ? friendlyMarkdown(summary, input.manifest)
-    : legacyMarkdown(summary, input.manifest);
-  const technicalText = input.manifest.thresholdPolicy
-    ? technicalMarkdown(summary, input.manifest)
-    : undefined;
+  const markdownText = factsMarkdown(summary, input.manifest, false, sorted);
+  const technicalText = factsMarkdown(summary, input.manifest, true, sorted);
   const accepted = evaluateSuiteGates(
     summary,
     input.manifest.suiteGates,
@@ -738,9 +848,7 @@ export async function promoteResult(input: {
   await writeFile(join(resultDir, "results.jsonl"), lines, "utf8");
   await writeFile(join(resultDir, "summary.json"), summaryText, "utf8");
   await writeFile(join(resultDir, "summary.md"), markdownText, "utf8");
-  if (technicalText) {
-    await writeFile(join(resultDir, "technical.md"), technicalText, "utf8");
-  }
+  await writeFile(join(resultDir, "technical.md"), technicalText, "utf8");
   const artifactManifest = ResultManifestSchema.parse({
     schemaVersion: "openneko.eval.result-manifest/v1",
     runId: input.manifest.runId,
@@ -789,7 +897,7 @@ export async function promoteResult(input: {
       "results.jsonl": textDigest(lines),
       "summary.json": textDigest(summaryText),
       "summary.md": textDigest(markdownText),
-      ...(technicalText ? { "technical.md": textDigest(technicalText) } : {}),
+      "technical.md": textDigest(technicalText),
     },
   });
   await writeFile(
@@ -937,7 +1045,14 @@ export async function verifyResult(resultDirInput: string): Promise<{
   if (contentDigest(comparableSummary) !== contentDigest(storedSummaryRaw)) {
     throw new Error("summary does not match deterministic aggregate of results.jsonl");
   }
-  const expectedFriendly = manifest.thresholdPolicy
+  const storedFriendly = await readFile(join(resultDir, "summary.md"), "utf8");
+  const metricsReport = storedFriendly.includes("openneko.eval.report.facts.md/v2");
+  if (metricsReport) assertRequiredMetrics(episodes);
+  const expectedFriendly = metricsReport
+    ? factsMarkdown(recomputed, manifest, false, episodes)
+    : storedFriendly.includes(FACTS_REPORT_VERSION)
+    ? factsMarkdown(recomputed, manifest)
+    : manifest.thresholdPolicy
     ? friendlyMarkdown(recomputed, manifest)
     : !Object.hasOwn(
           (storedSummaryRaw as Record<string, unknown>).measurements as object,
@@ -951,11 +1066,13 @@ export async function verifyResult(resultDirInput: string): Promise<{
   ) {
     throw new Error("summary.md does not match deterministic summary rendering");
   }
-  if (manifest.thresholdPolicy) {
-    const expectedTechnical = technicalMarkdown(
-      recomputed,
-      manifest,
-    );
+  if (manifest.thresholdPolicy || metricsReport) {
+    const storedTechnical = await readFile(join(resultDir, "technical.md"), "utf8");
+    const expectedTechnical = metricsReport
+      ? factsMarkdown(recomputed, manifest, true, episodes)
+      : storedTechnical.includes(FACTS_REPORT_VERSION)
+      ? factsMarkdown(recomputed, manifest, true)
+      : technicalMarkdown(recomputed, manifest);
     if (
       expectedTechnical !==
       (await readFile(join(resultDir, "technical.md"), "utf8"))
