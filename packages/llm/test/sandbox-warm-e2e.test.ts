@@ -51,3 +51,37 @@ it.skipIf(process.env.OPENNEKO_OPENSHELL_WARM_E2E !== '1' || !process.env.OPENNE
     }
   }, 180_000,
 );
+
+it.skipIf(process.env.OPENNEKO_OPENSHELL_WARM_E2E !== '1' || !process.env.OPENNEKO_AGENT_IMAGE)(
+  'preloads stable org inputs and refreshes an unused spare without replacing it', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'warm-preload-e2e-'));
+    const workspace = { orgRoot: path.join(root, 'org'), knowledgeRoot: path.join(root, 'org/knowledge'), skillsRoot: path.join(root, 'org/skills') };
+    const slots: string[] = [];
+    const log = console.log;
+    const logger = vi.spyOn(console, 'log').mockImplementation((...args) => {
+      for (const value of args) { try { const event = JSON.parse(String(value)); if (event.outcome === 'spare_ready') slots.push(event.slot); } catch {} }
+      log(...args);
+    });
+    const run = (args: string[]) => new Promise<string>((resolve, reject) => {
+      const child = execFile('openshell', args, { timeout: 15_000 }, (error, stdout, stderr) => error ? reject(new Error(error.message + stderr)) : resolve(stdout));
+      child.stdin?.end();
+    });
+    const read = () => run(['sandbox', 'exec', '-n', slots[0]!, '--no-tty', '--', '/usr/local/uv/tools/hermes-agent/bin/python', '-c', "from pathlib import Path; print(Path('/sandbox/org/knowledge/catalog').read_text()); print(Path('/sandbox/org/knowledge/stale').exists())"]);
+    try {
+      await mkdir(workspace.knowledgeRoot, { recursive: true }); await mkdir(workspace.skillsRoot);
+      await writeFile(path.join(workspace.knowledgeRoot, 'catalog'), 'revision one');
+      await writeFile(path.join(workspace.knowledgeRoot, 'stale'), 'old');
+      await prepareSandboxCapacity({ agentImage: process.env.OPENNEKO_AGENT_IMAGE!, cpu: '1', memory: '512Mi', warmPoolSize: 1, warmIdleMs: 3000 }, workspace);
+      expect(slots).toHaveLength(1);
+      expect(await read()).toContain('revision one\nTrue');
+      await writeFile(path.join(workspace.knowledgeRoot, 'catalog'), 'revision two');
+      await rm(path.join(workspace.knowledgeRoot, 'stale'));
+      await vi.waitFor(async () => expect(await read()).toContain('revision two\nFalse'), { timeout: 15_000, interval: 500 });
+      await new Promise(resolve => setTimeout(resolve, 3500));
+      expect(await read()).toContain('revision two\nFalse');
+      expect(slots).toHaveLength(1);
+    } finally {
+      await closeSandboxPools(); logger.mockRestore(); await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000,
+);

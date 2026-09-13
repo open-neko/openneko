@@ -78,7 +78,7 @@ const h = vi.hoisted(() => {
       write(chunk, _encoding, done) { call.stdin = (call.stdin ?? "") + chunk.toString(); done(); },
       final(done) {
         if (reconciliation >= 0) {
-          const response = state.failReconcile ? "invalid reconciliation" : "__openneko_sync__" + JSON.stringify(Object.entries(JSON.parse(call.stdin!)).filter(([, value]) => value !== null).map(([key]) => key));
+          const response = state.failReconcile ? "invalid reconciliation" : "__openneko_sync__" + JSON.stringify(JSON.parse(call.stdin!).directories.map((directory: { entries: Record<string, unknown> }) => Object.entries(directory.entries).filter(([, value]) => value !== null).map(([key]) => key)));
           stdout.push(response + "\n"); stdout.push(null);
         }
         done();
@@ -515,7 +515,7 @@ describe("makeSandboxRunCore", () => {
     await makeSandboxRunCore({ ...options, modelProvider: "configured-after-startup" })(fakeInput(async () => {}));
     expect(logs.some(line => line.includes('"mode":"generic"'))).toBe(true);
     expect(logs.some(line => line.includes('"phase":"warm_miss"'))).toBe(false);
-    for (const phase of ["warm_checkout", "workspace_reconcile", "workspace_upload", "config_reconcile"]) {
+    for (const phase of ["inputs_reconcile", "workspace_upload", "inputs_sync"]) {
       expect(logs.some(line => line.includes(`"phase":"${phase}"`))).toBe(true);
     }
   });
