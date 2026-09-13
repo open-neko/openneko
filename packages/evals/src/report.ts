@@ -433,6 +433,57 @@ function policyCapabilityName(
     ?.display_name ?? id;
 }
 
+const FACTS_REPORT_VERSION = "openneko.eval.report.facts.md/v1";
+
+export function factsMarkdown(
+  summary: ReturnType<typeof summarizeEpisodes>,
+  manifest: ReportManifest,
+  detail = false,
+): string {
+  const measured = (value: { count: number; total: number }, money = false) =>
+    value.count ? (money ? `$${value.total.toFixed(2)}` : String(value.total)) : "unavailable";
+  let out = `# OpenNeko evaluation ${detail ? "details" : "results"}\n\n`;
+  out += `> Report schema: \`${FACTS_REPORT_VERSION}\`\n\n`;
+  out += "| Metric | Observed |\n| --- | ---: |\n";
+  out += `| Tasks passed | ${summary.passedTasks}/${summary.taskCount} (${pct(summary.taskPassRate)}) |\n`;
+  out += `| Tasks passed at least once | ${summary.tasks.filter((task) => task.passes > 0).length}/${summary.taskCount} |\n`;
+  out += `| Tasks passed every repetition | ${summary.tasks.filter((task) => task.passes === task.repetitions).length}/${summary.taskCount} |\n`;
+  out += `| Episodes completed | ${summary.expectedEpisodes - summary.executionFailures}/${summary.expectedEpisodes} |\n`;
+  out += `| Execution failures | ${summary.executionFailures} |\n`;
+  out += `| Ground truth | ${pct(summary.macro.groundTruth)} |\n`;
+  out += `| Method | ${pct(summary.macro.method)} |\n`;
+  out += `| Behavior | ${pct(summary.macro.behavior)} |\n`;
+  out += `| Safety | ${pct(summary.macro.safety)} |\n`;
+  out += `| Safety check failures | ${summary.safetyGateFailures} |\n`;
+  out += `| Unsafe effects | ${summary.unsafeEffects} |\n`;
+  out += `| Latency p50 / p95 | ${duration(summary.measurements.wallDurationMs.p50)} / ${duration(summary.measurements.wallDurationMs.p95)} |\n`;
+  out += `| Total tokens | ${measured(summary.measurements.totalTokens)} |\n`;
+  out += `| Token coverage | ${pct(summary.measurements.totalTokens.coverage)} |\n`;
+  out += `| Estimated cost | ${measured(summary.measurements.estimatedCostUsd, true)} |\n`;
+  out += `| Cost coverage | ${pct(summary.measurements.estimatedCostUsd.coverage)} |\n\n`;
+  if (detail) {
+    out += "## Tasks\n\n| Task | Variant | Phase | Passed repetitions | Ground truth | Method | Behavior | Safety | Unsafe effects |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n";
+    for (const task of summary.tasks) {
+      out += `| ${mdCell(task.caseId)} | ${mdCell(task.variantId)} | ${mdCell(task.phase)} | ${task.passes}/${task.repetitions} | ${pct(task.vector.groundTruth)} | ${pct(task.vector.method)} | ${pct(task.vector.behavior)} | ${pct(task.vector.safety)} | ${task.unsafeEffects} |\n`;
+    }
+  } else {
+    out += "## Task families\n\n| Family | Tasks passed | Ground truth | Method | Behavior | Safety |\n| --- | ---: | ---: | ---: | ---: | ---: |\n";
+    for (const [name, family] of Object.entries(summary.byFamily).sort()) {
+      out += `| ${mdCell(name)} | ${family.passed}/${family.tasks} | ${pct(family.vector.groundTruth)} | ${pct(family.vector.method)} | ${pct(family.vector.behavior)} | ${pct(family.vector.safety)} |\n`;
+    }
+  }
+  out += "\n## Safety events\n\n| Outcome | Count |\n| --- | ---: |\n";
+  for (const [outcome, count] of Object.entries(summary.securityOutcomes.byOutcome).sort()) {
+    out += `| ${mdCell(outcome.replace(/_/gu, " "))} | ${count} |\n`;
+  }
+  out += "\n## Provenance\n\n| Field | Value |\n| --- | --- |\n";
+  out += `| Run | ${mdCell(manifest.runId)} |\n| Suite | ${mdCell(manifest.suiteId)} |\n| Attestation | ${mdCell(manifest.attestation)} |\n`;
+  out += `| Source commit | ${mdCell(manifest.source.commit)} |\n| Uncommitted changes | ${manifest.source.dirty ? "yes" : "no"} |\n`;
+  out += `| Models | ${manifest.effectiveConfig.variants.map((variant) => mdCell(`${variant.backend} / ${variant.outer_model.provider}:${variant.outer_model.model}`)).join(", ")} |\n`;
+  out += `| Repetitions | ${manifest.effectiveConfig.defaults.repetitions} |\n`;
+  return out;
+}
+
 function failedGateRows(summary: EvalSummaryDocument): GateResult[] {
   return (summary.qualification?.gateResults ?? []).filter(
     (gate) => gate.enforcement === "required" && gate.status !== "pass",
@@ -718,11 +769,9 @@ export async function promoteResult(input: {
     input.manifest,
   );
   const summaryText = `${JSON.stringify(summary, null, 2)}\n`;
-  const markdownText = input.manifest.thresholdPolicy
-    ? friendlyMarkdown(summary, input.manifest)
-    : legacyMarkdown(summary, input.manifest);
+  const markdownText = factsMarkdown(summary, input.manifest);
   const technicalText = input.manifest.thresholdPolicy
-    ? technicalMarkdown(summary, input.manifest)
+    ? factsMarkdown(summary, input.manifest, true)
     : undefined;
   const accepted = evaluateSuiteGates(
     summary,
@@ -937,7 +986,10 @@ export async function verifyResult(resultDirInput: string): Promise<{
   if (contentDigest(comparableSummary) !== contentDigest(storedSummaryRaw)) {
     throw new Error("summary does not match deterministic aggregate of results.jsonl");
   }
-  const expectedFriendly = manifest.thresholdPolicy
+  const storedFriendly = await readFile(join(resultDir, "summary.md"), "utf8");
+  const expectedFriendly = storedFriendly.includes(FACTS_REPORT_VERSION)
+    ? factsMarkdown(recomputed, manifest)
+    : manifest.thresholdPolicy
     ? friendlyMarkdown(recomputed, manifest)
     : !Object.hasOwn(
           (storedSummaryRaw as Record<string, unknown>).measurements as object,
@@ -952,10 +1004,10 @@ export async function verifyResult(resultDirInput: string): Promise<{
     throw new Error("summary.md does not match deterministic summary rendering");
   }
   if (manifest.thresholdPolicy) {
-    const expectedTechnical = technicalMarkdown(
-      recomputed,
-      manifest,
-    );
+    const storedTechnical = await readFile(join(resultDir, "technical.md"), "utf8");
+    const expectedTechnical = storedTechnical.includes(FACTS_REPORT_VERSION)
+      ? factsMarkdown(recomputed, manifest, true)
+      : technicalMarkdown(recomputed, manifest);
     if (
       expectedTechnical !==
       (await readFile(join(resultDir, "technical.md"), "utf8"))

@@ -332,7 +332,7 @@ describe("durable eval execution", () => {
     expect(summary.byCapability["fixture.read"]?.tasks).toBe(3);
     expect(
       await readFile(join(result.resultDir!, "summary.md"), "utf8"),
-    ).toContain("Macro method: 0.0%");
+    ).toContain("| Method | 0.0% |");
     const manifestPath = join(result.resultDir!, "manifest.json");
     const artifactManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
       datasetFingerprint?: unknown;
@@ -391,21 +391,21 @@ describe("durable eval execution", () => {
     const technicalPath = join(result.resultDir!, "technical.md");
     const technical = await readFile(technicalPath, "utf8");
     expect(friendly).toContain(
-      "Friendly report schema: `openneko.eval.report.friendly.md/v1`",
+      "Report schema: `openneko.eval.report.facts.md/v1`",
     );
-    expect(friendly).toContain("## Qualification: Accepted");
-    expect(friendly).toContain("## Why qualification failed");
+    expect(friendly).not.toMatch(/accepted|rejected|qualification/iu);
+    expect(friendly).toContain("## Safety events");
     expect(technical).toContain(
-      "Technical report schema: `openneko.eval.report.technical.md/v1`",
+      "Report schema: `openneko.eval.report.facts.md/v1`",
     );
-    expect(technical).toContain("## Assertion-level capabilities");
+    expect(technical).toContain("## Tasks");
     await expect(verifyResult(result.resultDir!)).resolves.toMatchObject({
       gatesPassed: true,
     });
 
     const tampered = technical.replace(
-      "production qualification: **pass**",
-      "production qualification: **fail**",
+      "| Tasks passed | 3/3 (100.0%) |",
+      "| Tasks passed | 0/3 (0.0%) |",
     );
     await writeFile(technicalPath, tampered, "utf8");
     const manifestPath = join(result.resultDir!, "manifest.json");
@@ -717,7 +717,7 @@ describe("durable eval execution", () => {
     ).toMatchObject({ accepted: false });
     expect(
       await readFile(join(missing.resultDir!, "summary.md"), "utf8"),
-    ).toContain("Accepted: no");
+    ).not.toMatch(/accepted|rejected/iu);
 
     const partialPaths = await fixture({ minTokenUsageCoverage: 1 });
     const partialLoaded = await loadEval(partialPaths.configPath);
@@ -764,8 +764,8 @@ describe("durable eval execution", () => {
       gatesPassed: true,
     });
     const markdown = await readFile(join(withTokens.resultDir!, "summary.md"), "utf8");
-    expect(markdown).toContain("Accepted: yes");
-    expect(markdown).toContain("Estimated / billed cost: unavailable / unavailable");
+    expect(markdown).not.toMatch(/accepted|rejected/iu);
+    expect(markdown).toContain("| Estimated cost | unavailable |");
   });
 
   it("closes adapter resources when setup or rescoring fails", async () => {
