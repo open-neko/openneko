@@ -175,6 +175,24 @@ describe("OpenNeko backend scorer", () => {
     );
   });
 
+  it("classifies provider and network outages as infrastructure failures", () => {
+    for (const error of [
+      "Gemini HTTP 503 UNAVAILABLE",
+      "503 UNAVAILABLE. Provider is temporarily overloaded",
+      "litellm.ServiceUnavailableError: provider is down",
+      "Error code: 429 - rate limit exceeded",
+      "litellm.APIConnectionError: connection dropped",
+      "fetch failed: ECONNRESET",
+      "getaddrinfo ENOTFOUND generativelanguage.googleapis.com",
+      "HTTP 401 invalid API key",
+    ]) {
+      expect(backendAgentFailureType("failed", error)).toBe("agent_infrastructure_failure");
+    }
+    for (const error of ["tool call limit exceeded", "HTTP 400 invalid tool arguments", "request aborted", "answer was 503"]) {
+      expect(backendAgentFailureType("failed", error)).toBe("agent_failed");
+    }
+  });
+
   it("passes composition only when answer truth and trusted method evidence agree", () => {
     const spec = buildWorkBackendFixtureSpec({
       caseId: "b11-composition",

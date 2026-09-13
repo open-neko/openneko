@@ -501,11 +501,10 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         }
         const oracle = oracles[slot.caseId];
         let attempt = await store.nextAttemptNumber(manifest.runId, slot.key);
+        const lastAttempt =
+          attempt + options.loaded.config.defaults.max_attempts - 1;
         let terminal: EvalEpisode | undefined;
-        while (
-          attempt <= options.loaded.config.defaults.max_attempts &&
-          !terminal
-        ) {
+        while (attempt <= lastAttempt && !terminal) {
           const startedAt = new Date().toISOString();
           await store.writeAttempt({
             schemaVersion: "openneko.eval.attempt/v1",
@@ -637,10 +636,16 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
               errorType: info.type,
               error: info.message,
             });
-            if (
-              attempt >= options.loaded.config.defaults.max_attempts ||
-              !info.environment
-            ) {
+            if (info.environment && attempt >= lastAttempt) {
+              manifest = updateProgress(manifest, { completed, failed });
+              await store.replaceManifest(manifest);
+              await partialReport(store, manifest, episodes);
+              throw new EvalEnvironmentError(
+                `run ${manifest.runId} paused at ${slot.key}: ${info.message}; resume with --resume ${manifest.runId}`,
+                info.type,
+              );
+            }
+            if (!info.environment) {
               terminal = await store.writeEpisode({
                 schemaVersion: "openneko.eval.episode/v1",
                 runId: manifest.runId,
@@ -664,7 +669,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
                 attempt,
                 startedAt,
                 finishedAt,
-                status: info.environment ? "environment_failure" : "failed",
+                status: "failed",
                 measurements: failedExecution?.measurements ?? {},
                 observations: memorySink.observations,
                 ...(failedEvidence !== undefined
@@ -726,6 +731,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
         gatesPassed: evaluateSuiteGates(
           summarizeEpisodes(episodes),
           manifest.suiteGates,
+          manifest.thresholdPolicy,
         ),
         ...(resultDir ? { resultDir } : {}),
         manifest,
@@ -834,6 +840,7 @@ export async function rescoreEvaluation(input: {
       gatesPassed: evaluateSuiteGates(
         summarizeEpisodes(rescored),
         manifest.suiteGates,
+        manifest.thresholdPolicy,
       ),
       ...(resultDir ? { resultDir } : {}),
     };

@@ -12,6 +12,7 @@ import {
   deleteTestOrg,
 } from "@neko/db/test-helpers";
 import {
+  runEmbeddingIndexJob,
   type AgentWorkspace,
 } from "@neko/llm";
 import {
@@ -415,6 +416,14 @@ export async function provisionWorkBackendFixture(input: {
     });
     crossTenantResourceIds.push(crossTenantMemory.id);
 
+    // Production saves defer indexing; eval fixtures must be ready before
+    // the first query, without starting unrelated worker queues.
+    for (const resources of [targetResourceIds, decoyResourceIds]) {
+      for (const [resource, kind] of [["memory", "memory"], ["library", "concept"]] as const) {
+        const id = resources[resource];
+        if (id) await runEmbeddingIndexJob({ kind, orgId, id });
+      }
+    }
     const memoryResults = await searchWorkMemory({
       orgId,
       userId,

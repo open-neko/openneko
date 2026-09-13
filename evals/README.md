@@ -610,6 +610,14 @@ oracle values, binary/source commit, schema versions, generator, scorer/reward,
 prompt/tool/skill digests, model settings, and baseline identity. Reused
 episodes are revalidated before provider traffic.
 
+Network/provider failures exhaust at most `defaults.max_attempts` attempts per
+invocation, then pause the run instead of recording a permanent episode failure.
+Rerun the same command after recovery (or select `--resume <run-id>`): completed
+episodes are reused, the pending slot gets a fresh bounded retry allowance, and
+attempt numbers continue in the append-only journal. Genuine task failures and
+scored answers remain final. Resume is operator-triggered; there is no background
+retry loop. Authentication errors require a corrected credential before resuming.
+
 An interrupted read slot can retry directly. An interrupted mutation or watcher
 slot is never assumed safe: the dataset instance is reset to its fingerprinted
 baseline, setup/readiness is replayed, and the entire slot is rerun. Idempotency

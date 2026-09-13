@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,6 +164,49 @@ ${
 }
 
 describe("durable eval execution", () => {
+  it("keeps outage slots resumable across exhausted retries without replaying completed work", async () => {
+    const paths = await fixture({ family: "mutation" });
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const store = new EvalStateStore(paths.stateRoot);
+    const options = {
+      loaded, plan, cwd: process.cwd(),
+      stateRoot: paths.stateRoot, resultsRoot: paths.resultsRoot, promote: false,
+    };
+    const driver = createFixtureDriver({
+      loaded, plan, callLog: paths.callLog, resetLog: paths.resetLog,
+    });
+    const execute = driver.execute.bind(driver);
+    let pendingCalls = 0;
+    driver.execute = async (context) => {
+      if (context.slot.key === plan.slots[1]!.key) {
+        pendingCalls += 1;
+        throw new Error("fetch failed: ECONNRESET");
+      }
+      return execute(context);
+    };
+    await expect(runEvaluation({ ...options, driver })).rejects.toThrow(/paused.*--resume/u);
+    const [runId] = await readdir(join(paths.stateRoot, "runs"));
+    const saved = await readFile(store.episodePath(runId!, plan.slots[0]!.key), "utf8");
+    await expect(runEvaluation({ ...options, driver, resumeRunId: runId })).rejects.toThrow(/paused/u);
+    expect(pendingCalls).toBe(4);
+    expect(await store.readManifest(runId!)).toMatchObject({
+      status: "in_progress", completedSlotKeys: [plan.slots[0]!.key],
+      failedSlotKeys: [], inFlightSlotKeys: [],
+    });
+    expect(await store.readEpisode(runId!, plan.slots[1]!.key)).toBeUndefined();
+    expect(await readdir(paths.resultsRoot).catch(() => [])).toEqual([]);
+
+    driver.execute = execute;
+    const result = await runEvaluation({ ...options, driver });
+    expect(result).toMatchObject({ runId, resumed: true, reusedEpisodes: 1 });
+    expect(result.manifest.status).toBe("complete");
+    expect(await store.readEpisode(runId!, plan.slots[1]!.key)).toMatchObject({ attempt: 5, status: "completed" });
+    expect(await readFile(store.episodePath(runId!, plan.slots[0]!.key), "utf8")).toBe(saved);
+    expect((await readFile(paths.callLog, "utf8")).trim().split("\n")).toHaveLength(3);
+    expect((await readFile(paths.resetLog, "utf8")).trim().split("\n").filter((key) => key === plan.slots[1]!.key)).toHaveLength(10);
+  });
+
   it("retains private partial measurements and evidence for task failures", async () => {
     const paths = await fixture();
     const loaded = await loadEval(paths.configPath);
@@ -307,6 +350,23 @@ describe("durable eval execution", () => {
     await expect(verifyResult(result.resultDir!)).rejects.toThrow(
       /literal credential/u,
     );
+  });
+
+  it("applies v4 qualification to run and rescore exit status", async () => {
+    const paths = await fixture({ v4Policy: true });
+    const loaded = await loadEval(paths.configPath);
+    const plan = createEvalPlan(loaded);
+    const driver = createFixtureDriver({ loaded, plan, callLog: paths.callLog });
+    driver.execute = async () => ({ output: { actual: -1 } });
+    const options = {
+      loaded, plan, driver, cwd: process.cwd(),
+      stateRoot: paths.stateRoot, resultsRoot: paths.resultsRoot, promote: true,
+    };
+    const result = await runEvaluation(options);
+    expect(result.gatesPassed).toBe(false);
+    await expect(verifyResult(result.resultDir!)).resolves.toMatchObject({ gatesPassed: false });
+    const rescored = await rescoreEvaluation({ ...options, runId: result.runId, promote: false });
+    expect(rescored.gatesPassed).toBe(false);
   });
 
   it("publishes deterministic friendly and technical v4 reports", async () => {
