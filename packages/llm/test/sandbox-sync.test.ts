@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile, access 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { RECONCILE_COMMAND, syncSandboxDirectory } from '../src/work/sandbox-sync';
+import { RECONCILE_COMMAND, syncSandboxDirectory, syncSandboxDirectories } from '../src/work/sandbox-sync';
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 it('skips unchanged files, repairs agent edits, removes stale files and refreshes turn inputs', async () => {
@@ -51,4 +51,24 @@ it('rejects injected paths and source symlinks', async () => {
   expect(upload).not.toHaveBeenCalled();
   await symlink('/tmp', path.join(source, 'link'));
   await expect(syncSandboxDirectory(options)).rejects.toThrow('Unsupported sandbox input');
+});
+
+it('reconciles workspace and config in one call and preserves delta validation', async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'sandbox-sync-batch-'))); roots.push(root);
+  const directories = await Promise.all(['workspace', 'config'].map(async name => {
+    const source = path.join(root, name); const destination = path.join(root, 'box', name);
+    await mkdir(source); await writeFile(path.join(source, 'input'), name);
+    return { source, destination, deltaRoot: path.join(root, 'delta', name),
+      upload: async (delta: string) => { await cp(delta, destination, { recursive: true }); } };
+  }));
+  const reconcile = vi.fn((manifest: string) => new Promise<string>((resolve, reject) => {
+    const child = execFile('python3', ['-c', RECONCILE_COMMAND], (error, stdout) => error ? reject(error) : resolve(stdout));
+    child.stdin!.end(manifest);
+  }));
+  expect((await syncSandboxDirectories({ directories, reconcile })).map(stat => stat.changed)).toEqual([1, 1]);
+  expect(reconcile).toHaveBeenCalledTimes(1);
+  expect((await syncSandboxDirectories({ directories, reconcile })).map(stat => stat.changed)).toEqual([0, 0]);
+  await writeFile(path.join(directories[0]!.destination, 'input'), 'agent edit');
+  expect((await syncSandboxDirectories({ directories, reconcile })).map(stat => stat.changed)).toEqual([1, 0]);
+  await expect(syncSandboxDirectories({ directories, reconcile: async () => '__openneko_sync__[]' })).rejects.toThrow('batch');
 });

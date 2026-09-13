@@ -4,6 +4,8 @@ export type WarmSlot = {
   alive: () => boolean;
   destroy: () => Promise<void>;
   closed?: Promise<void>;
+  /** Renew an unused spare without exposing user configuration to it. */
+  refresh?: () => Promise<void>;
 };
 type IdleSlot = {
   slot: WarmSlot;
@@ -20,6 +22,7 @@ export class SandboxPool {
   private idle = new Map<string, IdleSlot>();
   private busy = new Set<string>();
   private stopped = false;
+  private maintenance = new Map<WarmSlot, { timer?: ReturnType<typeof setTimeout>; pending?: Promise<void> }>();
 
   constructor(private options: {
     size: number;
@@ -33,6 +36,34 @@ export class SandboxPool {
     try { this.options.onEvent?.(attributes); } catch {}
   }
 
+  private maintain(slot: WarmSlot): void {
+    if (!slot.refresh || this.stopped || !this.generic.includes(slot)) return;
+    const state: { timer?: ReturnType<typeof setTimeout>; pending?: Promise<void> } = {};
+    this.maintenance.set(slot, state);
+    state.timer = setTimeout(() => {
+      state.pending = slot.refresh!().catch(async error => {
+        this.event({ outcome: "spare_refresh_failed", background: true, slot: slot.name });
+        this.generic = this.generic.filter(candidate => candidate !== slot);
+        await slot.destroy().catch(this.options.onError);
+        this.options.onError(error);
+        this.replenish();
+      }).then(() => {
+        if (this.maintenance.get(slot) === state) {
+          this.maintenance.delete(slot);
+          this.maintain(slot);
+        }
+      });
+    }, Math.max(1, Math.floor(this.options.idleMs / 3)));
+    state.timer.unref();
+  }
+
+  private stopMaintenance(slot: WarmSlot): Promise<void> | undefined {
+    const state = this.maintenance.get(slot);
+    clearTimeout(state?.timer);
+    this.maintenance.delete(slot);
+    return state?.pending;
+  }
+
   replenish(): void {
     if (this.stopped) return;
     this.generic = this.generic.filter(slot => slot.alive());
@@ -43,9 +74,11 @@ export class SandboxPool {
         if (this.stopped) await slot.destroy();
         else {
           this.generic.push(slot);
+          this.maintain(slot);
           void slot.closed?.then(() => {
             const index = this.generic.indexOf(slot);
             if (index < 0) return; // Assigned slots follow their user's idle timeout.
+            void this.stopMaintenance(slot);
             this.event({ outcome: "evicted", reason: "generic_closed", background: true, slot: slot.name });
             this.generic.splice(index, 1);
             this.replenish();
@@ -124,6 +157,15 @@ export class SandboxPool {
           await this.ready(signal);
         }
         const candidate = this.generic.shift();
+        // A checkout must not race a background ping through the fork server.
+        if (candidate) {
+          await this.stopMaintenance(candidate);
+          if (this.stopped) { await candidate.destroy(); throw new Error("Sandbox pool is closed"); }
+          if (signal?.aborted) {
+            if (candidate.alive()) { this.generic.unshift(candidate); this.maintain(candidate); }
+            signal.throwIfAborted();
+          }
+        }
         if (candidate?.alive()) slot = candidate;
       }
     } catch (error) {
@@ -166,6 +208,7 @@ export class SandboxPool {
       clearTimeout(value.timer);
       return value.slot;
     })];
+    await Promise.all([...this.maintenance.keys()].map(slot => this.stopMaintenance(slot)));
     this.generic = [];
     this.idle.clear();
     await Promise.all([...slots.map(slot => slot.destroy()), ...[...this.pending].map(p => p.catch(() => {}))]);

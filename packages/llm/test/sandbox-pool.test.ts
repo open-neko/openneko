@@ -166,3 +166,45 @@ it('gives simultaneous waiters distinct slots while sharing pending preparation'
   finishes.shift()!(slot('spare'));
   await a.release(a.slot, true); await b.release(b.slot, true); await pool.close();
 });
+it('renews generic capacity through idle periods and stops renewal when assigned', async () => {
+  vi.useFakeTimers();
+  let count = 0;
+  const create = vi.fn(async () => {
+    let expiry = Date.now() + 3000;
+    return { name: String(++count), alive: () => Date.now() < expiry,
+      refresh: vi.fn(async () => { expiry = Date.now() + 3000; }), destroy: vi.fn(async () => {}) };
+  });
+  const pool = new SandboxPool({ size: 1, idleMs: 3000, create, onError: vi.fn() });
+  await pool.ready();
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(create).toHaveBeenCalledTimes(1);
+  const lease = await pool.acquire({ key: 'alice', scope: 'v1' });
+  expect(lease.slot?.name).toBe('1');
+  const refresh = lease.slot!.refresh!;
+  const calls = vi.mocked(refresh).mock.calls.length;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(refresh).toHaveBeenCalledTimes(calls);
+  await lease.release(lease.slot, false);
+  await pool.close();
+  const created = create.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(create).toHaveBeenCalledTimes(created);
+});
+it('waits for an in-flight spare renewal before handing the slot to a turn', async () => {
+  vi.useFakeTimers();
+  let finish!: () => void;
+  const slot = { name: 'spare', alive: () => true, destroy: vi.fn(async () => {}),
+    refresh: () => new Promise<void>(resolve => { finish = resolve; }) };
+  const pool = new SandboxPool({ size: 1, idleMs: 3000, create: async () => slot, onError: vi.fn() });
+  await pool.ready();
+  await vi.advanceTimersByTimeAsync(1000);
+  let acquired = false;
+  const admission = pool.acquire().then(lease => { acquired = true; return lease; });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(acquired).toBe(false);
+  finish();
+  const lease = await admission;
+  expect(lease.slot).toBe(slot);
+  await lease.release(lease.slot, false);
+  await pool.close();
+});
