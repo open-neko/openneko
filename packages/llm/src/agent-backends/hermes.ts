@@ -685,6 +685,8 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
           toolActivityObserved = true;
           flushProviderSummary();
           if (!onEvent) return;
+          const meta = (update.fieldMeta ?? update._meta) as { openneko?: { usage?: unknown } } | undefined;
+          const usageSnapshot = normalizeHermesUsage(meta?.openneko?.usage);
           const mcpToolName = canonicalAcpMcpToolName(update.title);
           // The brokered neko_ui server is the sole surface emitter. Suppress
           // a successful render's tool pill, but preserve the exact rejected
@@ -698,6 +700,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
             emitQueued({
               type: "tool_start",
               id: update.toolCallId,
+              ...(usageSnapshot ? { usageSnapshot } : {}),
               name: A2UI_RENDER_TOOL_NAME,
               input: {
                 title: update.title,
@@ -710,6 +713,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
           emitQueued({
             type: "tool_start",
             id: update.toolCallId,
+            ...(usageSnapshot ? { usageSnapshot } : {}),
             name: mcpToolName ?? update.kind ?? "tool",
             input:
               mcpToolName && update.rawInput !== undefined

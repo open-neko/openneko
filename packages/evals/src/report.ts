@@ -794,7 +794,8 @@ export function assertRequiredMetrics(episodes: readonly EvalEpisode[]): void {
         throw new Error(`missing or invalid required metric ${field}: ${episode.slotKey}`);
       }
     }
-    if (!episode.score) throw new Error(`missing required score metrics: ${episode.slotKey}`);
+    // Failed executions have no scorer output; their execution metrics remain mandatory.
+    if (episode.status === "completed" && !episode.score) throw new Error(`missing required score metrics: ${episode.slotKey}`);
     for (const field of ["usageCoverage", "costCoverage"] as const) {
       if (!["complete", "partial", "unavailable"].includes(String(episode.measurements[field]))) {
         throw new Error(`missing required metric ${field}: ${episode.slotKey}`);

@@ -348,6 +348,64 @@ const STATE_RECORDS_ACTION: PluginActionDescriptor = {
   default_mode: "ask",
 };
 
+// Tool snapshots are cumulative for this turn. Interrupted turns may have an
+// additional in-flight request, so never label a snapshot as complete usage.
+export function backendUsageMeasurements(
+  events: readonly AgentEvent[],
+  variant: EvalVariant,
+  catalog: LoadedEval["pricing"],
+): EvalExecution["measurements"] {
+  const final = events.filter((event) => event.type === "usage" && event.source === "outer").at(-1);
+  const snapshot = events.filter((event) => event.type === "tool_start" && event.usageSnapshot).at(-1);
+  const usage: AgentTokenUsage | undefined = final?.type === "usage" && final.usage?.coverage !== "unavailable"
+    ? final.usage
+    : snapshot?.type === "tool_start" && snapshot.usageSnapshot
+      ? { ...snapshot.usageSnapshot, coverage: "partial", missingReasons: ["turn ended without final usage; last tool-boundary snapshot only"] }
+      : undefined;
+  const cost = estimateUsageCost({ usage, provider: variant.outer_model.provider, model: variant.outer_model.model, catalog });
+  return {
+    usageCoverage: usage?.coverage ?? "unavailable",
+    ...(usage?.missingReasons
+      ? { usageMissingReasons: usage.missingReasons }
+      : {}),
+    ...(usage?.inputTokens !== undefined
+      ? { inputTokens: usage.inputTokens }
+      : {}),
+    ...(usage?.outputTokens !== undefined
+      ? { outputTokens: usage.outputTokens }
+      : {}),
+    ...(usage?.cacheReadTokens !== undefined
+      ? { cacheReadTokens: usage.cacheReadTokens }
+      : {}),
+    ...(usage?.cacheWriteTokens !== undefined
+      ? { cacheWriteTokens: usage.cacheWriteTokens }
+      : {}),
+    ...(usage?.reasoningTokens !== undefined
+      ? { reasoningTokens: usage.reasoningTokens }
+      : {}),
+    ...(usage?.totalTokens !== undefined
+      ? { totalTokens: usage.totalTokens }
+      : {}),
+    costCoverage: cost.coverage,
+    ...(cost.missingReasons
+      ? { costMissingReasons: cost.missingReasons }
+      : {}),
+    ...(cost.estimatedCostUsd !== undefined
+      ? { estimatedCostUsd: cost.estimatedCostUsd }
+      : {}),
+    ...(cost.currency ? { currency: cost.currency } : {}),
+    ...(cost.pricingCatalogVersion
+      ? { pricingCatalogVersion: cost.pricingCatalogVersion }
+      : {}),
+  };
+}
+
+export function assertCompactionPrompt(prompt: string): void {
+  if (!prompt.includes(`[Earlier conversation summary]\nThe operator selected ${STATE_COMPACTION_MARKER} as the exact resume code.`)) {
+    throw new EvalEnvironmentError("persisted compaction summary missing from model prompt", "compaction_context_missing");
+  }
+}
+
 function stateActionPromptDescriptor() {
   return {
     kind: STATE_ACTION_KIND,
@@ -2738,6 +2796,8 @@ export function createOpenNekoBackendDriver(context: {
       let initialWorkflows: Awaited<ReturnType<typeof listWorkflows>> = [];
       let initialCrossTenantWorkflows: Awaited<ReturnType<typeof listWorkflows>> = [];
       let compactionWatermark = "";
+      let compactionPromptVerified = false;
+      let compactionPromptError: unknown;
       let stateMachine: StateMachineObservation | undefined;
       const partialExecution = (): EvalExecution => ({
         semanticEvidence: {
@@ -2751,6 +2811,8 @@ export function createOpenNekoBackendDriver(context: {
           repeatedToolCalls: repeatedBackendToolCallCount(events),
           ...(maxToolCalls !== undefined ? { maxToolCalls } : {}),
           semanticEvidenceEvents: evidence.length,
+          ...backendUsageMeasurements(events, slot.variant, context.loaded.pricing),
+          ...(scenario === "stateful-compaction-resume" ? { compactionPromptVerified } : {}),
           configuredProvider: slot.variant.outer_model.provider,
           configuredModel: slot.variant.outer_model.model,
         },
@@ -3033,9 +3095,21 @@ export function createOpenNekoBackendDriver(context: {
                 resolveAgentBackend: async () => runtime.backend,
                 ensureWorkWorkspace: async () => fixture.workspace,
                 formatWorkMemoryPromptContext: formatMemory,
-                runCore: runtime.runCore,
+                runCore: (input) => {
+                  if (scenario === "stateful-compaction-resume") {
+                    try {
+                      assertCompactionPrompt(input.prompt);
+                    } catch (error) {
+                      compactionPromptError = error;
+                      throw error;
+                    }
+                    compactionPromptVerified = true;
+                  }
+                  return runtime.runCore(input);
+                },
               },
             );
+        if (compactionPromptError) throw compactionPromptError;
         if (toolCallLimitReached) {
           throw new EvalTaskError(
             `agent exceeded max_tool_calls=${maxToolCalls}; tool_sequence=${toolCallSequence(events)}`,
@@ -3103,13 +3177,6 @@ export function createOpenNekoBackendDriver(context: {
             "model_identity_mismatch",
           );
         }
-        const usage: AgentTokenUsage | undefined = reported?.usage;
-        const cost = estimateUsageCost({
-          usage,
-          provider: slot.variant.outer_model.provider,
-          model: slot.variant.outer_model.model,
-          catalog: context.loaded.pricing,
-        });
         const wallDurationMs = Date.now() - started;
         return {
           output: {
@@ -3130,6 +3197,7 @@ export function createOpenNekoBackendDriver(context: {
           },
           measurements: {
             wallDurationMs,
+            ...(scenario === "stateful-compaction-resume" ? { compactionPromptVerified } : {}),
             ...(firstOutputMs !== undefined ? { firstOutputMs } : {}),
             toolCalls: events.filter((event) => event.type === "tool_start").length,
             repeatedToolCalls: repeatedBackendToolCallCount(events),
@@ -3149,39 +3217,7 @@ export function createOpenNekoBackendDriver(context: {
                   observedModel: observedIdentity.model,
                 }
               : {}),
-            usageCoverage: usage?.coverage ?? "unavailable",
-            ...(usage?.missingReasons
-              ? { usageMissingReasons: usage.missingReasons }
-              : {}),
-            ...(usage?.inputTokens !== undefined
-              ? { inputTokens: usage.inputTokens }
-              : {}),
-            ...(usage?.outputTokens !== undefined
-              ? { outputTokens: usage.outputTokens }
-              : {}),
-            ...(usage?.cacheReadTokens !== undefined
-              ? { cacheReadTokens: usage.cacheReadTokens }
-              : {}),
-            ...(usage?.cacheWriteTokens !== undefined
-              ? { cacheWriteTokens: usage.cacheWriteTokens }
-              : {}),
-            ...(usage?.reasoningTokens !== undefined
-              ? { reasoningTokens: usage.reasoningTokens }
-              : {}),
-            ...(usage?.totalTokens !== undefined
-              ? { totalTokens: usage.totalTokens }
-              : {}),
-            costCoverage: cost.coverage,
-            ...(cost.missingReasons
-              ? { costMissingReasons: cost.missingReasons }
-              : {}),
-            ...(cost.estimatedCostUsd !== undefined
-              ? { estimatedCostUsd: cost.estimatedCostUsd }
-              : {}),
-            ...(cost.currency ? { currency: cost.currency } : {}),
-            ...(cost.pricingCatalogVersion
-              ? { pricingCatalogVersion: cost.pricingCatalogVersion }
-              : {}),
+            ...backendUsageMeasurements(events, slot.variant, context.loaded.pricing),
           },
         };
       } finally {

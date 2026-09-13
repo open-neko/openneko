@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   EvalTaskError,
+  EvalEnvironmentError,
   EvalStateStore,
   contentDigest,
   createEvalPlan,
@@ -183,7 +184,7 @@ describe("durable eval execution", () => {
     driver.execute = async (context) => {
       if (context.slot.key === plan.slots[1]!.key) {
         pendingCalls += 1;
-        throw new Error("fetch failed: ECONNRESET");
+        throw new EvalEnvironmentError("fetch failed: ECONNRESET " + "provider trace ".repeat(300), "agent_infrastructure_failure");
       }
       return execute(context);
     };
@@ -239,7 +240,7 @@ describe("durable eval execution", () => {
       callLog: paths.callLog,
     });
     driver.execute = async () => {
-      throw new EvalTaskError("candidate failed", "candidate_failure", {
+      throw new EvalTaskError("candidate failed " + "backend trace ".repeat(300), "candidate_failure", {
         measurements: {
           wallDurationMs: 123,
           toolCalls: 31,
@@ -261,6 +262,7 @@ describe("durable eval execution", () => {
     });
     const episodes = await readStateEpisodes(paths.stateRoot, result.manifest);
     expect(episodes).toHaveLength(3);
+    expect(episodes[0]!.error).toHaveLength(2048);
     expect(episodes[0]).toMatchObject({
       status: "failed",
       errorType: "candidate_failure",
@@ -757,6 +759,8 @@ describe("durable eval execution", () => {
     const scoreMissing = structuredClone(episodes);
     delete scoreMissing[0]!.score;
     expect(() => assertRequiredMetrics(scoreMissing)).toThrow(/score metrics/);
+    scoreMissing[0]!.status = "failed";
+    expect(() => assertRequiredMetrics(scoreMissing)).not.toThrow();
     const costMissing = structuredClone(episodes);
     costMissing[0]!.measurements.costCoverage = "complete";
     expect(() => assertRequiredMetrics(costMissing)).toThrow(/estimatedCostUsd/);

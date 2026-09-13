@@ -30,6 +30,8 @@ export type AcpSessionUpdate =
     }
   | {
       sessionUpdate: "tool_call";
+      fieldMeta?: unknown;
+      _meta?: unknown;
       toolCallId: string;
       title?: string;
       kind?: string;

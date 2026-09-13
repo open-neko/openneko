@@ -10,6 +10,8 @@ import type { AgentEvent } from "@neko/llm";
 import { workSemanticDigest, type WorkSemanticTraceEvent } from "@neko/llm/work";
 import {
   backendAgentFailureType,
+  backendUsageMeasurements,
+  assertCompactionPrompt,
   backendExplicitModelLimits,
   backendExecutionOrderIsSafe,
   backendGraphjinActorProbe,
@@ -1653,5 +1655,31 @@ describe("OpenNeko backend Hermes MCP event recognition", () => {
         (input) => input.blueprint === "crm",
       ),
     ).toBe(true);
+  });
+});
+
+
+describe("interrupted backend usage", () => {
+  it("uses the last cumulative snapshot without summing it, and prefers final usage", async () => {
+    const loaded = await loadEval(resolve(import.meta.dirname, "../../../evals/configs/openneko-backend-hermes-gemini-3.8-flash-v4.yaml"));
+    const variant = loaded.config.variants[0]!;
+    const snapshot = (inputTokens: number): AgentEvent => ({
+      type: "tool_start", id: "t", name: "terminal",
+      usageSnapshot: { inputTokens, outputTokens: 100, totalTokens: inputTokens + 100, coverage: "complete" },
+    });
+    const events: AgentEvent[] = [snapshot(1000), snapshot(2000)];
+    expect(backendUsageMeasurements(events, variant, loaded.pricing)).toMatchObject({
+      inputTokens: 2000, outputTokens: 100, totalTokens: 2100,
+      usageCoverage: "partial", costCoverage: "partial", estimatedCostUsd: 0.001875,
+    });
+    events.push({ type: "usage", source: "outer", usage: { inputTokens: 3000, outputTokens: 100, totalTokens: 3100, coverage: "complete" } });
+    expect(backendUsageMeasurements(events, variant, loaded.pricing)).toMatchObject({ totalTokens: 3100, usageCoverage: "complete", costCoverage: "complete" });
+    expect(backendUsageMeasurements([], variant, loaded.pricing)).toMatchObject({ usageCoverage: "unavailable", costCoverage: "unavailable" });
+    expect(backendUsageMeasurements([], variant, loaded.pricing)).not.toHaveProperty("totalTokens");
+  });
+
+  it("fails compaction setup before inference if the summary was omitted", () => {
+    expect(() => assertCompactionPrompt("What resume code did we choose?")).toThrow("persisted compaction summary missing");
+    expect(() => assertCompactionPrompt("[Earlier conversation summary]\nThe operator selected AW-RESUME-CODE-7Q4M as the exact resume code.")).not.toThrow();
   });
 });

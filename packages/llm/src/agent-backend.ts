@@ -90,7 +90,14 @@ export type AgentEvent =
   | { type: "message"; role: "user" | "assistant"; content: string }
   /** Hermes ACP's provider-neutral, model-authored mid-turn commentary. */
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
-  | { type: "tool_start"; id: string; name: string; input?: unknown }
+  | {
+      type: "tool_start";
+      id: string;
+      name: string;
+      input?: unknown;
+      /** Cumulative provider usage for the current turn, not an additive delta. */
+      usageSnapshot?: AgentTokenUsage;
+    }
   | { type: "tool_delta"; id: string; delta: unknown }
   | { type: "tool_end"; id: string; result?: unknown; error?: string }
   | { type: "surface"; messages: AgentSurfaceMessage[] }
