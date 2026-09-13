@@ -1,3 +1,4 @@
+import { prepareSandboxCapacity, closeSandboxPools } from "@neko/llm/work/sandbox-launcher";
 import { withStartupTrace, startupPhase, startupEvent } from "@neko/telemetry/startup";
 import { soloAdminNeedsEmail } from "@neko/db";
 import { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "@neko/llm";
@@ -961,6 +962,10 @@ const GRAPHJIN_URL = toGraphqlEndpoint(
 );
 console.log(`[worker] neko graphjin client targeting ${GRAPHJIN_URL}`);
 
+if (process.env.OPENNEKO_AGENT_IMAGE) {
+  try { await prepareSandboxCapacity(); }
+  catch (error) { console.error("[sandbox] startup preparation failed", error); }
+}
 const b = await boss();
 
 {
@@ -1708,6 +1713,8 @@ const shutdown = async (signal: string) => {
   } catch (e) {
     console.error("[worker] records pool shutdown error:", e);
   }
+  try { await closeSandboxPools(); }
+  catch (error) { console.error("[worker] sandbox shutdown error:", error); }
   await shutdownWorkerTelemetry();
   process.exit(0);
 };
