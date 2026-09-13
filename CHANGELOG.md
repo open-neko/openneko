@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.44.5](https://github.com/open-neko/openneko/compare/v2.44.4...v2.44.5) (2026-09-13)
+
+
+### Bug Fixes
+
+* stream large sandbox manifests over stdin ([f9b75f2](https://github.com/open-neko/openneko/commit/f9b75f236e242cfb2d479c53cc5a64bc2754f753))
+* stream sandbox manifests instead of exceeding exec argument limits ([53dea5d](https://github.com/open-neko/openneko/commit/53dea5df92624c1d8b4dd9fa7a8b2dd619e67b10))
+
 ## [2.44.4](https://github.com/open-neko/openneko/compare/v2.44.3...v2.44.4) (2026-09-13)
 
 
