@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.46.1](https://github.com/open-neko/openneko/compare/v2.46.0...v2.46.1) (2026-09-13)
+
+
+### Performance Improvements
+
+* **work:** cache stable inputs and retain preloaded warm sandboxes ([581eba9](https://github.com/open-neko/openneko/commit/581eba91d070329e3a2f58c541df440f006a5ca5))
+* **work:** cache stable inputs and retain preloaded warm sandboxes ([4f0a18f](https://github.com/open-neko/openneko/commit/4f0a18f244e8b4b707542eddd5dcb78d9891355a))
+
 ## [2.46.0](https://github.com/open-neko/openneko/compare/v2.45.0...v2.46.0) (2026-09-13)
 
 
