@@ -110,22 +110,15 @@ function errorInfo(cause: unknown): {
   message: string;
   environment: boolean;
 } {
-  if (cause instanceof EvalEnvironmentError) {
-    return { type: cause.errorType, message: cause.message, environment: true };
-  }
-  if (cause instanceof EvalTaskError) {
-    return {
-      type: cause.errorType,
-      message: cause.message,
-      environment: false,
-    };
-  }
-  const name = cause instanceof Error ? cause.name : "unknown";
-  const message = cause instanceof Error ? cause.message : String(cause);
+  const message = redactText(
+    cause instanceof Error ? cause.message : String(cause),
+  ).slice(0, 2048);
+  const typed = cause instanceof EvalEnvironmentError || cause instanceof EvalTaskError;
+  const type = typed ? cause.errorType : cause instanceof Error ? cause.name : "unknown";
   return {
-    type: name.replace(/[^A-Za-z0-9_.:-]+/g, "_").slice(0, 128) || "unknown",
-    message: redactText(message).slice(0, 2048),
-    environment: true,
+    type: type.replace(/[^A-Za-z0-9_.:-]+/g, "_").slice(0, 128) || "unknown",
+    message,
+    environment: !(cause instanceof EvalTaskError),
   };
 }
 
