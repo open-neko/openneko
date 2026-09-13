@@ -533,8 +533,8 @@ function makeSandboxCore(
         }));
       }
     };
-    const run = (args: string[], timeoutMs: number): Promise<string> =>
-      runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal);
+    const run = (args: string[], timeoutMs: number, stdin?: string): Promise<string> =>
+      runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal, stdin);
     const inputPrompt = jobInput?.run.prompt ??
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
     let name = `${isJob ? "job" : "work"}-${input.runId}`
@@ -741,8 +741,8 @@ function makeSandboxCore(
               reconcile: manifest => timed(`${phase}_reconcile`, () => run([
                 "sandbox", "exec", "-n", name, "--no-tty", "--",
                 "/usr/local/uv/tools/hermes-agent/bin/python", "-c", RECONCILE_COMMAND,
-                destination, manifest,
-              ], 30_000)),
+                destination,
+              ], 30_000, manifest)),
               upload: directory => timed(`${phase}_upload`, () => run([
                 "sandbox", "upload", name, directory, path.posix.dirname(destination), "--no-git-ignore",
               ], 120_000)).then(() => {}),
@@ -1227,9 +1227,10 @@ function runProcessOnce(
   args: string[],
   timeoutMs: number,
   signal?: AbortSignal,
+  stdin?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -1248,8 +1249,8 @@ function runProcessOnce(
       child.kill("SIGKILL");
       fail(abortError());
     };
-    child.stdout.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
+    child.stdout!.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
+    child.stderr!.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
     timer = setTimeout(() => {
       child.kill("SIGKILL");
       fail(new Error(`openshell ${args[0] ?? ""} timed out after ${timeoutMs}ms`));
@@ -1281,6 +1282,17 @@ function runProcessOnce(
       }
       resolve(stdout);
     });
+    if (stdin !== undefined) {
+      child.stdin?.on("error", error => {
+        // EPIPE usually means the CLI rejected the command; let its exit status
+        // report the actual error. Other transport failures must stop the run.
+        if ((error as NodeJS.ErrnoException).code !== "EPIPE") {
+          child.kill("SIGKILL");
+          fail(error);
+        }
+      });
+      child.stdin?.end(stdin);
+    }
   });
 }
 

@@ -1,5 +1,4 @@
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,7 +15,10 @@ it('skips unchanged files, repairs agent edits, removes stale files and refreshe
   const upload = vi.fn(async (delta: string) => { await cp(delta, destination, { recursive: true }); });
   let turn = 0;
   const sync = () => syncSandboxDirectory({ source, destination, deltaRoot: path.join(root, 'delta'+turn++), upload,
-    reconcile: async manifest => (await promisify(execFile)('python3', ['-c', RECONCILE_COMMAND, destination, manifest])).stdout });
+    reconcile: manifest => new Promise<string>((resolve, reject) => {
+      const child = execFile('python3', ['-c', RECONCILE_COMMAND, destination], (error, stdout) => error ? reject(error) : resolve(stdout));
+      child.stdin!.end(manifest);
+    }) });
   expect((await sync()).changed).toBe(2);
   expect((await sync()).changed).toBe(0);
   expect(upload).toHaveBeenCalledTimes(1);
