@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.44.6](https://github.com/open-neko/openneko/compare/v2.44.5...v2.44.6) (2026-09-13)
+
+
+### Bug Fixes
+
+* **evals:** publish Gemini Flash-Lite v4 results and harden runs ([07ea2c1](https://github.com/open-neko/openneko/commit/07ea2c1ef11c64d206c64d6f9a1a531cb77f9312))
+* **evals:** publish Gemini Flash-Lite v4 results and harden runs ([3c02eb6](https://github.com/open-neko/openneko/commit/3c02eb624fdddea4dfc8f409ef3e2a2f641e298c))
+
 ## [2.44.5](https://github.com/open-neko/openneko/compare/v2.44.4...v2.44.5) (2026-09-13)
 
 
