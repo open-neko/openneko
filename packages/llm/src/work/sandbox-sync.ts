@@ -9,7 +9,7 @@ type Entry = { hash: string; mode: number } | null;
 export const RECONCILE_DIRECTORY = String.raw`
 import hashlib,json,os,pathlib,shutil,sys
 root=pathlib.Path(sys.argv[1])
-wanted=json.loads(sys.argv[2])
+wanted=json.load(sys.stdin)
 for parent in root.parents:
     if parent.is_symlink(): raise ValueError('sandbox root ancestor is a symlink')
 def remove(p):

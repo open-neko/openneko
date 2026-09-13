@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import type { RunAgentBackendInput } from "../src/work/agent-core";
@@ -25,7 +25,7 @@ import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
  * relay to `emit` and parse into the AgentRunResult.
  */
 const h = vi.hoisted(() => {
-  const calls: { args: string[] }[] = [];
+  const calls: { args: string[]; stdin?: string }[] = [];
   const state = {
     holdExec: false,
     failPolicy: false,
@@ -35,7 +35,8 @@ const h = vi.hoisted(() => {
     execLines: undefined as string[] | undefined,
   };
   function spawn(_cmd: string, args: string[]) {
-    calls.push({ args });
+    const call: { args: string[]; stdin?: string } = { args };
+    calls.push(call);
     const isExec = args.includes("exec");
     const warmCreate = args.includes("create") && args.includes("/app/hermes-warm.py");
     const failedPolicy = args.includes("set") && state.failPolicy;
@@ -59,8 +60,7 @@ const h = vi.hoisted(() => {
         : [],
     );
     const reconciliation = args.findIndex(arg => arg.startsWith("exec(__import__('base64')"));
-    const syncLines = reconciliation < 0 ? undefined : state.failReconcile ? ["invalid reconciliation\n"] : ["__openneko_sync__" + JSON.stringify(Object.entries(JSON.parse(args[reconciliation + 2]!)).filter(([, value]) => value !== null).map(([key]) => key)) + "\n"];
-    const lines = syncLines ?? (warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
+    const lines = (warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
       ? state.execLines ?? [
           'noise before\n',
           `\n__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "hi" })}\n`,
@@ -73,11 +73,22 @@ const h = vi.hoisted(() => {
       closed = true;
       fire(ch, "close", createCollision || failedPolicy || missingDelete ? 1 : 0);
     };
-    const stdout = Readable.from(lines);
+    const stdout = reconciliation < 0 ? Readable.from(lines) : new Readable({ read() {} });
+    const stdin = new Writable({
+      write(chunk, _encoding, done) { call.stdin = (call.stdin ?? "") + chunk.toString(); done(); },
+      final(done) {
+        if (reconciliation >= 0) {
+          const response = state.failReconcile ? "invalid reconciliation" : "__openneko_sync__" + JSON.stringify(Object.entries(JSON.parse(call.stdin!)).filter(([, value]) => value !== null).map(([key]) => key));
+          stdout.push(response + "\n"); stdout.push(null);
+        }
+        done();
+      },
+    });
     if (!warmCreate && (!isExec || !state.holdExec)) {
       stdout.on("end", () => queueMicrotask(closeOnce));
     }
     return {
+      stdin,
       stdout,
       stderr,
       on: reg(ch),
@@ -531,6 +542,25 @@ describe("makeSandboxRunCore", () => {
     expect(policies).toHaveLength(2);
     expect(commands.findIndex(args => args.includes("attach"))).toBeLessThan(commands.findIndex(args => args.includes("set")));
     expect(commands.filter(args => args.includes("create")).every(args => !args.includes("--provider"))).toBe(true);
+  });
+
+  it("streams large manifests through stdin instead of OpenShell command arguments", async () => {
+    const input = fakeInput(async () => {});
+    await mkdir(input.workspace.knowledgeRoot, { recursive: true });
+    const files: string[] = [];
+    try {
+      for (let i = 0; i < 400; i++) {
+        const file = join(input.workspace.knowledgeRoot, `large-manifest-${i}-${"x".repeat(80)}`);
+        files.push(file); await writeFile(file, "fixture");
+      }
+      await makeSandboxRunCore({ agentImage: "manifest-test", onLog: () => {} })(input);
+      const reconciliations = h.calls.filter(call => call.stdin !== undefined);
+      expect(reconciliations.some(call => Buffer.byteLength(call.stdin!) > 32768)).toBe(true);
+      for (const call of reconciliations) {
+        expect(call.args.every(arg => Buffer.byteLength(arg) <= 32768)).toBe(true);
+        expect(call.args).not.toContain(call.stdin);
+      }
+    } finally { await Promise.all(files.map(file => rm(file, { force: true }))); }
   });
 
   it("discards the slot without executing the agent when file reconciliation fails", async () => {
