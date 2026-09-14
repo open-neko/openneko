@@ -3057,6 +3057,7 @@ export function createOpenNekoBackendDriver(context: {
           ? await runWorkflowTurn(
               {
                 prepared: preparedWorkflow,
+                includeUxMetadata: false,
                 userMessage: question,
                 mode: "headless",
                 emit,
@@ -3080,6 +3081,7 @@ export function createOpenNekoBackendDriver(context: {
                 runId: workRun.id,
                 message: question,
                 channel: "slack",
+                includeUxMetadata: false,
                 emit,
                 pluginActions:
                   scenario === "stateful-records-blueprint"

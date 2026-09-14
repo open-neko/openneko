@@ -2,6 +2,7 @@ import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWo
 import { type KnowledgePackContents } from "../knowledge-pack";
 import {
   GRAPHJIN_DATE_RULE,
+  VALUE_ESTIMATE_INSTRUCTIONS,
   buildDataAccessSection,
   buildMemorySection,
 } from "../prompts/sections";
@@ -630,23 +631,7 @@ turn and emits none of these blocks. Otherwise, the
 \`neko_value\` block is MANDATORY on every answer — emit it even when the
 turn ran long; never drop it.
 
-1. The time a data analyst or BI specialist would need to produce this answer
-   from scratch — finding the right data, writing and validating the queries,
-   and assembling the result. The operator got it from one plain-English
-   question instead of briefing a specialist and waiting on the report.
-   Estimate honestly in minutes, rounded down:
-
-\`\`\`neko_value
-{ "minutes_saved": 90, "basis": "Joined orders to products, ranked by revenue, cross-checked against returns — a half-day BI request" }
-\`\`\`
-
-   Anchors: a single metric lookup 15-30 · a multi-table breakdown or
-   drill-down 45-120 · a multi-step diagnostic like "why did revenue drop"
-   120-300. Use 0 for a check that surfaced nothing. If the clarification tool
-   is unavailable and you must ask in prose, use 0; a clarification-tool turn
-   emits no value block at all.
-   An action you propose (an email, a purchase order) carries its own
-   \`minutes_saved\`.
+1. ${VALUE_ESTIMATE_INSTRUCTIONS}
 
 2. The two to four numbers that carry this answer — the figures the operator
    would repeat to their team. Give each a short label, the value with its
@@ -779,6 +764,8 @@ export function buildWorkPrompt(args: {
   /** Whether this channel renders a2ui cards (web). Default true. When false,
    *  the prompt carries no rendering section and the agent answers in markdown. */
   wantsCards?: boolean;
+  /** Include work UX metadata; efficacy evals disable it. Defaults to true. */
+  includeUxMetadata?: boolean;
   supportsCardTool: boolean;
   supportsSkillTool: boolean;
   supportsMemoryTool: boolean;
@@ -811,6 +798,7 @@ export function buildWorkPrompt(args: {
     operatorProfile,
     installedSkills,
     wantsCards = true,
+    includeUxMetadata = true,
     supportsCardTool,
     supportsSkillTool,
     supportsMemoryTool,
@@ -888,7 +876,7 @@ that flags churn risk every Monday."
       ? buildPluginActionsSection(pluginActions ?? [], !supportsCardTool)
       : "",
     RULES_SECTION,
-    CLOSING_SECTION,
+    includeUxMetadata ? CLOSING_SECTION : "",
   ].filter((s) => s.length > 0);
 
   if (inlineTranscript) {

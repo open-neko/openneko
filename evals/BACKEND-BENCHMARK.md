@@ -187,6 +187,13 @@ sentinels, resource references, terminal state, and host-observed method. An
 LLM rubric may be emitted as a non-gating diagnostic but cannot decide v1
 qualification.
 
+Efficacy evals use the production work prompt with only its UX closing
+instructions disabled: no `neko_value`, `neko_vitals`, or `neko_followups`
+blocks are requested. Production work runs retain all three; production
+workflow runs retain their time-saved block, which workflow evals disable.
+Tool-call, token, cost, and other required report metrics come
+from execution telemetry and remain mandatory.
+
 The v2 suite keeps all thirteen cases and adds forty read-only AdventureWorks
 questions through the same `runChatTurn` → candidate backend → broker → direct
 GraphJin path. Those cases reuse q01–q40's host-only SQL, but independently

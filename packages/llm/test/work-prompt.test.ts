@@ -3,6 +3,7 @@ import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
 import type { PluginCatalog } from "../src/work/control-plane";
 import { buildWorkPrompt } from "../src/work/prompt";
+import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 
 const workspace: AgentWorkspace = {
   orgRoot: "/tmp/org",
@@ -28,6 +29,7 @@ function build(
   backend: "hermes",
   overrides: {
     wantsCards?: boolean;
+    includeUxMetadata?: boolean;
     supportsCardTool?: boolean;
     supportsSkillTool?: boolean;
     supportsMemoryTool?: boolean;
@@ -55,6 +57,7 @@ function build(
     messages: [],
     currentUserMessage: "test",
     wantsCards: overrides.wantsCards ?? true,
+    includeUxMetadata: overrides.includeUxMetadata,
     supportsCardTool: overrides.supportsCardTool ?? false,
     supportsSkillTool: overrides.supportsSkillTool ?? false,
     supportsMemoryTool: overrides.supportsMemoryTool ?? false,
@@ -86,6 +89,19 @@ function build(
     inlineTranscript: false,
   });
 }
+
+describe("buildWorkPrompt UX metadata", () => {
+  it("omits only the UX closing instructions for efficacy evals", () => {
+    const production = build("hermes");
+    expect(production).toContain(VALUE_ESTIMATE_INSTRUCTIONS);
+    const evaluation = build("hermes", { includeUxMetadata: false });
+    for (const block of ["neko_value", "neko_vitals", "neko_followups"]) {
+      expect(production).toContain(block);
+      expect(evaluation).not.toContain(block);
+    }
+    expect(evaluation).toBe(production.replace(/\n\n<closing>[\s\S]*?<\/closing>/, ""));
+  });
+});
 
 describe("buildWorkPrompt records data surface", () => {
   it("routes generated-app questions only to native records tools", () => {

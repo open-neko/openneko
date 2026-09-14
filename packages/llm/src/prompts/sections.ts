@@ -418,3 +418,22 @@ export function compactTableDigest(raw: string): string {
   }
   return out.trimEnd();
 }
+
+// Shared analysis time-saved guidance; work and workflows use the same schema.
+export const VALUE_ESTIMATE_INSTRUCTIONS = `The time a data analyst or BI specialist would need to produce this answer
+   from scratch — finding the right data, writing and validating the queries,
+   and assembling the result. The operator got it from one plain-English
+   question instead of briefing a specialist and waiting on the report.
+   Estimate honestly in minutes, rounded down:
+
+\`\`\`neko_value
+{ "minutes_saved": 90, "basis": "Joined orders to products, ranked by revenue, cross-checked against returns — a half-day BI request" }
+\`\`\`
+
+   Anchors: a single metric lookup 15-30 · a multi-table breakdown or
+   drill-down 45-120 · a multi-step diagnostic like "why did revenue drop"
+   120-300. Use 0 for a check that surfaced nothing. If the clarification tool
+   is unavailable and you must ask in prose, use 0; a clarification-tool turn
+   emits no value block at all.
+   An action you propose (an email, a purchase order) carries its own
+   \`minutes_saved\`.`;

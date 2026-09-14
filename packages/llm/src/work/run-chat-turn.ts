@@ -89,6 +89,8 @@ export type RunChatTurnOptions = {
   message: string;
   /** Delivery channel; defaults to "web". Gates output rendering. */
   channel?: RunChannel;
+  /** Efficacy evals disable the work UX metadata blocks. Defaults to true. */
+  includeUxMetadata?: boolean;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   /**
@@ -490,6 +492,7 @@ async function runChatTurnTraced(
       operatorProfile,
       installedSkills,
       wantsCards,
+      includeUxMetadata: opts.includeUxMetadata,
       supportsCardTool,
       supportsSkillTool,
       supportsMemoryTool,
