@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { db, eq, pool, work_thread, workflow_output, workflow_run } from "@neko/db";
+import { db, eq, pool, work_run, work_thread, workflow_output, workflow_run } from "@neko/db";
 import { withTestOrg, dbReachable } from "@neko/db/test-helpers";
 import { createWorkThread, listWorkThreads } from "../../src/work/store";
 import type {
@@ -14,6 +14,7 @@ import {
   saveWorkflow,
 } from "../../src/workflows";
 import { emitWorkflowOutput } from "../../src/workflows/store";
+import { VALUE_ESTIMATE_INSTRUCTIONS } from "../../src/prompts/sections";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -58,6 +59,7 @@ describeIfDb("runWorkflowTurn", () => {
       };
 
       const backend = fakeBackend(async (opts) => {
+        expect(opts.prompt).toContain(VALUE_ESTIMATE_INSTRUCTIONS);
         await opts.onEvent?.({
           type: "message",
           role: "assistant",
@@ -65,7 +67,7 @@ describeIfDb("runWorkflowTurn", () => {
         });
         return {
           status: "completed",
-          finalText: "All clear.",
+          finalText: 'All clear.\n\n```neko_value\n{"minutes_saved":90,"basis":"Cross-checked the report"}\n```',
         };
       });
 
@@ -91,14 +93,21 @@ describeIfDb("runWorkflowTurn", () => {
       );
 
       expect(result.status).toBe("completed");
-      expect(result.finalText).toContain("All clear");
+      expect(result.finalText).toBe("All clear.");
 
       const rows = await db()
         .select()
         .from(workflow_run)
         .where(eq(workflow_run.id, prepared.workflowRun.id));
       expect(rows[0]?.status).toBe("completed");
-      expect(rows[0]?.summary).toContain("All clear");
+      expect(rows[0]?.summary).toBe("All clear.");
+      const [savedWorkRun] = await db().select().from(work_run)
+        .where(eq(work_run.id, prepared.workRunId));
+      expect(savedWorkRun?.analysis_minutes_saved).toBe(90);
+      expect(savedWorkRun?.analysis_minutes_basis).toBe("Cross-checked the report");
+      expect(events).toContainEqual({
+        type: "done", result: { status: "completed", minutesSaved: 90 },
+      });
 
       const eventTypes = events.map((e) => e.type);
       expect(eventTypes).toContain("status");

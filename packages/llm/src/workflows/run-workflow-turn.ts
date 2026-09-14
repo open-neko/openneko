@@ -147,6 +147,8 @@ export async function loadPreparedWorkflowRun(input: {
 
 export type RunWorkflowTurnOptions = {
   prepared: PreparedWorkflowRun;
+  /** Efficacy evals disable time-saved metadata. Defaults to true. */
+  includeUxMetadata?: boolean;
   userMessage?: string;
   mode: "live" | "headless";
   emit: (event: AgentEvent) => Promise<void>;
@@ -259,6 +261,7 @@ async function runWorkflowTurnTraced(
 
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
+      includeUxMetadata: opts.includeUxMetadata,
       mode,
       memoryContext,
       mcpTools: backend.capabilities.mcpTools,

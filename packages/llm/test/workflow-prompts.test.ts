@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
 import { buildWorkflowRunnerPrompt } from "../src/workflows/runner-prompt";
 import type { WorkflowRecord } from "../src/workflows/store";
+import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
+import { extractValueFence } from "../src/workflows/fence-parsers";
 
 const sampleWorkspace: AgentWorkspace = {
   orgRoot: "/tmp/org",
@@ -59,6 +61,21 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).toContain("mcp_neko_action_request");
     expect(prompt).not.toContain("```neko_workflow_output");
     expect(prompt).not.toContain("```neko_action_request");
+  });
+
+  it.each(["headless", "live"] as const)("keeps time saved in %s production workflows but omits it for evals", (mode) => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mode, mcpTools: true });
+    expect(prompt).toContain("```neko_value");
+    expect(prompt).toContain(VALUE_ESTIMATE_INSTRUCTIONS);
+    expect(extractValueFence(VALUE_ESTIMATE_INSTRUCTIONS)).toMatchObject({
+      errors: [],
+      payload: { minutes_saved: 90 },
+    });
+    expect(prompt).not.toMatch(/neko_(vitals|followups)/);
+    expect(prompt).toContain("mcp_neko_workflow_output_emit");
+    const evaluation = buildWorkflowRunnerPrompt({ ...base, mode, mcpTools: true, includeUxMetadata: false });
+    expect(evaluation).not.toMatch(/neko_(value|vitals|followups)/);
+    expect(evaluation).toContain("mcp_neko_workflow_output_emit");
   });
 
   it("fails closed when the native GraphJin broker tool is unavailable", () => {
