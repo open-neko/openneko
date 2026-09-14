@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.46.2](https://github.com/open-neko/openneko/compare/v2.46.1...v2.46.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **evals:** omit UX metadata and reuse work time-saved guidance ([9f309c9](https://github.com/open-neko/openneko/commit/9f309c9f895ce9e3a99d8a44ec15413d8c338230))
+* **evals:** omit UX metadata and share workflow time-saved guidance ([2e2d4e7](https://github.com/open-neko/openneko/commit/2e2d4e70f36c483c6460a5f25b7bb1d1a2f8bd75))
+
 ## [2.46.1](https://github.com/open-neko/openneko/compare/v2.46.0...v2.46.1) (2026-09-13)
 
 
