@@ -181,10 +181,20 @@ export function graphjinDevelopmentAuthHeaders(
   };
 }
 
+/** A run needs at least one data_source item to reach GraphJin. */
+async function assertRunHoldsDataSource(orgId: string, runId: string | null | undefined): Promise<void> {
+  if (!runId) return;
+  const actor = await entitlementActorForRun(orgId, runId);
+  const { heldItems } = await import("@neko/db");
+  const held = actor ? await heldItems(actor, "data_source") : new Set<string>();
+  if (held !== "*" && held.size === 0) throw new Error("No data source is available to this run.");
+}
+
 async function graphjinMcpAccess(input: {
   orgId: string;
   runId?: string | null;
 }): Promise<{ mcpUrl: string; headers: Record<string, string> }> {
+  await assertRunHoldsDataSource(input.orgId, input.runId);
   const { and, data_source, db, desc, eq } = await import("@neko/db");
   const [source] = await db()
     .select({
@@ -946,6 +956,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     operationName?: string;
   }) {
     assertReadOnlyGraphql(input.query);
+    await assertRunHoldsDataSource(input.orgId, input.runId);
     const { data_source, db, desc, eq } = await import("@neko/db");
     const [source] = await db()
       .select({
@@ -999,6 +1010,16 @@ export class InProcessControlPlane implements AgentControlPlane {
         process.env.OPENNEKO_GRAPHJIN_CONFIG,
       );
     }
+    if (input.name === "execute_saved_query" && input.runId) {
+      const actor = await entitlementActorForRun(input.orgId, input.runId);
+      const name = String(input.arguments?.name ?? "");
+      if (!actor || !(await holds(actor, "saved_query", name)).allowed) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Saved query "${name}" is not available to this run.` }],
+        };
+      }
+    }
     const access = await graphjinMcpAccess(input);
     return callRemoteGraphjinMcpTool(
       {
@@ -1019,6 +1040,11 @@ export class InProcessControlPlane implements AgentControlPlane {
     instruction: string;
     maxSteps?: number;
   }): Promise<GraphjinDataAgentResult> {
+    try {
+      await assertRunHoldsDataSource(input.orgId, input.runId);
+    } catch (error) {
+      return { denied: true, error: error instanceof Error ? error.message : String(error) };
+    }
     const instruction = input.instruction.trim();
     if (!instruction || instruction.length > 8_000) {
       return { error: "instruction must contain between 1 and 8,000 characters" };

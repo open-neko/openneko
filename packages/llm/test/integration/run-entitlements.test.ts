@@ -102,6 +102,25 @@ describeIfDb("run entitlements", () => {
     });
   });
 
+  it("refuses saved queries the run's user does not hold", async () => {
+    await withOrg(async (orgId) => {
+      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+      const everyone = await builtinGroupId(orgId, "everyone");
+      await revokeItem(orgId, { groupId: everyone, itemType: "saved_query", itemId: "*" });
+      const thread = await createWorkThread(orgId, "t");
+      const run = await createWorkRun(orgId, thread.id, "hermes", { userId: `${orgId}-ann`, role: "member" });
+      const result = await inProcessControlPlane.callGraphjinTool({
+        orgId, runId: run.id, name: "execute_saved_query", arguments: { name: "average_order_value" },
+      });
+      expect(result).toMatchObject({ isError: true, content: [{ text: 'Saved query "average_order_value" is not available to this run.' }] });
+
+      await revokeItem(orgId, { groupId: everyone, itemType: "data_source", itemId: "*" });
+      await expect(inProcessControlPlane.listGraphjinTools({ orgId, runId: run.id })).rejects.toThrow("No data source is available");
+      await expect(inProcessControlPlane.queryGraphjinRead({ orgId, runId: run.id, query: "query { x }" })).rejects.toThrow("No data source is available");
+      expect(await inProcessControlPlane.askGraphjinDataAgent({ orgId, runId: run.id, instruction: "revenue" })).toMatchObject({ denied: true });
+    });
+  });
+
   it("hides team global memories from users without the team memory grant", async () => {
     await withOrg(async (orgId) => {
       await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
