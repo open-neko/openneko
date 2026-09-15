@@ -8,10 +8,13 @@ import type { AllowedLibrary } from "../library/staging";
  */
 export async function runEntitlementActor(
   orgId: string,
-  actor: { userId: string | null },
+  actor: { userId: string | null; role?: string | null },
   opts: { workflowId?: string | null } = {},
 ): Promise<EntitlementActor> {
   if (actor.userId) return { orgId, kind: "user", userId: actor.userId };
+  // A run without a user but with a member snapshot is an unlinked channel
+  // sender; it holds nothing. Only service runs act for the system.
+  if (actor.role && actor.role !== "service" && actor.role !== "admin") return { orgId, kind: "anonymous" };
   if (opts.workflowId) {
     const [packId] = await packsContaining(orgId, { type: "workflow", id: opts.workflowId });
     if (packId) return { orgId, kind: "service", packId };
@@ -29,7 +32,7 @@ export async function runHeldItemIds(actor: EntitlementActor, type: ItemType): P
 export async function entitlementActorForRun(orgId: string, runId: string): Promise<EntitlementActor | null> {
   const { and, db, eq, work_run, workflow_run } = await import("@neko/db");
   const [run] = await db()
-    .select({ userId: work_run.actor_user_id })
+    .select({ userId: work_run.actor_user_id, role: work_run.actor_role })
     .from(work_run)
     .where(and(eq(work_run.id, runId), eq(work_run.org_id, orgId)))
     .limit(1);
@@ -41,7 +44,7 @@ export async function entitlementActorForRun(orgId: string, runId: string): Prom
         .from(workflow_run)
         .where(and(eq(workflow_run.work_run_id, runId), eq(workflow_run.org_id, orgId)))
         .limit(1);
-  return runEntitlementActor(orgId, { userId: run.userId }, { workflowId: workflowRun?.workflowId ?? null });
+  return runEntitlementActor(orgId, { userId: run.userId, role: run.role }, { workflowId: workflowRun?.workflowId ?? null });
 }
 
 /**
@@ -57,6 +60,7 @@ export async function runWorkflowFilter(
   if (!actor) return () => false;
   const held = await heldItems(actor, "workflow");
   const admin = actor.kind === "service" && !actor.packId;
+  if (actor.kind === "anonymous") return () => false;
   return (workflow) => {
     const owner = workflow.ownerUserId ?? "";
     if (actor.kind === "user" && owner === actor.userId) return true;

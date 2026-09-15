@@ -65,6 +65,13 @@ describeIfDb("run entitlements", () => {
       expect(await runHeldItemIds(annActor!, "skill")).toEqual(["docx"]);
       expect(await runHeldItemIds((await entitlementActorForRun(orgId, bossRun.id))!, "skill")).toBeUndefined();
       expect(await entitlementActorForRun(orgId, "00000000-0000-0000-0000-000000000000")).toBeNull();
+      const channelRun = await createWorkRun(orgId, thread.id, "hermes", { userId: null, role: "member" });
+      const anonymous = (await entitlementActorForRun(orgId, channelRun.id))!;
+      expect(anonymous.kind).toBe("anonymous");
+      expect(await runHeldItemIds(anonymous, "skill")).toEqual([]);
+      expect((await inProcessControlPlane.listWorkflowsWithTriggers({ orgId, runId: channelRun.id })).total).toBe(0);
+      const serviceRun = await createWorkRun(orgId, thread.id, "hermes", { userId: null, role: "service" });
+      expect((await entitlementActorForRun(orgId, serviceRun.id))!.kind).toBe("service");
     });
   });
 

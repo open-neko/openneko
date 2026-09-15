@@ -35,7 +35,8 @@ export function isItemType(value: unknown): value is ItemType {
  */
 export type EntitlementActor =
   | { orgId: string; kind: "user"; userId: string }
-  | { orgId: string; kind: "service"; packId?: string | null };
+  | { orgId: string; kind: "service"; packId?: string | null }
+  | { orgId: string; kind: "anonymous" };
 
 export type HoldResult = { allowed: boolean; via: string[] };
 export type HeldItems = "*" | Set<string>;
@@ -146,6 +147,7 @@ export async function holds(
   opts: { parents?: ItemRef[] } = {},
 ): Promise<HoldResult> {
   const refs: ItemRef[] = [{ type, id: itemId }, ...(opts.parents ?? [])];
+  if (actor.kind === "anonymous") return { allowed: false, via: [] };
   if (actor.kind === "service") {
     if (!actor.packId) return { allowed: true, via: ["service"] };
     const packs = (await Promise.all(refs.map((ref) => packsContaining(actor.orgId, ref)))).flat();
@@ -171,6 +173,7 @@ export async function holds(
 
 /** "*" when the actor holds every item of the type, otherwise the held ids. */
 export async function heldItems(actor: EntitlementActor, type: ItemType): Promise<HeldItems> {
+  if (actor.kind === "anonymous") return new Set();
   if (actor.kind === "service") {
     if (!actor.packId) return "*";
     return packItemIds(actor.orgId, [actor.packId], type);
@@ -319,4 +322,19 @@ export async function revokeItem(orgId: string, input: ItemGrantInput): Promise<
     }
     return { removed: removed.length > 0 };
   });
+}
+
+/** Whether one group holds an item, including '*' and pack grants. */
+export async function groupHolds(orgId: string, groupId: string, type: ItemType, itemId: string): Promise<boolean> {
+  const [group] = rows<{ slug: string }>(
+    await db().execute(sql`select slug from user_group where org_id = ${orgId} and id = ${groupId}`),
+  );
+  if (!group) return false;
+  if (group.slug === ADMINISTRATORS_GROUP_SLUG) return true;
+  const grants = (await grantIndex(orgId)).byGroup.get(groupId) ?? [];
+  if (grants.some((g) => g.item_type === type && (g.item_id === itemId || g.item_id === "*"))) return true;
+  const packGrants = grants.filter((g) => g.item_type === "pack");
+  if (packGrants.length === 0) return false;
+  const containing = await packsContaining(orgId, { type, id: itemId });
+  return packGrants.some((g) => (g.item_id === "*" ? containing.length > 0 : containing.includes(g.item_id)));
 }
