@@ -2,11 +2,12 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { app_user, db, eq, organization, pool } from "@neko/db";
-import type { ListDirectoryResult } from "@open-neko/plugin-types";
+import type { DirectoryChange, ListDirectoryResult } from "@open-neko/plugin-types";
 import { createAdminHandler } from "../src/admin-server";
 import {
   DirectorySyncError,
   collectDirectorySnapshot,
+  createDirectoryUser,
   directoryStatus,
   runDirectorySync,
   type DirectorySource,
@@ -15,7 +16,7 @@ import {
 const reachable = await pool().query("select 1").then(() => true, () => false);
 const describeIfDb = reachable ? describe : describe.skip;
 
-function source(pages: ListDirectoryResult[] | (() => never)): DirectorySource {
+function source(pages: ListDirectoryResult[] | (() => never), changes: DirectoryChange[] = [], createUser = false): DirectorySource {
   return {
     getDirectoryProvider: () => ({
       pluginId: "scalekit",
@@ -23,12 +24,16 @@ function source(pages: ListDirectoryResult[] | (() => never)): DirectorySource {
       declaration: {
         providerLabel: "Scalekit",
         read: { users: true, groups: true, memberships: true },
-        write: { createUser: false, deactivateUser: false },
+        write: { createUser, deactivateUser: false },
       },
     }),
     listDirectory: async (cursor) => {
       if (typeof pages === "function") return pages();
       return pages[cursor ? Number(cursor) : 0]!;
+    },
+    applyDirectoryChange: async (change) => {
+      changes.push(change);
+      return { user: { externalId: "usr_1", email: change.op === "create_user" ? change.email : "", active: true } };
     },
   };
 }
@@ -72,8 +77,45 @@ describe("collectDirectorySnapshot", () => {
 
   it("fails without a directory plugin", async () => {
     await expect(
-      collectDirectorySnapshot({ getDirectoryProvider: () => null, listDirectory: async () => { throw new Error("unused"); } }, "org"),
+      collectDirectorySnapshot({ ...source([]), getDirectoryProvider: () => null }, "org"),
     ).rejects.toBeInstanceOf(DirectorySyncError);
+  });
+});
+
+describe("createDirectoryUser", () => {
+  it("creates the user only when the plugin declares the write", async () => {
+    const changes: DirectoryChange[] = [];
+    await expect(createDirectoryUser(source([], changes), { email: "a@x.test", name: null })).rejects.toMatchObject({ code: "unsupported" });
+    expect(await createDirectoryUser(source([], changes, true), { email: "a@x.test", name: "Ana" })).toMatchObject({ user: { externalId: "usr_1" } });
+    expect(changes).toEqual([{ op: "create_user", email: "a@x.test", name: "Ana" }]);
+  });
+
+  it("serves POST /admin/directory/users", async () => {
+    const created: Array<{ email: string; name: string | null }> = [];
+    const handler = createAdminHandler({
+      directory: {
+        status: async () => ({}),
+        sync: async () => ({}),
+        createUser: async (input) => {
+          created.push(input);
+          if (input.email.startsWith("no")) throw new DirectorySyncError("unsupported", "Scalekit does not create users");
+          return { user: { externalId: "usr_1" } };
+        },
+      },
+    });
+    const server = createServer(handler);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const post = (body: unknown) => fetch(`${base}/admin/directory/users`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    try {
+      expect((await post({ email: " Ana@X.test ", name: "Ana" })).status).toBe(200);
+      expect((await post({ email: "nope" })).status).toBe(400);
+      expect((await post({ email: "no@x.test" })).status).toBe(400);
+      expect((await fetch(`${base}/admin/directory/users`)).status).toBe(405);
+      expect(created).toEqual([{ email: "ana@x.test", name: "Ana" }, { email: "no@x.test", name: null }]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
 
@@ -110,6 +152,7 @@ describe("directory admin routes", () => {
         sync: async () => {
           throw new DirectorySyncError("running", "a directory sync is already running");
         },
+        createUser: async () => ({}),
       },
     });
     const server = createServer(handler);

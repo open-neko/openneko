@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   updates: [] as Row[],
   actorId: "admin-1" as string | null,
   setAdministrator: vi.fn(async (...args: [string, string, boolean]) => void args),
+  requestWorker: vi.fn(async (path: string, body?: unknown) => ({ status: 200, body: { path, body } })),
 }));
+
+vi.mock("@/lib/groups-admin", () => ({ requestWorker: mocks.requestWorker }));
 
 vi.mock("@/lib/admin-auth", () => ({
   requireAdminActor: async () => ({ userId: mocks.actorId, role: "admin" }),
@@ -127,6 +130,24 @@ describe("POST /api/admin/users", () => {
       org_id: "org-1",
     });
     expect(String(mocks.inserted[0].id)).toMatch(/^usr_/);
+  });
+
+  it("creates the user in the directory when asked and reports a directory failure", async () => {
+    mocks.selectResults = [[]];
+    const res = await POST(postRequest({ email: "Dee@Company.com", name: "Dee", role: "member", addToDirectory: true }) as never);
+    expect(res.status).toBe(201);
+    expect(mocks.requestWorker).toHaveBeenCalledWith("/admin/directory/users", { email: "dee@company.com", name: "Dee" });
+    expect((await res.json()).directoryError).toBeUndefined();
+
+    mocks.selectResults = [[]];
+    mocks.requestWorker.mockResolvedValueOnce({ status: 400, body: { error: "Scalekit does not create users" } } as never);
+    const failed = await POST(postRequest({ email: "eve@company.com", role: "member", addToDirectory: true }) as never);
+    expect(failed.status).toBe(201);
+    expect(await failed.json()).toMatchObject({ user: { email: "eve@company.com" }, directoryError: "Scalekit does not create users" });
+
+    mocks.selectResults = [[]];
+    await POST(postRequest({ email: "fay@company.com", role: "member" }) as never);
+    expect(mocks.requestWorker).toHaveBeenCalledTimes(2);
   });
 
   it("rejects duplicates with 409", async () => {

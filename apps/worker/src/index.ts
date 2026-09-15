@@ -63,6 +63,7 @@ import {
   scheduleGroupGrantsApply,
 } from "./graphjin/group-grants-service.js";
 import {
+  createDirectoryUser,
   DIRECTORY_SYNC_CRON,
   directoryStatus,
   runDirectorySync,
@@ -619,6 +620,10 @@ const server = createServer(
       sync: async () => {
         if (!pluginRegistry) throw new Error("plugin registry not initialised");
         return runDirectorySync(pluginRegistry, await getOrgId());
+      },
+      createUser: async (input) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return createDirectoryUser(pluginRegistry, input);
       },
     },
     packs: {

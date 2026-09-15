@@ -27,6 +27,7 @@
  *   GET  /admin/plugins/status → 200 + registry health/status summary.
  *   GET  /admin/directory/status → directory plugin and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
+ *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
  *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
@@ -403,6 +404,7 @@ export interface GroupGrantsHandlerSurface {
 export interface DirectoryHandlerSurface {
   status(): Promise<unknown>;
   sync(): Promise<unknown>;
+  createUser(input: { email: string; name: string | null }): Promise<unknown>;
 }
 
 export interface ActionRequestHandlerSurface {
@@ -597,7 +599,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       })();
       return;
     }
-    if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync") {
+    if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync" || req.url === "/admin/directory/users") {
       void handleDirectory(req, res, directory);
       return;
     }
@@ -1063,15 +1065,27 @@ async function handleDirectory(
     return;
   }
   const sync = req.url === "/admin/directory/sync";
-  if (req.method !== (sync ? "POST" : "GET")) {
+  const users = req.url === "/admin/directory/users";
+  if (req.method !== (sync || users ? "POST" : "GET")) {
     json(res, 405, { error: "method not allowed" });
     return;
   }
   try {
+    if (users) {
+      const body = (await readJson(req).catch(() => null)) as { email?: unknown; name?: unknown } | null;
+      const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+      if (!email.includes("@")) {
+        json(res, 400, { error: "a valid email address is required" });
+        return;
+      }
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : null;
+      json(res, 200, await directory.createUser({ email, name }));
+      return;
+    }
     json(res, 200, sync ? { stats: await directory.sync() } : await directory.status());
   } catch (err) {
     const code = (err as { code?: string }).code;
-    const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : 500;
+    const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : code === "unsupported" ? 400 : 500;
     json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
   }
 }

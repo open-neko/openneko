@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionGroup } from "@/components/ui/action-group";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input, NativeSelect } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { SearchInput } from "@/components/ui/search-input";
@@ -37,13 +38,22 @@ export interface AdminUserRow {
  * change roles, and disable/enable accounts. The API enforces the
  * last-active-admin guard; errors from it surface inline.
  */
-export function UsersClient({ users, identitySetup = false }: { users: AdminUserRow[]; identitySetup?: boolean }) {
+export function UsersClient({
+  users,
+  identitySetup = false,
+  directoryCreateLabel = null,
+}: {
+  users: AdminUserRow[];
+  identitySetup?: boolean;
+  directoryCreateLabel?: string | null;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<"member" | "admin">(identitySetup ? "admin" : "member");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [addToDirectory, setAddToDirectory] = useState(true);
   const [query, setQuery] = useState("");
   const visibleUsers = users.filter((user) =>
     matchesListSearch(
@@ -56,7 +66,7 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
     ),
   );
 
-  async function callApi(path: string, init: RequestInit): Promise<boolean> {
+  async function callApi(path: string, init: RequestInit): Promise<Record<string, unknown> | null> {
     setError(null);
     try {
       const res = await fetch(path, {
@@ -68,29 +78,33 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
           error?: string;
         } | null;
         setError(body?.error ?? `request failed (${res.status})`);
-        return false;
+        return null;
       }
       router.refresh();
-      return true;
+      return ((await res.json().catch(() => null)) as Record<string, unknown> | null) ?? {};
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      return false;
+      return null;
     }
   }
 
   async function createUser(event: React.FormEvent) {
     event.preventDefault();
     setBusy("create");
-    const ok = await callApi("/api/admin/users", {
+    const created = await callApi("/api/admin/users", {
       method: "POST",
       body: JSON.stringify({
         email,
         name: name.trim().length > 0 ? name : undefined,
         role,
         ...(identitySetup ? { updateSoloAccount: true } : {}),
+        ...(directoryCreateLabel && !identitySetup ? { addToDirectory } : {}),
       }),
     });
-    if (ok) {
+    if (typeof created?.directoryError === "string") {
+      setError(`The user was added to OpenNeko. ${directoryCreateLabel} did not create the user: ${created.directoryError}`);
+    }
+    if (created) {
       setEmail("");
       setName("");
       setRole("member");
@@ -175,6 +189,14 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
         <Button type="submit" variant="primary" disabled={busy === "create"}>
           {busy === "create" ? "Saving…" : identitySetup ? "Save email" : "Add user"}
         </Button>
+        {directoryCreateLabel && !identitySetup && (
+          <Checkbox
+            className="col-span-full"
+            checked={addToDirectory}
+            onCheckedChange={(value) => setAddToDirectory(value === true)}
+            label={`Also create the user in ${directoryCreateLabel}`}
+          />
+        )}
       </form>
 
       {visibleUsers.length === 0 ? (

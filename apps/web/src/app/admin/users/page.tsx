@@ -14,6 +14,7 @@ import {
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
 import { getPluginStatus } from "@/lib/auth";
+import { requestWorker } from "@/lib/groups-admin";
 import { AdminDenied, AdminShell } from "../AdminShell";
 import { UsersAdminTabs, type UsersAdminTab } from "./UsersAdminTabs";
 import type { AdminUserRow } from "./UsersClient";
@@ -63,6 +64,13 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     groupsByUser.set(m.userId, list);
   }
 
+  const directory = pluginStatus.directoryProvider
+    ? ((await requestWorker("/admin/directory/status").catch(() => null))?.body as
+        | { provider?: { providerLabel: string; canCreateUsers: boolean } | null }
+        | undefined)
+    : undefined;
+  const directoryCreateLabel = directory?.provider?.canCreateUsers ? directory.provider.providerLabel : null;
+
   const identitySetup = users.some((user) => user.id === actor.userId && isUnclaimedSoloEmail(user.email));
   const rows: AdminUserRow[] = users.map((user) => ({
     id: user.id,
@@ -97,6 +105,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         idpGroups={idpGroups.map((g) => ({ ...g }))}
         rules={rules.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }))}
         directoryProvider={pluginStatus.directoryProvider ?? null}
+        directoryCreateLabel={directoryCreateLabel}
       />
     </AdminShell>
   );

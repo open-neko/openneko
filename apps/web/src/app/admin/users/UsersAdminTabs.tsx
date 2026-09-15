@@ -17,6 +17,7 @@ export function UsersAdminTabs({
   idpGroups,
   rules,
   directoryProvider,
+  directoryCreateLabel,
 }: {
   tab: UsersAdminTab;
   users: AdminUserRow[];
@@ -25,6 +26,7 @@ export function UsersAdminTabs({
   idpGroups: IdpGroupRow[];
   rules: IdpRuleView[];
   directoryProvider: string | null;
+  directoryCreateLabel: string | null;
 }) {
   const router = useRouter();
   const select = (next: UsersAdminTab) => router.replace(next === "users" ? "/admin/users" : `/admin/users?tab=${next}`, { scroll: false });
@@ -53,7 +55,7 @@ export function UsersAdminTabs({
               <strong className="is-ok">{users.length} total</strong>
             </div>
           </div>
-          <UsersClient users={users} identitySetup={identitySetup} />
+          <UsersClient users={users} identitySetup={identitySetup} directoryCreateLabel={directoryCreateLabel} />
         </>
       )}
       {tab === "groups" && <GroupsPanel groups={groups} />}

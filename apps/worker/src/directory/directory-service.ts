@@ -7,12 +7,13 @@ import {
   type DirectorySnapshot,
   type DirectorySyncStats,
 } from "@neko/db";
-import type { ListDirectoryResult } from "@open-neko/plugin-types";
+import type { ApplyDirectoryChangeResult, DirectoryChange, ListDirectoryResult } from "@open-neko/plugin-types";
 import type { DirectoryProviderInfo } from "../plugins/plugin-registry.js";
 
 export interface DirectorySource {
   getDirectoryProvider(): DirectoryProviderInfo | null;
   listDirectory(cursor: string | null): Promise<ListDirectoryResult>;
+  applyDirectoryChange(change: DirectoryChange): Promise<ApplyDirectoryChangeResult>;
 }
 
 export type DirectoryStatus = {
@@ -30,7 +31,7 @@ export const DIRECTORY_SYNC_CRON = "0 */6 * * *";
 const MAX_PAGES = 500;
 
 export class DirectorySyncError extends Error {
-  constructor(public readonly code: "no_provider" | "running" | "invalid", message: string) {
+  constructor(public readonly code: "no_provider" | "running" | "invalid" | "unsupported", message: string) {
     super(message);
     this.name = "DirectorySyncError";
   }
@@ -123,4 +124,17 @@ export async function runDirectorySync(source: DirectorySource, orgId: string): 
       .where(eq(directory_sync_state.org_id, orgId));
     throw err;
   }
+}
+
+/** Creates the user in the identity provider. Sign-in links it to the OpenNeko user by email. */
+export async function createDirectoryUser(
+  source: DirectorySource,
+  input: { email: string; name: string | null },
+): Promise<ApplyDirectoryChangeResult> {
+  const provider = source.getDirectoryProvider();
+  if (!provider) throw new DirectorySyncError("no_provider", "no directory plugin installed");
+  if (!provider.declaration.write.createUser) {
+    throw new DirectorySyncError("unsupported", `${provider.declaration.providerLabel} does not create users`);
+  }
+  return source.applyDirectoryChange({ op: "create_user", email: input.email, name: input.name });
 }
