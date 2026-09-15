@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { and, app_user, db, eq, getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail, work_thread, work_run, workflow_definition, workflow_run } from "../../src";
+import { ADMINISTRATORS_GROUP_SLUG, and, app_user, db, eq, getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail, user_group, user_group_membership, work_thread, work_run, workflow_definition, workflow_run } from "../../src";
 import { dbReachable, withTestOrg } from "./_helpers";
 const reachable = await dbReachable();
 
@@ -19,6 +19,10 @@ it.skipIf(!reachable)("upgrades a userless installation once under concurrent re
     expect(chats.find(row => row.id === channelChat.id)?.created_by_user_id).toBeNull();
     expect(chats.find(row => row.id === workflowChat.id)?.created_by_user_id).toBeNull();
     expect(isUnclaimedSoloEmail(owner.email)).toBe(true);
+    const admins = await db().select({ userId: user_group_membership.user_id }).from(user_group_membership)
+      .innerJoin(user_group, eq(user_group.id, user_group_membership.group_id))
+      .where(and(eq(user_group_membership.org_id, orgId), eq(user_group.slug, ADMINISTRATORS_GROUP_SLUG)));
+    expect(admins).toEqual([{ userId: owner.id }]);
     expect(await soloAdminNeedsEmail(orgId)).toBe(true);
     await db().insert(app_user).values({ id: `${orgId}-other`, org_id: orgId, role: "admin", email: "other@example.test" });
     expect((await getOrCreateSoloAdmin(orgId))?.id).toBe(owner.id);
