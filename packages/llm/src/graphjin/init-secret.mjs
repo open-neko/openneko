@@ -65,13 +65,20 @@ if (typeof localPg.password === "string" && localPg.password.startsWith("enc:"))
   const { maybeDecryptSecret } = await import("@neko/secret-crypt");
   localPg.password = maybeDecryptSecret(localPg.password);
 }
-const sslmode = localPg.sslmode ?? process.env.NEKO_PG_SSLMODE;
+// OPENNEKO_PG_ENV_OVERRIDE=1 puts set environment values ahead of
+// config.json, as @neko/db does for host processes in development.
+const envFirst = process.env.OPENNEKO_PG_ENV_OVERRIDE?.trim() === "1";
+const setting = (fromConfig, envName, fallback) => {
+  const fromEnv = process.env[envName]?.trim() || undefined;
+  return (envFirst ? fromEnv ?? fromConfig : fromConfig ?? fromEnv) ?? fallback;
+};
+const sslmode = setting(localPg.sslmode, "NEKO_PG_SSLMODE", undefined);
 const client = new pg.Client({
-  host: localPg.host ?? process.env.NEKO_PG_HOST ?? "localhost",
-  port: Number(localPg.port ?? process.env.NEKO_PG_PORT ?? 5432),
-  user: localPg.user ?? process.env.NEKO_PG_USER ?? "neko",
-  password: localPg.password ?? process.env.NEKO_PG_PASSWORD ?? "secret",
-  database: localPg.database ?? process.env.NEKO_PG_DATABASE ?? "neko",
+  host: setting(localPg.host, "NEKO_PG_HOST", "localhost"),
+  port: Number(setting(localPg.port, "NEKO_PG_PORT", 5432)),
+  user: setting(localPg.user, "NEKO_PG_USER", "neko"),
+  password: setting(localPg.password, "NEKO_PG_PASSWORD", "secret"),
+  database: setting(localPg.database, "NEKO_PG_DATABASE", "neko"),
   ssl: sslmode === "require" ? { rejectUnauthorized: false } : undefined,
 });
 

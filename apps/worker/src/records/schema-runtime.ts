@@ -120,6 +120,22 @@ export function recordsPostgresConnectionString(
   )}@${authorityHost}:${port}/${encodeURIComponent(database)}`;
 }
 
+/**
+ * Connection string written into records GraphJin configs. In development the
+ * worker runs on the host while GraphJin runs in Docker, so
+ * OPENNEKO_RECORDS_GRAPHJIN_DB_HOST and _PORT give GraphJin its own address.
+ */
+export function recordsGraphjinConnectionString(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const url = new URL(recordsPostgresConnectionString(env));
+  const host = env.OPENNEKO_RECORDS_GRAPHJIN_DB_HOST?.trim();
+  const port = env.OPENNEKO_RECORDS_GRAPHJIN_DB_PORT?.trim();
+  if (host) url.hostname = host;
+  if (port) url.port = port;
+  return url.toString();
+}
+
 function schemaChangeDefinition(change: RecordSchemaChange): RecordAppDefinition {
   const definition = parseRecordAppDefinition(change.artifact.detail.definition);
   if (definition.appId !== change.appId) {
@@ -233,7 +249,7 @@ export async function createRecordsSchemaRuntime(options: {
   const validateConfig =
     options.validateConfig ?? createRecordsGraphjinConfigValidator({ binary });
   const connectionString =
-    options.connectionString ?? recordsPostgresConnectionString();
+    options.connectionString ?? recordsGraphjinConnectionString();
 
   const projectPolicy: RecordsPolicyProjector = async () => {
     const model = await loadRecordsGraphjinPolicyModel(options.pool, options.orgId);

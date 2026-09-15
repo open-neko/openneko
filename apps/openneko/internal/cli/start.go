@@ -581,6 +581,16 @@ func defaultConn() db.ConnConfig {
 			conn.SSLMode = local.Pg.SSLMode
 		}
 	}
+	// OPENNEKO_PG_ENV_OVERRIDE=1 puts set env vars ahead of config.json, as
+	// packages/db does for host processes in development.
+	if os.Getenv("OPENNEKO_PG_ENV_OVERRIDE") == "1" {
+		conn.Host = envOr("NEKO_PG_HOST", conn.Host)
+		conn.Port = envInt("NEKO_PG_PORT", conn.Port)
+		conn.User = envOr("NEKO_PG_USER", conn.User)
+		conn.Password = envOr("NEKO_PG_PASSWORD", conn.Password)
+		conn.Database = envOr("NEKO_PG_DATABASE", conn.Database)
+		conn.SSLMode = envOr("NEKO_PG_SSLMODE", conn.SSLMode)
+	}
 	return conn
 }
 
