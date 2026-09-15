@@ -98,6 +98,13 @@ export async function setGroupGrantsEnabled(
       updated_at = now()`);
 }
 
+/** Stores read modes of sources seen for the first time. Stored modes stay. */
+export async function recordPreviousReadModes(orgId: string, modes: Record<string, string>): Promise<void> {
+  await db().execute(sql`
+    update data_access_settings set previous_read_modes = ${JSON.stringify(modes)}::jsonb || previous_read_modes, updated_at = now()
+    where org_id = ${orgId}`);
+}
+
 export async function getPreviousReadModes(orgId: string): Promise<Record<string, string>> {
   const [row] = rows<{ modes: Record<string, string> }>(
     await db().execute(sql`select previous_read_modes as modes from data_access_settings where org_id = ${orgId}`),

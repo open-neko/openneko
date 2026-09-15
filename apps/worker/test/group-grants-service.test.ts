@@ -8,6 +8,7 @@ import {
   createUserGroup,
   db,
   eq,
+  getPreviousReadModes,
   grantItem,
   organization,
   pool,
@@ -68,8 +69,9 @@ describe("scheduleGroupGrantsApply", () => {
       expect(config.identity.role_mode).toBe("union");
       expect(config.sources[0].access).toEqual({
         read: "admin",
-        grants: [{ role: "og_finance", tables: [{ name: "orders", columns: ["id"], filter: '{ region: { eq: "emea" } }' }] }],
+        grants: [{ role: "og_finance", tables: [{ name: "orders", columns: ["id"], filter: '{ and: [{ account_id: { eq: $account_id } }, { region: { eq: "emea" } }] }' }] }],
       });
+      expect(await getPreviousReadModes(orgId)).toEqual({ shop: "account" });
       expect(restart).toHaveBeenCalledTimes(1);
 
       expect((await applyGroupGrants(orgId, { configFile, restart })).changed).toBe(false);
@@ -98,8 +100,8 @@ describe("scheduleGroupGrantsApply", () => {
       const on = parse(await readFile(configFile, "utf8"));
       expect(on.sources[0].access.read).toBe("admin");
       expect(on.sources[0].access.grants).toEqual([{ role: "og_everyone", tables: [
-        { name: "public.customers", columns: ["id", "email"] },
-        { name: "public.orders", columns: ["id", "amount"] },
+        { name: "public.customers", columns: ["id", "email"], filter: "{ account_id: { eq: $account_id } }" },
+        { name: "public.orders", columns: ["id", "amount"], filter: "{ account_id: { eq: $account_id } }" },
       ] }]);
       expect((await enableGroupGrants(orgId, null, { configFile, restart, catalog })).seededRules).toBe(0);
 

@@ -95,12 +95,23 @@ function isGroupRole(value: unknown): boolean {
   return typeof value === "string" && value.startsWith(GROUP_ROLE_PREFIX);
 }
 
+function scopeFilter(access: YAMLMap, mode: string): string | null {
+  if (mode === "account") return `{ ${String(access.get("namespace_column") || "account_id")}: { eq: $account_id } }`;
+  if (mode === "owner") return `{ ${String(access.get("owner_column") || "user_id")}: { eq: $user_id } }`;
+  return null;
+}
+
 /**
  * Writes the group grant model into a GraphJin sources-mode config. The patch
  * is idempotent and replaces only og_* roles, grants and allowed_roles, so
- * roles and grants written by hand or by packs stay.
+ * roles and grants written by hand or by packs stay. A source that read in
+ * account or owner mode before grants keeps that row scope in every grant.
  */
-export function applyGroupGrantsToConfig(raw: string, model: GroupGrantsModel): { content: string; changed: boolean } {
+export function applyGroupGrantsToConfig(
+  raw: string,
+  model: GroupGrantsModel,
+  previousReadModes: Record<string, string>,
+): { content: string; changed: boolean } {
   const document = parseDocument(raw);
   if (document.errors.length > 0) throw new Error(`GraphJin config is not valid YAML: ${document.errors[0]!.message}`);
   if (!isMap(document.contents)) throw new Error("GraphJin config root must be a YAML object");
@@ -129,6 +140,7 @@ export function applyGroupGrantsToConfig(raw: string, model: GroupGrantsModel): 
     const kind = String(source.get("kind") ?? "database").toLowerCase();
     if (!NON_DATABASE_KINDS.has(kind)) {
       const access = mapOf(source, "access");
+      const scope = scopeFilter(access, previousReadModes[name] ?? String(access.get("read") ?? ""));
       access.set("read", "admin");
       const existing = access.get("grants", true);
       const kept = isSeq(existing) ? existing.items.filter((item) => !(isMap(item) && isGroupRole(item.get("role")))) : [];
@@ -139,7 +151,10 @@ export function applyGroupGrantsToConfig(raw: string, model: GroupGrantsModel): 
             role,
             tables: [...tables]
               .sort((a, b) => a.name.localeCompare(b.name))
-              .map((t) => ({ name: t.name, columns: t.columns, ...(t.filter ? { filter: t.filter } : {}) })),
+              .map((t) => {
+                const filter = scope && t.filter ? `{ and: [${scope}, ${t.filter}] }` : (scope ?? t.filter);
+                return { name: t.name, columns: t.columns, ...(filter ? { filter } : {}) };
+              }),
           }),
         );
       if (kept.length + generated.length === 0) access.delete("grants");
@@ -224,7 +239,7 @@ export function readDatabaseSourceReadModes(raw: string): Record<string, string>
  * GraphJin to first role mode.
  */
 export function removeGroupGrantsFromConfig(raw: string, previousReadModes: Record<string, string>): { content: string; changed: boolean } {
-  const cleared = applyGroupGrantsToConfig(raw, { roles: [], grants: new Map(), apiOperations: new Map() }).content;
+  const cleared = applyGroupGrantsToConfig(raw, { roles: [], grants: new Map(), apiOperations: new Map() }, previousReadModes).content;
   const document = parseDocument(cleared);
   if (!isMap(document.contents) || !document.contents.has("sources")) return { content: raw, changed: false };
   const root = document.contents;

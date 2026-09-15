@@ -85,6 +85,7 @@ export {
   deleteDataAccessRule,
   getGroupGrantsEnabled,
   getPreviousReadModes,
+  recordPreviousReadModes,
   seedEveryoneDataAccess,
   graphjinGroupClaims,
   listDataAccessRules,

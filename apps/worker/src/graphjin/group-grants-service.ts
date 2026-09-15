@@ -8,6 +8,7 @@ import {
   eq,
   getGroupGrantsEnabled,
   getPreviousReadModes,
+  recordPreviousReadModes,
   loadGroupGrantInputs,
   seedEveryoneDataAccess,
   setGroupGrantsEnabled,
@@ -154,7 +155,12 @@ export async function applyGroupGrants(orgId: string, deps: GroupGrantsDeps = de
     const raw = await readFile(configFile, "utf8");
     const inputs = await loadGroupGrantInputs(orgId, listConfigApiOperations(raw));
     const model = buildGroupGrantsModel(inputs);
-    const patched = applyGroupGrantsToConfig(raw, model);
+    const stored = await getPreviousReadModes(orgId);
+    const unseen = Object.fromEntries(
+      Object.entries(readDatabaseSourceReadModes(raw)).filter(([source, mode]) => !(source in stored) && mode !== "admin"),
+    );
+    if (Object.keys(unseen).length > 0) await recordPreviousReadModes(orgId, unseen);
+    const patched = applyGroupGrantsToConfig(raw, model, { ...unseen, ...stored });
     if (patched.changed) {
       const mode = (await stat(configFile)).mode & 0o777;
       const temporary = `${configFile}.${randomUUID()}.group-grants`;
