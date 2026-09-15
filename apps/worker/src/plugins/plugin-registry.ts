@@ -254,6 +254,7 @@ export class PluginRegistry {
    * status endpoint falls back to a name-derived label until then.
    */
   private authProviderLabels: Map<string, string> = new Map();
+  private vmStarts = new Map<string, Promise<void>>();
 
   constructor(private readonly options: PluginRegistryOptions) {}
 
@@ -1305,6 +1306,7 @@ export class PluginRegistry {
           );
         }
       }
+      this.warmAuthProvider();
     } finally {
       this.refreshing = false;
       if (this.pendingRefresh) {
@@ -1505,6 +1507,33 @@ export class PluginRegistry {
   ): Promise<void> {
     if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
     if (this.runtime.hasPlugin(pluginId)) return;
+    const pending = this.vmStarts.get(pluginId);
+    if (pending) return pending;
+    const starting = this.startVm(pluginId, entry).finally(() => this.vmStarts.delete(pluginId));
+    this.vmStarts.set(pluginId, starting);
+    return starting;
+  }
+
+  /**
+   * Starts the sign-in plugin's sandbox after each refresh, so the first
+   * sign-in does not wait for a cold sandbox start.
+   */
+  private warmAuthProvider(): void {
+    const provider = this.getAuthProvider();
+    const entry = provider ? this.state.entriesByPluginId.get(provider.pluginId) : undefined;
+    if (!provider || !entry || !this.runtime || !this.authSignInReady()) return;
+    void this.ensureVm(provider.pluginId, entry).catch((err) => {
+      console.warn(
+        `[plugin-registry] could not start ${entry.name} ahead of sign-in: ${err instanceof Error ? err.message : err}`,
+      );
+    });
+  }
+
+  private async startVm(
+    pluginId: string,
+    entry: PluginManifestEntry,
+  ): Promise<void> {
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
 
     const resolveRunner =
       this.options.resolveRunner ??

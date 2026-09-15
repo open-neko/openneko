@@ -793,6 +793,53 @@ describe("PluginRegistry — auth provider", () => {
     await reg.stop();
   });
 
+  it("starts a ready sign-in plugin at load, once, so the first sign-in finds it running", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithAuthEntry()),
+      "utf8",
+    );
+    let releaseRegister: () => void = () => {};
+    const registered = new Promise<void>((resolve) => (releaseRegister = resolve));
+    const runtime = new FakeRuntime({
+      responses: {
+        register: authRegisterResponse(),
+        begin_auth: rpcOk({ result: { authorizationUrl: "https://idp.example/authorize" } }),
+      },
+    });
+    const start = runtime.start.bind(runtime);
+    runtime.start = async (spec) => {
+      await registered;
+      return start(spec);
+    };
+    const reg = newRegistry(runtime);
+    await reg.start();
+    const signIns = Promise.all([
+      reg.beginAuth({ redirectUri: "https://app.example.com/cb", state: "a" }),
+      reg.beginAuth({ redirectUri: "https://app.example.com/cb", state: "b" }),
+    ]);
+    releaseRegister();
+    await signIns;
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.rpcs.map((r) => r.method)).toEqual(["register", "begin_auth", "begin_auth"]);
+    await reg.stop();
+  });
+
+  it("does not start a sign-in plugin that still misses required settings", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify(manifestWithMagicLinkEntry()),
+      "utf8",
+    );
+    const runtime = new FakeRuntime({ responses: { register: authRegisterResponse() } });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reg.authSignInReady()).toBe(false);
+    expect(runtime.starts).toHaveLength(0);
+    await reg.stop();
+  });
+
   it("upgrades providerLabel from the VM's register() response", async () => {
     await writeFile(
       path.join(repoRoot, "openneko.plugins.json"),
