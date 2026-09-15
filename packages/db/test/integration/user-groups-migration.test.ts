@@ -191,6 +191,25 @@ describeIfDb("0074 user groups", () => {
     });
   });
 
+  it("0076 gives Everyone every item type on upgrade and for new organizations", async () => {
+    await withTempDb(async (client) => {
+      await applyMigrations(client, (f) => f < "0076_item_grants.sql");
+      await client.query("insert into organization (id, name) values ('old', 'Old')");
+      await applyMigrations(client, (f) => f === "0076_item_grants.sql");
+      await applyMigrations(client, (f) => f === "0076_item_grants.sql");
+      await client.query("insert into organization (id, name) values ('new', 'New')");
+      const { rows } = await client.query<{ org_id: string; n: number; wildcard: boolean }>(`
+        select ig.org_id, count(*)::int as n, bool_and(ig.item_id = '*') as wildcard
+        from item_grant ig join user_group g on g.id = ig.group_id and g.slug = 'everyone'
+        group by ig.org_id order by ig.org_id`);
+      expect(rows).toEqual([
+        { org_id: "new", n: 15, wildcard: true },
+        { org_id: "old", n: 15, wildcard: true },
+      ]);
+      await client.query("delete from organization where id = 'old'");
+    });
+  });
+
   it("seeds built-in groups for a new organization and rejects bad rows", async () => {
     await withTempDb(async (client) => {
       await applyMigrations(client, (f) => f <= TARGET);
