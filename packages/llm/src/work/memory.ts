@@ -188,10 +188,26 @@ async function resolveRunMemoryLayer(runId: string | null): Promise<string | nul
 // sees their own live personal rows plus team rows whose origin they
 // haven't overridden — a personal row pointing overrides_origin_id at a
 // team row's origin replaces it (edit) or hides it (suppressed).
-function layerVisibilityFilter(userId: string | null | undefined) {
-  if (!userId) return isNull(work_memory.user_id);
+async function runTeamMemory(orgId: string, runId: string): Promise<"*" | ReadonlySet<string>> {
+  const { entitlementActorForRun } = await import("./entitlement-scope");
+  const { heldItems } = await import("@neko/db");
+  const actor = await entitlementActorForRun(orgId, runId);
+  return actor ? heldItems(actor, "team_memory") : new Set<string>();
+}
+
+function teamMemoryFilter(teamMemory: "*" | ReadonlySet<string> | undefined) {
+  if (!teamMemory || teamMemory === "*") return sql`true`;
+  const held = `{${[...teamMemory].map((v) => `"${v.replace(/(["\\])/g, "\\$1")}"`).join(",")}}`;
+  return sql`(${work_memory.scope} = 'thread'
+    or (${work_memory.scope} = 'global' and 'global' = any(${held}::text[]))
+    or (${work_memory.scope} = 'database' and ('database:' || coalesce(${work_memory.scope_id}, '')) = any(${held}::text[])))`;
+}
+
+function layerVisibilityFilter(userId: string | null | undefined, teamMemory?: "*" | ReadonlySet<string>) {
+  const team = teamMemoryFilter(teamMemory);
+  if (!userId) return and(isNull(work_memory.user_id), team)!;
   return sql`((${work_memory.user_id} = ${userId} and ${work_memory.suppressed} = false)
-    or (${work_memory.user_id} is null and not exists (
+    or (${work_memory.user_id} is null and ${team} and not exists (
       select 1 from work_memory p
       where p.org_id = ${work_memory.org_id}
         and p.user_id = ${userId}
@@ -365,6 +381,7 @@ export async function listWorkMemories(
     includeArchived?: boolean;
     limit?: number;
     userId?: string | null;
+    teamMemory?: "*" | ReadonlySet<string>;
   } = {},
 ): Promise<WorkMemory[]> {
   const activeFilter = options.includeArchived ? undefined : isNull(work_memory.archived_at);
@@ -374,7 +391,7 @@ export async function listWorkMemories(
     .where(
       and(
         eq(work_memory.org_id, orgId),
-        layerVisibilityFilter(options.userId),
+        layerVisibilityFilter(options.userId, options.teamMemory),
         ...(activeFilter ? [activeFilter] : []),
       ),
     )
@@ -393,7 +410,7 @@ export async function getCoreWorkMemories(
     .where(
       and(
         eq(work_memory.org_id, ctx.orgId),
-        layerVisibilityFilter(ctx.userId),
+        layerVisibilityFilter(ctx.userId, ctx.teamMemory),
         isNull(work_memory.archived_at),
       ),
     )
@@ -434,6 +451,7 @@ export async function formatWorkMemoryPromptContext(
           limit: options.contextLimit ?? 5,
           userId: ctx.userId ?? null,
           runId: ctx.runId ?? null,
+          ...(ctx.teamMemory !== undefined ? { teamMemory: ctx.teamMemory } : {}),
         })
       )
         .map((r) => r.memory)
@@ -460,7 +478,9 @@ export async function formatWorkMemoryPromptContext(
 export async function formatGlobalMemoryPromptContext(
   orgId: string,
   limit = 5,
+  teamMemory: "*" | ReadonlySet<string> = "*",
 ): Promise<string> {
+  if (teamMemory !== "*" && !teamMemory.has("global")) return "No global memories are currently saved for this workspace.";
   const rows = await db()
     .select()
     .from(work_memory)
@@ -517,6 +537,7 @@ export async function searchWorkMemoryByContext(args: {
   limit?: number;
   userId?: string | null;
   runId?: string | null;
+  teamMemory?: "*" | ReadonlySet<string>;
 }): Promise<WorkMemorySearchResult[]> {
   const limit = clamp(Math.floor(args.limit ?? 5), 1, 20);
   const trimmed = args.query.trim();
@@ -574,7 +595,7 @@ export async function searchWorkMemoryByContext(args: {
     .where(
       and(
         eq(work_memory.org_id, args.orgId),
-        layerVisibilityFilter(layerUserId),
+        layerVisibilityFilter(layerUserId, args.teamMemory ?? (args.runId ? await runTeamMemory(args.orgId, args.runId) : undefined)),
         isNull(work_memory.archived_at),
         sql`work_memory.embedding IS NOT NULL`,
       ),

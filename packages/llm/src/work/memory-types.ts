@@ -30,4 +30,6 @@ export type WorkMemoryContext = {
    * When undefined, write paths fall back to the runId's K1 actor.
    */
   userId?: string | null;
+  /** Held team_memory ids ("global", "database:<id>"); undefined means every team memory. */
+  teamMemory?: "*" | ReadonlySet<string>;
 };

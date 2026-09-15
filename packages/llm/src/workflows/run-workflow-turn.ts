@@ -1,5 +1,5 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { pool, resolveUserGroups } from "@neko/db";
+import { heldItems, pool, resolveUserGroups } from "@neko/db";
 import { runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import type { AgentEvent } from "../agent-backend";
@@ -256,7 +256,9 @@ async function runWorkflowTurnTraced(
       message: `Starting workflow "${workflow.name}" (${triggerKind})…`,
     });
 
-    const memoryContext = await startupPhase("context.memory", async () => formatGlobalMemoryPromptContext(orgId));
+    const runActor = await runEntitlementActor(orgId, await getWorkRunActor(workRunId), { workflowId: workflow.id });
+    const memoryContext = await startupPhase("context.memory", async () =>
+      formatGlobalMemoryPromptContext(orgId, 5, await heldItems(runActor, "team_memory")));
 
     const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
       knowledgePackPaths(workspace.knowledgeRoot),
@@ -285,7 +287,6 @@ async function runWorkflowTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${seedMessage}`, "utf8"),
     });
-    const runActor = await runEntitlementActor(orgId, await getWorkRunActor(workRunId), { workflowId: workflow.id });
     const [allowedSkills, allowedLibrary] = await startupPhase("identity.entitlements", () =>
       Promise.all([runHeldItemIds(runActor, "skill"), runAllowedLibrary(runActor)]));
     const result = await runCore({

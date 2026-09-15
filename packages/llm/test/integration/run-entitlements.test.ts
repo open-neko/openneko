@@ -13,6 +13,7 @@ import { inProcessControlPlane } from "../../src/work/control-plane";
 import { entitlementActorForRun, runHeldItemIds } from "../../src/work/entitlement-scope";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
 import { saveWorkflow } from "../../src/workflows/store";
+import { listWorkMemories, rememberWorkMemory } from "../../src/work/memory";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -64,6 +65,21 @@ describeIfDb("run entitlements", () => {
       expect(await runHeldItemIds(annActor!, "skill")).toEqual(["docx"]);
       expect(await runHeldItemIds((await entitlementActorForRun(orgId, bossRun.id))!, "skill")).toBeUndefined();
       expect(await entitlementActorForRun(orgId, "00000000-0000-0000-0000-000000000000")).toBeNull();
+    });
+  });
+
+  it("hides team global memories from users without the team memory grant", async () => {
+    await withOrg(async (orgId) => {
+      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+      await rememberWorkMemory({ orgId, userId: null, kind: "business_rule", scope: "global", text: "Fiscal year starts in April" });
+      await rememberWorkMemory({ orgId, userId: `${orgId}-ann`, kind: "preference", scope: "global", text: "Ann likes tables" });
+      const texts = async (teamMemory: "*" | Set<string>) =>
+        (await listWorkMemories(orgId, { userId: `${orgId}-ann`, teamMemory })).map((m) => m.text).sort();
+      expect(await texts("*")).toEqual(["Ann likes tables", "Fiscal year starts in April"]);
+      expect(await texts(new Set(["global"]))).toEqual(["Ann likes tables", "Fiscal year starts in April"]);
+      expect(await texts(new Set(["database:erp"]))).toEqual(["Ann likes tables"]);
+      await revokeItem(orgId, { groupId: await builtinGroupId(orgId, "everyone"), itemType: "team_memory", itemId: "*" });
+      expect(await listWorkMemories(orgId, { userId: null, teamMemory: new Set() })).toEqual([]);
     });
   });
 });
