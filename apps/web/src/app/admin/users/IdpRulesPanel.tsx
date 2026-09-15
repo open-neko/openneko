@@ -121,7 +121,7 @@ export function IdpRulesPanel({
             <NativeSelect id="rule-idp-group" value={ssoGroupId} onChange={(e) => setSsoGroupId(e.target.value)}>
               {idpGroups.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.displayName ?? g.externalId} · {g.provider}
+                  {g.displayName ?? g.externalId} · {providerName(g.provider)}
                   {g.active ? "" : " (inactive)"}
                 </option>
               ))}
@@ -156,7 +156,7 @@ export function IdpRulesPanel({
                 <TableRow key={rule.id} className="border-b border-border last:border-0">
                   <TableCell className="px-3 py-3">
                     <div className="font-semibold text-text">{rule.idpGroupName}</div>
-                    <Badge variant="muted">{rule.provider}</Badge>
+                    <Badge variant="muted">{providerName(rule.provider)}</Badge>
                   </TableCell>
                   <TableCell className="px-3 py-3 text-text2">{rule.userGroupName}</TableCell>
                   <TableCell className="px-3 py-3 text-text2"><LocalDateTime value={rule.createdAt} /></TableCell>
@@ -178,4 +178,9 @@ export function IdpRulesPanel({
       )}
     </>
   );
+}
+
+function providerName(provider: string): string {
+  const name = provider.replace(/^@open-neko\/plugin-/, "").replace(/^@[^/]+\//, "");
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }

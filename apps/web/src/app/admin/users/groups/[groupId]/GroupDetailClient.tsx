@@ -113,7 +113,7 @@ export function GroupDetailClient({
             </p>
           </div>
           <div className="settings-source">
-            <strong className="is-ok">{members.length} members</strong>
+            <strong className="is-ok">{members.length} {members.length === 1 ? "member" : "members"}</strong>
           </div>
         </div>
         {!everyone && candidates.length > 0 && (
@@ -134,6 +134,9 @@ export function GroupDetailClient({
             <Button type="submit" variant="primary" disabled={busy === "add-member" || !newMember}>Add member</Button>
           </form>
         )}
+        {members.length === 0 ? (
+          <p className="text-sm text-text2">No members yet. Add a user above, or add an IdP rule for this group.</p>
+        ) : (
         <div className="overflow-x-auto">
           <Table className="w-full border-collapse text-left text-sm">
             <TableHeader className="text-ui-label uppercase tracking-[0.12em] text-text3">
@@ -169,7 +172,7 @@ export function GroupDetailClient({
                       >
                         Remove
                       </Button>
-                    ) : (
+                    ) : everyone ? null : (
                       <span className="text-xs text-text3">Managed by the identity provider</span>
                     )}
                   </TableCell>
@@ -178,6 +181,7 @@ export function GroupDetailClient({
             </TableBody>
           </Table>
         </div>
+        )}
       </section>
 
       {administrators ? (

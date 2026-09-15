@@ -38,7 +38,7 @@ export function GroupsPanel({ groups }: { groups: UserGroupRow[] }) {
           </p>
         </div>
         <div className="settings-source">
-          <strong className="is-ok">{groups.length} groups</strong>
+          <strong className="is-ok">{groups.length} {groups.length === 1 ? "group" : "groups"}</strong>
         </div>
       </div>
       <AdminError message={error} />

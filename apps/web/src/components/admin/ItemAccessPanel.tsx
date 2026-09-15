@@ -35,7 +35,7 @@ export function ItemAccessPanel({ itemType, itemId, label }: { itemType: string;
     if (!holding.ok || !allGroups.ok) return setHolders(null);
     setHolders(holding.body.holders);
     const candidates = allGroups.body.groups.filter(
-      (g) => g.slug !== "administrators" && !holding.body.holders.some((h) => h.groupId === g.id && h.via === "item"),
+      (g) => g.slug !== "administrators" && !holding.body.holders.some((h) => h.groupId === g.id && (h.via === "item" || h.via === "all")),
     );
     setGroups(candidates);
     setSelected((current) => (candidates.some((g) => g.id === current) ? current : (candidates[0]?.id ?? "")));

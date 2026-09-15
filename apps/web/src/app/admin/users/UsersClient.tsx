@@ -226,9 +226,6 @@ export function UsersClient({
                   Last login
                 </TableHead>
                 <TableHead className="border-b border-border px-3 py-2 font-bold">
-                  Created
-                </TableHead>
-                <TableHead className="border-b border-border px-3 py-2 font-bold">
                   Actions
                 </TableHead>
               </TableRow>
@@ -264,13 +261,11 @@ export function UsersClient({
                     <StatusBadge disabled={user.disabled} />
                   </TableCell>
                   <TableCell className="px-3 py-3 text-text2">
-                    {formatDate(user.lastLoginAt)}
-                  </TableCell>
-                  <TableCell className="px-3 py-3 text-text2">
-                    {formatDate(user.createdAt)}
+                    <div className="whitespace-nowrap">{formatDate(user.lastLoginAt)}</div>
+                    {user.createdAt ? <div className="whitespace-nowrap text-xs text-text3">Created {formatDay(user.createdAt)}</div> : null}
                   </TableCell>
                   <TableCell className="px-3 py-3">
-                    <ActionGroup align="start" className="flex-nowrap">
+                    <ActionGroup align="start" className="min-w-[220px]">
                       <EffectiveAccessSheet userId={user.id} email={user.email} />
                       <Button
                         size="sm"
@@ -316,6 +311,10 @@ function StatusBadge({ disabled }: { disabled: boolean }) {
       {disabled ? "Disabled" : "Active"}
     </Badge>
   );
+}
+
+function formatDay(value: string): string {
+  return new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" });
 }
 
 function formatDate(value: string | null): string {
