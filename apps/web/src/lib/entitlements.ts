@@ -3,6 +3,7 @@ import {
   and,
   db,
   eq,
+  inArray,
   workflow_definition,
   workflow_run,
   filterHeld,
@@ -125,4 +126,23 @@ export async function workflowIdVisibility(): Promise<(workflowId: string | null
       .where(eq(workflow_definition.org_id, await getOrgId()))).map((w) => [w.id, w.ownerUserId]),
   );
   return (workflowId) => !workflowId || (owners.has(workflowId) && visible({ id: workflowId, ownerUserId: owners.get(workflowId) }));
+}
+
+/** Hides outputs of watcher-triggered runs when the user does not hold the watcher. */
+export async function watcherRunVisibility(runIds: Array<string | null | undefined>): Promise<(runId: string | null | undefined) => boolean> {
+  const ids = [...new Set(runIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return () => true;
+  const held = await heldItemIds("watcher");
+  if (held === "*") return () => true;
+  const runs = await db()
+    .select({ id: workflow_run.id, kind: workflow_run.trigger_kind, payload: workflow_run.trigger_payload })
+    .from(workflow_run)
+    .where(and(eq(workflow_run.org_id, await getOrgId()), inArray(workflow_run.id, ids)));
+  const hidden = new Set(
+    runs
+      .filter((r) => r.kind === "watcher")
+      .filter((r) => !held.has(String((r.payload as { watcherId?: unknown } | null)?.watcherId ?? "")))
+      .map((r) => r.id),
+  );
+  return (runId) => !runId || !hidden.has(runId);
 }
