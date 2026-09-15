@@ -103,13 +103,21 @@ export function catalogWhere(kind: string, databaseName?: string): string {
 export async function graphjinCatalog(orgId: string, kind: string, databaseName?: string): Promise<CatalogRow[]> {
   const admin = await graphjinAdmin(orgId);
   if (!admin) return [];
-  const result = await graphjinQuery<{ gj_catalog?: CatalogRow[] }>({
-    baseUrl: admin.endpoint,
-    headers: admin.headers,
-    query: `query AdminCatalog { gj_catalog(where: ${catalogWhere(kind, databaseName)}, limit: 1000, order_by: { id: asc }) { id name summary database_name schema_name table_name column_name } }`,
-    signal: AbortSignal.timeout(30_000),
-  }).catch(() => ({ data: undefined, errors: [{ message: "GraphJin is unavailable" }] }));
-  return result.errors?.length ? [] : (result.data?.gj_catalog ?? []);
+  const pageSize = 1000;
+  const rows: CatalogRow[] = [];
+  for (let offset = 0; offset < 200_000; offset += pageSize) {
+    const result = await graphjinQuery<{ gj_catalog?: CatalogRow[] }>({
+      baseUrl: admin.endpoint,
+      headers: admin.headers,
+      query: `query AdminCatalog { gj_catalog(where: ${catalogWhere(kind, databaseName)}, limit: ${pageSize}, offset: ${offset}, order_by: { id: asc }) { id name summary database_name schema_name table_name column_name } }`,
+      signal: AbortSignal.timeout(30_000),
+    }).catch(() => ({ data: undefined, errors: [{ message: "GraphJin is unavailable" }] }));
+    if (result.errors?.length) return rows;
+    const page = result.data?.gj_catalog ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 /** Tables and columns of one GraphJin source, for the data access editor. */
