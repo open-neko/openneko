@@ -99,7 +99,7 @@ export function _resetEntitlementCacheForTesting(): void {
   indexCache.clear();
 }
 
-async function packsContaining(orgId: string, item: ItemRef): Promise<string[]> {
+export async function packsContaining(orgId: string, item: ItemRef): Promise<string[]> {
   const spec = PACK_ITEM_JOINS[item.type];
   if (!spec) return [];
   return rows<{ pack_id: string }>(

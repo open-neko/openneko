@@ -67,6 +67,7 @@ export {
   isItemType,
   listGroupItemGrants,
   packItemIds,
+  packsContaining,
   revokeItem,
   whoHolds,
   type EffectiveItem,

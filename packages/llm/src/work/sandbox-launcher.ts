@@ -114,6 +114,8 @@ export type RunJobAgentBackendInput = {
   workspace: AgentWorkspace;
   run: AgentRunOptions;
   access: AgentJobAccess;
+  /** Skill names the job's actor holds. Undefined means every skill. */
+  allowedSkills?: readonly string[];
   emit: (event: AgentEvent) => Promise<void>;
 };
 
@@ -296,7 +298,7 @@ async function copyDirectoryIfPresent(
 export async function stageSandboxWorkspace(
   workspace: AgentWorkspace,
   stageDir: string,
-  options: { requiredSkillNames?: readonly string[]; cached?: boolean } = {},
+  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; cached?: boolean } = {},
 ): Promise<StagedSandboxWorkspace> {
   const stageOrgRoot = path.join(
     stageDir,
@@ -311,7 +313,7 @@ export async function stageSandboxWorkspace(
   ) as AgentWorkspace;
 
   await mkdir(stageOrgRoot, { recursive: true });
-  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames) : undefined;
+  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames, options.allowedSkills) : undefined;
   try {
   const knowledge = stable ? null : await readKnowledgeSnapshot(workspace.knowledgeRoot);
   await Promise.all([
@@ -346,6 +348,7 @@ export async function stageSandboxWorkspace(
     workspace.skillsRoot,
     stagedWorkspace.skillsRoot,
     options.requiredSkillNames,
+    options.allowedSkills,
   );
 
   return {
@@ -602,6 +605,7 @@ function makeSandboxCore(
       configuredIdentity: input.backend.configuredIdentity,
       // Hermes reads its model from the staged config.yaml.
       workspace: boxWorkspace,
+      ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
       ...(kind === "work"
         ? {
             backendState: (input as RunAgentBackendInput).backendState,
@@ -687,6 +691,7 @@ function makeSandboxCore(
         // A records-scoped turn must remain functional during a rolling
         // upgrade even if the sandbox image predates the records skill.
         requiredSkillNames: recordsScoped ? ["records"] : [],
+        ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
         cached: Boolean(pool),
       }));
       stableInputs = staged.stable;
@@ -736,7 +741,7 @@ function makeSandboxCore(
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,

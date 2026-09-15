@@ -266,9 +266,12 @@ export async function listInstalledSkills(
  * Existing directories win, so an organization-created skill or a modified
  * built-in skill can override the image copy by name.
  */
-export async function materializeBuiltinSkills(skillsRoot: string): Promise<void> {
+export async function materializeBuiltinSkills(
+  skillsRoot: string,
+  allowedSkills?: readonly string[],
+): Promise<void> {
   await mkdir(skillsRoot, { recursive: true });
-  await seedBuiltinSkills(skillsRoot);
+  await seedBuiltinSkills(skillsRoot, allowedSkills);
 }
 
 const builtinSkillFingerprints = new Map<string, Promise<string>>();
@@ -343,9 +346,11 @@ export async function copySkillOverrides(
   skillsRoot: string,
   destinationRoot: string,
   forceNames: readonly string[] = [],
+  allowedSkills?: readonly string[],
 ): Promise<string[]> {
   await mkdir(destinationRoot, { recursive: true });
   const forced = new Set(forceNames);
+  const allowed = allowedSkills ? new Set([...allowedSkills, ...forceNames]) : null;
   let entries: Dirent[];
   try {
     entries = await readdir(skillsRoot, { withFileTypes: true });
@@ -356,6 +361,7 @@ export async function copySkillOverrides(
   const copied: string[] = [];
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
+    if (allowed && !allowed.has(entry.name)) continue;
     const workspaceSource = join(skillsRoot, entry.name);
     const bundled = join(BUILTIN_SKILLS_ROOT, entry.name);
     const source = forced.has(entry.name) ? bundled : workspaceSource;
@@ -400,10 +406,12 @@ export async function copySkillOverrides(
   return copied;
 }
 
-async function seedBuiltinSkills(skillsRoot: string): Promise<void> {
+async function seedBuiltinSkills(skillsRoot: string, allowedSkills?: readonly string[]): Promise<void> {
+  const allowed = allowedSkills ? new Set(allowedSkills) : null;
   const entries = await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    if (allowed && !allowed.has(entry.name)) continue;
     const dest = join(skillsRoot, entry.name);
     try {
       await access(dest, fsConstants.F_OK);

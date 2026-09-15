@@ -51,6 +51,8 @@ export interface RunAgentBackendInput {
   /** Trusted host-only reuse boundary. Missing revision disables assigned reuse.
    * Future RBAC must change this revision when ANY effective grant changes. */
   sandboxUser?: { principalId: string; authorizationRevision: string };
+  /** Skill names the run's actor holds. Undefined means every skill. */
+  allowedSkills?: readonly string[];
   pluginActions: readonly PluginActionDescriptor[];
   /** Installed pack actions, discovered independently of plugins. */
   packActions?: readonly PackActionDescriptor[];

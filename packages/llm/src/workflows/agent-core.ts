@@ -27,6 +27,8 @@ export interface RunWorkflowAgentBackendInput {
   networkHosts: string[];
   triggeredByObservationId?: string | null;
   workspace: AgentWorkspace;
+  /** Skill names the run's actor holds. Undefined means every skill. */
+  allowedSkills?: readonly string[];
   /** In-process on the host; broker-backed inside the agent sandbox. */
   controlPlane: AgentControlPlane;
   emit: (event: AgentEvent) => Promise<void>;

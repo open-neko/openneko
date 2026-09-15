@@ -136,6 +136,28 @@ describe("work workspace", () => {
       .toContain("Org override.");
   }, 30_000);
 
+  it("stages and seeds only the skills the run's actor holds", async () => {
+    const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
+    const stage = await mkdtemp(join(tmpdir(), "neko-skills-stage-"));
+    cleanupPaths.push(home, stage);
+    process.env.HOME = home;
+
+    const workspace = await ensureOrgWorkspace("org-test");
+    for (const name of ["quarterly-review", "sales-playbook"]) {
+      await mkdir(join(workspace.skillsRoot, name), { recursive: true });
+      await writeFile(join(workspace.skillsRoot, name, "SKILL.md"), `---\nname: ${name}\ndescription: x\n---\n`);
+    }
+
+    const stagedSkills = join(stage, "skills");
+    const allowed = ["quarterly-review", "pdf"];
+    expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills, [], allowed)).toEqual(["quarterly-review"]);
+    await materializeBuiltinSkills(stagedSkills, allowed);
+    expect((await readdir(stagedSkills)).sort()).toEqual(["pdf", "quarterly-review"]);
+
+    const forced = join(stage, "forced");
+    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["records"], [])).toEqual(["records"]);
+  }, 30_000);
+
   it("records a builtin seed origin and skips a stale unmodified seed", async () => {
     const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
     const stage = await mkdtemp(join(tmpdir(), "neko-skills-stage-"));

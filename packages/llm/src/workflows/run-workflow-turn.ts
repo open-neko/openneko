@@ -1,5 +1,7 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { pool } from "@neko/db";
+import { pool, resolveUserGroups } from "@neko/db";
+import { runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
+import { getWorkRunActor } from "../work/personas";
 import type { AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
 import { resolveAgentBackend as defaultResolveAgentBackend } from "../agent-backend-resolver";
@@ -86,9 +88,10 @@ export async function prepareWorkflowRun(
   const backend = await startupPhase("config.backend", async () => resolveAgentBackend(opts.orgId));
   let actor: { userId: string | null; role: "admin" | "member" | "service" } = { userId: null, role: "service" };
   if (workflow.ownerUserId) {
-    const owner = await pool().query<{ role: string }>("select role from app_user where org_id=$1 and id=$2 and disabled_at is null", [opts.orgId, workflow.ownerUserId]);
+    const owner = await pool().query<{ id: string }>("select id from app_user where org_id=$1 and id=$2 and disabled_at is null", [opts.orgId, workflow.ownerUserId]);
     if (!owner.rows[0]) throw new Error("The workflow owner is no longer active");
-    actor = { userId: workflow.ownerUserId, role: owner.rows[0].role === "admin" ? "admin" : "member" };
+    const groups = await resolveUserGroups(opts.orgId, workflow.ownerUserId);
+    actor = { userId: workflow.ownerUserId, role: groups.administrator ? "admin" : "member" };
   }
   // Trigger threads live on the "workflow" channel, never "web", so they can't
   // surface in the human Ask sidebar — even as an orphan whose work_run never
@@ -282,7 +285,10 @@ async function runWorkflowTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${seedMessage}`, "utf8"),
     });
+    const allowedSkills = await startupPhase("identity.entitlements", async () =>
+      runHeldItemIds(await runEntitlementActor(orgId, await getWorkRunActor(workRunId), { workflowId: workflow.id }), "skill"));
     const result = await runCore({
+      ...(allowedSkills ? { allowedSkills } : {}),
       backend,
       prompt,
       userMessage: seedMessage,

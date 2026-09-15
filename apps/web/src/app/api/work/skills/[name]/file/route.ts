@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrgId } from "@/lib/db";
+import { requireItem } from "@/lib/entitlements";
 import { readWorkSkillFile, writeWorkSkillFile } from "@/lib/work-files";
 
 type RouteContext = {
@@ -10,6 +11,8 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request, context: RouteContext) {
   const { name } = await context.params;
+  const denied = await requireItem("skill", decodeURIComponent(name), { notFound: "File not found" });
+  if (denied) return denied;
   const path = new URL(request.url).searchParams.get("path");
   if (!path) {
     return NextResponse.json({ error: "Missing file path" }, { status: 400 });
@@ -23,6 +26,8 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PUT(request: Request, context: RouteContext) {
   const { name } = await context.params;
+  const denied = await requireItem("skill", decodeURIComponent(name), { notFound: "File not found" });
+  if (denied) return denied;
   const path = new URL(request.url).searchParams.get("path");
   if (!path) {
     return NextResponse.json({ error: "Missing file path" }, { status: 400 });
