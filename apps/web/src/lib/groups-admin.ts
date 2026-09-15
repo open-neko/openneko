@@ -94,13 +94,19 @@ async function graphjinAdmin(orgId: string) {
 
 type CatalogRow = { id: string; name: string | null; summary: string | null; database_name: string | null; schema_name: string | null; table_name: string | null; column_name: string | null };
 
-export async function graphjinCatalog(orgId: string, kind: string, where = ""): Promise<CatalogRow[]> {
+/** GraphJin rejects an `and` with one expression, so a single condition stays bare. */
+export function catalogWhere(kind: string, databaseName?: string): string {
+  const byKind = `{ kind: { eq: ${JSON.stringify(kind)} } }`;
+  return databaseName === undefined ? byKind : `{ and: [${byKind}, { database_name: { eq: ${JSON.stringify(databaseName)} } }] }`;
+}
+
+export async function graphjinCatalog(orgId: string, kind: string, databaseName?: string): Promise<CatalogRow[]> {
   const admin = await graphjinAdmin(orgId);
   if (!admin) return [];
   const result = await graphjinQuery<{ gj_catalog?: CatalogRow[] }>({
     baseUrl: admin.endpoint,
     headers: admin.headers,
-    query: `query AdminCatalog { gj_catalog(where: { and: [{ kind: { eq: ${JSON.stringify(kind)} } }${where}] }, limit: 1000, order_by: { id: asc }) { id name summary database_name schema_name table_name column_name } }`,
+    query: `query AdminCatalog { gj_catalog(where: ${catalogWhere(kind, databaseName)}, limit: 1000, order_by: { id: asc }) { id name summary database_name schema_name table_name column_name } }`,
     signal: AbortSignal.timeout(30_000),
   }).catch(() => ({ data: undefined, errors: [{ message: "GraphJin is unavailable" }] }));
   return result.errors?.length ? [] : (result.data?.gj_catalog ?? []);
@@ -108,7 +114,7 @@ export async function graphjinCatalog(orgId: string, kind: string, where = ""): 
 
 /** Tables and columns of one GraphJin source, for the data access editor. */
 export async function sourceTables(orgId: string, source: string): Promise<Array<{ schema: string; table: string; columns: string[] }>> {
-  const rows = await graphjinCatalog(orgId, "column", `, { database_name: { eq: ${JSON.stringify(source)} } }`);
+  const rows = await graphjinCatalog(orgId, "column", source);
   const tables = new Map<string, { schema: string; table: string; columns: string[] }>();
   for (const row of rows) {
     if (!row.table_name || !row.column_name) continue;

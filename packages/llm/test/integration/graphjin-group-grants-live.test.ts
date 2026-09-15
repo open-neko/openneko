@@ -139,6 +139,15 @@ sources:
     expect(await rows([], "id", "admin")).toEqual({ rows: [{ id: 1 }, { id: 2 }, { id: 3 }] });
   });
 
+  it("accepts the admin catalog filters: one condition bare, two joined with and", async () => {
+    const databases = await query([], 'query { gj_catalog(where: { kind: { eq: "database" } }, limit: 10) { name } }', "admin");
+    expect(databases.errors).toBeUndefined();
+    expect(databases.data?.gj_catalog?.map((d) => d.name)).toContain("shop");
+    const columns = await query([], 'query { gj_catalog(where: { and: [{ kind: { eq: "column" } }, { database_name: { eq: "shop" } }] }, limit: 10) { column_name } }', "admin");
+    expect(columns.errors).toBeUndefined();
+    expect(columns.data?.gj_catalog?.length).toBeGreaterThan(0);
+  });
+
   it("serves the column catalog by source name with offset paging", async () => {
     const page = (offset: number) =>
       query([], `query { gj_catalog(where: { kind: { eq: "column" } }, limit: 2, offset: ${offset}, order_by: { id: asc }) { database_name table_name column_name } }`, "admin");
