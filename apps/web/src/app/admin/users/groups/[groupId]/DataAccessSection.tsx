@@ -152,7 +152,7 @@ export function DataAccessSection({
       {!enabled && (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-inner border border-border px-4 py-3 text-sm text-text2">
           <span>
-            Group data access is off, so every member keeps today&apos;s access. Turning it on needs a GraphJin release with source grants. Everyone first gets read access to every existing table and column.
+            Group data access is off, so every member keeps today&apos;s access. Turning it on restarts GraphJin once. Everyone first gets read access to every existing table and column.
           </span>
           <Button
             size="sm"
