@@ -16,12 +16,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { matchesListSearch } from "@/lib/list-search";
+import { EffectiveAccessSheet } from "./EffectiveAccessSheet";
 
 export interface AdminUserRow {
   id: string;
   email: string;
   name: string | null;
   role: string;
+  source: string;
+  groups: Array<{ name: string; fromRule: boolean }>;
   disabled: boolean;
   hasSignedIn: boolean;
   lastLoginAt: string | null;
@@ -48,6 +51,7 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
       user.email,
       user.name,
       user.role,
+      ...user.groups.map((g) => g.name),
       user.disabled ? "disabled" : "active",
     ),
   );
@@ -164,8 +168,8 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
               setRole(event.target.value === "admin" ? "admin" : "member")
             }
           >
-            <option value="member">member</option>
-            <option value="admin">admin</option>
+            <option value="member">Member</option>
+            <option value="admin">Administrator</option>
           </NativeSelect>
         </Field>
         <Button type="submit" variant="primary" disabled={busy === "create"}>
@@ -191,6 +195,9 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
                   Role
                 </TableHead>
                 <TableHead className="border-b border-border px-3 py-2 font-bold">
+                  Groups
+                </TableHead>
+                <TableHead className="border-b border-border px-3 py-2 font-bold">
                   Status
                 </TableHead>
                 <TableHead className="border-b border-border px-3 py-2 font-bold">
@@ -214,11 +221,22 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
                     <div className="font-semibold text-text">{user.email}</div>
                     <div className="text-xs text-text3">
                       {user.name ?? user.id}
+                      {user.source !== "local" ? ` · ${user.source}` : null}
                       {user.hasSignedIn ? null : " · never signed in"}
                     </div>
                   </TableCell>
                   <TableCell className="px-3 py-3">
                     <RoleBadge role={user.role} />
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className="flex max-w-[260px] flex-wrap gap-1">
+                      {user.groups.filter((g) => g.name !== "Administrators").map((g) => (
+                        <Badge key={g.name} variant={g.fromRule ? "secondary" : "muted"} title={g.fromRule ? "From an IdP rule" : "Added in OpenNeko"}>
+                          {g.name}{g.fromRule ? " · IdP" : ""}
+                        </Badge>
+                      ))}
+                      <Badge variant="outline">Everyone</Badge>
+                    </div>
                   </TableCell>
                   <TableCell className="px-3 py-3">
                     <StatusBadge disabled={user.disabled} />
@@ -231,6 +249,7 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
                   </TableCell>
                   <TableCell className="px-3 py-3">
                     <ActionGroup align="start" className="flex-nowrap">
+                      <EffectiveAccessSheet userId={user.id} email={user.email} />
                       <Button
                         size="sm"
                         disabled={busy === user.id}
@@ -266,7 +285,7 @@ export function UsersClient({ users, identitySetup = false }: { users: AdminUser
 
 function RoleBadge({ role }: { role: string }) {
   const isAdmin = role === "admin";
-  return <Badge variant={isAdmin ? "success" : "muted"}>{role}</Badge>;
+  return <Badge variant={isAdmin ? "success" : "muted"}>{isAdmin ? "Administrator" : "Member"}</Badge>;
 }
 
 function StatusBadge({ disabled }: { disabled: boolean }) {
