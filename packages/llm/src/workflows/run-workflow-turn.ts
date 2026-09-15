@@ -1,6 +1,6 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { heldItems, pool, resolveUserGroups } from "@neko/db";
-import { runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
+import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import type { AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
@@ -273,7 +273,7 @@ async function runWorkflowTurnTraced(
       backend: backend.id,
       workspace,
       knowledge,
-      pluginActions: opts.pluginActions ?? [],
+      pluginActions: await filterHeldActions(runActor, opts.pluginActions ?? []),
     });
 
     const seedMessage = synthesizeSeedMessage(

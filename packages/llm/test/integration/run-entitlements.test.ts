@@ -10,7 +10,7 @@ import {
   revokeItem,
 } from "@neko/db";
 import { inProcessControlPlane } from "../../src/work/control-plane";
-import { entitlementActorForRun, runHeldItemIds } from "../../src/work/entitlement-scope";
+import { entitlementActorForRun, filterHeldActions, runHeldItemIds } from "../../src/work/entitlement-scope";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
 import { saveWorkflow } from "../../src/workflows/store";
 import { listWorkMemories, rememberWorkMemory } from "../../src/work/memory";
@@ -65,6 +65,33 @@ describeIfDb("run entitlements", () => {
       expect(await runHeldItemIds(annActor!, "skill")).toEqual(["docx"]);
       expect(await runHeldItemIds((await entitlementActorForRun(orgId, bossRun.id))!, "skill")).toBeUndefined();
       expect(await entitlementActorForRun(orgId, "00000000-0000-0000-0000-000000000000")).toBeNull();
+    });
+  });
+
+  it("refuses external action requests and filters action descriptors the run's user does not hold", async () => {
+    await withOrg(async (orgId) => {
+      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+      const everyone = await builtinGroupId(orgId, "everyone");
+      await revokeItem(orgId, { groupId: everyone, itemType: "action", itemId: "*" });
+      await grantItem(orgId, { groupId: everyone, itemType: "action", itemId: "send_slack_message" });
+      const thread = await createWorkThread(orgId, "t");
+      const run = await createWorkRun(orgId, thread.id, "hermes", { userId: `${orgId}-ann`, role: "member" });
+      const actor = (await entitlementActorForRun(orgId, run.id))!;
+
+      const descriptors = [{ kind: "send_slack_message", description: "" }, { kind: "manage_inventory", description: "" }];
+      expect((await filterHeldActions(actor, descriptors)).map((d) => d.kind)).toEqual(["send_slack_message"]);
+
+      await expect(inProcessControlPlane.createActionRequest({
+        orgId, workRunId: run.id, scope: "external", kind: "manage_inventory", status: "pending_approval", intent: "x",
+      })).rejects.toThrow("not available to this run");
+      const allowed = await inProcessControlPlane.createActionRequest({
+        orgId, workRunId: run.id, scope: "external", kind: "send_slack_message", status: "pending_approval", intent: "x",
+      });
+      expect(allowed.id).toBeTruthy();
+      const internal = await inProcessControlPlane.createActionRequest({
+        orgId, workRunId: run.id, scope: "internal", kind: "memory_write", status: "pending_approval", intent: "x",
+      });
+      expect(internal.id).toBeTruthy();
     });
   });
 

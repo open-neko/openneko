@@ -84,3 +84,24 @@ export async function runAllowedLibrary(actor: EntitlementActor): Promise<Allowe
     : [];
   return { prefixes: [...access.collections].sort(), paths: paths.sort() };
 }
+
+/** Keeps only action descriptors whose kind the actor holds. */
+export async function filterHeldActions<T extends { kind: string }>(actor: EntitlementActor, actions: readonly T[]): Promise<T[]> {
+  const held = await heldItems(actor, "action");
+  return held === "*" ? [...actions] : actions.filter((action) => held.has(action.kind));
+}
+
+/**
+ * Whether an action request needs the action item: every external action and
+ * every pack action. Internal host actions such as memory writes do not.
+ */
+export async function actionKindIsGranted(orgId: string, kind: string, scope: string): Promise<boolean> {
+  if (scope === "external") return true;
+  const { and, db, pack_action_definition } = await import("@neko/db");
+  const [row] = await db()
+    .select({ kind: pack_action_definition.kind })
+    .from(pack_action_definition)
+    .where(and(eq(pack_action_definition.org_id, orgId), eq(pack_action_definition.kind, kind)))
+    .limit(1);
+  return Boolean(row);
+}

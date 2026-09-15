@@ -4,6 +4,7 @@ import {
   db,
   eq,
   inArray,
+  pack_action_definition,
   workflow_definition,
   workflow_run,
   filterHeld,
@@ -25,6 +26,7 @@ export async function currentEntitlementActor(): Promise<EntitlementActor | null
 }
 
 export async function heldItemIds(type: ItemType): Promise<HeldItems> {
+  if ((await getCurrentActor()).role === "admin") return "*";
   const actor = await currentEntitlementActor();
   return actor ? heldItems(actor, type) : new Set();
 }
@@ -34,6 +36,7 @@ export async function filterToHeld<T>(type: ItemType, items: T[], idOf: (item: T
 }
 
 export async function holdsItem(type: ItemType, id: string, parents: ItemRef[] = []): Promise<boolean> {
+  if ((await getCurrentActor()).role === "admin") return true;
   const actor = await currentEntitlementActor();
   return actor ? (await holds(actor, type, id, { parents })).allowed : false;
 }
@@ -70,9 +73,10 @@ export function libraryCollectionParents(path: string): ItemRef[] {
  */
 export async function workflowVisibility(): Promise<(workflow: { id: string; ownerUserId?: string | null }) => boolean> {
   const actor = await currentEntitlementActor();
+  const admin = (await getCurrentActor()).role === "admin";
+  if (admin) return () => true;
   if (!actor || actor.kind !== "user") return () => false;
   const held = await heldItems(actor, "workflow");
-  const admin = (await getCurrentActor()).role === "admin";
   return (workflow) => {
     const owner = workflow.ownerUserId ?? "";
     if (owner === actor.userId) return true;
@@ -107,7 +111,9 @@ export async function currentLibraryReader() {
   const orgId = await getOrgId();
   const actor = await getCurrentActor();
   const entitlementActor = await currentEntitlementActor();
-  const access = entitlementActor
+  const access = actor.role === "admin"
+    ? { concepts: "*" as const, collections: "*" as const }
+    : entitlementActor
     ? {
         concepts: await heldItems(entitlementActor, "library_concept"),
         collections: await heldItems(entitlementActor, "library_collection"),
@@ -145,4 +151,28 @@ export async function watcherRunVisibility(runIds: Array<string | null | undefin
       .map((r) => r.id),
   );
   return (runId) => !runId || !hidden.has(runId);
+}
+
+/**
+ * Action requests from visible workflows. External and pack actions also need
+ * the action item; admin proposals and internal host actions do not.
+ */
+export async function actionRequestVisibility(): Promise<
+  (row: { kind: string; scope?: string | null; workflowId?: string | null }) => boolean
+> {
+  const workflowVisible = await workflowIdVisibility();
+  const held = await heldItemIds("action");
+  const packKinds = held === "*"
+    ? new Set<string>()
+    : new Set(
+        (await db()
+          .select({ kind: pack_action_definition.kind })
+          .from(pack_action_definition)
+          .where(eq(pack_action_definition.org_id, await getOrgId()))).map((r) => r.kind),
+      );
+  return (row) => {
+    if (!workflowVisible(row.workflowId)) return false;
+    if (held === "*" || (row.scope !== "external" && !packKinds.has(row.kind))) return true;
+    return held.has(row.kind);
+  };
 }

@@ -1,5 +1,6 @@
 import { enqueue, QUEUE } from "@neko/db/jobs";
-import { runWorkflowFilter } from "./entitlement-scope";
+import { holds } from "@neko/db";
+import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
 import {
   createActionRequest,
   getActionRequest,
@@ -855,6 +856,12 @@ export class InProcessControlPlane implements AgentControlPlane {
       });
       if (!gate.ok) {
         throw new Error(`source_config_admin: ${gate.error}`);
+      }
+    }
+    if (input.workRunId && (await actionKindIsGranted(input.orgId, input.kind, input.scope))) {
+      const actor = await entitlementActorForRun(input.orgId, input.workRunId);
+      if (!actor || !(await holds(actor, "action", input.kind)).allowed) {
+        throw new Error(`action ${input.kind} is not available to this run`);
       }
     }
     const workerAdminUrl = process.env.WORKER_ADMIN_URL?.trim();

@@ -1,6 +1,6 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
 import { getGraphjinConfigSettingsForOrg, heldItems } from "@neko/db";
-import { runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
+import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
   AgentEvent,
@@ -442,11 +442,13 @@ async function runChatTurnTraced(
     });
 
     const runActor = await runEntitlementActor(orgId, actor);
-    const [allowedSkills, allowedLibrary, teamMemory] = await startupPhase("identity.entitlements", () =>
+    const [allowedSkills, allowedLibrary, teamMemory, heldPluginActions, heldPackActions] = await startupPhase("identity.entitlements", () =>
       Promise.all([
         runHeldItemIds(runActor, "skill"),
         runAllowedLibrary(runActor),
         heldItems(runActor, "team_memory"),
+        filterHeldActions(runActor, opts.pluginActions ?? []),
+        filterHeldActions(runActor, opts.packActions ?? []),
       ]));
     const [memoryContext, installedSkills, profile] = await Promise.all([
       customerSurface
@@ -515,7 +517,7 @@ async function runChatTurnTraced(
         opts.nativeDelegation !== "disabled",
       pluginCatalog,
       inlineTranscript,
-      pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
+      pluginActions: customerSurface ? heldPluginActions : [],
       dataSurface,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
@@ -546,8 +548,8 @@ async function runChatTurnTraced(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
-      pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
-      packActions: customerSurface ? (opts.packActions ?? []) : [],
+      pluginActions: customerSurface ? heldPluginActions : [],
+      packActions: customerSurface ? heldPackActions : [],
       sourceConfigEnabled: supportsSourceConfigTool,
       dataSurface,
       ...(opts.graphjinToolPolicy
