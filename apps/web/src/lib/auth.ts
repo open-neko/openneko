@@ -42,9 +42,12 @@ import {
   inArray,
   isNull,
   sql,
-  sso_group,
   sso_group_mapping,
-  sso_group_membership,
+  ADMINISTRATORS_GROUP_SLUG,
+  GroupError,
+  idp_group_rule,
+  reconcileSignInGroups,
+  user_group,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 import { upsertOperatorProfile } from "@neko/llm/work";
@@ -285,6 +288,7 @@ export interface PluginStatus {
   kinds: string[];
   vmsRunning: number;
   authProvider?: string | null;
+  directoryProvider?: string | null;
   channels: Array<{
     pluginId: string;
     providerLabel: string;
@@ -473,7 +477,11 @@ export async function upsertUserFromIdentity(
     // Brand new user. Bootstrap the first active admin so installing an SSO
     // plugin cannot leave an org with no administrator.
     const newId = `usr_${randomBytes(9).toString("base64url")}`;
-    const fallbackRole = heuristicRoleForGroups(identity.groups ?? []);
+    // Group-name admins apply only until the org maps an IdP group to
+    // Administrators; from then on rules decide.
+    const fallbackRole = (await orgHasAdministratorsRule(orgId, tx))
+      ? "member"
+      : heuristicRoleForGroups(identity.groups ?? []);
     const role = (await orgHasActiveAdmin(orgId, tx))
       ? (mapped.role ?? fallbackRole)
       : "admin";
@@ -484,17 +492,31 @@ export async function upsertUserFromIdentity(
       name: identity.name ?? null,
       org_id: orgId,
       role,
+      source: provider,
       last_login_at: new Date(),
     });
     return { id: newId, name: identity.name ?? null };
   });
-  await syncSsoGroups({ orgId, userId: resolved.id, identity });
+  await syncIdentityGroups({ orgId, userId: resolved.id, identity });
   await provisionPersona({ orgId, userId: resolved.id, identity, mapped });
   return {
     id: resolved.id,
     email: identity.email,
     name: resolved.name,
   };
+}
+
+async function orgHasAdministratorsRule(
+  orgId: string,
+  runner: Pick<ReturnType<typeof db>, "select"> = db(),
+): Promise<boolean> {
+  const [rule] = await runner
+    .select({ id: idp_group_rule.id })
+    .from(idp_group_rule)
+    .innerJoin(user_group, eq(user_group.id, idp_group_rule.user_group_id))
+    .where(and(eq(idp_group_rule.org_id, orgId), eq(user_group.slug, ADMINISTRATORS_GROUP_SLUG)))
+    .limit(1);
+  return Boolean(rule);
 }
 
 async function orgHasActiveAdmin(
@@ -610,76 +632,33 @@ function normalizedIdentityGroups(identity: AuthIdentity): Array<{
   }));
 }
 
-/** Sign-in claim sync fallback. SCIM writes the same tables when available. */
-async function syncSsoGroups(input: {
+/**
+ * Sign-in claim sync. Records the user's IdP groups and applies IdP rules.
+ * A sync that would remove the last administrator is skipped so sign-in
+ * still succeeds with the previous groups.
+ */
+async function syncIdentityGroups(input: {
   orgId: string;
   userId: string;
   identity: AuthIdentity;
 }): Promise<void> {
   const provider = (await getAuthProvider())?.pluginName ?? "oidc";
   const tenantId = input.identity.orgId?.trim() || input.orgId;
-  const groups = normalizedIdentityGroups(input.identity);
-  await db().transaction(async (tx) => {
-    const groupIds: string[] = [];
-    for (const group of groups) {
-      const [row] = await tx
-        .insert(sso_group)
-        .values({
-          org_id: input.orgId,
-          provider,
-          tenant_id: tenantId,
-          external_id: group.externalId,
-          display_name: group.displayName,
-          active: true,
-          updated_at: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [
-            sso_group.org_id,
-            sso_group.provider,
-            sso_group.tenant_id,
-            sso_group.external_id,
-          ],
-          set: {
-            display_name: group.displayName,
-            active: true,
-            updated_at: new Date(),
-          },
-        })
-        .returning({ id: sso_group.id });
-      if (row) groupIds.push(row.id);
+  try {
+    await reconcileSignInGroups({
+      orgId: input.orgId,
+      userId: input.userId,
+      provider,
+      tenantId,
+      groups: normalizedIdentityGroups(input.identity),
+    });
+  } catch (err) {
+    if (err instanceof GroupError && err.code === "lockout") {
+      console.warn(`[auth] kept previous groups for ${input.userId}: ${err.message}`);
+      return;
     }
-    await tx
-      .delete(sso_group_membership)
-      .where(
-        and(
-          eq(sso_group_membership.org_id, input.orgId),
-          eq(sso_group_membership.user_id, input.userId),
-        ),
-      );
-    if (groupIds.length > 0) {
-      await tx.insert(sso_group_membership).values(
-        groupIds.map((groupId) => ({
-          org_id: input.orgId,
-          group_id: groupId,
-          user_id: input.userId,
-          synced_at: new Date(),
-        })),
-      );
-    }
-    await tx.execute(sql`
-      insert into sso_group_sync_audit
-        (org_id, user_id, provider, tenant_id, external_group_ids)
-      values (
-        ${input.orgId}, ${input.userId}, ${provider}, ${tenantId},
-        (ARRAY[${sql.raw(
-          groups
-            .map((group) => `'${group.externalId.replace(/'/g, "''")}'`)
-            .join(","),
-        )}])::text[]
-      )
-    `);
-  });
+    throw err;
+  }
 }
 
 export function encodeSession(payload: SessionPayload): string {

@@ -189,6 +189,7 @@ describe("PluginRegistry", () => {
       kinds: [],
       vmsRunning: 0,
       authProvider: null,
+      directoryProvider: null,
       channels: [],
     });
     await reg.stop();
@@ -924,6 +925,87 @@ describe("PluginRegistry — auth provider", () => {
     expect(reg.status().skipped.some((s) => /auth capability/.test(s.reason))).toBe(
       true,
     );
+    await reg.stop();
+  });
+});
+
+// ─── directory capability ──────────────────────────────────────────────
+
+describe("PluginRegistry — directory capability", () => {
+  let repoRoot: string;
+  let workRoot: string;
+  let secretsConfigDir: string;
+  let runnerPath: string;
+
+  beforeEach(async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), "neko-registry-directory-"));
+    workRoot = await mkdtemp(path.join(tmpdir(), "neko-registry-directory-work-"));
+    secretsConfigDir = await mkdtemp(path.join(tmpdir(), "neko-registry-directory-secrets-"));
+    runnerPath = path.join(repoRoot, "fake-runner.js");
+    await writeFakeRunner(runnerPath);
+  });
+
+  afterEach(async () => {
+    await rm(repoRoot, { recursive: true, force: true });
+    await rm(workRoot, { recursive: true, force: true });
+    await rm(secretsConfigDir, { recursive: true, force: true });
+  });
+
+  function newRegistry(runtime: PluginRuntime) {
+    return new PluginRegistry({ repoRoot, workRoot, secretsConfigDir, runtime, resolveRunner: () => runnerPath });
+  }
+
+  function directoryEntry(name: string, label: string) {
+    return {
+      name,
+      version: "0.1.0",
+      integrity: FAKE_INTEGRITY,
+      permissions: { network: ["*.example.com"], env: [] },
+      capabilities: { directory: { providerLabel: label, write: { createUser: true } } },
+    };
+  }
+
+  it("uses the first directory plugin, pages list_directory and refuses undeclared writes", async () => {
+    await writeFile(
+      path.join(repoRoot, "openneko.plugins.json"),
+      JSON.stringify({
+        schema: "https://open-neko.github.io/plugins/manifest.schema.json",
+        plugins: [directoryEntry("@open-neko/plugin-scalekit", "Scalekit"), directoryEntry("@acme/plugin-okta-scim", "Okta")],
+      }),
+      "utf8",
+    );
+    const runtime = new FakeRuntime({
+      responses: {
+        register: rpcOk({
+          protocol: RPC_PROTOCOL_VERSION,
+          pluginName: "@open-neko/plugin-scalekit",
+          pluginVersion: "0.1.0",
+          capabilities: { directory: { providerLabel: "Scalekit", read: { users: true, groups: true, memberships: true }, write: { createUser: true, deactivateUser: false } } },
+        }),
+        list_directory: rpcOk({ result: { tenantId: "t1", users: [{ externalId: "u1", email: "a@x.test" }] } }),
+        apply_directory_change: rpcOk({ result: { user: null } }),
+      },
+    });
+    const reg = newRegistry(runtime);
+    await reg.start();
+    expect(reg.getDirectoryProvider()).toMatchObject({ pluginName: "@open-neko/plugin-scalekit" });
+    expect(reg.status().directoryProvider).toBe(reg.getDirectoryProvider()!.pluginId);
+    expect(reg.status().skipped.some((s) => /directory capability/.test(s.reason))).toBe(true);
+
+    const page = await reg.listDirectory("c1");
+    expect(page.users[0]).toMatchObject({ email: "a@x.test", active: true });
+    expect(JSON.parse(runtime.rpcs.find((r) => r.method === "list_directory")!.paramsJson)).toEqual({ params: { cursor: "c1" } });
+
+    await reg.applyDirectoryChange({ op: "create_user", email: "b@x.test" });
+    await expect(reg.applyDirectoryChange({ op: "deactivate_user", externalId: "u1" })).rejects.toThrow(/does not accept/);
+    await reg.stop();
+  });
+
+  it("throws a clear message when no directory plugin is installed", async () => {
+    const reg = newRegistry(new FakeRuntime());
+    await reg.start();
+    expect(reg.getDirectoryProvider()).toBeNull();
+    await expect(reg.listDirectory(null)).rejects.toThrow("no directory plugin installed");
     await reg.stop();
   });
 });

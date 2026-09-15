@@ -57,6 +57,11 @@ import {
   startSsoSetupPoller,
 } from "./sso/sso-setup-service.js";
 import {
+  DIRECTORY_SYNC_CRON,
+  directoryStatus,
+  runDirectorySync,
+} from "./directory/directory-service.js";
+import {
   and,
   app_user,
   data_source,
@@ -540,6 +545,7 @@ const server = createServer(
           kinds: [],
           vmsRunning: 0,
           authProvider: null,
+          directoryProvider: null,
           channels: [],
         },
       getRegisteredActionDescriptors: () =>
@@ -585,6 +591,13 @@ const server = createServer(
       getInstallPolicy: async () => {
         const { getInstallPolicyForOrg } = await import("@neko/db");
         return getInstallPolicyForOrg(ADMIN_ORG_ID);
+      },
+    },
+    directory: {
+      status: async () => directoryStatus(pluginRegistry, await getOrgId()),
+      sync: async () => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return runDirectorySync(pluginRegistry, await getOrgId());
       },
     },
     packs: {
@@ -1411,6 +1424,17 @@ await b.work(
     }
   },
 );
+
+await b.work(QUEUE.DIRECTORY_SYNC, async () => {
+  if (!pluginRegistry?.getDirectoryProvider()) return;
+  try {
+    const stats = await runDirectorySync(pluginRegistry, await getOrgId());
+    console.log(`[directory-sync] ${JSON.stringify(stats)}`);
+  } catch (e) {
+    console.warn(`[directory-sync] failed: ${e instanceof Error ? e.message : e}`);
+  }
+});
+await b.schedule(QUEUE.DIRECTORY_SYNC, DIRECTORY_SYNC_CRON, {}, { tz: "UTC", retryLimit: 0 });
 
 await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
   tz: "UTC",

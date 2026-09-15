@@ -25,6 +25,8 @@
  *                               Proxies to the installed auth plugin's
  *                               complete_auth RPC.
  *   GET  /admin/plugins/status → 200 + registry health/status summary.
+ *   GET  /admin/directory/status → directory plugin and last sync state.
+ *   POST /admin/directory/sync  → run a full directory sync now.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
  *
@@ -301,6 +303,7 @@ export interface PluginRegistryStatus {
   kinds: string[];
   vmsRunning: number;
   authProvider?: string | null;
+  directoryProvider?: string | null;
   channels: Array<{
     pluginId: string;
     providerLabel: string;
@@ -314,6 +317,7 @@ const EMPTY_PLUGIN_STATUS: PluginRegistryStatus = {
   kinds: [],
   vmsRunning: 0,
   authProvider: null,
+  directoryProvider: null,
   channels: [],
 };
 
@@ -380,7 +384,14 @@ export type AdminHandlerOptions = {
   actionRequests?: ActionRequestHandlerSurface | null;
   /** Shared first-party and uploaded solution-pack lifecycle. */
   packs?: PacksHandlerSurface | null;
+  /** Directory plugin status and on-demand sync. */
+  directory?: DirectoryHandlerSurface | null;
 };
+
+export interface DirectoryHandlerSurface {
+  status(): Promise<unknown>;
+  sync(): Promise<unknown>;
+}
 
 export interface ActionRequestHandlerSurface {
   create(input: Record<string, unknown>): Promise<{ id: string; status: string }>;
@@ -440,6 +451,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const recordsImports = opts.recordsImports ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const packs = opts.packs ?? null;
+  const directory = opts.directory ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -541,6 +553,10 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       req.url === "/admin/plugins/action-descriptors"
     ) {
       handlePluginActionDescriptors(res, plugins);
+      return;
+    }
+    if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync") {
+      void handleDirectory(req, res, directory);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/plugins/status") {
@@ -993,6 +1009,29 @@ function handlePluginActionDescriptors(
 ) {
   const descriptors = plugins?.getRegisteredActionDescriptors() ?? [];
   json(res, 200, { descriptors });
+}
+
+async function handleDirectory(
+  req: IncomingMessage,
+  res: ServerResponse,
+  directory: DirectoryHandlerSurface | null,
+) {
+  if (!directory) {
+    json(res, 503, { error: "directory is not configured" });
+    return;
+  }
+  const sync = req.url === "/admin/directory/sync";
+  if (req.method !== (sync ? "POST" : "GET")) {
+    json(res, 405, { error: "method not allowed" });
+    return;
+  }
+  try {
+    json(res, 200, sync ? { stats: await directory.sync() } : await directory.status());
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : 500;
+    json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
+  }
 }
 
 function handlePluginStatus(

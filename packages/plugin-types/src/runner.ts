@@ -1,4 +1,8 @@
 import {
+  ApplyDirectoryChangeRpcParams,
+  ApplyDirectoryChangeRpcResult,
+  ListDirectoryRpcParams,
+  ListDirectoryRpcResult,
   BeginAuthRpcParams,
   BeginAuthRpcResult,
   BeginConnectRpcParams,
@@ -27,6 +31,7 @@ import {
   VerifyInboundParams,
   VerifyInboundResult,
 } from "./channel.js";
+import { DirectoryCapabilityDeclaration, directoryChangeAllowed } from "./directory.js";
 import type { PluginDefinition } from "./define-plugin.js";
 
 export interface RunPluginOptions {
@@ -68,6 +73,10 @@ export async function dispatchPluginRpc(
         return rpcOk(await runVerifyInbound(plugin, options.paramsJson));
       case "poll_inbound":
         return rpcOk(await runPollInbound(plugin, options.paramsJson));
+      case "list_directory":
+        return rpcOk(await runListDirectory(plugin, options.paramsJson));
+      case "apply_directory_change":
+        return rpcOk(await runApplyDirectoryChange(plugin, options.paramsJson));
       default:
         return rpcErr("UNKNOWN_METHOD", `unknown RPC method: ${options.method}`);
     }
@@ -113,6 +122,7 @@ function buildRegisterResult(plugin: PluginDefinition): RegisterResult {
             ingress: caps.channel.ingress ?? "none",
           }
         : undefined,
+      directory: caps.directory ? directoryDeclaration(plugin) : undefined,
     },
   });
 }
@@ -132,6 +142,35 @@ async function runExecuteAction(
   }
   const outcome = await action.handler(parsed.request);
   return ExecuteActionResult.parse({ outcome });
+}
+
+function directoryDeclaration(plugin: PluginDefinition): DirectoryCapabilityDeclaration {
+  const directory = plugin.capabilities.directory!;
+  return DirectoryCapabilityDeclaration.parse({
+    providerLabel: directory.providerLabel,
+    read: { users: true, groups: true, memberships: true, ...directory.read },
+    write: { createUser: false, deactivateUser: false, ...directory.write },
+  });
+}
+
+async function runListDirectory(plugin: PluginDefinition, paramsJson: string): Promise<ListDirectoryRpcResult> {
+  const directory = plugin.capabilities.directory;
+  if (!directory) throw new Error("plugin does not implement a directory capability");
+  const parsed = ListDirectoryRpcParams.parse(JSON.parse(paramsJson));
+  return ListDirectoryRpcResult.parse({ result: await directory.list(parsed.params) });
+}
+
+async function runApplyDirectoryChange(
+  plugin: PluginDefinition,
+  paramsJson: string,
+): Promise<ApplyDirectoryChangeRpcResult> {
+  const directory = plugin.capabilities.directory;
+  if (!directory) throw new Error("plugin does not implement a directory capability");
+  const parsed = ApplyDirectoryChangeRpcParams.parse(JSON.parse(paramsJson));
+  if (!directory.apply || !directoryChangeAllowed(directoryDeclaration(plugin), parsed.params.change)) {
+    throw new Error(`plugin does not accept directory change "${parsed.params.change.op}"`);
+  }
+  return ApplyDirectoryChangeRpcResult.parse({ result: await directory.apply(parsed.params) });
 }
 
 async function runBeginAuth(

@@ -4,5 +4,6 @@ export * from "./channel.js";
 export * from "./action.js";
 export * from "./auth.js";
 export * from "./connect.js";
+export * from "./directory.js";
 export * from "./define-plugin.js";
 export * from "./runner.js";
