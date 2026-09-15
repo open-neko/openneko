@@ -37,7 +37,17 @@ type ActionCapability struct {
 }
 
 type AuthCapability struct {
-	ProviderLabel string `json:"providerLabel,omitempty"`
+	ProviderLabel     string `json:"providerLabel,omitempty"`
+	Provisioning      string `json:"provisioning,omitempty"`
+	LoginHintRequired bool   `json:"loginHintRequired,omitempty"`
+}
+
+// DirectoryCapability lists identity provider users and groups. Read and
+// Write are carried as raw JSON; the worker validates them.
+type DirectoryCapability struct {
+	ProviderLabel string          `json:"providerLabel"`
+	Read          json.RawMessage `json:"read,omitempty"`
+	Write         json.RawMessage `json:"write,omitempty"`
 }
 
 type ConnectCapability struct {
@@ -60,10 +70,11 @@ type ChannelCapability struct {
 }
 
 type Capabilities struct {
-	Action  *ActionCapability  `json:"action,omitempty"`
-	Auth    *AuthCapability    `json:"auth,omitempty"`
-	Connect *ConnectCapability `json:"connect,omitempty"`
-	Channel *ChannelCapability `json:"channel,omitempty"`
+	Action    *ActionCapability    `json:"action,omitempty"`
+	Auth      *AuthCapability      `json:"auth,omitempty"`
+	Connect   *ConnectCapability   `json:"connect,omitempty"`
+	Channel   *ChannelCapability   `json:"channel,omitempty"`
+	Directory *DirectoryCapability `json:"directory,omitempty"`
 }
 
 type Version struct {

@@ -464,10 +464,11 @@ type pkgPermissions struct {
 }
 
 type pkgCapabilities struct {
-	Action  *manifest.ActionCapability  `json:"action,omitempty"`
-	Auth    *manifest.AuthCapability    `json:"auth,omitempty"`
-	Connect *manifest.ConnectCapability `json:"connect,omitempty"`
-	Channel *manifest.ChannelCapability `json:"channel,omitempty"`
+	Action    *manifest.ActionCapability    `json:"action,omitempty"`
+	Auth      *manifest.AuthCapability      `json:"auth,omitempty"`
+	Connect   *manifest.ConnectCapability   `json:"connect,omitempty"`
+	Channel   *manifest.ChannelCapability   `json:"channel,omitempty"`
+	Directory *manifest.DirectoryCapability `json:"directory,omitempty"`
 }
 
 type pkgOpenneko struct {
@@ -542,7 +543,11 @@ func convertCapabilities(c marketplace.Capabilities) manifest.Capabilities {
 		out.Action = &manifest.ActionCapability{Kinds: acts}
 	}
 	if c.Auth != nil {
-		out.Auth = &manifest.AuthCapability{ProviderLabel: c.Auth.ProviderLabel}
+		out.Auth = &manifest.AuthCapability{
+			ProviderLabel:     c.Auth.ProviderLabel,
+			Provisioning:      c.Auth.Provisioning,
+			LoginHintRequired: c.Auth.LoginHintRequired,
+		}
 	}
 	if c.Connect != nil {
 		out.Connect = &manifest.ConnectCapability{
@@ -558,6 +563,13 @@ func convertCapabilities(c marketplace.Capabilities) manifest.Capabilities {
 			Profile:       c.Channel.Profile,
 			Directions:    c.Channel.Directions,
 			Ingress:       c.Channel.Ingress,
+		}
+	}
+	if c.Directory != nil {
+		out.Directory = &manifest.DirectoryCapability{
+			ProviderLabel: c.Directory.ProviderLabel,
+			Read:          c.Directory.Read,
+			Write:         c.Directory.Write,
 		}
 	}
 	return out
@@ -579,6 +591,9 @@ func convertOpennekoCapabilities(c *pkgCapabilities) manifest.Capabilities {
 	}
 	if c.Channel != nil {
 		out.Channel = c.Channel
+	}
+	if c.Directory != nil {
+		out.Directory = c.Directory
 	}
 	return out
 }
