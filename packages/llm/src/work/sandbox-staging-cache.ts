@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
 import { cp, lstat, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -45,14 +46,14 @@ async function dispose(entry: Entry): Promise<void> {
 
 class InputsChanged extends Error {}
 
-export function acquireStableSandboxInputs(workspace: StableWorkspace, requiredSkills: readonly string[] = [], allowedSkills?: readonly string[]) {
-  return acquireInputs(workspace, requiredSkills, allowedSkills, 0);
+export function acquireStableSandboxInputs(workspace: StableWorkspace, requiredSkills: readonly string[] = [], allowedSkills?: readonly string[], allowedLibrary?: AllowedLibrary) {
+  return acquireInputs(workspace, requiredSkills, allowedSkills, allowedLibrary, 0);
 }
 
-async function acquireInputs(workspace: StableWorkspace, requiredSkills: readonly string[], allowedSkills: readonly string[] | undefined, attempt: number): Promise<Snapshot & { hit: boolean; release: () => Promise<void> }> {
+async function acquireInputs(workspace: StableWorkspace, requiredSkills: readonly string[], allowedSkills: readonly string[] | undefined, allowedLibrary: AllowedLibrary | undefined, attempt: number): Promise<Snapshot & { hit: boolean; release: () => Promise<void> }> {
   const library = path.join(workspace.orgRoot, 'library', 'okf');
   const overlay = path.join(workspace.orgRoot, 'skill-overlays');
-  const key = JSON.stringify([workspace.orgRoot, [...requiredSkills].sort(), allowedSkills ? [...allowedSkills].sort() : null]);
+  const key = JSON.stringify([workspace.orgRoot, [...requiredSkills].sort(), allowedSkills ? [...allowedSkills].sort() : null, allowedLibrary ? [[...allowedLibrary.prefixes].sort(), [...allowedLibrary.paths].sort()] : null]);
   const revision = await Promise.all([knowledgeRevision(workspace.knowledgeRoot), ...[workspace.skillsRoot, library, overlay].map(treeRevision)]).then(parts => parts.join(':'));
   let entry = cache.get(key);
   let retired: Entry | undefined;
@@ -71,7 +72,8 @@ async function acquireInputs(workspace: StableWorkspace, requiredSkills: readonl
         } else {
           await cp(workspace.knowledgeRoot, path.join(root, 'knowledge'), { recursive: true }).catch(error => { if (error.code !== 'ENOENT') throw error; });
         }
-        await cp(library, path.join(root, 'library', 'okf'), { recursive: true }).catch(error => { if (error.code !== 'ENOENT') throw error; });
+        if (allowedLibrary) await copyAllowedTeamLibrary(library, path.join(root, 'library', 'okf'), allowedLibrary);
+        else await cp(library, path.join(root, 'library', 'okf'), { recursive: true }).catch(error => { if (error.code !== 'ENOENT') throw error; });
         const skillOverrides = await copySkillOverrides(workspace.skillsRoot, path.join(root, 'skills'), requiredSkills, allowedSkills);
         // A publisher may have changed inputs during construction. Never cache a mixed generation.
         const after = await Promise.all([knowledgeRevision(workspace.knowledgeRoot), ...[workspace.skillsRoot, library, overlay].map(treeRevision)]).then(parts => parts.join(':'));
@@ -98,7 +100,7 @@ async function acquireInputs(workspace: StableWorkspace, requiredSkills: readonl
     if (cache.get(key) === held) cache.delete(key);
     held.retired = true;
     await release();
-    if (error instanceof InputsChanged && attempt < 2) return acquireInputs(workspace, requiredSkills, allowedSkills, attempt + 1);
+    if (error instanceof InputsChanged && attempt < 2) return acquireInputs(workspace, requiredSkills, allowedSkills, allowedLibrary, attempt + 1);
     throw error;
   }
 }

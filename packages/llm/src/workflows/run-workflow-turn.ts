@@ -1,6 +1,6 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { pool, resolveUserGroups } from "@neko/db";
-import { runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
+import { runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import type { AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
@@ -285,10 +285,12 @@ async function runWorkflowTurnTraced(
       ...(backend.model ? { model: backend.model } : {}),
       inputBytes: Buffer.byteLength(`${prompt}\n\n${seedMessage}`, "utf8"),
     });
-    const allowedSkills = await startupPhase("identity.entitlements", async () =>
-      runHeldItemIds(await runEntitlementActor(orgId, await getWorkRunActor(workRunId), { workflowId: workflow.id }), "skill"));
+    const runActor = await runEntitlementActor(orgId, await getWorkRunActor(workRunId), { workflowId: workflow.id });
+    const [allowedSkills, allowedLibrary] = await startupPhase("identity.entitlements", () =>
+      Promise.all([runHeldItemIds(runActor, "skill"), runAllowedLibrary(runActor)]));
     const result = await runCore({
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
       prompt,
       userMessage: seedMessage,

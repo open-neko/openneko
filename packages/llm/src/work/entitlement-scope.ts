@@ -1,4 +1,5 @@
-import { heldItems, packsContaining, type EntitlementActor, type ItemType } from "@neko/db";
+import { eq, heldItems, packsContaining, type EntitlementActor, type HeldItems, type ItemType } from "@neko/db";
+import type { AllowedLibrary } from "../library/staging";
 
 /**
  * The entitlement actor for an agent run. A user run resolves through the
@@ -62,4 +63,24 @@ export async function runWorkflowFilter(
     if (owner) return admin || held === "*";
     return held === "*" || held.has(workflow.id);
   };
+}
+
+export async function libraryAccessFor(actor: EntitlementActor): Promise<{ concepts: HeldItems; collections: HeldItems }> {
+  const [concepts, collections] = await Promise.all([heldItems(actor, "library_concept"), heldItems(actor, "library_collection")]);
+  return { concepts, collections };
+}
+
+/** Team library files a run may stage, or undefined for the whole team library. */
+export async function runAllowedLibrary(actor: EntitlementActor): Promise<AllowedLibrary | undefined> {
+  const access = await libraryAccessFor(actor);
+  if (access.concepts === "*" || access.collections === "*") return undefined;
+  const ids = [...access.concepts];
+  const { and, db, inArray, isNull, library_concept } = await import("@neko/db");
+  const paths = ids.length
+    ? (await db()
+        .select({ path: library_concept.path })
+        .from(library_concept)
+        .where(and(eq(library_concept.org_id, actor.orgId), isNull(library_concept.user_id), inArray(library_concept.id, ids)))).map((r) => r.path)
+    : [];
+  return { prefixes: [...access.collections].sort(), paths: paths.sort() };
 }

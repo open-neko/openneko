@@ -3,6 +3,7 @@ import { archiveLibraryConcept, editLibraryConcept, readLibraryConcept } from "@
 import { materializeTeamLibrary } from "@neko/llm";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { currentLibraryReader } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,8 +32,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const parsed = parseEdit(await request.json().catch(() => null));
   if (!parsed) return NextResponse.json({ error: "Provide a title, type and content within the field limits." }, { status: 400 });
   const orgId = await getOrgId();
-  const actor = await getCurrentActor();
-  const result = await editLibraryConcept({ orgId, userId: actor.userId, isAdmin: actor.role === "admin" }, { id, ...parsed });
+  const result = await editLibraryConcept(await currentLibraryReader(), { id, ...parsed });
   if (result.status === "not_found") return NextResponse.json({ error: "Not found or not editable." }, { status: 404 });
   if (result.status === "conflict") return NextResponse.json({ error: "This concept changed while you were editing. Copy your changes, then reload the latest version." }, { status: 409 });
   if (result.concept.userId === null) await materializeTeamLibrary(orgId);
@@ -44,9 +44,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
-  const orgId = await getOrgId();
-  const actor = await getCurrentActor();
-  const concept = await readLibraryConcept({ orgId, userId: actor.userId, isAdmin: actor.role === "admin" }, id);
+  const concept = await readLibraryConcept(await currentLibraryReader(), id);
   return concept ? NextResponse.json({ concept }) : NextResponse.json({ error: "Not found." }, { status: 404 });
 }
 

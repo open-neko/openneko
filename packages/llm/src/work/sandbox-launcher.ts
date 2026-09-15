@@ -1,4 +1,5 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
+import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
 import { createHash, randomUUID } from "node:crypto";
 import { RECONCILE_COMMAND, syncSandboxDirectories } from "./sandbox-sync";
 import { acquireStableSandboxInputs, clearStableSandboxInputs, type StableWorkspace } from "./sandbox-staging-cache";
@@ -116,6 +117,8 @@ export type RunJobAgentBackendInput = {
   access: AgentJobAccess;
   /** Skill names the job's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
+  /** Team library files the actor holds. Undefined means the whole team library. */
+  allowedLibrary?: AllowedLibrary;
   emit: (event: AgentEvent) => Promise<void>;
 };
 
@@ -298,7 +301,7 @@ async function copyDirectoryIfPresent(
 export async function stageSandboxWorkspace(
   workspace: AgentWorkspace,
   stageDir: string,
-  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; cached?: boolean } = {},
+  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; allowedLibrary?: AllowedLibrary; cached?: boolean } = {},
 ): Promise<StagedSandboxWorkspace> {
   const stageOrgRoot = path.join(
     stageDir,
@@ -313,7 +316,7 @@ export async function stageSandboxWorkspace(
   ) as AgentWorkspace;
 
   await mkdir(stageOrgRoot, { recursive: true });
-  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames, options.allowedSkills) : undefined;
+  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames, options.allowedSkills, options.allowedLibrary) : undefined;
   try {
   const knowledge = stable ? null : await readKnowledgeSnapshot(workspace.knowledgeRoot);
   await Promise.all([
@@ -331,10 +334,16 @@ export async function stageSandboxWorkspace(
     // never writes personal-layer rows there, so staging it leaks nothing;
     // personal concepts reach the agent via mcp_neko_library_search,
     // scoped server-side to the run's owner).
-    stable ? Promise.resolve() : copyDirectoryIfPresent(
-      path.join(workspace.orgRoot, "library", "okf"),
-      path.join(stageOrgRoot, "library", "okf"),
-    ),
+    stable ? Promise.resolve() : options.allowedLibrary
+      ? copyAllowedTeamLibrary(
+          path.join(workspace.orgRoot, "library", "okf"),
+          path.join(stageOrgRoot, "library", "okf"),
+          options.allowedLibrary,
+        )
+      : copyDirectoryIfPresent(
+          path.join(workspace.orgRoot, "library", "okf"),
+          path.join(stageOrgRoot, "library", "okf"),
+        ),
   ]);
 
   // Preserve the expected workspace shape even when a selected source is
@@ -692,6 +701,7 @@ function makeSandboxCore(
         // upgrade even if the sandbox image predates the records skill.
         requiredSkillNames: recordsScoped ? ["records"] : [],
         ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
+        ...(input.allowedLibrary ? { allowedLibrary: input.allowedLibrary } : {}),
         cached: Boolean(pool),
       }));
       stableInputs = staged.stable;
@@ -741,7 +751,7 @@ function makeSandboxCore(
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,

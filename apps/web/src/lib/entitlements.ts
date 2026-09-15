@@ -100,3 +100,17 @@ export async function requireWorkflowRun(workflowRunId: string): Promise<NextRes
   const denied = await requireWorkflow(row.workflowId);
   return denied ? itemNotFound("Run not found") : null;
 }
+
+/** Library reader for the current user, limited to held team concepts. */
+export async function currentLibraryReader() {
+  const orgId = await getOrgId();
+  const actor = await getCurrentActor();
+  const entitlementActor = await currentEntitlementActor();
+  const access = entitlementActor
+    ? {
+        concepts: await heldItems(entitlementActor, "library_concept"),
+        collections: await heldItems(entitlementActor, "library_collection"),
+      }
+    : { concepts: new Set<string>(), collections: new Set<string>() };
+  return { orgId, userId: actor.userId, isAdmin: actor.role === "admin", access };
+}

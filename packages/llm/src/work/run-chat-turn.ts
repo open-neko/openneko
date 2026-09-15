@@ -1,6 +1,6 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
 import { getGraphjinConfigSettingsForOrg } from "@neko/db";
-import { runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
+import { runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
   AgentEvent,
@@ -441,8 +441,9 @@ async function runChatTurnTraced(
       message: "Retrieving relevant context…",
     });
 
-    const allowedSkills = await startupPhase("identity.entitlements", async () =>
-      runHeldItemIds(await runEntitlementActor(orgId, actor), "skill"));
+    const runActor = await runEntitlementActor(orgId, actor);
+    const [allowedSkills, allowedLibrary] = await startupPhase("identity.entitlements", () =>
+      Promise.all([runHeldItemIds(runActor, "skill"), runAllowedLibrary(runActor)]));
     const [memoryContext, installedSkills, profile] = await Promise.all([
       customerSurface
         ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
@@ -531,6 +532,7 @@ async function runChatTurnTraced(
     const result = await runCore({
       ...(sandboxUser ? { sandboxUser } : {}),
       ...(allowedSkills && customerSurface ? { allowedSkills } : {}),
+      ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
       prompt,
       userMessage: message,
