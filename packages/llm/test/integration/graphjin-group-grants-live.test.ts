@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -39,18 +39,9 @@ async function freePort(): Promise<number> {
     const port = await freePort();
     endpoint = `http://127.0.0.1:${port}/api/v1/graphql`;
 
-    const { default: Database } = await import("better-sqlite3").catch(() => ({ default: null }));
     const dbPath = join(dir, "shop.db");
-    if (Database) {
-      const sqlite = new Database(dbPath);
-      sqlite.exec(`CREATE TABLE orders (id INTEGER PRIMARY KEY, account_id TEXT NOT NULL, region TEXT NOT NULL, amount INTEGER NOT NULL);
-        INSERT INTO orders VALUES (1, '${ORG}', 'emea', 10), (2, '${ORG}', 'apac', 20), (3, 'other', 'emea', 30);`);
-      sqlite.close();
-    } else {
-      const { execFileSync } = await import("node:child_process");
-      execFileSync("sqlite3", [dbPath, `CREATE TABLE orders (id INTEGER PRIMARY KEY, account_id TEXT NOT NULL, region TEXT NOT NULL, amount INTEGER NOT NULL);
-        INSERT INTO orders VALUES (1, '${ORG}', 'emea', 10), (2, '${ORG}', 'apac', 20), (3, 'other', 'emea', 30);`]);
-    }
+    execFileSync("sqlite3", [dbPath, `CREATE TABLE orders (id INTEGER PRIMARY KEY, account_id TEXT NOT NULL, region TEXT NOT NULL, amount INTEGER NOT NULL);
+      INSERT INTO orders VALUES (1, '${ORG}', 'emea', 10), (2, '${ORG}', 'apac', 20), (3, 'other', 'emea', 30);`]);
 
     const base = `app_name: OpenNeko group grants test
 mode: agentic
