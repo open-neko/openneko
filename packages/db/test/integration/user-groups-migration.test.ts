@@ -170,6 +170,11 @@ describeIfDb("0074 user groups", () => {
         "insert into user_group_membership (org_id, group_id, user_id, source) values ('org', $1, 'member', $2)",
         [admins, rule],
       );
+      const { rows: ruleOnly } = await client.query(
+        "select source from user_group_membership where group_id = $1 and user_id = 'member'",
+        [admins],
+      );
+      expect(ruleOnly).toEqual([{ source: rule }]);
       await client.query("update app_user set role = 'member' where id = 'member'");
       expect(await adminIds(client, "org")).toEqual(["admin"]);
 

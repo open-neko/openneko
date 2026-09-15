@@ -65,6 +65,7 @@ export const app_user = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    source: text("source").notNull().default("local"),
     // ADM1: a deactivated user can't sign in and their sessions are dead.
     disabled_at: ts("disabled_at"),
     created_at: ts("created_at").notNull().defaultNow(),
@@ -157,6 +158,45 @@ export const sso_group = pgTable(
     id_org_unique: uniqueIndex("sso_group_id_org_unique").on(t.id, t.org_id),
   }),
 );
+
+export const idp_group_rule = pgTable(
+  "idp_group_rule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    sso_group_id: uuid("sso_group_id")
+      .notNull()
+      .references(() => sso_group.id, { onDelete: "cascade" }),
+    user_group_id: uuid("user_group_id")
+      .notNull()
+      .references(() => user_group.id, { onDelete: "cascade" }),
+    created_by_user_id: text("created_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    rule_unique: uniqueIndex("idp_group_rule_org_id_sso_group_id_user_group_id_key").on(
+      t.org_id,
+      t.sso_group_id,
+      t.user_group_id,
+    ),
+    group_idx: index("idp_group_rule_group_idx").on(t.org_id, t.user_group_id),
+  }),
+);
+
+export const directory_sync_state = pgTable("directory_sync_state", {
+  org_id: text("org_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  provider: text("provider"),
+  status: text("status").notNull().default("never"),
+  started_at: ts("started_at"),
+  finished_at: ts("finished_at"),
+  last_error: text("last_error"),
+  stats: jsonb("stats").notNull().default({}),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+});
 
 export const sso_group_membership = pgTable(
   "sso_group_membership",

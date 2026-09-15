@@ -74,7 +74,10 @@ begin
   end if;
   if NEW.role = 'admin' then
     insert into user_group_membership (org_id, group_id, user_id, source)
-    values (NEW.org_id, admins, NEW.id, 'local')
+    select NEW.org_id, admins, NEW.id, 'local'
+    where not exists (
+      select 1 from user_group_membership
+      where org_id = NEW.org_id and group_id = admins and user_id = NEW.id)
     on conflict do nothing;
   elsif TG_OP = 'UPDATE' then
     delete from user_group_membership
