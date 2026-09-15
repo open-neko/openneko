@@ -1515,6 +1515,8 @@ interface GovernedActionDescriptor {
       };
   /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
   example?: Record<string, unknown>;
+  /** Installed plugin that handles the kind; the integration item gates it. */
+  pluginName?: string;
 }
 
 export interface PluginActionDescriptor extends GovernedActionDescriptor {}

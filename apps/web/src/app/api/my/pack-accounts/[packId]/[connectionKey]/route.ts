@@ -4,6 +4,7 @@ import { personalPackActor } from "@/lib/personal-pack-accounts";
 import { newPkceVerifier, newStateToken, pkceChallenge } from "@/lib/integrations";
 import { packOAuthCallbackUri, writePackOAuthState } from "@/lib/pack-oauth";
 import { validPackId } from "@/lib/solution-packs";
+import { holdsItem } from "@/lib/entitlements";
 
 type Context = { params: Promise<{ packId: string; connectionKey: string }> };
 async function manage(request: Request, context: Context) {
@@ -11,6 +12,7 @@ async function manage(request: Request, context: Context) {
     const actor = await personalPackActor();
     const { packId, connectionKey } = await context.params;
     if (!validPackId(packId) || !validPackId(connectionKey)) throw new Error("Invalid pack connection");
+    if (request.method !== "DELETE" && !(await holdsItem("pack", packId))) return NextResponse.json({ error: "Pack not found" }, { status: 404 });
     const redirectUri = packOAuthCallbackUri(request, packId, connectionKey);
     if (request.headers.get("origin") !== new URL(redirectUri).origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
     if (request.method === "DELETE") {

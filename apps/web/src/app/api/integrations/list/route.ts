@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { heldItemIds } from "@/lib/entitlements";
 import {
   getDeploymentConnectStatus,
   getOperatorConnectStatus,
@@ -22,12 +23,14 @@ export async function GET() {
     getOperatorConnectStatus(user.id),
     getDeploymentConnectStatus(),
   ]);
+  const heldIntegrations = await heldItemIds("integration");
+  const held = (pluginName: string) => heldIntegrations === "*" || heldIntegrations.has(pluginName);
   const connectedByPlugin = new Map(status.map((s) => [s.pluginName, s]));
   const deploymentConnectedByPlugin = new Map(
     deploymentStatus.map((s) => [s.pluginName, s]),
   );
   const workspace = providers
-    .filter((p) => p.credentialScope === "deployment")
+    .filter((p) => p.credentialScope === "deployment" && held(p.pluginName))
     .map((p) => ({
       pluginId: p.pluginId,
       pluginName: p.pluginName,
@@ -40,7 +43,7 @@ export async function GET() {
         deploymentConnectedByPlugin.get(p.pluginName)?.connectedAt ?? null,
     }));
   const connectors = providers
-    .filter((p) => p.credentialScope !== "deployment")
+    .filter((p) => p.credentialScope !== "deployment" && held(p.pluginName))
     .map((p) => ({
       pluginId: p.pluginId,
       pluginName: p.pluginName,

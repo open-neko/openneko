@@ -313,6 +313,7 @@ export class PluginRegistry {
   getRegisteredActionDescriptors(): Array<{
     kind: string;
     description: string;
+    pluginName?: string;
     default_mode?:
       | "auto"
       | "ask"
@@ -326,6 +327,7 @@ export class PluginRegistry {
     const out: Array<{
       kind: string;
       description: string;
+      pluginName?: string;
       default_mode?:
         | "auto"
         | "ask"
@@ -341,6 +343,7 @@ export class PluginRegistry {
         out.push({
           kind: decl.kind,
           description: decl.description,
+          pluginName: entry.name,
           default_mode: decl.default_mode,
           example: decl.example,
         });

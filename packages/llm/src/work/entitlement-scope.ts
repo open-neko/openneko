@@ -85,10 +85,17 @@ export async function runAllowedLibrary(actor: EntitlementActor): Promise<Allowe
   return { prefixes: [...access.collections].sort(), paths: paths.sort() };
 }
 
-/** Keeps only action descriptors whose kind the actor holds. */
-export async function filterHeldActions<T extends { kind: string }>(actor: EntitlementActor, actions: readonly T[]): Promise<T[]> {
-  const held = await heldItems(actor, "action");
-  return held === "*" ? [...actions] : actions.filter((action) => held.has(action.kind));
+/** Keeps action descriptors whose kind and, for plugin actions, whose integration the actor holds. */
+export async function filterHeldActions<T extends { kind: string; pluginName?: string }>(
+  actor: EntitlementActor,
+  actions: readonly T[],
+): Promise<T[]> {
+  const [held, integrations] = await Promise.all([heldItems(actor, "action"), heldItems(actor, "integration")]);
+  return actions.filter(
+    (action) =>
+      (held === "*" || held.has(action.kind)) &&
+      (!action.pluginName || integrations === "*" || integrations.has(action.pluginName)),
+  );
 }
 
 /**

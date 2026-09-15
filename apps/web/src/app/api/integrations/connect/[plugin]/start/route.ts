@@ -8,6 +8,7 @@
  * browser there. The matching /callback finishes the dance.
  */
 
+import { requireItem } from "@/lib/entitlements";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
@@ -30,6 +31,8 @@ export async function GET(
   if (!pluginName) {
     return NextResponse.json({ error: "plugin param required" }, { status: 400 });
   }
+  const deniedIntegration = await requireItem("integration", pluginName, { notFound: `connect plugin "${pluginName}" not installed` });
+  if (deniedIntegration) return deniedIntegration;
   // Verify the plugin is installed + declares connect; gives the operator
   // a clear 404 instead of a worker-side error when they hit a stale link.
   const providers = await listConnectProviders();

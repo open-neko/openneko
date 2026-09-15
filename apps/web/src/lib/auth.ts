@@ -269,6 +269,7 @@ export async function beginAuth(params: {
 export interface PluginActionDescriptor {
   kind: string;
   description: string;
+  pluginName?: string;
   scope?: "external" | "internal";
   default_mode?:
     | "auto"
