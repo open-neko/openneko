@@ -210,6 +210,29 @@ describeIfDb("0074 user groups", () => {
     });
   });
 
+  it("0078 moves admin approvers to Administrators and admin mappings to IdP rules", async () => {
+    await withTempDb(async (client) => {
+      await applyMigrations(client, (f) => f < "0078_approver_groups.sql");
+      await client.query(`
+        insert into organization (id, name) values ('org', 'Org');
+        insert into action_policy (org_id, name, mode, approver_role) values ('org', 'admins', 'approval_required', 'admin'), ('org', 'anyone', 'approval_required', null);
+        insert into sso_group (org_id, provider, tenant_id, external_id, display_name) values ('org', 'scalekit', 't', 'g-admins', 'Admins'), ('org', 'scalekit', 't', 'g-staff', 'Staff');
+        insert into sso_group_mapping (org_id, provider, group_external_id, role) values ('org', 'scalekit', 'g-admins', 'admin'), ('org', 'scalekit', 'g-staff', 'member');
+      `);
+      await applyMigrations(client, (f) => f === "0078_approver_groups.sql");
+      await applyMigrations(client, (f) => f === "0078_approver_groups.sql");
+      const admins = await groupId(client, "org", "administrators");
+      const { rows: policies } = await client.query("select name, approver_group_id from action_policy order by name");
+      expect(policies).toEqual([{ name: "admins", approver_group_id: admins }, { name: "anyone", approver_group_id: null }]);
+      await client.query("insert into action_policy (org_id, name, mode, approver_role) values ('org', 'later', 'approval_required', 'admin')");
+      expect((await client.query("select approver_group_id from action_policy where name = 'later'")).rows[0].approver_group_id).toBe(admins);
+      const { rows: rules } = await client.query(
+        "select s.external_id, r.user_group_id from idp_group_rule r join sso_group s on s.id = r.sso_group_id",
+      );
+      expect(rules).toEqual([{ external_id: "g-admins", user_group_id: admins }]);
+    });
+  });
+
   it("seeds built-in groups for a new organization and rejects bad rows", async () => {
     await withTempDb(async (client) => {
       await applyMigrations(client, (f) => f <= TARGET);

@@ -37,7 +37,8 @@ it("links SSO to the solo account without creating a second identity, and requir
   state.rows = [[], [owner]];
   const linked = await upsertUserFromIdentity({ sub: "idp-owner", email: "Owner@Example.com", name: "Owner" });
   expect(linked.id).toBe(owner.id);
-  expect(state.updates[0]).toMatchObject({ sub: "idp-owner", role: "admin" });
+  expect(state.updates[0]).toMatchObject({ sub: "idp-owner" });
+  expect(state.updates[0]).not.toHaveProperty("role");
   expect(state.inserts).toEqual([]);
   expect(state.reconcile).toHaveBeenCalledWith({ orgId: "org", userId: owner.id, provider: "oidc", tenantId: "org", groups: [] });
   state.token = encodeSession({ userId: owner.id, email: owner.email, name: owner.name, expiresAt: Math.floor(Date.now() / 1000) + 60 });

@@ -2370,6 +2370,7 @@ export const action_policy = pgTable(
     denied_targets: jsonb("denied_targets"),
     limits: jsonb("limits").notNull().default(sql`'{}'::jsonb`),
     approver_role: text("approver_role"),
+    approver_group_id: uuid("approver_group_id"),
     priority: integer("priority").notNull().default(100),
     enabled: boolean("enabled").notNull().default(true),
     created_by_thread_id: uuid("created_by_thread_id").references(

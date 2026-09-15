@@ -7,6 +7,8 @@ import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/field";
+import { adminApi } from "@/components/admin/admin-api";
 
 type PolicyDetail = {
   policy: {
@@ -21,6 +23,7 @@ type PolicyDetail = {
     deniedTargets: Record<string, unknown> | null;
     limits: Record<string, unknown>;
     approverRole: string | null;
+    approverGroupId: string | null;
     priority: number;
     enabled: boolean;
     createdByThreadId?: string | null;
@@ -28,6 +31,47 @@ type PolicyDetail = {
     updatedAt: string;
   };
 };
+
+function ApproverGroupPicker({
+  policyId,
+  value,
+  onSaved,
+}: {
+  policyId: string;
+  value: string | null;
+  onSaved: (approverGroupId: string | null) => void;
+}) {
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+  const [selected, setSelected] = useState(value ?? "");
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    void adminApi<{ groups: Array<{ id: string; name: string; slug: string }> }>("/api/admin/groups").then((result) => {
+      if (result.ok) setGroups(result.body.groups.filter((g) => g.slug !== "everyone"));
+    });
+  }, []);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <NativeSelect aria-label="Approver group" value={selected} onChange={(e) => setSelected(e.target.value)}>
+        <option value="">Any signed-in user</option>
+        {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+      </NativeSelect>
+      <Button
+        size="sm"
+        disabled={selected === (value ?? "")}
+        onClick={async () => {
+          const result = await adminApi(`/api/policies/${policyId}`, "PATCH", { approverGroupId: selected || null });
+          setStatus(result.ok ? "Saved" : result.error);
+          if (result.ok) onSaved(selected || null);
+        }}
+      >
+        Save
+      </Button>
+      {status ? <span className="text-ui-body-sm text-text2" role="status">{status}</span> : null}
+    </div>
+  );
+}
 
 export default function PolicyDetailClient({ policyId }: { policyId: string }) {
   const router = useRouter();
@@ -131,11 +175,13 @@ export default function PolicyDetailClient({ policyId }: { policyId: string }) {
               </Field>
             )}
 
-            {policy.approverRole && (
-              <Field label="Approver role">
-                <span className="text-ui-body-sm">{policy.approverRole}</span>
-              </Field>
-            )}
+            <Field label="Approver group">
+              <ApproverGroupPicker
+                policyId={policy.id}
+                value={policy.approverGroupId}
+                onSaved={(approverGroupId) => setPolicy((current) => (current ? { ...current, approverGroupId } : current))}
+              />
+            </Field>
 
             <Field label="Priority">
               <span className="text-ui-body-sm">{policy.priority}</span>

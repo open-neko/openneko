@@ -39,10 +39,8 @@ import {
   isUnclaimedSoloEmail,
   db,
   eq,
-  inArray,
   isNull,
   sql,
-  sso_group_mapping,
   ADMINISTRATORS_GROUP_SLUG,
   GroupError,
   idp_group_rule,
@@ -50,7 +48,6 @@ import {
   user_group,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
-import { upsertOperatorProfile } from "@neko/llm/work";
 
 export const SESSION_COOKIE_NAME = "openneko_session";
 export const STATE_COOKIE_NAME = "openneko_sso_state";
@@ -394,7 +391,6 @@ export async function upsertUserFromIdentity(
   const gate = await getAuthGateStatus();
   const providerInfo = gate.provider ?? gate.pending;
   const provider = providerInfo?.pluginName ?? "oidc";
-  const mapped = await resolveGroupRole(orgId, provider, identity.groups ?? []);
   // Serialize sign-ins per org. Two concurrent first sign-ins (two tabs,
   // an IdP callback retry) could each miss both lookups AND both pass the
   // has-admin check — minting duplicate identities and duplicate admins,
@@ -418,15 +414,11 @@ export async function upsertUserFromIdentity(
       .where(and(eq(app_user.org_id, orgId), eq(app_user.sub, identity.sub)))
       .limit(1);
     if (bySub[0]) {
-      // A configured group mapping is authoritative on every sign-in; when
-      // none is configured, leave the existing role untouched.
-      const role = mapped.role ?? bySub[0].role;
       await tx
         .update(app_user)
         .set({
           email: identity.email,
           name: identity.name ?? null,
-          role,
           last_login_at: new Date(),
           updated_at: new Date(),
         })
@@ -446,13 +438,11 @@ export async function upsertUserFromIdentity(
       .where(and(eq(app_user.org_id, orgId), sql`lower(${app_user.email}) = ${identity.email.trim().toLowerCase()}`))
       .limit(1);
     if (byEmail[0] && !byEmail[0].sub) {
-      const role = mapped.role ?? byEmail[0].role;
       await tx
         .update(app_user)
         .set({
           sub: identity.sub,
           name: identity.name ?? byEmail[0].name ?? null,
-          role,
           last_login_at: new Date(),
           updated_at: new Date(),
         })
@@ -484,7 +474,7 @@ export async function upsertUserFromIdentity(
       ? "member"
       : heuristicRoleForGroups(identity.groups ?? []);
     const role = (await orgHasActiveAdmin(orgId, tx))
-      ? (mapped.role ?? fallbackRole)
+      ? fallbackRole
       : "admin";
     await tx.insert(app_user).values({
       id: newId,
@@ -499,7 +489,6 @@ export async function upsertUserFromIdentity(
     return { id: newId, name: identity.name ?? null };
   });
   await syncIdentityGroups({ orgId, userId: resolved.id, identity });
-  await provisionPersona({ orgId, userId: resolved.id, identity, mapped });
   return {
     id: resolved.id,
     email: identity.email,
@@ -559,59 +548,6 @@ function heuristicRoleForGroups(
     return "admin";
   }
   return "member";
-}
-
-/**
- * Resolve a configurable role + persona template from sso_group_mapping for
- * the user's groups. `role`/`persona` are null when nothing maps — the caller
- * falls back to the heuristic and the current role, respectively.
- */
-async function resolveGroupRole(
-  orgId: string,
-  provider: string,
-  groups: Array<string | { id: string; name?: string | null }>,
-): Promise<{ role: string | null; persona: string | null }> {
-  const externalIds = groups
-    .map((group) => (typeof group === "string" ? group : group.id).trim())
-    .filter((id) => id.length > 0);
-  if (externalIds.length === 0) return { role: null, persona: null };
-  const rows = await db()
-    .select({
-      role: sso_group_mapping.role,
-      persona_role_template: sso_group_mapping.persona_role_template,
-      group_external_id: sso_group_mapping.group_external_id,
-    })
-    .from(sso_group_mapping)
-    .where(
-      and(
-        eq(sso_group_mapping.org_id, orgId),
-        eq(sso_group_mapping.provider, provider),
-        inArray(sso_group_mapping.group_external_id, externalIds),
-      ),
-    );
-  if (rows.length === 0) return { role: null, persona: null };
-  const role = rows.some((r) => r.role === "admin") ? "admin" : "member";
-  const personaRow = rows.find((r) => r.persona_role_template) ?? null;
-  return { role, persona: personaRow?.persona_role_template ?? null };
-}
-
-/** Provision the user's per-user persona from the group mapping (idempotent). */
-async function provisionPersona(input: {
-  orgId: string;
-  userId: string;
-  identity: AuthIdentity;
-  mapped: { role: string | null; persona: string | null };
-}): Promise<void> {
-  const roleTemplate =
-    input.mapped.persona ??
-    (input.mapped.role === "admin" ? "Administrator" : "");
-  if (!roleTemplate) return;
-  await upsertOperatorProfile({
-    orgId: input.orgId,
-    userId: input.userId,
-    displayName: input.identity.name ?? null,
-    roleTemplate,
-  });
 }
 
 function normalizedIdentityGroups(identity: AuthIdentity): Array<{
