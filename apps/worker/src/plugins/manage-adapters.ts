@@ -143,6 +143,76 @@ export function registerPluginManagementAdapters(opts: {
 }
 
 /**
+ * Executes approved group_admin action requests: groups, members, IdP
+ * rules, item grants and data access rules. Changes that can alter
+ * GraphJin roles schedule a batched GraphJin apply.
+ */
+export function registerGroupAdminAdapter(onGraphjinChange: (orgId: string) => void): void {
+  registerActionAdapter("group_admin", async ({ request }) => {
+    const db = await import("@neko/db");
+    const { parseRowFilter } = await import("@neko/llm/graphjin");
+    const payload = request.payload as Record<string, unknown>;
+    const orgId = request.orgId;
+    const text = (key: string) => {
+      const value = payload[key];
+      if (typeof value !== "string" || !value.trim()) throw new Error(`group_admin ${String(payload.action)}: ${key} required`);
+      return value.trim();
+    };
+    const action = String(payload.action ?? "");
+    const done = (result: Record<string, unknown>, graphjin = false) => {
+      if (graphjin) onGraphjinChange(orgId);
+      return { commandOrOperation: action, result };
+    };
+    switch (action) {
+      case "create_group": {
+        const group = await db.createUserGroup(orgId, { name: text("name"), description: typeof payload.description === "string" ? payload.description : null });
+        return done({ groupId: group.id, slug: group.slug });
+      }
+      case "delete_group":
+        await db.deleteUserGroup(orgId, text("groupId"));
+        return done({ groupId: text("groupId") }, true);
+      case "add_member":
+        await db.addLocalGroupMember(orgId, text("groupId"), text("userId"));
+        return done({ groupId: text("groupId"), userId: text("userId") });
+      case "remove_member":
+        return done(await db.removeLocalGroupMember(orgId, text("groupId"), text("userId")));
+      case "add_idp_rule":
+        return done(await db.createIdpGroupRule(orgId, { ssoGroupId: text("ssoGroupId"), userGroupId: text("groupId"), createdByUserId: request.actorUserId ?? null }));
+      case "remove_idp_rule":
+        await db.deleteIdpGroupRule(orgId, text("ruleId"));
+        return done({ ruleId: text("ruleId") });
+      case "grant_item":
+      case "revoke_item": {
+        const itemType = text("itemType");
+        if (!db.isItemType(itemType)) throw new Error(`group_admin: unknown item type ${itemType}`);
+        const input = { groupId: text("groupId"), itemType, itemId: text("itemId"), actorUserId: request.actorUserId ?? null, actionRequestId: request.id };
+        const result = action === "grant_item" ? await db.grantItem(orgId, input) : await db.revokeItem(orgId, input);
+        return done(result, itemType === "data_source" || itemType === "api_operation");
+      }
+      case "set_table_access": {
+        const table = text("table");
+        const [schema, name] = table.includes(".") ? [table.slice(0, table.lastIndexOf(".")), table.slice(table.lastIndexOf(".") + 1)] : ["", table];
+        const columns = Array.isArray(payload.columns) ? payload.columns.map(String) : [];
+        const rule = await db.upsertDataAccessRule(orgId, {
+          groupId: text("groupId"),
+          source: text("source"),
+          tableSchema: schema,
+          tableName: name,
+          columns,
+          rowFilter: payload.rowFilter == null ? null : parseRowFilter(payload.rowFilter),
+          actorUserId: request.actorUserId ?? null,
+        });
+        return done({ ruleId: rule.id }, true);
+      }
+      case "remove_table_access":
+        return done({ removed: await db.deleteDataAccessRule(orgId, text("ruleId")) }, true);
+      default:
+        throw new Error(`group_admin: unknown action "${action}"`);
+    }
+  });
+}
+
+/**
  * ADM1 — executes approved user_admin action requests (admin-approved
  * per the user_management_default policy; K2 enforces the approver).
  * invite pre-creates the app_user row so SSO links by email on first

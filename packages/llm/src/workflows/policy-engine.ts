@@ -233,6 +233,25 @@ export async function seedDefaultActionPolicies(orgId: string): Promise<void> {
       enabled: true,
     });
   }
+  // Group, item grant and data access changes proposed from chat need an admin.
+  if (!names.has("group_management_default")) {
+    await createActionPolicy({
+      orgId,
+      name: "group_management_default",
+      description:
+        "Group, membership, item grant and data access changes proposed from chat require an admin's approval.",
+      appliesToKinds: ["group_admin"],
+      appliesToScopes: ["internal", "external"],
+      mode: "approval_required" as ActionPolicyMode,
+      riskThresholdAutoApprove: null,
+      allowedTargets: null,
+      deniedTargets: null,
+      limits: {},
+      approverRole: "admin",
+      priority: 90,
+      enabled: true,
+    });
+  }
   // ADM3: chat-driven plugin management is always an explicit approval.
   // SEC8: org/hardened postures require that approval to come from an ADMIN.
   if (!names.has("plugin_management_default")) {

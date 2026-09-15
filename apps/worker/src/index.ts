@@ -829,8 +829,10 @@ recordsImportAdminSurface = createRecordsCliImportBridge({
     registerSourceConfigAdminAdapter,
     registerPluginManagementAdapters,
     registerUserAdminAdapter,
+    registerGroupAdminAdapter,
   } = await import("./plugins/manage-adapters.js");
   registerUserAdminAdapter();
+  registerGroupAdminAdapter((orgId) => scheduleGroupGrantsApply(orgId));
   registerChannelAdminAdapter();
   registerDataSourceAdminAdapter();
   registerSourceConfigAdminAdapter();

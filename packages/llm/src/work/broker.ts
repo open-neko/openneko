@@ -458,6 +458,8 @@ async function handle(
       return send(res, 200, await cp.listPlugins({ orgId: binding.orgId }));
     case "/v1/users/list":
       return send(res, 200, await cp.listUsers({ orgId: binding.orgId }));
+    case "/v1/groups/list":
+      return send(res, 200, await cp.listGroups({ orgId: binding.orgId }));
     case "/v1/channels/list":
       return send(res, 200, await cp.listChannels({ orgId: binding.orgId }));
     case "/v1/datasources/list":

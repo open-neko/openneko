@@ -187,6 +187,7 @@ async function proposeAdminAction(opts: {
     | "plugin_install"
     | "plugin_uninstall"
     | "user_admin"
+    | "group_admin"
     | "channel_admin"
     | "data_source_admin"
     | "source_config_admin";
@@ -358,10 +359,156 @@ export function buildUserManagerServer(opts: {
     },
   );
 
+  const listGroups = defineMcpTool(
+    "list_groups",
+    [
+      "List OpenNeko groups with their members (and whether each membership",
+      "is local or from an IdP rule), the items each group holds, IdP rules,",
+      "and each group's table data access. Use before proposing any group,",
+      "item grant or data access change.",
+    ].join(" "),
+    {},
+    async () => ({
+      content: [{ type: "text" as const, text: JSON.stringify(await controlPlane.listGroups({ orgId: opts.orgId })) }],
+    }),
+  );
+
+  const fail = (error: string) => ({ content: [{ type: "text" as const, text: JSON.stringify({ ok: false, error }) }] });
+
+  const requestGroupChange = defineMcpTool(
+    "request_group_change",
+    [
+      "Propose a group change: create_group (name, description?),",
+      "delete_group (groupId), add_member or remove_member (groupId + userId),",
+      "add_idp_rule (ssoGroupId + groupId) or remove_idp_rule (ruleId).",
+      "NEVER applies directly — files an action request an ADMIN must approve.",
+      "Tell the operator what you proposed and end your turn.",
+    ].join(" "),
+    {
+      action: z.enum(["create_group", "delete_group", "add_member", "remove_member", "add_idp_rule", "remove_idp_rule"]),
+      name: z.string().trim().min(1).max(120).optional(),
+      description: z.string().trim().max(500).optional(),
+      groupId: z.string().trim().min(1).optional(),
+      userId: z.string().trim().min(1).optional(),
+      ssoGroupId: z.string().trim().min(1).optional(),
+      ruleId: z.string().trim().min(1).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async (args) => {
+      const needs: Record<typeof args.action, Array<keyof typeof args>> = {
+        create_group: ["name"],
+        delete_group: ["groupId"],
+        add_member: ["groupId", "userId"],
+        remove_member: ["groupId", "userId"],
+        add_idp_rule: ["groupId", "ssoGroupId"],
+        remove_idp_rule: ["ruleId"],
+      };
+      const missing = needs[args.action].filter((key) => !args[key]);
+      if (missing.length) return fail(`${args.action} needs ${missing.join(" + ")}`);
+      const { intent, ...payload } = args;
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "group_admin",
+        target: args.groupId ?? args.name ?? args.ruleId ?? args.action,
+        intent,
+        payload,
+      });
+    },
+  );
+
+  const requestItemGrant = defineMcpTool(
+    "request_item_grant",
+    [
+      "Propose granting or revoking one item for a group. itemType is one of",
+      "skill, workflow, library_collection, library_concept, metric, dashboard,",
+      "watcher, team_memory, data_source, saved_query, api_operation, action,",
+      "integration, channel, pack. itemId '*' means every current and future",
+      "item of the type. NEVER applies directly — an ADMIN must approve.",
+    ].join(" "),
+    {
+      action: z.enum(["grant_item", "revoke_item"]),
+      groupId: z.string().trim().min(1),
+      itemType: z.enum([
+        "skill", "workflow", "library_collection", "library_concept", "metric", "dashboard", "watcher",
+        "team_memory", "data_source", "saved_query", "api_operation", "action", "integration", "channel", "pack",
+      ]),
+      itemId: z.string().trim().min(1).max(500),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async ({ intent, ...payload }) =>
+      proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "group_admin",
+        target: `${payload.itemType}:${payload.itemId}`,
+        intent,
+        payload,
+      }),
+  );
+
+  const rowFilterSchema: z.ZodType<unknown> = z.lazy(() =>
+    z.union([
+      z.object({ and: z.array(rowFilterSchema).min(1) }),
+      z.object({ or: z.array(rowFilterSchema).min(1) }),
+      z.object({
+        column: z.string().min(1),
+        op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "nin", "is_null"]),
+        value: z.union([
+          z.string(), z.number(), z.boolean(),
+          z.array(z.union([z.string(), z.number(), z.boolean()])),
+          z.object({ var: z.enum(["user_id", "user_groups", "account_id"]) }),
+        ]),
+      }),
+    ]),
+  );
+
+  const requestDataAccessChange = defineMcpTool(
+    "request_data_access_change",
+    [
+      "Propose which table rows and columns a group reads through GraphJin:",
+      "set_table_access (groupId, source, table as name or schema.name, columns,",
+      "rowFilter?) or remove_table_access (ruleId). rowFilter is a tree of",
+      "{column, op, value} conditions joined with {and: []} or {or: []}; value",
+      "may be {var: 'user_id'} or {var: 'user_groups'}. NEVER applies directly",
+      "— an ADMIN must approve.",
+    ].join(" "),
+    {
+      action: z.enum(["set_table_access", "remove_table_access"]),
+      groupId: z.string().trim().min(1).optional(),
+      source: z.string().trim().min(1).optional(),
+      table: z.string().trim().min(1).optional(),
+      columns: z.array(z.string().trim().min(1)).min(1).optional(),
+      rowFilter: rowFilterSchema.optional(),
+      ruleId: z.string().trim().min(1).optional(),
+      intent: z.string().trim().min(1).max(500),
+    },
+    async ({ intent, ...payload }) => {
+      if (payload.action === "set_table_access" && (!payload.groupId || !payload.source || !payload.table || !payload.columns)) {
+        return fail("set_table_access needs groupId + source + table + columns");
+      }
+      if (payload.action === "remove_table_access" && !payload.ruleId) return fail("remove_table_access needs ruleId");
+      return proposeAdminAction({
+        controlPlane,
+        orgId: opts.orgId,
+        runId: opts.runId,
+        emit: opts.emit,
+        kind: "group_admin",
+        target: payload.table ? `${payload.source}:${payload.table}` : (payload.ruleId ?? payload.action),
+        intent,
+        payload,
+      });
+    },
+  );
+
   return createMcpServer({
     name: "neko_user_manager",
     version: "1.0.0",
-    tools: [listUsers, requestChange],
+    tools: [listUsers, requestChange, listGroups, requestGroupChange, requestItemGrant, requestDataAccessChange],
   });
 }
 

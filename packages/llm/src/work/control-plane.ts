@@ -641,6 +641,20 @@ export interface AgentControlPlane {
   /** ADM3: installed plugins (manifest) + marketplace catalog. */
   listPlugins(input: { orgId: string }): Promise<PluginCatalog>;
   /** ADM1: the org's users (id, email, role, disabled). */
+  listGroups(input: { orgId: string }): Promise<{
+    groups: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      kind: string;
+      memberCount: number;
+      members: Array<{ userId: string; email: string; sources: string[] }>;
+      grants: Array<{ itemType: string; itemId: string }>;
+      dataAccess: Array<{ id: string; source: string; table: string; columns: string[]; rowFilter: unknown }>;
+    }>;
+    idpRules: Array<{ id: string; idpGroupName: string; ssoGroupId: string; userGroupId: string; userGroupName: string }>;
+    groupDataAccessEnabled: boolean;
+  }>;
   listUsers(input: { orgId: string }): Promise<{
     users: Array<{
       id: string;
@@ -1370,6 +1384,43 @@ export class InProcessControlPlane implements AgentControlPlane {
       installed,
       available,
       ...(marketplaceError ? { marketplaceError } : {}),
+    };
+  }
+
+  async listGroups(input: { orgId: string }) {
+    const {
+      getGroupGrantsEnabled,
+      listDataAccessRules,
+      listGroupItemGrants,
+      listGroupMembers,
+      listIdpGroupRules,
+      listUserGroups,
+    } = await import("@neko/db");
+    const [groups, idpRules, rules, enabled] = await Promise.all([
+      listUserGroups(input.orgId),
+      listIdpGroupRules(input.orgId),
+      listDataAccessRules(input.orgId),
+      getGroupGrantsEnabled(input.orgId),
+    ]);
+    return {
+      groups: await Promise.all(
+        groups.map(async (group) => ({
+          id: group.id,
+          slug: group.slug,
+          name: group.name,
+          kind: group.kind,
+          memberCount: group.memberCount,
+          members: group.slug === "everyone"
+            ? []
+            : (await listGroupMembers(input.orgId, group.id)).map((m) => ({ userId: m.userId, email: m.email, sources: m.sources })),
+          grants: (await listGroupItemGrants(input.orgId, group.id)).map((g) => ({ itemType: g.itemType, itemId: g.itemId })),
+          dataAccess: rules
+            .filter((r) => r.groupId === group.id)
+            .map((r) => ({ id: r.id, source: r.source, table: r.tableSchema ? `${r.tableSchema}.${r.tableName}` : r.tableName, columns: r.columns, rowFilter: r.rowFilter })),
+        })),
+      ),
+      idpRules: idpRules.map((r) => ({ id: r.id, idpGroupName: r.idpGroupName, ssoGroupId: r.ssoGroupId, userGroupId: r.userGroupId, userGroupName: r.userGroupName })),
+      groupDataAccessEnabled: enabled,
     };
   }
 
