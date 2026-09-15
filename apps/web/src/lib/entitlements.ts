@@ -114,3 +114,15 @@ export async function currentLibraryReader() {
     : { concepts: new Set<string>(), collections: new Set<string>() };
   return { orgId, userId: actor.userId, isAdmin: actor.role === "admin", access };
 }
+
+/** Visibility by workflow id; items without a workflow stay visible. */
+export async function workflowIdVisibility(): Promise<(workflowId: string | null | undefined) => boolean> {
+  const visible = await workflowVisibility();
+  const owners = new Map(
+    (await db()
+      .select({ id: workflow_definition.id, ownerUserId: workflow_definition.owner_user_id })
+      .from(workflow_definition)
+      .where(eq(workflow_definition.org_id, await getOrgId()))).map((w) => [w.id, w.ownerUserId]),
+  );
+  return (workflowId) => !workflowId || (owners.has(workflowId) && visible({ id: workflowId, ownerUserId: owners.get(workflowId) }));
+}

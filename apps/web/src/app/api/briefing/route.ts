@@ -22,6 +22,7 @@ import { outputRowToInteractionEvent } from "@neko/llm/interaction";
 import type { A2UIComponent, A2UIMessage } from "@/a2ui/types";
 import { CATALOG_ID } from "@/a2ui/catalog";
 import { getOrgId } from "@/lib/db";
+import { heldItemIds, holdsItem } from "@/lib/entitlements";
 import { isDemoMode, mockChatResponse } from "@/lib/demo-mode";
 
 function genTimeSeriesData() {
@@ -226,8 +227,12 @@ export async function GET(request: NextRequest) {
     ? "briefing-overview"
     : `briefing-${role.toLowerCase()}`;
   const demo = isDemoMode();
+  if (!isOverview && !(await holdsItem("dashboard", role))) {
+    return NextResponse.json({ error: "Dashboard not found" }, { status: 404 });
+  }
+  const heldMetrics = await heldItemIds("metric");
 
-  const cards = demo
+  const unfilteredCards = demo
     ? []
     : await db()
         .query.metric.findMany({
@@ -250,6 +255,7 @@ export async function GET(request: NextRequest) {
           },
         })
         .catch(() => [] as Array<never>);
+  const cards = heldMetrics === "*" ? unfilteredCards : unfilteredCards.filter((m) => heldMetrics.has(m.id));
 
   const dbInsights = cards.map((m) => {
     const snap = m.snapshots?.[0];
