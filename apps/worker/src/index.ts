@@ -56,6 +56,7 @@ import {
   SsoSetupService,
   startSsoSetupPoller,
 } from "./sso/sso-setup-service.js";
+import { applyGroupGrants, scheduleGroupGrantsApply } from "./graphjin/group-grants-service.js";
 import {
   DIRECTORY_SYNC_CRON,
   directoryStatus,
@@ -591,6 +592,12 @@ const server = createServer(
       getInstallPolicy: async () => {
         const { getInstallPolicyForOrg } = await import("@neko/db");
         return getInstallPolicyForOrg(ADMIN_ORG_ID);
+      },
+    },
+    groupGrants: {
+      apply: async () => applyGroupGrants(await getOrgId()),
+      schedule: () => {
+        void getOrgId().then((orgId) => scheduleGroupGrantsApply(orgId));
       },
     },
     directory: {

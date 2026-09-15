@@ -90,7 +90,7 @@ async function persistPackSections(
   await rename(temporary, configFile);
 }
 
-async function requestGraphjinRestart(configFile: string, endpoint: string): Promise<void> {
+export async function requestGraphjinRestart(configFile: string, endpoint: string): Promise<void> {
   const directory = dirname(configFile);
   const requestFile = join(directory, ".openneko-graphjin-restart");
   const acknowledgementFile = join(directory, ".openneko-graphjin-restart-ack");

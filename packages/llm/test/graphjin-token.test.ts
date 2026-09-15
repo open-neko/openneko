@@ -46,6 +46,22 @@ describe("GraphJin actor tokens (GJ4)", () => {
     expect(claims!.exp - claims!.iat).toBe(300);
   });
 
+  it("carries group roles and group slugs for union role mode", () => {
+    const token = mintGraphjinToken({
+      orgId: "org-1",
+      userId: "u-1",
+      role: "member",
+      groupRoles: ["og_finance", "og_sales", "og_finance"],
+      groups: ["everyone", "finance", "sales"],
+    });
+    expect(verifyGraphjinToken(token, "org-1")).toMatchObject({
+      role: "member",
+      roles: ["member", "og_finance", "og_sales"],
+      groups: ["everyone", "finance", "sales"],
+    });
+    expect(verifyGraphjinToken(mintGraphjinToken({ orgId: "org-1", userId: "u-1", role: "member" }), "org-1")).not.toHaveProperty("groups");
+  });
+
   it("service principal gets sub=service", () => {
     const token = mintGraphjinToken({
       orgId: "org-1",

@@ -32,7 +32,7 @@ describeIfDb("entitlements", () => {
     await withTestOrg(async (orgId) => {
       const everyone = await builtinGroupId(orgId, "everyone");
       const grants = await listGroupItemGrants(orgId, everyone);
-      expect(grants.map((g) => g.itemType).sort()).toEqual([...ITEM_TYPES].sort());
+      expect(grants.map((g) => g.itemType).sort()).toEqual(ITEM_TYPES.filter((t) => t !== "api_operation").sort());
       expect(new Set(grants.map((g) => g.itemId))).toEqual(new Set(["*"]));
       const ann = await user(orgId, "ann");
       expect(await holds(ann, "skill", "docx")).toMatchObject({ allowed: true, via: [everyone] });

@@ -203,8 +203,8 @@ describeIfDb("0074 user groups", () => {
         from item_grant ig join user_group g on g.id = ig.group_id and g.slug = 'everyone'
         group by ig.org_id order by ig.org_id`);
       expect(rows).toEqual([
-        { org_id: "new", n: 15, wildcard: true },
-        { org_id: "old", n: 15, wildcard: true },
+        { org_id: "new", n: 14, wildcard: true },
+        { org_id: "old", n: 14, wildcard: true },
       ]);
       await client.query("delete from organization where id = 'old'");
     });

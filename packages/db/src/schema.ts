@@ -133,6 +133,46 @@ export const user_group_membership = pgTable(
   }),
 );
 
+export const data_access_rule = pgTable(
+  "data_access_rule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => user_group.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    table_schema: text("table_schema").notNull().default(""),
+    table_name: text("table_name").notNull(),
+    columns: text("columns").array().notNull(),
+    row_filter: jsonb("row_filter"),
+    created_by_user_id: text("created_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    rule_unique: uniqueIndex("data_access_rule_org_id_group_id_source_table_schema_table_name_key").on(
+      t.org_id,
+      t.group_id,
+      t.source,
+      t.table_schema,
+      t.table_name,
+    ),
+    source_idx: index("data_access_rule_source_idx").on(t.org_id, t.source),
+  }),
+);
+
+export const data_access_settings = pgTable("data_access_settings", {
+  org_id: text("org_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  group_grants_enabled: boolean("group_grants_enabled").notNull().default(false),
+  enabled_by_user_id: text("enabled_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+});
+
 export const sso_group = pgTable(
   "sso_group",
   {

@@ -20,6 +20,10 @@ export type GraphjinTokenInput = {
   userId: string | null;
   /** GraphJin role name. Core callers use admin/member/service; governed packs use isolated executor roles. */
   role: "admin" | "member" | "service" | (string & {});
+  /** Group roles (og_<slug>) GraphJin merges in union role mode. */
+  groupRoles?: readonly string[];
+  /** Group slugs for the $user_groups variable. */
+  groups?: readonly string[];
   ttlSeconds?: number;
   /** Test seam. */
   nowMs?: number;
@@ -53,7 +57,8 @@ export function mintGraphjinToken(input: GraphjinTokenInput): string {
     JSON.stringify({
       sub: input.userId ?? "service",
       role: input.role,
-      roles: [input.role],
+      roles: [...new Set([input.role, ...(input.groupRoles ?? [])])],
+      ...(input.groups ? { groups: [...input.groups] } : {}),
       account_id: input.orgId,
       org_id: input.orgId,
       iat: now,
@@ -70,6 +75,7 @@ export type GraphjinTokenClaims = {
   sub: string;
   role: string;
   roles?: string[];
+  groups?: string[];
   account_id?: string;
   org_id: string;
   iat: number;

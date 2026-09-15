@@ -70,6 +70,8 @@ create trigger user_group_membership_revision_trigger
 
 -- Everyone holds every item type by default, on upgrade and for new
 -- organizations, so no user loses access. Administrators narrow it later.
+-- API operations are excluded: their allowed_roles already name who may call
+-- them, and a default grant would widen exposed mutations.
 create or replace function seed_everyone_item_grants(p_org_id text) returns void as $$
 begin
   insert into item_grant (org_id, group_id, item_type, item_id)
@@ -77,7 +79,7 @@ begin
   from user_group g
   cross join (values
     ('skill'), ('workflow'), ('library_collection'), ('library_concept'), ('metric'), ('dashboard'),
-    ('watcher'), ('team_memory'), ('data_source'), ('saved_query'), ('api_operation'), ('action'),
+    ('watcher'), ('team_memory'), ('data_source'), ('saved_query'), ('action'),
     ('integration'), ('channel'), ('pack')) as t(item_type)
   where g.org_id = p_org_id and g.slug = 'everyone'
   on conflict do nothing;

@@ -1,0 +1,82 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
+import {
+  builtinGroupId,
+  createUserGroup,
+  db,
+  eq,
+  grantItem,
+  organization,
+  pool,
+  revokeItem,
+  setGroupGrantsEnabled,
+  upsertDataAccessRule,
+} from "@neko/db";
+import { applyGroupGrants, scheduleGroupGrantsApply } from "../src/graphjin/group-grants-service";
+
+const reachable = await pool().query("select 1").then(() => true, () => false);
+
+const CONFIG = `identity:
+  role_claims: [role]
+roles:
+  - name: member
+sources:
+  - name: shop
+    kind: database
+    access:
+      read: account
+`;
+
+describe("scheduleGroupGrantsApply", () => {
+  it("runs one apply after the last change", async () => {
+    vi.useFakeTimers();
+    const run = vi.fn(async () => undefined);
+    scheduleGroupGrantsApply("org-a", 1000, run);
+    vi.advanceTimersByTime(600);
+    scheduleGroupGrantsApply("org-a", 1000, run);
+    vi.advanceTimersByTime(999);
+    expect(run).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});
+
+(reachable ? describe : describe.skip)("applyGroupGrants", () => {
+  it("does nothing while off, then writes grants once and restarts GraphJin only on change", async () => {
+    const orgId = `grants-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const dir = await mkdtemp(join(tmpdir(), "gj-grants-"));
+    const configFile = join(dir, "config.yml");
+    await writeFile(configFile, CONFIG);
+    await db().insert(organization).values({ id: orgId, name: "Grants" });
+    const restart = vi.fn(async () => undefined);
+    try {
+      expect(await applyGroupGrants(orgId, { configFile, restart })).toEqual({ enabled: false, changed: false, roles: [] });
+      expect(await readFile(configFile, "utf8")).toBe(CONFIG);
+
+      const finance = await createUserGroup(orgId, { name: "Finance" });
+      await revokeItem(orgId, { groupId: await builtinGroupId(orgId, "everyone"), itemType: "data_source", itemId: "*" });
+      await grantItem(orgId, { groupId: finance.id, itemType: "data_source", itemId: "shop" });
+      await upsertDataAccessRule(orgId, { groupId: finance.id, source: "shop", tableName: "orders", columns: ["id"], rowFilter: { column: "region", op: "eq", value: "emea" } });
+      await setGroupGrantsEnabled(orgId, true, null);
+
+      expect(await applyGroupGrants(orgId, { configFile, restart })).toEqual({ enabled: true, changed: true, roles: ["og_finance"] });
+      const config = parse(await readFile(configFile, "utf8"));
+      expect(config.identity.role_mode).toBe("union");
+      expect(config.sources[0].access).toEqual({
+        read: "admin",
+        grants: [{ role: "og_finance", tables: [{ name: "orders", columns: ["id"], filter: '{ region: { eq: "emea" } }' }] }],
+      });
+      expect(restart).toHaveBeenCalledTimes(1);
+
+      expect((await applyGroupGrants(orgId, { configFile, restart })).changed).toBe(false);
+      expect(restart).toHaveBeenCalledTimes(1);
+    } finally {
+      await db().delete(organization).where(eq(organization.id, orgId));
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

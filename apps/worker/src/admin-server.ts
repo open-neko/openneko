@@ -27,6 +27,7 @@
  *   GET  /admin/plugins/status → 200 + registry health/status summary.
  *   GET  /admin/directory/status → directory plugin and last sync state.
  *   POST /admin/directory/sync  → run a full directory sync now.
+ *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
  *
@@ -387,7 +388,14 @@ export type AdminHandlerOptions = {
   packs?: PacksHandlerSurface | null;
   /** Directory plugin status and on-demand sync. */
   directory?: DirectoryHandlerSurface | null;
+  /** Writes group grants into the GraphJin config, now or batched. */
+  groupGrants?: GroupGrantsHandlerSurface | null;
 };
+
+export interface GroupGrantsHandlerSurface {
+  apply(): Promise<unknown>;
+  schedule(): void;
+}
 
 export interface DirectoryHandlerSurface {
   status(): Promise<unknown>;
@@ -453,6 +461,7 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const actionRequests = opts.actionRequests ?? null;
   const packs = opts.packs ?? null;
   const directory = opts.directory ?? null;
+  const groupGrants = opts.groupGrants ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -554,6 +563,20 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       req.url === "/admin/plugins/action-descriptors"
     ) {
       handlePluginActionDescriptors(res, plugins);
+      return;
+    }
+    if (req.url === "/admin/graphjin/group-grants" && req.method === "POST") {
+      void (async () => {
+        if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
+        try {
+          const body = (await readJson(req)) as { immediate?: unknown };
+          if (body.immediate === true) return json(res, 200, await groupGrants.apply());
+          groupGrants.schedule();
+          json(res, 202, { scheduled: true });
+        } catch (err) {
+          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        }
+      })();
       return;
     }
     if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync") {

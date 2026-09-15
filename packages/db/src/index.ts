@@ -82,6 +82,16 @@ export {
   type ItemType,
 } from "./entitlements";
 export {
+  deleteDataAccessRule,
+  getGroupGrantsEnabled,
+  graphjinGroupClaims,
+  listDataAccessRules,
+  loadGroupGrantInputs,
+  setGroupGrantsEnabled,
+  upsertDataAccessRule,
+  type DataAccessRuleRow,
+} from "./data-access";
+export {
   readLocalConfig,
   writeLocalConfig,
   hasCustomPassword,

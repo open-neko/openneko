@@ -135,6 +135,24 @@ export function assertReadOnlyGraphql(query: string): void {
   }
 }
 
+/** A run's GraphJin token: the K1 principal plus group roles when group grants are on. */
+async function runGraphjinToken(orgId: string, runId: string | null | undefined): Promise<string> {
+  const { mintGraphjinToken } = await import("../graphjin/token");
+  const { getWorkRunActor } = await import("./personas");
+  const principal = runId ? graphjinReadPrincipal(await getWorkRunActor(runId, orgId)) : { userId: null, role: "service" as const };
+  let claims: { roles: string[]; groups: string[] } | null = null;
+  if (principal.userId && principal.role === "member") {
+    const { getGroupGrantsEnabled, graphjinGroupClaims } = await import("@neko/db");
+    if (await getGroupGrantsEnabled(orgId)) claims = await graphjinGroupClaims(orgId, principal.userId);
+  }
+  return mintGraphjinToken({
+    orgId,
+    userId: principal.userId,
+    role: principal.role,
+    ...(claims ? { groupRoles: claims.roles, groups: claims.groups } : {}),
+  });
+}
+
 export function graphjinReadPrincipal(actor: {
   userId: string | null;
   role: string | null;
@@ -199,22 +217,7 @@ async function graphjinMcpAccess(input: {
 
   const headers: Record<string, string> = {};
   if (source.authMode === "jwt") {
-    let principal: ReturnType<typeof graphjinReadPrincipal> = {
-      userId: null,
-      role: "service",
-    };
-    if (input.runId) {
-      const { getWorkRunActor } = await import("./personas");
-      principal = graphjinReadPrincipal(
-        await getWorkRunActor(input.runId, input.orgId),
-      );
-    }
-    const { mintGraphjinToken } = await import("../graphjin/token");
-    headers.authorization = `Bearer ${mintGraphjinToken({
-      orgId: input.orgId,
-      userId: principal.userId,
-      role: principal.role,
-    })}`;
+    headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
   } else if (source.authMode === "development") {
     let principal: ReturnType<typeof graphjinReadPrincipal> = {
       userId: null,
@@ -959,21 +962,7 @@ export class InProcessControlPlane implements AgentControlPlane {
 
     const headers: Record<string, string> = {};
     if (source.authMode === "jwt") {
-      let principal: ReturnType<typeof graphjinReadPrincipal> = {
-        userId: null,
-        role: "service",
-      };
-      if (input.runId) {
-        const { getWorkRunActor } = await import("./personas");
-        const actor = await getWorkRunActor(input.runId, input.orgId);
-        principal = graphjinReadPrincipal(actor);
-      }
-      const { mintGraphjinToken } = await import("../graphjin/token");
-      headers.authorization = `Bearer ${mintGraphjinToken({
-        orgId: input.orgId,
-        userId: principal.userId,
-        role: principal.role,
-      })}`;
+      headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
     }
     const { graphjinQuery } = await import("../graphjin/client");
     return graphjinQuery({
@@ -1078,14 +1067,7 @@ export class InProcessControlPlane implements AgentControlPlane {
 
     let token = "openneko-read-only";
     if (src.authMode === "jwt") {
-      const { mintGraphjinToken } = await import("../graphjin/token");
-      const { getWorkRunActor } = await import("./personas");
-      const principal = input.runId ? graphjinReadPrincipal(await getWorkRunActor(input.runId, input.orgId)) : { userId: null, role: "service" as const };
-      token = mintGraphjinToken({
-        orgId: input.orgId,
-        userId: principal.userId,
-        role: principal.role,
-      });
+      token = await runGraphjinToken(input.orgId, input.runId);
     }
     const source = {
       id: src.id,

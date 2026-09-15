@@ -1,0 +1,202 @@
+import { isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
+import { compileRowFilter, parseRowFilter } from "./row-filter";
+
+/** GraphJin role for an OpenNeko group. The slug never changes after creation. */
+export function groupRoleName(slug: string): string {
+  return `og_${slug}`;
+}
+
+export const GROUP_ROLE_PREFIX = "og_";
+
+export type GroupTableGrant = { name: string; columns: string[]; filter?: string };
+
+export type GroupGrantsModel = {
+  roles: Array<{ role: string; groupName: string }>;
+  /** source name -> role -> table grants */
+  grants: Map<string, Map<string, GroupTableGrant[]>>;
+  /** "source:spec:operation" -> roles that hold the API operation */
+  apiOperations: Map<string, string[]>;
+};
+
+export type DataAccessRuleInput = {
+  groupSlug: string;
+  groupName: string;
+  source: string;
+  tableSchema: string;
+  tableName: string;
+  columns: string[];
+  rowFilter: unknown;
+};
+
+/** Builds the grant model from rules the groups hold. Invalid filters throw. */
+export function buildGroupGrantsModel(input: {
+  groups: Array<{ slug: string; name: string }>;
+  rules: DataAccessRuleInput[];
+  apiOperationHolders: Map<string, string[]>;
+}): GroupGrantsModel {
+  const grants = new Map<string, Map<string, GroupTableGrant[]>>();
+  const roleNames = new Map<string, string>();
+  for (const rule of input.rules) {
+    const role = groupRoleName(rule.groupSlug);
+    roleNames.set(role, rule.groupName);
+    const bySource = grants.get(rule.source) ?? new Map<string, GroupTableGrant[]>();
+    const tables = bySource.get(role) ?? [];
+    const grant: GroupTableGrant = {
+      name: rule.tableSchema ? `${rule.tableSchema}.${rule.tableName}` : rule.tableName,
+      columns: [...rule.columns],
+    };
+    if (rule.rowFilter != null) grant.filter = compileRowFilter(parseRowFilter(rule.rowFilter));
+    tables.push(grant);
+    bySource.set(role, tables);
+    grants.set(rule.source, bySource);
+  }
+  const apiOperations = new Map<string, string[]>();
+  for (const [operation, slugs] of input.apiOperationHolders) {
+    const roles = [...new Set(slugs.map(groupRoleName))].sort();
+    for (const role of roles) {
+      if (!roleNames.has(role)) {
+        roleNames.set(role, input.groups.find((g) => groupRoleName(g.slug) === role)?.name ?? role);
+      }
+    }
+    apiOperations.set(operation, roles);
+  }
+  return {
+    roles: [...roleNames].map(([role, groupName]) => ({ role, groupName })).sort((a, b) => a.role.localeCompare(b.role)),
+    grants,
+    apiOperations,
+  };
+}
+
+const NON_DATABASE_KINDS = new Set(["api", "file", "code", "graphjin"]);
+
+function listOf(parent: YAMLMap, key: string): YAMLSeq {
+  const node: unknown = parent.get(key, true);
+  if (node == null) {
+    const created = new YAMLSeq();
+    parent.set(key, created);
+    return created;
+  }
+  if (!isSeq(node)) throw new Error(`GraphJin config ${key} must be a YAML list`);
+  return node;
+}
+
+function mapOf(parent: YAMLMap, key: string): YAMLMap {
+  const node: unknown = parent.get(key, true);
+  if (node == null) {
+    const created = new YAMLMap();
+    parent.set(key, created);
+    return created;
+  }
+  if (!isMap(node)) throw new Error(`GraphJin config ${key} must be a YAML object`);
+  return node;
+}
+
+function isGroupRole(value: unknown): boolean {
+  return typeof value === "string" && value.startsWith(GROUP_ROLE_PREFIX);
+}
+
+/**
+ * Writes the group grant model into a GraphJin sources-mode config. The patch
+ * is idempotent and replaces only og_* roles, grants and allowed_roles, so
+ * roles and grants written by hand or by packs stay.
+ */
+export function applyGroupGrantsToConfig(raw: string, model: GroupGrantsModel): { content: string; changed: boolean } {
+  const document = parseDocument(raw);
+  if (document.errors.length > 0) throw new Error(`GraphJin config is not valid YAML: ${document.errors[0]!.message}`);
+  if (!isMap(document.contents)) throw new Error("GraphJin config root must be a YAML object");
+  const root = document.contents;
+  if (!root.has("sources")) return { content: raw, changed: false };
+  const before = document.toString();
+
+  const identity = mapOf(root, "identity");
+  identity.set("role_mode", "union");
+  const roleClaims = listOf(identity, "role_claims");
+  for (const claim of ["role", "roles"]) {
+    if (!roleClaims.items.some((item) => String((item as { value?: unknown }).value ?? item) === claim)) roleClaims.add(claim);
+  }
+  identity.set("group_claims", document.createNode(["groups"]));
+
+  const roles = listOf(root, "roles");
+  roles.items = roles.items.filter((item) => !(isMap(item) && isGroupRole(item.get("name"))));
+  for (const role of model.roles) {
+    roles.add(document.createNode({ name: role.role, comment: `OpenNeko group ${role.groupName}` }));
+  }
+
+  const sources = listOf(root, "sources");
+  for (const source of sources.items) {
+    if (!isMap(source)) continue;
+    const name = String(source.get("name") ?? "");
+    const kind = String(source.get("kind") ?? "database").toLowerCase();
+    if (!NON_DATABASE_KINDS.has(kind)) {
+      const access = mapOf(source, "access");
+      access.set("read", "admin");
+      const existing = access.get("grants", true);
+      const kept = isSeq(existing) ? existing.items.filter((item) => !(isMap(item) && isGroupRole(item.get("role")))) : [];
+      const generated = [...(model.grants.get(name) ?? new Map())]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([role, tables]) =>
+          document.createNode({
+            role,
+            tables: [...tables]
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((t) => ({ name: t.name, columns: t.columns, ...(t.filter ? { filter: t.filter } : {}) })),
+          }),
+        );
+      if (kept.length + generated.length === 0) access.delete("grants");
+      else {
+        const seq = new YAMLSeq();
+        seq.items = [...kept, ...generated];
+        access.set("grants", seq);
+      }
+    }
+    const specs = source.get("specs", true);
+    if (!isMap(specs)) continue;
+    for (const specPair of specs.items) {
+      const specName = String((specPair.key as { value?: unknown })?.value ?? specPair.key);
+      const spec = specPair.value;
+      if (!isMap(spec)) continue;
+      const operations = spec.get("operations", true);
+      if (!isMap(operations)) continue;
+      for (const operationPair of operations.items) {
+        const operationName = String((operationPair.key as { value?: unknown })?.value ?? operationPair.key);
+        const operation = operationPair.value;
+        if (!isMap(operation)) continue;
+        const current = operation.get("allowed_roles", true);
+        const kept = isSeq(current)
+          ? current.items.map((item) => String((item as { value?: unknown }).value ?? item)).filter((role) => !isGroupRole(role))
+          : [];
+        const generated = model.apiOperations.get(`${name}:${specName}:${operationName}`) ?? [];
+        if (!isSeq(current) && generated.length === 0) continue;
+        operation.set("allowed_roles", document.createNode([...kept, ...generated]));
+      }
+    }
+  }
+
+  const content = document.toString();
+  return { content, changed: content !== before };
+}
+
+/** API operations exposed in the config, as "source:spec:operation" ids. */
+export function listConfigApiOperations(raw: string): string[] {
+  const document = parseDocument(raw);
+  if (!isMap(document.contents)) return [];
+  const sources = document.contents.get("sources", true);
+  if (!isSeq(sources)) return [];
+  const out: string[] = [];
+  for (const source of sources.items) {
+    if (!isMap(source)) continue;
+    const specs = source.get("specs", true);
+    if (!isMap(specs)) continue;
+    for (const specPair of specs.items) {
+      const spec = specPair.value;
+      const operations = isMap(spec) ? spec.get("operations", true) : null;
+      if (!isMap(operations)) continue;
+      for (const operationPair of operations.items) {
+        out.push(
+          `${source.get("name")}:${String((specPair.key as { value?: unknown })?.value ?? specPair.key)}:${String((operationPair.key as { value?: unknown })?.value ?? operationPair.key)}`,
+        );
+      }
+    }
+  }
+  return out.sort();
+}
