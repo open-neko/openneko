@@ -5,6 +5,7 @@ import type {
   AgentRunResult,
   AgentWorkspace,
 } from "../agent-backend";
+import type { AllowedLibrary } from "../library/staging";
 import { buildWorkflowBuilderServer } from "../workflows/builder-server";
 import { buildRuleBuilderServer } from "../workflows/rule-builder-server";
 import type { AgentControlPlane } from "./control-plane";
@@ -51,6 +52,10 @@ export interface RunAgentBackendInput {
   /** Trusted host-only reuse boundary. Missing revision disables assigned reuse.
    * Future RBAC must change this revision when ANY effective grant changes. */
   sandboxUser?: { principalId: string; authorizationRevision: string };
+  /** Skill names the run's actor holds. Undefined means every skill. */
+  allowedSkills?: readonly string[];
+  /** Team library files the actor holds. Undefined means the whole team library. */
+  allowedLibrary?: AllowedLibrary;
   pluginActions: readonly PluginActionDescriptor[];
   /** Installed pack actions, discovered independently of plugins. */
   packActions?: readonly PackActionDescriptor[];

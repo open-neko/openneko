@@ -9,6 +9,7 @@ import {
 } from "@/lib/records";
 import { RecordAdminNav } from "@/components/records/RecordAdminNav";
 import { RecordPermissionsPanel } from "@/components/records/RecordPermissionsPanel";
+import { RecordAppAccessPanel } from "@/components/records/RecordAppAccessPanel";
 import { RecordsUnavailable } from "@/components/records/RecordsNotice";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export default async function RecordPermissionsPage({ params }: { params: Promis
         <div><span className="records-breadcrumb">{model.app.label} / Admin</span><h1>Permissions</h1></div>
         <RecordAdminNav appId={model.app.appId} active="permissions" />
       </header>
+      <RecordAppAccessPanel appId={model.app.appId} />
       <RecordPermissionsPanel objects={model.objects} permissions={model.permissions} />
     </main>
   );

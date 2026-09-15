@@ -146,6 +146,9 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         </CardHeader>
         <CardFooter>
           <ActionGroup align="start">
+            {isAdmin && !preview && "pluginName" in row ? (
+              <ButtonLink href={`/admin/access?type=integration&id=${encodeURIComponent(String(row.pluginName))}`}>Access</ButtonLink>
+            ) : null}
             {row.connected ? (
               <Button variant="danger" disabled={disabled} onClick={() => void disconnect(row, isDeployment)}>
                 {busy === row.pluginName ? "Disconnecting…" : "Disconnect"}

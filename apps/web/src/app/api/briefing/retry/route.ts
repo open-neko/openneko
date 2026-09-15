@@ -10,6 +10,7 @@ import {
 } from "@neko/db";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { getOrgId } from "@/lib/db";
+import { requireItem } from "@/lib/entitlements";
 
 export async function POST(request: NextRequest) {
   let body: { metricId?: string };
@@ -25,6 +26,8 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  const deniedMetric = await requireItem("metric", metricId, { notFound: "metric not found" });
+  if (deniedMetric) return deniedMetric;
 
   const orgId = await getOrgId();
 

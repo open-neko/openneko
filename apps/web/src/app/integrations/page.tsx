@@ -5,6 +5,7 @@ import { personalConnectionsFixture, pluginConnectionsFixture } from "./visual-f
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { getCurrentActor } from "@/lib/actor";
+import { heldItemIds } from "@/lib/entitlements";
 import {
   getDeploymentConnectStatus,
   getOperatorConnectStatus,
@@ -50,6 +51,8 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const connectors = providers
     .filter((p) => p.credentialScope !== "deployment")
     .map((p) => rowFor(p, connectedByPlugin));
-  const personal = user ? await listPackUserConnections({ orgId: await getOrgId(), userId: user.id }) : [];
+  const heldPacks = await heldItemIds("pack");
+  const personal = (user ? await listPackUserConnections({ orgId: await getOrgId(), userId: user.id }) : [])
+    .filter((connection) => heldPacks === "*" || heldPacks.has(connection.packId));
   return <IntegrationsList key="live" initial={{ workspace, connectors, personal }} isAdmin={actor.role === "admin"} />;
 }

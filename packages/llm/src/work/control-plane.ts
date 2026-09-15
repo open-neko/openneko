@@ -1,4 +1,6 @@
 import { enqueue, QUEUE } from "@neko/db/jobs";
+import { holds } from "@neko/db";
+import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
 import {
   createActionRequest,
   getActionRequest,
@@ -20,6 +22,7 @@ import {
   deleteWorkflow,
   emitWorkflowOutput,
   listSubscriptionsByWorkflow,
+  getWorkflow,
   listWorkflows,
   type SaveWorkflowInput,
   type WorkflowRecord,
@@ -132,6 +135,24 @@ export function assertReadOnlyGraphql(query: string): void {
   }
 }
 
+/** A run's GraphJin token: the K1 principal plus group roles when group grants are on. */
+async function runGraphjinToken(orgId: string, runId: string | null | undefined): Promise<string> {
+  const { mintGraphjinToken } = await import("../graphjin/token");
+  const { getWorkRunActor } = await import("./personas");
+  const principal = runId ? graphjinReadPrincipal(await getWorkRunActor(runId, orgId)) : { userId: null, role: "service" as const };
+  let claims: { roles: string[]; groups: string[] } | null = null;
+  if (principal.userId && principal.role === "member") {
+    const { getGroupGrantsEnabled, graphjinGroupClaims } = await import("@neko/db");
+    if (await getGroupGrantsEnabled(orgId)) claims = await graphjinGroupClaims(orgId, principal.userId);
+  }
+  return mintGraphjinToken({
+    orgId,
+    userId: principal.userId,
+    role: principal.role,
+    ...(claims ? { groupRoles: claims.roles, groups: claims.groups } : {}),
+  });
+}
+
 export function graphjinReadPrincipal(actor: {
   userId: string | null;
   role: string | null;
@@ -160,10 +181,20 @@ export function graphjinDevelopmentAuthHeaders(
   };
 }
 
+/** A run needs at least one data_source item to reach GraphJin. */
+async function assertRunHoldsDataSource(orgId: string, runId: string | null | undefined): Promise<void> {
+  if (!runId) return;
+  const actor = await entitlementActorForRun(orgId, runId);
+  const { heldItems } = await import("@neko/db");
+  const held = actor ? await heldItems(actor, "data_source") : new Set<string>();
+  if (held !== "*" && held.size === 0) throw new Error("No data source is available to this run.");
+}
+
 async function graphjinMcpAccess(input: {
   orgId: string;
   runId?: string | null;
 }): Promise<{ mcpUrl: string; headers: Record<string, string> }> {
+  await assertRunHoldsDataSource(input.orgId, input.runId);
   const { and, data_source, db, desc, eq } = await import("@neko/db");
   const [source] = await db()
     .select({
@@ -196,22 +227,7 @@ async function graphjinMcpAccess(input: {
 
   const headers: Record<string, string> = {};
   if (source.authMode === "jwt") {
-    let principal: ReturnType<typeof graphjinReadPrincipal> = {
-      userId: null,
-      role: "service",
-    };
-    if (input.runId) {
-      const { getWorkRunActor } = await import("./personas");
-      principal = graphjinReadPrincipal(
-        await getWorkRunActor(input.runId, input.orgId),
-      );
-    }
-    const { mintGraphjinToken } = await import("../graphjin/token");
-    headers.authorization = `Bearer ${mintGraphjinToken({
-      orgId: input.orgId,
-      userId: principal.userId,
-      role: principal.role,
-    })}`;
+    headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
   } else if (source.authMode === "development") {
     let principal: ReturnType<typeof graphjinReadPrincipal> = {
       userId: null,
@@ -401,8 +417,7 @@ async function recordsViewerForRun(input: {
     app_user,
     db,
     eq,
-    sso_group,
-    sso_group_membership,
+    resolveUserGroups,
     work_run,
   } = await import("@neko/db");
   const [run] = await db()
@@ -433,28 +448,12 @@ async function recordsViewerForRun(input: {
     ) {
       throw new Error("records tools are not available to this actor");
     }
-    const memberships = await db()
-      .select({ groupId: sso_group.id })
-      .from(sso_group_membership)
-      .innerJoin(
-        sso_group,
-        and(
-          eq(sso_group.id, sso_group_membership.group_id),
-          eq(sso_group.org_id, sso_group_membership.org_id),
-        ),
-      )
-      .where(
-        and(
-          eq(sso_group_membership.org_id, input.orgId),
-          eq(sso_group_membership.user_id, run.userId),
-          eq(sso_group.active, true),
-        ),
-      );
+    const groups = await resolveUserGroups(input.orgId, run.userId);
     return {
       orgId: input.orgId,
       userId: run.userId,
-      role: user.role,
-      groupIds: memberships.map((row) => row.groupId),
+      role: groups.administrator ? "admin" : "member",
+      groupIds: [...groups.groupIds, ...groups.ssoGroupIds],
       solo: false,
     };
   }
@@ -620,6 +619,7 @@ export interface AgentControlPlane {
   listWorkflowsWithTriggers(input: {
     orgId: string;
     limit?: number;
+    runId?: string | null;
   }): Promise<{ total: number; workflows: WorkflowListEntry[] }>;
   /**
    * Hard-delete a workflow and its dependents (triggers, runs, outputs,
@@ -629,6 +629,7 @@ export interface AgentControlPlane {
   deleteWorkflow(input: {
     orgId: string;
     workflowId: string;
+    runId?: string | null;
   }): Promise<{ found: boolean; name: string | null }>;
   upsertActionPolicyByName(
     input: CreateActionPolicyInput,
@@ -640,6 +641,20 @@ export interface AgentControlPlane {
   /** ADM3: installed plugins (manifest) + marketplace catalog. */
   listPlugins(input: { orgId: string }): Promise<PluginCatalog>;
   /** ADM1: the org's users (id, email, role, disabled). */
+  listGroups(input: { orgId: string }): Promise<{
+    groups: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      kind: string;
+      memberCount: number;
+      members: Array<{ userId: string; email: string; sources: string[] }>;
+      grants: Array<{ itemType: string; itemId: string }>;
+      dataAccess: Array<{ id: string; source: string; table: string; columns: string[]; rowFilter: unknown }>;
+    }>;
+    idpRules: Array<{ id: string; idpGroupName: string; ssoGroupId: string; userGroupId: string; userGroupName: string }>;
+    groupDataAccessEnabled: boolean;
+  }>;
   listUsers(input: { orgId: string }): Promise<{
     users: Array<{
       id: string;
@@ -853,6 +868,12 @@ export class InProcessControlPlane implements AgentControlPlane {
         throw new Error(`source_config_admin: ${gate.error}`);
       }
     }
+    if (input.workRunId && (await actionKindIsGranted(input.orgId, input.kind, input.scope))) {
+      const actor = await entitlementActorForRun(input.orgId, input.workRunId);
+      if (!actor || !(await holds(actor, "action", input.kind)).allowed) {
+        throw new Error(`action ${input.kind} is not available to this run`);
+      }
+    }
     const workerAdminUrl = process.env.WORKER_ADMIN_URL?.trim();
     if (workerAdminUrl) {
       return createActionRequestViaWorker(workerAdminUrl, input);
@@ -949,6 +970,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     operationName?: string;
   }) {
     assertReadOnlyGraphql(input.query);
+    await assertRunHoldsDataSource(input.orgId, input.runId);
     const { data_source, db, desc, eq } = await import("@neko/db");
     const [source] = await db()
       .select({
@@ -965,21 +987,7 @@ export class InProcessControlPlane implements AgentControlPlane {
 
     const headers: Record<string, string> = {};
     if (source.authMode === "jwt") {
-      let principal: ReturnType<typeof graphjinReadPrincipal> = {
-        userId: null,
-        role: "service",
-      };
-      if (input.runId) {
-        const { getWorkRunActor } = await import("./personas");
-        const actor = await getWorkRunActor(input.runId, input.orgId);
-        principal = graphjinReadPrincipal(actor);
-      }
-      const { mintGraphjinToken } = await import("../graphjin/token");
-      headers.authorization = `Bearer ${mintGraphjinToken({
-        orgId: input.orgId,
-        userId: principal.userId,
-        role: principal.role,
-      })}`;
+      headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
     }
     const { graphjinQuery } = await import("../graphjin/client");
     return graphjinQuery({
@@ -1016,6 +1024,16 @@ export class InProcessControlPlane implements AgentControlPlane {
         process.env.OPENNEKO_GRAPHJIN_CONFIG,
       );
     }
+    if (input.name === "execute_saved_query" && input.runId) {
+      const actor = await entitlementActorForRun(input.orgId, input.runId);
+      const name = String(input.arguments?.name ?? "");
+      if (!actor || !(await holds(actor, "saved_query", name)).allowed) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Saved query "${name}" is not available to this run.` }],
+        };
+      }
+    }
     const access = await graphjinMcpAccess(input);
     return callRemoteGraphjinMcpTool(
       {
@@ -1036,6 +1054,11 @@ export class InProcessControlPlane implements AgentControlPlane {
     instruction: string;
     maxSteps?: number;
   }): Promise<GraphjinDataAgentResult> {
+    try {
+      await assertRunHoldsDataSource(input.orgId, input.runId);
+    } catch (error) {
+      return { denied: true, error: error instanceof Error ? error.message : String(error) };
+    }
     const instruction = input.instruction.trim();
     if (!instruction || instruction.length > 8_000) {
       return { error: "instruction must contain between 1 and 8,000 characters" };
@@ -1084,14 +1107,7 @@ export class InProcessControlPlane implements AgentControlPlane {
 
     let token = "openneko-read-only";
     if (src.authMode === "jwt") {
-      const { mintGraphjinToken } = await import("../graphjin/token");
-      const { getWorkRunActor } = await import("./personas");
-      const principal = input.runId ? graphjinReadPrincipal(await getWorkRunActor(input.runId, input.orgId)) : { userId: null, role: "service" as const };
-      token = mintGraphjinToken({
-        orgId: input.orgId,
-        userId: principal.userId,
-        role: principal.role,
-      });
+      token = await runGraphjinToken(input.orgId, input.runId);
     }
     const source = {
       id: src.id,
@@ -1262,6 +1278,13 @@ export class InProcessControlPlane implements AgentControlPlane {
   async saveWorkflowWithTrigger(
     input: SaveWorkflowInput,
   ): Promise<Wire<SaveWorkflowWithTriggerResult>> {
+    if (input.createdByRunId) {
+      const owner = input.ownerUserId ?? "";
+      const existing = (await listWorkflows(input.orgId)).find((w) => w.name === input.name && w.ownerUserId === owner);
+      if (existing && !(await runWorkflowFilter(input.orgId, input.createdByRunId))(existing)) {
+        throw new Error(`A workflow named "${input.name}" exists and this run cannot change it. Choose another name.`);
+      }
+    }
     return toWire(await saveWorkflowWithTrigger(input));
   }
 
@@ -1276,8 +1299,10 @@ export class InProcessControlPlane implements AgentControlPlane {
   async listWorkflowsWithTriggers(input: {
     orgId: string;
     limit?: number;
+    runId?: string | null;
   }): Promise<{ total: number; workflows: WorkflowListEntry[] }> {
-    const all = await listWorkflows(input.orgId);
+    const visible = await runWorkflowFilter(input.orgId, input.runId);
+    const all = (await listWorkflows(input.orgId)).filter(visible);
     const slice = all.slice(0, input.limit ?? 50);
     const triggers = await Promise.all(
       slice.map((w) => listSubscriptionsByWorkflow(input.orgId, w.id)),
@@ -1296,7 +1321,12 @@ export class InProcessControlPlane implements AgentControlPlane {
   async deleteWorkflow(input: {
     orgId: string;
     workflowId: string;
+    runId?: string | null;
   }): Promise<{ found: boolean; name: string | null }> {
+    const target = await getWorkflow(input.orgId, input.workflowId);
+    if (!target || !(await runWorkflowFilter(input.orgId, input.runId))(target)) {
+      return { found: false, name: null };
+    }
     const deleted = await deleteWorkflow(input.orgId, input.workflowId);
     return { found: deleted !== null, name: deleted?.name ?? null };
   }
@@ -1354,6 +1384,43 @@ export class InProcessControlPlane implements AgentControlPlane {
       installed,
       available,
       ...(marketplaceError ? { marketplaceError } : {}),
+    };
+  }
+
+  async listGroups(input: { orgId: string }) {
+    const {
+      getGroupGrantsEnabled,
+      listDataAccessRules,
+      listGroupItemGrants,
+      listGroupMembers,
+      listIdpGroupRules,
+      listUserGroups,
+    } = await import("@neko/db");
+    const [groups, idpRules, rules, enabled] = await Promise.all([
+      listUserGroups(input.orgId),
+      listIdpGroupRules(input.orgId),
+      listDataAccessRules(input.orgId),
+      getGroupGrantsEnabled(input.orgId),
+    ]);
+    return {
+      groups: await Promise.all(
+        groups.map(async (group) => ({
+          id: group.id,
+          slug: group.slug,
+          name: group.name,
+          kind: group.kind,
+          memberCount: group.memberCount,
+          members: group.slug === "everyone"
+            ? []
+            : (await listGroupMembers(input.orgId, group.id)).map((m) => ({ userId: m.userId, email: m.email, sources: m.sources })),
+          grants: (await listGroupItemGrants(input.orgId, group.id)).map((g) => ({ itemType: g.itemType, itemId: g.itemId })),
+          dataAccess: rules
+            .filter((r) => r.groupId === group.id)
+            .map((r) => ({ id: r.id, source: r.source, table: r.tableSchema ? `${r.tableSchema}.${r.tableName}` : r.tableName, columns: r.columns, rowFilter: r.rowFilter })),
+        })),
+      ),
+      idpRules: idpRules.map((r) => ({ id: r.id, idpGroupName: r.idpGroupName, ssoGroupId: r.ssoGroupId, userGroupId: r.userGroupId, userGroupName: r.userGroupName })),
+      groupDataAccessEnabled: enabled,
     };
   }
 

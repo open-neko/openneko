@@ -277,6 +277,7 @@ export default function CustomPacksAdmin({ initialPack = "", connected = "" }: {
       {status?.lastError ? <div className="grid gap-2"><p role="alert" className="text-ui-body-sm text-danger">The last installation attempt failed. Use the error details to correct the pack or its configuration, then review it again.</p><Disclosure title="Pack author error details"><p className="break-words text-ui-body-sm">{status.lastError}</p></Disclosure></div> : null}
       {status?.status === "installed" ? <ActionGroup align="start">
         {!status.configuration?.required && detail.manifest.management && <ButtonLink href={detail.manifest.management.path}>{detail.manifest.management.label}</ButtonLink>}
+        <ButtonLink href={`/admin/access?type=pack&id=${encodeURIComponent(selected)}`}>Access</ButtonLink>
         <Button variant="secondary" disabled={busy !== null} onClick={() => void loadPack(selected, operation === "upgrade" ? "configure" : "upgrade")}>{operation === "upgrade" ? "Edit installed version" : "Review available update"}</Button>
         <Button ref={removeButton} variant="danger" disabled={busy !== null} onClick={() => void remove()}>{busy === "uninstall" ? "Removing…" : "Remove pack"}</Button>
       </ActionGroup> : null}

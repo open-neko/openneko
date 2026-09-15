@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PluginActionDeclaration } from "./action.js";
 import { ChannelCapabilityDeclaration } from "./channel.js";
+import { DirectoryCapabilityDeclaration } from "./directory.js";
 import {
   ConnectCredentialScope,
   ConnectFlow,
@@ -173,12 +174,13 @@ export const PluginCapabilitiesDeclaration = z
     auth: AuthCapabilityDeclaration.optional(),
     connect: ConnectCapabilityDeclaration.optional(),
     channel: ChannelCapabilityDeclaration.optional(),
+    directory: DirectoryCapabilityDeclaration.optional(),
   })
   .refine(
-    (c) => c.action != null || c.auth != null || c.connect != null || c.channel != null,
+    (c) => c.action != null || c.auth != null || c.connect != null || c.channel != null || c.directory != null,
     {
       message:
-        "capabilities must declare at least one surface (action, auth, connect, channel)",
+        "capabilities must declare at least one surface (action, auth, connect, channel, directory)",
     },
   );
 

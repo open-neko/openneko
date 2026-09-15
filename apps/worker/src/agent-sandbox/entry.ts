@@ -60,6 +60,8 @@ interface SandboxJob {
   networkHosts?: string[];
   triggeredByObservationId?: string | null;
   workspace: AgentWorkspace;
+  /** Skill names the run's actor holds. Undefined means every skill. */
+  allowedSkills?: string[];
   /** Explicit least-privilege envelope for non-interactive agent jobs. */
   agentAccess?: {
     graphjinRead?: boolean;
@@ -104,7 +106,7 @@ export async function main(job = loadJob()): Promise<void> {
   // The launcher transfers only custom or modified skill directories. Fill in
   // unchanged built-ins from the agent image. Skill bodies remain filesystem
   // resources and are read only when the agent chooses one.
-  await materializeBuiltinSkills(job.workspace.skillsRoot);
+  await materializeBuiltinSkills(job.workspace.skillsRoot, job.allowedSkills);
   // Hermes scans HERMES_HOME/skills. Point it at the per-run catalog so a
   // required skill staged by the host is visible to Hermes' native skill tool.
   if (process.env.HERMES_HOME) {

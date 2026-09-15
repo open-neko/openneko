@@ -1,6 +1,7 @@
-import { app_user, db, eq } from "@neko/db";
+import { resolveUserGroups } from "@neko/db";
 import type { RunActor } from "@neko/llm/work";
 import { getCurrentUser } from "@/lib/auth";
+import { getOrgId } from "@/lib/db";
 
 /**
  * getCurrentUser without a request-scope requirement: outside a Next
@@ -21,10 +22,6 @@ export async function getCurrentUserSafe(): Promise<Awaited<
 export async function getCurrentActor(): Promise<RunActor> {
   const user = await getCurrentUserSafe();
   if (!user) return { userId: null, role: "member" };
-  const [row] = await db()
-    .select({ role: app_user.role })
-    .from(app_user)
-    .where(eq(app_user.id, user.id))
-    .limit(1);
-  return { userId: user.id, role: row?.role === "admin" ? "admin" : "member" };
+  const groups = await resolveUserGroups(await getOrgId(), user.id);
+  return { userId: user.id, role: groups.administrator ? "admin" : "member" };
 }

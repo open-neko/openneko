@@ -65,6 +65,7 @@ export const app_user = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    source: text("source").notNull().default("local"),
     // ADM1: a deactivated user can't sign in and their sessions are dead.
     disabled_at: ts("disabled_at"),
     created_at: ts("created_at").notNull().defaultNow(),
@@ -85,6 +86,93 @@ export const app_user = pgTable(
     ),
   }),
 );
+
+export const ADMINISTRATORS_GROUP_SLUG = "administrators";
+export const EVERYONE_GROUP_SLUG = "everyone";
+
+// Administrators membership and app_user.role are kept equal by triggers
+// (migration 0074). Everyone has no membership rows.
+export const user_group = pgTable(
+  "user_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    kind: text("kind").notNull().default("custom"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_slug_unique: uniqueIndex("user_group_org_id_slug_key").on(t.org_id, t.slug),
+    id_org_unique: uniqueIndex("user_group_id_org_id_key").on(t.id, t.org_id),
+  }),
+);
+
+export const user_group_membership = pgTable(
+  "user_group_membership",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => user_group.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    source: text("source").notNull().default("local"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.org_id, t.group_id, t.user_id, t.source] }),
+    user_idx: index("user_group_membership_user_idx").on(t.org_id, t.user_id, t.group_id),
+  }),
+);
+
+export const data_access_rule = pgTable(
+  "data_access_rule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => user_group.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    table_schema: text("table_schema").notNull().default(""),
+    table_name: text("table_name").notNull(),
+    columns: text("columns").array().notNull(),
+    row_filter: jsonb("row_filter"),
+    created_by_user_id: text("created_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    rule_unique: uniqueIndex("data_access_rule_org_id_group_id_source_table_schema_table_name_key").on(
+      t.org_id,
+      t.group_id,
+      t.source,
+      t.table_schema,
+      t.table_name,
+    ),
+    source_idx: index("data_access_rule_source_idx").on(t.org_id, t.source),
+  }),
+);
+
+export const data_access_settings = pgTable("data_access_settings", {
+  org_id: text("org_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  group_grants_enabled: boolean("group_grants_enabled").notNull().default(false),
+  previous_read_modes: jsonb("previous_read_modes").notNull().default({}),
+  enabled_by_user_id: text("enabled_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+});
 
 export const sso_group = pgTable(
   "sso_group",
@@ -111,6 +199,45 @@ export const sso_group = pgTable(
     id_org_unique: uniqueIndex("sso_group_id_org_unique").on(t.id, t.org_id),
   }),
 );
+
+export const idp_group_rule = pgTable(
+  "idp_group_rule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    sso_group_id: uuid("sso_group_id")
+      .notNull()
+      .references(() => sso_group.id, { onDelete: "cascade" }),
+    user_group_id: uuid("user_group_id")
+      .notNull()
+      .references(() => user_group.id, { onDelete: "cascade" }),
+    created_by_user_id: text("created_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    rule_unique: uniqueIndex("idp_group_rule_org_id_sso_group_id_user_group_id_key").on(
+      t.org_id,
+      t.sso_group_id,
+      t.user_group_id,
+    ),
+    group_idx: index("idp_group_rule_group_idx").on(t.org_id, t.user_group_id),
+  }),
+);
+
+export const directory_sync_state = pgTable("directory_sync_state", {
+  org_id: text("org_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  provider: text("provider"),
+  status: text("status").notNull().default("never"),
+  started_at: ts("started_at"),
+  finished_at: ts("finished_at"),
+  last_error: text("last_error"),
+  stats: jsonb("stats").notNull().default({}),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+});
 
 export const sso_group_membership = pgTable(
   "sso_group_membership",
@@ -2243,6 +2370,7 @@ export const action_policy = pgTable(
     denied_targets: jsonb("denied_targets"),
     limits: jsonb("limits").notNull().default(sql`'{}'::jsonb`),
     approver_role: text("approver_role"),
+    approver_group_id: uuid("approver_group_id"),
     priority: integer("priority").notNull().default(100),
     enabled: boolean("enabled").notNull().default(true),
     created_by_thread_id: uuid("created_by_thread_id").references(

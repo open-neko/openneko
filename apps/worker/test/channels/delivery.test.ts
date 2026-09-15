@@ -20,6 +20,7 @@ vi.mock("@neko/db/jobs", () => ({
 const h = vi.hoisted(() => ({
   binds: [] as Array<Record<string, unknown>>,
   selectRows: [] as unknown[],
+  audience: vi.fn(async (_org: string, audience: string, _run: string) => audience !== "finance"),
 }));
 vi.mock("@neko/db", () => ({
   db: vi.fn(() => ({
@@ -45,6 +46,7 @@ vi.mock("@neko/db", () => ({
   delivery_binding: { org_id: {}, enabled: {}, channel_plugin: {}, id: {} },
   processing_job: { id: {} },
 }));
+vi.mock("../../src/channels/audience", () => ({ audienceReceivesOutput: h.audience }));
 vi.mock("@neko/llm", () => ({ resolveAgentBackend: vi.fn(async () => ({ id: "hermes" })) }));
 vi.mock("@neko/llm/work", () => ({
   createWorkThread: vi.fn(async () => ({ id: "thread-1" })),
@@ -292,10 +294,12 @@ describe("output → channel fan-out (registerChannelOutputDelivery)", () => {
     h.selectRows = [
       { channel_plugin: "@open-neko/channel-telegram", recipient: { chatId: 1 } },
       { channel_plugin: "@open-neko/channel-slack", recipient: { chatId: 2 } },
+      { channel_plugin: "@open-neko/channel-slack", recipient: { chatId: 3 }, audience: "finance" },
     ];
     registerChannelOutputDelivery();
     const hook = vi.mocked(setWorkflowOutputDeliveryHook).mock.calls[0][0];
-    await hook("org-1", { id: "o1", title: "Sales", body: "up 4%", mood: "good" } as never);
+    await hook("org-1", { id: "o1", workflowRunId: "wr-1", title: "Sales", body: "up 4%", mood: "good" } as never);
+    expect(h.audience).toHaveBeenCalledWith("org-1", "finance", "wr-1");
     expect(enqueue).toHaveBeenCalledTimes(2);
     const keys = vi.mocked(enqueue).mock.calls.map((c) => (c[2] as { singletonKey: string }).singletonKey);
     expect(keys).toEqual([

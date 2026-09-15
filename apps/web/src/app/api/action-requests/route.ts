@@ -5,6 +5,7 @@ import {
 } from "@neko/llm/workflows";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { actionRequestVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,8 +43,9 @@ export async function GET(req: NextRequest) {
     limit,
   });
 
+  const actionVisible = await actionRequestVisibility();
   const visibleRows = rows.filter(
-    (row) => actor.role === "admin" || row.kind !== "source_config_admin",
+    (row) => (actor.role === "admin" || row.kind !== "source_config_admin") && actionVisible(row),
   );
 
   return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { applyMemoryPull, listMemoryPullUpdates } from "@neko/llm/work";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { holdsItem } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const actor = await getCurrentActor();
-  if (actor.role !== "member" || !actor.userId) {
+  if (actor.role !== "member" || !actor.userId || !(await holdsItem("team_memory", "global"))) {
     return NextResponse.json({ updates: [] });
   }
   const orgId = await getOrgId();
@@ -21,7 +22,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const actor = await getCurrentActor();
-  if (actor.role !== "member" || !actor.userId) {
+  if (actor.role !== "member" || !actor.userId || !(await holdsItem("team_memory", "global"))) {
     return NextResponse.json({ error: "members only" }, { status: 403 });
   }
   const body = await request.json().catch(() => ({}));

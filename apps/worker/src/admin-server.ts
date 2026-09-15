@@ -25,6 +25,10 @@
  *                               Proxies to the installed auth plugin's
  *                               complete_auth RPC.
  *   GET  /admin/plugins/status → 200 + registry health/status summary.
+ *   GET  /admin/directory/status → directory plugin and last sync state.
+ *   POST /admin/directory/sync  → run a full directory sync now.
+ *   POST /admin/directory/users → create a user in the identity provider ({ email, name? }).
+ *   POST /admin/graphjin/group-grants → apply group grants now ({ immediate: true }) or in a batch.
  *   POST /admin/action-requests/create → persist + run worker-owned preflight
  *                               before returning an approval-card-safe id.
  *
@@ -281,6 +285,7 @@ export interface PluginsHandlerSurface {
   getRegisteredActionDescriptors(): Array<{
     kind: string;
     description: string;
+    pluginName?: string;
     scope?: "external" | "internal";
     default_mode?:
       | "auto"
@@ -301,6 +306,7 @@ export interface PluginRegistryStatus {
   kinds: string[];
   vmsRunning: number;
   authProvider?: string | null;
+  directoryProvider?: string | null;
   channels: Array<{
     pluginId: string;
     providerLabel: string;
@@ -314,6 +320,7 @@ const EMPTY_PLUGIN_STATUS: PluginRegistryStatus = {
   kinds: [],
   vmsRunning: 0,
   authProvider: null,
+  directoryProvider: null,
   channels: [],
 };
 
@@ -380,7 +387,25 @@ export type AdminHandlerOptions = {
   actionRequests?: ActionRequestHandlerSurface | null;
   /** Shared first-party and uploaded solution-pack lifecycle. */
   packs?: PacksHandlerSurface | null;
+  /** Directory plugin status and on-demand sync. */
+  directory?: DirectoryHandlerSurface | null;
+  /** Writes group grants into the GraphJin config, now or batched. */
+  groupGrants?: GroupGrantsHandlerSurface | null;
 };
+
+export interface GroupGrantsHandlerSurface {
+  apply(): Promise<unknown>;
+  schedule(): void;
+  enable(actorUserId: string | null): Promise<unknown>;
+  disable(actorUserId: string | null): Promise<unknown>;
+  apiOperations(): Promise<string[]>;
+}
+
+export interface DirectoryHandlerSurface {
+  status(): Promise<unknown>;
+  sync(): Promise<unknown>;
+  createUser(input: { email: string; name: string | null }): Promise<unknown>;
+}
 
 export interface ActionRequestHandlerSurface {
   create(input: Record<string, unknown>): Promise<{ id: string; status: string }>;
@@ -440,6 +465,8 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
   const recordsImports = opts.recordsImports ?? null;
   const actionRequests = opts.actionRequests ?? null;
   const packs = opts.packs ?? null;
+  const directory = opts.directory ?? null;
+  const groupGrants = opts.groupGrants ?? null;
 
   return function handle(req: IncomingMessage, res: ServerResponse) {
     if (req.method === "GET" && req.url === "/health") {
@@ -541,6 +568,39 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       req.url === "/admin/plugins/action-descriptors"
     ) {
       handlePluginActionDescriptors(res, plugins);
+      return;
+    }
+    if (req.url === "/admin/graphjin/api-operations" && req.method === "GET") {
+      void (async () => {
+        if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
+        try {
+          json(res, 200, { operations: await groupGrants.apiOperations() });
+        } catch (err) {
+          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        }
+      })();
+      return;
+    }
+    if (req.url?.startsWith("/admin/graphjin/group-grants") && req.method === "POST") {
+      void (async () => {
+        if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
+        try {
+          const body = (await readJson(req)) as { immediate?: unknown; actorUserId?: unknown };
+          const actorUserId = typeof body.actorUserId === "string" ? body.actorUserId : null;
+          if (req.url === "/admin/graphjin/group-grants/enable") return json(res, 200, await groupGrants.enable(actorUserId));
+          if (req.url === "/admin/graphjin/group-grants/disable") return json(res, 200, await groupGrants.disable(actorUserId));
+          if (req.url !== "/admin/graphjin/group-grants") return json(res, 404, { error: "not found" });
+          if (body.immediate === true) return json(res, 200, await groupGrants.apply());
+          groupGrants.schedule();
+          json(res, 202, { scheduled: true });
+        } catch (err) {
+          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        }
+      })();
+      return;
+    }
+    if (req.url === "/admin/directory/status" || req.url === "/admin/directory/sync" || req.url === "/admin/directory/users") {
+      void handleDirectory(req, res, directory);
       return;
     }
     if (req.method === "GET" && req.url === "/admin/plugins/status") {
@@ -993,6 +1053,41 @@ function handlePluginActionDescriptors(
 ) {
   const descriptors = plugins?.getRegisteredActionDescriptors() ?? [];
   json(res, 200, { descriptors });
+}
+
+async function handleDirectory(
+  req: IncomingMessage,
+  res: ServerResponse,
+  directory: DirectoryHandlerSurface | null,
+) {
+  if (!directory) {
+    json(res, 503, { error: "directory is not configured" });
+    return;
+  }
+  const sync = req.url === "/admin/directory/sync";
+  const users = req.url === "/admin/directory/users";
+  if (req.method !== (sync || users ? "POST" : "GET")) {
+    json(res, 405, { error: "method not allowed" });
+    return;
+  }
+  try {
+    if (users) {
+      const body = (await readJson(req).catch(() => null)) as { email?: unknown; name?: unknown } | null;
+      const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+      if (!email.includes("@")) {
+        json(res, 400, { error: "a valid email address is required" });
+        return;
+      }
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : null;
+      json(res, 200, await directory.createUser({ email, name }));
+      return;
+    }
+    json(res, 200, sync ? { stats: await directory.sync() } : await directory.status());
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    const status = code === "no_provider" ? 404 : code === "running" || code === "lockout" ? 409 : code === "unsupported" ? 400 : 500;
+    json(res, status, { error: err instanceof Error ? err.message : String(err), code: code ?? null });
+  }
 }
 
 function handlePluginStatus(

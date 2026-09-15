@@ -19,6 +19,7 @@ import { observeSafely, type HarnessRunSummary } from "@neko/telemetry";
 import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflow } from "@/lib/entitlements";
 import {
   registerRun,
   unregisterRun,
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 async function postWorkflow(request: NextRequest, context: RouteContext) {
   const telemetryStartedAt = Date.now();
   const { workflowId } = await context.params;
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const body = await request.json().catch(() => ({}));
   const userMessage =
     typeof body.userMessage === "string" ? body.userMessage.trim() : undefined;

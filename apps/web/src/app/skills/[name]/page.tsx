@@ -1,5 +1,6 @@
 "use client";
 
+import { ItemAccessPanel } from "@/components/admin/ItemAccessPanel";
 import { use as usePromise, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, FileText, Pencil } from "lucide-react";
@@ -161,6 +162,7 @@ export default function SkillDetailPage({ params }: PageProps) {
       />
 
       <SkillWorkspace skill={skill} skillName={name} onReload={load} />
+      <ItemAccessPanel itemType="skill" itemId={skill.name} label={skill.name} />
     </div>
   );
 }

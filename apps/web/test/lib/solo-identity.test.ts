@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[][], updates: [] as unknown[], inserts: [] as unknown[], token: undefined as string | undefined }));
+const state = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[][], updates: [] as unknown[], inserts: [] as unknown[], token: undefined as string | undefined, reconcile: vi.fn(async (input: unknown) => void input) }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => state.token ? { value: state.token } : undefined }) }));
 vi.mock("@/lib/db", () => ({ getOrgId: async () => "org" }));
 vi.mock("@neko/llm/work", () => ({ upsertOperatorProfile: vi.fn() }));
@@ -13,7 +13,7 @@ vi.mock("@neko/db", async (original) => {
     insert: () => ({ values: async (value: unknown) => { state.inserts.push(value); } }),
     delete: () => ({ where: async () => {} }),
   };
-  return { ...actual, getOrCreateSoloAdmin: vi.fn(async () => state.rows.shift()?.[0] ?? null), db: () => ({ ...runner, transaction: async (fn: (tx: typeof runner) => unknown) => fn(runner) }) };
+  return { ...actual, reconcileSignInGroups: state.reconcile, getOrCreateSoloAdmin: vi.fn(async () => state.rows.shift()?.[0] ?? null), db: () => ({ ...runner, transaction: async (fn: (tx: typeof runner) => unknown) => fn(runner) }) };
 });
 import { _resetAuthProviderCache, encodeSession, getCurrentUser, upsertUserFromIdentity } from "@/lib/auth";
 
@@ -37,8 +37,10 @@ it("links SSO to the solo account without creating a second identity, and requir
   state.rows = [[], [owner]];
   const linked = await upsertUserFromIdentity({ sub: "idp-owner", email: "Owner@Example.com", name: "Owner" });
   expect(linked.id).toBe(owner.id);
-  expect(state.updates[0]).toMatchObject({ sub: "idp-owner", role: "admin" });
+  expect(state.updates[0]).toMatchObject({ sub: "idp-owner" });
+  expect(state.updates[0]).not.toHaveProperty("role");
   expect(state.inserts).toEqual([]);
+  expect(state.reconcile).toHaveBeenCalledWith({ orgId: "org", userId: owner.id, provider: "oidc", tenantId: "org", groups: [] });
   state.token = encodeSession({ userId: owner.id, email: owner.email, name: owner.name, expiresAt: Math.floor(Date.now() / 1000) + 60 });
   state.rows = [[{ id: owner.id, email: owner.email, name: owner.name }]];
   expect((await getCurrentUser())?.id).toBe(owner.id);

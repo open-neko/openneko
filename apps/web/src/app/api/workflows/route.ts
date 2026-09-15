@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { listWorkflows } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
+import { workflowVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const orgId = await getOrgId();
-  const workflows = await listWorkflows(orgId);
+  const visible = await workflowVisibility();
+  const workflows = (await listWorkflows(orgId)).filter(visible);
   return NextResponse.json({
     workflows: workflows.map((w) => ({
       id: w.id,

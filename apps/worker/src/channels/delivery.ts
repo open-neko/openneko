@@ -4,6 +4,7 @@
 // RPC. Inbound: an IntentEvent (parsed in-VM) routes to the SAME agent entry
 // points the web uses — approve/reject an action_request, or start a chat run.
 import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
+import { audienceReceivesOutput } from "./audience.js";
 import { enqueue, QUEUE, type ChannelDeliverPayload } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
 import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
@@ -124,6 +125,7 @@ const onOutput: WorkflowOutputDeliveryHook = async (orgId, output) => {
   };
   const event = outputRowToInteractionEvent(row);
   for (const b of bindings) {
+    if (!(await audienceReceivesOutput(orgId, b.audience, output.workflowRunId))) continue;
     await enqueueChannelDelivery(
       orgId,
       b.channel_plugin,

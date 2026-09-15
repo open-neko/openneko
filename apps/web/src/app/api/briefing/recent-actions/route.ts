@@ -13,6 +13,7 @@ import {
   workflow_run,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { watcherRunVisibility, workflowIdVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,8 +83,10 @@ export async function GET() {
     .orderBy(desc(action_execution.finished_at))
     .limit(LIMIT);
 
+  const workflowVisible = await workflowIdVisibility();
+  const watcherVisible = await watcherRunVisibility(rows.map((r) => r.workflowRunId));
   return NextResponse.json({
-    receipts: rows.map((r) => ({
+    receipts: rows.filter((r) => workflowVisible(r.workflowId) && watcherVisible(r.workflowRunId)).map((r) => ({
       id: r.id,
       kind: r.kind,
       target: r.target,

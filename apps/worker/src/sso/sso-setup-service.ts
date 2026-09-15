@@ -230,7 +230,10 @@ export class SsoSetupService {
     return out;
   }
 
-  /** Pin the active Scalekit environment/organization (Dev default, Prod opt-in). */
+  /**
+   * Pin the active Scalekit environment/organization (Dev default, Prod opt-in).
+   * The organization also becomes the plugin's SCALEKIT_ORGANIZATION_ID for directory sync.
+   */
   async setScalekitIds(
     orgId: string,
     input: { environmentId: string; organizationId: string; tier: string },
@@ -260,6 +263,10 @@ export class SsoSetupService {
       .update(organization)
       .set({ scalekit_org_id: input.organizationId, updated_at: new Date() })
       .where(eq(organization.id, orgId));
+    const provider = this.getRegistry()?.getAuthProvider();
+    if (provider) {
+      await this.registry().setPluginSecret(provider.pluginName, "SCALEKIT_ORGANIZATION_ID", input.organizationId);
+    }
   }
 
   /** Write the sign-in credentials into the encrypted vault (admin-gated). */

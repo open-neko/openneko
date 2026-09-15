@@ -23,6 +23,13 @@ import {
   ConnectCapabilityDeclaration,
 } from "./manifest.js";
 import { ChannelCapabilityDeclaration } from "./channel.js";
+import {
+  ApplyDirectoryChangeParams,
+  ApplyDirectoryChangeResult,
+  DirectoryCapabilityDeclaration,
+  ListDirectoryParams,
+  ListDirectoryResult,
+} from "./directory.js";
 
 /**
  * JSON-RPC over stdio between the OpenNeko worker (caller) and a plugin
@@ -45,6 +52,8 @@ export const RpcMethod = z.enum([
   "parse_inbound",
   "verify_inbound",
   "poll_inbound",
+  "list_directory",
+  "apply_directory_change",
 ]);
 export type RpcMethod = z.infer<typeof RpcMethod>;
 
@@ -74,6 +83,7 @@ export const RegisterResult = z.object({
     auth: AuthCapabilityDeclaration.optional(),
     connect: ConnectCapabilityDeclaration.optional(),
     channel: ChannelCapabilityDeclaration.optional(),
+    directory: DirectoryCapabilityDeclaration.optional(),
   }),
 });
 export type RegisterResult = z.infer<typeof RegisterResult>;
@@ -117,6 +127,18 @@ export type RefreshConnectRpcParams = z.infer<typeof RefreshConnectRpcParams>;
 
 export const RefreshConnectRpcResult = z.object({ result: RefreshConnectResult });
 export type RefreshConnectRpcResult = z.infer<typeof RefreshConnectRpcResult>;
+
+export const ListDirectoryRpcParams = z.object({ params: ListDirectoryParams });
+export type ListDirectoryRpcParams = z.infer<typeof ListDirectoryRpcParams>;
+
+export const ListDirectoryRpcResult = z.object({ result: ListDirectoryResult });
+export type ListDirectoryRpcResult = z.infer<typeof ListDirectoryRpcResult>;
+
+export const ApplyDirectoryChangeRpcParams = z.object({ params: ApplyDirectoryChangeParams });
+export type ApplyDirectoryChangeRpcParams = z.infer<typeof ApplyDirectoryChangeRpcParams>;
+
+export const ApplyDirectoryChangeRpcResult = z.object({ result: ApplyDirectoryChangeResult });
+export type ApplyDirectoryChangeRpcResult = z.infer<typeof ApplyDirectoryChangeRpcResult>;
 
 export const RpcOk = z.object({
   ok: z.literal(true),

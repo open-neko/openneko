@@ -1,4 +1,15 @@
-import { and, app_user, channel_identity, db, eq, isNull, sql } from "@neko/db";
+import { and, app_user, channel_identity, db, eq, holds, isNull, resolveUserGroups, sql } from "@neko/db";
+
+/**
+ * A linked user acts through their groups, and needs the channel item for
+ * the channel plugin; without it the inbound is dropped.
+ */
+async function linkedActor(orgId: string, channelPlugin: string, userId: string): Promise<ChannelActor> {
+  const allowed = (await holds({ orgId, kind: "user", userId }, "channel", channelPlugin)).allowed;
+  if (!allowed) return { userId: null, role: "member", blocked: true };
+  const groups = await resolveUserGroups(orgId, userId);
+  return { userId, role: groups.administrator ? "admin" : "member" };
+}
 
 /**
  * CH3 — resolve the acting principal for an inbound channel message.
@@ -68,9 +79,7 @@ export async function resolveChannelActor(
 
   if (identity.status === "linked" && identity.app_user_id) {
     const user = await getActiveUser(orgId, identity.app_user_id);
-    if (user) {
-      return { userId: user.id, role: user.role === "admin" ? "admin" : "member" };
-    }
+    if (user) return linkedActor(orgId, channelPlugin, user.id);
     return anonymous;
   }
 
@@ -103,7 +112,7 @@ export async function resolveChannelActor(
       console.log(
         `[channel-identity] auto-linked ${channelPlugin}/${sender.id} → ${match.id} (email match)`,
       );
-      return { userId: match.id, role: match.role === "admin" ? "admin" : "member" };
+      return linkedActor(orgId, channelPlugin, match.id);
     }
   }
 

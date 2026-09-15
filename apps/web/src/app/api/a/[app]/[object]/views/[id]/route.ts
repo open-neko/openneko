@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getOrgId } from "@/lib/db";
 import { deleteRecordSavedView } from "@/lib/records";
 import { recordsApiError } from "@/lib/records-api";
+import { appRedirect } from "@/lib/public-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ async function remove(request: Request, context: RouteContext) {
         ? new NextResponse(null, { status: 204 })
         : NextResponse.json({ error: "not found" }, { status: 404 });
     }
-    return NextResponse.redirect(new URL(`/a/${app}/${object}`, request.url), 303);
+    return appRedirect(`/a/${app}/${object}`, 303);
   } catch (error) {
     return recordsApiError(error);
   }

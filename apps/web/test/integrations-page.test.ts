@@ -4,6 +4,7 @@ vi.mock("next/server", () => ({ connection: async () => {} }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => ({ id: "alice" }), getAuthProvider: async () => ({}) }));
 vi.mock("@/lib/actor", () => ({ getCurrentActor: async () => ({ userId: "alice", role: "member" }) }));
 vi.mock("@neko/db", () => ({ getOrgId: async () => "org" }));
+vi.mock("@/lib/entitlements", () => ({ heldItemIds: async () => "*" }));
 vi.mock("@neko/llm/graphjin/pack-user-connections", () => ({ listPackUserConnections: mocks.list }));
 vi.mock("@/lib/integrations", () => ({ getOperatorConnectStatus: async () => [], getDeploymentConnectStatus: async () => [], listConnectProviders: async () => [] }));
 vi.mock("../src/app/integrations/visual-fixture", () => ({ personalConnectionsFixture: mocks.fixture }));

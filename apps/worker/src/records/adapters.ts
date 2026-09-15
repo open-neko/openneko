@@ -310,8 +310,7 @@ async function actorForRequest(request: ActionRequestRecord): Promise<RecordPoli
     app_user,
     db,
     eq,
-    sso_group,
-    sso_group_membership,
+    resolveUserGroups,
   } = await import("@neko/db");
   if (!actorUserId) {
     const [anyUser] = await db()
@@ -347,27 +346,11 @@ async function actorForRequest(request: ActionRequestRecord): Promise<RecordPoli
       "record action actor is disabled or no longer belongs to the organization",
     );
   }
-  const memberships = await db()
-    .select({ groupId: sso_group.id })
-    .from(sso_group_membership)
-    .innerJoin(
-      sso_group,
-      and(
-        eq(sso_group.id, sso_group_membership.group_id),
-        eq(sso_group.org_id, sso_group_membership.org_id),
-      ),
-    )
-    .where(
-      and(
-        eq(sso_group_membership.org_id, request.orgId),
-        eq(sso_group_membership.user_id, actorUserId),
-        eq(sso_group.active, true),
-      ),
-    );
+  const groups = await resolveUserGroups(request.orgId, actorUserId);
   return {
     userId: actorUserId,
-    role: user.role,
-    groupIds: memberships.map((row) => row.groupId),
+    role: groups.administrator ? "admin" : "member",
+    groupIds: [...groups.groupIds, ...groups.ssoGroupIds],
     solo: false,
   };
 }

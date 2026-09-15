@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, db, eq, metric } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { requireItem } from "@/lib/entitlements";
 
 /**
  * PATCH /api/briefing/pin
@@ -17,6 +18,8 @@ export async function PATCH(request: NextRequest) {
   if (!metricId || typeof active !== "boolean") {
     return NextResponse.json({ error: "metricId and active required" }, { status: 400 });
   }
+  const deniedMetric = await requireItem("metric", metricId, { notFound: "metric not found" });
+  if (deniedMetric) return deniedMetric;
 
   await db()
     .update(metric)

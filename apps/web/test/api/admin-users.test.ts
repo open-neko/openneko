@@ -7,7 +7,11 @@ const mocks = vi.hoisted(() => ({
   inserted: [] as Row[],
   updates: [] as Row[],
   actorId: "admin-1" as string | null,
+  setAdministrator: vi.fn(async (...args: [string, string, boolean]) => void args),
+  requestWorker: vi.fn(async (path: string, body?: unknown) => ({ status: 200, body: { path, body } })),
 }));
+
+vi.mock("@/lib/groups-admin", () => ({ requestWorker: mocks.requestWorker }));
 
 vi.mock("@/lib/admin-auth", () => ({
   requireAdminActor: async () => ({ userId: mocks.actorId, role: "admin" }),
@@ -27,6 +31,12 @@ vi.mock("@neko/db", () => {
     }),
   });
   return {
+    GroupError: class GroupError extends Error {
+      constructor(public readonly code: string, message: string) {
+        super(message);
+      }
+    },
+    setLocalAdministrator: mocks.setAdministrator,
     organization: { solo_admin_user_id: "owner" },
     isUnclaimedSoloEmail: (email: string) => email.endsWith("@solo.openneko.invalid"),
     app_user: {
@@ -122,6 +132,24 @@ describe("POST /api/admin/users", () => {
     expect(String(mocks.inserted[0].id)).toMatch(/^usr_/);
   });
 
+  it("creates the user in the directory when asked and reports a directory failure", async () => {
+    mocks.selectResults = [[]];
+    const res = await POST(postRequest({ email: "Dee@Company.com", name: "Dee", role: "member", addToDirectory: true }) as never);
+    expect(res.status).toBe(201);
+    expect(mocks.requestWorker).toHaveBeenCalledWith("/admin/directory/users", { email: "dee@company.com", name: "Dee" });
+    expect((await res.json()).directoryError).toBeUndefined();
+
+    mocks.selectResults = [[]];
+    mocks.requestWorker.mockResolvedValueOnce({ status: 400, body: { error: "Scalekit does not create users" } } as never);
+    const failed = await POST(postRequest({ email: "eve@company.com", role: "member", addToDirectory: true }) as never);
+    expect(failed.status).toBe(201);
+    expect(await failed.json()).toMatchObject({ user: { email: "eve@company.com" }, directoryError: "Scalekit does not create users" });
+
+    mocks.selectResults = [[]];
+    await POST(postRequest({ email: "fay@company.com", role: "member" }) as never);
+    expect(mocks.requestWorker).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects duplicates with 409", async () => {
     mocks.selectResults = [[{ id: "usr_existing" }]];
     const res = await POST(
@@ -189,8 +217,8 @@ describe("PATCH /api/admin/users/[userId]", () => {
       targetParams as never,
     );
     expect(res.status).toBe(200);
-    expect(mocks.updates).toHaveLength(1);
-    expect(mocks.updates[0]).toMatchObject({ role: "member" });
+    expect(mocks.setAdministrator).toHaveBeenCalledWith(expect.any(String), "usr_target", false);
+    expect(mocks.updates).toHaveLength(0);
   });
 
   it("disables and re-enables a member without consulting the admin count", async () => {

@@ -5,6 +5,7 @@ import {
   setSubscriptionEnabled,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflow } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   const body = await req.json().catch(() => ({}));
   const orgId = await getOrgId();
   const sub = await getOwnedSubscription(orgId, subscriptionId);
-  if (!sub) {
+  if (!sub || (await requireWorkflow(sub.workflow_id))) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   if (typeof body.enabled === "boolean") {
@@ -40,7 +41,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
   const { subscriptionId } = await context.params;
   const orgId = await getOrgId();
   const sub = await getOwnedSubscription(orgId, subscriptionId);
-  if (!sub) {
+  if (!sub || (await requireWorkflow(sub.workflow_id))) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   await deleteSubscription(subscriptionId);
