@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import {
+  and,
+  db,
+  eq,
+  workflow_definition,
+  workflow_run,
   filterHeld,
   heldItems,
   holds,
@@ -56,4 +61,42 @@ export function libraryCollectionParents(path: string): ItemRef[] {
     parents.push({ type: "library_collection", id: `${parts.slice(0, i).join("/")}/` });
   }
   return parents;
+}
+
+/**
+ * A workflow is visible when the user holds it and it is an org workflow,
+ * or when it is the user's own personal workflow.
+ */
+export async function workflowVisibility(): Promise<(workflow: { id: string; ownerUserId?: string | null }) => boolean> {
+  const actor = await currentEntitlementActor();
+  if (!actor || actor.kind !== "user") return () => false;
+  const held = await heldItems(actor, "workflow");
+  const admin = (await getCurrentActor()).role === "admin";
+  return (workflow) => {
+    const owner = workflow.ownerUserId ?? "";
+    if (owner === actor.userId) return true;
+    if (owner) return admin;
+    return held === "*" || held.has(workflow.id);
+  };
+}
+
+export async function requireWorkflow(workflowId: string): Promise<NextResponse | null> {
+  const [row] = await db()
+    .select({ id: workflow_definition.id, ownerUserId: workflow_definition.owner_user_id })
+    .from(workflow_definition)
+    .where(and(eq(workflow_definition.org_id, await getOrgId()), eq(workflow_definition.id, workflowId)))
+    .limit(1);
+  if (!row) return null;
+  return (await workflowVisibility())(row) ? null : itemNotFound("Workflow not found");
+}
+
+export async function requireWorkflowRun(workflowRunId: string): Promise<NextResponse | null> {
+  const [row] = await db()
+    .select({ workflowId: workflow_run.workflow_id })
+    .from(workflow_run)
+    .where(and(eq(workflow_run.org_id, await getOrgId()), eq(workflow_run.id, workflowRunId)))
+    .limit(1);
+  if (!row) return null;
+  const denied = await requireWorkflow(row.workflowId);
+  return denied ? itemNotFound("Run not found") : null;
 }

@@ -1,4 +1,5 @@
 import { enqueue, QUEUE } from "@neko/db/jobs";
+import { runWorkflowFilter } from "./entitlement-scope";
 import {
   createActionRequest,
   getActionRequest,
@@ -20,6 +21,7 @@ import {
   deleteWorkflow,
   emitWorkflowOutput,
   listSubscriptionsByWorkflow,
+  getWorkflow,
   listWorkflows,
   type SaveWorkflowInput,
   type WorkflowRecord,
@@ -620,6 +622,7 @@ export interface AgentControlPlane {
   listWorkflowsWithTriggers(input: {
     orgId: string;
     limit?: number;
+    runId?: string | null;
   }): Promise<{ total: number; workflows: WorkflowListEntry[] }>;
   /**
    * Hard-delete a workflow and its dependents (triggers, runs, outputs,
@@ -629,6 +632,7 @@ export interface AgentControlPlane {
   deleteWorkflow(input: {
     orgId: string;
     workflowId: string;
+    runId?: string | null;
   }): Promise<{ found: boolean; name: string | null }>;
   upsertActionPolicyByName(
     input: CreateActionPolicyInput,
@@ -1262,6 +1266,13 @@ export class InProcessControlPlane implements AgentControlPlane {
   async saveWorkflowWithTrigger(
     input: SaveWorkflowInput,
   ): Promise<Wire<SaveWorkflowWithTriggerResult>> {
+    if (input.createdByRunId) {
+      const owner = input.ownerUserId ?? "";
+      const existing = (await listWorkflows(input.orgId)).find((w) => w.name === input.name && w.ownerUserId === owner);
+      if (existing && !(await runWorkflowFilter(input.orgId, input.createdByRunId))(existing)) {
+        throw new Error(`A workflow named "${input.name}" exists and this run cannot change it. Choose another name.`);
+      }
+    }
     return toWire(await saveWorkflowWithTrigger(input));
   }
 
@@ -1276,8 +1287,10 @@ export class InProcessControlPlane implements AgentControlPlane {
   async listWorkflowsWithTriggers(input: {
     orgId: string;
     limit?: number;
+    runId?: string | null;
   }): Promise<{ total: number; workflows: WorkflowListEntry[] }> {
-    const all = await listWorkflows(input.orgId);
+    const visible = await runWorkflowFilter(input.orgId, input.runId);
+    const all = (await listWorkflows(input.orgId)).filter(visible);
     const slice = all.slice(0, input.limit ?? 50);
     const triggers = await Promise.all(
       slice.map((w) => listSubscriptionsByWorkflow(input.orgId, w.id)),
@@ -1296,7 +1309,12 @@ export class InProcessControlPlane implements AgentControlPlane {
   async deleteWorkflow(input: {
     orgId: string;
     workflowId: string;
+    runId?: string | null;
   }): Promise<{ found: boolean; name: string | null }> {
+    const target = await getWorkflow(input.orgId, input.workflowId);
+    if (!target || !(await runWorkflowFilter(input.orgId, input.runId))(target)) {
+      return { found: false, name: null };
+    }
     const deleted = await deleteWorkflow(input.orgId, input.workflowId);
     return { found: deleted !== null, name: deleted?.name ?? null };
   }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, db, desc, eq, observation } from "@neko/db";
+import { and, db, desc, eq, observation, workflow_definition } from "@neko/db";
+import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflow, requireWorkflowRun, workflowVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,8 +32,21 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(observation.created_at))
     .limit(limit);
 
+  const visible = await workflowVisibility();
+  const actorUserId = (await getCurrentActor()).userId;
+  const owners = new Map(
+    (await db()
+      .select({ id: workflow_definition.id, ownerUserId: workflow_definition.owner_user_id })
+      .from(workflow_definition)
+      .where(eq(workflow_definition.org_id, orgId))).map((w) => [w.id, w.ownerUserId]),
+  );
+  const shown = rows.filter((r) =>
+    r.consumer_workflow_id
+      ? visible({ id: r.consumer_workflow_id, ownerUserId: owners.get(r.consumer_workflow_id) ?? "" })
+      : !r.consumer_user_id || r.consumer_user_id === actorUserId,
+  );
   return NextResponse.json({
-    observations: rows.map((r) => ({
+    observations: shown.map((r) => ({
       id: r.id,
       sourceOutputId: r.source_output_id,
       consumerKind: r.consumer_kind,

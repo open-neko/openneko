@@ -418,6 +418,7 @@ async function handle(
             cp.listWorkflowsWithTriggers({
               orgId: binding.orgId,
               limit,
+              runId: binding.runId,
             }),
         }),
       );
@@ -431,6 +432,7 @@ async function handle(
         await cp.deleteWorkflow({
           orgId: binding.orgId,
           workflowId: String(body.workflowId),
+          runId: binding.runId,
         }),
       );
     case "/v1/rule/save":

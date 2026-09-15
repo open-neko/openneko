@@ -23,3 +23,43 @@ export async function runHeldItemIds(actor: EntitlementActor, type: ItemType): P
   const held = await heldItems(actor, type);
   return held === "*" ? undefined : [...held].sort();
 }
+
+/** Entitlement actor for a persisted work run; unknown runs hold nothing. */
+export async function entitlementActorForRun(orgId: string, runId: string): Promise<EntitlementActor | null> {
+  const { and, db, eq, work_run, workflow_run } = await import("@neko/db");
+  const [run] = await db()
+    .select({ userId: work_run.actor_user_id })
+    .from(work_run)
+    .where(and(eq(work_run.id, runId), eq(work_run.org_id, orgId)))
+    .limit(1);
+  if (!run) return null;
+  const [workflowRun] = run.userId
+    ? []
+    : await db()
+        .select({ workflowId: workflow_run.workflow_id })
+        .from(workflow_run)
+        .where(and(eq(workflow_run.work_run_id, runId), eq(workflow_run.org_id, orgId)))
+        .limit(1);
+  return runEntitlementActor(orgId, { userId: run.userId }, { workflowId: workflowRun?.workflowId ?? null });
+}
+
+/**
+ * A workflow filter for a run: the run's user sees org workflows they hold
+ * and their own personal workflows. Without a run id nothing is filtered.
+ */
+export async function runWorkflowFilter(
+  orgId: string,
+  runId: string | null | undefined,
+): Promise<(workflow: { id: string; ownerUserId?: string | null }) => boolean> {
+  if (!runId) return () => true;
+  const actor = await entitlementActorForRun(orgId, runId);
+  if (!actor) return () => false;
+  const held = await heldItems(actor, "workflow");
+  const admin = actor.kind === "service" && !actor.packId;
+  return (workflow) => {
+    const owner = workflow.ownerUserId ?? "";
+    if (actor.kind === "user" && owner === actor.userId) return true;
+    if (owner) return admin || held === "*";
+    return held === "*" || held.has(workflow.id);
+  };
+}

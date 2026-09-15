@@ -11,6 +11,7 @@ import {
   type SubscriptionSourceKind,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflow, requireWorkflowRun, workflowVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ const VALID_SOURCE_KINDS: SubscriptionSourceKind[] = [
 
 export async function GET(_req: NextRequest, context: RouteContext) {
   const { workflowId } = await context.params;
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const orgId = await getOrgId();
   const subs = await listSubscriptionsByWorkflow(orgId, workflowId);
   return NextResponse.json({
@@ -48,6 +51,8 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
 export async function POST(req: NextRequest, context: RouteContext) {
   const { workflowId } = await context.params;
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const body = await req.json().catch(() => ({}));
   const sourceKind = body.sourceKind as string | undefined;
   if (!sourceKind || !VALID_SOURCE_KINDS.includes(sourceKind as SubscriptionSourceKind)) {
