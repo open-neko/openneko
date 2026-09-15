@@ -1,4 +1,4 @@
-import { and, app_user, db, eq, sso_group } from "@neko/db";
+import { and, app_user, db, eq, sso_group, user_group } from "@neko/db";
 import {
   RecordsAccessAdmin,
   type RecordAccessSubject,
@@ -22,7 +22,7 @@ export const RECORD_ACCESS_ACTION_DESCRIPTORS = [
     scope: "internal",
     description: "Grant a specific user or immutable SSO group access to a generated app.",
     default_mode: "ask",
-    example: { app: "crm", subject_type: "group", subject_id: "<sso_group.id>" },
+    example: { app: "crm", subject_type: "group", subject_id: "<user_group.id>" },
   },
   {
     kind: "app_access_revoke",
@@ -40,7 +40,7 @@ export const RECORD_ACCESS_ACTION_DESCRIPTORS = [
       app: "crm",
       object: "activity",
       subject_type: "group",
-      subject_id: "<sso_group.id>",
+      subject_id: "<user_group.id>",
       read: true,
       create: true,
       update: true,
@@ -57,7 +57,7 @@ export const RECORD_ACCESS_ACTION_DESCRIPTORS = [
       object: "opportunity",
       field: "amount",
       subject_type: "group",
-      subject_id: "<sso_group.id>",
+      subject_id: "<user_group.id>",
       read: true,
       write: false,
     },
@@ -124,6 +124,12 @@ async function accessSubject(
     return { type, id };
   }
   if (type === "group") {
+    const [userGroup] = await db()
+      .select({ id: user_group.id, slug: user_group.slug })
+      .from(user_group)
+      .where(and(eq(user_group.org_id, request.orgId), eq(user_group.id, id)))
+      .limit(1);
+    if (userGroup) return { type, id };
     const [group] = await db()
       .select({ id: sso_group.id })
       .from(sso_group)
@@ -135,7 +141,7 @@ async function accessSubject(
         ),
       )
       .limit(1);
-    if (!group) throw new Error("access subject SSO group was not found or is inactive");
+    if (!group) throw new Error("access subject group was not found or is inactive");
     return { type, id };
   }
   throw new Error("subject_type must be user or group");

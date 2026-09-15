@@ -105,6 +105,7 @@ describeIfDb("groups", () => {
       const rule = await createIdpGroupRule(orgId, { ssoGroupId: fin!.id, userGroupId: finance.id });
       await createIdpGroupRule(orgId, { ssoGroupId: it!.id, userGroupId: admins });
       expect(await resolveUserGroups(orgId, bea)).toMatchObject({ administrator: true, slugs: ["administrators", "everyone", "finance"] });
+      expect((await resolveUserGroups(orgId, bea)).ssoGroupIds.sort()).toEqual([fin!.id, it!.id].sort());
       expect(await listGroupMembers(orgId, finance.id)).toEqual([
         expect.objectContaining({ userId: bea, sources: [`rule:${rule.id}`] }),
       ]);

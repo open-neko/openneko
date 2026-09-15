@@ -11,8 +11,7 @@ import {
   desc,
   eq,
   inArray,
-  sso_group,
-  sso_group_membership,
+  resolveUserGroups,
 } from "@neko/db";
 import {
   authorizeRecordSnapshot,
@@ -412,30 +411,12 @@ async function recordsViewer(orgId: string): Promise<{
   const role: RecordViewerRole = actor.role === "member" ? "member" : "admin";
   const userId = actor.userId ?? `urn:openneko:solo-admin:${orgId}`;
   const solo = actor.userId === null;
-  const memberships = solo
-    ? []
-    : await db()
-        .select({ groupId: sso_group.id })
-        .from(sso_group_membership)
-        .innerJoin(
-          sso_group,
-          and(
-            eq(sso_group.id, sso_group_membership.group_id),
-            eq(sso_group.org_id, sso_group_membership.org_id),
-          ),
-        )
-        .where(
-          and(
-            eq(sso_group_membership.org_id, orgId),
-            eq(sso_group_membership.user_id, userId),
-            eq(sso_group.active, true),
-          ),
-        );
+  const groups = solo ? null : await resolveUserGroups(orgId, userId);
   await syncRecordsActor(recordsRuntime().pool, { orgId, userId, role });
   return {
     role,
     userId,
-    groupIds: memberships.map((row) => row.groupId),
+    groupIds: groups ? [...groups.groupIds, ...groups.ssoGroupIds] : [],
     solo,
     token: mintRecordsGraphjinToken({
       secret: recordsGraphjinSigningSecret(orgId),

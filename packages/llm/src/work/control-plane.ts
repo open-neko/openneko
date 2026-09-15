@@ -404,8 +404,7 @@ async function recordsViewerForRun(input: {
     app_user,
     db,
     eq,
-    sso_group,
-    sso_group_membership,
+    resolveUserGroups,
     work_run,
   } = await import("@neko/db");
   const [run] = await db()
@@ -436,28 +435,12 @@ async function recordsViewerForRun(input: {
     ) {
       throw new Error("records tools are not available to this actor");
     }
-    const memberships = await db()
-      .select({ groupId: sso_group.id })
-      .from(sso_group_membership)
-      .innerJoin(
-        sso_group,
-        and(
-          eq(sso_group.id, sso_group_membership.group_id),
-          eq(sso_group.org_id, sso_group_membership.org_id),
-        ),
-      )
-      .where(
-        and(
-          eq(sso_group_membership.org_id, input.orgId),
-          eq(sso_group_membership.user_id, run.userId),
-          eq(sso_group.active, true),
-        ),
-      );
+    const groups = await resolveUserGroups(input.orgId, run.userId);
     return {
       orgId: input.orgId,
       userId: run.userId,
-      role: user.role,
-      groupIds: memberships.map((row) => row.groupId),
+      role: groups.administrator ? "admin" : "member",
+      groupIds: [...groups.groupIds, ...groups.ssoGroupIds],
       solo: false,
     };
   }
