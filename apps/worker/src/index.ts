@@ -197,6 +197,8 @@ import { PackService } from "./packs/service.js";
 import { registerPackActionPreflight } from "./packs/action-preflight.js";
 import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
 
+process.env.OPENNEKO_SANDBOX_OWNER ||= "worker";
+
 const PORT: number = 4100;
 const MAX_JOB_RETRIES: number = 2;
 

@@ -41,6 +41,40 @@ const ARTIFACTS_MARKER = "__openneko_artifacts__";
 const AGENT_ENTRY = "/app/entry.js";
 const SANDBOX_RUNTIME_DIR = ".openneko";
 
+const SANDBOX_OWNER_LABEL = "openneko.owner";
+const SANDBOX_BOOT_LABEL = "openneko.boot";
+const SANDBOX_BOOT_ID = randomUUID();
+
+/** web or worker; each host deletes only boxes it owns. */
+function sandboxOwner(): string {
+  return process.env.OPENNEKO_SANDBOX_OWNER || "openneko";
+}
+
+/** Labels that let the next boot of this host find boxes a restart stranded. */
+export function sandboxOwnerLabelArgs(owner = sandboxOwner(), boot = SANDBOX_BOOT_ID): string[] {
+  return ["--label", `${SANDBOX_OWNER_LABEL}=${owner}`, "--label", `${SANDBOX_BOOT_LABEL}=${boot}`];
+}
+
+/**
+ * Deletes this host's sandboxes from earlier boots. The create command that
+ * would delete a warm or job box dies with its host process, so without this
+ * every restart leaves running boxes behind.
+ */
+export async function reapStrandedSandboxes(
+  run: (args: string[], timeoutMs: number) => Promise<string>,
+  owner = sandboxOwner(),
+  boot = SANDBOX_BOOT_ID,
+): Promise<string[]> {
+  const listed = JSON.parse(
+    await run(["sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`, "-o", "json", "--limit", "500"], 30_000),
+  ) as Array<{ name: string; labels?: Record<string, string> }>;
+  const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot).map((box) => box.name);
+  await Promise.allSettled(stranded.map((name) => run(["sandbox", "delete", name], 60_000)));
+  return stranded;
+}
+
+const reapedGateways = new Set<string>();
+
 export interface SandboxLauncherOptions {
   /** `openshell` binary; default resolves from PATH. */
   cli?: string;
@@ -491,6 +525,13 @@ function getSandboxPool(opts: SandboxLauncherOptions, workspace?: StableWorkspac
   // Preloaded org knowledge never enters another organization's spare queue.
   const poolKey = JSON.stringify([cli, gatewayArgs, opts.agentImage, cpu, memory, warmSize, idleMs, workspace?.orgRoot]);
   let pool = warmPools.get(poolKey);
+  const gatewayKey = JSON.stringify([cli, gatewayArgs]);
+  if (!reapedGateways.has(gatewayKey)) {
+    reapedGateways.add(gatewayKey);
+    void reapStrandedSandboxes(runCleanup)
+      .then((names) => { if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`); })
+      .catch((error) => (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${error instanceof Error ? error.message : error}`));
+  }
   if (!pool) {
     pool = new SandboxPool({ size: warmSize, idleMs,
       onEvent: attributes => startupEvent("sandbox.pool", { poolId: createHash("sha256").update(poolKey).digest("hex").slice(0, 16), ...attributes }),
@@ -815,6 +856,7 @@ function makeSandboxCore(
           memory,
           "--no-tty",
           "--no-auto-providers",
+          ...sandboxOwnerLabelArgs(),
           ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
           "--policy",
           policyFile,
@@ -1511,7 +1553,7 @@ async function createWarmSandbox(o: {
   await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));
   const child = spawn(o.cli, [...o.gatewayArgs, "sandbox", "create", "--name", name,
     "--from", o.image, "--cpu", o.cpu, "--memory", o.memory,
-    "--no-tty", "--no-keep", "--no-auto-providers", "--policy", policy,
+    "--no-tty", "--no-keep", "--no-auto-providers", ...sandboxOwnerLabelArgs(), "--policy", policy,
     "--", "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "serve",
     String(Math.ceil(o.idleMs / 1000))], { stdio: ["ignore", "pipe", "pipe"] });
   let alive = true;
