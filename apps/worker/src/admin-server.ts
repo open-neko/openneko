@@ -395,6 +395,8 @@ export type AdminHandlerOptions = {
 export interface GroupGrantsHandlerSurface {
   apply(): Promise<unknown>;
   schedule(): void;
+  enable(actorUserId: string | null): Promise<unknown>;
+  disable(actorUserId: string | null): Promise<unknown>;
 }
 
 export interface DirectoryHandlerSurface {
@@ -565,11 +567,15 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       handlePluginActionDescriptors(res, plugins);
       return;
     }
-    if (req.url === "/admin/graphjin/group-grants" && req.method === "POST") {
+    if (req.url?.startsWith("/admin/graphjin/group-grants") && req.method === "POST") {
       void (async () => {
         if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
         try {
-          const body = (await readJson(req)) as { immediate?: unknown };
+          const body = (await readJson(req)) as { immediate?: unknown; actorUserId?: unknown };
+          const actorUserId = typeof body.actorUserId === "string" ? body.actorUserId : null;
+          if (req.url === "/admin/graphjin/group-grants/enable") return json(res, 200, await groupGrants.enable(actorUserId));
+          if (req.url === "/admin/graphjin/group-grants/disable") return json(res, 200, await groupGrants.disable(actorUserId));
+          if (req.url !== "/admin/graphjin/group-grants") return json(res, 404, { error: "not found" });
           if (body.immediate === true) return json(res, 200, await groupGrants.apply());
           groupGrants.schedule();
           json(res, 202, { scheduled: true });

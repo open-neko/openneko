@@ -15,7 +15,7 @@ import {
   setGroupGrantsEnabled,
   upsertDataAccessRule,
 } from "@neko/db";
-import { applyGroupGrants, scheduleGroupGrantsApply } from "../src/graphjin/group-grants-service";
+import { applyGroupGrants, disableGroupGrants, enableGroupGrants, scheduleGroupGrantsApply } from "../src/graphjin/group-grants-service";
 
 const reachable = await pool().query("select 1").then(() => true, () => false);
 
@@ -74,6 +74,40 @@ describe("scheduleGroupGrantsApply", () => {
 
       expect((await applyGroupGrants(orgId, { configFile, restart })).changed).toBe(false);
       expect(restart).toHaveBeenCalledTimes(1);
+    } finally {
+      await db().delete(organization).where(eq(organization.id, orgId));
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("seeds Everyone with today's access on enable and restores the read policy on disable", async () => {
+    const orgId = `grants-on-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const dir = await mkdtemp(join(tmpdir(), "gj-grants-on-"));
+    const configFile = join(dir, "config.yml");
+    await writeFile(configFile, CONFIG);
+    await db().insert(organization).values({ id: orgId, name: "Grants" });
+    const restart = vi.fn(async () => undefined);
+    const catalog = vi.fn(async () => new Map([["shop", [
+      { schema: "public", table: "orders", columns: ["id", "amount"] },
+      { schema: "public", table: "customers", columns: ["id", "email"] },
+    ]]]));
+    try {
+      const enabled = await enableGroupGrants(orgId, null, { configFile, restart, catalog });
+      expect(enabled).toMatchObject({ enabled: true, changed: true, seededRules: 2, roles: ["og_everyone"] });
+      expect(catalog).toHaveBeenCalledWith(["shop"]);
+      const on = parse(await readFile(configFile, "utf8"));
+      expect(on.sources[0].access.read).toBe("admin");
+      expect(on.sources[0].access.grants).toEqual([{ role: "og_everyone", tables: [
+        { name: "public.customers", columns: ["id", "email"] },
+        { name: "public.orders", columns: ["id", "amount"] },
+      ] }]);
+      expect((await enableGroupGrants(orgId, null, { configFile, restart, catalog })).seededRules).toBe(0);
+
+      expect(await disableGroupGrants(orgId, null, { configFile, restart, catalog })).toEqual({ changed: true });
+      const off = parse(await readFile(configFile, "utf8"));
+      expect(off.sources[0].access).toEqual({ read: "account" });
+      expect(off.identity.role_mode).toBe("first");
+      expect(restart).toHaveBeenCalledTimes(2);
     } finally {
       await db().delete(organization).where(eq(organization.id, orgId));
       await rm(dir, { recursive: true, force: true });

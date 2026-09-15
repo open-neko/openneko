@@ -1,19 +1,38 @@
 import { randomUUID } from "node:crypto";
 import { readFile, rename, stat, writeFile } from "node:fs/promises";
-import { and, data_source, db, desc, eq, getGroupGrantsEnabled, loadGroupGrantInputs } from "@neko/db";
+import {
+  and,
+  data_source,
+  db,
+  desc,
+  eq,
+  getGroupGrantsEnabled,
+  getPreviousReadModes,
+  loadGroupGrantInputs,
+  seedEveryoneDataAccess,
+  setGroupGrantsEnabled,
+} from "@neko/db";
 import {
   acquireGraphjinConfigLock,
   applyGroupGrantsToConfig,
   buildGroupGrantsModel,
+  graphjinQuery,
   listConfigApiOperations,
+  mintGraphjinToken,
+  readDatabaseSourceReadModes,
+  removeGroupGrantsFromConfig,
 } from "@neko/llm/graphjin";
 import { requestGraphjinRestart } from "../packs/graphjin-config.js";
 
 export type GroupGrantsApplyResult = { enabled: boolean; changed: boolean; roles: string[] };
 
+export type ColumnCatalog = Map<string, Array<{ schema: string; table: string; columns: string[] }>>;
+
 export type GroupGrantsDeps = {
   configFile: string | null;
   restart: (configFile: string) => Promise<void>;
+  /** Tables and columns GraphJin exposes for each database source. */
+  catalog?: (sources: string[]) => Promise<ColumnCatalog>;
 };
 
 async function defaultEndpoint(orgId: string): Promise<string | null> {
@@ -28,6 +47,37 @@ async function defaultEndpoint(orgId: string): Promise<string | null> {
   return clean.endsWith("/api/v1/graphql") ? clean : `${clean}/api/v1/graphql`;
 }
 
+type CatalogColumnRow = { database_name: string | null; schema_name: string | null; table_name: string | null; column_name: string | null };
+
+/** Reads column rows from gj_catalog with an admin token, one page at a time. */
+export async function fetchGraphjinColumnCatalog(orgId: string, endpoint: string, sources: string[]): Promise<ColumnCatalog> {
+  const wanted = new Set(sources);
+  const tables = new Map<string, Map<string, { schema: string; table: string; columns: string[] }>>();
+  const token = mintGraphjinToken({ orgId, userId: null, role: "admin", ttlSeconds: 120 });
+  const pageSize = 500;
+  for (let offset = 0; offset < 200_000; offset += pageSize) {
+    const result = await graphjinQuery<{ gj_catalog?: CatalogColumnRow[] }>({
+      baseUrl: endpoint,
+      headers: { authorization: `Bearer ${token}` },
+      query: `query GroupGrantsCatalog { gj_catalog(where: { kind: { eq: "column" } }, limit: ${pageSize}, offset: ${offset}, order_by: { id: asc }) { database_name schema_name table_name column_name } }`,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (result.errors?.length) throw new Error(`GraphJin catalog read failed: ${result.errors.map((e) => e.message).join("; ")}`);
+    const page = result.data?.gj_catalog ?? [];
+    for (const row of page) {
+      if (!row.database_name || !row.table_name || !row.column_name || !wanted.has(row.database_name)) continue;
+      const bySource = tables.get(row.database_name) ?? new Map();
+      const key = `${row.schema_name ?? ""}.${row.table_name}`;
+      const entry = bySource.get(key) ?? { schema: row.schema_name ?? "", table: row.table_name, columns: [] };
+      if (!entry.columns.includes(row.column_name)) entry.columns.push(row.column_name);
+      bySource.set(key, entry);
+      tables.set(row.database_name, bySource);
+    }
+    if (page.length < pageSize) break;
+  }
+  return new Map([...tables].map(([source, byTable]) => [source, [...byTable.values()]]));
+}
+
 export function defaultGroupGrantsDeps(orgId: string): GroupGrantsDeps {
   return {
     configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim() || null,
@@ -35,7 +85,58 @@ export function defaultGroupGrantsDeps(orgId: string): GroupGrantsDeps {
       const endpoint = await defaultEndpoint(orgId);
       if (endpoint) await requestGraphjinRestart(configFile, endpoint);
     },
+    catalog: async (sources) => {
+      const endpoint = await defaultEndpoint(orgId);
+      if (!endpoint) throw new Error("no enabled GraphJin data source");
+      return fetchGraphjinColumnCatalog(orgId, endpoint, sources);
+    },
   };
+}
+
+/**
+ * Turns group grants on: records each source's read mode, gives Everyone
+ * today's member access to every existing table, then applies the grants.
+ */
+export async function enableGroupGrants(
+  orgId: string,
+  actorUserId: string | null,
+  deps: GroupGrantsDeps = defaultGroupGrantsDeps(orgId),
+): Promise<GroupGrantsApplyResult & { seededRules: number }> {
+  if (!deps.configFile) throw new Error("GraphJin configuration is unavailable");
+  if (await getGroupGrantsEnabled(orgId)) return { ...(await applyGroupGrants(orgId, deps)), seededRules: 0 };
+  const modes = readDatabaseSourceReadModes(await readFile(deps.configFile, "utf8"));
+  const sources = Object.keys(modes);
+  const catalog = sources.length && deps.catalog ? await deps.catalog(sources) : new Map();
+  const seededRules = await seedEveryoneDataAccess(orgId, catalog);
+  await setGroupGrantsEnabled(orgId, true, actorUserId, modes);
+  return { ...(await applyGroupGrants(orgId, deps)), seededRules };
+}
+
+/** Turns group grants off and restores GraphJin's previous read policy. */
+export async function disableGroupGrants(
+  orgId: string,
+  actorUserId: string | null,
+  deps: GroupGrantsDeps = defaultGroupGrantsDeps(orgId),
+): Promise<{ changed: boolean }> {
+  if (!deps.configFile) throw new Error("GraphJin configuration is unavailable");
+  const configFile = deps.configFile;
+  await setGroupGrantsEnabled(orgId, false, actorUserId);
+  const release = await acquireGraphjinConfigLock({ configFile });
+  let changed = false;
+  try {
+    const restored = removeGroupGrantsFromConfig(await readFile(configFile, "utf8"), await getPreviousReadModes(orgId));
+    if (restored.changed) {
+      const mode = (await stat(configFile)).mode & 0o777;
+      const temporary = `${configFile}.${randomUUID()}.group-grants`;
+      await writeFile(temporary, restored.content, { mode });
+      await rename(temporary, configFile);
+      changed = true;
+    }
+  } finally {
+    await release();
+  }
+  if (changed) await deps.restart(configFile);
+  return { changed };
 }
 
 /**

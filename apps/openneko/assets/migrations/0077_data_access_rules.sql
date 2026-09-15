@@ -30,3 +30,7 @@ create table if not exists data_access_settings (
   enabled_by_user_id text references app_user(id) on delete set null,
   updated_at timestamptz not null default now()
 );
+
+-- Read modes of database sources before group grants turned them to admin,
+-- restored when group grants are turned off.
+alter table data_access_settings add column if not exists previous_read_modes jsonb not null default '{}'::jsonb;

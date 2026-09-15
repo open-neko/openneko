@@ -56,7 +56,12 @@ import {
   SsoSetupService,
   startSsoSetupPoller,
 } from "./sso/sso-setup-service.js";
-import { applyGroupGrants, scheduleGroupGrantsApply } from "./graphjin/group-grants-service.js";
+import {
+  applyGroupGrants,
+  disableGroupGrants,
+  enableGroupGrants,
+  scheduleGroupGrantsApply,
+} from "./graphjin/group-grants-service.js";
 import {
   DIRECTORY_SYNC_CRON,
   directoryStatus,
@@ -599,6 +604,8 @@ const server = createServer(
       schedule: () => {
         void getOrgId().then((orgId) => scheduleGroupGrantsApply(orgId));
       },
+      enable: async (actorUserId) => enableGroupGrants(await getOrgId(), actorUserId),
+      disable: async (actorUserId) => disableGroupGrants(await getOrgId(), actorUserId),
     },
     directory: {
       status: async () => directoryStatus(pluginRegistry, await getOrgId()),

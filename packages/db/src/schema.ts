@@ -169,6 +169,7 @@ export const data_access_settings = pgTable("data_access_settings", {
     .primaryKey()
     .references(() => organization.id, { onDelete: "cascade" }),
   group_grants_enabled: boolean("group_grants_enabled").notNull().default(false),
+  previous_read_modes: jsonb("previous_read_modes").notNull().default({}),
   enabled_by_user_id: text("enabled_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
   updated_at: ts("updated_at").notNull().defaultNow(),
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { applyGroupGrantsToConfig, buildGroupGrantsModel, groupRoleName, listConfigApiOperations } from "../src/graphjin/group-grants";
+import { applyGroupGrantsToConfig, buildGroupGrantsModel, groupRoleName, listConfigApiOperations, readDatabaseSourceReadModes, removeGroupGrantsFromConfig } from "../src/graphjin/group-grants";
 
 const CONFIG = `
 identity:
@@ -76,6 +76,18 @@ describe("group grants config", () => {
     expect(applyGroupGrantsToConfig("database:\n  type: postgres\n", model)).toEqual({ content: "database:\n  type: postgres\n", changed: false });
     expect(listConfigApiOperations(CONFIG)).toEqual(["payments:stripe:list_charges", "payments:stripe:refund"]);
     expect(groupRoleName("finance-emea")).toBe("og_finance-emea");
+  });
+
+  it("restores the previous read modes and first role mode when turned off", () => {
+    const modes = readDatabaseSourceReadModes(CONFIG);
+    expect(modes).toEqual({ shop: "account" });
+    const on = applyGroupGrantsToConfig(CONFIG, model).content;
+    const off = parse(removeGroupGrantsFromConfig(on, modes).content);
+    expect(off.identity.role_mode).toBe("first");
+    expect(off.identity.group_claims).toBeUndefined();
+    expect(off.sources[0].access).toEqual({ read: "account", grants: [{ role: "packrole", tables: [{ name: "products", columns: ["id"] }] }] });
+    expect(off.roles.map((r: { name: string }) => r.name)).toEqual(["member"]);
+    expect(off.sources[1].specs.stripe.operations.refund.allowed_roles).toEqual(["admin"]);
   });
 
   it("rejects an invalid stored row filter", () => {

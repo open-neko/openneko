@@ -200,3 +200,47 @@ export function listConfigApiOperations(raw: string): string[] {
   }
   return out.sort();
 }
+
+/** Current read modes of database sources, keyed by source name ("" when unset). */
+export function readDatabaseSourceReadModes(raw: string): Record<string, string> {
+  const document = parseDocument(raw);
+  if (!isMap(document.contents)) return {};
+  const sources = document.contents.get("sources", true);
+  if (!isSeq(sources)) return {};
+  const modes: Record<string, string> = {};
+  for (const source of sources.items) {
+    if (!isMap(source)) continue;
+    const kind = String(source.get("kind") ?? "database").toLowerCase();
+    if (NON_DATABASE_KINDS.has(kind)) continue;
+    const access = source.get("access", true);
+    modes[String(source.get("name") ?? "")] = isMap(access) ? String(access.get("read") ?? "") : "";
+  }
+  return modes;
+}
+
+/**
+ * Undoes applyGroupGrantsToConfig: removes og_* roles, grants and allowed
+ * roles, restores each database source's previous read mode and returns
+ * GraphJin to first role mode.
+ */
+export function removeGroupGrantsFromConfig(raw: string, previousReadModes: Record<string, string>): { content: string; changed: boolean } {
+  const cleared = applyGroupGrantsToConfig(raw, { roles: [], grants: new Map(), apiOperations: new Map() }).content;
+  const document = parseDocument(cleared);
+  if (!isMap(document.contents) || !document.contents.has("sources")) return { content: raw, changed: false };
+  const root = document.contents;
+  const identity = mapOf(root, "identity");
+  identity.set("role_mode", "first");
+  identity.delete("group_claims");
+  for (const source of listOf(root, "sources").items) {
+    if (!isMap(source)) continue;
+    const name = String(source.get("name") ?? "");
+    if (!(name in previousReadModes)) continue;
+    const access = mapOf(source, "access");
+    const previous = previousReadModes[name];
+    if (previous) access.set("read", previous);
+    else access.delete("read");
+    if (access.items.length === 0) source.delete("access");
+  }
+  const content = document.toString();
+  return { content, changed: content !== raw };
+}

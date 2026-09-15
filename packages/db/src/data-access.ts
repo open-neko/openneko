@@ -83,12 +83,59 @@ export async function getGroupGrantsEnabled(orgId: string): Promise<boolean> {
   return row?.enabled ?? false;
 }
 
-export async function setGroupGrantsEnabled(orgId: string, enabled: boolean, actorUserId: string | null): Promise<void> {
+export async function setGroupGrantsEnabled(
+  orgId: string,
+  enabled: boolean,
+  actorUserId: string | null,
+  previousReadModes?: Record<string, string>,
+): Promise<void> {
   await db().execute(sql`
-    insert into data_access_settings (org_id, group_grants_enabled, enabled_by_user_id, updated_at)
-    values (${orgId}, ${enabled}, ${actorUserId}, now())
+    insert into data_access_settings (org_id, group_grants_enabled, enabled_by_user_id, previous_read_modes, updated_at)
+    values (${orgId}, ${enabled}, ${actorUserId}, ${JSON.stringify(previousReadModes ?? {})}::jsonb, now())
     on conflict (org_id) do update set group_grants_enabled = excluded.group_grants_enabled,
-      enabled_by_user_id = excluded.enabled_by_user_id, updated_at = now()`);
+      enabled_by_user_id = excluded.enabled_by_user_id,
+      previous_read_modes = case when ${previousReadModes === undefined} then data_access_settings.previous_read_modes else excluded.previous_read_modes end,
+      updated_at = now()`);
+}
+
+export async function getPreviousReadModes(orgId: string): Promise<Record<string, string>> {
+  const [row] = rows<{ modes: Record<string, string> }>(
+    await db().execute(sql`select previous_read_modes as modes from data_access_settings where org_id = ${orgId}`),
+  );
+  return row?.modes ?? {};
+}
+
+/**
+ * Upgrade parity: when group grants turn on, Everyone reads every existing
+ * table and column of each source, as members did before. Sources where
+ * Everyone already has rules are left alone.
+ */
+export async function seedEveryoneDataAccess(
+  orgId: string,
+  catalog: Map<string, Array<{ schema: string; table: string; columns: string[] }>>,
+): Promise<number> {
+  const [everyone] = rows<{ id: string }>(
+    await db().execute(sql`select id from user_group where org_id = ${orgId} and slug = 'everyone'`),
+  );
+  if (!everyone) return 0;
+  const existing = new Set((await listDataAccessRules(orgId, everyone.id)).map((r) => r.source));
+  let created = 0;
+  for (const [source, tables] of catalog) {
+    if (existing.has(source)) continue;
+    for (const table of tables) {
+      if (table.columns.length === 0 || !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(table.table)) continue;
+      await upsertDataAccessRule(orgId, {
+        groupId: everyone.id,
+        source,
+        tableSchema: table.schema,
+        tableName: table.table,
+        columns: table.columns,
+        rowFilter: null,
+      });
+      created++;
+    }
+  }
+  return created;
 }
 
 /**
