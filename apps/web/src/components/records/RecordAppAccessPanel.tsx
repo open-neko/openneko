@@ -31,7 +31,8 @@ export function RecordAppAccessPanel({ appId }: { appId: string }) {
   }, [appId]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   async function change(groupId: string, grant: boolean) {

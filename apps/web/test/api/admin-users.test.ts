@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   inserted: [] as Row[],
   updates: [] as Row[],
   actorId: "admin-1" as string | null,
-  setAdministrator: vi.fn(async (_orgId: string, _userId: string, _admin: boolean) => {}),
+  setAdministrator: vi.fn(async (...args: [string, string, boolean]) => void args),
 }));
 
 vi.mock("@/lib/admin-auth", () => ({

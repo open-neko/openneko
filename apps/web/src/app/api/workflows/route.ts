@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listWorkflows } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
-import { requireWorkflow, requireWorkflowRun, workflowVisibility } from "@/lib/entitlements";
+import { workflowVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -19,7 +19,7 @@ import { observeSafely, type HarnessRunSummary } from "@neko/telemetry";
 import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
-import { requireWorkflow, requireWorkflowRun, workflowVisibility } from "@/lib/entitlements";
+import { requireWorkflow } from "@/lib/entitlements";
 import {
   registerRun,
   unregisterRun,

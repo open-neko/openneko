@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adoptWorkflowForTeam } from "@neko/llm/workflows";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
-import { requireWorkflow, requireWorkflowRun, workflowVisibility } from "@/lib/entitlements";
+import { requireWorkflow } from "@/lib/entitlements";
 
 type RouteContext = {
   params: Promise<{ workflowId: string }>;

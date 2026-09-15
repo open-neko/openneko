@@ -11,7 +11,7 @@ import {
   type SubscriptionSourceKind,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
-import { requireWorkflow, requireWorkflowRun, workflowVisibility } from "@/lib/entitlements";
+import { requireWorkflow } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

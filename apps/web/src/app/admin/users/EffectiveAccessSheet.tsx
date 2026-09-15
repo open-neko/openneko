@@ -35,18 +35,28 @@ export function EffectiveAccessSheet({ userId, email }: { userId: string; email:
 
   useEffect(() => {
     if (!open) return;
-    setAccess(null);
-    setError(null);
-    void adminApi<Access>(`/api/admin/users/${encodeURIComponent(userId)}/access`).then((result) =>
-      result.ok ? setAccess(result.body) : setError(result.error),
-    );
+    const timer = window.setTimeout(() => {
+      void adminApi<Access>(`/api/admin/users/${encodeURIComponent(userId)}/access`).then((result) =>
+        result.ok ? setAccess(result.body) : setError(result.error),
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [open, userId]);
 
   const byType = new Map<string, EffectiveItem[]>();
   for (const item of access?.items ?? []) byType.set(item.itemType, [...(byType.get(item.itemType) ?? []), item]);
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setAccess(null);
+          setError(null);
+        }
+        setOpen(next);
+      }}
+    >
       <SheetTrigger asChild>
         <Button size="sm" variant="ghost">Access</Button>
       </SheetTrigger>

@@ -42,7 +42,8 @@ export function ItemAccessPanel({ itemType, itemId, label }: { itemType: string;
   }, [itemType, itemId]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   async function change(groupId: string, grant: boolean) {
