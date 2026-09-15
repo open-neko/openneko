@@ -16,7 +16,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { and, app_user, db, eq, isNull, ne } from "@neko/db";
+import { and, app_user, db, eq, isNull, ne, GroupError, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
 
@@ -105,14 +105,22 @@ export async function PATCH(
     }
   }
 
-  const patch: Partial<typeof app_user.$inferInsert> = {
-    updated_at: new Date(),
-  };
-  if (role !== undefined) patch.role = role;
-  if (disabled !== undefined) {
-    patch.disabled_at = disabled ? new Date() : null;
+  if (role !== undefined && role !== target.role) {
+    try {
+      await setLocalAdministrator(orgId, target.id, role === "admin");
+    } catch (error) {
+      if (error instanceof GroupError) {
+        return NextResponse.json({ error: error.message }, { status: error.code === "not_found" ? 404 : 409 });
+      }
+      throw error;
+    }
   }
-  await db().update(app_user).set(patch).where(eq(app_user.id, target.id));
+  if (disabled !== undefined) {
+    await db()
+      .update(app_user)
+      .set({ disabled_at: disabled ? new Date() : null, updated_at: new Date() })
+      .where(eq(app_user.id, target.id));
+  }
 
   return NextResponse.json({
     user: {

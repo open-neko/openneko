@@ -606,6 +606,13 @@ const server = createServer(
       },
       enable: async (actorUserId) => enableGroupGrants(await getOrgId(), actorUserId),
       disable: async (actorUserId) => disableGroupGrants(await getOrgId(), actorUserId),
+      apiOperations: async () => {
+        const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
+        if (!configFile) return [];
+        const { readFile } = await import("node:fs/promises");
+        const { listConfigApiOperations } = await import("@neko/llm/graphjin");
+        return listConfigApiOperations(await readFile(configFile, "utf8"));
+      },
     },
     directory: {
       status: async () => directoryStatus(pluginRegistry, await getOrgId()),

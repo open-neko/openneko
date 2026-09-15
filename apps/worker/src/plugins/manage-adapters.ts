@@ -185,12 +185,10 @@ export function registerUserAdminAdapter(): void {
 
     if (action === "set_role") {
       const role = payload.role === "admin" ? "admin" : "member";
-      const rows = await db()
-        .update(app_user)
-        .set({ role, updated_at: new Date() })
-        .where(where)
-        .returning({ id: app_user.id });
-      if (rows.length === 0) throw new Error(`user ${userId} not found`);
+      const { setLocalAdministrator } = await import("@neko/db");
+      const [row] = await db().select({ id: app_user.id }).from(app_user).where(where).limit(1);
+      if (!row) throw new Error(`user ${userId} not found`);
+      await setLocalAdministrator(orgId, userId, role === "admin");
       return { commandOrOperation: `set_role ${userId} ${role}`, result: { userId, role } };
     }
     if (action === "deactivate" || action === "reactivate") {

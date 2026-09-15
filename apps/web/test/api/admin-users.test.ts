@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   inserted: [] as Row[],
   updates: [] as Row[],
   actorId: "admin-1" as string | null,
+  setAdministrator: vi.fn(async (_orgId: string, _userId: string, _admin: boolean) => {}),
 }));
 
 vi.mock("@/lib/admin-auth", () => ({
@@ -27,6 +28,12 @@ vi.mock("@neko/db", () => {
     }),
   });
   return {
+    GroupError: class GroupError extends Error {
+      constructor(public readonly code: string, message: string) {
+        super(message);
+      }
+    },
+    setLocalAdministrator: mocks.setAdministrator,
     organization: { solo_admin_user_id: "owner" },
     isUnclaimedSoloEmail: (email: string) => email.endsWith("@solo.openneko.invalid"),
     app_user: {
@@ -189,8 +196,8 @@ describe("PATCH /api/admin/users/[userId]", () => {
       targetParams as never,
     );
     expect(res.status).toBe(200);
-    expect(mocks.updates).toHaveLength(1);
-    expect(mocks.updates[0]).toMatchObject({ role: "member" });
+    expect(mocks.setAdministrator).toHaveBeenCalledWith(expect.any(String), "usr_target", false);
+    expect(mocks.updates).toHaveLength(0);
   });
 
   it("disables and re-enables a member without consulting the admin count", async () => {

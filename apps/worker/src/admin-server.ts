@@ -397,6 +397,7 @@ export interface GroupGrantsHandlerSurface {
   schedule(): void;
   enable(actorUserId: string | null): Promise<unknown>;
   disable(actorUserId: string | null): Promise<unknown>;
+  apiOperations(): Promise<string[]>;
 }
 
 export interface DirectoryHandlerSurface {
@@ -565,6 +566,17 @@ export function createAdminHandler(opts: AdminHandlerOptions = {}) {
       req.url === "/admin/plugins/action-descriptors"
     ) {
       handlePluginActionDescriptors(res, plugins);
+      return;
+    }
+    if (req.url === "/admin/graphjin/api-operations" && req.method === "GET") {
+      void (async () => {
+        if (!groupGrants) return json(res, 503, { error: "group grants are not configured" });
+        try {
+          json(res, 200, { operations: await groupGrants.apiOperations() });
+        } catch (err) {
+          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        }
+      })();
       return;
     }
     if (req.url?.startsWith("/admin/graphjin/group-grants") && req.method === "POST") {
