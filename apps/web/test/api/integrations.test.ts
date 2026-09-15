@@ -16,9 +16,20 @@ import {
 } from "vitest";
 import { callRoute } from "../_helpers/route";
 
-const { mockGetCurrentUser } = vi.hoisted(() => ({
+const { mockGetCurrentUser, held } = vi.hoisted(() => ({
   mockGetCurrentUser: vi.fn(),
+  held: { integrations: "*" as "*" | Set<string> },
 }));
+
+vi.mock("@/lib/entitlements", async () => {
+  const { NextResponse } = await import("next/server");
+  const holds = (id: string) => held.integrations === "*" || held.integrations.has(id);
+  return {
+    heldItemIds: async () => held.integrations,
+    requireItem: async (_type: string, id: string, opts: { notFound?: string } = {}) =>
+      holds(id) ? null : NextResponse.json({ error: opts.notFound ?? "Not found" }, { status: 404 }),
+  };
+});
 
 vi.mock("@/lib/auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
@@ -41,6 +52,7 @@ beforeEach(() => {
 afterEach(() => {
   fetchMock.mockRestore();
   vi.clearAllMocks();
+  held.integrations = "*";
 });
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -121,6 +133,11 @@ describe("/api/integrations/list", () => {
       "@open-neko/connector-google-workspace",
     );
     expect(body.connectors[0]!.connected).toBe(true);
+
+    held.integrations = new Set(["@open-neko/plugin-scalekit"]);
+    const narrowed = (await callRoute(GET)).body as typeof body;
+    expect(narrowed.workspace.map((p) => p.pluginName)).toEqual(["@open-neko/plugin-scalekit"]);
+    expect(narrowed.connectors).toEqual([]);
   });
 });
 

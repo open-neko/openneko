@@ -31,8 +31,6 @@ export async function GET(
   if (!pluginName) {
     return NextResponse.json({ error: "plugin param required" }, { status: 400 });
   }
-  const deniedIntegration = await requireItem("integration", pluginName, { notFound: `connect plugin "${pluginName}" not installed` });
-  if (deniedIntegration) return deniedIntegration;
   // Verify the plugin is installed + declares connect; gives the operator
   // a clear 404 instead of a worker-side error when they hit a stale link.
   const providers = await listConnectProviders();
@@ -54,6 +52,8 @@ export async function GET(
     if (!user) {
       return NextResponse.json({ error: "not signed in" }, { status: 401 });
     }
+    const deniedIntegration = await requireItem("integration", pluginName, { notFound: `connect plugin "${pluginName}" not installed` });
+    if (deniedIntegration) return deniedIntegration;
   }
   // Deployment-scoped connectors use a reserved slot — the worker ignores
   // the operator id and stores one org-wide credential.

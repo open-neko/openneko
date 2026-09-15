@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), begin: vi.fn(), complete: vi.fn(), disconnect: vi.fn(), write: vi.fn(), read: vi.fn(), admin: vi.fn(), worker: vi.fn() }));
+const mocks = vi.hoisted(() => ({ holds: vi.fn(async () => true), actor: vi.fn(), begin: vi.fn(), complete: vi.fn(), disconnect: vi.fn(), write: vi.fn(), read: vi.fn(), admin: vi.fn(), worker: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/personal-pack-accounts", () => ({ personalPackActor: mocks.actor }));
 vi.mock("@neko/llm/graphjin/pack-user-connections", () => ({ beginPackUserConnection: mocks.begin, completePackUserConnection: mocks.complete, disconnectPackUserConnection: mocks.disconnect }));
@@ -9,6 +9,7 @@ vi.mock("@/lib/integrations", () => ({ newStateToken: () => "state", newPkceVeri
 vi.mock("@/lib/admin-auth", () => ({ requireAdminActor: mocks.admin, isDenied: (value: unknown) => value instanceof Response }));
 vi.mock("@/lib/solution-packs", () => ({ validPackId: () => true, requestPackWorker: mocks.worker }));
 vi.mock("@neko/db", () => ({ getOrgId: async () => "org" }));
+vi.mock("@/lib/entitlements", () => ({ holdsItem: mocks.holds }));
 import { POST, DELETE } from "../src/app/api/my/pack-accounts/[packId]/[connectionKey]/route";
 import { GET } from "../src/app/api/pack-accounts/[packId]/[connectionKey]/callback/route";
 const params = { params: Promise.resolve({ packId: "fixture", connectionKey: "account" }) };
@@ -20,6 +21,10 @@ describe("personal account routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.begin).toHaveBeenCalledWith(actor, "fixture", "account", expect.objectContaining({ state: "state", codeChallenge: "challenge" }));
     expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ ...actor, personal: true }));
+    mocks.holds.mockResolvedValueOnce(false);
+    const hidden = await POST(new Request("https://app.test/api/my/pack-accounts/fixture/account", { method: "POST", headers: { origin: "https://app.test" } }), params);
+    expect(hidden.status).toBe(404);
+    expect(mocks.holds).toHaveBeenLastCalledWith("pack", "fixture");
   });
   it("rejects cross-origin disconnect and missing session", async () => {
     expect((await DELETE(new Request("https://app.test/api/my/pack-accounts/fixture/account", { method: "DELETE", headers: { origin: "https://evil.test" } }), params)).status).toBe(403);
