@@ -48,6 +48,7 @@ import {
   user_group,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { publicBaseUrl } from "@/lib/public-url";
 
 export const SESSION_COOKIE_NAME = "openneko_session";
 export const STATE_COOKIE_NAME = "openneko_sso_state";
@@ -745,8 +746,5 @@ export async function getCurrentUser(): Promise<{
  * Host headers).
  */
 export function buildRedirectUri(requestUrl: string): string {
-  const override = process.env.OPENNEKO_PUBLIC_URL?.replace(/\/+$/, "");
-  if (override) return `${override}/api/auth/callback`;
-  const u = new URL(requestUrl);
-  return `${u.protocol}//${u.host}/api/auth/callback`;
+  return `${publicBaseUrl(requestUrl)}/api/auth/callback`;
 }

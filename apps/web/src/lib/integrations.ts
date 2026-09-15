@@ -10,6 +10,7 @@
 import "server-only";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { publicBaseUrl } from "@/lib/public-url";
 
 const CONNECT_COOKIE_NAME = "openneko_connect_state";
 const CONNECT_TTL_SECONDS = 10 * 60;
@@ -271,9 +272,5 @@ function isStatePayload(value: unknown): value is ConnectStateCookiePayload {
  * balancer that strips Host headers) set OPENNEKO_PUBLIC_URL.
  */
 export function buildConnectCallbackUri(requestUrl: string, pluginName: string): string {
-  const publicBase = process.env.OPENNEKO_PUBLIC_URL;
-  const base = publicBase
-    ? publicBase.replace(/\/+$/, "")
-    : new URL(requestUrl).origin;
-  return `${base}/api/integrations/connect/${encodeURIComponent(pluginName)}/callback`;
+  return `${publicBaseUrl(requestUrl)}/api/integrations/connect/${encodeURIComponent(pluginName)}/callback`;
 }

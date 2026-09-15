@@ -5,6 +5,7 @@ import {
   saveRecordSavedView,
 } from "@/lib/records";
 import { recordsApiError } from "@/lib/records-api";
+import { appRedirect } from "@/lib/public-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,9 +72,7 @@ export async function POST(request: Request, context: RouteContext) {
       definition: input.definition,
     });
     if (input.wantsJson) return NextResponse.json({ view }, { status: 201 });
-    const destination = new URL(`/a/${app}/${object}`, request.url);
-    destination.searchParams.set("view", view.id);
-    return NextResponse.redirect(destination, 303);
+    return appRedirect(`/a/${app}/${object}?${new URLSearchParams({ view: view.id })}`, 303);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: "saved view definition is malformed" }, { status: 400 });

@@ -28,13 +28,11 @@ import {
   newStateToken,
   writeStateCookie,
 } from "@/lib/auth";
+import { appRedirect } from "@/lib/public-url";
 
 /** The neutral outcome both known and unknown emails resolve to. */
-function linkSentRedirect(requestUrl: string): NextResponse {
-  return NextResponse.redirect(
-    new URL("/signin?notice=link-sent", requestUrl),
-    { status: 302 },
-  );
+function linkSentRedirect(): NextResponse {
+  return appRedirect("/signin?notice=link-sent");
 }
 
 async function isProvisionedUser(email: string): Promise<boolean> {
@@ -66,19 +64,13 @@ export async function GET(request: NextRequest) {
   const loginHint = url.searchParams.get("loginHint")?.trim() ?? "";
 
   if (provider.loginHintRequired && !loginHint) {
-    return NextResponse.redirect(
-      new URL(
-        "/signin?error=enter+your+email+address+to+sign+in",
-        request.url,
-      ),
-      { status: 302 },
-    );
+    return appRedirect("/signin?error=enter+your+email+address+to+sign+in");
   }
 
   const manual = provider.provisioning === "manual";
   if (manual && !(await isProvisionedUser(loginHint))) {
     // Same response as the happy path — reveal nothing, send nothing.
-    return linkSentRedirect(request.url);
+    return linkSentRedirect();
   }
 
   const state = newStateToken();
@@ -99,7 +91,7 @@ export async function GET(request: NextRequest) {
       console.error(
         `[auth] magic-link begin failed: ${err instanceof Error ? err.message : err}`,
       );
-      return linkSentRedirect(request.url);
+      return linkSentRedirect();
     }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
