@@ -70,6 +70,8 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/api/my", rule: "signed-in" },
   { prefix: "/api/observations", rule: "signed-in" },
   { prefix: "/api/profile", rule: "signed-in" },
+  { prefix: "/api/settings/persona", rule: "signed-in", why: "each person edits their own persona; the route allows only their own row" },
+  { prefix: "/profile", rule: "signed-in" },
   { prefix: "/api/subscriptions", rule: "signed-in" },
   { prefix: "/api/work", rule: "signed-in" },
   { prefix: "/api/workflow-runs", rule: "signed-in" },

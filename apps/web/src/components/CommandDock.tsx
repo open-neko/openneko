@@ -193,13 +193,13 @@ export default function CommandDock() {
             </nav>
             {session.signedIn ? (
               <Link
-                href="/onboarding"
+                href="/profile"
                 onClick={closeSheet}
                 className="cdock-persona-link"
               >
                 <UserRound aria-hidden="true" strokeWidth={1.9} />
                 <span>
-                  <strong>Personal setup</strong>
+                  <strong>Your profile</strong>
                   <small>Role and priorities</small>
                 </span>
                 <ChevronRight aria-hidden="true" />

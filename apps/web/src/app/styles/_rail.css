@@ -370,8 +370,7 @@ body {
     color: var(--text);
   }
 
-  .app-rail-link:focus-visible,
-  .app-rail-signout:focus-visible {
+  .app-rail-link:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -428,9 +427,14 @@ body {
   }
 
   .app-rail-user-profile {
+    width: 100%;
     min-width: 0;
+    height: auto;
     display: flex;
+    justify-content: flex-start;
     align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
     color: inherit;
     text-decoration: none;
     border-radius: 10px;
@@ -453,33 +457,6 @@ body {
     font-size: var(--type-body-sm);
     font-weight: 800;
     letter-spacing: 0;
-  }
-
-  .app-rail-signout {
-    position: absolute;
-    right: 8px;
-    bottom: 16px;
-    width: 28px;
-    height: 28px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--text3);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .app-rail-signout:hover,
-  .app-rail-signout:focus-visible {
-    background: var(--danger-soft);
-    color: var(--danger);
-  }
-
-  .app-rail-signout svg {
-    width: 15px;
-    height: 15px;
   }
 
   body:has(> .app-rail-wrap) .app-header {
@@ -1154,17 +1131,11 @@ body {
     line-height: 1.35;
   }
 
-  .app-rail-signout {
-    position: static;
-    margin-left: auto;
-    flex: 0 0 auto;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   body,
-  .app-rail-link,
-  .app-rail-signout {
+  .app-rail-link {
     animation: none;
     transition: none;
   }

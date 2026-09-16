@@ -8,6 +8,7 @@ import {
   Database,
   LayoutGrid,
   LogOut,
+  UserRound,
   Search,
   Settings2,
   Star,
@@ -15,6 +16,8 @@ import {
 } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MenuItem } from "@/components/ui/overflow-menu";
 import {
   ALL_NAV,
   hideAppChrome,
@@ -601,33 +604,40 @@ export default function AppRail() {
         )}
         {user ? (
           <div className="app-rail-user">
-            <Link
-              href="/onboarding"
-              className="app-rail-user-profile"
-              title="Profile"
-            >
-              <span className="app-rail-avatar" aria-hidden="true">
-                {initials(user)}
-              </span>
-              <span className="app-rail-user-copy">
-                <span className="app-rail-user-name">
-                  {user.name || user.email}
-                </span>
-                <span className="app-rail-user-email">
-                  {user.name ? user.email : "Profile"}
-                </span>
-              </span>
-            </Link>
-            {sessionMode !== "solo" && <Button
-              variant="ghost"
-              type="button"
-              className="app-rail-signout"
-              onClick={handleSignOut}
-              aria-label={`Sign out ${user.email}`}
-              title={`Sign out ${user.email}`}
-            >
-              <LogOut aria-hidden="true" strokeWidth={2} />
-            </Button>}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  className="app-rail-user-profile"
+                  aria-label={`Account: ${user.email}`}
+                >
+                  <span className="app-rail-avatar" aria-hidden="true">
+                    {initials(user)}
+                  </span>
+                  <span className="app-rail-user-copy">
+                    <span className="app-rail-user-name">
+                      {user.name || user.email}
+                    </span>
+                    <span className="app-rail-user-email">{user.email}</span>
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-44 border border-border bg-card p-1.5 shadow-lift">
+                <MenuItem asChild>
+                  <Link href="/profile">
+                    <UserRound aria-hidden="true" strokeWidth={2} />
+                    Profile
+                  </Link>
+                </MenuItem>
+                {sessionMode !== "solo" && (
+                  <MenuItem onSelect={() => void handleSignOut()}>
+                    <LogOut aria-hidden="true" strokeWidth={2} />
+                    Sign out
+                  </MenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ) : null}
       </div>
