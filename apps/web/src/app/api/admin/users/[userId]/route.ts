@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { activeAdministratorIds, administratorUserIds, and, app_user, db, eq, GroupError, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
+import { isDemoMode } from "@/lib/demo-mode";
 import { getOrgId } from "@/lib/db";
 
 export async function PATCH(
@@ -26,6 +27,9 @@ export async function PATCH(
 ) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
+  if (isDemoMode()) {
+    return NextResponse.json({ error: "the demo does not accept user changes" }, { status: 403 });
+  }
 
   const { userId } = await params;
   let body: { role?: unknown; disabled?: unknown };

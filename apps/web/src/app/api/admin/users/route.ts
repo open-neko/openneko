@@ -17,12 +17,18 @@ import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail, setLoca
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
 import { requestWorker } from "@/lib/groups-admin";
+import { isDemoMode } from "@/lib/demo-mode";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: NextRequest) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
+  if (isDemoMode()) {
+    // Every visitor to a public demo is the same solo operator, so one
+    // person's address would be shown to the next.
+    return NextResponse.json({ error: "the demo does not accept user changes" }, { status: 403 });
+  }
 
   let body: { email?: unknown; name?: unknown; role?: unknown; updateSoloAccount?: unknown; addToDirectory?: unknown };
   try {

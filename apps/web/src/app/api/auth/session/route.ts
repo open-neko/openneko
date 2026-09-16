@@ -9,6 +9,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser, getAuthProvider, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { getCurrentActor } from "@/lib/actor";
+import { demoSafeEmail, demoSafeName } from "@/lib/demo-mode";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -17,7 +18,9 @@ export async function GET(request: NextRequest) {
   // Sign out. It stays true while the worker or the plugin is unreachable.
   const signedIn = Boolean(request?.cookies?.get(SESSION_COOKIE_NAME)?.value);
   return NextResponse.json({
-    user,
+    user: user
+      ? { ...user, email: demoSafeEmail(user.email, user.id), name: demoSafeName(user.name) }
+      : null,
     role: actor?.role ?? null,
     authEnabled: Boolean(await getAuthProvider()),
     signedIn,

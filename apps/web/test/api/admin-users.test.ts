@@ -161,6 +161,17 @@ describe("POST /api/admin/users", () => {
     expect(mocks.inserted).toHaveLength(0);
   });
 
+  it("refuses to write a user on a public demo", async () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO", "true");
+    // Every demo visitor is the same solo operator, so one person's
+    // address would greet the next one.
+    const res = await POST(postRequest({ email: "visitor@gmail.com", role: "admin", updateSoloAccount: true }) as never);
+    expect(res.status).toBe(403);
+    expect(mocks.inserted).toHaveLength(0);
+    expect(mocks.updates).toHaveLength(0);
+    vi.unstubAllEnvs();
+  });
+
   it("rejects invalid emails and roles", async () => {
     expect(
       (await POST(postRequest({ email: "not-an-email", role: "member" }) as never))

@@ -14,6 +14,7 @@ import {
 } from "@neko/db";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { demoSafeEmail, demoSafeName } from "@/lib/demo-mode";
 import { getPluginStatus } from "@/lib/auth";
 import { requestWorker } from "@/lib/groups-admin";
 import { AdminDenied, AdminShell } from "../AdminShell";
@@ -75,8 +76,8 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   const identitySetup = users.some((user) => user.id === actor.userId && isUnclaimedSoloEmail(user.email));
   const rows: AdminUserRow[] = users.map((user) => ({
     id: user.id,
-    email: isUnclaimedSoloEmail(user.email) ? "Email not set" : user.email,
-    name: user.name,
+    email: isUnclaimedSoloEmail(user.email) ? "Email not set" : demoSafeEmail(user.email, user.id),
+    name: demoSafeName(user.name),
     role: administrators.has(user.id) ? "admin" : "member",
     source: user.source,
     groups: groupsByUser.get(user.id) ?? [],

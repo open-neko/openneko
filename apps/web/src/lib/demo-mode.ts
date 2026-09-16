@@ -25,6 +25,23 @@ export function isDemoMode(): boolean {
   );
 }
 
+/**
+ * A public demo signs every visitor in as the same solo operator, so
+ * anything one visitor types about themselves is shown to the next one.
+ * Outside demo mode this returns the address unchanged.
+ */
+export function demoSafeEmail(email: string, userId = ""): string {
+  if (!isDemoMode() || !email) return email;
+  const suffix = userId.replace(/[^a-z0-9]/giu, "").slice(-4).toLowerCase();
+  return suffix ? `operator-${suffix}@example.com` : "operator@example.com";
+}
+
+/** Same rule for a display name a visitor may have typed. */
+export function demoSafeName(name: string | null): string | null {
+  if (!isDemoMode()) return name;
+  return name ? "Demo operator" : name;
+}
+
 type MockCard = {
   metric: string;
   label: string;

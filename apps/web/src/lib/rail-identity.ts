@@ -1,6 +1,7 @@
 import { getCurrentActor } from "@/lib/actor";
 import { getAuthProvider, getCurrentUser, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { cookies } from "next/headers";
+import { demoSafeEmail, demoSafeName } from "@/lib/demo-mode";
 import type { RailIdentity } from "@/components/AppRail";
 
 /**
@@ -15,7 +16,7 @@ export async function railIdentity(): Promise<RailIdentity | undefined> {
     if (!user) return undefined;
     const [actor, provider] = await Promise.all([getCurrentActor(), getAuthProvider()]);
     return {
-      user: { email: user.email, name: user.name },
+      user: { email: demoSafeEmail(user.email, user.id), name: demoSafeName(user.name) },
       mode: !provider ? "solo" : actor?.role === "member" ? "member" : "admin",
       signedIn,
     };
