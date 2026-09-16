@@ -34,13 +34,11 @@ describeIfDb("K1 actor threading", () => {
         id: userId,
         email: "ada@example.com",
         org_id: orgId,
-        role: "member",
       },
       {
         id: adminId,
         email: "admin@example.com",
         org_id: orgId,
-        role: "admin",
       },
     ]);
   });

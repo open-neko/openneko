@@ -242,7 +242,11 @@ export function registerUserAdminAdapter(): void {
         };
       }
       const id = randomUUID();
-      await db().insert(app_user).values({ id, email, org_id: orgId, role });
+      await db().insert(app_user).values({ id, email, org_id: orgId });
+      if (role === "admin") {
+        const { setLocalAdministrator } = await import("@neko/db");
+        await setLocalAdministrator(orgId, id, true);
+      }
       return {
         commandOrOperation: `invite ${email} as ${role}`,
         result: { userId: id, role },
@@ -695,7 +699,7 @@ export function registerSourceConfigAdminAdapter(): void {
 
     if (request.approvedByUserId) {
       const [approver] = await db()
-        .select({ role: app_user.role, disabledAt: app_user.disabled_at })
+        .select({ disabledAt: app_user.disabled_at })
         .from(app_user)
         .where(
           and(
@@ -704,7 +708,9 @@ export function registerSourceConfigAdminAdapter(): void {
           ),
         )
         .limit(1);
-      if (!approver || approver.role !== "admin" || approver.disabledAt) {
+      const { resolveUserGroups } = await import("@neko/db");
+      const approverGroups = approver ? await resolveUserGroups(orgId, request.approvedByUserId) : null;
+      if (!approver || approver.disabledAt || !approverGroups?.administrator) {
         throw new Error(
           "source_config_admin: approving user is no longer an active admin",
         );

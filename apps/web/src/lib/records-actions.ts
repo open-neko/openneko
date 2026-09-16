@@ -10,9 +10,11 @@ import {
   type RecordValidationIssue,
   type RecordViewColumn,
 } from "@neko/records";
-import { can, inProcessControlPlane } from "@neko/llm/work";
+import { resolveUserGroups } from "@neko/db";
+import { can, inProcessControlPlane, type RunActor } from "@neko/llm/work";
 import { approveActionRequest } from "@neko/llm/workflows";
 import { getCurrentActor } from "@/lib/actor";
+import { getOrgId } from "@/lib/db";
 import {
   loadRecordAppShell,
   readRecordDetail,
@@ -107,6 +109,15 @@ function resolveFormView(
     recordId: "records-form-model",
     allFields: true,
   }).view;
+}
+
+/** The policy's approver group decides; administrators always may. */
+async function mayApprove(actor: RunActor, approverGroupId: string | null): Promise<boolean> {
+  if (!can(actor, "approve", { kind: "action_approval", approverRole: null })) return false;
+  if (!approverGroupId || actor.role === "admin") return true;
+  if (!actor.userId) return false;
+  const groups = await resolveUserGroups(await getOrgId(), actor.userId);
+  return groups.groupIds.includes(approverGroupId);
 }
 
 export async function getRecordFormModel(input: {
@@ -240,15 +251,8 @@ export async function submitRecordFormAction(input: {
   if (decision.decision === "deny") {
     throw new RecordFormPolicyError(decision.reason);
   }
-  if (
-    !can(actor, "approve", {
-      kind: "action_approval",
-      approverRole: decision.policy.approverRole,
-    })
-  ) {
-    throw new RecordFormPolicyError(
-      `This change requires approval from ${decision.policy.approverRole ?? "an authorized operator"}.`,
-    );
+  if (!(await mayApprove(actor, decision.policy.approverGroupId))) {
+    throw new RecordFormPolicyError("This change needs approval from the policy's approver group.");
   }
 
   const payload: Record<string, unknown> = {
@@ -345,15 +349,8 @@ export async function submitRecordRestoreAction(input: {
   if (decision.decision === "deny") {
     throw new RecordFormPolicyError(decision.reason);
   }
-  if (
-    !can(actor, "approve", {
-      kind: "action_approval",
-      approverRole: decision.policy.approverRole,
-    })
-  ) {
-    throw new RecordFormPolicyError(
-      `This restore requires approval from ${decision.policy.approverRole ?? "an authorized operator"}.`,
-    );
+  if (!(await mayApprove(actor, decision.policy.approverGroupId))) {
+    throw new RecordFormPolicyError("This restore needs approval from the policy's approver group.");
   }
 
   const summary = `Restore ${recycled.view.object.label} ${recycled.row.recordId}`;

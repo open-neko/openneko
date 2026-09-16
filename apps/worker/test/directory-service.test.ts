@@ -122,7 +122,7 @@ describe("createDirectoryUser", () => {
 describeIfDb("runDirectorySync", () => {
   it("records success and failure in directory_sync_state", async () => {
     await withOrg(async (orgId) => {
-      await db().insert(app_user).values({ id: `${orgId}-owner`, org_id: orgId, role: "admin", email: "owner@x.test" });
+      await db().insert(app_user).values({ id: `${orgId}-owner`, org_id: orgId, email: "owner@x.test" });
       const stats = await runDirectorySync(
         source([{ tenantId: "t1", users: [{ externalId: "u1", email: "new@x.test", active: true }], groups: [], memberships: [] }]),
         orgId,

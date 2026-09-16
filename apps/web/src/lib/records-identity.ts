@@ -195,12 +195,7 @@ export async function runRecordIdentityBackfillFromWeb(input: {
   if (decision.decision === "deny") {
     throw new RecordIdentityWebPermissionError(decision.reason);
   }
-  if (
-    !can(actor, "approve", {
-      kind: "action_approval",
-      approverRole: decision.policy.approverRole,
-    })
-  ) {
+  if (!can(actor, "approve", { kind: "action_approval", approverRole: null })) {
     throw new RecordIdentityWebPermissionError();
   }
   const summary = `Backfill ${shell.snapshot.app.label} ownership from ${sourceInstanceId}`;

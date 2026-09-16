@@ -67,8 +67,8 @@ describeIfDb("library layering and search", () => {
     await db()
       .insert(app_user)
       .values([
-        { id: `${orgId}-${ALICE}`, email: "alice@example.com", org_id: orgId, role: "member" },
-        { id: `${orgId}-${BOB}`, email: "bob@example.com", org_id: orgId, role: "member" },
+        { id: `${orgId}-${ALICE}`, email: "alice@example.com", org_id: orgId },
+        { id: `${orgId}-${BOB}`, email: "bob@example.com", org_id: orgId },
       ]);
   });
 

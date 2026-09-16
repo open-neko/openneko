@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
-import { ADMINISTRATORS_GROUP_SLUG, and, app_user, db, eq, getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail, user_group, user_group_membership, work_thread, work_run, workflow_definition, workflow_run } from "../../src";
+import { ADMINISTRATORS_GROUP_SLUG, and, app_user, db, eq, getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail, user_group, user_group_membership, work_thread, work_run, workflow_definition, workflow_run,
+  setLocalAdministrator,
+} from "../../src";
 import { dbReachable, withTestOrg } from "./_helpers";
 const reachable = await dbReachable();
 
@@ -24,7 +26,7 @@ it.skipIf(!reachable)("upgrades a userless installation once under concurrent re
       .where(and(eq(user_group_membership.org_id, orgId), eq(user_group.slug, ADMINISTRATORS_GROUP_SLUG)));
     expect(admins).toEqual([{ userId: owner.id }]);
     expect(await soloAdminNeedsEmail(orgId)).toBe(true);
-    await db().insert(app_user).values({ id: `${orgId}-other`, org_id: orgId, role: "admin", email: "other@example.test" });
+    await db().insert(app_user).values({ id: `${orgId}-other`, org_id: orgId, email: "other@example.test" });
     expect((await getOrCreateSoloAdmin(orgId))?.id).toBe(owner.id);
     await db().update(app_user).set({ email: "owner@example.test" }).where(eq(app_user.id, owner.id));
     expect(await soloAdminNeedsEmail(orgId)).toBe(false);
@@ -37,16 +39,20 @@ it.skipIf(!reachable)("upgrades a userless installation once under concurrent re
 it.skipIf(!reachable)("adopts an existing local admin and never chooses an arbitrary admin in ambiguous legacy data", async () => {
   await withTestOrg(async (orgId) => {
     const originalId = `${orgId}-admin`;
-    await db().insert(app_user).values({ id: originalId, org_id: orgId, role: "admin", email: "owner@example.test" });
+    await db().insert(app_user).values({ id: originalId, org_id: orgId, email: "owner@example.test" });
+    await setLocalAdministrator(orgId, originalId, true);
     const [personalChat] = await db().insert(work_thread).values({ org_id: orgId, created_by_user_id: originalId }).returning();
     expect((await getOrCreateSoloAdmin(orgId))?.id).toBe(originalId);
     expect((await db().select().from(work_thread).where(eq(work_thread.id, personalChat.id)))[0].created_by_user_id).toBe(originalId);
     expect(await soloAdminNeedsEmail(orgId)).toBe(false);
-    await db().insert(app_user).values({ id: `${orgId}-member`, org_id: orgId, role: "member", email: "member@example.test" });
+    await db().insert(app_user).values({ id: `${orgId}-member`, org_id: orgId, email: "member@example.test" });
     expect((await getOrCreateSoloAdmin(orgId))?.id).toBe(originalId);
   }, "solo-existing");
   await withTestOrg(async (orgId) => {
-    for (const id of ["a", "b"]) await db().insert(app_user).values({ id: `${orgId}-${id}`, org_id: orgId, role: "admin", email: `${id}@example.test` });
+    for (const id of ["a", "b"]) {
+      await db().insert(app_user).values({ id: `${orgId}-${id}`, org_id: orgId, email: `${id}@example.test` });
+      await setLocalAdministrator(orgId, `${orgId}-${id}`, true);
+    }
     const [otherChat] = await db().insert(work_thread).values({ org_id: orgId, created_by_user_id: `${orgId}-a` }).returning();
     const owner = await getOrCreateSoloAdmin(orgId);
     expect((await db().select().from(work_thread).where(eq(work_thread.id, otherChat.id)))[0].created_by_user_id).toBe(`${orgId}-a`);

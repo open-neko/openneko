@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import {
+  administratorUserIds,
   app_user,
   asc,
   db,
@@ -27,14 +28,13 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   if (actor.role !== "admin") return <AdminDenied />;
 
   const orgId = await getOrgId();
-  const [users, memberships, groups, idpGroups, rules, pluginStatus, query] = await Promise.all([
+  const [users, memberships, administrators, groups, idpGroups, rules, pluginStatus, query] = await Promise.all([
     db()
       .select({
         id: app_user.id,
         sub: app_user.sub,
         email: app_user.email,
         name: app_user.name,
-        role: app_user.role,
         source: app_user.source,
         disabledAt: app_user.disabled_at,
         createdAt: app_user.created_at,
@@ -48,6 +48,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
       .from(user_group_membership)
       .innerJoin(user_group, eq(user_group.id, user_group_membership.group_id))
       .where(eq(user_group_membership.org_id, orgId)),
+    administratorUserIds(orgId),
     listUserGroups(orgId),
     listIdpGroups(orgId),
     listIdpGroupRules(orgId),
@@ -76,7 +77,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     id: user.id,
     email: isUnclaimedSoloEmail(user.email) ? "Email not set" : user.email,
     name: user.name,
-    role: user.role,
+    role: administrators.has(user.id) ? "admin" : "member",
     source: user.source,
     groups: groupsByUser.get(user.id) ?? [],
     disabled: Boolean(user.disabledAt),

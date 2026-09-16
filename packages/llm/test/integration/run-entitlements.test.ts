@@ -8,6 +8,7 @@ import {
   db,
   grantItem,
   revokeItem,
+  setLocalAdministrator,
 } from "@neko/db";
 import { inProcessControlPlane } from "../../src/work/control-plane";
 import { entitlementActorForRun, filterHeldActions, runHeldItemIds } from "../../src/work/entitlement-scope";
@@ -36,10 +37,11 @@ describeIfDb("run entitlements", () => {
       await revokeItem(orgId, { groupId: everyone, itemType: "skill", itemId: "*" });
       const finance = await createUserGroup(orgId, { name: "Finance" });
       await db().insert(app_user).values([
-        { id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" },
-        { id: `${orgId}-boss`, org_id: orgId, role: "admin", email: "boss@example.test" },
+        { id: `${orgId}-ann`, org_id: orgId, email: "ann@example.test" },
+        { id: `${orgId}-boss`, org_id: orgId, email: "boss@example.test" },
       ]);
       await addLocalGroupMember(orgId, finance.id, `${orgId}-ann`);
+      await setLocalAdministrator(orgId, `${orgId}-boss`, true);
 
       const revenue = (await saveWorkflow({ orgId, name: "Daily revenue check", steps: [] })).workflow;
       const promos = (await saveWorkflow({ orgId, name: "Promotions", steps: [] })).workflow;
@@ -77,7 +79,7 @@ describeIfDb("run entitlements", () => {
 
   it("refuses external action requests and filters action descriptors the run's user does not hold", async () => {
     await withOrg(async (orgId) => {
-      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, email: "ann@example.test" });
       const everyone = await builtinGroupId(orgId, "everyone");
       await revokeItem(orgId, { groupId: everyone, itemType: "action", itemId: "*" });
       await grantItem(orgId, { groupId: everyone, itemType: "action", itemId: "send_slack_message" });

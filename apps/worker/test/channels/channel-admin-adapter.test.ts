@@ -36,7 +36,6 @@ describeIfDb("channel_admin adapter (ADM5)", () => {
       id: ada,
       email: "ada@example.com",
       org_id: orgId,
-      role: "member",
     });
     const [identity] = await db()
       .insert(channel_identity)

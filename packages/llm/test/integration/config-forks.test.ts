@@ -172,7 +172,6 @@ describeIfDb("CV4 forks (DB-backed)", () => {
       id: ada,
       email: "ada@example.com",
       org_id: orgId,
-      role: "member",
     });
     root = getOrgAgentRoot(orgId);
   });

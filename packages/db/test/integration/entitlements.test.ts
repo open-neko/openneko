@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ITEM_TYPES,
+  setLocalAdministrator,
   addLocalGroupMember,
   app_user,
   createUserGroup,
@@ -23,7 +24,8 @@ const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
 
 async function user(orgId: string, id: string, role = "member") {
-  await db().insert(app_user).values({ id: `${orgId}-${id}`, org_id: orgId, role, email: `${id}@example.test` });
+  await db().insert(app_user).values({ id: `${orgId}-${id}`, org_id: orgId, email: `${id}@example.test` });
+  if (role === "admin") await setLocalAdministrator(orgId, `${orgId}-${id}`, true);
   return { orgId, kind: "user" as const, userId: `${orgId}-${id}` };
 }
 

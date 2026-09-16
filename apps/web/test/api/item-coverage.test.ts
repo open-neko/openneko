@@ -43,7 +43,7 @@ const reachable = await dbReachable();
     state.orgId = uniqueOrgId("coverage");
     state.userId = `${state.orgId}-ann`;
     await createTestOrg(state.orgId);
-    await db().insert(app_user).values({ id: state.userId, org_id: state.orgId, role: "member", email: "ann@example.test" });
+    await db().insert(app_user).values({ id: state.userId, org_id: state.orgId, email: "ann@example.test" });
 
     const everyone = await builtinGroupId(state.orgId, "everyone");
     for (const type of ["skill", "workflow", "metric", "dashboard", "team_memory"] as const) {

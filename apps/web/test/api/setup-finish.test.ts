@@ -21,7 +21,7 @@ import {
   seedProvider,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { app_user, getOrCreateSoloAdmin, db, eq, organization, pool } from "@neko/db";
+import { app_user, setLocalAdministrator, getOrCreateSoloAdmin, db, eq, organization, pool } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockGetCurrentUser, mockRequireAgentRuntimeReady } = vi.hoisted(() => ({
@@ -98,8 +98,8 @@ describeIfDb("/settings/finish", () => {
       email: `${id}@example.com`,
       name: role,
       org_id: orgId,
-      role,
     });
+    if (role === "admin") await setLocalAdministrator(orgId, id, true);
     return id;
   }
 

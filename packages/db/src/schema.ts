@@ -64,7 +64,6 @@ export const app_user = pgTable(
     org_id: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    role: text("role").notNull(),
     source: text("source").notNull().default("local"),
     // ADM1: a deactivated user can't sign in and their sessions are dead.
     disabled_at: ts("disabled_at"),
@@ -90,8 +89,8 @@ export const app_user = pgTable(
 export const ADMINISTRATORS_GROUP_SLUG = "administrators";
 export const EVERYONE_GROUP_SLUG = "everyone";
 
-// Administrators membership and app_user.role are kept equal by triggers
-// (migration 0074). Everyone has no membership rows.
+// Administrators membership records who administers an install (migration
+// 0079 dropped app_user.role). Everyone has no membership rows.
 export const user_group = pgTable(
   "user_group",
   {
@@ -285,26 +284,6 @@ export const sso_setup = pgTable(
   },
 );
 
-// Configurable group → role/persona mapping (overrides the default heuristic).
-export const sso_group_mapping = pgTable(
-  "sso_group_mapping",
-  {
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    provider: text("provider").notNull(),
-    group_external_id: text("group_external_id").notNull(),
-    role: text("role").notNull(),
-    persona_role_template: text("persona_role_template"),
-    created_at: ts("created_at").notNull().defaultNow(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({
-      columns: [t.org_id, t.provider, t.group_external_id],
-    }),
-  }),
-);
 
 // Availability mirror for the records-engine registry. The records database
 // remains authoritative for app definitions; metadata consumers use this
@@ -2369,7 +2348,6 @@ export const action_policy = pgTable(
     allowed_targets: jsonb("allowed_targets"),
     denied_targets: jsonb("denied_targets"),
     limits: jsonb("limits").notNull().default(sql`'{}'::jsonb`),
-    approver_role: text("approver_role"),
     approver_group_id: uuid("approver_group_id"),
     priority: integer("priority").notNull().default(100),
     enabled: boolean("enabled").notNull().default(true),

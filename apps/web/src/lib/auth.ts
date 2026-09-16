@@ -42,8 +42,8 @@ import {
   isNull,
   sql,
   ADMINISTRATORS_GROUP_SLUG,
+  user_group_membership,
   GroupError,
-  idp_group_rule,
   reconcileSignInGroups,
   user_group,
 } from "@neko/db";
@@ -409,7 +409,6 @@ export async function upsertUserFromIdentity(
         id: app_user.id,
         email: app_user.email,
         name: app_user.name,
-        role: app_user.role,
       })
       .from(app_user)
       .where(and(eq(app_user.org_id, orgId), eq(app_user.sub, identity.sub)))
@@ -433,7 +432,6 @@ export async function upsertUserFromIdentity(
         email: app_user.email,
         name: app_user.name,
         sub: app_user.sub,
-        role: app_user.role,
       })
       .from(app_user)
       .where(and(eq(app_user.org_id, orgId), sql`lower(${app_user.email}) = ${identity.email.trim().toLowerCase()}`))
@@ -469,24 +467,25 @@ export async function upsertUserFromIdentity(
     // Brand new user. Bootstrap the first active admin so installing an SSO
     // plugin cannot leave an org with no administrator.
     const newId = `usr_${randomBytes(9).toString("base64url")}`;
-    // Group-name admins apply only until the org maps an IdP group to
-    // Administrators; from then on rules decide.
-    const fallbackRole = (await orgHasAdministratorsRule(orgId, tx))
-      ? "member"
-      : heuristicRoleForGroups(identity.groups ?? []);
-    const role = (await orgHasActiveAdmin(orgId, tx))
-      ? fallbackRole
-      : "admin";
     await tx.insert(app_user).values({
       id: newId,
       sub: identity.sub,
       email: identity.email,
       name: identity.name ?? null,
       org_id: orgId,
-      role,
       source: provider,
       last_login_at: new Date(),
     });
+    // An IdP group name never grants administration; an IdP rule or an
+    // administrator does. The first account of an org with no administrator
+    // still gets one, so a sign-in plugin cannot leave an org locked out.
+    if (!(await orgHasActiveAdmin(orgId, tx))) {
+      await tx.execute(sql`
+        insert into user_group_membership (org_id, group_id, user_id, source)
+        select ${orgId}, g.id, ${newId}, 'local' from user_group g
+        where g.org_id = ${orgId} and g.slug = ${ADMINISTRATORS_GROUP_SLUG}
+        on conflict do nothing`);
+    }
     return { id: newId, name: identity.name ?? null };
   });
   await syncIdentityGroups({ orgId, userId: resolved.id, identity });
@@ -497,30 +496,20 @@ export async function upsertUserFromIdentity(
   };
 }
 
-async function orgHasAdministratorsRule(
-  orgId: string,
-  runner: Pick<ReturnType<typeof db>, "select"> = db(),
-): Promise<boolean> {
-  const [rule] = await runner
-    .select({ id: idp_group_rule.id })
-    .from(idp_group_rule)
-    .innerJoin(user_group, eq(user_group.id, idp_group_rule.user_group_id))
-    .where(and(eq(idp_group_rule.org_id, orgId), eq(user_group.slug, ADMINISTRATORS_GROUP_SLUG)))
-    .limit(1);
-  return Boolean(rule);
-}
 
 async function orgHasActiveAdmin(
   orgId: string,
-  runner: Pick<ReturnType<typeof db>, "select"> = db(),
+  runner: Pick<ReturnType<typeof db>, "select">= db(),
 ): Promise<boolean> {
   const [admin] = await runner
     .select({ id: app_user.id })
     .from(app_user)
+    .innerJoin(user_group_membership, eq(user_group_membership.user_id, app_user.id))
+    .innerJoin(user_group, eq(user_group.id, user_group_membership.group_id))
     .where(
       and(
         eq(app_user.org_id, orgId),
-        eq(app_user.role, "admin"),
+        eq(user_group.slug, ADMINISTRATORS_GROUP_SLUG),
         isNull(app_user.disabled_at),
       ),
     )
@@ -528,28 +517,6 @@ async function orgHasActiveAdmin(
   return Boolean(admin);
 }
 
-/**
- * Coarse-grained fallback role mapping used only when no sso_group_mapping
- * row matches. Anyone with an `admin` or `owners` group becomes admin;
- * everyone else is `member`.
- */
-function heuristicRoleForGroups(
-  groups: Array<string | { id: string; name?: string | null }>,
-): string {
-  const lower = new Set(
-    groups.flatMap((group) =>
-      typeof group === "string"
-        ? [group.toLowerCase()]
-        : [group.id.toLowerCase(), group.name?.toLowerCase()].filter(
-            (value): value is string => Boolean(value),
-          ),
-    ),
-  );
-  if (lower.has("admin") || lower.has("admins") || lower.has("owners")) {
-    return "admin";
-  }
-  return "member";
-}
 
 function normalizedIdentityGroups(identity: AuthIdentity): Array<{
   externalId: string;

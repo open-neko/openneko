@@ -285,7 +285,7 @@ async function requireSourceConfigAccess(input: {
     if (run.userId) {
       userId = run.userId;
       const [user] = await db()
-        .select({ role: app_user.role, disabledAt: app_user.disabled_at })
+        .select({ disabledAt: app_user.disabled_at })
         .from(app_user)
         .where(
           and(
@@ -294,7 +294,12 @@ async function requireSourceConfigAccess(input: {
           ),
         )
         .limit(1);
-      role = user && !user.disabledAt ? user.role : null;
+      if (user && !user.disabledAt) {
+        const { resolveUserGroups } = await import("@neko/db");
+        role = (await resolveUserGroups(input.orgId, run.userId)).administrator ? "admin" : "member";
+      } else {
+        role = null;
+      }
     } else {
       // Null-user admin runs are valid only in the solo profile. In a
       // multi-user org, a deleted/detached admin must not inherit the solo
@@ -435,17 +440,13 @@ async function recordsViewerForRun(input: {
 
   if (run.userId) {
     const [user] = await db()
-      .select({ role: app_user.role, disabledAt: app_user.disabled_at })
+      .select({ disabledAt: app_user.disabled_at })
       .from(app_user)
       .where(
         and(eq(app_user.id, run.userId), eq(app_user.org_id, input.orgId)),
       )
       .limit(1);
-    if (
-      !user ||
-      user.disabledAt ||
-      (user.role !== "admin" && user.role !== "member")
-    ) {
+    if (!user || user.disabledAt) {
       throw new Error("records tools are not available to this actor");
     }
     const groups = await resolveUserGroups(input.orgId, run.userId);
@@ -1426,18 +1427,19 @@ export class InProcessControlPlane implements AgentControlPlane {
 
   async listUsers(input: { orgId: string }) {
     const {
+      administratorUserIds,
       app_user,
       db,
       eq,
       sso_group,
       sso_group_membership,
     } = await import("@neko/db");
+    const administrators = await administratorUserIds(input.orgId);
     const rows = await db()
       .select({
         id: app_user.id,
         email: app_user.email,
         name: app_user.name,
-        role: app_user.role,
         disabledAt: app_user.disabled_at,
         lastLoginAt: app_user.last_login_at,
       })
@@ -1466,6 +1468,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     return {
       users: rows.map((r) => ({
         ...r,
+        role: administrators.has(r.id) ? "admin" : "member",
         disabledAt: r.disabledAt?.toISOString() ?? null,
         lastLoginAt: r.lastLoginAt?.toISOString() ?? null,
         groupIds: memberships

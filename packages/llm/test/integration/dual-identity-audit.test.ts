@@ -46,7 +46,6 @@ describeIfDb("SEC5 dual-identity audit", () => {
         id: ada,
         email: "ada@example.com",
         org_id: orgId,
-        role: "member",
       });
       const thread = await createWorkThread(orgId, "t", "web", ada);
       const run = await createWorkRun(orgId, thread.id, "hermes", {

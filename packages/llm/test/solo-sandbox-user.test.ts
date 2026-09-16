@@ -6,7 +6,10 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@neko/db", () => ({
   organization: { id: "org", solo_admin_user_id: "owner" },
-  app_user: { id: "id", org_id: "org_id", role: "role", disabled_at: "disabled_at", sub: "sub" },
+  app_user: { id: "id", org_id: "org_id", disabled_at: "disabled_at", sub: "sub" },
+  resolveUserGroups: async (_orgId: string, userId: string) => ({
+    administrator: state.users.some((u) => u.id === userId && u.role === "admin"),
+  }),
   operator_profile: {}, work_run: {}, and: vi.fn(), eq: vi.fn(),
   db: () => ({ select: () => ({ from: (table: { solo_admin_user_id?: string }) => ({ where: () => ({
     limit: async () => table.solo_admin_user_id ? [{ owner: state.owner }] : state.users.filter(u => u.id === state.owner),

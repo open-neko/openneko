@@ -1,4 +1,4 @@
-import { and, app_user, db, eq, sso_group, user_group } from "@neko/db";
+import { and, app_user, db, eq, resolveUserGroups, sso_group, user_group } from "@neko/db";
 import {
   RecordsAccessAdmin,
   type RecordAccessSubject,
@@ -86,7 +86,7 @@ async function liveAdminActor(request: ActionRequestRecord): Promise<string> {
   }
   if (request.actorUserId) {
     const [user] = await db()
-      .select({ role: app_user.role, disabledAt: app_user.disabled_at })
+      .select({ disabledAt: app_user.disabled_at })
       .from(app_user)
       .where(
         and(
@@ -95,8 +95,11 @@ async function liveAdminActor(request: ActionRequestRecord): Promise<string> {
         ),
       )
       .limit(1);
-    if (!user || user.disabledAt || user.role !== "admin") {
-      throw new Error("records access admin is disabled or no longer an admin");
+    if (!user || user.disabledAt) {
+      throw new Error("records access admin is disabled or no longer belongs to the organization");
+    }
+    if (!(await resolveUserGroups(request.orgId, request.actorUserId)).administrator) {
+      throw new Error("records access administration needs an administrator");
     }
     return request.actorUserId;
   }

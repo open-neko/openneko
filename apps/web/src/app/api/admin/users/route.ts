@@ -13,7 +13,7 @@
 
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail } from "@neko/db";
+import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
 import { requestWorker } from "@/lib/groups-admin";
@@ -83,17 +83,12 @@ export async function POST(request: NextRequest) {
         await tx.update(app_user).set({ email, name, updated_at: new Date() }).where(eq(app_user.id, id));
         return true;
       }
-      await tx.insert(app_user).values({
-        id,
-        sub: null,
-        email,
-        name,
-        org_id: orgId,
-        role,
-      });
+      await tx.insert(app_user).values({ id, sub: null, email, name, org_id: orgId });
       return true;
     });
     if (!created) return NextResponse.json({ error: "This account cannot be updated here. Reload the page." }, { status: 409 });
+    // Administrators membership records the role; there is no role column.
+    if (role === "admin") await setLocalAdministrator(orgId, id, true);
   } catch (e) {
     // app_user_org_email_unique: a concurrent provision (double-click,
     // second admin tab) won the race between our lookup and this insert.

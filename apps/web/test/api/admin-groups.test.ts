@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestOrg, dbReachable, deleteTestOrg, uniqueOrgId } from "@neko/db/test-helpers";
-import { app_user, db, pool } from "@neko/db";
+import { app_user, db, pool, setLocalAdministrator } from "@neko/db";
 import { callRoute } from "../_helpers/route";
 
 const mocks = vi.hoisted(() => ({ orgId: "", role: "admin" as "admin" | "member", worker: vi.fn() }));
@@ -26,9 +26,10 @@ const reachable = await dbReachable();
     mocks.role = "admin";
     await createTestOrg(mocks.orgId);
     await db().insert(app_user).values([
-      { id: `${mocks.orgId}-owner`, org_id: mocks.orgId, role: "admin", email: "owner@example.test" },
-      { id: `${mocks.orgId}-ann`, org_id: mocks.orgId, role: "member", email: "ann@example.test" },
+      { id: `${mocks.orgId}-owner`, org_id: mocks.orgId, email: "owner@example.test" },
+      { id: `${mocks.orgId}-ann`, org_id: mocks.orgId, email: "ann@example.test" },
     ]);
+    await setLocalAdministrator(mocks.orgId, `${mocks.orgId}-owner`, true);
   });
   afterEach(async () => {
     await deleteTestOrg(mocks.orgId);

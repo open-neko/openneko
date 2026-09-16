@@ -14,7 +14,7 @@ const reachable = await pool().query("select 1").then(() => true, () => false);
   it("applies approved group, member, grant and data access changes", async () => {
     const orgId = `group-admin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     await db().insert(organization).values({ id: orgId, name: "Group admin" });
-    await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+    await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, email: "ann@example.test" });
     const onGraphjin = vi.fn();
     registerGroupAdminAdapter(onGraphjin);
     const run = (payload: Record<string, unknown>) =>

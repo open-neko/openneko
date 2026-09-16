@@ -32,7 +32,6 @@ export async function GET(_: Request, context: RouteContext) {
       allowedTargets: policy.allowedTargets,
       deniedTargets: policy.deniedTargets,
       limits: policy.limits,
-      approverRole: policy.approverRole,
       approverGroupId: policy.approverGroupId,
       priority: policy.priority,
       enabled: policy.enabled,
@@ -55,7 +54,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "approverGroupId must be a group id or null" }, { status: 400 });
   }
   const orgId = await getOrgId();
-  let approverRole: "admin" | null = null;
+
   if (approverGroupId) {
     const [group] = await db()
       .select({ slug: user_group.slug })
@@ -63,9 +62,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       .where(and(eq(user_group.org_id, orgId), eq(user_group.id, approverGroupId)))
       .limit(1);
     if (!group) return NextResponse.json({ error: "group not found" }, { status: 404 });
-    approverRole = group.slug === "administrators" ? "admin" : null;
   }
-  const policy = await updateActionPolicy(orgId, policyId, { approverGroupId, approverRole });
+  const policy = await updateActionPolicy(orgId, policyId, { approverGroupId });
   if (!policy) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ policy: { id: policy.id, approverGroupId: policy.approverGroupId, approverRole: policy.approverRole } });
+  return NextResponse.json({ policy: { id: policy.id, approverGroupId: policy.approverGroupId } });
 }

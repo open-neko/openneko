@@ -28,7 +28,7 @@ export async function GET() {
       allowedTargets: r.allowed_targets,
       deniedTargets: r.denied_targets,
       limits: r.limits,
-      approverRole: r.approver_role,
+      approverGroupId: r.approver_group_id,
       priority: r.priority,
       enabled: r.enabled,
       createdAt: r.created_at.toISOString(),

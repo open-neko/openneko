@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  administratorUserIds,
   GroupError,
   addLocalGroupMember,
   app_user,
@@ -26,7 +27,9 @@ const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
 
 async function addUser(orgId: string, id: string, role = "member", extra: Partial<typeof app_user.$inferInsert> = {}) {
-  await db().insert(app_user).values({ id: `${orgId}-${id}`, org_id: orgId, role, email: `${id}@example.test`, ...extra });
+  await db().insert(app_user).values({ id: `${orgId}-${id}`, org_id: orgId, email: `${id}@example.test`, ...extra });
+  // Administrators membership records who administers (migration 0079).
+  if (role === "admin") await setLocalAdministrator(orgId, `${orgId}-${id}`, true);
   return `${orgId}-${id}`;
 }
 
@@ -75,7 +78,7 @@ describeIfDb("groups", () => {
       await expectGroupError(removeLocalGroupMember(orgId, admins, owner), "lockout");
       await expectGroupError(setLocalAdministrator(orgId, owner, false), "lockout");
       await setLocalAdministrator(orgId, ann, true);
-      expect((await db().select({ role: app_user.role }).from(app_user).where(eq(app_user.id, ann)))[0]!.role).toBe("admin");
+      expect(await administratorUserIds(orgId)).toContain(ann);
       await setLocalAdministrator(orgId, owner, false);
       expect((await resolveUserGroups(orgId, owner)).administrator).toBe(false);
       expect(await resolveUserGroups(orgId, ann)).toMatchObject({
@@ -120,7 +123,7 @@ describeIfDb("groups", () => {
       await deleteIdpGroupRule(orgId, rule.id);
       await reconcileSignInGroups({ orgId, userId: bea, provider: "scalekit", tenantId: "t1", groups: [{ externalId: "g-fin", displayName: "Finance EU" }] });
       expect((await resolveUserGroups(orgId, bea)).slugs).toEqual(["everyone"]);
-      expect((await db().select({ role: app_user.role }).from(app_user).where(eq(app_user.id, bea)))[0]!.role).toBe("member");
+      expect(await administratorUserIds(orgId)).not.toContain(bea);
     }, "groups-rules");
   });
 
@@ -162,7 +165,7 @@ describeIfDb("groups", () => {
       expect(stats).toMatchObject({ usersCreated: 1, usersMatched: 1, usersDisabled: 1, memberships: 2, groups: 1 });
       const users = await db().select().from(app_user).where(eq(app_user.org_id, orgId));
       const dan = users.find((u) => u.email === "dan@acme.test")!;
-      expect(dan).toMatchObject({ role: "member", source: "scalekit", disabled_at: null });
+      expect(dan).toMatchObject({ source: "scalekit", disabled_at: null });
       expect(users.find((u) => u.id === old)!.disabled_at).not.toBeNull();
       expect(users.find((u) => u.id === owner)!.disabled_at).toBeNull();
       expect(users.some((u) => u.email === "eve@acme.test")).toBe(false);
@@ -175,7 +178,7 @@ describeIfDb("groups", () => {
       expect(await listGroupMembers(orgId, sales.id)).toEqual([]);
       const after = await db().select().from(app_user).where(eq(app_user.org_id, orgId));
       expect(after.find((u) => u.id === dan.id)!.disabled_at).not.toBeNull();
-      expect(after.find((u) => u.id === owner)).toMatchObject({ disabled_at: null, role: "admin" });
+      expect(after.find((u) => u.id === owner)).toMatchObject({ disabled_at: null });
     }, "groups-directory");
   });
 });

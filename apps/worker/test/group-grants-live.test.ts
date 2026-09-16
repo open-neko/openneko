@@ -141,9 +141,9 @@ sources:
 `);
     await db().insert(organization).values({ id: orgId, name: "GraphJin live" });
     await db().insert(app_user).values([
-      { id: `${orgId}-both`, org_id: orgId, role: "member", email: "both@x.test" },
-      { id: `${orgId}-finance`, org_id: orgId, role: "member", email: "finance@x.test" },
-      { id: `${orgId}-none`, org_id: orgId, role: "member", email: "none@x.test" },
+      { id: `${orgId}-both`, org_id: orgId, email: "both@x.test" },
+      { id: `${orgId}-finance`, org_id: orgId, email: "finance@x.test" },
+      { id: `${orgId}-none`, org_id: orgId, email: "none@x.test" },
     ]);
     await startGraphjin();
   }, 120_000);

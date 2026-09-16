@@ -718,7 +718,7 @@ async function runChatTurnTraced(
           allowedTargets: policyFence.payload.allowed_targets ?? null,
           deniedTargets: policyFence.payload.denied_targets ?? null,
           limits: policyFence.payload.limits,
-          approverRole: policyFence.payload.approver_role ?? null,
+          approverRole: policyFence.payload.approver_role === "admin" ? "admin" : null,
           priority: policyFence.payload.priority,
           enabled: policyFence.payload.enabled,
           createdByThreadId: threadId,

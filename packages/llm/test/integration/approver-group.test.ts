@@ -17,8 +17,8 @@ const reachable = await dbReachable();
     await createTestOrg(orgId);
     try {
       await db().insert(app_user).values([
-        { id: `${orgId}-fin`, org_id: orgId, role: "member", email: "fin@example.test" },
-        { id: `${orgId}-other`, org_id: orgId, role: "member", email: "other@example.test" },
+        { id: `${orgId}-fin`, org_id: orgId, email: "fin@example.test" },
+        { id: `${orgId}-other`, org_id: orgId, email: "other@example.test" },
       ]);
       const base = {
         orgId, description: "", appliesToKinds: ["send_slack_message"], appliesToScopes: ["external" as const],

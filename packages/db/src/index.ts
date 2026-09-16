@@ -25,7 +25,9 @@ export { getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail } from 
 export { getOrgId, _resetOrgIdCacheForTesting } from "./org";
 export {
   GroupError,
+  activeAdministratorIds,
   addLocalGroupMember,
+  administratorUserIds,
   assertAdministratorsKept,
   builtinGroupId,
   createIdpGroupRule,

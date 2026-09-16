@@ -88,7 +88,7 @@ export async function resolveChannelActor(
   const email = sender.email ?? identity.email;
   if (email) {
     const [match] = await db()
-      .select({ id: app_user.id, role: app_user.role })
+      .select({ id: app_user.id })
       .from(app_user)
       .where(
         and(
@@ -122,9 +122,9 @@ export async function resolveChannelActor(
 async function getActiveUser(
   orgId: string,
   userId: string,
-): Promise<{ id: string; role: string } | null> {
+): Promise<{ id: string } | null> {
   const [user] = await db()
-    .select({ id: app_user.id, role: app_user.role })
+    .select({ id: app_user.id })
     .from(app_user)
     .where(
       and(

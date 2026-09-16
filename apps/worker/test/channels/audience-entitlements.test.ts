@@ -60,7 +60,7 @@ const reachable = await pool().query("select 1").then(() => true, () => false);
   it("drops a linked sender who does not hold the channel", async () => {
     await withOrg(async (orgId) => {
       const userId = `${orgId}-ann`;
-      await db().insert(app_user).values({ id: userId, org_id: orgId, role: "member", email: "ann@example.test" });
+      await db().insert(app_user).values({ id: userId, org_id: orgId, email: "ann@example.test" });
       await db().insert(channel_identity).values({
         org_id: orgId, channel_plugin: "@open-neko/channel-slack", workspace_id: "T1", channel_user_id: "U1",
         app_user_id: userId, status: "linked",

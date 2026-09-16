@@ -248,6 +248,29 @@ export async function removeLocalGroupMember(orgId: string, groupId: string, use
   });
 }
 
+/** User ids that hold Administrators, by any membership source. */
+export async function administratorUserIds(orgId: string, runner: Runner = db()): Promise<Set<string>> {
+  const found = rows<{ user_id: string }>(
+    await runner.execute(sql`
+      select m.user_id from user_group_membership m
+      join user_group g on g.id = m.group_id
+      where m.org_id = ${orgId} and g.slug = ${ADMINISTRATORS_GROUP_SLUG}`),
+  );
+  return new Set(found.map((row) => row.user_id));
+}
+
+/** Active administrators, for the lockout guard and for worker notices. */
+export async function activeAdministratorIds(orgId: string, runner: Runner = db()): Promise<string[]> {
+  const found = rows<{ user_id: string }>(
+    await runner.execute(sql`
+      select m.user_id from user_group_membership m
+      join user_group g on g.id = m.group_id
+      join app_user u on u.id = m.user_id and u.disabled_at is null
+      where m.org_id = ${orgId} and g.slug = ${ADMINISTRATORS_GROUP_SLUG}`),
+  );
+  return found.map((row) => row.user_id);
+}
+
 /** Adds or removes the local Administrators membership; rule memberships stay. */
 export async function setLocalAdministrator(orgId: string, userId: string, administrator: boolean): Promise<void> {
   const groupId = await builtinGroupId(orgId, ADMINISTRATORS_GROUP_SLUG);
@@ -472,8 +495,8 @@ export async function reconcileDirectorySnapshot(snapshot: DirectorySnapshot): P
       if (!user.active || !snapshot.createUsers) continue;
       const id = `usr_${randomBytes(9).toString("base64url")}`;
       await tx.execute(sql`
-        insert into app_user (id, org_id, email, name, sub, role, source)
-        values (${id}, ${orgId}, ${email}, ${user.name ?? null}, ${user.sub ?? null}, 'member', ${provider})`);
+        insert into app_user (id, org_id, email, name, sub, source)
+        values (${id}, ${orgId}, ${email}, ${user.name ?? null}, ${user.sub ?? null}, ${provider})`);
       stats.usersCreated++;
       seen.add(id);
       userIds.set(user.externalId, id);

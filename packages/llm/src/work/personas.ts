@@ -1,4 +1,4 @@
-import { and, app_user, organization, db, eq, operator_profile, work_run } from "@neko/db";
+import { and, app_user, organization, db, eq, operator_profile, resolveUserGroups, work_run } from "@neko/db";
 import { resolveDeploymentProfile } from "./deployment-profile";
 
 /**
@@ -136,9 +136,10 @@ export async function getSoloSandboxUser(
   const [org] = await db().select({ owner: organization.solo_admin_user_id })
     .from(organization).where(eq(organization.id, orgId)).limit(1);
   if (!org?.owner || (actor.userId && actor.userId !== org.owner)) return null;
-  const users = await db().select({ id: app_user.id, role: app_user.role, disabledAt: app_user.disabled_at, sub: app_user.sub })
+  const users = await db().select({ id: app_user.id, disabledAt: app_user.disabled_at, sub: app_user.sub })
     .from(app_user).where(and(eq(app_user.org_id, orgId), eq(app_user.id, org.owner))).limit(1);
-  if (!users[0] || users[0].role !== "admin" || users[0].disabledAt || users[0].sub) return null;
+  if (!users[0] || users[0].disabledAt || users[0].sub) return null;
+  if (!(await resolveUserGroups(orgId, users[0].id)).administrator) return null;
   return {
     principalId: users[0].id,
     // Solo admin has unrestricted org access; fine-grained grants still use

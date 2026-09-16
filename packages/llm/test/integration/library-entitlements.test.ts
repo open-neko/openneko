@@ -53,7 +53,7 @@ const reachable = await dbReachable();
     await createTestOrg(orgId);
     try {
       const ann = `${orgId}-ann`;
-      await db().insert(app_user).values({ id: ann, org_id: orgId, role: "member", email: "ann@example.test" });
+      await db().insert(app_user).values({ id: ann, org_id: orgId, email: "ann@example.test" });
       const everyone = await builtinGroupId(orgId, "everyone");
       await revokeItem(orgId, { groupId: everyone, itemType: "library_collection", itemId: "*" });
       await revokeItem(orgId, { groupId: everyone, itemType: "library_concept", itemId: "*" });

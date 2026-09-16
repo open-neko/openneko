@@ -27,7 +27,7 @@ const reachable = await dbReachable();
       const sales = await createUserGroup(orgId, { name: "Sales" });
       const everyone = await builtinGroupId(orgId, "everyone");
       const admins = await builtinGroupId(orgId, "administrators");
-      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, role: "member", email: "ann@example.test" });
+      await db().insert(app_user).values({ id: `${orgId}-ann`, org_id: orgId, email: "ann@example.test" });
       await addLocalGroupMember(orgId, finance.id, `${orgId}-ann`);
 
       expect(await getGroupGrantsEnabled(orgId)).toBe(false);

@@ -76,6 +76,7 @@ import {
   db,
   desc,
   eq,
+  activeAdministratorIds,
   getOrgId,
   isNull,
   metric,
@@ -512,14 +513,7 @@ const server = createServer(
       getAuthDeclaredEnvKeys: () =>
         pluginRegistry?.getAuthDeclaredEnvKeys() ?? [],
       soloAdminNeedsEmail: async () => soloAdminNeedsEmail(await getOrgId()),
-      hasProvisionedAdmin: async () => {
-        const [row] = await db()
-          .select({ id: app_user.id })
-          .from(app_user)
-          .where(and(eq(app_user.role, "admin"), isNull(app_user.disabled_at)))
-          .limit(1);
-        return Boolean(row);
-      },
+      hasProvisionedAdmin: async () => (await activeAdministratorIds(await getOrgId())).length > 0,
       setAuthSecret: async (key, value) => {
         if (!pluginRegistry) {
           throw new Error("plugin registry not initialised");

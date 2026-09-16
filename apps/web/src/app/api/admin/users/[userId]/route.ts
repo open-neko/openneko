@@ -12,11 +12,11 @@
  *    die with the flip.
  *
  * Role changes propagate to GraphJin lazily — the records read gateway
- * re-syncs engine.actor from app_user.role on the viewer's next query.
+ * re-syncs engine.actor from Administrators membership on the viewer's next query.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { and, app_user, db, eq, isNull, ne, GroupError, setLocalAdministrator } from "@neko/db";
+import { activeAdministratorIds, administratorUserIds, and, app_user, db, eq, GroupError, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
 
@@ -67,37 +67,26 @@ export async function PATCH(
   }
 
   const orgId = await getOrgId();
-  const [target] = await db()
-    .select({
-      id: app_user.id,
-      role: app_user.role,
-      disabledAt: app_user.disabled_at,
-    })
+  const [row] = await db()
+    .select({ id: app_user.id, disabledAt: app_user.disabled_at })
     .from(app_user)
     .where(and(eq(app_user.org_id, orgId), eq(app_user.id, userId)))
     .limit(1);
-  if (!target) {
+  if (!row) {
     return NextResponse.json({ error: "user not found" }, { status: 404 });
   }
+  const target = {
+    ...row,
+    role: (await administratorUserIds(orgId)).has(row.id) ? ("admin" as const) : ("member" as const),
+  };
 
   const losesAdmin =
     target.role === "admin" &&
     !target.disabledAt &&
     (role === "member" || disabled === true);
   if (losesAdmin) {
-    const [otherAdmin] = await db()
-      .select({ id: app_user.id })
-      .from(app_user)
-      .where(
-        and(
-          eq(app_user.org_id, orgId),
-          eq(app_user.role, "admin"),
-          isNull(app_user.disabled_at),
-          ne(app_user.id, target.id),
-        ),
-      )
-      .limit(1);
-    if (!otherAdmin) {
+    const others = (await activeAdministratorIds(orgId)).filter((id) => id !== target.id);
+    if (others.length === 0) {
       return NextResponse.json(
         { error: "refusing to remove the last active administrator" },
         { status: 409 },

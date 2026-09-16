@@ -331,17 +331,13 @@ async function actorForRequest(request: ActionRequestRecord): Promise<RecordPoli
     };
   }
   const [user] = await db()
-    .select({ role: app_user.role, disabledAt: app_user.disabled_at })
+    .select({ disabledAt: app_user.disabled_at })
     .from(app_user)
     .where(
       and(eq(app_user.org_id, request.orgId), eq(app_user.id, actorUserId)),
     )
     .limit(1);
-  if (
-    !user ||
-    user.disabledAt ||
-    (user.role !== "admin" && user.role !== "member")
-  ) {
+  if (!user || user.disabledAt) {
     throw new RecordActionPayloadError(
       "record action actor is disabled or no longer belongs to the organization",
     );
