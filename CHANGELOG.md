@@ -1,5 +1,45 @@
 # Changelog
 
+## [3.0.0](https://github.com/open-neko/openneko/compare/v2.46.2...v3.0.0) (2026-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* app_user.role and action_policy.approver_role are gone. An older image cannot read this schema, so the release offers no downgrade path. Administrators group membership replaces both columns.
+
+### Features
+
+* admin API for groups, IdP rules, item grants and data access ([e7f1a65](https://github.com/open-neko/openneko/commit/e7f1a65c84e9897a20fa3464ae7749c379a51871))
+* agent tools for groups, item grants and data access ([3f2c046](https://github.com/open-neko/openneko/commit/3f2c0466b888ef6885214742a44b2fba593e7d23))
+* approval by group and removal of the unused role mapping ([35d976e](https://github.com/open-neko/openneko/commit/35d976e219a08c05cd31fa547a1599c8f1b15bd1))
+* **db:** Administrators and Everyone groups ([d79e3d0](https://github.com/open-neko/openneko/commit/d79e3d051625799a3f73e2fa20999715364c5cfb))
+* **db:** IdP group rules, local groups and directory reconcile ([74da6cb](https://github.com/open-neko/openneko/commit/74da6cb79076614929b5db57e9cfc9da7e3b04cb))
+* **db:** item grants and entitlement resolution ([4b135f6](https://github.com/open-neko/openneko/commit/4b135f60d54fa6d072b86225035447793ab4d9a0))
+* directory plugin capability, directory sync and IdP rules at sign-in ([66ce45f](https://github.com/open-neko/openneko/commit/66ce45f197102c5c2787817b5a0e61ae8e38a090))
+* enforce action grants for agent runs and action lists ([748078e](https://github.com/open-neko/openneko/commit/748078eccf7ec2cf4e92a59ed51a49bf2bb03f02))
+* enforce channel grants and hold nothing for unlinked senders ([033c0b1](https://github.com/open-neko/openneko/commit/033c0b1d62888f9aebdbf7b4d73822da167dad14))
+* enforce dashboard and metric grants in the briefing ([7fff5b9](https://github.com/open-neko/openneko/commit/7fff5b9649e4d4b77841527bda199c141488810a))
+* enforce integration and pack grants for connections ([8b5dfed](https://github.com/open-neko/openneko/commit/8b5dfedda118c3dd18355b3122f34f264c06024d))
+* enforce library collection and concept grants ([1e22da7](https://github.com/open-neko/openneko/commit/1e22da7ea0f579cf898ac457e5e8c47be7cd712c))
+* enforce saved query and data source grants for agent GraphJin tools ([0b05891](https://github.com/open-neko/openneko/commit/0b05891735d74c89eec836e15073283bdf4f0a9c))
+* enforce skill grants in the web app and agent runs ([9ee1bc5](https://github.com/open-neko/openneko/commit/9ee1bc5b96bfc4fcfd761df332e2f036e8494a77))
+* enforce team memory grants ([7c6ac42](https://github.com/open-neko/openneko/commit/7c6ac4245a28229c6550e8715c6c947a12461eda))
+* enforce workflow grants in routes and agent workflow tools ([82a865d](https://github.com/open-neko/openneko/commit/82a865d39e7a4121aa1ff7b3085d1079b546c0c9))
+* group data access rules compiled into GraphJin grants ([d0c1a68](https://github.com/open-neko/openneko/commit/d0c1a689ca41aaa7550478ac7d223fa9608cd72a))
+* groups are the only record of who administers ([010199b](https://github.com/open-neko/openneko/commit/010199b8d1e2f5222b011f7b21f2906244bab11e))
+* hide watcher findings from users without the watcher grant ([6b290b5](https://github.com/open-neko/openneko/commit/6b290b5f50772bed7ae055773463c64304e200fb))
+* records access uses OpenNeko groups and keeps IdP group grants ([b5c66be](https://github.com/open-neko/openneko/commit/b5c66be971c4db83088fb51b96cc41518dc47144))
+* turn group grants on with upgrade parity and off with a clean restore ([187676f](https://github.com/open-neko/openneko/commit/187676f24cfcb9aff53a710d238e634658cd51c1))
+* **web:** groups, IdP rules, item access and data access admin UI ([16f5c98](https://github.com/open-neko/openneko/commit/16f5c98cc889811221754e365e4216f84f40383a))
+
+
+### Bug Fixes
+
+* **dev:** host processes reach the running stack ([afc4c18](https://github.com/open-neko/openneko/commit/afc4c182f26beb4fcf198a2fa4974a09a96db501))
+* **web:** check sign-in before the integration grant and cover grant filtering in tests ([581b33b](https://github.com/open-neko/openneko/commit/581b33b77e92cd0b35a011ec62abf841392ae914))
+* **web:** defer admin panel loads out of effect bodies and trim unused imports ([dc240b9](https://github.com/open-neko/openneko/commit/dc240b9ea1cd1bf5870117be16042cd0373fb4a5))
+* **web:** serve the files in public/ and keep Sign out in reach ([00480f7](https://github.com/open-neko/openneko/commit/00480f71b8425a193e8d113a8172c46afc48f893))
+
 ## [2.46.2](https://github.com/open-neko/openneko/compare/v2.46.1...v2.46.2) (2026-09-14)
 
 
