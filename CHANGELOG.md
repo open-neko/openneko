@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.1](https://github.com/open-neko/openneko/compare/v3.0.0...v3.0.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **web:** ask for people only when they can sign in ([150565b](https://github.com/open-neko/openneko/commit/150565b2648daf563f5746cada60ae76cf427625))
+* **web:** ask for people only when they can sign in ([86a549d](https://github.com/open-neko/openneko/commit/86a549debeaff0a1834d174c8a125440127a8f44))
+
 ## [3.0.0](https://github.com/open-neko/openneko/compare/v2.46.2...v3.0.0) (2026-09-16)
 
 
