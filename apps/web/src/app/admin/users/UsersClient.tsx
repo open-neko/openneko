@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ActionGroup } from "@/components/ui/action-group";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input, NativeSelect } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { SearchInput } from "@/components/ui/search-input";
+import { EmptyState } from "@/components/ui/empty";
 import {
   Table,
   TableBody,
@@ -41,10 +43,12 @@ export interface AdminUserRow {
 export function UsersClient({
   users,
   identitySetup = false,
+  signInProvider = null,
   directoryCreateLabel = null,
 }: {
   users: AdminUserRow[];
   identitySetup?: boolean;
+  signInProvider?: string | null;
   directoryCreateLabel?: string | null;
 }) {
   const router = useRouter();
@@ -145,6 +149,15 @@ export function UsersClient({
       </div>}
 
       {identitySetup && <p className="mb-4 text-sm text-text2">Use the email you will sign in with if you enable SSO later.</p>}
+      {/* A user row without a sign-in plugin promises an account nobody
+          can reach, and asks a real person for their address to do it. */}
+      {!signInProvider && !identitySetup ? (
+        <EmptyState
+          title="No sign-in plugin yet"
+          body="Install a sign-in plugin, such as Email link or Scalekit, and this page will add the people who use it. Until then this installation runs as a single operator."
+          action={<Button asChild><Link href="/admin/plugins">Open Plugins</Link></Button>}
+        />
+      ) : (
       <form
         onSubmit={createUser}
         className="mb-6 grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1fr)_minmax(130px,0.6fr)_auto] items-end gap-3 max-[820px]:grid-cols-2 max-[520px]:grid-cols-1"
@@ -198,6 +211,7 @@ export function UsersClient({
           />
         )}
       </form>
+      )}
 
       {visibleUsers.length === 0 ? (
         <p className="text-sm text-text2">

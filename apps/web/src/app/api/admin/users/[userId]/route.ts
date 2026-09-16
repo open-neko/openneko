@@ -18,6 +18,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { activeAdministratorIds, administratorUserIds, and, app_user, db, eq, GroupError, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
+import { getAuthProvider } from "@/lib/auth";
+import { noSignInResponse } from "@/lib/user-admin-gate";
 import { getOrgId } from "@/lib/db";
 
 export async function PATCH(
@@ -26,6 +28,7 @@ export async function PATCH(
 ) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
+  if (!(await getAuthProvider())) return noSignInResponse();
 
   const { userId } = await params;
   let body: { role?: unknown; disabled?: unknown };

@@ -72,7 +72,12 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     : undefined;
   const directoryCreateLabel = directory?.provider?.canCreateUsers ? directory.provider.providerLabel : null;
 
-  const identitySetup = users.some((user) => user.id === actor.userId && isUnclaimedSoloEmail(user.email));
+  // Claiming the operator's address only matters once someone can sign
+  // in, so the prompt waits for a sign-in plugin. Without one it would ask
+  // whoever opens the page, which on a public installation is a stranger.
+  const identitySetup =
+    Boolean(pluginStatus.authProvider) &&
+    users.some((user) => user.id === actor.userId && isUnclaimedSoloEmail(user.email));
   const rows: AdminUserRow[] = users.map((user) => ({
     id: user.id,
     email: isUnclaimedSoloEmail(user.email) ? "Email not set" : user.email,
@@ -105,6 +110,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         groups={groups}
         idpGroups={idpGroups.map((g) => ({ ...g }))}
         rules={rules.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }))}
+        signInProvider={pluginStatus.authProvider ?? null}
         directoryProvider={pluginStatus.directoryProvider ?? null}
         directoryCreateLabel={directoryCreateLabel}
       />
