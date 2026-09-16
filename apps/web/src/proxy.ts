@@ -40,6 +40,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { get as httpGet } from "node:http";
 import { get as httpsGet } from "node:https";
 import { deriveSigningSecret } from "@neko/secret-crypt";
+import { accessPolicyFor } from "./lib/access-policy";
 import {
   readAuthGateMarker,
   registerAuthGateCacheReset,
@@ -170,7 +171,12 @@ export function _resetProviderCache(): void {
  * redirects to /signin rather than 500ing every page load.
  */
 export function verifySessionCookie(value: string | undefined): boolean {
-  if (!value) return false;
+  return sessionUserId(value) !== null;
+}
+
+/** The signed-in user id, or null when the cookie is missing or invalid. */
+export function sessionUserId(value: string | undefined): string | null {
+  if (!value) return null;
   // Same resolution as lib/auth's sessionSecret(): explicit env wins;
   // otherwise a stable secret derived from the deployment secret-key.
   // (This copy still never throws — the proxy treats any failure as "no
@@ -180,48 +186,104 @@ export function verifySessionCookie(value: string | undefined): boolean {
     try {
       secret = deriveSigningSecret("session-cookie:v1").toString("base64");
     } catch {
-      return false;
+      return null;
     }
   }
-  if (secret.length < 32) return false;
+  if (secret.length < 32) return null;
   const parts = value.split(".");
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return null;
   const [userId, expiresAtRaw, mac] = parts;
-  if (!userId || !expiresAtRaw || !mac) return false;
+  if (!userId || !expiresAtRaw || !mac) return null;
   const body = `${userId}.${expiresAtRaw}`;
   const expected = createHmac("sha256", secret).update(body).digest("base64url");
   const a = Buffer.from(mac);
   const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  if (!timingSafeEqual(a, b)) return false;
+  if (a.length !== b.length) return null;
+  if (!timingSafeEqual(a, b)) return null;
   const expiresAt = Number.parseInt(expiresAtRaw, 10);
-  if (!Number.isFinite(expiresAt)) return false;
-  if (expiresAt < Math.floor(Date.now() / 1000)) return false;
-  return true;
+  if (!Number.isFinite(expiresAt)) return null;
+  if (expiresAt < Math.floor(Date.now() / 1000)) return null;
+  return userId;
 }
 
-export async function proxy(request: NextRequest): Promise<NextResponse> {
-  if (!(await isAuthPluginInstalled())) {
-    return NextResponse.next();
+const ADMIN_CACHE_TTL_MS = 5_000;
+const administrators = new Map<string, { administrator: boolean; at: number }>();
+
+/** Test seam: drop the cached Administrators answers. */
+export function _resetAdministratorCacheForTest(): void {
+  administrators.clear();
+}
+
+/**
+ * Administrators membership for the signed-in user. Cached for five
+ * seconds: the route handler behind this check reads the membership again,
+ * so a change applies there at once and here on the next few requests.
+ */
+async function isAdministrator(userId: string): Promise<boolean> {
+  const now = Date.now();
+  const cached = administrators.get(userId);
+  if (cached && now - cached.at < ADMIN_CACHE_TTL_MS) return cached.administrator;
+  try {
+    const [{ resolveUserGroups }, { getOrgId }] = await Promise.all([
+      import("@neko/db"),
+      import("./lib/db"),
+    ]);
+    const groups = await resolveUserGroups(await getOrgId(), userId);
+    administrators.set(userId, { administrator: groups.administrator, at: now });
+    return groups.administrator;
+  } catch {
+    // The route handler checks again, so a database blip must not lock an
+    // administrator out of the pages that report it.
+    return true;
   }
-  const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (verifySessionCookie(cookie)) {
-    return NextResponse.next();
+}
+
+function refuse(request: NextRequest, pathname: string): NextResponse {
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "admin only" }, { status: 403 });
   }
-  const returnTo = request.nextUrl.pathname + request.nextUrl.search;
   const url = request.nextUrl.clone();
-  url.pathname = "/signin";
-  url.search = `?returnTo=${encodeURIComponent(returnTo)}`;
+  url.pathname = "/";
+  url.search = "";
   return NextResponse.redirect(url, { status: 302 });
 }
 
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const pathname = request.nextUrl.pathname;
+  const policy = accessPolicyFor(pathname);
+  if (!policy) {
+    // No entry covers this path. Refuse it rather than guess; add the area
+    // to ACCESS_POLICIES (the access-policy test names it).
+    return pathname.startsWith("/api/")
+      ? NextResponse.json({ error: "not found" }, { status: 404 })
+      : new NextResponse(null, { status: 404 });
+  }
+  if (policy.rule === "public" || policy.rule === "token") {
+    return NextResponse.next();
+  }
+  if (!(await isAuthPluginInstalled())) {
+    // Single-operator install: one person runs everything.
+    return NextResponse.next();
+  }
+  const userId = sessionUserId(request.cookies.get(SESSION_COOKIE_NAME)?.value);
+  if (!userId) {
+    const returnTo = pathname + request.nextUrl.search;
+    const url = request.nextUrl.clone();
+    url.pathname = "/signin";
+    url.search = `?returnTo=${encodeURIComponent(returnTo)}`;
+    return NextResponse.redirect(url, { status: 302 });
+  }
+  if (policy.rule === "admin" && !(await isAdministrator(userId))) {
+    return refuse(request, pathname);
+  }
+  return NextResponse.next();
+}
+
 export const config = {
-  // Match everything except the SSO flow surfaces, the SSO setup
-  // surfaces (admin-gated internally — they must stay reachable before
-  // the first sign-in), and static assets.
+  // Match every route except static assets: ACCESS_POLICIES decides what
+  // each path needs, and the sign-in, SSO setup and OAuth callback paths
+  // are `public` or `token` there.
   // Negative lookahead is a constant here so Next can statically
   // analyse it at build time (per the proxy.md API reference).
-  matcher: [
-    "/((?!signin|api/auth/|admin/settings/sso|api/sso/|integrations|api/integrations/|_next/static|_next/image|favicon\\.ico).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico).*)"],
 };

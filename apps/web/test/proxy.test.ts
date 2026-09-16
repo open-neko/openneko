@@ -3,12 +3,17 @@ import { NextRequest } from "next/server";
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import {
+  _resetAdministratorCacheForTest,
   _resetProviderCache,
   _setProviderStatusRequestForTest,
   isAuthPluginInstalled,
   proxy,
   verifySessionCookie,
 } from "../src/proxy";
+
+const resolveUserGroups = vi.fn(async () => ({ administrator: false, groupIds: [], slugs: [], ssoGroupIds: [] }));
+vi.mock("@neko/db", () => ({ resolveUserGroups: (...args: unknown[]) => resolveUserGroups(...(args as [])) }));
+vi.mock("../src/lib/db", () => ({ getOrgId: async () => "org-1" }));
 
 const SECRET = "a".repeat(64);
 
@@ -155,7 +160,7 @@ describe("proxy", () => {
     _setProviderStatusRequestForTest(
       freshFetch(() => Response.json({ provider: null })),
     );
-    const res = await proxy(request("https://app.example.com/dashboard"));
+    const res = await proxy(request("https://app.example.com/runs"));
     expect(res.status).toBe(200);
     // NextResponse.next() carries the x-middleware-next sentinel header.
     expect(res.headers.get("x-middleware-next")).toBe("1");
@@ -168,7 +173,7 @@ describe("proxy", () => {
       ),
     );
     const res = await proxy(
-      request("https://app.example.com/dashboard", mintCookie()),
+      request("https://app.example.com/runs", mintCookie()),
     );
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
@@ -180,13 +185,13 @@ describe("proxy", () => {
       ),
     );
     const res = await proxy(
-      request("https://app.example.com/dashboard?foo=bar"),
+      request("https://app.example.com/runs?foo=bar"),
     );
     expect(res.status).toBe(302);
     const loc = res.headers.get("location") ?? "";
     expect(loc).toContain("/signin");
     expect(loc).toContain(
-      `returnTo=${encodeURIComponent("/dashboard?foo=bar")}`,
+      `returnTo=${encodeURIComponent("/runs?foo=bar")}`,
     );
   });
 
@@ -198,10 +203,55 @@ describe("proxy", () => {
     );
     const tampered = mintCookie({ secret: "b".repeat(64) });
     const res = await proxy(
-      request("https://app.example.com/dashboard", tampered),
+      request("https://app.example.com/runs", tampered),
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location") ?? "").toContain("/signin");
+  });
+
+  it("refuses a path no access policy covers", async () => {
+    _setProviderStatusRequestForTest(freshFetch(() => Response.json({ provider: null })));
+    expect((await proxy(request("https://app.example.com/api/not-an-area"))).status).toBe(404);
+    expect((await proxy(request("https://app.example.com/not-an-area"))).status).toBe(404);
+  });
+
+  it("lets the sign-in flow through without a session", async () => {
+    _setProviderStatusRequestForTest(
+      freshFetch(() => Response.json({ provider: { pluginName: "@x/y", providerLabel: "X" } })),
+    );
+    for (const path of ["/signin", "/api/auth/begin", "/api/version"]) {
+      const res = await proxy(request(`https://app.example.com${path}`));
+      expect(res.headers.get("x-middleware-next")).toBe("1");
+    }
+  });
+
+  it("keeps a member out of admin routes and lets an administrator in", async () => {
+    _setProviderStatusRequestForTest(
+      freshFetch(() => Response.json({ provider: { pluginName: "@x/y", providerLabel: "X" } })),
+    );
+    _resetAdministratorCacheForTest();
+    resolveUserGroups.mockResolvedValue({ administrator: false, groupIds: [], slugs: [], ssoGroupIds: [] });
+    const denied = await proxy(request("https://app.example.com/api/admin/groups", mintCookie()));
+    expect(denied.status).toBe(403);
+    const page = await proxy(request("https://app.example.com/admin/users", mintCookie()));
+    expect(page.status).toBe(302);
+    expect(page.headers.get("location") ?? "").toContain("/");
+
+    _resetAdministratorCacheForTest();
+    resolveUserGroups.mockResolvedValue({ administrator: true, groupIds: [], slugs: [], ssoGroupIds: [] });
+    const allowed = await proxy(request("https://app.example.com/api/admin/groups", mintCookie()));
+    expect(allowed.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("lets a member reach a signed-in route without asking for groups", async () => {
+    _setProviderStatusRequestForTest(
+      freshFetch(() => Response.json({ provider: { pluginName: "@x/y", providerLabel: "X" } })),
+    );
+    _resetAdministratorCacheForTest();
+    resolveUserGroups.mockClear();
+    const res = await proxy(request("https://app.example.com/api/work/skills", mintCookie()));
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+    expect(resolveUserGroups).not.toHaveBeenCalled();
   });
 
   it("redirects when the session cookie has expired", async () => {
@@ -214,7 +264,7 @@ describe("proxy", () => {
       expiresAt: Math.floor(Date.now() / 1000) - 60,
     });
     const res = await proxy(
-      request("https://app.example.com/dashboard", expired),
+      request("https://app.example.com/runs", expired),
     );
     expect(res.status).toBe(302);
   });
