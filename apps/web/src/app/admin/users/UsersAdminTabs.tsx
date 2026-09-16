@@ -16,6 +16,7 @@ export function UsersAdminTabs({
   groups,
   idpGroups,
   rules,
+  signInProvider,
   directoryProvider,
   directoryCreateLabel,
 }: {
@@ -25,6 +26,7 @@ export function UsersAdminTabs({
   groups: UserGroupRow[];
   idpGroups: IdpGroupRow[];
   rules: IdpRuleView[];
+  signInProvider: string | null;
   directoryProvider: string | null;
   directoryCreateLabel: string | null;
 }) {
@@ -48,14 +50,21 @@ export function UsersAdminTabs({
               <p className="settings-card-copy">
                 {identitySetup
                   ? "Your local account is ready to use. Add your email before you turn on SSO; your work stays with this account."
-                  : "Add users before their first sign-in, choose administrators, and disable accounts. Group membership decides which items each user holds."}
+                  : signInProvider
+                    ? "Add users before their first sign-in, choose administrators, and disable accounts. Group membership decides which items each user holds."
+                    : "This installation has no sign-in plugin, so nobody can sign in yet. Install one from Plugins, then add the people who will use it."}
               </p>
             </div>
             <div className="settings-source">
               <strong className="is-ok">{users.length} total</strong>
             </div>
           </div>
-          <UsersClient users={users} identitySetup={identitySetup} directoryCreateLabel={directoryCreateLabel} />
+          <UsersClient
+            users={users}
+            identitySetup={identitySetup}
+            signInProvider={signInProvider}
+            directoryCreateLabel={directoryCreateLabel}
+          />
         </>
       )}
       {tab === "groups" && <GroupsPanel groups={groups} />}

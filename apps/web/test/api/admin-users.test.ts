@@ -9,10 +9,13 @@ const mocks = vi.hoisted(() => ({
   actorId: "admin-1" as string | null,
   setAdministrator: vi.fn(async (...args: [string, string, boolean]) => void args),
   administrators: new Set<string>(),
+  signInProvider: { providerLabel: "Email link" } as unknown,
   requestWorker: vi.fn(async (path: string, body?: unknown) => ({ status: 200, body: { path, body } })),
 }));
 
 vi.mock("@/lib/groups-admin", () => ({ requestWorker: mocks.requestWorker }));
+
+vi.mock("@/lib/auth", () => ({ getAuthProvider: async () => mocks.signInProvider }));
 
 vi.mock("@/lib/admin-auth", () => ({
   requireAdminActor: async () => ({ userId: mocks.actorId, role: "admin" }),
@@ -106,6 +109,7 @@ describe("POST /api/admin/users", () => {
     mocks.updates = [];
     mocks.actorId = "admin-1";
     mocks.administrators = new Set();
+    mocks.signInProvider = { providerLabel: "Email link" };
   });
 
   it("adds the solo owner's email in place without creating another account", async () => {
@@ -161,6 +165,23 @@ describe("POST /api/admin/users", () => {
     expect(mocks.inserted).toHaveLength(0);
   });
 
+  it("refuses to add a person when no sign-in plugin is installed", async () => {
+    mocks.signInProvider = null;
+    // Nobody can sign in, so the row would promise an account that cannot
+    // exist, and the form would collect a real address to do it.
+    const res = await POST(postRequest({ email: "visitor@gmail.com", role: "admin" }) as never);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining("sign-in plugin") });
+    expect(mocks.inserted).toHaveLength(0);
+  });
+
+  it("refuses to claim the solo account before a plugin exists", async () => {
+    mocks.signInProvider = null;
+    const res = await POST(postRequest({ email: "owner@company.com", role: "admin", updateSoloAccount: true }) as never);
+    expect(res.status).toBe(409);
+    expect(mocks.updates).toHaveLength(0);
+  });
+
   it("rejects invalid emails and roles", async () => {
     expect(
       (await POST(postRequest({ email: "not-an-email", role: "member" }) as never))
@@ -182,6 +203,7 @@ describe("PATCH /api/admin/users/[userId]", () => {
     mocks.updates = [];
     mocks.actorId = "admin-1";
     mocks.administrators = new Set();
+    mocks.signInProvider = { providerLabel: "Email link" };
   });
 
   it("refuses to demote the last active admin", async () => {
