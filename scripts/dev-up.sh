@@ -10,6 +10,7 @@ compose() {
 }
 
 mkdir -p "$OPENNEKO_DEV_STATE/graphjin" "$OPENNEKO_DEV_STATE/records-graphjin" "$OPENNEKO_CONFIG_VOLUME" "$OPENSHELL_STATE_DIR"
+printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$OPENNEKO_DEV_STATE/compose-project"
 if [ ! -s .openneko/development-backup-key ]; then
   (umask 077 && openssl rand -hex 32 > .openneko/development-backup-key)
 fi

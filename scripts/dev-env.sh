@@ -10,6 +10,13 @@ if [ -n "${OPENNEKO_DEV_CONFIG_HOME:-}" ]; then
   export XDG_CONFIG_HOME="$OPENNEKO_DEV_CONFIG_HOME"
 fi
 export OPENNEKO_DEV_STATE="${OPENNEKO_DEV_STATE:-$PWD/.openneko/dev}"
+
+# Every shell must reach the stack dev-up.sh started. Without one project
+# name, a later compose call builds a second stack and the network clashes.
+if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -s "$OPENNEKO_DEV_STATE/compose-project" ]; then
+  COMPOSE_PROJECT_NAME="$(cat "$OPENNEKO_DEV_STATE/compose-project")"
+fi
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}"
 export OPENNEKO_CONFIG_VOLUME="${OPENNEKO_CONFIG_VOLUME:-${XDG_CONFIG_HOME:-$HOME/.config}/openneko}"
 export OPENSHELL_STATE_DIR="${OPENSHELL_STATE_DIR:-$PWD/.openneko/openshell}"
 # `pnpm dev:up` installs the pinned GraphJin CLI here.
@@ -25,6 +32,11 @@ export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
 export OPENNEKO_OPENSHELL_DB_PASSWORD="${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}"
 export RECORDS_PG_HOST=127.0.0.1
 export RECORDS_PG_PORT="${OPENNEKO_RECORDS_DB_PORT:-5434}"
+
+# Plugins install into the dev state, not the repo root, so the host
+# worker reads the same manifest the openneko CLI writes.
+export OPENNEKO_PLUGINS_MANIFEST_PATH="${OPENNEKO_PLUGINS_MANIFEST_PATH:-$OPENNEKO_CONFIG_VOLUME/plugins.json}"
+export OPENNEKO_PLUGIN_INSTALL_DIR="${OPENNEKO_PLUGIN_INSTALL_DIR:-$OPENNEKO_DEV_STATE/plugins}"
 
 export NEKO_EMBEDDING_URL="http://127.0.0.1:${OPENNEKO_EMBEDDING_PORT:-5003}"
 export NEKO_LIBRARIAN_URL="http://127.0.0.1:${OPENNEKO_LIBRARIAN_PORT:-5001}"
