@@ -1,4 +1,5 @@
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
+import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
 import { createHash, randomUUID } from "node:crypto";
 import { RECONCILE_COMMAND, syncSandboxDirectories } from "./sandbox-sync";
 import { acquireStableSandboxInputs, clearStableSandboxInputs, type StableWorkspace } from "./sandbox-staging-cache";
@@ -39,6 +40,44 @@ const ARTIFACTS_MARKER = "__openneko_artifacts__";
  */
 const AGENT_ENTRY = "/app/entry.js";
 const SANDBOX_RUNTIME_DIR = ".openneko";
+
+const SANDBOX_OWNER_LABEL = "openneko.owner";
+const SANDBOX_BOOT_LABEL = "openneko.boot";
+const SANDBOX_BOOT_ID = randomUUID();
+
+/** web or worker; each host deletes only boxes it owns. */
+function sandboxOwner(): string {
+  return process.env.OPENNEKO_SANDBOX_OWNER || "openneko";
+}
+
+/** Labels that let the next boot of this host find boxes a restart stranded. */
+export function sandboxOwnerLabelArgs(owner = sandboxOwner(), boot = SANDBOX_BOOT_ID): string[] {
+  return ["--label", `${SANDBOX_OWNER_LABEL}=${owner}`, "--label", `${SANDBOX_BOOT_LABEL}=${boot}`];
+}
+
+/**
+ * Deletes this host's sandboxes from earlier boots. The create command that
+ * would delete a warm or job box dies with its host process, so without this
+ * every restart leaves running boxes behind.
+ */
+export async function reapStrandedSandboxes(
+  run: (args: string[], timeoutMs: number) => Promise<string>,
+  owner = sandboxOwner(),
+  boot = SANDBOX_BOOT_ID,
+): Promise<string[]> {
+  const listed = JSON.parse(
+    await run(["sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`, "-o", "json", "--limit", "500"], 30_000),
+  ) as Array<{ name: string; labels?: Record<string, string> }>;
+  const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot).map((box) => box.name);
+  await Promise.allSettled(stranded.map((name) => run(["sandbox", "delete", name], 60_000)));
+  return stranded;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const reapedGateways = new Set<string>();
 
 export interface SandboxLauncherOptions {
   /** `openshell` binary; default resolves from PATH. */
@@ -114,6 +153,10 @@ export type RunJobAgentBackendInput = {
   workspace: AgentWorkspace;
   run: AgentRunOptions;
   access: AgentJobAccess;
+  /** Skill names the job's actor holds. Undefined means every skill. */
+  allowedSkills?: readonly string[];
+  /** Team library files the actor holds. Undefined means the whole team library. */
+  allowedLibrary?: AllowedLibrary;
   emit: (event: AgentEvent) => Promise<void>;
 };
 
@@ -296,7 +339,7 @@ async function copyDirectoryIfPresent(
 export async function stageSandboxWorkspace(
   workspace: AgentWorkspace,
   stageDir: string,
-  options: { requiredSkillNames?: readonly string[]; cached?: boolean } = {},
+  options: { requiredSkillNames?: readonly string[]; allowedSkills?: readonly string[]; allowedLibrary?: AllowedLibrary; cached?: boolean } = {},
 ): Promise<StagedSandboxWorkspace> {
   const stageOrgRoot = path.join(
     stageDir,
@@ -311,7 +354,7 @@ export async function stageSandboxWorkspace(
   ) as AgentWorkspace;
 
   await mkdir(stageOrgRoot, { recursive: true });
-  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames) : undefined;
+  const stable = options.cached ? await acquireStableSandboxInputs(workspace, options.requiredSkillNames, options.allowedSkills, options.allowedLibrary) : undefined;
   try {
   const knowledge = stable ? null : await readKnowledgeSnapshot(workspace.knowledgeRoot);
   await Promise.all([
@@ -329,10 +372,16 @@ export async function stageSandboxWorkspace(
     // never writes personal-layer rows there, so staging it leaks nothing;
     // personal concepts reach the agent via mcp_neko_library_search,
     // scoped server-side to the run's owner).
-    stable ? Promise.resolve() : copyDirectoryIfPresent(
-      path.join(workspace.orgRoot, "library", "okf"),
-      path.join(stageOrgRoot, "library", "okf"),
-    ),
+    stable ? Promise.resolve() : options.allowedLibrary
+      ? copyAllowedTeamLibrary(
+          path.join(workspace.orgRoot, "library", "okf"),
+          path.join(stageOrgRoot, "library", "okf"),
+          options.allowedLibrary,
+        )
+      : copyDirectoryIfPresent(
+          path.join(workspace.orgRoot, "library", "okf"),
+          path.join(stageOrgRoot, "library", "okf"),
+        ),
   ]);
 
   // Preserve the expected workspace shape even when a selected source is
@@ -346,6 +395,7 @@ export async function stageSandboxWorkspace(
     workspace.skillsRoot,
     stagedWorkspace.skillsRoot,
     options.requiredSkillNames,
+    options.allowedSkills,
   );
 
   return {
@@ -479,11 +529,22 @@ function getSandboxPool(opts: SandboxLauncherOptions, workspace?: StableWorkspac
   // Preloaded org knowledge never enters another organization's spare queue.
   const poolKey = JSON.stringify([cli, gatewayArgs, opts.agentImage, cpu, memory, warmSize, idleMs, workspace?.orgRoot]);
   let pool = warmPools.get(poolKey);
+  const gatewayKey = JSON.stringify([cli, gatewayArgs]);
+  if (!reapedGateways.has(gatewayKey)) {
+    reapedGateways.add(gatewayKey);
+    void reapStrandedSandboxes(runCleanup)
+      .then((names) => { if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`); })
+      .catch((error) => {
+        // A gateway that is down reaps nothing. Try again on the next pool.
+        reapedGateways.delete(gatewayKey);
+        (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
+      });
+  }
   if (!pool) {
     pool = new SandboxPool({ size: warmSize, idleMs,
       onEvent: attributes => startupEvent("sandbox.pool", { poolId: createHash("sha256").update(poolKey).digest("hex").slice(0, 16), ...attributes }),
       create: () => createWarmSandbox({ cli, gatewayArgs, image: opts.agentImage, cpu, memory, idleMs, runCleanup, workspace }),
-      onError: () => (opts.onLog ?? console.error)("warm sandbox preparation failed"),
+      onError: (error) => (opts.onLog ?? console.error)(`warm sandbox preparation failed: ${describeError(error)}`),
     });
     warmPools.set(poolKey, pool);
     pool.replenish();
@@ -602,6 +663,7 @@ function makeSandboxCore(
       configuredIdentity: input.backend.configuredIdentity,
       // Hermes reads its model from the staged config.yaml.
       workspace: boxWorkspace,
+      ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
       ...(kind === "work"
         ? {
             backendState: (input as RunAgentBackendInput).backendState,
@@ -687,6 +749,8 @@ function makeSandboxCore(
         // A records-scoped turn must remain functional during a rolling
         // upgrade even if the sandbox image predates the records skill.
         requiredSkillNames: recordsScoped ? ["records"] : [],
+        ...(input.allowedSkills ? { allowedSkills: input.allowedSkills } : {}),
+        ...(input.allowedLibrary ? { allowedLibrary: input.allowedLibrary } : {}),
         cached: Boolean(pool),
       }));
       stableInputs = staged.stable;
@@ -736,7 +800,7 @@ function makeSandboxCore(
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
@@ -800,6 +864,7 @@ function makeSandboxCore(
           memory,
           "--no-tty",
           "--no-auto-providers",
+          ...sandboxOwnerLabelArgs(),
           ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
           "--policy",
           policyFile,
@@ -1496,7 +1561,7 @@ async function createWarmSandbox(o: {
   await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));
   const child = spawn(o.cli, [...o.gatewayArgs, "sandbox", "create", "--name", name,
     "--from", o.image, "--cpu", o.cpu, "--memory", o.memory,
-    "--no-tty", "--no-keep", "--no-auto-providers", "--policy", policy,
+    "--no-tty", "--no-keep", "--no-auto-providers", ...sandboxOwnerLabelArgs(), "--policy", policy,
     "--", "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "serve",
     String(Math.ceil(o.idleMs / 1000))], { stdio: ["ignore", "pipe", "pipe"] });
   let alive = true;

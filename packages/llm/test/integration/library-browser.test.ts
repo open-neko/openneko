@@ -42,8 +42,8 @@ if (!reachable && process.env.LIBRARY_BROWSE_REQUIRE_DB === "1") throw new Error
     await createTestOrg(orgId);
     await createTestOrg(otherOrgId);
     await db().insert(app_user).values([
-      { id: alice, org_id: orgId, email: "alice@example.com", role: "member" },
-      { id: bob, org_id: orgId, email: "bob@example.com", role: "member" },
+      { id: alice, org_id: orgId, email: "alice@example.com" },
+      { id: bob, org_id: orgId, email: "bob@example.com" },
     ]);
     await db().insert(library_document).values(Array.from({ length: 125 }, (_, index) => ({
       id: index === 124 ? documentId : randomUUID(), org_id: orgId, user_id: alice,

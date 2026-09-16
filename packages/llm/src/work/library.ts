@@ -24,6 +24,8 @@ import {
   work_thread,
 } from "@neko/db";
 import { embedText, vectorLiteral } from "../embedding";
+import type { HeldItems } from "@neko/db";
+import { entitlementActorForRun, libraryAccessFor } from "./entitlement-scope";
 import type { OkfActorStamp, OkfSource } from "../library/okf";
 
 export const LIBRARY_DOCUMENT_STATUSES = [
@@ -102,7 +104,20 @@ export type LibraryBrowseOptions = {
   pageSize: number;
 };
 
-type LibraryReader = { orgId: string; userId: string | null; isAdmin: boolean };
+/** Held library items; undefined means every team concept. */
+export type LibraryAccess = { concepts: HeldItems; collections: HeldItems };
+type LibraryReader = { orgId: string; userId: string | null; isAdmin: boolean; access?: LibraryAccess };
+
+function pgTextArray(values: Iterable<string>): string {
+  return `{${[...values].map((v) => `"${v.replace(/(["\\])/g, "\\$1")}"`).join(",")}}`;
+}
+
+/** Team concepts the reader holds by concept id or by collection path prefix. */
+function heldTeamConcepts(access: LibraryAccess | undefined) {
+  if (!access || access.concepts === "*" || access.collections === "*") return sql`true`;
+  const prefixes = [...access.collections].map((prefix) => `${prefix.replace(/[\\%_]/g, "\\$&")}%`);
+  return sql`(${library_concept.id}::text = any(${pgTextArray(access.concepts)}::text[]) or ${library_concept.path} like any(${pgTextArray(prefixes)}::text[]))`;
+}
 
 // Browser search intentionally does not depend on embeddings: filenames,
 // partial terms and newly distilled concepts must remain discoverable.
@@ -133,7 +148,7 @@ function visibleLibraryConcepts(reader: LibraryReader, review = false, layer = "
   const personal = reader.userId && layer !== "team"
     ? eq(library_concept.user_id, reader.userId) : sql`false`;
   const team = layer !== "personal"
-    ? and(isNull(library_concept.user_id), eq(library_concept.status, "stable")) : sql`false`;
+    ? and(isNull(library_concept.user_id), eq(library_concept.status, "stable"), reader.isAdmin ? undefined : heldTeamConcepts(reader.access)) : sql`false`;
   return and(eq(library_concept.org_id, reader.orgId), isNull(library_concept.archived_at),
     review ? (reader.isAdmin ? and(isNull(library_concept.user_id), eq(library_concept.status, "draft")) : sql`false`)
       : or(personal, team));
@@ -694,13 +709,15 @@ export async function searchLibraryByContext(input: {
   userId: string | null;
   query: string;
   limit?: number;
+  access?: LibraryAccess;
 }): Promise<LibraryConceptSearchResult[]> {
   const queryVec = await tryEmbed(input.query);
   if (!queryVec) return [];
   const limit = clampLimit(input.limit ?? 5, 20);
+  const team = sql`(${library_concept.user_id} IS NULL AND ${heldTeamConcepts(input.access)})`;
   const layerVisible = input.userId
-    ? sql`(${library_concept.user_id} IS NULL OR ${library_concept.user_id} = ${input.userId})`
-    : sql`${library_concept.user_id} IS NULL`;
+    ? sql`(${team} OR ${library_concept.user_id} = ${input.userId})`
+    : team;
   const rows = await db()
     .select({
       row: library_concept,
@@ -739,11 +756,14 @@ export async function searchLibraryForRun(input: {
   const userId = input.runId
     ? await resolveRunOwnerUserId(input.orgId, input.runId)
     : null;
+  const actor = input.runId ? await entitlementActorForRun(input.orgId, input.runId) : null;
+  if (input.runId && !actor) return [];
   return searchLibraryByContext({
     orgId: input.orgId,
     userId,
     query: input.query,
     limit: input.limit,
+    ...(actor ? { access: await libraryAccessFor(actor) } : {}),
   });
 }
 

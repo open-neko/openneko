@@ -37,6 +37,7 @@ import {
   work_message,
   work_thread,
   workflow_definition,
+  setLocalAdministrator,
 } from "@neko/db";
 import {
   appendWorkRunEvent,
@@ -158,9 +159,10 @@ describeIfDb("runChatTurn", () => {
     vi.stubEnv("OPENNEKO_PROFILE", "solo");
     try {
       const localUserId = `${orgId}-admin`;
-      if (hasLocalUser) await db().insert(app_user).values({
-        id: localUserId, org_id: orgId, email: "admin@example.test", role: "admin",
-      });
+      if (hasLocalUser) {
+        await db().insert(app_user).values({ id: localUserId, org_id: orgId, email: "admin@example.test" });
+        await setLocalAdministrator(orgId, localUserId, true);
+      }
       if (hasLocalUser) await db().update(organization).set({ solo_admin_user_id: localUserId }).where(eq(organization.id, orgId));
       const thread = await insertWorkThread(orgId);
       const run = await insertWorkRun({ orgId, threadId: thread.id });

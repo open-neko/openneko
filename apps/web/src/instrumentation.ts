@@ -1,6 +1,8 @@
 /** Prepare the same process-local pool used by Work before serving requests. */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || !process.env.OPENNEKO_AGENT_IMAGE) return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  process.env.OPENNEKO_SANDBOX_OWNER ||= "web";
+  if (!process.env.OPENNEKO_AGENT_IMAGE) return;
   const { prepareSandboxCapacity } = await import("@neko/llm/work/sandbox-launcher");
   try {
     const { getOrgId } = await import("@neko/db");

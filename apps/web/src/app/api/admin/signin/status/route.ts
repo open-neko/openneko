@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { and, app_user, db, eq, isNull } from "@neko/db";
+import { activeAdministratorIds, and, app_user, db, eq, isNull, sql } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getAuthGateStatus, _resetAuthProviderCache } from "@/lib/auth";
 import { getOrgId } from "@/lib/db";
@@ -20,13 +20,10 @@ export async function GET() {
   const gate = await getAuthGateStatus();
 
   const orgId = await getOrgId();
-  const users = await db()
-    .select({
-      role: app_user.role,
-      disabledAt: app_user.disabled_at,
-    })
-    .from(app_user)
-    .where(eq(app_user.org_id, orgId));
+  const [administrators, [userCount]] = await Promise.all([
+    activeAdministratorIds(orgId),
+    db().select({ total: sql<number>`count(*)::int` }).from(app_user).where(eq(app_user.org_id, orgId)),
+  ]);
   const [self] = actor.userId
     ? await db()
         .select({ email: app_user.email })
@@ -38,9 +35,8 @@ export async function GET() {
   return NextResponse.json({
     ...gate,
     users: {
-      total: users.length,
-      activeAdmins: users.filter((u) => u.role === "admin" && !u.disabledAt)
-        .length,
+      total: userCount?.total ?? 0,
+      activeAdmins: administrators.length,
     },
     /** The signed-in admin's own provisioned email, for test prefill. */
     selfEmail: self?.email ?? null,

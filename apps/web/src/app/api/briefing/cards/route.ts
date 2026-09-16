@@ -7,6 +7,7 @@ import {
   observation,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { workflowIdVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,10 +33,11 @@ export async function POST(request: Request) {
       title: observation.title,
       body: observation.body,
       mood: observation.mood,
+      consumerWorkflowId: observation.consumer_workflow_id,
     })
     .from(observation)
     .where(and(eq(observation.org_id, orgId), eq(observation.id, observationId)));
-  if (!obs) {
+  if (!obs || !(await workflowIdVisibility())(obs.consumerWorkflowId)) {
     return NextResponse.json({ error: "observation not found" }, { status: 404 });
   }
 

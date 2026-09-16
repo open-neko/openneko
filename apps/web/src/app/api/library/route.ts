@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { browseLibrary, parseLibraryBrowseOptions } from "@neko/llm/work";
 import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
+import { currentLibraryReader } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,14 +18,13 @@ export async function GET(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid library filters." }, { status: 400 });
   }
-  const orgId = await getOrgId();
   const actor = await getCurrentActor();
 
   if (options.view === "review" && actor.role !== "admin") {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
   try {
-    return NextResponse.json(await browseLibrary({ orgId, userId: actor.userId, isAdmin: actor.role === "admin" }, options));
+    return NextResponse.json(await browseLibrary(await currentLibraryReader(), options));
   } catch {
     return NextResponse.json({ error: "Library could not be loaded. Try again." }, { status: 503 });
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { ItemAccessPanel } from "@/components/admin/ItemAccessPanel";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -1089,6 +1090,9 @@ function WorkflowDetail({
         >
           Edit with OpenNeko
         </Button>
+      </div>
+      <div className="px-[var(--panel-padding)] pb-5">
+        <ItemAccessPanel itemType="workflow" itemId={workflow.id} label={workflow.name} />
       </div>
     </div>
   );

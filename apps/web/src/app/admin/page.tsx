@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import {
   action_policy,
   action_request,
+  activeAdministratorIds,
   and,
   app_user,
   data_source,
@@ -28,6 +29,7 @@ export default async function AdminPage() {
     setupCompleteAt,
     pluginStatus,
     users,
+    administrators,
     sources,
     policyCounts,
     workflowCounts,
@@ -36,13 +38,10 @@ export default async function AdminPage() {
     getSetupCompleteAt(orgId),
     getPluginStatus(),
     db()
-      .select({
-        id: app_user.id,
-        role: app_user.role,
-        disabledAt: app_user.disabled_at,
-      })
+      .select({ id: app_user.id, disabledAt: app_user.disabled_at })
       .from(app_user)
       .where(eq(app_user.org_id, orgId)),
+    activeAdministratorIds(orgId),
     db()
       .select({
         id: data_source.id,
@@ -76,9 +75,7 @@ export default async function AdminPage() {
       ),
   ]);
 
-  const adminCount = users.filter(
-    (user) => user.role === "admin" && !user.disabledAt,
-  ).length;
+  const adminCount = administrators.length;
   const activeUserCount = users.filter((user) => !user.disabledAt).length;
   const enabledSources = sources.filter((source) => source.enabled);
   const jwtSources = enabledSources.filter(

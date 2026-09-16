@@ -1,5 +1,6 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
-import { getGraphjinConfigSettingsForOrg } from "@neko/db";
+import { getGraphjinConfigSettingsForOrg, heldItems } from "@neko/db";
+import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
   AgentEvent,
@@ -440,6 +441,15 @@ async function runChatTurnTraced(
       message: "Retrieving relevant context…",
     });
 
+    const runActor = await runEntitlementActor(orgId, actor);
+    const [allowedSkills, allowedLibrary, teamMemory, heldPluginActions, heldPackActions] = await startupPhase("identity.entitlements", () =>
+      Promise.all([
+        runHeldItemIds(runActor, "skill"),
+        runAllowedLibrary(runActor),
+        heldItems(runActor, "team_memory"),
+        filterHeldActions(runActor, opts.pluginActions ?? []),
+        filterHeldActions(runActor, opts.packActions ?? []),
+      ]));
     const [memoryContext, installedSkills, profile] = await Promise.all([
       customerSurface
         ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
@@ -448,6 +458,7 @@ async function runChatTurnTraced(
               threadId,
               runId,
               userId: effectiveMemoryLayer(orgId, actor),
+              teamMemory,
             },
             // Use the latest user message as the retrieval query so we pull
             // memories semantically close to what the operator just asked.
@@ -456,7 +467,7 @@ async function runChatTurnTraced(
         : Promise.resolve(""),
       startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then((skills) =>
         customerSurface
-          ? skills
+          ? skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name))
           : skills.filter((skill) => skill.name === "records"),
       ),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
@@ -506,7 +517,7 @@ async function runChatTurnTraced(
         opts.nativeDelegation !== "disabled",
       pluginCatalog,
       inlineTranscript,
-      pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
+      pluginActions: customerSurface ? heldPluginActions : [],
       dataSurface,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
@@ -527,6 +538,8 @@ async function runChatTurnTraced(
       : await startupPhase("identity.sandbox", () => getSoloSandboxUser(orgId, actor));
     const result = await runCore({
       ...(sandboxUser ? { sandboxUser } : {}),
+      ...(allowedSkills && customerSurface ? { allowedSkills } : {}),
+      ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
       prompt,
       userMessage: message,
@@ -535,8 +548,8 @@ async function runChatTurnTraced(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
-      pluginActions: customerSurface ? (opts.pluginActions ?? []) : [],
-      packActions: customerSurface ? (opts.packActions ?? []) : [],
+      pluginActions: customerSurface ? heldPluginActions : [],
+      packActions: customerSurface ? heldPackActions : [],
       sourceConfigEnabled: supportsSourceConfigTool,
       dataSurface,
       ...(opts.graphjinToolPolicy
@@ -705,7 +718,7 @@ async function runChatTurnTraced(
           allowedTargets: policyFence.payload.allowed_targets ?? null,
           deniedTargets: policyFence.payload.denied_targets ?? null,
           limits: policyFence.payload.limits,
-          approverRole: policyFence.payload.approver_role ?? null,
+          approverRole: policyFence.payload.approver_role === "admin" ? "admin" : null,
           priority: policyFence.payload.priority,
           enabled: policyFence.payload.enabled,
           createdByThreadId: threadId,

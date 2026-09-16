@@ -19,6 +19,13 @@ import {
   RefreshConnectParams,
   RefreshConnectResult,
 } from "./connect.js";
+import {
+  type ApplyDirectoryChangeParams,
+  type ApplyDirectoryChangeResult,
+  type DirectoryCapabilityDeclaration,
+  type ListDirectoryParams,
+  type ListDirectoryResult,
+} from "./directory.js";
 import type {
   CapabilityProfile,
   ChannelDirection,
@@ -82,6 +89,15 @@ export interface ActionCapabilityImpl {
   kinds: PluginActionDefinition[];
 }
 
+/** Implementation shape for the directory capability. */
+export interface DirectoryCapabilityImpl {
+  providerLabel: string;
+  read?: Partial<DirectoryCapabilityDeclaration["read"]>;
+  write?: Partial<DirectoryCapabilityDeclaration["write"]>;
+  list: (params: ListDirectoryParams) => Promise<ListDirectoryResult> | ListDirectoryResult;
+  apply?: (params: ApplyDirectoryChangeParams) => Promise<ApplyDirectoryChangeResult> | ApplyDirectoryChangeResult;
+}
+
 /** Implementation shape for the auth capability — the OIDC begin/complete handlers. */
 export interface AuthCapabilityImpl {
   providerLabel?: string;
@@ -138,6 +154,7 @@ export interface PluginCapabilitiesImpl {
   auth?: AuthCapabilityImpl;
   connect?: ConnectCapabilityImpl;
   channel?: ChannelCapabilityImpl;
+  directory?: DirectoryCapabilityImpl;
 }
 
 export interface PluginDefinition {
@@ -180,11 +197,23 @@ export function definePlugin(definition: PluginDefinition): PluginDefinition {
   const caps = definition.capabilities;
   if (
     !caps ||
-    (caps.action == null && caps.auth == null && caps.connect == null && caps.channel == null)
+    (caps.action == null && caps.auth == null && caps.connect == null && caps.channel == null && caps.directory == null)
   ) {
     throw new Error(
-      "definePlugin: capabilities must declare at least one surface (action, auth, connect, channel)",
+      "definePlugin: capabilities must declare at least one surface (action, auth, connect, channel, directory)",
     );
+  }
+  if (caps.directory) {
+    if (!caps.directory.providerLabel) {
+      throw new Error("definePlugin: capabilities.directory.providerLabel is required");
+    }
+    if (typeof caps.directory.list !== "function") {
+      throw new Error("definePlugin: capabilities.directory.list must be a function");
+    }
+    const writes = caps.directory.write ?? {};
+    if ((writes.createUser || writes.deactivateUser) && typeof caps.directory.apply !== "function") {
+      throw new Error("definePlugin: capabilities.directory.apply must be a function when write ops are declared");
+    }
   }
   if (caps.action) {
     if (!Array.isArray(caps.action.kinds) || caps.action.kinds.length === 0) {

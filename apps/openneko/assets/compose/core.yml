@@ -597,6 +597,9 @@ services:
       <<: *neko-app-env
       WORKER_ADMIN_URL: http://worker:4100
       OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
+      # Base URL for emailed sign-in links and OAuth callbacks. Set it to the
+      # URL people open when the web port is behind a proxy or another host.
+      OPENNEKO_PUBLIC_URL: ${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}
       OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
     ports:

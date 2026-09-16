@@ -52,6 +52,7 @@ worker_queues:
   embedding_index: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
   embedding_sweep: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
   skill_learn: [WORK-SKILLS]
+  directory_sync: [ADMIN-USER, PLUGIN-AUTH]
 
 observation_kinds:
   run.start: [RUNTIME-OBSERVABILITY]

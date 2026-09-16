@@ -197,6 +197,12 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/plugins/list", input);
   }
 
+  listGroups(
+    input: Parameters<AgentControlPlane["listGroups"]>[0],
+  ): ReturnType<AgentControlPlane["listGroups"]> {
+    return this.post("/v1/groups/list", input);
+  }
+
   listUsers(
     input: Parameters<AgentControlPlane["listUsers"]>[0],
   ): ReturnType<AgentControlPlane["listUsers"]> {

@@ -6,6 +6,7 @@ import {
   getWorkflowApiArtifactForOperator,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflowRun } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,8 @@ type RouteContext = {
 
 export async function GET(_request: Request, context: RouteContext) {
   const { workflowRunId } = await context.params;
+  const deniedRun = await requireWorkflowRun(workflowRunId);
+  if (deniedRun) return deniedRun;
   const orgId = await getOrgId();
   try {
     const artifact = await getWorkflowApiArtifactForOperator({

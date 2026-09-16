@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
   LayoutGrid,
+  LogIn,
   LogOut,
   Search,
   Settings2,
@@ -36,6 +37,12 @@ const RECORDS_VISUAL_TEST =
 type SessionUser = {
   email: string;
   name: string | null;
+};
+
+export type RailIdentity = {
+  user: SessionUser | null;
+  mode: "solo" | "admin" | "member";
+  signedIn: boolean;
 };
 
 type RecordAppNav = {
@@ -290,7 +297,11 @@ function RailLink({
   );
 }
 
-export default function AppRail() {
+/**
+ * `initial` comes from the server layout, so the name and Sign out paint
+ * with the first frame. The client fetch only refreshes them.
+ */
+export default function AppRail({ initial }: { initial?: RailIdentity }) {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const hidden = hideAppChrome(pathname);
@@ -299,11 +310,14 @@ export default function AppRail() {
   const [user, setUser] = useState<SessionUser | null>(
     RECORDS_VISUAL_TEST
       ? { email: "kavya@example.com", name: "Kavya M." }
-      : null,
+      : (initial?.user ?? null),
   );
   const [sessionMode, setSessionMode] = useState<
     "loading" | "solo" | "admin" | "member"
-  >(RECORDS_VISUAL_TEST ? "member" : "loading");
+  >(RECORDS_VISUAL_TEST ? "member" : (initial?.mode ?? "loading"));
+  // A visitor holding a session cookie can always sign out, whatever
+  // the worker reports about the auth plugin.
+  const [signedIn, setSignedIn] = useState(Boolean(initial?.signedIn));
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [recordApps, setRecordApps] = useState<RecordAppNav[]>(
     RECORDS_VISUAL_TEST
@@ -339,8 +353,10 @@ export default function AppRail() {
         const data = (await res.json()) as {
           user: { id: string; email: string; name: string | null } | null;
           authEnabled?: boolean;
+          signedIn?: boolean;
           role: "admin" | "member" | null;
         };
+        setSignedIn(Boolean(data.signedIn));
         if (data.user) {
           setUser({ email: data.user.email, name: data.user.name });
           setSessionMode(data.authEnabled === false ? "solo" : data.role === "member" ? "member" : "admin");
@@ -601,10 +617,11 @@ export default function AppRail() {
         )}
         {user ? (
           <div className="app-rail-user">
+            {/* Two visible controls. Signing out never hides behind a menu. */}
             <Link
-              href="/onboarding"
+              href="/profile"
               className="app-rail-user-profile"
-              title="Profile"
+              aria-label={`Your profile: ${user.email}`}
             >
               <span className="app-rail-avatar" aria-hidden="true">
                 {initials(user)}
@@ -613,21 +630,33 @@ export default function AppRail() {
                 <span className="app-rail-user-name">
                   {user.name || user.email}
                 </span>
-                <span className="app-rail-user-email">
-                  {user.name ? user.email : "Profile"}
-                </span>
+                <span className="app-rail-user-email">{user.email}</span>
               </span>
             </Link>
-            {sessionMode !== "solo" && <Button
-              variant="ghost"
-              type="button"
-              className="app-rail-signout"
-              onClick={handleSignOut}
-              aria-label={`Sign out ${user.email}`}
-              title={`Sign out ${user.email}`}
-            >
-              <LogOut aria-hidden="true" strokeWidth={2} />
-            </Button>}
+            {signedIn && (
+              <Button
+                variant="ghost"
+                type="button"
+                className="app-rail-signout"
+                onClick={() => void handleSignOut()}
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut aria-hidden="true" strokeWidth={2} />
+              </Button>
+            )}
+          </div>
+        ) : signedIn === false && sessionMode !== "solo" ? (
+          <div className="app-rail-user">
+            {/* The session ended. Offer the way back in, never a blank row. */}
+            <Link href="/signin" className="app-rail-user-profile">
+              <span className="app-rail-avatar" aria-hidden="true">
+                <LogIn aria-hidden="true" strokeWidth={2} />
+              </span>
+              <span className="app-rail-user-copy">
+                <span className="app-rail-user-name">Sign in</span>
+              </span>
+            </Link>
           </div>
         ) : null}
       </div>

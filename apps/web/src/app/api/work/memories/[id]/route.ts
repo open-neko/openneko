@@ -6,6 +6,7 @@ import {
 } from "@neko/llm/work";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { holdsItem } from "@/lib/entitlements";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -22,6 +23,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const actor = await getCurrentActor();
+  if (
+    actor.role !== "admin" &&
+    !memory.userId &&
+    memory.scope !== "thread" &&
+    !(await holdsItem("team_memory", memory.scope === "database" ? `database:${memory.scopeId ?? ""}` : "global"))
+  ) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   if (
     actor.role !== "admin" &&
     memory.userId &&
@@ -53,6 +62,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
   }
   const orgId = await getOrgId();
+  const existing = await getWorkMemory(orgId, id);
+  if (existing && !existing.userId && existing.scope !== "thread" && !(await holdsItem("team_memory", existing.scope === "database" ? `database:${existing.scopeId ?? ""}` : "global"))) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   try {
     const memory = await overrideWorkMemoryForUser({
       orgId,

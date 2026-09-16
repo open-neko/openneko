@@ -37,6 +37,7 @@ import {
   pool,
   work_run,
   work_thread,
+  setLocalAdministrator,
 } from "@neko/db";
 import {
   createActionRequest,
@@ -605,8 +606,8 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
       id: userId,
       org_id: orgId,
       email: `${userId}@example.test`,
-      role: "admin",
     });
+    await setLocalAdministrator(orgId, userId, true);
     await db().insert(work_thread).values({
       id: threadId,
       org_id: orgId,
@@ -673,7 +674,11 @@ describeIfDb("source_config_admin adapter (OL5)", () => {
     expect(calls.every((call) => call.headers.has("authorization"))).toBe(true);
     expect(calls.every((call) => !call.headers.has("x-role"))).toBe(true);
 
-    await db().update(app_user).set({ role: "member" }).where(eq(app_user.id, userId));
+    // The guard keeps one administrator, so the org gets a second before the demotion.
+    const keeperId = `keeper-${randomUUID()}`;
+    await db().insert(app_user).values({ id: keeperId, org_id: orgId, email: `${keeperId}@example.test` });
+    await setLocalAdministrator(orgId, keeperId, true);
+    await setLocalAdministrator(orgId, userId, false);
     calls.length = 0;
     const denied = await inProcessControlPlane.askSourceConfigAgent({
       orgId,

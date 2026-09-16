@@ -19,6 +19,7 @@ export class SandboxPool {
   private generic: WarmSlot[] = [];
   private pending = new Set<Promise<void>>();
   private retry?: ReturnType<typeof setTimeout>;
+  private failures = 0;
   private idle = new Map<string, IdleSlot>();
   private busy = new Set<string>();
   private stopped = false;
@@ -70,6 +71,7 @@ export class SandboxPool {
     while (this.generic.length + this.pending.size < this.options.size) {
       const started = performance.now();
       const preparation = this.options.create().then(async slot => {
+        this.failures = 0;
         this.event({ outcome: "spare_ready", background: true, slot: slot.name, durationMs: performance.now() - started });
         if (this.stopped) await slot.destroy();
         else {
@@ -92,7 +94,11 @@ export class SandboxPool {
         this.event({ outcome: "spare_failed", background: true, durationMs: performance.now() - started });
         this.options.onError(error);
         if (!this.stopped && !this.retry) {
-          this.retry = setTimeout(() => { this.retry = undefined; this.replenish(); }, 1_000);
+          // A gateway that is down fails every attempt. Wait longer each time,
+          // up to 30s, so a broken gateway costs one log line a minute.
+          this.failures += 1;
+          const delay = Math.min(30_000, 1_000 * 2 ** (this.failures - 1));
+          this.retry = setTimeout(() => { this.retry = undefined; this.replenish(); }, delay);
           this.retry.unref();
         }
       });

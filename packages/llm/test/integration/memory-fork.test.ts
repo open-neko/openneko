@@ -61,8 +61,8 @@ describeIfDb("CV2 memory fork overlay", () => {
     await db()
       .insert(app_user)
       .values([
-        { id: ada, email: "ada@example.com", org_id: orgId, role: "member" },
-        { id: bob, email: "bob@example.com", org_id: orgId, role: "member" },
+        { id: ada, email: "ada@example.com", org_id: orgId },
+        { id: bob, email: "bob@example.com", org_id: orgId },
       ]);
   });
 

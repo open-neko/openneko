@@ -364,11 +364,14 @@ pnpm dev:setup
 pnpm dev
 ```
 
-`pnpm dev:setup` starts the Docker-only pieces (`neko-db`, `neko-graphjin`, AdventureWorks Postgres, customer GraphJin, the order simulator, and the scenario injector), applies migrations, and seeds the OpenNeko metadata DB with demo workflows. It writes the demo data source as `http://localhost:8080` because web/worker run on the host in this flow.
+Web and worker run on the host with hot reload. Everything else runs in Docker.
 
-`pnpm dev` runs `next dev` and `tsx watch` from the checkout, so edits to `apps/web`, `apps/worker`, and workspace packages hot reload without rebuilding images. `pnpm dev:up` is the Docker-only bring-up step; `pnpm dev:seed` re-runs only the metadata seed.
-
-`pnpm dev:up` bind-mounts `~/.config/openneko` into `neko-graphjin` so host web/worker and in-Docker GraphJin share `config.json` (including the DB password after `/setup` rotates it). Demo/prod don't need this — web+worker run in compose and share the named volume.
+- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `embedding`, `librarian`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
+- `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
+- `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
+- `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
+- The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
+- OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.
 
 Without `neko-graphjin`, subscription-chained workflows stay silent (`subscription manager ready (0 active)` in worker logs).
 
@@ -380,7 +383,7 @@ Install host-only CLIs the worker shells out to (Docker images already include t
 
 Installs the GraphJin CLI and Hermes.
 
-In the dev flow, use `http://localhost:8080` for customer-data GraphJin in the setup wizard. Metadata GraphJin reaches `http://127.0.0.1:8089` automatically.
+In the dev flow, use `http://localhost:8080` for customer-data GraphJin in the setup wizard.
 
 ### Working on the openneko binary
 

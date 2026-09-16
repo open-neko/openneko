@@ -596,6 +596,7 @@ describe("worker admin /admin/plugins/*", () => {
           kinds: [],
           vmsRunning: 0,
           authProvider: null,
+          directoryProvider: null,
           channels: [],
         },
       });

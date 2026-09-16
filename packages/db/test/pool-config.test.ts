@@ -94,6 +94,13 @@ describe("metadata DB pool config", () => {
     expect(pool()).toBe(first);
   });
 
+  it("survives an idle connection error instead of killing the process", () => {
+    const live = pool();
+    expect(live.listenerCount("error")).toBeGreaterThan(0);
+    // Without a listener node reports this as unhandled and exits.
+    expect(() => live.emit("error", new Error("Connection terminated unexpectedly"))).not.toThrow();
+  });
+
   it("rebuilds the pool when local Postgres config changes", () => {
     const first = pool();
     writeLocalConfig({ pg: { password: "changed-password" } });

@@ -122,6 +122,7 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
         {
           orgId: ctx.orgId,
           limit: args.limit ?? 50,
+          runId: ctx.createdByRunId ?? null,
         },
       );
       return {
@@ -186,6 +187,7 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
       const result = await controlPlane.deleteWorkflow({
         orgId: ctx.orgId,
         workflowId: args.workflowId,
+        runId: ctx.createdByRunId ?? null,
       });
       if (!result.found) {
         return {

@@ -7,14 +7,16 @@
  * emails found here. Works equally under SSO for pre-assigning a role
  * before a user's first login (the sub attaches on that login).
  *
- * Body: { email: string, name?: string, role: "admin" | "member" }
+ * Body: { email: string, name?: string, role: "admin" | "member", addToDirectory?: boolean }
+ * `addToDirectory` also creates the user in the directory plugin's identity provider.
  */
 
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail } from "@neko/db";
+import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
+import { requestWorker } from "@/lib/groups-admin";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
 
-  let body: { email?: unknown; name?: unknown; role?: unknown; updateSoloAccount?: unknown };
+  let body: { email?: unknown; name?: unknown; role?: unknown; updateSoloAccount?: unknown; addToDirectory?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -81,17 +83,12 @@ export async function POST(request: NextRequest) {
         await tx.update(app_user).set({ email, name, updated_at: new Date() }).where(eq(app_user.id, id));
         return true;
       }
-      await tx.insert(app_user).values({
-        id,
-        sub: null,
-        email,
-        name,
-        org_id: orgId,
-        role,
-      });
+      await tx.insert(app_user).values({ id, sub: null, email, name, org_id: orgId });
       return true;
     });
     if (!created) return NextResponse.json({ error: "This account cannot be updated here. Reload the page." }, { status: 409 });
+    // Administrators membership records the role; there is no role column.
+    if (role === "admin") await setLocalAdministrator(orgId, id, true);
   } catch (e) {
     // app_user_org_email_unique: a concurrent provision (double-click,
     // second admin tab) won the race between our lookup and this insert.
@@ -106,8 +103,16 @@ export async function POST(request: NextRequest) {
     }
     throw e;
   }
+  let directoryError: string | null = null;
+  if (body.addToDirectory === true && body.updateSoloAccount !== true) {
+    const result = await requestWorker("/admin/directory/users", { email, name }).catch((err: unknown) => ({
+      status: 503,
+      body: { error: err instanceof Error ? err.message : "worker is unavailable" },
+    }));
+    if (result.status >= 400) directoryError = (result.body as { error?: string }).error ?? `HTTP ${result.status}`;
+  }
   return NextResponse.json(
-    { user: { id, email, name, role } },
+    { user: { id, email, name, role }, ...(directoryError ? { directoryError } : {}) },
     { status: body.updateSoloAccount === true ? 200 : 201 },
   );
 }

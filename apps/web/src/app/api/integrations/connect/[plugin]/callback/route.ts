@@ -10,13 +10,14 @@
  *   5. Redirect back to the originating returnPath with ?connected=<plugin>.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   buildConnectCallbackUri,
   completeConnect,
   listConnectProviders,
   readAndClearConnectStateCookie,
 } from "@/lib/integrations";
+import { appRedirect } from "@/lib/public-url";
 
 export async function GET(
   request: NextRequest,
@@ -26,49 +27,31 @@ export async function GET(
   const error = url.searchParams.get("error");
   if (error) {
     const description = url.searchParams.get("error_description") ?? error;
-    return NextResponse.redirect(
-      new URL(`/integrations?error=${encodeURIComponent(description)}`, request.url),
-      { status: 302 },
-    );
+    return appRedirect(`/integrations?error=${encodeURIComponent(description)}`);
   }
   const { plugin } = await params;
   const pluginName = decodeURIComponent(plugin);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (!code || !state) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=missing+code+or+state", request.url),
-      { status: 302 },
-    );
+    return appRedirect("/integrations?error=missing+code+or+state");
   }
   const stored = await readAndClearConnectStateCookie();
   if (!stored) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=state+cookie+missing+or+expired", request.url),
-      { status: 302 },
-    );
+    return appRedirect("/integrations?error=state+cookie+missing+or+expired");
   }
   if (stored.pluginName !== pluginName) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=plugin+mismatch", request.url),
-      { status: 302 },
-    );
+    return appRedirect("/integrations?error=plugin+mismatch");
   }
   if (stored.state !== state) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=state+mismatch", request.url),
-      { status: 302 },
-    );
+    return appRedirect("/integrations?error=state+mismatch");
   }
   // Re-verify the plugin is still installed (rare race; operator might've
   // removed it during the IdP dance).
   const providers = await listConnectProviders();
   const provider = providers.find((p) => p.pluginName === pluginName);
   if (!provider) {
-    return NextResponse.redirect(
-      new URL(`/integrations?error=plugin+removed`, request.url),
-      { status: 302 },
-    );
+    return appRedirect(`/integrations?error=plugin+removed`);
   }
   try {
     await completeConnect(pluginName, {
@@ -80,15 +63,9 @@ export async function GET(
       scopes: provider.scopes,
       ...(stored.oauthState ? { oauthState: stored.oauthState } : {}),
     });
-    return NextResponse.redirect(
-      new URL(`${stored.returnPath}?connected=${encodeURIComponent(pluginName)}`, request.url),
-      { status: 302 },
-    );
+    return appRedirect(`${stored.returnPath}?connected=${encodeURIComponent(pluginName)}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.redirect(
-      new URL(`/integrations?error=${encodeURIComponent(message)}`, request.url),
-      { status: 302 },
-    );
+    return appRedirect(`/integrations?error=${encodeURIComponent(message)}`);
   }
 }

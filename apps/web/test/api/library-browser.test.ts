@@ -3,6 +3,13 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ browse: vi.fn(), parse: vi.fn(), edit: vi.fn(), read: vi.fn(), materialize: vi.fn(), actor: vi.fn() }));
 vi.mock("@/lib/actor", () => ({ getCurrentActor: mocks.actor }));
 vi.mock("@/lib/db", () => ({ getOrgId: async () => "trusted-org" }));
+const access = { concepts: new Set(["held-concept"]), collections: new Set(["revenue/"]) };
+vi.mock("@/lib/entitlements", () => ({
+  currentLibraryReader: async () => {
+    const actor = await mocks.actor();
+    return { orgId: "trusted-org", userId: actor.userId, isAdmin: actor.role === "admin", access };
+  },
+}));
 vi.mock("@neko/llm", () => ({ materializeTeamLibrary: mocks.materialize }));
 vi.mock("@neko/llm/work", () => ({ browseLibrary: mocks.browse, parseLibraryBrowseOptions: mocks.parse, editLibraryConcept: mocks.edit, readLibraryConcept: mocks.read, archiveLibraryConcept: vi.fn() }));
 import { GET as browse } from "@/app/api/library/route";
@@ -19,7 +26,7 @@ beforeEach(() => {
 });
 it("takes org, ownership and admin rights only from the authenticated server context", async () => {
   await browse(new Request("http://localhost/api/library?userId=another-user&orgId=another-org&isAdmin=true"));
-  expect(mocks.browse).toHaveBeenCalledWith({ orgId: "trusted-org", userId: "trusted-user", isAdmin: false }, { view: "concepts" });
+  expect(mocks.browse).toHaveBeenCalledWith({ orgId: "trusted-org", userId: "trusted-user", isAdmin: false, access }, { view: "concepts" });
   mocks.parse.mockReturnValue({ view: "review" });
   expect((await browse(new Request("http://localhost/api/library?view=review"))).status).toBe(403);
   expect((await PATCH(request({ ...input, userId: "another-user" }), context)).status).toBe(400);

@@ -8,6 +8,7 @@ import {
   metric_snapshot,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { requireItem } from "@/lib/entitlements";
 
 /**
  * GET /api/briefing/by-metric?metricId=<uuid>
@@ -31,6 +32,8 @@ export async function GET(request: NextRequest) {
   if (!metricId) {
     return NextResponse.json({ error: "missing metricId" }, { status: 400 });
   }
+  const deniedMetric = await requireItem("metric", metricId, { notFound: "metric not found" });
+  if (deniedMetric) return deniedMetric;
 
   const orgId = await getOrgId();
   const metricRows = await db()

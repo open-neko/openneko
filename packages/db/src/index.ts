@@ -24,6 +24,79 @@ export { createNotifyClient, type NotifyClient } from "./notify";
 export { getOrCreateSoloAdmin, isUnclaimedSoloEmail, soloAdminNeedsEmail } from "./solo-admin";
 export { getOrgId, _resetOrgIdCacheForTesting } from "./org";
 export {
+  GroupError,
+  activeAdministratorIds,
+  addLocalGroupMember,
+  administratorUserIds,
+  assertAdministratorsKept,
+  builtinGroupId,
+  createIdpGroupRule,
+  createUserGroup,
+  deleteIdpGroupRule,
+  deleteUserGroup,
+  getUserGroup,
+  listGroupMembers,
+  listIdpGroupRules,
+  listIdpGroups,
+  listUserGroups,
+  reconcileDirectorySnapshot,
+  reconcileSignInGroups,
+  recomputeRuleMemberships,
+  removeLocalGroupMember,
+  resolveUserGroups,
+  setLocalAdministrator,
+  slugifyGroupName,
+  updateUserGroup,
+  withAdministratorGuard,
+  type DirectorySnapshot,
+  type DirectorySyncStats,
+  type GroupErrorCode,
+  type GroupMemberRow,
+  type IdpGroupInput,
+  type IdpGroupRow,
+  type IdpGroupRuleRow,
+  type ResolvedUserGroups,
+  type UserGroupRow,
+} from "./groups";
+export {
+  ITEM_TYPES,
+  _resetEntitlementCacheForTesting,
+  effectiveAccess,
+  filterHeld,
+  grantItem,
+  groupHolds,
+  heldItems,
+  holds,
+  isItemType,
+  listGroupItemGrants,
+  packItemIds,
+  packsContaining,
+  revokeItem,
+  whoHolds,
+  type EffectiveItem,
+  type EntitlementActor,
+  type GroupItemGrant,
+  type HeldItems,
+  type HoldResult,
+  type ItemGrantInput,
+  type ItemHolder,
+  type ItemRef,
+  type ItemType,
+} from "./entitlements";
+export {
+  deleteDataAccessRule,
+  getGroupGrantsEnabled,
+  getPreviousReadModes,
+  recordPreviousReadModes,
+  seedEveryoneDataAccess,
+  graphjinGroupClaims,
+  listDataAccessRules,
+  loadGroupGrantInputs,
+  setGroupGrantsEnabled,
+  upsertDataAccessRule,
+  type DataAccessRuleRow,
+} from "./data-access";
+export {
   readLocalConfig,
   writeLocalConfig,
   hasCustomPassword,
@@ -97,6 +170,13 @@ export function pool(): pg.Pool {
   }
 
   _pool = new pg.Pool(config);
+  // An idle connection that the server or the network drops emits on the
+  // pool. With no listener node treats it as unhandled and kills the
+  // process, which took the whole worker down. The next query opens a
+  // fresh connection, so logging is the right answer.
+  _pool.on("error", (error) => {
+    console.error("[db] idle connection error:", error instanceof Error ? error.message : error);
+  });
   _poolConfigSignature = signature;
   _db = null;
   return _pool;

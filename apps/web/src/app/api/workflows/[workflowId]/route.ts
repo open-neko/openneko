@@ -17,6 +17,7 @@ import {
   listSubscriptionsByWorkflow,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflow } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ const SPARKLINE_DAYS = 14;
 
 export async function GET(_request: Request, context: RouteContext) {
   const { workflowId } = await context.params;
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const orgId = await getOrgId();
 
   const workflow = await getWorkflow(orgId, workflowId);
@@ -214,6 +217,8 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { workflowId } = await context.params;
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const orgId = await getOrgId();
   const body = await request.json().catch(() => ({}));
 
@@ -260,6 +265,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(_request: Request, context: RouteContext) {
   const { workflowId } = await context.params;
+  const deniedWorkflow = await requireWorkflow(workflowId);
+  if (deniedWorkflow) return deniedWorkflow;
   const orgId = await getOrgId();
 
   const deleted = await deleteWorkflow(orgId, workflowId);

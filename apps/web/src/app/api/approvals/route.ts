@@ -15,6 +15,7 @@ import {
 } from "@neko/db";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
+import { actionRequestVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -140,8 +141,9 @@ export async function GET(request: NextRequest) {
         })
       : rows;
 
+  const actionVisible = await actionRequestVisibility();
   return NextResponse.json({
-    actions: sorted.map((r) => ({
+    actions: sorted.filter((r) => actionVisible(r)).map((r) => ({
       id: r.id,
       workflowRunId: r.workflowRunId,
       workflow: r.workflowId ? { id: r.workflowId, name: r.workflowName } : null,

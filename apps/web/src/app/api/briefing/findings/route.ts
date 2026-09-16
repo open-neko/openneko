@@ -23,6 +23,7 @@ import { summarizeBriefing } from "@neko/llm";
 import { getCurrentActor } from "@/lib/actor";
 import { serializeBriefingApproval } from "@/lib/briefing-findings";
 import { getOrgId } from "@/lib/db";
+import { watcherRunVisibility, workflowIdVisibility } from "@/lib/entitlements";
 
 // 5-minute freshness window for the auto-generated live summary. If a row
 // exists newer than this, reuse it. Otherwise compose a fresh template.
@@ -382,6 +383,14 @@ export async function GET() {
     }
   }
 
+  const workflowVisibleById = await workflowIdVisibility();
+  const watcherVisible = await watcherRunVisibility([
+    ...actRaw.map((o) => o.workflowRunId),
+    ...watchRaw.map((o) => o.workflowRunId),
+    ...pinnedRows.map((p) => p.workflowRunId),
+  ]);
+  const workflowVisible = (workflowId: string | null | undefined, runId?: string | null) =>
+    workflowVisibleById(workflowId) && watcherVisible(runId);
   return NextResponse.json({
     summary: latestSummary
       ? {
@@ -391,8 +400,8 @@ export async function GET() {
         }
       : null,
     awaitingYou: {
-      approvals: approvals.map(serializeBriefingApproval),
-      actFindings: actRaw.map((o) => ({
+      approvals: approvals.filter((a) => workflowVisible(a.workflowId)).map(serializeBriefingApproval),
+      actFindings: actRaw.filter((o) => workflowVisible(o.workflowId, o.workflowRunId)).map((o) => ({
         id: o.id,
         kind: "finding" as const,
         workflowRunId: o.workflowRunId,
@@ -407,7 +416,7 @@ export async function GET() {
         createdAt: o.createdAt.toISOString(),
       })),
     },
-    pinned: pinnedRows.map((p) => ({
+    pinned: pinnedRows.filter((p) => workflowVisible(p.workflowId, p.workflowRunId)).map((p) => ({
       id: p.outputId,
       pinId: p.pinId,
       kind: "finding" as const,
@@ -421,7 +430,7 @@ export async function GET() {
       createdAt: p.outputCreatedAt.toISOString(),
       pinnedAt: p.pinnedAt.toISOString(),
     })),
-    worthKnowing: watchRaw.map((o) => ({
+    worthKnowing: watchRaw.filter((o) => workflowVisible(o.workflowId, o.workflowRunId)).map((o) => ({
       id: o.id,
       kind: "finding" as const,
       workflowRunId: o.workflowRunId,
@@ -435,7 +444,7 @@ export async function GET() {
       lastSeenAt: o.lastSeenAt.toISOString(),
       createdAt: o.createdAt.toISOString(),
     })),
-    elevated: elevatedRows.map((c) => ({
+    elevated: elevatedRows.filter((c) => workflowVisible(c.consumerWorkflowId)).map((c) => ({
       id: c.cardId,
       kind: "elevated" as const,
       observationId: c.observationId,

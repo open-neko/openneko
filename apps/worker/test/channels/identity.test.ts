@@ -5,7 +5,9 @@ import {
   deleteTestOrg,
   uniqueOrgId,
 } from "@neko/db/test-helpers";
-import { and, app_user, channel_identity, db, eq, pool } from "@neko/db";
+import { and, app_user, channel_identity, db, eq, pool,
+  setLocalAdministrator,
+} from "@neko/db";
 import { resolveChannelActor } from "../../src/channels/identity.js";
 
 const reachable = await dbReachable();
@@ -29,9 +31,10 @@ describeIfDb("resolveChannelActor (CH3)", () => {
     await db()
       .insert(app_user)
       .values([
-        { id: ada, email: "Ada@Example.com", org_id: orgId, role: "member" },
-        { id: boss, email: "boss@example.com", org_id: orgId, role: "admin" },
+        { id: ada, email: "Ada@Example.com", org_id: orgId },
+        { id: boss, email: "boss@example.com", org_id: orgId },
       ]);
+    await setLocalAdministrator(orgId, boss, true);
   });
 
   afterAll(async () => {

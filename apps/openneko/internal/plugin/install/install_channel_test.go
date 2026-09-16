@@ -85,3 +85,46 @@ func TestConvertOpennekoCapabilities_Connect(t *testing.T) {
 		t.Fatalf("connect capability not passed through: %+v", out.Connect)
 	}
 }
+
+// Magic link declares manual provisioning. Losing it would let any mailbox sign in.
+func TestConvertCapabilities_AuthProvisioning(t *testing.T) {
+	out := convertCapabilities(marketplace.Capabilities{
+		Auth: &marketplace.AuthCapability{ProviderLabel: "Email link", Provisioning: "manual", LoginHintRequired: true},
+	})
+	if out.Auth == nil || out.Auth.Provisioning != "manual" || !out.Auth.LoginHintRequired {
+		t.Fatalf("auth declaration not round-tripped: %+v", out.Auth)
+	}
+}
+
+func TestConvertCapabilities_Directory(t *testing.T) {
+	write := json.RawMessage(`{"createUser":true,"deactivateUser":false}`)
+	out := convertCapabilities(marketplace.Capabilities{
+		Directory: &marketplace.DirectoryCapability{ProviderLabel: "Scalekit directory", Write: write},
+	})
+	if out.Directory == nil || out.Directory.ProviderLabel != "Scalekit directory" || string(out.Directory.Write) != string(write) {
+		t.Fatalf("directory capability not round-tripped: %+v", out.Directory)
+	}
+}
+
+func TestConvertOpennekoCapabilities_AuthAndDirectory(t *testing.T) {
+	var pkg pkgCapabilities
+	raw := `{"auth":{"providerLabel":"Email link","provisioning":"manual","loginHintRequired":true},"directory":{"providerLabel":"Scalekit directory","read":{"users":true}}}`
+	if err := json.Unmarshal([]byte(raw), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	out := convertOpennekoCapabilities(&pkg)
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var round manifest.Capabilities
+	if err := json.Unmarshal(encoded, &round); err != nil {
+		t.Fatal(err)
+	}
+	if round.Auth == nil || round.Auth.Provisioning != "manual" || !round.Auth.LoginHintRequired {
+		t.Fatalf("auth declaration lost: %s", encoded)
+	}
+	if round.Directory == nil || string(round.Directory.Read) != `{"users":true}` {
+		t.Fatalf("directory declaration lost: %s", encoded)
+	}
+}

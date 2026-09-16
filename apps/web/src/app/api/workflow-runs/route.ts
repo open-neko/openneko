@@ -10,6 +10,7 @@ import {
   workflow_run,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { workflowVisibility } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,11 +56,13 @@ export async function GET(request: NextRequest) {
       : inArray(workflow_run.status, statuses)
     : undefined;
 
-  const rows = await db()
+  const visible = await workflowVisibility();
+  const fetched = await db()
     .select({
       id: workflow_run.id,
       workflowId: workflow_run.workflow_id,
       workflowName: workflow_definition.name,
+      workflowOwnerUserId: workflow_definition.owner_user_id,
       triggerKind: workflow_run.trigger_kind,
       executionMode: workflow_run.execution_mode,
       chainDepth: workflow_run.chain_depth,
@@ -101,7 +104,10 @@ export async function GET(request: NextRequest) {
         : eq(workflow_run.org_id, orgId),
     )
     .orderBy(desc(workflow_run.created_at))
-    .limit(limit);
+    .limit(Math.max(limit * 5, 500));
+  const rows = fetched
+    .filter((r) => visible({ id: r.workflowId, ownerUserId: r.workflowOwnerUserId }))
+    .slice(0, limit);
 
   return NextResponse.json({
     runs: rows.map((r) => ({

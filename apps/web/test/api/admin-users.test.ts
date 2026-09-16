@@ -7,7 +7,12 @@ const mocks = vi.hoisted(() => ({
   inserted: [] as Row[],
   updates: [] as Row[],
   actorId: "admin-1" as string | null,
+  setAdministrator: vi.fn(async (...args: [string, string, boolean]) => void args),
+  administrators: new Set<string>(),
+  requestWorker: vi.fn(async (path: string, body?: unknown) => ({ status: 200, body: { path, body } })),
 }));
+
+vi.mock("@/lib/groups-admin", () => ({ requestWorker: mocks.requestWorker }));
 
 vi.mock("@/lib/admin-auth", () => ({
   requireAdminActor: async () => ({ userId: mocks.actorId, role: "admin" }),
@@ -27,13 +32,20 @@ vi.mock("@neko/db", () => {
     }),
   });
   return {
+    GroupError: class GroupError extends Error {
+      constructor(public readonly code: string, message: string) {
+        super(message);
+      }
+    },
+    setLocalAdministrator: mocks.setAdministrator,
+    administratorUserIds: async () => mocks.administrators,
+    activeAdministratorIds: async () => [...mocks.administrators],
     organization: { solo_admin_user_id: "owner" },
     isUnclaimedSoloEmail: (email: string) => email.endsWith("@solo.openneko.invalid"),
     app_user: {
       id: "id",
       org_id: "org_id",
       email: "email",
-      role: "role",
       disabled_at: "disabled_at",
       $inferInsert: {},
     },
@@ -93,6 +105,7 @@ describe("POST /api/admin/users", () => {
     mocks.inserted = [];
     mocks.updates = [];
     mocks.actorId = "admin-1";
+    mocks.administrators = new Set();
   });
 
   it("adds the solo owner's email in place without creating another account", async () => {
@@ -115,11 +128,28 @@ describe("POST /api/admin/users", () => {
     expect(mocks.inserted).toHaveLength(1);
     expect(mocks.inserted[0]).toMatchObject({
       email: "new.person@company.com",
-      role: "member",
       sub: null,
       org_id: "org-1",
     });
     expect(String(mocks.inserted[0].id)).toMatch(/^usr_/);
+  });
+
+  it("creates the user in the directory when asked and reports a directory failure", async () => {
+    mocks.selectResults = [[]];
+    const res = await POST(postRequest({ email: "Dee@Company.com", name: "Dee", role: "member", addToDirectory: true }) as never);
+    expect(res.status).toBe(201);
+    expect(mocks.requestWorker).toHaveBeenCalledWith("/admin/directory/users", { email: "dee@company.com", name: "Dee" });
+    expect((await res.json()).directoryError).toBeUndefined();
+
+    mocks.selectResults = [[]];
+    mocks.requestWorker.mockResolvedValueOnce({ status: 400, body: { error: "Scalekit does not create users" } } as never);
+    const failed = await POST(postRequest({ email: "eve@company.com", role: "member", addToDirectory: true }) as never);
+    expect(failed.status).toBe(201);
+    expect(await failed.json()).toMatchObject({ user: { email: "eve@company.com" }, directoryError: "Scalekit does not create users" });
+
+    mocks.selectResults = [[]];
+    await POST(postRequest({ email: "fay@company.com", role: "member" }) as never);
+    expect(mocks.requestWorker).toHaveBeenCalledTimes(2);
   });
 
   it("rejects duplicates with 409", async () => {
@@ -151,13 +181,12 @@ describe("PATCH /api/admin/users/[userId]", () => {
     mocks.inserted = [];
     mocks.updates = [];
     mocks.actorId = "admin-1";
+    mocks.administrators = new Set();
   });
 
   it("refuses to demote the last active admin", async () => {
-    mocks.selectResults = [
-      [{ id: "usr_target", role: "admin", disabledAt: null }],
-      [], // no other active admin
-    ];
+    mocks.selectResults = [[{ id: "usr_target", disabledAt: null }]];
+    mocks.administrators = new Set(["usr_target"]);
     const res = await PATCH(
       patchRequest({ role: "member" }) as never,
       targetParams as never,
@@ -167,10 +196,8 @@ describe("PATCH /api/admin/users/[userId]", () => {
   });
 
   it("refuses to disable the last active admin", async () => {
-    mocks.selectResults = [
-      [{ id: "usr_target", role: "admin", disabledAt: null }],
-      [],
-    ];
+    mocks.selectResults = [[{ id: "usr_target", disabledAt: null }]];
+    mocks.administrators = new Set(["usr_target"]);
     const res = await PATCH(
       patchRequest({ disabled: true }) as never,
       targetParams as never,
@@ -180,22 +207,20 @@ describe("PATCH /api/admin/users/[userId]", () => {
   });
 
   it("demotes an admin when another active admin remains", async () => {
-    mocks.selectResults = [
-      [{ id: "usr_target", role: "admin", disabledAt: null }],
-      [{ id: "usr_other_admin" }],
-    ];
+    mocks.selectResults = [[{ id: "usr_target", disabledAt: null }]];
+    mocks.administrators = new Set(["usr_target", "usr_other_admin"]);
     const res = await PATCH(
       patchRequest({ role: "member" }) as never,
       targetParams as never,
     );
     expect(res.status).toBe(200);
-    expect(mocks.updates).toHaveLength(1);
-    expect(mocks.updates[0]).toMatchObject({ role: "member" });
+    expect(mocks.setAdministrator).toHaveBeenCalledWith(expect.any(String), "usr_target", false);
+    expect(mocks.updates).toHaveLength(0);
   });
 
   it("disables and re-enables a member without consulting the admin count", async () => {
     mocks.selectResults = [
-      [{ id: "usr_target", role: "member", disabledAt: null }],
+      [{ id: "usr_target", disabledAt: null }],
     ];
     const res = await PATCH(
       patchRequest({ disabled: true }) as never,
@@ -204,9 +229,7 @@ describe("PATCH /api/admin/users/[userId]", () => {
     expect(res.status).toBe(200);
     expect(mocks.updates[0].disabled_at).toBeInstanceOf(Date);
 
-    mocks.selectResults = [
-      [{ id: "usr_target", role: "member", disabledAt: new Date() }],
-    ];
+    mocks.selectResults = [[{ id: "usr_target", disabledAt: new Date() }]];
     const res2 = await PATCH(
       patchRequest({ disabled: false }) as never,
       targetParams as never,

@@ -291,12 +291,7 @@ async function executeApprovedImportControl(input: {
   if (decision.decision === "deny") {
     throw new RecordImportWebPermissionError(decision.reason, "records_import_denied");
   }
-  if (
-    !can(actor, "approve", {
-      kind: "action_approval",
-      approverRole: decision.policy.approverRole,
-    })
-  ) {
+  if (!can(actor, "approve", { kind: "action_approval", approverRole: null })) {
     throw new RecordImportWebPermissionError();
   }
   const request = await inProcessControlPlane.createActionRequest({

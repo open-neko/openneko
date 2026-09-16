@@ -109,7 +109,7 @@ describe("records saved-view routes", () => {
     );
     expect(redirected.status).toBe(303);
     expect(redirected.headers.get("location")).toBe(
-      "http://localhost/a/operations/work_order",
+      "/a/operations/work_order",
     );
   });
 

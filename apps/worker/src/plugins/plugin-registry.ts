@@ -31,6 +31,15 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import {
+  ApplyDirectoryChangeRpcParams,
+  ApplyDirectoryChangeRpcResult,
+  ListDirectoryRpcParams,
+  ListDirectoryRpcResult,
+  directoryChangeAllowed,
+  type ApplyDirectoryChangeResult,
+  type DirectoryCapabilityDeclaration,
+  type DirectoryChange,
+  type ListDirectoryResult,
   BeginAuthParams,
   BeginAuthRpcParams,
   BeginAuthRpcResult,
@@ -160,6 +169,8 @@ export interface RegistryStatus {
   vmsRunning: number;
   /** Plugin id of the installed SSO provider (if any). */
   authProvider: string | null;
+  /** Plugin id of the installed directory provider (if any). */
+  directoryProvider: string | null;
   /** Installed channel plugins (frontends): pluginId + provider label. */
   channels: Array<{ pluginId: string; providerLabel: string }>;
 }
@@ -180,13 +191,23 @@ interface ManifestState {
   kindToPluginId: Map<string, string>;
   /** Plugin id chosen as the SSO provider (or null if none). */
   authPluginId: string | null;
+  /** Plugin id chosen as the directory provider (or null if none). */
+  directoryPluginId: string | null;
 }
 
 const EMPTY_STATE: ManifestState = {
   entriesByPluginId: new Map(),
   kindToPluginId: new Map(),
   authPluginId: null,
+  directoryPluginId: null,
 };
+
+/** Snapshot of the directory provider for sync and the admin UI. */
+export interface DirectoryProviderInfo {
+  pluginId: string;
+  pluginName: string;
+  declaration: DirectoryCapabilityDeclaration;
+}
 
 const REFRESH_DEBOUNCE_MS = 200;
 
@@ -233,6 +254,7 @@ export class PluginRegistry {
    * status endpoint falls back to a name-derived label until then.
    */
   private authProviderLabels: Map<string, string> = new Map();
+  private vmStarts = new Map<string, Promise<void>>();
 
   constructor(private readonly options: PluginRegistryOptions) {}
 
@@ -292,6 +314,7 @@ export class PluginRegistry {
   getRegisteredActionDescriptors(): Array<{
     kind: string;
     description: string;
+    pluginName?: string;
     default_mode?:
       | "auto"
       | "ask"
@@ -305,6 +328,7 @@ export class PluginRegistry {
     const out: Array<{
       kind: string;
       description: string;
+      pluginName?: string;
       default_mode?:
         | "auto"
         | "ask"
@@ -320,6 +344,7 @@ export class PluginRegistry {
         out.push({
           kind: decl.kind,
           description: decl.description,
+          pluginName: entry.name,
           default_mode: decl.default_mode,
           example: decl.example,
         });
@@ -337,6 +362,7 @@ export class PluginRegistry {
       kinds: [...this.state.kindToPluginId.keys()].sort(),
       vmsRunning: countRunningVms(this.runtime, this.state),
       authProvider: this.state.authPluginId,
+      directoryProvider: this.state.directoryPluginId,
       channels: this.getChannelProviders().map((c) => ({
         pluginId: c.pluginId,
         providerLabel: c.providerLabel,
@@ -477,6 +503,52 @@ export class PluginRegistry {
       );
     }
     return CompleteAuthRpcResult.parse(response.result).result.identity;
+  }
+
+  getDirectoryProvider(): DirectoryProviderInfo | null {
+    const pluginId = this.state.directoryPluginId;
+    const entry = pluginId ? this.state.entriesByPluginId.get(pluginId) : undefined;
+    if (!pluginId || !entry?.capabilities.directory) return null;
+    return { pluginId, pluginName: entry.name, declaration: entry.capabilities.directory };
+  }
+
+  /** One page of the directory provider's `list_directory` RPC. */
+  async listDirectory(cursor: string | null): Promise<ListDirectoryResult> {
+    const provider = this.requireDirectoryProvider();
+    const response = await this.callDirectoryRpc(provider, "list_directory", ListDirectoryRpcParams.parse({ params: { cursor } }));
+    return ListDirectoryRpcResult.parse(response).result;
+  }
+
+  async applyDirectoryChange(change: DirectoryChange): Promise<ApplyDirectoryChangeResult> {
+    const provider = this.requireDirectoryProvider();
+    if (!directoryChangeAllowed(provider.declaration, change)) {
+      throw new Error(`directory plugin ${provider.pluginName} does not accept "${change.op}"`);
+    }
+    const response = await this.callDirectoryRpc(
+      provider,
+      "apply_directory_change",
+      ApplyDirectoryChangeRpcParams.parse({ params: { change } }),
+    );
+    return ApplyDirectoryChangeRpcResult.parse(response).result;
+  }
+
+  private requireDirectoryProvider(): DirectoryProviderInfo {
+    const provider = this.getDirectoryProvider();
+    if (!provider) throw new Error("no directory plugin installed");
+    return provider;
+  }
+
+  private async callDirectoryRpc(provider: DirectoryProviderInfo, method: "list_directory" | "apply_directory_change", params: unknown) {
+    const entry = this.state.entriesByPluginId.get(provider.pluginId)!;
+    await this.ensureVm(provider.pluginId, entry);
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
+    const response = await this.runtime.callRpc(provider.pluginId, method, JSON.stringify(params), {
+      env: mergeEnv(entry, this.secrets),
+    });
+    if (!response.ok) {
+      throw new Error(`directory plugin ${entry.name} ${method} failed: ${response.error.code} ${response.error.message}`);
+    }
+    return response.result;
   }
 
   private requireAuthProviderEntry(): {
@@ -1159,7 +1231,7 @@ export class PluginRegistry {
       // refresh_token gets redacted from agent output too.
       this.scrubber = createScrubber(allSecretValuesFull(full));
 
-      const { state: newState, authDuplicates } = buildState(manifest);
+      const { state: newState, authDuplicates, directoryDuplicates } = buildState(manifest);
       await this.backfillAutogeneratedSecrets(newState);
       const removed = diffRemoved(this.state, newState);
 
@@ -1195,6 +1267,12 @@ export class PluginRegistry {
             'auth capability claimed by another plugin (only one SSO provider supported per deployment)',
         });
       }
+      for (const name of directoryDuplicates) {
+        this.skipped.push({
+          name,
+          reason: "directory capability claimed by another plugin (only one directory provider supported per deployment)",
+        });
+      }
       const seenKinds = new Set<string>();
       for (const [pluginId, entry] of newState.entriesByPluginId) {
         for (const decl of entry.capabilities.action?.kinds ?? []) {
@@ -1228,6 +1306,7 @@ export class PluginRegistry {
           );
         }
       }
+      this.warmAuthProvider();
     } finally {
       this.refreshing = false;
       if (this.pendingRefresh) {
@@ -1428,6 +1507,33 @@ export class PluginRegistry {
   ): Promise<void> {
     if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
     if (this.runtime.hasPlugin(pluginId)) return;
+    const pending = this.vmStarts.get(pluginId);
+    if (pending) return pending;
+    const starting = this.startVm(pluginId, entry).finally(() => this.vmStarts.delete(pluginId));
+    this.vmStarts.set(pluginId, starting);
+    return starting;
+  }
+
+  /**
+   * Starts the sign-in plugin's sandbox after each refresh, so the first
+   * sign-in does not wait for a cold sandbox start.
+   */
+  private warmAuthProvider(): void {
+    const provider = this.getAuthProvider();
+    const entry = provider ? this.state.entriesByPluginId.get(provider.pluginId) : undefined;
+    if (!provider || !entry || !this.runtime || !this.authSignInReady()) return;
+    void this.ensureVm(provider.pluginId, entry).catch((err) => {
+      console.warn(
+        `[plugin-registry] could not start ${entry.name} ahead of sign-in: ${err instanceof Error ? err.message : err}`,
+      );
+    });
+  }
+
+  private async startVm(
+    pluginId: string,
+    entry: PluginManifestEntry,
+  ): Promise<void> {
+    if (!this.runtime) throw new Error("plugin-registry: runtime unavailable");
 
     const resolveRunner =
       this.options.resolveRunner ??
@@ -1517,6 +1623,12 @@ export class PluginRegistry {
           registered.capabilities.auth.providerLabel,
         );
       }
+    }
+    if (entry.capabilities.directory && !registered.capabilities.directory) {
+      await this.runtime.stop(pluginId).catch(() => {});
+      throw new Error(
+        `${entry.name}: manifest declares the directory capability but VM register() reports no directory provider`,
+      );
     }
     if (entry.capabilities.connect) {
       if (!registered.capabilities.connect) {
@@ -1649,17 +1761,21 @@ async function readManifestFromDisk(
 function buildState(manifest: PluginManifest | null): {
   state: ManifestState;
   authDuplicates: string[];
+  directoryDuplicates: string[];
 } {
   const entriesByPluginId = new Map<string, PluginManifestEntry>();
   const kindToPluginId = new Map<string, string>();
   if (!manifest) {
     return {
-      state: { entriesByPluginId, kindToPluginId, authPluginId: null },
+      state: { entriesByPluginId, kindToPluginId, authPluginId: null, directoryPluginId: null },
       authDuplicates: [],
+      directoryDuplicates: [],
     };
   }
   let authPluginId: string | null = null;
+  let directoryPluginId: string | null = null;
   const authDuplicates: string[] = [];
+  const directoryDuplicates: string[] = [];
   for (const entry of manifest.plugins) {
     const pluginId = pluginIdFromName(entry.name);
     entriesByPluginId.set(pluginId, entry);
@@ -1678,10 +1794,15 @@ function buildState(manifest: PluginManifest | null): {
         authDuplicates.push(entry.name);
       }
     }
+    if (entry.capabilities.directory) {
+      if (directoryPluginId === null) directoryPluginId = pluginId;
+      else directoryDuplicates.push(entry.name);
+    }
   }
   return {
-    state: { entriesByPluginId, kindToPluginId, authPluginId },
+    state: { entriesByPluginId, kindToPluginId, authPluginId, directoryPluginId },
     authDuplicates,
+    directoryDuplicates,
   };
 }
 

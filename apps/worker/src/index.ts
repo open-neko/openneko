@@ -57,6 +57,18 @@ import {
   startSsoSetupPoller,
 } from "./sso/sso-setup-service.js";
 import {
+  applyGroupGrants,
+  disableGroupGrants,
+  enableGroupGrants,
+  scheduleGroupGrantsApply,
+} from "./graphjin/group-grants-service.js";
+import {
+  createDirectoryUser,
+  DIRECTORY_SYNC_CRON,
+  directoryStatus,
+  runDirectorySync,
+} from "./directory/directory-service.js";
+import {
   and,
   app_user,
   data_source,
@@ -64,6 +76,7 @@ import {
   db,
   desc,
   eq,
+  activeAdministratorIds,
   getOrgId,
   isNull,
   metric,
@@ -184,6 +197,8 @@ import { startWorkflowApiDispatcher } from "./workflow-api-dispatcher.js";
 import { PackService } from "./packs/service.js";
 import { registerPackActionPreflight } from "./packs/action-preflight.js";
 import { registerMagentoV2Runtime } from "./packs/magento-v2-runtime.js";
+
+process.env.OPENNEKO_SANDBOX_OWNER ||= "worker";
 
 const PORT: number = 4100;
 const MAX_JOB_RETRIES: number = 2;
@@ -498,14 +513,7 @@ const server = createServer(
       getAuthDeclaredEnvKeys: () =>
         pluginRegistry?.getAuthDeclaredEnvKeys() ?? [],
       soloAdminNeedsEmail: async () => soloAdminNeedsEmail(await getOrgId()),
-      hasProvisionedAdmin: async () => {
-        const [row] = await db()
-          .select({ id: app_user.id })
-          .from(app_user)
-          .where(and(eq(app_user.role, "admin"), isNull(app_user.disabled_at)))
-          .limit(1);
-        return Boolean(row);
-      },
+      hasProvisionedAdmin: async () => (await activeAdministratorIds(await getOrgId())).length > 0,
       setAuthSecret: async (key, value) => {
         if (!pluginRegistry) {
           throw new Error("plugin registry not initialised");
@@ -540,6 +548,7 @@ const server = createServer(
           kinds: [],
           vmsRunning: 0,
           authProvider: null,
+          directoryProvider: null,
           channels: [],
         },
       getRegisteredActionDescriptors: () =>
@@ -585,6 +594,32 @@ const server = createServer(
       getInstallPolicy: async () => {
         const { getInstallPolicyForOrg } = await import("@neko/db");
         return getInstallPolicyForOrg(ADMIN_ORG_ID);
+      },
+    },
+    groupGrants: {
+      apply: async () => applyGroupGrants(await getOrgId()),
+      schedule: () => {
+        void getOrgId().then((orgId) => scheduleGroupGrantsApply(orgId));
+      },
+      enable: async (actorUserId) => enableGroupGrants(await getOrgId(), actorUserId),
+      disable: async (actorUserId) => disableGroupGrants(await getOrgId(), actorUserId),
+      apiOperations: async () => {
+        const configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim();
+        if (!configFile) return [];
+        const { readFile } = await import("node:fs/promises");
+        const { listConfigApiOperations } = await import("@neko/llm/graphjin");
+        return listConfigApiOperations(await readFile(configFile, "utf8"));
+      },
+    },
+    directory: {
+      status: async () => directoryStatus(pluginRegistry, await getOrgId()),
+      sync: async () => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return runDirectorySync(pluginRegistry, await getOrgId());
+      },
+      createUser: async (input) => {
+        if (!pluginRegistry) throw new Error("plugin registry not initialised");
+        return createDirectoryUser(pluginRegistry, input);
       },
     },
     packs: {
@@ -795,8 +830,10 @@ recordsImportAdminSurface = createRecordsCliImportBridge({
     registerSourceConfigAdminAdapter,
     registerPluginManagementAdapters,
     registerUserAdminAdapter,
+    registerGroupAdminAdapter,
   } = await import("./plugins/manage-adapters.js");
   registerUserAdminAdapter();
+  registerGroupAdminAdapter((orgId) => scheduleGroupGrantsApply(orgId));
   registerChannelAdminAdapter();
   registerDataSourceAdminAdapter();
   registerSourceConfigAdminAdapter();
@@ -1411,6 +1448,17 @@ await b.work(
     }
   },
 );
+
+await b.work(QUEUE.DIRECTORY_SYNC, async () => {
+  if (!pluginRegistry?.getDirectoryProvider()) return;
+  try {
+    const stats = await runDirectorySync(pluginRegistry, await getOrgId());
+    console.log(`[directory-sync] ${JSON.stringify(stats)}`);
+  } catch (e) {
+    console.warn(`[directory-sync] failed: ${e instanceof Error ? e.message : e}`);
+  }
+});
+await b.schedule(QUEUE.DIRECTORY_SYNC, DIRECTORY_SYNC_CRON, {}, { tz: "UTC", retryLimit: 0 });
 
 await b.schedule(QUEUE.WORKFLOW_CRON_SWEEP, "* * * * *", {}, {
   tz: "UTC",

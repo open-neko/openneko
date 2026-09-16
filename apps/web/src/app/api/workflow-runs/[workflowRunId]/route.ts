@@ -10,6 +10,7 @@ import {
   workflow_run,
 } from "@neko/db";
 import { getOrgId } from "@/lib/db";
+import { requireWorkflowRun } from "@/lib/entitlements";
 import { getWorkRunEventsAfter } from "@/lib/work-store";
 
 export const runtime = "nodejs";
@@ -26,6 +27,8 @@ type RouteContext = {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const { workflowRunId } = await context.params;
+  const deniedRun = await requireWorkflowRun(workflowRunId);
+  if (deniedRun) return deniedRun;
   const orgId = await getOrgId();
   const includeTools =
     new URL(request.url).searchParams.get("detail") === "tools";

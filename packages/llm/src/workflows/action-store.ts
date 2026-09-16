@@ -1,4 +1,6 @@
 import {
+  ADMINISTRATORS_GROUP_SLUG,
+  builtinGroupId,
   audit_chain,
   action_execution,
   action_policy,
@@ -52,7 +54,8 @@ export type ActionPolicyRecord = {
   allowedTargets: Record<string, unknown> | null;
   deniedTargets: Record<string, unknown> | null;
   limits: Record<string, unknown>;
-  approverRole: string | null;
+  /** Group whose members may approve; Administrators may always approve. */
+  approverGroupId: string | null;
   priority: number;
   enabled: boolean;
   createdByThreadId: string | null;
@@ -79,7 +82,7 @@ function toPolicyRecord(
     deniedTargets:
       (row.denied_targets as Record<string, unknown> | null) ?? null,
     limits: (row.limits as Record<string, unknown>) ?? {},
-    approverRole: row.approver_role,
+    approverGroupId: row.approver_group_id ?? null,
     priority: row.priority,
     enabled: row.enabled,
     createdByThreadId: row.created_by_thread_id,
@@ -115,8 +118,11 @@ export async function listAllPolicies(
 
 export type CreateActionPolicyInput = Omit<
   ActionPolicyRecord,
-  "id" | "createdAt" | "updatedAt" | "createdByThreadId" | "createdByRunId"
+  "id" | "createdAt" | "updatedAt" | "createdByThreadId" | "createdByRunId" | "approverGroupId"
 > & {
+  approverGroupId?: string | null;
+  /** Convenience for seeds and tools: "admin" means the Administrators group. */
+  approverRole?: "admin" | null;
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
 };
@@ -124,6 +130,12 @@ export type CreateActionPolicyInput = Omit<
 export async function createActionPolicy(
   input: CreateActionPolicyInput,
 ): Promise<ActionPolicyRecord> {
+  const approverGroupId =
+    input.approverGroupId !== undefined
+      ? input.approverGroupId
+      : input.approverRole === "admin"
+        ? await builtinGroupId(input.orgId, ADMINISTRATORS_GROUP_SLUG)
+        : null;
   const [row] = await db()
     .insert(action_policy)
     .values({
@@ -137,7 +149,7 @@ export async function createActionPolicy(
       allowed_targets: input.allowedTargets,
       denied_targets: input.deniedTargets,
       limits: input.limits,
-      approver_role: input.approverRole,
+      approver_group_id: approverGroupId,
       priority: input.priority,
       enabled: input.enabled,
       created_by_thread_id: input.createdByThreadId ?? null,
@@ -193,7 +205,6 @@ export async function upsertActionPolicyByName(
     allowedTargets: input.allowedTargets,
     deniedTargets: input.deniedTargets,
     limits: input.limits,
-    approverRole: input.approverRole,
     priority: input.priority,
     enabled: input.enabled,
   });
@@ -228,7 +239,7 @@ export async function updateActionPolicy(
   if (patch.deniedTargets !== undefined)
     set.denied_targets = patch.deniedTargets;
   if (patch.limits !== undefined) set.limits = patch.limits;
-  if (patch.approverRole !== undefined) set.approver_role = patch.approverRole;
+  if (patch.approverGroupId !== undefined) set.approver_group_id = patch.approverGroupId;
   if (patch.priority !== undefined) set.priority = patch.priority;
   if (patch.enabled !== undefined) set.enabled = patch.enabled;
 
@@ -635,14 +646,22 @@ async function assertMayDecide(
   request: ActionRequestRecord,
   approver: { userId: string | null; role: "admin" | "member" | "service" },
 ): Promise<void> {
-  const { assertCan } = await import("../work/authz");
+  const { assertCan, ForbiddenError } = await import("../work/authz");
   const policy = request.policyId
     ? await getActionPolicy(orgId, request.policyId)
     : null;
+  if (policy?.approverGroupId && approver.role !== "admin") {
+    const { resolveUserGroups } = await import("@neko/db");
+    const groups = approver.userId && approver.role === "member" ? await resolveUserGroups(orgId, approver.userId) : null;
+    if (!groups?.groupIds.includes(policy.approverGroupId)) {
+      throw new ForbiddenError(`action_request ${request.id}: approval needs a member of the policy's approver group`);
+    }
+    return;
+  }
   assertCan(
     { userId: approver.userId, role: approver.role },
     "approve",
-    { kind: "action_approval", approverRole: policy?.approverRole ?? null },
+    { kind: "action_approval", approverRole: null },
     `action_request ${request.id}`,
   );
 }

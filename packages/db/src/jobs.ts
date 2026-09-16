@@ -38,6 +38,7 @@ export const QUEUE = {
   LIBRARY_EXTRACT: "library_extract",
   LIBRARY_DISTILL: "library_distill",
   SKILL_LEARN: "skill_learn",
+  DIRECTORY_SYNC: "directory_sync",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
