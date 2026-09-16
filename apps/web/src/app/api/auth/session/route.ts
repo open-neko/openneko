@@ -6,12 +6,20 @@
  * decide whether to render dashboard chrome or a "Sign in" CTA.
  */
 
-import { NextResponse } from "next/server";
-import { getCurrentUser, getAuthProvider } from "@/lib/auth";
+import { NextResponse, type NextRequest } from "next/server";
+import { getCurrentUser, getAuthProvider, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { getCurrentActor } from "@/lib/actor";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   const actor = user ? await getCurrentActor() : null;
-  return NextResponse.json({ user, role: actor?.role ?? null, authEnabled: Boolean(await getAuthProvider()) });
+  // `signedIn` says the visitor holds a session cookie, so the app offers
+  // Sign out. It stays true while the worker or the plugin is unreachable.
+  const signedIn = Boolean(request?.cookies?.get(SESSION_COOKIE_NAME)?.value);
+  return NextResponse.json({
+    user,
+    role: actor?.role ?? null,
+    authEnabled: Boolean(await getAuthProvider()),
+    signedIn,
+  });
 }

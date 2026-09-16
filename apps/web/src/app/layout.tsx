@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 import { DensityProvider } from "@/components/DensityProvider";
-import AppRail from "@/components/AppRail";
+import AppRail, { type RailIdentity } from "@/components/AppRail";
+import { railIdentity } from "@/lib/rail-identity";
 import CommandDock from "@/components/CommandDock";
 import { THEME_COLOR } from "@/lib/theme-color";
 import "@fontsource-variable/archivo/wght.css";
@@ -26,11 +27,12 @@ export const viewport: Viewport = {
   themeColor: THEME_COLOR,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const initial: RailIdentity | undefined = await railIdentity();
   return (
     <html lang="en" data-density="compact" suppressHydrationWarning>
       <head>
@@ -41,7 +43,7 @@ export default function RootLayout({
           Skip to main content
         </a>
         <DensityProvider>
-          <AppRail />
+          <AppRail initial={initial} />
           <div id="main-content">{children}</div>
           <CommandDock />
         </DensityProvider>

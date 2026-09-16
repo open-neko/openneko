@@ -245,7 +245,9 @@ export async function beginAuth(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(15_000),
+    // A cold plugin sandbox takes about 20s to start. Giving up early
+    // sends no email at all, which reads to the person as silence.
+    signal: AbortSignal.timeout(45_000),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");

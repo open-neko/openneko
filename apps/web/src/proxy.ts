@@ -283,7 +283,12 @@ export const config = {
   // Match every route except static assets: ACCESS_POLICIES decides what
   // each path needs, and the sign-in, SSO setup and OAuth callback paths
   // are `public` or `token` there.
+  // Everything under _next/ belongs to the framework, including the dev
+  // hot-reload socket. The gate 404s what it does not recognise, which
+  // stops the page hydrating and kills every button on it.
+  // A path that ends in a file extension is a file in public/ (cat.png,
+  // icon.png, robots.txt). No page or API route ends that way.
   // Negative lookahead is a constant here so Next can statically
   // analyse it at build time (per the proxy.md API reference).
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico).*)"],
+  matcher: ["/((?!_next/|favicon\\.ico|.*\\.[a-zA-Z0-9]+$).*)"],
 };

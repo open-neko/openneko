@@ -170,6 +170,13 @@ export function pool(): pg.Pool {
   }
 
   _pool = new pg.Pool(config);
+  // An idle connection that the server or the network drops emits on the
+  // pool. With no listener node treats it as unhandled and kills the
+  // process, which took the whole worker down. The next query opens a
+  // fresh connection, so logging is the right answer.
+  _pool.on("error", (error) => {
+    console.error("[db] idle connection error:", error instanceof Error ? error.message : error);
+  });
   _poolConfigSignature = signature;
   _db = null;
   return _pool;

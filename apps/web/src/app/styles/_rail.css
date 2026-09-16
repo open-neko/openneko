@@ -427,7 +427,10 @@ body {
   }
 
   .app-rail-user-profile {
-    width: 100%;
+    /* Shares the row with Sign out, so it takes the space that is left
+       instead of covering the button. */
+    flex: 1 1 auto;
+    width: auto;
     min-width: 0;
     height: auto;
     display: flex;
@@ -440,9 +443,25 @@ body {
     border-radius: 10px;
   }
 
-  .app-rail-user-profile:focus-visible {
+  .app-rail-user-profile:focus-visible,
+  .app-rail-signout:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  .app-rail-signout {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    color: var(--text2);
+  }
+
+  .app-rail-signout:hover {
+    color: var(--danger);
   }
 
   .app-rail-avatar {

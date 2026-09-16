@@ -29,11 +29,12 @@ export function ProfileClient({ email, signInEnabled }: { email: string; signInE
       try {
         const res = await fetch("/api/settings/persona", { cache: "no-store" });
         if (!res.ok) throw new Error(`could not load your profile (${res.status})`);
-        const body = (await res.json()) as { profile: Profile };
+        const body = (await res.json()) as { profile: Profile | null };
         if (cancelled) return;
-        setDisplayName(body.profile.displayName ?? "");
-        setRoleTemplate(body.profile.roleTemplate ?? "");
-        setFocusAreas((body.profile.focusAreas ?? []).join("\n"));
+        // A person who has never saved a persona has no row yet.
+        setDisplayName(body.profile?.displayName ?? "");
+        setRoleTemplate(body.profile?.roleTemplate ?? "");
+        setFocusAreas((body.profile?.focusAreas ?? []).join("\n"));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
