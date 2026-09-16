@@ -20,6 +20,9 @@ export PATH="$OPENNEKO_DEV_STATE/bin:$PATH"
 export OPENNEKO_PG_ENV_OVERRIDE=1
 export NEKO_PG_HOST=127.0.0.1
 export NEKO_PG_PORT="${OPENNEKO_DB_PORT:-5432}"
+# The gateway container reads this password from compose. Host migrations do
+# not provision the role, so dev-up.sh sets the role to the same value.
+export OPENNEKO_OPENSHELL_DB_PASSWORD="${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}"
 export RECORDS_PG_HOST=127.0.0.1
 export RECORDS_PG_PORT="${OPENNEKO_RECORDS_DB_PORT:-5434}"
 

@@ -33,6 +33,13 @@ fi
 compose up -d --wait neko-db records-db
 (cd apps/openneko && go run ./cmd/openneko migrate)
 
+# The OpenShell gateway signs in as its own role. Give it the password the
+# gateway container carries, or every sandbox start fails.
+compose exec -T neko-db psql -U neko -d neko -v ON_ERROR_STOP=1 \
+  -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'openshell') THEN CREATE ROLE openshell LOGIN; END IF; END \$\$" \
+  -c "ALTER ROLE openshell WITH LOGIN PASSWORD '$OPENNEKO_OPENSHELL_DB_PASSWORD'" \
+  -c "GRANT neko TO openshell" > /dev/null
+
 # GraphJin reads its auth key only at start, so the per-org secret goes into
 # agentic.yml before the server starts.
 compose run --rm --no-deps graphjin-config-init

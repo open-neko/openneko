@@ -73,6 +73,10 @@ export async function reapStrandedSandboxes(
   return stranded;
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const reapedGateways = new Set<string>();
 
 export interface SandboxLauncherOptions {
@@ -530,13 +534,17 @@ function getSandboxPool(opts: SandboxLauncherOptions, workspace?: StableWorkspac
     reapedGateways.add(gatewayKey);
     void reapStrandedSandboxes(runCleanup)
       .then((names) => { if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`); })
-      .catch((error) => (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${error instanceof Error ? error.message : error}`));
+      .catch((error) => {
+        // A gateway that is down reaps nothing. Try again on the next pool.
+        reapedGateways.delete(gatewayKey);
+        (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
+      });
   }
   if (!pool) {
     pool = new SandboxPool({ size: warmSize, idleMs,
       onEvent: attributes => startupEvent("sandbox.pool", { poolId: createHash("sha256").update(poolKey).digest("hex").slice(0, 16), ...attributes }),
       create: () => createWarmSandbox({ cli, gatewayArgs, image: opts.agentImage, cpu, memory, idleMs, runCleanup, workspace }),
-      onError: () => (opts.onLog ?? console.error)("warm sandbox preparation failed"),
+      onError: (error) => (opts.onLog ?? console.error)(`warm sandbox preparation failed: ${describeError(error)}`),
     });
     warmPools.set(poolKey, pool);
     pool.replenish();

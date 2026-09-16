@@ -136,6 +136,25 @@ it('fails admission on preparation failure and retries without a new request', a
   await lease.release(slot, true);
   await pool.close();
 });
+it('waits longer after each failed preparation and starts over once one succeeds', async () => {
+  vi.useFakeTimers();
+  const slot = { name: 'recovered', alive: () => true, destroy: vi.fn(async () => {}) };
+  const create = vi.fn()
+    .mockRejectedValueOnce(new Error('gateway down'))
+    .mockRejectedValueOnce(new Error('gateway down'))
+    .mockResolvedValue(slot);
+  const pool = new SandboxPool({ size: 1, idleMs: 1000, create, onError: vi.fn() });
+  pool.replenish();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(create).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(create).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(create).toHaveBeenCalledTimes(3);
+  const lease = await pool.acquire({ key: 'alice', scope: 'v1' });
+  await lease.release(slot, true);
+  await pool.close();
+});
 it('destroys a slot that becomes ready during shutdown and rejects the waiting admission', async () => {
   let finish!: (slot: WarmSlot) => void;
   const slot = { name: 'late', alive: () => true, destroy: vi.fn(async () => {}) };
