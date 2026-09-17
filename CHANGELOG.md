@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.0](https://github.com/open-neko/openneko/compare/v3.0.1...v3.1.0) (2026-09-17)
+
+
+### Features
+
+* **llm:** pass Hermes per-turn cost to OpenNeko ([7a98eaa](https://github.com/open-neko/openneko/commit/7a98eaaf26fdefe487ef7105bd82ee1d94ab8bca))
+* **llm:** pass Hermes per-turn cost to OpenNeko ([6e51835](https://github.com/open-neko/openneko/commit/6e5183534599ed6bdd84b188730add0d77d0b71c))
+
 ## [3.0.1](https://github.com/open-neko/openneko/compare/v3.0.0...v3.0.1) (2026-09-16)
 
 
