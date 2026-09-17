@@ -590,6 +590,20 @@ export async function releaseWorkflowScheduleFiringRun(
   );
 }
 
+export async function cancelWorkflowScheduleFiring(
+  firingId: string,
+  reason: string,
+  now = new Date(),
+): Promise<void> {
+  await pool().query(
+    `update workflow_schedule_firing
+     set status = 'cancelled', workflow_run_id = null, lease_until = null,
+         completed_at = $3, last_error = $2, updated_at = $3
+     where id = $1 and status = 'running'`,
+    [firingId, reason, now],
+  );
+}
+
 export async function recoverStaleWorkflowScheduleFirings(
   now = new Date(),
   options: { orgId?: string } = {},

@@ -14,6 +14,7 @@ import {
   ensureHostConfigProvisioned,
   runMetricAgent,
   type AgentTokenUsage,
+  type MetricAgentDiagnostics,
   type MetricAgentInput,
   type MetricAgentResult,
 } from "@neko/llm";
@@ -22,6 +23,7 @@ import {
   persistProcessingJobTelemetry,
 } from "../telemetry.js";
 import { observeSafely } from "@neko/telemetry";
+import { recordUsageSpend, releaseSpendReservation, reserveSpend } from "@neko/llm/spend";
 import { graphjinQuery, mintGraphjinToken, packArtifactSource } from "@neko/llm/graphjin";
 import {
   buildSavedQueryVariables,
@@ -209,6 +211,8 @@ async function runMetricRefreshTraced(jobId: string, orgId: string) {
     | undefined;
   const telemetryStartedAt = Date.now();
   let telemetryFailure: unknown;
+  let spendReservationId: string | undefined;
+  let metricDiagnostics: MetricAgentDiagnostics | undefined;
   try {
     let result: MetricAgentResult;
     runTelemetry = createWorkerHarnessObserver(jobId);
@@ -249,9 +253,14 @@ async function runMetricRefreshTraced(jobId: string, orgId: string) {
       });
     }
     await startupPhase("config.provision", async () => ensureHostConfigProvisioned(orgId));
+    spendReservationId = (await reserveSpend({ orgId, source: "metric" })).reservationId;
     result = await startupPhase("metric.agent", async () => runMetricAgent({
       ...input,
       jobId,
+      onDiagnostics: (diagnostics) => {
+        metricDiagnostics = diagnostics;
+        input.onDiagnostics?.(diagnostics);
+      },
       observer: runTelemetry!.observer,
       observationAttributes: {
         "openneko.job.kind": "metric_refresh",
@@ -315,6 +324,15 @@ async function runMetricRefreshTraced(jobId: string, orgId: string) {
       .where(eq(metric.id, metricRowId)));
     throw e;
   } finally {
+    if (spendReservationId) {
+      for (const usage of [metricDiagnostics?.outerUsage, metricDiagnostics?.innerUsage]) {
+        if (!usage) continue;
+        await recordUsageSpend({ orgId, reservationId: spendReservationId, usage }).catch((error) => {
+          console.error(`[metric_refresh] could not record spend for job=${jobId}: ${error instanceof Error ? error.message : error}`);
+        });
+      }
+      await releaseSpendReservation(spendReservationId).catch(() => undefined);
+    }
     if (runTelemetry) {
       // Structured and content-free: safe for production logs and collectors.
       if (!runTelemetry.snapshot().finishedAt) {

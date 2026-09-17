@@ -10,11 +10,11 @@ it("runs as the active owner, rejects a disabled owner, and leaves ownerless run
   const input = { orgId: "org", workflowId: "wf", triggerKind: "schedule" as const };
   mocks.query.mockResolvedValue({ rows: [{ role: "member" }] });
   await prepareWorkflowRun(input, { resolveAgentBackend: async () => backend });
-  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "hermes", { userId: "alice", role: "member" });
+  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "hermes", { userId: "alice", role: "member" }, { source: "trigger", workflowId: "wf" });
   mocks.query.mockResolvedValue({ rows: [] }); mocks.createRun.mockClear();
   await expect(prepareWorkflowRun(input, { resolveAgentBackend: async () => backend })).rejects.toThrow("no longer active");
   expect(mocks.createRun).not.toHaveBeenCalled();
   mocks.workflow.mockResolvedValue({ id: "wf", enabled: true, ownerUserId: "", name: "Shared" });
   await prepareWorkflowRun(input, { resolveAgentBackend: async () => backend });
-  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "hermes", { userId: null, role: "service" });
+  expect(mocks.createRun).toHaveBeenLastCalledWith("org", "thread", "hermes", { userId: null, role: "service" }, { source: "trigger", workflowId: "wf" });
 });

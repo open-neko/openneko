@@ -76,7 +76,7 @@ import {
   rejectActionRequest,
   setWorkflowOutputDeliveryHook,
 } from "@neko/llm/workflows";
-import { getOrCreateChannelThread, getWorkThread } from "@neko/llm/work";
+import { createWorkRun, getOrCreateChannelThread, getWorkThread } from "@neko/llm/work";
 import {
   conversationKeyFor,
   deliverChatReply,
@@ -161,6 +161,36 @@ describe("dispatchInboundIntent — utterance", () => {
         channelPlugin: "@open-neko/channel-telegram",
         recipient: { chatId: 7 },
       }),
+    );
+  });
+});
+
+describe("dispatchInboundIntent — spend budget", () => {
+  it("replies with the budget message and starts no run when a budget is full", async () => {
+    const { SpendBudgetExceeded } = await import("@neko/llm/spend");
+    vi.mocked(createWorkRun).mockRejectedValueOnce(
+      new SpendBudgetExceeded("org_daily", 500, 499, 5, 3600, new Date("2026-09-18T00:00:00Z")),
+    );
+    await dispatchInboundIntent(
+      "org-1",
+      { kind: "utterance", text: "how are sales?", threadRef: "42" },
+      "@open-neko/channel-telegram",
+      { chatId: 7 },
+    );
+    expect(enqueue).not.toHaveBeenCalledWith("work_run", expect.anything());
+    expect(enqueue).toHaveBeenCalledWith(
+      "channel_deliver",
+      expect.objectContaining({
+        channelPlugin: "@open-neko/channel-telegram",
+        recipient: { chatId: 7 },
+        events: [
+          expect.objectContaining({
+            kind: "converse",
+            text: "The daily spending limit of $500.00 for this organization is reached. Try again after 00:00 UTC.",
+          }),
+        ],
+      }),
+      expect.anything(),
     );
   });
 });

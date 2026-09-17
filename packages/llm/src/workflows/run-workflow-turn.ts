@@ -99,7 +99,10 @@ export async function prepareWorkflowRun(
   const threadId =
     opts.threadId ??
     (await startupPhase("workflow.create_thread", async () => createWorkThread(opts.orgId, workflow.name, "workflow"))).id;
-  const created = await startupPhase("workflow.create_work_run", async () => createWorkRun(opts.orgId, threadId, backend.id, actor));
+  const created = await startupPhase("workflow.create_work_run", async () => createWorkRun(opts.orgId, threadId, backend.id, actor, {
+    source: opts.triggerKind === "cron" ? "cron" : opts.triggerKind === "api" ? "api" : "trigger",
+    workflowId: opts.workflowId,
+  }));
   const workflowRun = await startupPhase("workflow.create_run", async () => createWorkflowRun({
     orgId: opts.orgId,
     workflowId: opts.workflowId,

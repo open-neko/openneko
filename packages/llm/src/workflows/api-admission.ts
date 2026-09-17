@@ -12,6 +12,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pool } from "@neko/db";
 import type { HarnessRunSummary } from "@neko/telemetry";
 import type { PoolClient } from "pg";
+import { admitRunSpend, SpendBudgetExceeded } from "../spend/admission";
 import { getOrgAgentRoot } from "../work/workspace";
 import {
   WorkflowApiError,
@@ -652,6 +653,20 @@ export async function admitWorkflowApiRun(input: {
          ) values ($1, $2, $3, 'hermes', 'queued', null, 'service', $4, $4)`,
         [workRunId, access.org_id, threadId, now],
       );
+      try {
+        await admitRunSpend(client, {
+          orgId: access.org_id,
+          workflowId: access.workflow_id,
+          workRunId,
+          source: "api",
+          now,
+        });
+      } catch (error) {
+        if (error instanceof SpendBudgetExceeded) {
+          throw new WorkflowApiError("spend_budget_exhausted", error.message, 429, error.retryAfterSeconds);
+        }
+        throw error;
+      }
       await client.query(
         `insert into workflow_run (
            id, org_id, workflow_id, thread_id, work_run_id,

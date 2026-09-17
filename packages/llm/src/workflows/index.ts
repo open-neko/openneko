@@ -93,6 +93,7 @@ export {
   recoverStaleWorkflowScheduleFirings,
   releaseWorkflowFiringDispatch,
   releaseWorkflowScheduleFiringRun,
+  cancelWorkflowScheduleFiring,
   type LeasedWorkflowFiring,
   type MaterializeScheduleResult,
   type ScheduleAdvance,

@@ -13,10 +13,13 @@ import {
   work_run_event,
   work_thread,
   workflow_run,
+  pool,
 } from "@neko/db";
 import { createHash } from "node:crypto";
 import type { AgentBackendId } from "../agent-backend";
 import type { AgentEvent } from "../agent-backend";
+import { admitRunSpend, type SpendSource } from "../spend/admission";
+import { recordUsageSpend } from "../spend/ledger";
 
 export type WorkThreadSummary = {
   id: string;
@@ -298,23 +301,42 @@ export type RunActor = {
   role: "admin" | "member" | "service";
 };
 
+export type RunSpend = {
+  source: SpendSource;
+  workflowId?: string | null;
+};
+
 export async function createWorkRun(
   orgId: string,
   threadId: string,
   backend: AgentBackendId,
   actor?: RunActor,
+  spend: RunSpend = { source: "system" },
 ) {
-  const rows = await db()
-    .insert(work_run)
-    .values({
-      org_id: orgId,
-      thread_id: threadId,
-      backend,
-      status: "queued",
-      actor_user_id: actor?.userId ?? null,
-      actor_role: actor?.role ?? null,
-    })
-    .returning();
+  const client = await pool().connect();
+  let rows: (typeof work_run.$inferSelect)[];
+  try {
+    await client.query("begin");
+    const inserted = await client.query<typeof work_run.$inferSelect>(
+      `insert into work_run (org_id, thread_id, backend, status, actor_user_id, actor_role)
+       values ($1, $2, $3, 'queued', $4, $5)
+       returning *`,
+      [orgId, threadId, backend, actor?.userId ?? null, actor?.role ?? null],
+    );
+    rows = inserted.rows;
+    await admitRunSpend(client, {
+      orgId,
+      workflowId: spend.workflowId ?? null,
+      workRunId: rows[0].id,
+      source: spend.source,
+    });
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
   // SEC10: run lifecycle rides the tamper-evident chain.
   const { recordAuditEvent } = await import("../workflows/audit-chain");
   await recordAuditEvent({
@@ -510,6 +532,15 @@ export async function appendWorkRunEvent(args: {
     })
     .returning({ id: work_run_event.id });
   const eventId = row?.id ?? 0;
+  if (args.event.type === "usage" && args.event.source === "outer" && eventId > 0) {
+    await recordUsageSpend({
+      orgId: args.orgId,
+      workRunId: args.runId,
+      usage: args.event.usage,
+      provider: args.event.provider,
+      model: args.event.model,
+    });
+  }
   if (args.event.type === "tool_start" && eventId > 0) {
     const { recordSkillUsageFromEvent } = await import("./skill-usage");
     await recordSkillUsageFromEvent({

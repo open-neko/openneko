@@ -23,6 +23,7 @@ import {
   persistWorkflowApiTelemetry,
   prepareWorkflowRun,
   releaseWorkflowScheduleFiringRun,
+  cancelWorkflowScheduleFiring,
   runCompiledWorkflowApiBatch,
   runWorkflowTurn,
   updateWorkflowApiRunProgress,
@@ -31,6 +32,7 @@ import {
   type WorkflowApiBatchProgress,
 } from "@neko/llm/workflows";
 import { observeSafely } from "@neko/telemetry";
+import { SpendBudgetExceeded } from "@neko/llm/spend";
 import {
   getCurrentScrubber,
   getPluginRegistryInstance,
@@ -555,6 +557,15 @@ async function runWorkflowRunFireTraced(
       });
       // Once execution has been claimed, never replay a possibly paid model
       // call. The canonical run carries the terminal failure for the caller.
+      return;
+    }
+    if (error instanceof SpendBudgetExceeded && !prepared) {
+      if (scheduleFiringId) {
+        await cancelWorkflowScheduleFiring(scheduleFiringId, error.message);
+      }
+      console.warn(
+        `[workflow-run-fire] workflow=${payload.workflowId} not started: ${error.message}`,
+      );
       return;
     }
     if (scheduleFiringId && !workflowFinished) {

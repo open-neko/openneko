@@ -22,6 +22,7 @@ import {
   getAgentSettingsPayload,
 } from "@/lib/agent-backend-settings";
 import { getGraphjinConfigSettingsPayload } from "@/lib/graphjin-config-settings";
+import { getSpendSettings } from "@neko/llm/spend";
 import SetupWizard from "./SetupWizard";
 
 /**
@@ -68,6 +69,7 @@ export default async function SettingsPage() {
     researchStatus,
     sources,
     graphjinConfig,
+    spend,
   ] = await Promise.all([
     hasDataSourceSetup(orgId),
     hasPrimaryProviderSetup(orgId),
@@ -81,6 +83,7 @@ export default async function SettingsPage() {
       .from(data_source)
       .where(eq(data_source.org_id, orgId)),
     getGraphjinConfigSettingsPayload(orgId),
+    getSpendSettings(orgId),
   ]);
 
   const enabledSources = sources.filter((source) => source.enabled);
@@ -149,6 +152,14 @@ export default async function SettingsPage() {
     href: "/admin/settings/signin",
     title: "Email-link sign-in",
     copy: "Passwordless magic-link sign-in for provisioned users: email delivery, first admins, and gate status.",
+  });
+  const spentToday = spend.org.day.spentUsd + spend.org.day.heldUsd;
+  cards.push({
+    href: "/admin/settings/spend",
+    title: "Spending limits",
+    copy: "Per-run cap and hourly and daily budgets for model spend across chat, channels, workflows and the API.",
+    status: `$${spentToday.toFixed(2)} of $${spend.org.day.limitUsd.toFixed(2)} today`,
+    statusTone: spentToday >= (spend.org.day.limitUsd * spend.limits.warnPercent) / 100 ? "watch" : "success",
   });
   cards.push({
     href: "/admin/settings/security",
