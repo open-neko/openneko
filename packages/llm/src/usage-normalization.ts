@@ -92,6 +92,11 @@ export function combineAgentTokenUsage(
               usage.pricingCatalogVersion ?? total.pricingCatalogVersion,
           }
         : {}),
+      ...(total.costStatus === "unknown" || usage.costStatus === "unknown"
+        ? { costStatus: "unknown" as const }
+        : usage.costStatus ?? total.costStatus
+          ? { costStatus: usage.costStatus ?? total.costStatus }
+          : {}),
       coverage: "unavailable",
     }),
     { coverage: "unavailable" },
