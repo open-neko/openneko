@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.2.0](https://github.com/open-neko/openneko/compare/v3.1.0...v3.2.0) (2026-09-17)
+
+
+### Features
+
+* **spend:** budgets, ledger and admission for all model spend ([810af40](https://github.com/open-neko/openneko/commit/810af400b796c03e033b1b76398a5ba1208ac467))
+* **spend:** budgets, ledger and admission for all model spend ([bd09ace](https://github.com/open-neko/openneko/commit/bd09acede38f9270f8bb5131b4836449d5976adb))
+
 ## [3.1.0](https://github.com/open-neko/openneko/compare/v3.0.1...v3.1.0) (2026-09-17)
 
 
