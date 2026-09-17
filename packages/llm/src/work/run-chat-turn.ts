@@ -75,6 +75,7 @@ import {
   listInstalledSkills as defaultListInstalledSkills,
 } from "./workspace";
 import type { HarnessObserver } from "@neko/telemetry";
+import { spendCapFromSignal } from "../spend/run-guard";
 
 /**
  * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
@@ -536,7 +537,7 @@ async function runChatTurnTraced(
         ? { principalId: actor.userId, authorizationRevision }
         : null
       : await startupPhase("identity.sandbox", () => getSoloSandboxUser(orgId, actor));
-    const result = await runCore({
+    const coreResult = await runCore({
       ...(sandboxUser ? { sandboxUser } : {}),
       ...(allowedSkills && customerSurface ? { allowedSkills } : {}),
       ...(allowedLibrary ? { allowedLibrary } : {}),
@@ -566,6 +567,10 @@ async function runChatTurnTraced(
       emit: wrappedEmit,
       signal,
     });
+    const spendStop = spendCapFromSignal(signal);
+    const result = spendStop
+      ? { ...coreResult, status: "failed" as const, error: spendStop.message }
+      : coreResult;
     const agentStatus = result.status === "completed" ? "ok" : "error";
     await eventTelemetry.finishAgent({
       status: agentStatus,
@@ -854,16 +859,20 @@ async function runChatTurnTraced(
       });
       return await finishNeedsInput();
     }
+    const spendStop = spendCapFromSignal(signal);
     const aborted =
-      signal?.aborted ||
-      (error instanceof Error &&
-        (error.name === "AbortError" || error.message.includes("aborted")));
+      !spendStop &&
+      (signal?.aborted ||
+        (error instanceof Error &&
+          (error.name === "AbortError" || error.message.includes("aborted"))));
     const status: "failed" | "cancelled" = aborted ? "cancelled" : "failed";
-    const errMsg = aborted
-      ? "Cancelled by user."
-      : error instanceof Error
-        ? error.message
-        : "Work run failed unexpectedly.";
+    const errMsg = spendStop
+      ? spendStop.message
+      : aborted
+        ? "Cancelled by user."
+        : error instanceof Error
+          ? error.message
+          : "Work run failed unexpectedly.";
     await eventTelemetry.closeOpen({
       status: "error",
       outcome: status,
@@ -873,7 +882,7 @@ async function runChatTurnTraced(
     await wrappedEmit({ type: "error", message: errMsg });
     await finishWorkRun(runId, status, aborted ? null : errMsg);
     await wrappedEmit({ type: "done", result: { status } });
-    if (!aborted) throw error;
-    return { status, finalText: assistantText };
+    if (!aborted && !spendStop) throw error;
+    return { status, finalText: assistantText, ...(spendStop ? { error: errMsg } : {}) };
   }
 }

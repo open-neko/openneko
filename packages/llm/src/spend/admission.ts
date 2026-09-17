@@ -1,4 +1,5 @@
 import { pool } from "@neko/db";
+import { raiseSpendAlert } from "./alerts";
 import { loadSpendLimits, microsToUsd, type SpendQueryable } from "./limits";
 
 export type SpendSource =
@@ -22,6 +23,7 @@ export class SpendBudgetExceeded extends Error {
     readonly reservationUsd: number,
     readonly retryAfterSeconds: number,
     readonly resetsAt: Date,
+    readonly alert: { orgId: string; workflowId: string | null; windowStart: Date; source: SpendSource; committedMicros: number; limitMicros: number } | null = null,
   ) {
     super(spendBudgetMessage(budget, limitUsd, resetsAt));
     this.name = "SpendBudgetExceeded";
@@ -138,6 +140,14 @@ export async function admitRunSpend(
         microsToUsd(reservation),
         Math.max(1, Math.ceil((check.resetsAt.getTime() - now.getTime()) / 1_000)),
         check.resetsAt,
+        {
+          orgId: input.orgId,
+          workflowId: check.workflowId,
+          windowStart: check.since,
+          source: input.source,
+          committedMicros: committed,
+          limitMicros: check.limit,
+        },
       );
     }
   }
@@ -158,6 +168,7 @@ export async function reserveSpend(input: {
   now?: Date;
 }): Promise<SpendAdmission> {
   const client = await pool().connect();
+  let released = false;
   try {
     await client.query("begin");
     const admission = await admitRunSpend(client, input);
@@ -165,10 +176,32 @@ export async function reserveSpend(input: {
     return admission;
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
+    client.release();
+    released = true;
+    await recordBudgetBlocked(error);
     throw error;
   } finally {
-    client.release();
+    if (!released) client.release();
   }
+}
+
+/** Record a blocked admission. Call it after the admission transaction has ended. */
+export async function recordBudgetBlocked(error: unknown): Promise<void> {
+  if (!(error instanceof SpendBudgetExceeded) || !error.alert) return;
+  const { alert } = error;
+  await raiseSpendAlert({
+    orgId: alert.orgId,
+    kind: "spend.budget_blocked",
+    subject: alert.workflowId ? `workflow:${alert.workflowId}` : "org",
+    observedMicros: alert.committedMicros,
+    thresholdMicros: alert.limitMicros,
+    windowSeconds: error.budget.endsWith("hourly") ? 3_600 : 86_400,
+    windowStart: alert.windowStart,
+    message: `A run was blocked. ${error.message}`,
+    details: { budget: error.budget, source: alert.source },
+  }).catch((cause) => {
+    console.warn(`[spend] could not record blocked alert: ${cause instanceof Error ? cause.message : cause}`);
+  });
 }
 
 export async function releaseSpendReservation(reservationId: string, now = new Date()): Promise<void> {

@@ -15,7 +15,7 @@ import {
   registerAgentBrokerEventSink,
   runChatTurn,
 } from "@neko/llm/work";
-import { SpendBudgetExceeded } from "@neko/llm/spend";
+import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
 import { getCurrentActor } from "@/lib/actor";
 import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
@@ -187,7 +187,8 @@ async function postRun(request: NextRequest, context: RouteContext) {
     runId: run.id,
   });
 
-  const unregisterBrokerEvents = registerAgentBrokerEventSink(run.id, emit);
+  const spendGuard = await createRunSpendGuard({ runId: run.id, emit, signal: abortController.signal });
+  const unregisterBrokerEvents = registerAgentBrokerEventSink(run.id, spendGuard.emit);
 
   void runChatTurn(
     {
@@ -196,8 +197,8 @@ async function postRun(request: NextRequest, context: RouteContext) {
       runId: run.id,
       message,
       channel: "web",
-      emit,
-      signal: abortController.signal,
+      emit: spendGuard.emit,
+      signal: spendGuard.signal,
       pluginActions,
       packActions,
       observer: runTelemetry.observer,
@@ -260,6 +261,7 @@ async function postRun(request: NextRequest, context: RouteContext) {
         `[work-run.telemetry] ${JSON.stringify(runTelemetry.snapshot())}`,
       );
       unregisterBrokerEvents();
+      spendGuard.dispose();
       try {
         await finalize();
       } catch (err) {

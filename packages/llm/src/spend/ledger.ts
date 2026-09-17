@@ -1,7 +1,8 @@
 import { pool } from "@neko/db";
 import type { NormalizedUsage } from "@neko/telemetry";
-import type { SpendSource } from "./admission";
-import { loadSpendLimits, SpendLimitsMissing, usdToMicros, type SpendQueryable } from "./limits";
+import { spendWindows, type SpendSource } from "./admission";
+import { checkSpendWarnings, raiseSpendAlert } from "./alerts";
+import { loadSpendLimits, microsToUsd, SpendLimitsMissing, usdToMicros, type SpendQueryable } from "./limits";
 
 export type SpendPricing = {
   costMicros: number;
@@ -84,5 +85,28 @@ export async function recordUsageSpend(input: {
       input.now ?? new Date(),
     ],
   );
+  try {
+    if (pricing.priced === "fallback") {
+      const now = input.now ?? new Date();
+      const model = `${input.provider ?? "unknown"}/${input.model ?? "unknown"}`;
+      await raiseSpendAlert({
+        orgId: input.orgId,
+        kind: "spend.price_unknown",
+        subject: `model:${model}`,
+        observedMicros: pricing.costMicros,
+        thresholdMicros: pricing.costMicros,
+        windowSeconds: 86_400,
+        windowStart: spendWindows(now).dayStart,
+        message: `OpenNeko has no price for ${model}. Each turn on it is charged the $${microsToUsd(pricing.costMicros).toFixed(2)} per-run cap until a price is added.`,
+      });
+    }
+    await checkSpendWarnings(client, {
+      orgId: input.orgId,
+      workflowId: reservation?.workflow_id ?? input.workflowId ?? null,
+      now: input.now,
+    });
+  } catch (error) {
+    console.warn(`[spend] alert check failed: ${error instanceof Error ? error.message : error}`);
+  }
   return pricing;
 }

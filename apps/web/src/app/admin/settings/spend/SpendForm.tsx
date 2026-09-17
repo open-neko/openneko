@@ -22,7 +22,7 @@ const utcTime = (iso: string) => `${iso.slice(11, 16)} UTC`;
 type DollarKey = Exclude<keyof SpendLimitsUsd, "warnPercent">;
 
 const LIMIT_FIELDS: Array<{ key: DollarKey; label: string; hint: string }> = [
-  { key: "runCapUsd", label: "Per-run cap", hint: "Held for each run while it runs. A turn with no known price is charged this amount." },
+  { key: "runCapUsd", label: "Per-run cap", hint: "Held for each run while it runs. A run stops at its next tool call once it spends more. A turn with no known price is charged this amount." },
   { key: "orgHourlyUsd", label: "Organization hourly budget", hint: "All spend in this organization, per UTC hour." },
   { key: "orgDailyUsd", label: "Organization daily budget", hint: "All spend in this organization, per UTC day." },
   { key: "workflowHourlyUsd", label: "Workflow hourly budget", hint: "Default for each workflow, per UTC hour. A workflow can override it below." },
@@ -59,6 +59,8 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
           title="Spending limits"
           description="Model spend for chat, channels, workflows and the API. A run that would pass a budget does not start."
         />
+
+        <SpendAlerts settings={settings} onSaved={setSettings} />
 
         <section className="grid grid-cols-2 gap-4 max-[720px]:grid-cols-1">
           <UsageCard title="This hour" usage={settings.org.hour} warnPercent={settings.limits.warnPercent} />
@@ -97,7 +99,7 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
             <Field
               label="Warning threshold (%)"
               htmlFor="spend-warnPercent"
-              hint="A budget at or above this share shows as near its limit."
+              hint="Administrators get an alert when a budget reaches this share."
             >
               <Input
                 id="spend-warnPercent"
@@ -124,6 +126,54 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
 
       <CreatorCredit />
     </>
+  );
+}
+
+function SpendAlerts({ settings, onSaved }: { settings: SpendSettings; onSaved: (s: SpendSettings) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (settings.alerts.length === 0) return null;
+
+  async function acknowledge(alertId: string) {
+    setBusy(alertId);
+    setError(null);
+    const result = await adminApi<SpendSettings>(`/api/admin/spend/alerts/${alertId}`, "DELETE");
+    setBusy(null);
+    if (!result.ok) return setError(result.error);
+    onSaved(result.body);
+  }
+
+  return (
+    <section className="settings-card mb-6 flex flex-col gap-3" aria-label="Spend alerts">
+      <h2 className="settings-card-title">Open alerts</h2>
+      <AdminError message={error} />
+      <ul className="flex flex-col gap-3">
+        {settings.alerts.map((alert) => (
+          <li key={alert.id} className="flex items-start justify-between gap-4 max-[720px]:flex-col">
+            <div className="flex flex-col gap-1">
+              <span className={`text-ui-body-sm ${alert.kind === "spend.budget_warning" ? "text-warn-ink" : "text-danger"}`}>
+                {alert.kind === "spend.budget_warning"
+                  ? "Near a budget"
+                  : alert.kind === "spend.budget_blocked"
+                    ? "Run blocked"
+                    : "Unknown price"}
+              </span>
+              <p className="text-ui-body-sm text-text2">{alert.message}</p>
+              <p className="text-ui-caption tabular-nums text-text3">{alert.createdAt.slice(0, 16).replace("T", " ")} UTC</p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy === alert.id}
+              onClick={() => void acknowledge(alert.id)}
+            >
+              Acknowledge
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

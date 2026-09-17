@@ -24,6 +24,7 @@ import {
   persistProcessingJobTelemetry,
 } from "../telemetry.js";
 import { observeSafely } from "@neko/telemetry";
+import { createRunSpendGuard } from "@neko/llm/spend";
 
 export async function runWorkRun(jobId: string, orgId: string, payload: Parameters<typeof runWorkRunTraced>[2]): Promise<void> {
   return withStartupTrace({ runId: payload.runId, threadId: payload.threadId }, () => runWorkRunTraced(jobId, orgId, payload));
@@ -109,7 +110,8 @@ async function runWorkRunTraced(
     const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
 
     const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
-    unregisterBrokerEvents = registerAgentBrokerEventSink(runId, emit);
+    const spendGuard = await createRunSpendGuard({ runId, emit });
+    unregisterBrokerEvents = registerAgentBrokerEventSink(runId, spendGuard.emit);
     result = await runChatTurn(
       {
         orgId,
@@ -117,7 +119,8 @@ async function runWorkRunTraced(
         runId,
         message,
         channel,
-        emit,
+        emit: spendGuard.emit,
+        signal: spendGuard.signal,
         pluginActions,
         packActions,
         observer: runTelemetry.observer,

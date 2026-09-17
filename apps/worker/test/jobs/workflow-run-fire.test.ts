@@ -23,6 +23,15 @@ vi.mock("@neko/llm", () => ({
   registerAgentCanceller: vi.fn(() => () => undefined),
 }));
 
+vi.mock("@neko/llm/spend", () => ({
+  SpendBudgetExceeded: class SpendBudgetExceeded extends Error {},
+  createRunSpendGuard: async (input: { emit: unknown; signal?: AbortSignal }) => ({
+    emit: input.emit,
+    signal: input.signal ?? new AbortController().signal,
+    exceeded: () => null,
+    dispose: () => {},
+  }),
+}));
 vi.mock("@neko/llm/work", () => ({
   appendWorkRunEvent: vi.fn(async () => undefined),
   ensureAgentBroker: vi.fn(async () => ({})),
