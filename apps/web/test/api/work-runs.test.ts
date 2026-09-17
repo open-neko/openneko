@@ -157,6 +157,31 @@ describeIfDb("/api/work/threads/[threadId]/runs POST", () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
+  it("returns 429 and creates no run when the organization spending limit is full", async () => {
+    await pool().query(
+      "update spend_limit set org_hourly_micros = 1000000 where org_id = $1 and workflow_id is null",
+      [orgId],
+    );
+    const res = await callRunsPost(POST, {
+      threadId,
+      body: { message: "What's the revenue?" },
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.body).toMatchObject({
+      code: "spend_budget_exhausted",
+      budget: "org_hourly",
+      limitUsd: 1,
+      reservationUsd: 5,
+    });
+    expect((res.body as { error: string }).error).toMatch(/hourly spending limit of \$1\.00 for this organization/);
+    const runs = await db()
+      .select({ id: work_run.id })
+      .from(work_run)
+      .where(eq(work_run.org_id, orgId));
+    expect(runs).toHaveLength(0);
+  });
+
   it("rejects empty message with 400", async () => {
     const res = await callRunsPost(POST, { threadId, body: { message: "" } });
     expect(res.status).toBe(400);

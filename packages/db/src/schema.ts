@@ -3018,3 +3018,88 @@ export const skill_learn_event = pgTable(
     ),
   }),
 );
+
+export const spend_limit = pgTable(
+  "spend_limit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflow_id: uuid("workflow_id").references(() => workflow_definition.id, {
+      onDelete: "cascade",
+    }),
+    run_cap_micros: bigint("run_cap_micros", { mode: "number" }),
+    org_hourly_micros: bigint("org_hourly_micros", { mode: "number" }),
+    org_daily_micros: bigint("org_daily_micros", { mode: "number" }),
+    workflow_hourly_micros: bigint("workflow_hourly_micros", { mode: "number" }),
+    workflow_daily_micros: bigint("workflow_daily_micros", { mode: "number" }),
+    warn_percent: integer("warn_percent"),
+    updated_by_user_id: text("updated_by_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_unique: uniqueIndex("spend_limit_org_unique")
+      .on(t.org_id)
+      .where(sql`workflow_id is null`),
+    workflow_unique: uniqueIndex("spend_limit_workflow_unique")
+      .on(t.org_id, t.workflow_id)
+      .where(sql`workflow_id is not null`),
+  }),
+);
+
+export const spend_reservation = pgTable(
+  "spend_reservation",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    work_run_id: uuid("work_run_id")
+      .unique()
+      .references(() => work_run.id, { onDelete: "cascade" }),
+    workflow_id: uuid("workflow_id").references(() => workflow_definition.id, {
+      onDelete: "set null",
+    }),
+    source: text("source").notNull(),
+    reserved_micros: bigint("reserved_micros", { mode: "number" }).notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    released_at: ts("released_at"),
+  },
+  (t) => ({
+    open_idx: index("spend_reservation_open_idx")
+      .on(t.org_id)
+      .where(sql`released_at is null`),
+  }),
+);
+
+export const spend_ledger = pgTable(
+  "spend_ledger",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    reservation_id: uuid("reservation_id").references(() => spend_reservation.id, {
+      onDelete: "set null",
+    }),
+    work_run_id: uuid("work_run_id").references(() => work_run.id, { onDelete: "set null" }),
+    workflow_id: uuid("workflow_id").references(() => workflow_definition.id, {
+      onDelete: "set null",
+    }),
+    source: text("source").notNull(),
+    provider: text("provider"),
+    model: text("model"),
+    cost_micros: bigint("cost_micros", { mode: "number" }).notNull(),
+    tokens: bigint("tokens", { mode: "number" }),
+    priced: text("priced").notNull(),
+    cost_source: text("cost_source"),
+    pricing_version: text("pricing_version"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_created_idx: index("spend_ledger_org_created_idx").on(t.org_id, t.created_at),
+  }),
+);

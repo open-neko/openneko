@@ -7,6 +7,7 @@ import { and, db, delivery_binding, eq, processing_job } from "@neko/db";
 import { audienceReceivesOutput } from "./audience.js";
 import { enqueue, QUEUE, type ChannelDeliverPayload } from "@neko/db/jobs";
 import { resolveAgentBackend } from "@neko/llm";
+import { SpendBudgetExceeded } from "@neko/llm/spend";
 import { outputRowToInteractionEvent, type OutputRow } from "@neko/llm/interaction";
 import type { InteractionEvent, SurfaceMessage } from "@neko/interaction";
 import {
@@ -408,7 +409,14 @@ async function startChatRun(
   const backend = await resolveAgentBackend(orgId);
   // K1: the CH3-resolved actor is the run's acting principal — a linked
   // sender gets their personal layer and role, unlinked stays anonymous.
-  const run = await createWorkRun(orgId, thread.id, backend.id, actor);
+  let run: Awaited<ReturnType<typeof createWorkRun>>;
+  try {
+    run = await createWorkRun(orgId, thread.id, backend.id, actor, { source: "channel" });
+  } catch (error) {
+    if (!(error instanceof SpendBudgetExceeded) || !recipient) throw error;
+    await deliverChatReply(orgId, channelPlugin, recipient, `spend-${thread.id}-${Date.now()}`, error.message);
+    return;
+  }
   // Record the user turn so reused threads build real conversation history.
   await createWorkMessage({
     orgId,

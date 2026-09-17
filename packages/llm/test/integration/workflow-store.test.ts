@@ -156,6 +156,38 @@ describeIfDb("workflow store", () => {
     });
   });
 
+  it("rejects API admission with spend_budget_exhausted when a spend budget is full", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId,
+        name: "API spend budget",
+        steps: [{ id: "inspect", description: "Inspect the supplied record" }],
+      });
+      const { token } = await enableWorkflowApiAccess({
+        orgId,
+        workflowId: workflow.id,
+        actor: { userId: null, role: "admin" },
+      });
+      await pool().query(
+        "update spend_limit set workflow_daily_micros = 4000000 where org_id = $1 and workflow_id is null",
+        [orgId],
+      );
+
+      const rejected = await admitWorkflowApiRun({
+        workflowId: workflow.id,
+        token,
+        idempotencyKey: "spend-budget-admission-v1",
+        mode: "single",
+        value: { orderId: "1042" },
+        clientFingerprint: `integration-${orgId}`,
+      }).catch((error) => error);
+
+      expect(rejected).toMatchObject({ code: "spend_budget_exhausted", status: 429 });
+      const runs = await pool().query("select count(*)::int as n from work_run where org_id = $1", [orgId]);
+      expect(runs.rows[0].n).toBe(0);
+    });
+  });
+
   it("listCronWorkflows surfaces only enabled + cron-enabled rows with a cron expression", async () => {
     await withTestOrg(async (orgId) => {
       await saveWorkflow({

@@ -15,6 +15,7 @@ import {
   registerAgentBrokerEventSink,
   runChatTurn,
 } from "@neko/llm/work";
+import { SpendBudgetExceeded } from "@neko/llm/spend";
 import { getCurrentActor } from "@/lib/actor";
 import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
@@ -123,7 +124,26 @@ async function postRun(request: NextRequest, context: RouteContext) {
   // events over the existing SSE.
   const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
 
-  const run = await startupPhase("run.create", () => createWorkRun(orgId, threadId, backend.id, actor));
+  let run: Awaited<ReturnType<typeof createWorkRun>>;
+  try {
+    run = await startupPhase("run.create", () => createWorkRun(orgId, threadId, backend.id, actor, { source: "chat" }));
+  } catch (error) {
+    if (error instanceof SpendBudgetExceeded) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code,
+          budget: error.budget,
+          limitUsd: error.limitUsd,
+          committedUsd: error.committedUsd,
+          reservationUsd: error.reservationUsd,
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+        { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
+      );
+    }
+    throw error;
+  }
   const runTelemetry = createWebHarnessObserver(run.id);
   const telemetryOperationId = `work:${run.id}`;
   await observeSafely(runTelemetry.observer, {
