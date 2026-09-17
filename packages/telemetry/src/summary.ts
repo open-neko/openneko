@@ -190,6 +190,11 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
         ...(measurements.pricingCatalogVersion
           ? { pricingCatalogVersion: measurements.pricingCatalogVersion }
           : {}),
+        ...(current.costStatus === "unknown" || measurements.costStatus === "unknown"
+          ? { costStatus: "unknown" as const }
+          : measurements.costStatus ?? current.costStatus
+            ? { costStatus: measurements.costStatus ?? current.costStatus }
+            : {}),
         coverage: this.sawUsageValue
           ? this.sawUsageGap
             ? "partial"

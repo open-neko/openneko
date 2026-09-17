@@ -230,6 +230,55 @@ describe("HermesBackend ACP behavior", () => {
     });
   });
 
+  it("carries the Hermes per-turn cost from the prompt response meta", async () => {
+    const sessionId = "sess-cost";
+    controller.setScript({
+      responders: {
+        "session/new": () => ({ sessionId }),
+        "session/prompt": (_p, ctx) => {
+          ctx.emitNotification(chunkNotification(sessionId, "answer"));
+          return {
+            stopReason: "end_turn",
+            usage: { inputTokens: 2_000_000, outputTokens: 100_000, totalTokens: 2_100_000 },
+            _meta: {
+              openneko: {
+                usage: {
+                  api_calls: 7,
+                  cost_usd: 1.875,
+                  cost_status: "estimated",
+                  cost_source: "official_docs_snapshot",
+                  pricing_version: "google-pricing-2026-09-17",
+                  unknown_cost_calls: 0,
+                  provider: "gemini",
+                  model: "gemini-3.7-flash",
+                },
+              },
+            },
+          };
+        },
+      },
+    });
+    const events: AgentEvent[] = [];
+    await new HermesBackend().run({
+      prompt: "p",
+      workspace: FAKE_WORKSPACE,
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(events.find((event) => event.type === "usage")).toMatchObject({
+      usage: {
+        inputTokens: 2_000_000,
+        outputTokens: 100_000,
+        estimatedCostUsd: 1.875,
+        currency: "USD",
+        costStatus: "estimated",
+        costSource: "official_docs_snapshot",
+        pricingCatalogVersion: "google-pricing-2026-09-17",
+        coverage: "complete",
+      },
+    });
+  });
+
   it("parses Hermes model choices without truncating qualified model ids", () => {
     expect(
       parseHermesSessionIdentity({

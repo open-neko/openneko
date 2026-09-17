@@ -173,7 +173,9 @@ COPY scripts/patches/hermes-acp-interim-messages.patch /tmp/hermes-acp-interim-m
 COPY scripts/patches/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-anthropic-reasoning.patch
 COPY scripts/patches/hermes-acp-native-delegation-policy.patch /tmp/hermes-acp-native-delegation-policy.patch
 COPY scripts/patches/hermes-acp-tool-usage.patch /tmp/hermes-acp-tool-usage.patch
+COPY scripts/patches/hermes-acp-cost.patch /tmp/hermes-acp-cost.patch
 COPY scripts/test-hermes-acp-tool-usage.py /tmp/test-hermes-acp-tool-usage.py
+COPY scripts/test-hermes-acp-cost.py /tmp/test-hermes-acp-cost.py
 RUN --mount=type=cache,id=hermes-uv,target=/tmp/uv-cache \
     curl -LsSf --retry 5 --retry-delay 5 --retry-all-errors https://astral.sh/uv/install.sh \
       | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh \
@@ -188,7 +190,8 @@ RUN --mount=type=cache,id=hermes-uv,target=/tmp/uv-cache \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-anthropic-reasoning.patch \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-native-delegation-policy.patch \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-tool-usage.patch \
-    && rm /tmp/hermes-acp-tool-usage.patch /tmp/hermes-acp-reasoning-config.patch /tmp/hermes-acp-interim-messages.patch /tmp/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-native-delegation-policy.patch \
+    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-cost.patch \
+    && rm /tmp/hermes-acp-cost.patch /tmp/hermes-acp-tool-usage.patch /tmp/hermes-acp-reasoning-config.patch /tmp/hermes-acp-interim-messages.patch /tmp/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-native-delegation-policy.patch \
     && cd /usr/local/lib/hermes-agent \
     && UV_PROJECT_ENVIRONMENT=/usr/local/uv/tools/hermes-agent \
        UV_CACHE_DIR=/tmp/uv-cache \
@@ -206,7 +209,8 @@ RUN --mount=type=cache,id=hermes-uv,target=/tmp/uv-cache \
     && /usr/local/uv/tools/hermes-agent/bin/python -c "from agent import chat_completion_helpers; from pathlib import Path; source = Path(chat_completion_helpers.__file__).read_text(); assert '_emit_unstreamed_anthropic_reasoning' in source and 'reasoning_was_streamed' in source, 'Hermes ACP Anthropic reasoning fallback missing'" \
     && /usr/local/uv/tools/hermes-agent/bin/python -c "from acp_adapter.session import _openneko_disabled_toolsets; import os; os.environ['OPENNEKO_HERMES_NATIVE_DELEGATION']='disabled'; assert _openneko_disabled_toolsets() == ['delegation'], 'Hermes ACP native delegation policy missing'" \
     && /usr/local/uv/tools/hermes-agent/bin/python /tmp/test-hermes-acp-tool-usage.py \
-    && rm /tmp/test-hermes-acp-tool-usage.py \
+    && /usr/local/uv/tools/hermes-agent/bin/python /tmp/test-hermes-acp-cost.py \
+    && rm /tmp/test-hermes-acp-tool-usage.py /tmp/test-hermes-acp-cost.py \
     && rm -rf \
       /usr/local/lib/hermes-agent/.git \
       /usr/local/lib/hermes-agent/.github \

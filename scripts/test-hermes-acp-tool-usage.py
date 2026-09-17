@@ -16,6 +16,7 @@ fields = ("input", "output")
 usage_getter = eval(compile(ast.Expression(getter), "server usage_getter", "eval"), {
     "state": SimpleNamespace(agent=agent), "usage_calls_start": 2,
     "usage_fields": fields, "usage_start": {"input": 500, "output": 50},
+    "cost_usage": lambda: {},
 })
 assert usage_getter() is None  # no measured response is not zero-token usage
 agent.session_api_calls += 1

@@ -90,7 +90,7 @@ if ! $SKIP_HERMES && ! hermes_matches_version; then
 
   hermes_tools_dir="$(uv tool dir)"
   hermes_tool_root="$hermes_tools_dir/hermes-agent"
-  hermes_source_root="$hermes_tools_dir/hermes-agent-openneko-${HERMES_AGENT_VERSION}-${HERMES_AGENT_REF:0:12}-patchset2"
+  hermes_source_root="$hermes_tools_dir/hermes-agent-openneko-${HERMES_AGENT_VERSION}-${HERMES_AGENT_REF:0:12}-patchset3"
   hermes_bin_dir="$(uv tool dir --bin)"
   case "$hermes_tools_dir" in
     ""|"/") echo "refusing unsafe uv tool directory: $hermes_tools_dir" >&2; exit 1 ;;
@@ -125,6 +125,14 @@ if ! $SKIP_HERMES && ! hermes_matches_version; then
   if ! grep -q 'OPENNEKO_HERMES_NATIVE_DELEGATION' "$hermes_source_root/acp_adapter/session.py"; then
     patch --batch --forward --fuzz=0 -d "$hermes_source_root" -p1 \
       < "$REPO_ROOT/scripts/patches/hermes-acp-native-delegation-policy.patch"
+  fi
+  if ! grep -q 'usage_getter' "$hermes_source_root/acp_adapter/events.py"; then
+    patch --batch --forward --fuzz=0 -d "$hermes_source_root" -p1 \
+      < "$REPO_ROOT/scripts/patches/hermes-acp-tool-usage.patch"
+  fi
+  if ! grep -q '_DATED_OFFICIAL_DOCS_PRICING' "$hermes_source_root/agent/usage_pricing.py"; then
+    patch --batch --forward --fuzz=0 -d "$hermes_source_root" -p1 \
+      < "$REPO_ROOT/scripts/patches/hermes-acp-cost.patch"
   fi
   uv venv --clear "$hermes_tool_root" --python 3.11
   UV_PROJECT_ENVIRONMENT="$hermes_tool_root" \
@@ -167,6 +175,14 @@ if ! $SKIP_HERMES; then
     patch --batch --forward --fuzz=0 -d "$hermes_site" -p1 \
       < "$REPO_ROOT/scripts/patches/hermes-acp-native-delegation-policy.patch"
   fi
+  if ! grep -q 'usage_getter' "$hermes_events"; then
+    patch --batch --forward --fuzz=0 -d "$hermes_site" -p1 \
+      < "$REPO_ROOT/scripts/patches/hermes-acp-tool-usage.patch"
+  fi
+  if ! grep -q '_DATED_OFFICIAL_DOCS_PRICING' "$hermes_site/agent/usage_pricing.py"; then
+    patch --batch --forward --fuzz=0 -d "$hermes_site" -p1 \
+      < "$REPO_ROOT/scripts/patches/hermes-acp-cost.patch"
+  fi
   "$hermes_python" -c \
     "import hermes_cli; assert hermes_cli.__version__ == '${HERMES_AGENT_VERSION}'"
   "$hermes_python" -c \
@@ -185,6 +201,8 @@ if ! $SKIP_HERMES; then
     "from agent import chat_completion_helpers; from pathlib import Path; source = Path(chat_completion_helpers.__file__).read_text(); assert '_emit_unstreamed_anthropic_reasoning' in source and 'reasoning_was_streamed' in source, 'Hermes ACP Anthropic reasoning fallback missing'"
   "$hermes_python" -c \
     "from acp_adapter.session import _openneko_disabled_toolsets; import os; os.environ['OPENNEKO_HERMES_NATIVE_DELEGATION']='disabled'; assert _openneko_disabled_toolsets() == ['delegation'], 'Hermes ACP native delegation policy missing'"
+  "$hermes_python" "$REPO_ROOT/scripts/test-hermes-acp-tool-usage.py"
+  "$hermes_python" "$REPO_ROOT/scripts/test-hermes-acp-cost.py"
 fi
 
 log "done. installed:"

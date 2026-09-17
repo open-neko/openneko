@@ -785,12 +785,15 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       const promptResponse = await client.request<{
         usage?: unknown;
         stopReason?: string;
+        _meta?: { openneko?: { usage?: unknown } };
+        fieldMeta?: { openneko?: { usage?: unknown } };
       }>("session/prompt", {
         sessionId,
         prompt: [{ type: "text", text: prompt }],
       });
       promptStopReason = promptResponse.stopReason;
-      promptUsage = normalizeHermesUsage(promptResponse.usage);
+      const promptMeta = promptResponse.fieldMeta ?? promptResponse._meta;
+      promptUsage = normalizeHermesUsage(promptResponse.usage, promptMeta?.openneko?.usage);
       flushProviderSummary();
     } catch (e) {
       if (e instanceof AcpProtocolError) {
@@ -950,9 +953,22 @@ export function parseHermesSessionIdentity(
   return { provider, model };
 }
 
-export function normalizeHermesUsage(value: unknown): AgentTokenUsage | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const usage = value as Record<string, unknown>;
+const HERMES_COST_STATUSES = new Set(["actual", "estimated", "included", "unknown"]);
+
+function plainRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+export function normalizeHermesUsage(
+  value: unknown,
+  costMeta?: unknown,
+): AgentTokenUsage | undefined {
+  const tokens = plainRecord(value);
+  const cost = plainRecord(costMeta);
+  if (!tokens && !cost) return undefined;
+  const usage = { ...cost, ...tokens };
   const number = (...keys: string[]): number | undefined => {
     for (const key of keys) {
       const parsed = Number(usage[key]);
@@ -986,16 +1002,38 @@ export function normalizeHermesUsage(value: unknown): AgentTokenUsage | undefine
     "thought_tokens",
   );
   const reportedTotal = number("totalTokens", "total_tokens");
-  const billedCostUsd = number("costUsd", "cost_usd", "billedCostUsd", "billed_cost_usd");
+  const rawStatus = usage.cost_status ?? usage.costStatus;
+  const costStatus =
+    typeof rawStatus === "string" && HERMES_COST_STATUSES.has(rawStatus)
+      ? (rawStatus as NonNullable<AgentTokenUsage["costStatus"]>)
+      : undefined;
+  const rawSource = usage.cost_source ?? usage.costSource;
+  const costSource = typeof rawSource === "string" && rawSource ? rawSource : undefined;
+  const rawVersion = usage.pricing_version ?? usage.pricingVersion;
+  const pricingVersion = typeof rawVersion === "string" && rawVersion ? rawVersion : undefined;
+  const reportedCost = number("costUsd", "cost_usd", "billedCostUsd", "billed_cost_usd");
+  const unknownCostCalls = number("unknown_cost_calls", "unknownCostCalls");
+  // Only provider-reported cost is billed; an unpriced call never counts as zero.
+  const billedCostUsd =
+    costStatus === undefined || costStatus === "actual" ? reportedCost : undefined;
+  const estimatedCostUsd =
+    costStatus === "estimated" || costStatus === "included" ? reportedCost : undefined;
   if (
     inputTokens === undefined &&
     outputTokens === undefined &&
     reportedTotal === undefined &&
-    billedCostUsd === undefined
+    reportedCost === undefined &&
+    costStatus === undefined
   ) {
     return undefined;
   }
   const complete = inputTokens !== undefined && outputTokens !== undefined;
+  const missingReasons = [
+    ...(!complete ? ["Hermes ACP usage omitted input or output token counts"] : []),
+    ...(costStatus === "unknown"
+      ? [`Hermes could not price ${unknownCostCalls ?? "some"} model call(s)`]
+      : []),
+  ];
   return {
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
@@ -1008,10 +1046,12 @@ export function normalizeHermesUsage(value: unknown): AgentTokenUsage | undefine
         ? { totalTokens: inputTokens + outputTokens }
         : {}),
     ...(billedCostUsd !== undefined ? { billedCostUsd, currency: "USD" } : {}),
+    ...(estimatedCostUsd !== undefined ? { estimatedCostUsd, currency: "USD" } : {}),
+    ...(costStatus ? { costStatus } : {}),
+    ...(costSource ? { costSource } : {}),
+    ...(pricingVersion ? { pricingCatalogVersion: pricingVersion } : {}),
     coverage: complete ? "complete" : "partial",
-    ...(!complete
-      ? { missingReasons: ["Hermes ACP usage omitted input or output token counts"] }
-      : {}),
+    ...(missingReasons.length > 0 ? { missingReasons } : {}),
   };
 }
 

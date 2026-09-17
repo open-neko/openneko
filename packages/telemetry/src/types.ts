@@ -38,6 +38,8 @@ export type NormalizedUsage = {
   billedCostUsd?: number;
   currency?: string;
   pricingCatalogVersion?: string;
+  costStatus?: "actual" | "estimated" | "included" | "unknown";
+  costSource?: string;
   coverage: "complete" | "partial" | "unavailable";
   missingReasons?: readonly string[];
 };

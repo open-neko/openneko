@@ -308,6 +308,8 @@ function measurementAttributes(
   assignNumber(attrs, "openneko.rows", measurements.rows);
   assignNumber(attrs, "openneko.attempts", measurements.attempts);
   if (measurements.currency) attrs["openneko.usage.currency"] = measurements.currency;
+  if (measurements.costStatus) attrs["openneko.usage.cost_status"] = measurements.costStatus;
+  if (measurements.costSource) attrs["openneko.usage.cost_source"] = measurements.costSource;
   if (measurements.pricingCatalogVersion) {
     attrs["openneko.usage.pricing_catalog.version"] =
       measurements.pricingCatalogVersion;
