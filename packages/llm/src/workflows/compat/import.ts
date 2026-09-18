@@ -1,5 +1,5 @@
 import { pool } from "@neko/db";
-import { enableWorkflowApiAccess, getWorkflowApiAccess } from "../api-access";
+import { enableWorkflowApiAccess, getWorkflowApiAccess, updateWorkflowApiLimits } from "../api-access";
 import { recordAuditEvent } from "../audit-chain";
 import { sha256Hex } from "./contract";
 
@@ -107,34 +107,12 @@ export async function importCompatWebhook(input: {
       actor: { userId: input.actorUserId, role: "admin" },
     });
   }
-  // updateWorkflowApiLimits() re-inserts the row without its token columns, and
-  // Postgres checks workflow_api_access_token_state before the conflict update,
-  // so an enabled row cannot be patched through it. Update the columns directly.
-  await pool().query(
-    `update workflow_api_access
-        set request_limit_per_minute = $2, poll_limit_per_minute = $3, queue_cap = $4,
-            concurrency_cap = $5, max_request_bytes = $6, max_runtime_seconds = $7,
-            max_model_calls = $8, max_tool_calls = $9, max_tokens_per_run = $10,
-            max_cost_micros_per_run = $11, max_artifact_bytes = $12, retention_hours = $13,
-            updated_at = now()
-      where org_id = $1 and workflow_id = $14::uuid`,
-    [
-      input.orgId,
-      COMPAT_LIMITS.requestLimitPerMinute,
-      COMPAT_LIMITS.pollLimitPerMinute,
-      COMPAT_LIMITS.queueCap,
-      COMPAT_LIMITS.concurrencyCap,
-      COMPAT_LIMITS.maxRequestBytes,
-      COMPAT_LIMITS.maxRuntimeSeconds,
-      COMPAT_LIMITS.maxModelCalls,
-      COMPAT_LIMITS.maxToolCalls,
-      COMPAT_LIMITS.maxTokensPerRun,
-      COMPAT_LIMITS.maxCostMicrosPerRun,
-      COMPAT_LIMITS.maxArtifactBytes,
-      COMPAT_LIMITS.retentionHours,
-      input.workflowId,
-    ],
-  );
+  await updateWorkflowApiLimits({
+    orgId: input.orgId,
+    workflowId: input.workflowId,
+    actor: { userId: input.actorUserId, role: "admin" },
+    limits: COMPAT_LIMITS,
+  });
 
   await pool().query(
     `insert into compat_webhook (

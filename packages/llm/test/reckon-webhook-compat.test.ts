@@ -222,6 +222,11 @@ describeIfDb("reckon webhook admission", () => {
     await withWebhook(async ({ reckonId }) => {
       const webhook = (await getCompatWebhook(reckonId))!;
       const now = new Date("2026-09-18T07:30:10Z");
+      // The bucket rows outlive the test org, so start this window clean.
+      await pool().query("delete from workflow_api_rate_bucket where scope_id in ($1, $2)", [
+        "reckon:global",
+        `reckon:${reckonId}`,
+      ]);
       for (let i = 0; i < 10; i += 1) {
         await consumeReckonStartRate(webhook, now);
       }
