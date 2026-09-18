@@ -619,8 +619,6 @@ async function runChatTurnTraced(
       }
     }
 
-    await finishWorkRun(runId, result.status, result.error ?? null);
-
     // Hermes /work emits plugin action calls as `neko_action_request`
     // fences (no MCP tool registry to use). Parse them out and route
     // each through the same policy + DB + emit path the MCP tools
@@ -840,6 +838,8 @@ async function runChatTurnTraced(
       type: "done",
       result: { status: result.status, minutesSaved: analysisMinutes ?? 0 },
     });
+
+    await finishWorkRun(runId, result.status, result.error ?? null);
 
     return {
       status: result.status,

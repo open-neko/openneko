@@ -161,6 +161,7 @@ async function getEvents(request: NextRequest, context: RouteContext) {
             for (const { id, event } of tail) {
               sendIfNew(event, id);
             }
+            safeEnqueue(frame({ type: "done", result: { status: current.status } }));
             break;
           }
 
