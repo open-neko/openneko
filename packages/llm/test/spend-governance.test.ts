@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { pool } from "@neko/db";
 import {
+  acknowledgeSpendAlert,
   admitRunSpend,
+  createRunSpendGuard,
+  listOpenSpendAlerts,
+  SpendCapExceeded,
+  spendCapFromSignal,
   committedSpendMicros,
   priceUsage,
   recordUsageSpend,
@@ -343,6 +348,96 @@ describeIfDb("spend settings", () => {
       await expect(
         saveWorkflowSpendOverride(orgId, null, "00000000-0000-0000-0000-000000000000", { hourlyUsd: 1, dailyUsd: 2 }),
       ).rejects.toThrow("Workflow not found.");
+    });
+  });
+});
+
+describeIfDb("run spend guard", () => {
+  it("stops at a tool call once the running turn passes the cap", async () => {
+    await withOrg(async (orgId) => {
+      const r = await run(orgId);
+      const events: Array<{ type: string; message?: string }> = [];
+      const guard = await createRunSpendGuard({ runId: r.id, emit: async (event) => void events.push(event as { type: string }) });
+      await guard.emit({ type: "tool_start", id: "a", name: "execute", input: {}, usageSnapshot: usage({ estimatedCostUsd: 4.9, costStatus: "estimated" }) });
+      expect(guard.signal.aborted).toBe(false);
+      await guard.emit({ type: "tool_start", id: "b", name: "execute", input: {}, usageSnapshot: usage({ estimatedCostUsd: 5.2, costStatus: "estimated" }) });
+      expect(guard.signal.aborted).toBe(true);
+      expect(spendCapFromSignal(guard.signal)).toBeInstanceOf(SpendCapExceeded);
+      expect(events.map((e) => e.type)).toEqual(["tool_start", "tool_start", "error"]);
+      const row = await pool().query("select status, error from work_run where id = $1", [r.id]);
+      expect(row.rows[0]).toEqual({ status: "failed", error: "The run exceeded its $5.00 spend cap ($5.20 spent)." });
+    });
+  });
+
+  it("adds completed turns and ignores a snapshot without a price", async () => {
+    await withOrg(async (orgId) => {
+      const r = await run(orgId);
+      const guard = await createRunSpendGuard({ runId: r.id, emit: async () => {} });
+      await guard.emit({ type: "usage", source: "outer", usage: usage({ estimatedCostUsd: 3, costStatus: "estimated" }) });
+      await guard.emit({ type: "tool_start", id: "a", name: "execute", input: {}, usageSnapshot: usage({}) });
+      expect(guard.signal.aborted).toBe(false);
+      await guard.emit({ type: "tool_start", id: "b", name: "execute", input: {}, usageSnapshot: usage({ estimatedCostUsd: 2.5, costStatus: "estimated" }) });
+      expect(guard.exceeded()?.message).toBe("The run exceeded its $5.00 spend cap ($5.50 spent).");
+    });
+  });
+
+  it("forwards a parent cancel without marking a spend stop", async () => {
+    await withOrg(async (orgId) => {
+      const r = await run(orgId);
+      const parent = new AbortController();
+      const guard = await createRunSpendGuard({ runId: r.id, emit: async () => {}, signal: parent.signal });
+      parent.abort();
+      expect(guard.signal.aborted).toBe(true);
+      expect(spendCapFromSignal(guard.signal)).toBeNull();
+      guard.dispose();
+    });
+  });
+});
+
+describeIfDb("spend alerts", () => {
+  const alerts = (orgId: string) =>
+    pool().query<{ kind: string; subject: string; message: string }>(
+      "select kind, subject, details->>'message' as message from behavior_alert where org_id = $1 order by kind, subject",
+      [orgId],
+    );
+
+  it("warns once per window when spend reaches the warning share", async () => {
+    await withOrg(async (orgId) => {
+      await setOrgLimits(orgId, { org_hourly_micros: 20, org_daily_micros: 500 });
+      const r = await run(orgId);
+      const event = { type: "usage" as const, source: "outer" as const, usage: usage({ estimatedCostUsd: 12, costStatus: "estimated" }) };
+      await appendWorkRunEvent({ orgId, threadId: r.thread_id, runId: r.id, event });
+      await appendWorkRunEvent({ orgId, threadId: r.thread_id, runId: r.id, event });
+      const { rows } = await alerts(orgId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ kind: "spend.budget_warning", subject: "org" });
+      expect(rows[0]!.message).toMatch(/^Spend is at 120% of the \$20\.00 hourly budget for this organization \(\$24\.00 so far\)\./);
+      expect((await listOpenSpendAlerts(orgId)).map((a) => a.kind)).toEqual(["spend.budget_warning"]);
+    });
+  });
+
+  it("records a blocked run and an unknown price, and lets an admin acknowledge an alert", async () => {
+    await withOrg(async (orgId) => {
+      await setOrgLimits(orgId, { org_hourly_micros: 6 });
+      const r = await run(orgId);
+      await expect(run(orgId)).rejects.toBeInstanceOf(SpendBudgetExceeded);
+      await expect(run(orgId)).rejects.toBeInstanceOf(SpendBudgetExceeded);
+      await appendWorkRunEvent({
+        orgId,
+        threadId: r.thread_id,
+        runId: r.id,
+        event: { type: "usage", source: "outer", provider: "gemini", model: "gemini-9-flash", usage: usage({ costStatus: "unknown" }) },
+      });
+      const { rows } = await alerts(orgId);
+      expect(rows.map((row) => [row.kind, row.subject])).toEqual([
+        ["spend.budget_blocked", "org"],
+        ["spend.budget_warning", "org"],
+        ["spend.price_unknown", "model:gemini/gemini-9-flash"],
+      ]);
+      const open = await listOpenSpendAlerts(orgId);
+      expect(await acknowledgeSpendAlert(orgId, open[0]!.id, null)).toBe(true);
+      expect(await acknowledgeSpendAlert(orgId, open[0]!.id, null)).toBe(false);
+      expect(await listOpenSpendAlerts(orgId)).toHaveLength(2);
     });
   });
 });

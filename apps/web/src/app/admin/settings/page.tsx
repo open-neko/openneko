@@ -158,8 +158,14 @@ export default async function SettingsPage() {
     href: "/admin/settings/spend",
     title: "Spending limits",
     copy: "Per-run cap and hourly and daily budgets for model spend across chat, channels, workflows and the API.",
-    status: `$${spentToday.toFixed(2)} of $${spend.org.day.limitUsd.toFixed(2)} today`,
-    statusTone: spentToday >= (spend.org.day.limitUsd * spend.limits.warnPercent) / 100 ? "watch" : "success",
+    status:
+      spend.alerts.length > 0
+        ? `${spend.alerts.length} open ${spend.alerts.length === 1 ? "alert" : "alerts"}`
+        : `$${spentToday.toFixed(2)} of $${spend.org.day.limitUsd.toFixed(2)} today`,
+    statusTone:
+      spend.alerts.length > 0 || spentToday >= (spend.org.day.limitUsd * spend.limits.warnPercent) / 100
+        ? "watch"
+        : "success",
   });
   cards.push({
     href: "/admin/settings/security",

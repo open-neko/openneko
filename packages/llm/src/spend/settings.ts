@@ -1,6 +1,7 @@
 import { pool } from "@neko/db";
 import { recordAuditEvent } from "../workflows/audit-chain";
 import { spendBreakdownMicros, spendWindows } from "./admission";
+import { listOpenSpendAlerts, type SpendAlert } from "./alerts";
 import { loadSpendLimits, microsToUsd, spendCeilingsMicros, usdToMicros } from "./limits";
 
 export type SpendLimitsUsd = {
@@ -35,6 +36,7 @@ export type SpendSettings = {
   ceilings: Omit<SpendLimitsUsd, "warnPercent">;
   org: { hour: SpendWindowUsage; day: SpendWindowUsage };
   workflows: WorkflowSpendRow[];
+  alerts: SpendAlert[];
 };
 
 export class SpendSettingsError extends Error {
@@ -49,9 +51,10 @@ export async function getSpendSettings(orgId: string, now = new Date()): Promise
   const limits = await loadSpendLimits(db, orgId);
   const ceilings = spendCeilingsMicros();
   const windows = spendWindows(now);
-  const [hour, day] = await Promise.all([
+  const [hour, day, alerts] = await Promise.all([
     spendBreakdownMicros(db, { orgId, since: windows.hourStart }),
     spendBreakdownMicros(db, { orgId, since: windows.dayStart }),
+    listOpenSpendAlerts(orgId),
   ]);
   const { rows } = await db.query<{
     id: string;
@@ -111,6 +114,7 @@ export async function getSpendSettings(orgId: string, now = new Date()): Promise
       dailyLimitUsd: override(row.workflow_daily_micros) ?? microsToUsd(limits.workflowDailyMicros),
       spentTodayUsd: microsToUsd(Number(row.spent_today)),
     })),
+    alerts,
   };
 }
 

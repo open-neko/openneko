@@ -38,6 +38,7 @@ import {
   type WorkflowRecord,
   type WorkflowRunRecord,
 } from "./store";
+import { spendCapFromSignal } from "../spend/run-guard";
 
 export class WorkflowNeedsInputError extends Error {
   constructor(message = "Workflow paused awaiting operator input") {
@@ -292,7 +293,7 @@ async function runWorkflowTurnTraced(
     });
     const [allowedSkills, allowedLibrary] = await startupPhase("identity.entitlements", () =>
       Promise.all([runHeldItemIds(runActor, "skill"), runAllowedLibrary(runActor)]));
-    const result = await runCore({
+    const coreResult = await runCore({
       ...(allowedSkills ? { allowedSkills } : {}),
       ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
@@ -312,6 +313,10 @@ async function runWorkflowTurnTraced(
       tag: `workflow ${workflow.name} ${workflowRun.id}`,
       signal,
     });
+    const spendStop = spendCapFromSignal(signal);
+    const result = spendStop
+      ? { ...coreResult, status: "failed" as const, error: spendStop.message }
+      : coreResult;
     await eventTelemetry.finishAgent({
       status: result.status === "completed" ? "ok" : "error",
       ...(result.error ? { errorType: "agent_backend_error" } : {}),
@@ -402,16 +407,20 @@ async function runWorkflowTurnTraced(
       };
     }
 
+    const spendStop = spendCapFromSignal(signal);
     const aborted =
-      signal?.aborted ||
-      (error instanceof Error &&
-        (error.name === "AbortError" || error.message.includes("aborted")));
+      !spendStop &&
+      (signal?.aborted ||
+        (error instanceof Error &&
+          (error.name === "AbortError" || error.message.includes("aborted"))));
     const status: "failed" | "cancelled" = aborted ? "cancelled" : "failed";
-    const errMsg = aborted
-      ? "Cancelled by user."
-      : error instanceof Error
-        ? error.message
-        : "Workflow run failed unexpectedly.";
+    const errMsg = spendStop
+      ? spendStop.message
+      : aborted
+        ? "Cancelled by user."
+        : error instanceof Error
+          ? error.message
+          : "Workflow run failed unexpectedly.";
 
     await eventTelemetry.closeOpen({
       status: "error",
@@ -429,9 +438,10 @@ async function runWorkflowTurnTraced(
       error: aborted ? null : errMsg,
     }));
     await wrappedEmit({ type: "done", result: { status } });
-    if (!aborted) throw error;
+    if (!aborted && !spendStop) throw error;
     return {
       status,
+      ...(spendStop ? { error: errMsg } : {}),
       workflowRunId: workflowRun.id,
       workRunId: workRunId,
       threadId,

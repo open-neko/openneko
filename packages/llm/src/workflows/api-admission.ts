@@ -12,7 +12,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pool } from "@neko/db";
 import type { HarnessRunSummary } from "@neko/telemetry";
 import type { PoolClient } from "pg";
-import { admitRunSpend, SpendBudgetExceeded } from "../spend/admission";
+import { admitRunSpend, recordBudgetBlocked, SpendBudgetExceeded } from "../spend/admission";
 import { getOrgAgentRoot } from "../work/workspace";
 import {
   WorkflowApiError,
@@ -663,6 +663,7 @@ export async function admitWorkflowApiRun(input: {
         });
       } catch (error) {
         if (error instanceof SpendBudgetExceeded) {
+          setImmediate(() => void recordBudgetBlocked(error));
           throw new WorkflowApiError("spend_budget_exhausted", error.message, 429, error.retryAfterSeconds);
         }
         throw error;

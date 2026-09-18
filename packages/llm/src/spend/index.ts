@@ -1,6 +1,7 @@
 export {
   admitRunSpend,
   committedSpendMicros,
+  recordBudgetBlocked,
   releaseSpendReservation,
   reserveSpend,
   SpendBudgetExceeded,
@@ -30,3 +31,13 @@ export {
   type SpendWindowUsage,
   type WorkflowSpendRow,
 } from "./settings";
+export {
+  acknowledgeSpendAlert,
+  budgetWarningMessage,
+  checkSpendWarnings,
+  listOpenSpendAlerts,
+  raiseSpendAlert,
+  type SpendAlert,
+  type SpendAlertKind,
+} from "./alerts";
+export { createRunSpendGuard, SpendCapExceeded, spendCapFromSignal, type RunSpendGuard } from "./run-guard";

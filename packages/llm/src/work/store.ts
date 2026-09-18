@@ -18,7 +18,7 @@ import {
 import { createHash } from "node:crypto";
 import type { AgentBackendId } from "../agent-backend";
 import type { AgentEvent } from "../agent-backend";
-import { admitRunSpend, type SpendSource } from "../spend/admission";
+import { admitRunSpend, recordBudgetBlocked, type SpendSource } from "../spend/admission";
 import { recordUsageSpend } from "../spend/ledger";
 
 export type WorkThreadSummary = {
@@ -314,6 +314,7 @@ export async function createWorkRun(
   spend: RunSpend = { source: "system" },
 ) {
   const client = await pool().connect();
+  let released = false;
   let rows: (typeof work_run.$inferSelect)[];
   try {
     await client.query("begin");
@@ -333,9 +334,12 @@ export async function createWorkRun(
     await client.query("commit");
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
+    client.release();
+    released = true;
+    await recordBudgetBlocked(error);
     throw error;
   } finally {
-    client.release();
+    if (!released) client.release();
   }
   // SEC10: run lifecycle rides the tamper-evident chain.
   const { recordAuditEvent } = await import("../workflows/audit-chain");

@@ -14,6 +14,7 @@ import {
   saveWorkflow,
 } from "../../src/workflows";
 import { emitWorkflowOutput } from "../../src/workflows/store";
+import { createRunSpendGuard } from "../../src/spend/run-guard";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../../src/prompts/sections";
 
 const reachable = await dbReachable();
@@ -243,6 +244,55 @@ describeIfDb("runWorkflowTurn", () => {
   });
 
   // The failure mode behind the "ACP client disposed" run failures: worker
+  it("records a spend-cap stop as failed with the cap message, not cancelled", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId,
+        name: "expensive workflow",
+        steps: [{ id: "s1", description: "work" }],
+      });
+      let guard: Awaited<ReturnType<typeof createRunSpendGuard>> | undefined;
+      const backend = fakeBackend(async (opts) => {
+        await opts.onEvent?.({
+          type: "tool_start",
+          id: "t1",
+          name: "execute",
+          input: {},
+          usageSnapshot: { estimatedCostUsd: 5.5, costStatus: "estimated", coverage: "complete" },
+        });
+        return { finalText: "", status: guard?.signal.aborted ? "cancelled" : "completed" };
+      });
+
+      const prepared = await prepareWorkflowRun(
+        { orgId, workflowId: workflow.id, triggerKind: "cron" },
+        { resolveAgentBackend: async () => backend },
+      );
+      const events: Array<{ type: string; message?: string }> = [];
+      guard = await createRunSpendGuard({
+        runId: prepared.workRunId,
+        emit: async (event) => {
+          events.push(event as { type: string; message?: string });
+        },
+      });
+
+      const result = await runWorkflowTurn(
+        { prepared, mode: "live", emit: guard.emit, signal: guard.signal },
+        {
+          resolveAgentBackend: async () => backend,
+          formatGlobalMemoryPromptContext: async () => "",
+        },
+      );
+
+      const message = "The run exceeded its $5.00 spend cap ($5.50 spent).";
+      expect(result).toMatchObject({ status: "failed" });
+      expect(events).toContainEqual({ type: "error", message });
+      const runs = await db().select().from(workflow_run).where(eq(workflow_run.id, prepared.workflowRun.id));
+      expect(runs[0]).toMatchObject({ status: "failed", error: message });
+      const workRuns = await db().select().from(work_run).where(eq(work_run.id, prepared.workRunId));
+      expect(workRuns[0]).toMatchObject({ status: "failed", error: message });
+    });
+  });
+
   // shutdown aborts the run mid-flight. With a signal wired in, that must land
   // as "cancelled" (no error), not a hard failure.
   it("records a shutdown-interrupted run as cancelled, not failed", async () => {

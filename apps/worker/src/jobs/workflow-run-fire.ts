@@ -32,7 +32,7 @@ import {
   type WorkflowApiBatchProgress,
 } from "@neko/llm/workflows";
 import { observeSafely } from "@neko/telemetry";
-import { SpendBudgetExceeded } from "@neko/llm/spend";
+import { createRunSpendGuard, SpendBudgetExceeded } from "@neko/llm/spend";
 import {
   getCurrentScrubber,
   getPluginRegistryInstance,
@@ -429,7 +429,12 @@ async function runWorkflowRunFireTraced(
           )
         : null;
       maxRuntimeTimer?.unref();
-      const guardedEmit = ceilingGuard?.emit ?? emit;
+      const spendGuard = await createRunSpendGuard({
+        runId: prepared.workRunId,
+        emit: ceilingGuard?.emit ?? emit,
+        signal: abort.signal,
+      });
+      const guardedEmit = spendGuard.emit;
       const unregisterBrokerEvents = registerAgentBrokerEventSink(
         prepared.workRunId,
         guardedEmit,
@@ -443,7 +448,7 @@ async function runWorkflowRunFireTraced(
               : payload.userMessage,
             mode: "headless",
             emit: guardedEmit,
-            signal: abort.signal,
+            signal: spendGuard.signal,
             pluginActions,
             observer: telemetry.observer,
           },
@@ -454,6 +459,7 @@ async function runWorkflowRunFireTraced(
       } finally {
         if (maxRuntimeTimer) clearTimeout(maxRuntimeTimer);
         unregisterBrokerEvents();
+        spendGuard.dispose();
         unregister();
       }
       if (apiClaim) {
