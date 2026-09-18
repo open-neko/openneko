@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.0](https://github.com/open-neko/openneko/compare/v3.3.0...v3.4.0) (2026-09-18)
+
+
+### Features
+
+* **workflows:** Reckon-compatible webhooks ([12f29ea](https://github.com/open-neko/openneko/commit/12f29eab950dea4aa6b3b0143b9a4a17b1f45c02))
+
+
+### Bug Fixes
+
+* **workflows:** patch API limits without re-inserting the access row ([4526106](https://github.com/open-neko/openneko/commit/45261067682b481dc2a7f7d8cda08e92b4246d5d))
+
 ## [3.3.0](https://github.com/open-neko/openneko/compare/v3.2.0...v3.3.0) (2026-09-18)
 
 
