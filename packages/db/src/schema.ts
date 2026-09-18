@@ -1841,7 +1841,7 @@ export const workflow_api_access = pgTable(
     ),
     max_tokens_per_run_check: check(
       "workflow_api_access_max_tokens_per_run_check",
-      sql`${t.max_tokens_per_run} between 1000 and 1000000`,
+      sql`${t.max_tokens_per_run} between 1000 and 3000000`,
     ),
     max_cost_per_run_check: check(
       "workflow_api_access_max_cost_micros_per_run_check",

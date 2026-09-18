@@ -70,7 +70,7 @@ export const WORKFLOW_API_LIMIT_RANGES = {
   maxRuntimeSeconds: [30, 1_800],
   maxModelCalls: [1, 32],
   maxToolCalls: [1, 128],
-  maxTokensPerRun: [1_000, 1_000_000],
+  maxTokensPerRun: [1_000, 3_000_000],
   maxCostMicrosPerRun: [1_000, 100_000_000],
   rollingWindowSeconds: [3_600, 604_800],
   rollingTokenBudget: [1_000, 10_000_000],

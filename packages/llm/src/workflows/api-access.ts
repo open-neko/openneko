@@ -370,13 +370,34 @@ export async function updateWorkflowApiLimits(input: {
   >) {
     values[LIMIT_COLUMNS[key]] = value;
   }
-  await db()
-    .insert(workflow_api_access)
-    .values(values as typeof workflow_api_access.$inferInsert)
-    .onConflictDoUpdate({
-      target: workflow_api_access.workflow_id,
-      set: values as Partial<typeof workflow_api_access.$inferInsert>,
-    });
+  // Postgres evaluates workflow_api_access_token_state on the proposed row
+  // before it resolves the conflict, so an upsert without the token columns
+  // fails for a workflow whose API access is enabled. Update the row in place.
+  const [existing] = await db()
+    .select({ workflowId: workflow_api_access.workflow_id })
+    .from(workflow_api_access)
+    .where(
+      and(
+        eq(workflow_api_access.org_id, input.orgId),
+        eq(workflow_api_access.workflow_id, input.workflowId),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    await db()
+      .update(workflow_api_access)
+      .set(values as Partial<typeof workflow_api_access.$inferInsert>)
+      .where(
+        and(
+          eq(workflow_api_access.org_id, input.orgId),
+          eq(workflow_api_access.workflow_id, input.workflowId),
+        ),
+      );
+  } else {
+    await db()
+      .insert(workflow_api_access)
+      .values(values as typeof workflow_api_access.$inferInsert);
+  }
   await recordAuditEvent({
     orgId: input.orgId,
     entityKind: "workflow_api_access",
