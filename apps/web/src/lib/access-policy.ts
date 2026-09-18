@@ -34,6 +34,7 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/api/version", rule: "public" },
   { prefix: "/api/health", rule: "public" },
   { prefix: "/api/v1", rule: "token", why: "workflow API bearer tokens" },
+  { prefix: "/api/hooks", rule: "token", why: "Reckon-compatible webhooks carry X-Webhook-Token" },
   { prefix: "/api/channels", rule: "token", why: "channel webhooks carry a provider signature" },
   { prefix: "/api/integrations/connect", rule: "token", why: "OAuth callbacks carry the state cookie" },
   { prefix: "/api/pack-accounts", rule: "token", why: "pack OAuth callbacks carry the state cookie" },
