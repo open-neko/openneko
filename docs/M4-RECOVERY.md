@@ -458,3 +458,33 @@ of executed receipts and the shared operation ceiling. The cumulative live
 OpenShell/GraphJin suite passed worker-death recovery and queue redelivery with
 this binary, and still exited nonzero on the known M2 upstream cancellation test.
 Owned fixture services were removed.
+
+## Governed proposal and effect wiring
+
+The Go CLI/optional OpenNeko adapter now sends typed proposals through the broker.
+Lookup and proposal requests use one operation-ID namespace and journal. Only
+installed, ready pack actions with a validated input schema and current entitlement
+can reach worker preflight. Original descriptor and arguments are bound to approval;
+actor, approver, policy and descriptor are rechecked before execution.
+
+Migration 0088 adds one partial unique index to the existing action execution table.
+Harness effects have a session owner lock plus a durable claim; Hermes execution
+is unchanged. Known results are persisted atomically with terminal action status.
+An abandoned claim either recovers through an adapter's read-only provider-status
+callback or becomes explicitly unknown. It never authorizes another dispatch.
+No shipped adapter gains inferred idempotency support: the capability must be
+implemented for the actual provider. The controlled HTTP fixture qualifies both
+reconcilable and non-reconcilable service contracts.
+
+Cancellation deletes the sandbox as the process-tree boundary. Cleanup failure
+now raises an explicit reconciliation error and `harness.cancellation` telemetry;
+a local Go cancellation alone is not evidence that the OpenShell proxy stopped
+upstream work. The separate M2 idle-proxy regression remains enforced.
+
+Retention policy: unfinished approvals, unknown operations and unreconciled
+sandboxes must not be TTL-deleted or automatically replayed. Retain their bounded
+checkpoints and host receipts until an operator records a resolution. Terminal
+sandbox deletion occurs only after a durable receipt. Host checkpoints and database
+receipts must be retained together for the deployment's accepted-input deduplication
+window; deleting one is not permission to rerun an accepted input. No background
+purge is enabled by this change. Existing organization deletion remains explicit.

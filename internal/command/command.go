@@ -18,9 +18,13 @@ import (
 )
 
 func Main(lookup func(context.Context, string) (json.RawMessage, error)) {
+	MainWithTools(agent.Tools{Lookup: lookup})
+}
+
+func MainWithTools(tools agent.Tools) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	code, err := execute(ctx, os.Stdin, os.Stdout, lookup)
+	code, err := executeWithTools(ctx, os.Stdin, os.Stdout, tools)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
@@ -30,6 +34,10 @@ func run(ctx context.Context, input io.Reader, output io.Writer) (int, error) {
 	return execute(ctx, input, output, nil)
 }
 func execute(ctx context.Context, input io.Reader, output io.Writer, lookup func(context.Context, string) (json.RawMessage, error)) (int, error) {
+	return executeWithTools(ctx, input, output, agent.Tools{Lookup: lookup})
+}
+
+func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, tools agent.Tools) (int, error) {
 	var spec agent.Spec
 	data, readErr := io.ReadAll(io.LimitReader(input, 131073))
 	if readErr != nil || len(data) > 131072 {
@@ -61,15 +69,15 @@ func execute(ctx context.Context, input io.Reader, output io.Writer, lookup func
 	}
 	if root := os.Getenv("HARNESS_STATE_DIR"); root != "" {
 		if resume == "1" {
-			result, err = session.Resume(ctx, root, spec, client, lookup, emit)
+			result, err = session.ResumeWithTools(ctx, root, spec, client, tools, emit)
 		} else {
-			result, err = session.Run(ctx, root, spec, client, lookup, emit)
+			result, err = session.RunWithTools(ctx, root, spec, client, tools, emit)
 		}
 	} else {
 		if resume != "" {
 			return 2, fmt.Errorf("continuation requires HARNESS_STATE_DIR")
 		}
-		result, err = agent.Run(ctx, spec, client, lookup, emit)
+		result, err = agent.RunWithTools(ctx, spec, client, tools, emit)
 	}
 	if err != nil {
 		return 1, fmt.Errorf("run input or event delivery failed")

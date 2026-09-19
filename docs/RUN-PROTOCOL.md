@@ -13,19 +13,20 @@ One bounded JSON object on stdin followed by EOF:
 Unknown fields, blank/oversized values and trailing input are rejected. Stdout is
 ordered NDJSON: `run.started`, Ax `span.started`/`span.finished`, optional
 `tool.started`/`tool.finished`, and `run.finished`. Events carry version, run/input
-IDs and sequence; spans have local parent IDs; lookup operations have stable local
+IDs and sequence; spans have local parent IDs; host tool operations have stable local
 IDs. Result status is `completed`, `failed` or `cancelled`; completed results have
-an `answer`, `clarification`, `refusal` or `partial` kind. Failed lookup transport
+an `answer`, `clarification`, `refusal`, `partial` or `approval` kind. Failed lookup transport
 cannot produce an unqualified `answer` kind. Raw delegated envelopes retain source,
 evidence, status, trace ID and usage. Tool data and final answers are **content**,
 not content-free telemetry. Raw Ax attributes, reasoning and upstream errors are
 excluded from lifecycle observations.
 
 Limits: 64 KiB prompt/answer, 128 KiB stdin, two-minute run deadline, eight Ax actor
-steps, four lookup operations, 8 KiB lookup instruction, 256 KiB lookup response,
+steps, four shared host operations, 8 KiB lookup instruction, 256 KiB lookup response,
 zero configured validation/infrastructure retries. Goja has its default five-second
-CPU execution bound. The adapter exposes only `lookup(instruction)`; no actor shell,
-file, arbitrary HTTP, MCP or mutation capability is installed.
+CPU execution bound. The adapter exposes `lookup(instruction)`. A trusted host may additionally install
+`propose({action, arguments, summary})`; no actor shell, file, arbitrary HTTP or
+direct mutation capability is installed.
 
 `HARNESS_STATE_DIR` enables atomic, fsynced, bounded 8 MiB checkpoints in a trusted
 consumer-scoped directory. The process locks the hashed run ID, persists accepted
@@ -85,3 +86,36 @@ bounded to two minutes. The SDK's default five seconds is insufficient for real
 GraphJin investigations. A slow-callback regression verifies that evidence from a
 lookup taking more than five seconds reaches the responder. This is a wall-clock
 step limit, not separate CPU accounting for JavaScript.
+
+## Optional approval capability
+
+`command.MainWithTools` installs typed callbacks without an OpenNeko dependency.
+The OpenNeko launcher binds a `harness-governed` broker token and enables
+`OPENNEKO_HARNESS_PROPOSALS=1`. Older `harness-read-only` tokens still deny proposals.
+Model input cannot select this profile, credentials, identity or an approval state.
+
+A proposal contains an action name (128 bytes), object arguments and a summary
+(1000 bytes), bounded to 64 KiB total. The broker resolves the installed ready pack
+contract, checks its schema, current actor entitlement and policy, and uses the
+existing worker preflight and approval store. Even an auto-allow policy creates a
+human approval request. The shared operation journal binds the exact proposal
+input and tool name before dispatch; the result is durable before delivery.
+
+Receipts are either `{id,status:"pending_approval"}` or
+`{status:"denied",reason}`. They never claim an effect executed. Pending receipts
+produce result kind `approval`; `completed` still means the model turn ended.
+Approval IDs are projected into product cards by the trusted launcher, including
+terminal recovery. Saved proposal receipts are immutable and reused on bounded
+continuation; human decisions and effect receipts are separate host records.
+
+The existing action queue dispatches approved Harness actions through a dedicated
+claim in `action_execution`. It rechecks actor, approver, policy, installed contract
+and frozen arguments. A PostgreSQL owner lock fences live executions and a unique
+index preserves the claim across death. A stable host idempotency key is supplied
+to the adapter. Optional adapter `reconcile` reads provider status by that key;
+missing/failed status never authorizes redispatch. Without a receipt the product
+records an explicit unknown outcome. Successful receipts and terminal action
+status commit together; repeated delivery returns the receipt without an effect.
+
+Apply OpenNeko migrations 0084–0088 before deploying matching worker and Harness
+images. Drain old workers first. Hermes keeps its existing execution path.

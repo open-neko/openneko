@@ -15,6 +15,7 @@ func main() {
 	counts := map[string]int{}
 	delay := 0
 	effectFences := false
+	proposal := false
 	continuation := false
 	pauseResponder := false
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
@@ -31,6 +32,7 @@ func main() {
 		var c struct {
 			Delay          int  `json:"delay"`
 			EffectFences   bool `json:"effect_fences"`
+			Proposal       bool `json:"proposal"`
 			Continue       bool `json:"continue"`
 			PauseResponder bool `json:"pause_responder"`
 		}
@@ -46,6 +48,7 @@ func main() {
 		pauseResponder = c.PauseResponder
 		delay = c.Delay
 		effectFences = c.EffectFences
+		proposal = c.Proposal
 		mu.Unlock()
 		w.WriteHeader(204)
 	})
@@ -62,6 +65,7 @@ func main() {
 		mu.Lock()
 		wait := delay
 		effects := effectFences
+		propose := proposal
 		resume := continuation
 		n := counts[req.Model]
 		if pauseResponder && req.Model == "harness-fixture" && n == 2 {
@@ -99,7 +103,7 @@ func main() {
 			n -= 3
 		}
 		refused := strings.Contains(string(req.Messages), "not configured read-only") && !strings.Contains(string(req.Messages), "trace_id")
-		if n == 2 && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -112,6 +116,14 @@ func main() {
 			}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
+			if propose {
+				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}
+				if n == 2 && !strings.Contains(string(req.Messages), "pending_approval") {
+					http.Error(w, "missing approval receipt", 422)
+					return
+				}
+			}
+
 		}
 		if n == 2 && req.Model != "graphjin-fixture" && effects {
 			answer := "The reference is REF-42."

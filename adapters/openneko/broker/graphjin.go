@@ -18,13 +18,10 @@ import (
 // GraphJin binds URL, token and source at the trusted host boundary. Actor input
 // is only an instruction; it cannot supply identity, a source, headers or a URL.
 func GraphJin(base, token, source string) (func(context.Context, string) (json.RawMessage, error), error) {
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || token == "" {
-		return nil, fmt.Errorf("invalid broker binding")
+	call, err := bind(base, token, "/v1/harness/lookup")
+	if err != nil {
+		return nil, err
 	}
-	u.Path = "/v1/harness/lookup"
-	u.RawPath = ""
-	client := &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return func(ctx context.Context, instruction string) (json.RawMessage, error) {
 		if strings.TrimSpace(instruction) == "" || len(instruction) > 8000 {
 			return nil, fmt.Errorf("invalid lookup instruction")
@@ -39,6 +36,63 @@ func GraphJin(base, token, source string) (func(context.Context, string) (json.R
 			Source      string `json:"dataSourceId,omitempty"`
 			MaxSteps    int    `json:"maxSteps"`
 		}{operationID, instruction, source, 12})
+		data, err := call(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		var envelope struct {
+			Denied   bool            `json:"denied"`
+			Error    string          `json:"error"`
+			Response json.RawMessage `json:"response"`
+		}
+		if json.Unmarshal(data, &envelope) != nil || (!envelope.Denied && envelope.Error == "" && (len(envelope.Response) == 0 || string(envelope.Response) == "null")) {
+			return nil, fmt.Errorf("invalid broker result")
+		}
+		// Preserve refusal/evidence/trace/usage without reinterpreting or double-counting it.
+		return json.RawMessage(data), nil
+	}, nil
+}
+
+// Propose submits only a request for approval. The broker owns policy and identity.
+func Propose(base, token string) (func(context.Context, agent.Proposal) (agent.ProposalReceipt, error), error) {
+	call, err := bind(base, token, "/v1/harness/propose")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, proposal agent.Proposal) (agent.ProposalReceipt, error) {
+		var receipt agent.ProposalReceipt
+		raw, err := json.Marshal(proposal)
+		if err != nil {
+			return receipt, fmt.Errorf("invalid proposal")
+		}
+		if _, err = agent.ParseProposal(raw); err != nil {
+			return receipt, err
+		}
+		id := agent.OperationID(ctx)
+		if id < 1 || id > 4 {
+			return receipt, fmt.Errorf("missing or invalid runtime operation ID")
+		}
+		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
+			Instruction string `json:"instruction"`
+		}{id, string(raw)})
+		data, err := call(ctx, body)
+		if err != nil {
+			return receipt, err
+		}
+		return agent.ParseProposalReceipt(data)
+	}, nil
+}
+
+func bind(base, token, path string) (func(context.Context, []byte) ([]byte, error), error) {
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || token == "" {
+		return nil, fmt.Errorf("invalid broker binding")
+	}
+	u.Path = path
+	u.RawPath = ""
+	client := &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return func(ctx context.Context, body []byte) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 		if err != nil {
 			return nil, fmt.Errorf("invalid broker request")
@@ -60,15 +114,6 @@ func GraphJin(base, token, source string) (func(context.Context, string) (json.R
 		if err != nil || len(data) > 262144 {
 			return nil, fmt.Errorf("broker result unreadable or too large")
 		}
-		var envelope struct {
-			Denied   bool            `json:"denied"`
-			Error    string          `json:"error"`
-			Response json.RawMessage `json:"response"`
-		}
-		if json.Unmarshal(data, &envelope) != nil || (!envelope.Denied && envelope.Error == "" && (len(envelope.Response) == 0 || string(envelope.Response) == "null")) {
-			return nil, fmt.Errorf("invalid broker result")
-		}
-		// Preserve refusal/evidence/trace/usage without reinterpreting or double-counting it.
-		return json.RawMessage(data), nil
+		return data, nil
 	}, nil
 }
