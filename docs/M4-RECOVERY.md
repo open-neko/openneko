@@ -277,3 +277,32 @@ now allows 60 seconds per step, within the two-minute attempt limit and above th
 broker's 45-second timeout. Tool-free runs keep the SDK default. A six-second
 lookup regression and the rebuilt image's delayed browser run both pass. No
 separate JavaScript CPU-time accounting is claimed.
+
+
+## Host launcher death verification (2026-09-19)
+
+The live suite now starts the production sandbox launcher in a separate Node
+process and sends it SIGKILL after its GraphJin receipt is saved, while the remote
+Go responder is paused. PostgreSQL ownership releases, but Docker inspection proves
+the original Go process remains alive. A new host admission refuses recovery while
+that remote execution owns its checkpoint lock; model and GraphJin counters do not
+increase. After the original process finishes, the host adopts its terminal
+checkpoint with no new attempt, model call or lookup. The saved checkpoint has no
+`run.resumed` event and the broker still holds exactly one finished operation.
+
+Evidence: `/tmp/harness-host-death.log`, `harness-live.test.ts` (50 seconds), all
+eight live launcher/journal/operation checks passed. The broker deliberately stays
+alive in this scenario, isolating launcher ownership from broker loss. This is a
+real host-launcher death gate, not yet a complete production pg-boss worker death
+or approval restart matrix. Test-owned orphan CLI processes are terminated through
+the child process group after recovery. No production behavior changed for this gate.
+
+The same cumulative run passed real GraphJin disconnect cancellation, Hermes
+cold/warm reuse and memory-fence regression checks, plus production queue
+redelivery for run `59d9c440-7965-4a4d-9904-98fdcab77a7e`.
+
+The full command exited 1 only at the existing M2 idle-stream cancellation gate;
+sandbox deletion still closed the upstream request. Owned test services were
+removed. Separate launcher regression tests passed all 60 cases and worker
+TypeScript checking passed. The OpenNeko test change is commit `87a035e` on
+`feat/openneko-harness`.

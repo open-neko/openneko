@@ -95,6 +95,9 @@ Broker disconnects cancel the real GraphJin model request; ambiguous operation
 records remain unknown without a receipt. Saved broker receipts can repair missing
 checkpoint tool results without execution. The launcher now starts a bounded new
 Ax attempt from repaired evidence; the live gate verifies saved lookup reuse.
+A separate live host-launcher SIGKILL gate proves overlap refusal while the remote
+Go process remains active and terminal adoption after it finishes, without new
+model or lookup calls. The full production worker crash matrix remains open.
 Accepted context survives changed
 prompts on real queue redelivery without new model/tool calls. Legacy mutation
 fences are disabled for Harness; their Hermes behavior has regression coverage.
