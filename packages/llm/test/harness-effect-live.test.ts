@@ -71,6 +71,12 @@ live.each(["before_dispatch","after_commit","after_commit_reconcile","after_rece
   const overlap=await executeApprovedActionRequest(orgId,receipt.id);
   expect(overlap.ok).toBe(phase === "after_receipt");
   const exited=once(child,"exit");child.kill("SIGKILL");await exited;
+  if (phase === "after_commit") {
+   await pool().query("UPDATE action_policy SET mode='never' WHERE org_id=$1",[orgId]);
+   await expect(executeApprovedActionRequest(orgId,receipt.id)).rejects.toThrow("policy changed");
+   expect((await getActionRequest(orgId,receipt.id))?.status).toBe("failed");
+   await pool().query("UPDATE action_policy SET mode='approval_required' WHERE org_id=$1",[orgId]);
+  }
   const recovered=await executeApprovedActionRequest(orgId,receipt.id);
   expect(recovered.ok).toBe(recoverable);
   if(recoverable) expect(recovered.outcome).toEqual({result:{changed:true},externalRef:"fixture-effect"});
