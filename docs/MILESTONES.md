@@ -5,7 +5,8 @@ M2 credential lifecycle, gateway restart and OTLP delivery now pass, but upstrea
 idle-stream cancellation remains open. M4 terminal recovery is implemented;
 distributed PostgreSQL ownership/receipts have live crash evidence; operation
 recovery and governed pack actions now have live crash, queue and browser evidence.
-M2 remains open at the raw idle-proxy cancellation test. M5–M8 are not qualified.
+M2 is locally qualified with the accepted raw idle-proxy cancellation limitation
+(2026-09-20 decision). M5–M8 are not qualified.
 Implementation is on `feat/openneko-harness` in Harness and the optional OpenNeko
 integration worktree; no further changes are being made on main.
 
@@ -55,10 +56,11 @@ Run focused deterministic checks on each change and the cumulative integration s
 
 **Latest gate:** HTTPS/Go CA trust and local Ax cancellation pass. Upstream idle
 stream cancellation through 0.0.116 fails the ten-second observation limit while
-the direct HTTPS control passes. The extended live suite exits nonzero; M2 stays
-open. See [the integration record](../integration/README.md).
+the direct HTTPS control passes. Per the 2026-09-20 user decision, this is a
+nonblocking upstream limitation: retain its observation, require successful sandbox
+teardown, and adopt an upstream fix when available. See [the integration record](../integration/README.md).
 
-**Partial implementation evidence:** [isolated OpenShell suite](../integration/README.md) passes mTLS lifecycle, actual Ax HTTP streaming through the proxy, synthetic credential replacement, destination-path rejection and unauthorized-binary rejection. It reproduces `MainProcessExited` for the existing cold-create `/bin/sh -lc true` command; the standalone adapter translates that lifecycle without modifying the launcher. HTTPS, static rotation/detach, two bindings, managed OAuth refresh, gateway restart and actual OTLP delivery now pass. The M3 suite provides real worker/queue/broker evidence; real Hermes cold/warm/reuse regressions pass; hosted CI remains open. The test stack cleans up without changing the active gateway.
+**Local implementation evidence:** [isolated OpenShell suite](../integration/README.md) passes mTLS lifecycle, actual Ax HTTP streaming through the proxy, synthetic credential replacement, destination-path rejection and unauthorized-binary rejection. It reproduces `MainProcessExited` for the existing cold-create `/bin/sh -lc true` command; the standalone adapter translates that lifecycle without modifying the launcher. HTTPS, static rotation/detach, two bindings, managed OAuth refresh, gateway restart and actual OTLP delivery now pass. The M3 suite provides real worker/queue/broker evidence; real Hermes cold/warm/reuse regressions pass; hosted CI remains open. The test stack cleans up without changing the active gateway.
 
 **Deliver:** an isolated gateway and minimal Go agent image with standalone lifecycle checks plus optional existing-host-launcher adapter checks. Pin the CLI/gateway/image tuple. Configure exact executable egress rules, endpoint-bound synthetic credentials and two distinct provider slots.
 
@@ -73,8 +75,9 @@ open. See [the integration record](../integration/README.md).
 **M3 acceptance implemented and exercised (2026-09-19):** see the
 [run protocol](RUN-PROTOCOL.md) and [acceptance record](../integration/m3/README.md).
 OpenNeko's actual browser path is in-process; its channel path uses the queue
-worker. Both existing paths are tested separately. M2 remains open, not waived;
-M3 completion does not qualify production rollout or remote cancellation.
+worker. Both existing paths are tested separately. M2 accepts delayed upstream
+cancellation; M3 completion does not qualify production rollout or instantaneous
+remote cancellation.
 
 **Deliver:** one headless Go/Ax runtime launched by OpenNeko and usable through the existing web app, one approved model route, and read-only delegation through the existing `/v1/graphjin/agent` broker route. Keep the harness run/event/result contract neutral. Translate the existing product launch and event contracts in the optional adapter. Justify any required product integration change separately. Add stable run/attempt/operation IDs, durable input acceptance and operation records, bounded outputs/deadlines, and a typed answer/clarification/partial/failure envelope.
 

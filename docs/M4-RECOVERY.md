@@ -542,3 +542,11 @@ Final browser-stack cleanup removed all owned M2/M3 services and volumes. The
 cumulative command still exits 1 at `upstream_stream_cancelled=false`, followed by
 `sandbox_delete_closes_upstream=true`. That remaining M2 dependency defect is
 reported, not waived or hidden by the successful Harness cancellation gate.
+
+## Acceptance decision (2026-09-20)
+
+The user accepted delayed upstream idle-stream cancellation as nonblocking, with
+possible additional token consumption. Earlier nonzero suite exits above remain
+historical evidence. The current runner reports the defect as a warning, retains
+the mandatory sandbox-teardown check, and permits M2/M4 acceptance. Keep upstream
+OpenShell unchanged and qualify its eventual fix during an upgrade.

@@ -19,7 +19,7 @@ The [headless run protocol](docs/RUN-PROTOCOL.md), M3 product path and
 [M4 governed recovery](docs/M4-RECOVERY.md) are implemented and locally verified.
 Acceptance covers real web approval/reload, queue worker death, broker, OpenShell,
 GraphJin and controlled HTTP effects. Unknown effects are never automatically
-redispatched. M2 raw OpenShell proxy cancellation remains a release blocker;
+redispatched. M2 raw OpenShell proxy cancellation is an accepted upstream limitation;
 arbitrary VM recovery, M5–M8 and production rollout are not qualified.
 
 ```sh

@@ -16,28 +16,24 @@ governed action proposals; Hermes remains the default backend.
 | M4 recovery | Host/session ownership, durable operation receipts, bounded continuation, sandbox/host terminal reconciliation, worker-death redelivery and one restored answer | [Recovery record](M4-RECOVERY.md) |
 | M4 effects | Frozen human approvals, fresh authorization before dispatch, durable execution claims, optional provider-status recovery and explicit unknown outcomes without redispatch | Real process-kill, queue, controlled HTTP effect and browser approval/reload checks in the recovery record |
 
-The cumulative live suite passes the consumer checks but deliberately exits 1 at
-the remaining raw proxy cancellation gate. Successful consumer checks do not make
-the overall suite green. The actual Harness cancellation path deletes its sandbox,
-which closes the upstream request; cleanup failure is reported explicitly.
+The cumulative live suite has passed the consumer checks. Its previous exit 1
+was solely the raw idle-proxy cancellation check. On 2026-09-20 the user accepted
+this as a nonblocking upstream limitation. The runner keeps the observation as an
+explicit warning and continues to require sandbox teardown to close upstream work.
+Cleanup failure remains fatal. M2 and M4 are locally qualified at the documented scope.
 
-## Remaining release blocker
+## Accepted upstream limitation
 
 OpenShell's idle HTTP response relay does not promptly notice downstream
-disconnect. The direct HTTPS control cancels; the proxied request remains open
-beyond the ten-second observation window. See the exact
+disconnect. Provider work may continue and consume tokens until closure is observed
+or the sandbox is torn down. The direct HTTPS control cancels; the proxied request
+remains open beyond the observation window. See the exact
 [source trace](OPENSHELL.md#source-trace-idle-response-cancellation).
 
-GitHub's latest-release API was checked on 2026-09-20 and still reports
-[v0.0.116](https://github.com/NVIDIA/OpenShell/releases/tag/v0.0.116), published
-2026-08-28. There is no newer stable release to qualify. The previously inspected
-main revision also retained this response path; that is source evidence only.
-
-Closing M2 requires an OpenShell relay fix and a passing rerun of the existing
-integration gate. It must preserve HTTP buffering/pipelining and define half-close
-behavior: reading EOF alone cannot distinguish a TCP write-half-close from a
-client abandoning its response. No speculative OpenShell fork, timeout workaround,
-waived test or active gateway upgrade is included in this delivery.
+The latest-release API checked on 2026-09-20 still reports
+[v0.0.116](https://github.com/NVIDIA/OpenShell/releases/tag/v0.0.116).
+Keep upstream OpenShell unchanged and qualify its eventual fix during an upgrade;
+do not maintain a fork for this issue. This limitation does not block M2/M4.
 
 ## Deferred work
 

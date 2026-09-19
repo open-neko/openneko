@@ -4,7 +4,7 @@ Status: working design; M1 compatibility implementation started. Updated: 2026-0
 
 **Integration boundary:** build and package the harness independently. OpenNeko is the first consumer. Prefer its existing launch, policy, event and result contracts; keep compatibility in the adapter. A small, justified product integration change may be preferable to a permanent workaround and should be reviewed explicitly. Seamless worker/web operation is an acceptance gate, not yet a verified property.
 
-This document records the current design direction, source findings, implementation notes, and questions to resolve. Proposed behavior is not a claim that Ax or OpenNeko already implements it. HTTP/Goja checks and isolated OpenShell/worker/web evidence now exist; see [milestone status](MILESTONES.md) for the qualified paths and remaining cancellation, recovery and governed-effect gates.
+This document records the current design direction, source findings, implementation notes, and questions to resolve. Proposed behavior is not a claim that Ax or OpenNeko already implements it. HTTP/Goja checks and isolated OpenShell/worker/web evidence now exist; see [milestone status](MILESTONES.md) for the qualified paths, accepted upstream cancellation limitation and later milestones.
 
 Detailed integration research: [OpenShell, broker and Ax compatibility](OPENSHELL.md). This covers the checked-in OpenShell version, credential replacement, transport requirements, multi-provider routing, broker recovery, sandbox lifecycle and required integration tests.
 

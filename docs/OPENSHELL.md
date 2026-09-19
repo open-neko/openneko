@@ -14,7 +14,7 @@ Evidence levels used below:
 - **Documented upstream:** current NVIDIA documentation; not proof of availability in OpenNeko's pinned version.
 - **Proposed:** implementation direction that still needs integration tests.
 
-Research below is supplemented by [M2's initial live compatibility results](../integration/README.md). A separate 0.0.116 test gateway/sandbox now passes synthetic HTTP credential and policy checks; the active application stack was not changed and no real-provider credentials or requests were used. Read-only worker/queue/browser gates now have local evidence in [M3 acceptance](../integration/m3/README.md); upstream idle-stream cancellation and full M4 recovery remain open.
+Research below is supplemented by [M2's initial live compatibility results](../integration/README.md). A separate 0.0.116 test gateway/sandbox now passes synthetic HTTP credential and policy checks; the active application stack was not changed and no real-provider credentials or requests were used. Read-only worker/queue/browser gates now have local evidence in [M3 acceptance](../integration/m3/README.md); M4 recovery also has [live acceptance evidence](M4-RECOVERY.md). Upstream idle-stream cancellation is an accepted nonblocking limitation as of 2026-09-20; provider work may consume additional tokens until closure or sandbox teardown.
 
 ## 1. Recommendation
 

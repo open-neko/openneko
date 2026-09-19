@@ -48,21 +48,31 @@ Optional consumer lifecycle checks live in [the OpenNeko adapter](../adapters/op
 Pass its integration script as the runner argument to include them; the default
 suite runs independently of every consumer.
 
-## Still required before M2 closes
+## Accepted upstream cancellation limitation (2026-09-20)
 
 HTTPS interception and Go CA trust now pass against a fixture signed by an
 isolated test CA. The CA is installed in the test image for upstream verification;
 no verification is disabled. Removing the OpenShell interception CA from the Go
 workload rejects the connection with an unknown-authority error.
 
-**Current failing gate:** after an initial nonterminal SSE event, cancelling the
+**Observed upstream defect:** after an initial nonterminal SSE event, cancelling the
 Go/Ax request returns locally within two seconds, but the HTTPS upstream does not
 observe cancellation within ten seconds through OpenShell 0.0.116. The runner
-exits nonzero and prints `upstream_stream_cancelled` with `ok:false`. A direct
+previously exited nonzero and printed `upstream_stream_cancelled` with `ok:false`.
+The user has accepted this as nonblocking: the runner now emits an explicit
+`upstream_idle_cancellation` warning and reports the observed boolean in the suite
+summary. Provider tokens may continue until upstream closure or sandbox teardown. A direct
 HTTPS control using the same fixture observes cancellation successfully. The [source trace](../docs/OPENSHELL.md#source-trace-idle-response-cancellation)
 confirms the relay awaits upstream reads without concurrently observing client
-closure; inspected upstream main retains that behavior. Consumer checks run before the final upstream-cancellation gate, so that known
-failure does not prevent qualification of the remaining consumer path.
+closure; inspected upstream main retains that behavior. Consumer checks run before the final upstream-cancellation observation, so that known
+limitation does not prevent qualification of the remaining consumer path.
+
+Rerun on 2026-09-20 completed with exit 0 on the pinned 0.0.116 tuple.
+Credential lifecycle, gateway restart, OTLP delivery, HTTPS trust/denial and local
+cancellation passed. The final summary reported
+`upstream_idle_cancellation_observed:false` alongside the accepted warning;
+`sandbox_delete_closes_upstream` passed. Owned containers and network were removed.
+Local evidence: `/tmp/harness-m2-accepted-cancellation.log`.
 
 ## Additional live qualification, 2026-09-19
 
@@ -96,11 +106,12 @@ The cumulative consumer suite also passes real Hermes cold execution and two
 warm executions reusing one sandbox. OpenShell 0.0.116 limits sandbox names to
 19 bytes; the shared launcher now bounds long names while preserving short ones.
 A separate cancellation check proves deleting the sandbox closes the idle upstream
-stream. This containment fallback does not pass the context-only cancellation gate.
+stream. This required cleanup check remains fatal on failure; it does not claim
+context-only cancellation passed.
 
-Still open: upstream idle-stream cancellation; Linux/hosted CI qualification; and any credential
-strategy beyond the tested static and OAuth client-credentials flows. The final
-exit remains nonzero until the cancellation gate passes. No active installation
+Deferred: the upstream idle-stream fix, Linux/hosted CI qualification, and credential
+strategies beyond the tested static and OAuth client-credentials flows. Adopt the
+upstream fix when available; no OpenShell fork is required. No active installation
 was upgraded. Current upstream main was rechecked at
 `fa0bfa490e42c87a74a70be6ebb40faee7fb8faa`; its ordinary response path still accepts
 only an `AsyncWrite` downstream and cannot concurrently observe its EOF.
