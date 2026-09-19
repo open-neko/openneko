@@ -9,6 +9,7 @@ import {
   index,
   bigint,
   integer,
+  foreignKey,
   jsonb,
   numeric,
   pgTable,
@@ -53,6 +54,40 @@ export const organization = pgTable(
       .where(sql`${t.domain} is not null`),
   }),
 );
+
+/** Opt-in Harness admission and terminal receipts; actor content is access-controlled. */
+export const harness_run_journal = pgTable("harness_run_journal", {
+  org_id: text("org_id").notNull().references(() => organization.id, {onDelete: "cascade"}),
+  run_id: text("run_id").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  accepted_context: jsonb("accepted_context"),
+  result: jsonb("result"),
+  created_at: ts("created_at").notNull().defaultNow(),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+}, t => ({
+  pk: primaryKey({columns: [t.org_id, t.run_id]}),
+  context_bounded: check("harness_run_journal_context_bounded", sql`${t.accepted_context} IS NULL OR octet_length(${t.accepted_context}::text) <= 8388608`),
+  fingerprint_valid: check("harness_run_journal_fingerprint_check", sql`${t.fingerprint} ~ '^[0-9a-f]{64}$'`),
+  result_bounded: check("harness_run_journal_result_check", sql`${t.result} IS NULL OR octet_length(${t.result}::text) <= 8388608`),
+}));
+
+/** Each runtime operation is admitted once; missing results are ambiguous. */
+export const harness_operation = pgTable("harness_operation", {
+  org_id: text("org_id").notNull(),
+  run_id: text("run_id").notNull(),
+  operation_id: integer("operation_id").notNull(),
+  request: jsonb("request").notNull(),
+  result: jsonb("result"),
+  created_at: ts("created_at").notNull().defaultNow(),
+  finished_at: ts("finished_at"),
+}, t => ({
+  pk: primaryKey({columns:[t.org_id,t.run_id,t.operation_id]}),
+  run: foreignKey({columns:[t.org_id,t.run_id],foreignColumns:[harness_run_journal.org_id,harness_run_journal.run_id]}).onDelete("cascade"),
+  id_bound: check("harness_operation_operation_id_check",sql`${t.operation_id} BETWEEN 1 AND 4`),
+  request_bound: check("harness_operation_request_check",sql`octet_length(${t.request}::text) <= 65536`),
+  result_bound: check("harness_operation_result_check",sql`${t.result} IS NULL OR octet_length(${t.result}::text) <= 262144`),
+  terminal: check("harness_operation_check",sql`(${t.result} IS NULL) = (${t.finished_at} IS NULL)`),
+}));
 
 export const app_user = pgTable(
   "app_user",

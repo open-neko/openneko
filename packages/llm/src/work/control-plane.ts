@@ -556,6 +556,7 @@ export interface AgentControlPlane {
     dataSourceId?: string;
     instruction: string;
     maxSteps?: number;
+    signal?: AbortSignal;
   }): Promise<GraphjinDataAgentResult>;
   /** Actor-scoped registry catalog for native generated records apps. */
   listRecordCatalog(input: {
@@ -1058,7 +1059,9 @@ export class InProcessControlPlane implements AgentControlPlane {
     dataSourceId?: string;
     instruction: string;
     maxSteps?: number;
+    signal?: AbortSignal;
   }): Promise<GraphjinDataAgentResult> {
+    input.signal?.throwIfAborted();
     try {
       await assertRunHoldsDataSource(input.orgId, input.runId);
     } catch (error) {
@@ -1126,7 +1129,7 @@ export class InProcessControlPlane implements AgentControlPlane {
       const agentStatus = await getGraphjinAgentStatus({
         baseUrl: src.graphqlUrl,
         token,
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(input.signal ? [input.signal] : [])]),
       });
       if (!agentStatus.ready) {
         return {
@@ -1147,7 +1150,7 @@ export class InProcessControlPlane implements AgentControlPlane {
       const response = await askGraphjinAgent({
         baseUrl: src.graphqlUrl,
         token,
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.any([AbortSignal.timeout(180_000), ...(input.signal ? [input.signal] : [])]),
         request: {
           instruction,
           max_steps: Math.min(Math.max(input.maxSteps ?? 8, 1), 12),

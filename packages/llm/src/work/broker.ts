@@ -1,3 +1,4 @@
+import { recordHarnessLookup } from "./harness-operation";
 import {
   createServer,
   type IncomingMessage,
@@ -293,6 +294,21 @@ async function handle(
             }),
         }),
       );
+    }
+    case "/v1/harness/lookup": {
+      const request = {
+        instruction: typeof body.instruction === "string" ? body.instruction : "",
+        ...(typeof body.dataSourceId === "string" ? {dataSourceId:body.dataSourceId} : {}),
+        maxSteps:12,
+      };
+      const abort = new AbortController();
+      const disconnected = () => { if (!res.writableFinished) abort.abort(); };
+      res.once("close",disconnected);
+      if (req.aborted || res.destroyed) abort.abort();
+      try {
+        return send(res,200,await recordHarnessLookup(binding,body.operationId,request,()=>
+          cp.askGraphjinDataAgent({orgId:binding.orgId,runId:binding.runId,...request,signal:abort.signal}),abort.signal));
+      } finally { res.removeListener("close",disconnected); }
     }
     case "/v1/graphjin/agent":
       return send(

@@ -107,3 +107,19 @@ it.skipIf(!process.env.HARNESS_INSPECT_BIN)("fences active hosts and releases ow
     expect(recovered.result?.finalText).toBe("terminal proof");
   } finally { child.kill("SIGKILL"); }
 });
+
+
+it("admits explicit continuation only after scope validation and saves its eventual result", async () => {
+  const path = await root();
+  await admitHarnessLaunch(path, {input:"same"});
+  let calls = 0;
+  const reconcile = async () => { calls++; return "resume" as const; };
+  await expect(admitHarnessLaunch(path, {input:"changed"}, reconcile)).rejects.toThrow("conflicts");
+  expect(calls).toBe(0);
+  const continued = await admitHarnessLaunch(path, {input:"same"}, reconcile);
+  expect(continued.resume).toBe(true);
+  expect(continued.result).toBeUndefined();
+  await continued.complete!({status:"completed",finalText:"continued evidence"});
+  expect((await admitHarnessLaunch(path, {input:"same"}, reconcile)).result?.finalText).toBe("continued evidence");
+  expect(calls).toBe(1);
+});

@@ -633,7 +633,12 @@ async function runChatTurnTraced(
     // off the same source — they're distinct delimited blocks.
     const fenceSource =
       (result.rawText ?? result.finalText).trim() || assistantText.trim();
-    const actionFences = extractActionRequestFences(fenceSource);
+    // Harness effects require the M4 journal/approval boundary, never text fences.
+    const effectFenceSource = backend.id === "harness" ? "" : fenceSource;
+    if (backend.id === "harness" && /```neko_(action_request|workflow_save|rule_save|memory)\b/.test(fenceSource)) {
+      startupEvent("harness.effects", {outcome:"denied", reason:"legacy_fence_disabled"});
+    }
+    const actionFences = extractActionRequestFences(effectFenceSource);
     for (const payload of actionFences.payloads) {
       try {
         await handleWorkActionRequest(
@@ -656,7 +661,7 @@ async function runChatTurnTraced(
     // Workflow / policy save fences are a compatibility fallback. Same chain
     // pattern as action fences above: persist, emit a confirmation
     // surface, strip the fence body from the displayed text.
-    const workflowFence = extractWorkflowSaveFence(fenceSource);
+    const workflowFence = extractWorkflowSaveFence(effectFenceSource);
     if (workflowFence.payload) {
       try {
         const saved = await saveWorkflowWithTrigger({
@@ -706,7 +711,7 @@ async function runChatTurnTraced(
       });
     }
 
-    const policyFence = extractRuleSaveFence(fenceSource);
+    const policyFence = extractRuleSaveFence(effectFenceSource);
     if (policyFence.payload) {
       try {
         const saved = await upsertActionPolicyByName({
@@ -791,7 +796,7 @@ async function runChatTurnTraced(
 
     // Pull any neko_memory fences out of the raw agent response and persist
     // them. This is harmless when Hermes used the MCP save tool.
-    const { ops: memoryOps } = extractMemoryFences(fenceSource);
+    const { ops: memoryOps } = extractMemoryFences(effectFenceSource);
     for (const op of memoryOps) {
       try {
         await rememberWorkMemory({

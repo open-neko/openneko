@@ -1,5 +1,7 @@
+import { loadHarnessOperations } from "./harness-operation";
+import { withHarnessRunJournal, type HarnessRunJournal } from "./harness-run-journal";
 import { harnessResult } from "../agent-backends/harness";
-import { admitHarnessLaunch, harnessInspector, withHarnessLaunchLock } from "./harness-launch-journal";
+import { admitHarnessLaunch, harnessInspector, withHarnessLaunchLock, type HarnessReconciliation } from "./harness-launch-journal";
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
 import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
 import { createHash, randomUUID } from "node:crypto";
@@ -12,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { performance } from "node:perf_hooks";
+import { isDeepStrictEqual } from "node:util";
 import {
   agentTurnTimeoutMs,
   type AgentBackend,
@@ -594,7 +597,7 @@ function makeSandboxCore(
   }
 
   async function sandboxRunCore(
-    input: SandboxRunInput, ownershipSignal?: AbortSignal,
+    input: SandboxRunInput, ownershipSignal?: AbortSignal, journal: HarnessRunJournal = admitHarnessLaunch,
   ): Promise<AgentRunResult> {
     const pool = kind === "work" && input.backend.id === "hermes" ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
@@ -633,6 +636,8 @@ function makeSandboxCore(
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "")
       .slice(0, 60);
+    // 0.0.116 caps sandbox names at 19 bytes. Preserve existing short names.
+    if (name.length > 19) name = `${isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 16)}`;
     if (input.backend.id === "harness") name = `h-${createHash("sha256").update(input.runId).digest("hex").slice(0, 16)}`;
 
     // The box is a separate filesystem; the host workspace path (~/.config/… or
@@ -649,9 +654,10 @@ function makeSandboxCore(
       ]),
     ) as RunAgentBackendInput["workspace"];
 
-    const reconcile = async (): Promise<AgentRunResult> => {
+    let acceptedPrompt = toBox(inputPrompt);
+    const reconcile = async (): Promise<HarnessReconciliation> => {
       const userMessage = jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : undefined);
-      const prompt = toBox(inputPrompt);
+      const prompt = acceptedPrompt;
       const spec = JSON.stringify({version: 1, run_id: input.runId, input_id: input.runId,
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
@@ -659,20 +665,73 @@ function makeSandboxCore(
       let local = false;
       try { await access(snapshot); local = true; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      const inspect = (args:string[], payload:string) => local
+        ? runProcessOnce(harnessInspector(), args, 30_000, signal, payload, {HARNESS_STATE_DIR: state})
+        : run(["sandbox", "exec", "-n", name, "--no-tty", "--", "/usr/bin/env",
+            `HARNESS_STATE_DIR=${path.posix.join(boxWorkspace.runRoot, ".harness")}`,
+            "/usr/local/bin/harness-inspect", ...args], 30_000, payload);
       let output: string;
       try {
-        output = await timed("harness_reconcile_inspect", () => local
-          ? runProcessOnce(harnessInspector(), [], 30_000, signal, spec, {HARNESS_STATE_DIR: state})
-          : run(["sandbox", "exec", "-n", name, "--no-tty", "--", "/usr/bin/env",
-              `HARNESS_STATE_DIR=${path.posix.join(boxWorkspace.runRoot, ".harness")}`,
-              "/usr/local/bin/harness-inspect"], 30_000, spec));
+        output = await timed("harness_reconcile_inspect", () => inspect([],spec));
       } catch { throw new Error("Harness launch outcome unknown: checkpoint unavailable or execution still active; automatic relaunch disabled"); }
       let evidence;
       try { evidence = JSON.parse(output); } catch { throw new Error("Harness launch outcome unknown: invalid inspection response"); }
+      let remoteExists = !local;
+      if (local && evidence.outcome !== "terminal") {
+        // A local lock cannot fence a live remote process. Obtain remote evidence
+        // first when the exact run sandbox remains registered in this workspace.
+        const boxes = JSON.parse(await run(["sandbox", "list", "-o", "json", "--limit", "500"], 30_000));
+        if (!Array.isArray(boxes) || boxes.some(box => typeof box?.name !== "string")) {
+          throw new Error("Harness launch outcome unknown: invalid sandbox inventory");
+        }
+        remoteExists = boxes.some(box => box.name === name);
+        // ponytail: one bounded inventory page; add an exact structured lookup if
+        // a workspace reaches 500 sandboxes. Never infer absence from truncation.
+        if (!remoteExists && boxes.length >= 500) throw new Error("Harness launch outcome unknown: sandbox inventory incomplete");
+        if (remoteExists) {
+          local = false;
+          evidence = JSON.parse(await inspect([], spec));
+        }
+      }
+      const operations = evidence.outcome === "terminal" ? [] : await loadHarnessOperations({orgId:input.orgId,runId:input.runId});
+      if (evidence.version === 1 && evidence.run_id === input.runId && evidence.outcome === "outcome_unknown" && Array.isArray(evidence.operations)) {
+        const pending = new Set(evidence.operations.filter((op:{finished:boolean})=>!op.finished).map((op:{id:number})=>op.id));
+        const receipts = operations.filter(receipt=>receipt.result !== null && pending.has(receipt.id));
+        if (receipts.length) {
+          const repaired=await timed("harness_reconcile_operations",()=>inspect(["--reconcile"],JSON.stringify({spec:JSON.parse(spec),receipts})));
+          evidence=JSON.parse(repaired);
+          startupEvent("sandbox.harness_operation_recovery",{outcome:evidence.outcome,operations:receipts.length});
+        }
+      }
       startupEvent("sandbox.harness_recovery", { source: local ? "host" : "sandbox",
         outcome: ["terminal", "interrupted", "outcome_unknown"].includes(evidence.outcome) ? evidence.outcome : "invalid" });
+      if (evidence.version === 1 && evidence.run_id === input.runId && evidence.outcome === "interrupted" &&
+          evidence.can_resume === true && Number.isInteger(evidence.next_attempt) && evidence.next_attempt >= 1 && evidence.next_attempt <= 3) {
+        if (!Array.isArray(evidence.operations) || operations.some(op => op.result === null ||
+            !evidence.operations.some((saved:{id:number;instruction:string;finished:boolean}) => saved.id === op.id && saved.instruction === op.instruction && saved.finished))) {
+          throw new Error("Harness launch outcome unknown: broker operations prevent continuation");
+        }
+        // Validate all broker receipts against the checkpoint, including results
+        // already recorded locally; Reconcile rejects conflicting observations.
+        if (operations.length) await inspect(["--reconcile"], JSON.stringify({spec:JSON.parse(spec),receipts:operations}));
+        if (!local) {
+          await mkdir(state, {recursive:true});
+          await timed("harness_reconcile_download", () => runCleanup(["sandbox", "download", name,
+            path.posix.join(boxWorkspace.runRoot, ".harness"), state], 30_000));
+          // Verify the downloaded copy before deleting the only remote evidence.
+          local = true;
+          const copied = JSON.parse(await inspect([], spec));
+          if (!isDeepStrictEqual(copied, evidence)) throw new Error("Harness recovery checkpoint transfer invalid");
+        }
+        signal?.throwIfAborted();
+        if (remoteExists) await timed("harness_continuation_cleanup", () => run(["sandbox", "delete", name], 60_000));
+        signal?.throwIfAborted();
+        startupEvent("sandbox.harness_continuation", {outcome:"ready",attempt:evidence.next_attempt});
+        return "resume";
+      }
       if (evidence.version !== 1 || evidence.run_id !== input.runId || evidence.outcome !== "terminal" ||
           !["completed", "failed", "cancelled"].includes(evidence.result?.status)) {
+        if (evidence.outcome === "interrupted") throw new Error("Harness run interrupted: saved operation evidence retained; continuation is not eligible");
         throw new Error("Harness launch outcome unknown: no validated terminal checkpoint; automatic relaunch disabled");
       }
       if (!local) {
@@ -683,18 +742,19 @@ function makeSandboxCore(
       return harnessResult(evidence.result);
     };
     const admission = input.backend.id === "harness"
-      ? await timed("harness_admission", () => admitHarnessLaunch(
+      ? await timed("harness_admission", () => journal(
           path.join(input.workspace.runsRoot, ".harness-launches", createHash("sha256").update(input.runId).digest("hex")),
           { version: 1, runId: input.runId, orgId: input.orgId, kind,
             threadId: !isJob ? (input as RunAgentBackendInput).threadId : null,
             userMessage: jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : null),
-            prompt: inputPrompt, backend: input.backend.id, model: input.backend.configuredIdentity,
+            prompt: toBox(inputPrompt), backend: input.backend.id, model: input.backend.configuredIdentity,
             allowedSkills: input.allowedSkills ?? null,
             dataSurface: !isJob ? (input as RunAgentBackendInput).dataSurface ?? null : null,
             graphjinToolPolicy: !isJob ? (input as RunAgentBackendInput).graphjinToolPolicy ?? null : null,
             principal: !isJob ? (input as RunAgentBackendInput).sandboxUser ?? null : null,
-            environment: opts.env, image: opts.agentImage, provider: opts.modelProvider, endpoints: opts.modelHosts },
+            environment: opts.env, gateway: opts.gatewayName ?? opts.gatewayEndpoint ?? null, image: opts.agentImage, provider: opts.modelProvider, endpoints: opts.modelHosts },
           reconcile,
+          prompt => { acceptedPrompt = prompt; },
         ))
       : undefined;
     if (admission?.result) {
@@ -727,7 +787,7 @@ function makeSandboxCore(
       threadId,
       runId: input.runId,
       message,
-      prompt: toBox(inputPrompt),
+      prompt: acceptedPrompt,
       backendId: input.backend.id,
       configuredIdentity: input.backend.configuredIdentity,
       // Hermes reads its model from the staged config.yaml.
@@ -1021,6 +1081,7 @@ function makeSandboxCore(
                 }
               : {}),
             ...(opts.env ?? {}),
+            ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
@@ -1094,8 +1155,10 @@ function makeSandboxCore(
     }
   }
   return (input: SandboxRunInput): Promise<AgentRunResult> => input.backend.id === "harness"
-    ? withHarnessLaunchLock(path.join(input.workspace.runsRoot, ".harness-launches",
-        createHash("sha256").update(input.runId).digest("hex")), signal => sandboxRunCore(input, signal))
+    ? withHarnessRunJournal({orgId: input.orgId, runId: input.runId}, (databaseSignal, journal) =>
+        withHarnessLaunchLock(path.join(input.workspace.runsRoot, ".harness-launches",
+          createHash("sha256").update(input.runId).digest("hex")), signal =>
+            sandboxRunCore(input, AbortSignal.any([signal, databaseSignal]), journal)))
     : sandboxRunCore(input);
 }
 
@@ -1666,7 +1729,7 @@ async function createWarmSandbox(o: {
   runCleanup: (args: string[], timeout: number) => Promise<string>;
   workspace?: StableWorkspace;
 }): Promise<WarmSlot> {
-  const name = `warm-${randomUUID()}`;
+  const name = `wm-${createHash("sha256").update(randomUUID()).digest("hex").slice(0, 16)}`;
   const dir = await mkdtemp(path.join(tmpdir(), "oss-warm-"));
   const policy = path.join(dir, "policy.json");
   await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));

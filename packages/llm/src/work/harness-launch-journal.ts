@@ -19,11 +19,27 @@ async function readRecord(path: string): Promise<any> {
   } finally { await file.close(); }
 }
 
-/** Host-only admission fence. An unresolved launch is never automatically replayed.
+/** Validate a legacy admission before importing it into the database journal. */
+export async function checkHarnessAdmission(root: string, fingerprint: string): Promise<boolean> {
+  let prior;
+  try { prior = await readRecord(join(root, "accepted.json")); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw new Error("Harness launch outcome unknown: invalid admission record; reconciliation required");
+  }
+  if (prior?.version !== 1 || prior.fingerprint !== fingerprint) {
+    throw new Error("Harness launch conflicts with accepted input or authorization scope");
+  }
+  return true;
+}
+
+export type HarnessReconciliation = AgentRunResult | "resume";
+
+/** Host-only admission fence. An unresolved launch requires validated reconciliation.
  * The directory must be outside the workspace uploaded to the sandbox.
- * Reconciliation may adopt terminal evidence, but never execute another attempt.
+ * Only the trusted reconciler can admit an explicit bounded continuation.
  */
-export async function admitHarnessLaunch(root: string, identity: unknown, reconcile?: () => Promise<AgentRunResult>) {
+export async function admitHarnessLaunch(root: string, identity: unknown, reconcile?: () => Promise<HarnessReconciliation>) {
   await mkdir(root, { recursive: true, mode: 0o700 });
   const fingerprint = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
   const complete = async (result: AgentRunResult) => {
@@ -42,17 +58,13 @@ export async function admitHarnessLaunch(root: string, identity: unknown, reconc
   try { file = await open(accepted, "wx", 0o600); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    let prior;
-    try { prior = await readRecord(accepted); }
-    catch { throw new Error("Harness launch outcome unknown: invalid admission record; reconciliation required"); }
-    if (prior?.version !== 1 || prior.fingerprint !== fingerprint) {
-      throw new Error("Harness launch conflicts with accepted input or authorization scope");
-    }
+    if (!await checkHarnessAdmission(root, fingerprint)) throw new Error("Harness launch outcome unknown: admission disappeared");
     let receipt;
     try { receipt = await readRecord(join(root, "result.json")); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !reconcile) throw new Error("Harness launch outcome unknown: prior attempt requires reconciliation; automatic relaunch disabled");
       const result = await reconcile();
+      if (result === "resume") return { result: undefined, complete, resume: true };
       await complete(result);
       return { result, complete: undefined };
     }
