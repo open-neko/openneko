@@ -27,14 +27,20 @@ trap cleanup EXIT
 arch=$(docker info --format '{{.Architecture}}')
 case "$arch" in aarch64|arm64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo 'Unsupported Docker architecture' >&2; exit 1;; esac
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o integration/probe-bin ./integration/probe
+mkdir "$state/tls"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=Harness-Test-CA -keyout "$state/tls/ca.key" -out "$state/tls/ca.crt" >/dev/null 2>&1
+openssl req -new -newkey rsa:2048 -nodes -subj /CN=model-fixture -keyout "$state/tls/fixture.key" -out "$state/tls/fixture.csr" >/dev/null 2>&1
+printf '%s\n' 'subjectAltName=DNS:model-fixture' 'basicConstraints=critical,CA:FALSE' 'extendedKeyUsage=serverAuth' > "$state/tls/extensions"
+openssl x509 -req -in "$state/tls/fixture.csr" -CA "$state/tls/ca.crt" -CAkey "$state/tls/ca.key" -CAcreateserial -days 1 -extfile "$state/tls/extensions" -out "$state/tls/fixture.crt" >/dev/null 2>&1
+cp "$state/tls/ca.crt" integration/fixture.crt
 docker build -q -t harness-m2:local integration
-cat > "$state/gateway.toml" <<'TOML'
+cat > "$state/gateway.toml" <<TOML
 [openshell]
 version = 1
 [openshell.drivers.docker]
 network_name = "harness-m2"
 grpc_endpoint = "https://openshell-gateway:18116"
-host_gateway_ip = "172.30.116.2"
+host_gateway_ip = "${HARNESS_HOST_GATEWAY_IP:-172.30.116.2}"
 TOML
 "${compose[@]}" run --rm certgen
 reg="$XDG_CONFIG_HOME/openshell/gateways/harness-m2"
@@ -66,4 +72,18 @@ status=$("${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 10 -- c
 "${compose[@]}" logs --no-log-prefix model-fixture | grep -q '"check":"upstream_auth_verified","ok":true'
 # Optional consumer checks reuse this isolated gateway; none are required by default.
 if [[ -n "$consumer_checks" ]]; then bash "$consumer_checks"; fi
+# HTTPS uses the same real proxy and synthetic credential binding.
+"${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 30 -- sh -c 'export MODEL_API_KEY="$api_key"; exec /usr/local/bin/harness-probe -url https://model-fixture:8443'
+"${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 30 -- sh -c 'export MODEL_API_KEY="$api_key" SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt SSL_CERT_DIR=/nonexistent; exec /usr/local/bin/harness-probe -url https://model-fixture:8443 -untrusted'
+"${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 30 -- sh -c 'export MODEL_API_KEY="$api_key"; exec /usr/local/bin/harness-probe -url https://model-fixture:8443 -cancel'
+for ((attempt=0; attempt<12; attempt++)); do
+  "${compose[@]}" logs --no-log-prefix model-fixture > "$state/fixture.log"
+  if grep -q '"check":"upstream_stream_cancelled","ok":true' "$state/fixture.log"; then break; fi
+  sleep 1
+done
+if ! grep -q '"check":"upstream_stream_cancelled","ok":true' "$state/fixture.log"; then
+  cat "$state/fixture.log" >&2
+  echo "Upstream idle stream did not observe cancellation within 10 seconds" >&2
+  exit 1
+fi
 printf '%s\n' '{"check":"openshell_transport_suite","ok":true}'

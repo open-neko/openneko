@@ -46,6 +46,11 @@ Run focused deterministic checks on each change and the cumulative integration s
 
 ## M2 — Qualify OpenShell 0.0.116 with Go/Ax
 
+**Latest gate:** HTTPS/Go CA trust and local Ax cancellation pass. Upstream idle
+stream cancellation through 0.0.116 fails the ten-second observation limit while
+the direct HTTPS control passes. The extended live suite exits nonzero; M2 stays
+open. See [the integration record](../integration/README.md).
+
 **Partial implementation evidence:** [isolated OpenShell suite](../integration/README.md) passes mTLS lifecycle, actual Ax HTTP streaming through the proxy, synthetic credential replacement, destination-path rejection and unauthorized-binary rejection. It reproduces `MainProcessExited` for the existing cold-create `/bin/sh -lc true` command; the standalone adapter translates that lifecycle without modifying the launcher. HTTPS/rotation/OTLP delivery and actual worker/queue/broker integration remain required. The test stack cleans up without changing the active gateway.
 
 **Deliver:** an isolated gateway and minimal Go agent image with standalone lifecycle checks plus optional existing-host-launcher adapter checks. Pin the CLI/gateway/image tuple. Configure exact executable egress rules, endpoint-bound synthetic credentials and two distinct provider slots.
@@ -57,6 +62,12 @@ Run focused deterministic checks on each change and the cumulative integration s
 **Dependency:** M1 is required for full Ax integration; gateway and synthetic transport setup can proceed independently.
 
 ## M3 — First usable GraphJin run
+
+**M3 acceptance implemented and exercised (2026-09-19):** see the
+[run protocol](RUN-PROTOCOL.md) and [acceptance record](../integration/m3/README.md).
+OpenNeko's actual browser path is in-process; its channel path uses the queue
+worker. Both existing paths are tested separately. M2 remains open, not waived;
+M3 completion does not qualify production rollout or remote cancellation.
 
 **Deliver:** one headless Go/Ax runtime launched by OpenNeko and usable through the existing web app, one approved model route, and read-only delegation through the existing `/v1/graphjin/agent` broker route. Keep the harness run/event/result contract neutral. Translate the existing product launch and event contracts in the optional adapter. Justify any required product integration change separately. Add stable run/attempt/operation IDs, durable input acceptance and operation records, bounded outputs/deadlines, and a typed answer/clarification/partial/failure envelope.
 

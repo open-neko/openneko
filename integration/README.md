@@ -2,7 +2,7 @@
 
 This is the first part of M2, not its worker/queue acceptance gate.
 
-Prerequisites: local Docker with host-shared home paths, Go, Bash, and a separately
+Prerequisites: local Docker with host-shared home paths, Go, Bash, OpenSSL, and a separately
 installed, checksum-verified OpenShell **0.0.116** CLI. Do not upgrade the active
 CLI/gateway to run this check. The Docker build installs packages from Debian;
 the fixture and sandbox contain no real provider credentials.
@@ -35,7 +35,7 @@ The probe image and downloaded OpenShell images remain cached locally.
 - `curl`, which is absent from the executable allowlist, also gets HTTP 403.
 - Cleanup leaves no test containers or test network.
 
-Successful final output:
+Baseline output before the HTTPS/cancellation extension:
 
 ```json
 {"check":"credential_stream","ok":true,"events":1}
@@ -49,9 +49,21 @@ suite runs independently of every consumer.
 
 ## Still required before M2 closes
 
-The fixture currently serves plain HTTP, not intercepted HTTPS. Qualify Go CA
-trust/TLS interception, query authentication, managed expiry/refresh, static-key
-rotation/detach, two providers, SSE idle/cancellation and actual OTLP export.
+HTTPS interception and Go CA trust now pass against a fixture signed by an
+isolated test CA. The CA is installed in the test image for upstream verification;
+no verification is disabled. Removing the OpenShell interception CA from the Go
+workload rejects the connection with an unknown-authority error.
+
+**Current failing gate:** after an initial nonterminal SSE event, cancelling the
+Go/Ax request returns locally within two seconds, but the HTTPS upstream does not
+observe cancellation within ten seconds through OpenShell 0.0.116. The runner
+exits nonzero and prints `upstream_stream_cancelled` with `ok:false`. A direct
+HTTPS control using the same fixture observes cancellation successfully. The [source trace](../docs/OPENSHELL.md#source-trace-idle-response-cancellation)
+confirms the relay awaits upstream reads without concurrently observing client
+closure; inspected upstream main retains that behavior. Consumer checks run only after these transport gates pass.
+
+Query authentication, managed expiry/refresh, static-key rotation/detach, two
+providers, upstream cancellation and actual OTLP export remain open.
 The gateway emits structured trace/log metadata, but that is not proof of
 collector delivery. Linux CI execution has not occurred.
 

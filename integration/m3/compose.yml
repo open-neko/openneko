@@ -1,0 +1,40 @@
+services:
+  metadata:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: neko
+      POSTGRES_PASSWORD: synthetic-m3
+      POSTGRES_DB: neko
+    ports: ["127.0.0.1:18119:5432"]
+    volumes:
+      - ${OPENNEKO_TEST_SOURCE:?}/db/migrations:/docker-entrypoint-initdb.d:ro
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fixture
+      POSTGRES_PASSWORD: fixture
+      POSTGRES_DB: fixture
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U fixture]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  model:
+    image: debian:bookworm-slim
+    command: [/fixture-model]
+    ports: ["127.0.0.1:18118:8080"]
+    volumes:
+      - ./model-bin:/fixture-model:ro
+  graphjin:
+    image: ${GRAPHJIN_TEST_IMAGE:-ongroups-graphjin:latest}
+    entrypoint: [/usr/local/bin/graphjin]
+    command: [serve, --path, /config]
+    environment:
+      GRAPHJIN_AGENT_API_KEY: synthetic-m3
+    ports: ["127.0.0.1:18117:8080"]
+    volumes:
+      - ./config:/config
+    depends_on:
+      postgres: {condition: service_healthy}

@@ -9,6 +9,12 @@ credentials:
     required: true
 endpoints:
   - host: model-fixture
+    port: 8443
+    path: /v1/**
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+  - host: model-fixture
     port: 8080
     path: /v1/**
     protocol: rest

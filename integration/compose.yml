@@ -25,6 +25,9 @@ services:
   model-fixture:
     image: harness-m2:local
     command: [/usr/local/bin/harness-probe, -serve]
+    volumes:
+      - ${HARNESS_STATE}/tls/fixture.crt:/tls/fixture.crt:ro
+      - ${HARNESS_STATE}/tls/fixture.key:/tls/fixture.key:ro
     networks:
       default:
         ipv4_address: 172.30.116.3

@@ -347,3 +347,57 @@ Inspected OpenNeko files, relative to this repository:
 - `../../Open-Neko/OpenNeko/apps/worker/src/agent-sandbox/entry.ts`
 - `../../Open-Neko/OpenNeko/apps/worker/src/agent-sandbox/broker-client.ts`
 - `../../Open-Neko/OpenNeko/apps/worker/src/agent-sandbox/runtime-contract.ts`
+
+
+## Source trace: idle response cancellation
+
+Inspected v0.0.116 at commit `d1155aa70042d3e2ee49dbfa15346b108b7c1d92`
+against the failing local HTTPS fixture on 2026-09-19. The client-side operation
+cancels promptly; direct HTTPS cancels the fixture; the proxied idle response does
+not observe upstream cancellation within ten seconds.
+
+The tagged source explains the failure:
+
+1. [`proxy.rs:2214–2228`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy.rs#L2214)
+   terminates the client TLS connection, connects upstream TLS, and enters
+   `relay_http_stream` with both streams.
+2. [`proxy/relay.rs:226–282`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/proxy/relay.rs#L226)
+   races the HTTP relay against policy-generation invalidation. It does not race
+   against client disconnect. Single/multiple inspected routes and credential
+   passthrough all use this pattern.
+3. [`l7/rest.rs:1146`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/l7/rest.rs#L1146)
+   awaits `relay_response` after sending the request. The response function's client
+   bound is only `AsyncWrite`, so it cannot read a client EOF/TLS close notification.
+4. [`l7/rest.rs:3270`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/l7/rest.rs#L3270)
+   sends chunked responses to `relay_chunked`. At
+   [`rest.rs:3005`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/l7/rest.rs#L3005)
+   that loop awaits the next upstream read before attempting another client write.
+   While upstream is idle, client closure cannot wake this read.
+5. EOF-delimited SSE has the same problem in
+   [`relay_until_eof_without_idle_timeout`](https://github.com/NVIDIA/OpenShell/blob/d1155aa70042d3e2ee49dbfa15346b108b7c1d92/crates/openshell-supervisor-network/src/l7/rest.rs#L3556).
+   Response-header and fixed-length reads also lack a concurrent client-closure
+   observation. These additional cases are source findings, not separately tested
+   cancellation scenarios.
+
+Thus client cancellation is noticed only when subsequent I/O exposes it, or another
+external event tears down the relay. The ten seconds is our fixture's observation
+window, not an OpenShell cancellation timeout. The source has no idle timeout in
+the tested chunked response loop. A later write may reveal the disconnect, but is
+not a bounded cancellation guarantee.
+
+Also inspected upstream main at `fa0bfa490e42c87a74a70be6ebb40faee7fb8faa`.
+Response handling has moved to
+[`l7/rest/http_response.rs`](https://github.com/NVIDIA/OpenShell/blob/fa0bfa490e42c87a74a70be6ebb40faee7fb8faa/crates/openshell-supervisor-network/src/l7/rest/http_response.rs#L42),
+but the ordinary response path still has a write-only client and uses the same
+chunked relay; the outer policy-generation select remains. No fix for this path
+was found in that snapshot. Main was source-inspected, not built or live-tested.
+
+The durable fix belongs in OpenShell's shared HTTP relay: observe downstream
+connection termination concurrently with upstream response work and drop/close the
+upstream request when cancellation is established. Preserve buffered/pipelined
+request bytes, legitimate TCP half-close behavior, TLS close semantics, and policy
+invalidation; a naive extra read could consume the next request. Cover cancellation
+before headers and during chunked, fixed-length and EOF-delimited responses, plus
+normal keep-alive/pipelining behavior. Do not disable TLS inspection, add a short
+SSE idle timeout, or treat local Ax cancellation as proof that provider work stopped.
+No upstream patch, issue or PR has been published during this investigation.

@@ -1,0 +1,6 @@
+/model-bin
+/config/allow.list
+/config/queries/
+/config/schema.graphql
+
+/config/.graphjin/

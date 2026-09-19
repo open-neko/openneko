@@ -2,9 +2,10 @@
 
 Optional consumer integration. Core packages do not import this directory, and
 building this adapter requires no OpenNeko checkout or application libraries.
-OpenNeko source currently serves as a contract reference; no product files are
-changed by this adapter. Prefer a small, explicitly justified integration change
-over maintaining a complicated compatibility workaround.
+The optional product change adds a Harness backend while preserving Hermes as the
+default. See [M3 acceptance](../../integration/m3/README.md) for the concrete
+launcher, broker, queue and browser checks. Build the product image with
+`./adapters/openneko/build-image.sh /absolute/OpenNeko-checkout`.
 
 ## Implemented: OpenShell cold-launch compatibility
 
@@ -26,7 +27,7 @@ sandbox. Other commands pass through. Failed creation remains the caller's
 responsibility. The live suite checks the original failure, staged bytes, exec,
 deletion and cleanup after a missing upload source.
 
-## Remaining product contract
+## Original integration contract (M3 implementation described above)
 
 Translate the existing launch/job format into the harness run specification,
 project neutral events/results into `__openneko_event__` and

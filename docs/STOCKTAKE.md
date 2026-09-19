@@ -2,13 +2,23 @@
 
 Reviewed 2026-09-19 against this working tree and local test results.
 
+## Latest M2 follow-up
+
+Baseline committed as `3f0071d`. HTTPS streaming with credential replacement and
+Go CA trust now passes; removing the interception CA correctly fails TLS. Local
+Ax cancellation is bounded, but the real proxied HTTPS upstream does not observe
+cancellation within ten seconds. The direct HTTPS fixture control passes. The
+extended integration suite therefore currently **fails** its upstream cancellation
+gate; the baseline pass records below predate this extension. No worker/product
+upgrade should be inferred from the transport checks.
+
 ## Current position
 
-This is an independent Go repository and a tightly integrated companion project to
-OpenNeko. It contains compatibility experiments, a small Ax binding, a consumer
-launcher shim and real OpenShell tests. It does **not** yet contain a usable agent
-runtime. M1's synchronous execution path is qualified locally; M2 is partially
-qualified; M3–M8 remain unimplemented or unverified.
+This is an independent Go runtime with an optional OpenNeko adapter. M3 now has
+bounded AxAgent execution, scoped server-side GraphJin delegation, durable accepted
+input/read evidence, completed-run replay and real product acceptance. Hermes stays
+the default. See [M3 evidence](../integration/m3/README.md) for the tested deployment
+and remaining limits. M2 is still partial; M4–M8 are not complete.
 
 ## Repository organization
 
@@ -32,7 +42,7 @@ this project, not an application dependency. No OpenNeko checkout is needed for
 builds or standalone tests. The local `claude_code` reference dump, built probes
 and `bin/` outputs are ignored. No empty future-runtime packages were scaffolded.
 
-## Implemented and verified
+## Earlier M1/M2 baseline (historical)
 
 | Area | Present evidence | Limit |
 | --- | --- | --- |
@@ -62,10 +72,10 @@ reported `legacy_launcher_adapter_upload_exec_delete` and
 Images remain cached. No real model credentials were used. See the
 [integration record](../integration/README.md) for platform and image digests.
 
-## Not built yet
+## Earlier backlog (superseded for M3 by the acceptance record)
 
-- Headless runtime entrypoint, concrete versioned run/event/result types, and a
-  session reducer with durable input acceptance and terminal-state ownership.
+- Durable session reducer and persisted input acceptance. The initial headless
+  entrypoint/run/event/result contract now exists; see [run protocol](RUN-PROTOCOL.md).
 - Journal/checkpoints, operation reconciliation, approval continuations and
   crash-recovery tests.
 - Production tool pipeline, read-parallel/write-exclusive scheduler, Read/Edit/Bash
@@ -101,8 +111,8 @@ worker, queue and broker. Probe success does not close those gates.
 
 ## Repository and historical state
 
-The local Harness Git repository is initialized on `main`, with no commits or
-remote yet. Files remain uncommitted; nothing was pushed. The earlier OpenNeko
+The standalone baseline is committed on `main` as `3f0071d`. No remote is
+configured and nothing was pushed. Subsequent M2 changes are uncommitted. The earlier OpenNeko
 M1 commit `643b4a8` remains historical and has not been reverted. The sibling
 `OpenNeko-harness` worktree also retains earlier uncommitted README/integration
 copies; current implementation authority is this repository. Those copies need

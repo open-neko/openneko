@@ -15,6 +15,12 @@ network_policies:
       - path: /usr/local/bin/harness-probe
     endpoints:
       - host: model-fixture
+        port: 8443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: {method: '*', path: '/**'}
+      - host: model-fixture
         port: 8080
         protocol: rest
         enforcement: enforce
