@@ -63,3 +63,12 @@ export async function emitHarnessApprovals(result:AgentRunResult,scope:{orgId:st
         await emit({type:"action_request_emit",action_request_id:row.id,kind:row.kind,scope:row.scope,decision:"pending_approval",summary:row.summary,intent:row.intent});
     }
 }
+
+/** Harness emits one final assistant message; recovery must not append it again. */
+export async function emitHarnessRestoredAnswer(result:AgentRunResult,scope:{orgId:string;runId:string},emit:(event:AgentEvent)=>Promise<void>) {
+    if (!result.finalText) return;
+    const {pool}=await import("@neko/db");
+    const existing=await pool().query(`SELECT 1 FROM work_run_event WHERE org_id=$1 AND run_id=$2
+      AND kind='message' AND payload->>'role'='assistant' LIMIT 1`,[scope.orgId,scope.runId]);
+    if (!existing.rowCount) await emit({type:"message",role:"assistant",content:result.finalText});
+}
