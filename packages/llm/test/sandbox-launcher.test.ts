@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +28,9 @@ import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
 const h = vi.hoisted(() => {
   const calls: { args: string[]; stdin?: string }[] = [];
   const state = {
+    inspections: [] as Array<string>,
+    operations: [] as Array<{id:number;instruction:string;result:unknown}>,
+    inventory: "[]",
     holdExec: false,
     failPolicy: false,
     failReconcile: false,
@@ -37,6 +41,9 @@ const h = vi.hoisted(() => {
   function spawn(_cmd: string, args: string[]) {
     const call: { args: string[]; stdin?: string } = { args };
     calls.push(call);
+    const inspector = args.includes("/usr/local/bin/harness-inspect") || _cmd.endsWith("harness-inspect");
+    const inspection = inspector ? state.inspections.shift() : undefined;
+    const inspectionFailed = inspection === "busy";
     const isExec = args.includes("exec");
     const warmCreate = args.includes("create") && args.includes("/app/hermes-warm.py");
     const failedPolicy = args.includes("set") && state.failPolicy;
@@ -60,7 +67,7 @@ const h = vi.hoisted(() => {
         : [],
     );
     const reconciliation = args.findIndex(arg => arg.startsWith("exec(__import__('base64')"));
-    const lines = (warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
+    const lines = (inspector && inspection !== undefined ? [inspection] : args.includes("list") ? [state.inventory] : warmCreate ? ["__openneko_warm_ready__\n"] : failedPolicy ? ["policy submitted\n"] : isExec
       ? state.execLines ?? [
           'noise before\n',
           `\n__openneko_event__${JSON.stringify({ type: "message", role: "assistant", content: "hi" })}\n`,
@@ -71,7 +78,7 @@ const h = vi.hoisted(() => {
     const closeOnce = () => {
       if (closed) return;
       closed = true;
-      fire(ch, "close", createCollision || failedPolicy || missingDelete ? 1 : 0);
+      fire(ch, "close", createCollision || failedPolicy || missingDelete || inspectionFailed ? 1 : 0);
     };
     const stdout = reconciliation < 0 ? Readable.from(lines) : new Readable({ read() {} });
     const stdin = new Writable({
@@ -103,6 +110,10 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock("node:child_process", () => ({ spawn: h.spawn }));
+vi.mock("../src/work/harness-operation", () => ({loadHarnessOperations: async () => h.state.operations}));
+vi.mock("../src/work/harness-run-journal", () => ({
+  withHarnessRunJournal: (_scope: unknown, run: (signal: AbortSignal) => Promise<unknown>) => run(new AbortController().signal),
+}));
 vi.mock("../src/work/harness-launch-journal", async importOriginal => ({
   ...await importOriginal<typeof import("../src/work/harness-launch-journal")>(),
   withHarnessLaunchLock: (_root: string, run: (signal: AbortSignal) => Promise<unknown>) => run(new AbortController().signal),
@@ -499,6 +510,9 @@ describe("stageSandboxWorkspace", () => {
 describe("makeSandboxRunCore", () => {
   beforeEach(() => {
     h.calls.length = 0;
+    h.state.inspections = [];
+    h.state.operations = [];
+    h.state.inventory = "[]";
     h.state.holdExec = false;
     h.state.failPolicy = false;
     h.state.failReconcile = false;
@@ -859,6 +873,15 @@ describe("makeSandboxRunCore", () => {
     ]);
   });
 
+  it("keeps UUID-based cold sandbox names within the OpenShell limit", async () => {
+    const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{}});
+    await core({...fakeInput(async()=>{}),runId:"d77ff28f-25db-46cd-a69c-a545a9e318b5"});
+    const create=h.calls.find(call=>call.args.includes("create"))!.args;
+    const name=create[create.indexOf("--name")+1];
+    expect(name).toMatch(/^w-[0-9a-f]{16}$/);
+    expect(h.calls.filter(call=>call.args.includes("delete")).some(call=>call.args.includes(name))).toBe(true);
+  });
+
   it.each(["collision", "lost-result"])("preserves Harness recovery evidence after %s and fences redelivery", async mode => {
     const root = await mkdtemp(join(tmpdir(), "harness-launch-test-"));
     try {
@@ -872,6 +895,53 @@ describe("makeSandboxRunCore", () => {
       const before=h.calls.length;
       await expect(core(input)).rejects.toThrow("outcome unknown");
       expect(h.calls.slice(before).every(c => c.args.includes("/usr/local/bin/harness-inspect"))).toBe(true);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+
+  it.each(["ready", "busy", "unknown", "exhausted", "broker-unknown", "stale-active", "inventory-full", "inventory-invalid", "transfer-mismatch", "absent"])("handles interrupted Harness continuation: %s", async mode => {
+    const root = await mkdtemp(join(tmpdir(), "harness-continue-test-"));
+    try {
+      const input = { ...fakeInput(async () => {}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]), workspace:fullWorkspace(root) };
+      const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{},env:{HARNESS_RESUME:"untrusted"}});
+      h.state.execLines = [];
+      await expect(core(input)).rejects.toThrow("without a result");
+      h.state.execLines = undefined;
+      const evidence = JSON.stringify({version:1,run_id:input.runId,outcome:mode === "unknown" ? "outcome_unknown" : "interrupted",can_resume:mode !== "exhausted",next_attempt:2,operations:[]});
+      h.state.inspections = mode === "busy" ? ["busy"] : [evidence,evidence];
+      if (mode === "broker-unknown") h.state.operations = [{id:1,instruction:"read",result:null}];
+      if (mode === "transfer-mismatch") h.state.inspections[1] = JSON.stringify({...JSON.parse(evidence),next_attempt:3});
+      if (["stale-active", "inventory-full", "inventory-invalid", "absent"].includes(mode)) {
+        const state = join(input.workspace.runRoot,".harness");
+        await mkdir(state,{recursive:true});
+        await writeFile(join(state,createHash("sha256").update(input.runId).digest("hex")+".json"),"{}");
+        if (mode === "inventory-full") h.state.inventory = JSON.stringify(Array.from({length:500},(_,i)=>({name:`other-${i}`})));
+        if (mode === "inventory-invalid") h.state.inventory = "invalid";
+        if (mode === "stale-active") {
+          const create = h.calls.find(c=>c.args.includes("create"))!.args;
+          h.state.inventory = JSON.stringify([{name:create[create.indexOf("--name")+1]}]);
+          h.state.inspections = [evidence,"busy"];
+        }
+      }
+      const before = h.calls.length;
+      if (mode === "ready" || mode === "absent") {
+        expect((await core(input)).status).toBe("completed");
+        const calls = h.calls.slice(before);
+        const download = calls.findIndex(c=>c.args.includes("download"));
+        const deletion = calls.findIndex(c=>c.args.includes("delete"));
+        const creation = calls.findIndex(c=>c.args.includes("create"));
+        if (mode === "ready") {
+          expect(download).toBeGreaterThanOrEqual(0);
+          expect(deletion).toBeGreaterThan(download);
+          expect(creation).toBeGreaterThan(deletion);
+        } else {
+          expect(creation).toBeGreaterThanOrEqual(0);
+          expect(deletion).toBeGreaterThan(creation);
+        }
+        expect(calls.some(c=>c.args.some(arg=>arg.includes("HARNESS_RESUME='1'")))).toBe(true);
+      } else {
+        await expect(core(input)).rejects.toThrow();
+        expect(h.calls.slice(before).some(c=>c.args.includes("create") || c.args.includes("delete"))).toBe(false);
+      }
     } finally {await rm(root,{recursive:true,force:true});}
   });
 
