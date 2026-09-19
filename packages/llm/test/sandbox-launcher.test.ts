@@ -888,8 +888,10 @@ describe("makeSandboxRunCore", () => {
       h.state.collideOnNextCreate = mode === "collision";
       if (mode === "lost-result") h.state.execLines = [];
       const input = { ...fakeInput(async () => {}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]), workspace:fullWorkspace(root) };
-      const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{}});
+      const tokenFor=vi.fn(()=>"restricted-token");
+      const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{},brokerUrl:"http://broker",brokerTokenFor:tokenFor});
       await expect(core(input)).rejects.toThrow(mode === "collision" ? "outcome unknown" : "without a result");
+      if(mode === "lost-result") expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-read-only"}));
       expect(h.calls.some(c=>c.args.includes("delete"))).toBe(false);
       expect(h.calls.find(c=>c.args.includes("create"))?.args).toContain("openneko.recovery=retain");
       const before=h.calls.length;

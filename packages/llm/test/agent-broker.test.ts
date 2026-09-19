@@ -5,6 +5,7 @@ import {
   registerAgentBrokerEventSink,
   shutdownAgentBroker,
   startAgentBroker,
+  type RunBinding,
 } from "../src/work/broker";
 
 // /v1/events is the only path exercised here and it never touches the control
@@ -74,6 +75,39 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("bounds Harness tokens to journaled lookup without widening on reuse", async () => {
+    const cp=stubControlPlane();
+    cp.createActionRequest=vi.fn(async()=>({id:"unexpected",status:"approved"}));
+    cp.enqueueActionExecute=vi.fn(async()=>{});
+    const onEvents=vi.fn(async()=>{});
+    const handle=await startAgentBroker({controlPlane:cp,onEvents,port:0});
+    try {
+      const binding:RunBinding={runId:"restricted",orgId:"org",kind:"work",profile:"harness-read-only"};
+      const token=handle.tokenFor(binding);
+      expect(handle.tokenFor({...binding})).toBe(token);
+      for(const change of [{profile:undefined},{orgId:"other"},{kind:"workflow" as const},{threadId:"other"}]) {
+        expect(()=>handle.tokenFor({...binding,...change})).toThrow("conflicts");
+      }
+      // Mutating the caller's object cannot alter the saved capability.
+      binding.profile=undefined;
+      for(const path of ["/v1/action/request","/v1/action/enqueue","/v1/memory/remember","/v1/events","/v1/graphjin/agent","/v1/graphjin/tools/call","/v1/future/route"]) {
+        const response=await fetch(`http://127.0.0.1:${handle.port}${path}`,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({profile:"legacy",status:"approved",events:[]})});
+        expect(response.status,path).toBe(403);
+        expect(await response.json()).toEqual({error:"Harness broker capability denied"});
+      }
+      expect(cp.createActionRequest).not.toHaveBeenCalled();
+      expect(cp.enqueueActionExecute).not.toHaveBeenCalled();
+      expect(onEvents).not.toHaveBeenCalled();
+      // The permitted route reaches its own validation, with no database needed.
+      const allowed=await fetch(`http://127.0.0.1:${handle.port}/v1/harness/lookup`,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:"{}"});
+      expect(allowed.status).toBe(200);
+      expect(await allowed.json()).toEqual({error:"Invalid Harness lookup operation"});
+      const legacy=handle.tokenFor({runId:"legacy",orgId:"org",kind:"work"});
+      expect((await postEvents(handle.port,legacy)).status).toBe(200);
+      expect(()=>handle.tokenFor({runId:"legacy",orgId:"org",kind:"work",profile:"harness-read-only"})).toThrow("conflicts");
+    } finally {await handle.close();}
+  });
+
   it("mints one stable token per run and resolves it over HTTP", async () => {
     const handle = await startAgentBroker({ controlPlane: stubControlPlane(), port: 0 });
     try {

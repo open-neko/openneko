@@ -1,3 +1,4 @@
+import { startupEvent } from "@neko/telemetry/startup";
 import { recordHarnessLookup } from "./harness-operation";
 import {
   createServer,
@@ -23,6 +24,8 @@ import {
 
 /** What a per-run bearer token resolves to — the trust binding. */
 export interface RunBinding {
+  /** Trusted launcher capability profile; never read from request JSON. */
+  profile?: "harness-read-only";
   runId: string;
   orgId: string;
   /** Agent jobs have no work_run actor and intentionally use service reads. */
@@ -92,17 +95,23 @@ async function handle(
   if (!binding) return send(res, 401, { error: "unauthorized" });
   if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
 
-  const body = (await readJson(req)) as Record<string, unknown>;
   const path = (req.url ?? "").split("?")[0];
-  // A trusted in-process eval may pass an already-decorated control plane.
-  // The broker is the authoritative outer boundary here, so unwrap it before
-  // applying the broker trace below and avoid recording every call twice.
-  const cp = unwrapWorkSemanticTraceControlPlane(deps.controlPlane);
-
   // SEC5: every authenticated gateway call is audited with the dual
   // identity (human principal + agent backend). Best-effort — auditing
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
+
+  if (binding.profile === "harness-read-only" && path !== "/v1/harness/lookup") {
+    startupEvent("harness.broker_capability", {
+      runId: binding.runId, outcome: "denied", profile: binding.profile,
+    });
+    return send(res, 403, { error: "Harness broker capability denied" });
+  }
+  const body = (await readJson(req)) as Record<string, unknown>;
+  // A trusted in-process eval may pass an already-decorated control plane.
+  // The broker is the authoritative outer boundary here, so unwrap it before
+  // applying the broker trace below and avoid recording every call twice.
+  const cp = unwrapWorkSemanticTraceControlPlane(deps.controlPlane);
 
   switch (path) {
     case "/v1/policy/evaluate":
@@ -729,9 +738,22 @@ export async function startAgentBroker(
     port,
     tokenFor(binding) {
       const existing = byRun.get(binding.runId);
-      if (existing) return existing;
+      if (binding.profile !== undefined && binding.profile !== "harness-read-only") {
+        throw new Error("Unknown broker capability profile");
+      }
+      if (existing) {
+        const saved = tokens.get(existing)!;
+        if (
+          (saved.profile || binding.profile) &&
+          (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId)
+        ) {
+          throw new Error("Broker capability binding conflicts with existing run");
+        }
+        return existing;
+      }
       const token = randomUUID();
-      tokens.set(token, binding);
+      tokens.set(token, { ...binding });
       byRun.set(binding.runId, token);
       return token;
     },
