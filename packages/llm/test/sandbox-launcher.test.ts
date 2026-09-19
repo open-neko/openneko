@@ -855,6 +855,22 @@ describe("makeSandboxRunCore", () => {
     ]);
   });
 
+  it.each(["collision", "lost-result"])("preserves Harness recovery evidence after %s and fences redelivery", async mode => {
+    const root = await mkdtemp(join(tmpdir(), "harness-launch-test-"));
+    try {
+      h.state.collideOnNextCreate = mode === "collision";
+      if (mode === "lost-result") h.state.execLines = [];
+      const input = { ...fakeInput(async () => {}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]), workspace:fullWorkspace(root) };
+      const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{}});
+      await expect(core(input)).rejects.toThrow(mode === "collision" ? "outcome unknown" : "without a result");
+      expect(h.calls.some(c=>c.args.includes("delete"))).toBe(false);
+      expect(h.calls.find(c=>c.args.includes("create"))?.args).toContain("openneko.recovery=retain");
+      const before=h.calls.length;
+      await expect(core(input)).rejects.toThrow("outcome unknown");
+      expect(h.calls).toHaveLength(before);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+
   it("replaces an orphaned sandbox when a durable retry collides on the run name", async () => {
     h.state.collideOnNextCreate = true;
     const runCore = makeSandboxRunCore({

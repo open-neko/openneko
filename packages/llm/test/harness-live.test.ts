@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { db, pool, organization, data_source, work_thread, work_run, eq } from "@neko/db";
@@ -44,9 +44,18 @@ live("runs Harness through the real launcher, broker and GraphJin and replays it
         expect(result.finalText).toContain("REF-42");
         expect(events.some(e => e.type === "tool_start")).toBe(true);
         expect(JSON.stringify(result.backendState)).toContain("REF-42");
+        const receiptRoot = join(workspace.runsRoot, ".harness-launches", createHash("sha256").update(runId).digest("hex"));
+        const receipt = JSON.parse(await readFile(join(receiptRoot, "result.json"), "utf8"));
+        expect(receipt.result.status).toBe("completed");
         const replay = await runCore(input);
         expect(replay.status, JSON.stringify(replay)).toBe("completed");
         expect(replay.finalText).toBe(result.finalText);
+        await expect(runCore({...input,prompt:"changed accepted input"})).rejects.toThrow("conflicts");
+        // Simulate losing the host process before committing its receipt: even with
+        // a downloaded Go checkpoint, redelivery must not recreate/delete a sandbox.
+        await rename(join(receiptRoot,"result.json"),join(receiptRoot,"saved-result.json"));
+        await expect(runCore(input)).rejects.toThrow("outcome unknown");
+        await rename(join(receiptRoot,"saved-result.json"),join(receiptRoot,"result.json"));
     }
     finally {
         await broker.close();
