@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createAdminHandler } from "../src/admin-server";
-import { createActionRequest } from "@neko/llm/workflows";
+import { runActionExecute } from "../src/jobs/action-execute";
+import { registerActionAdapter, createActionRequest } from "@neko/llm/workflows";
 // Acceptance driver: real queue and production handler, isolated synthetic stack only.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -22,6 +23,28 @@ await db().insert(customer_profile).values({ org_id: orgId, version: 1, is_curre
 if (process.argv.includes('--seed-only'))
     process.exit(0);
 const queue = await boss();
+if (process.argv.includes('--approval-worker-only')) {
+    // Explicit isolated fixture: production action queue/handler, controlled HTTP effect.
+    let effects=0;
+    const effect=createServer((req,res)=>{
+        req.resume();effects++;
+        assert.equal(effects,1,'approval must dispatch exactly once');
+        res.setHeader('content-type','application/json');res.end(JSON.stringify({value:42}));
+        console.log('M4_BROWSER_EFFECT_PASS',effects);
+    });
+    await new Promise<void>(resolve=>effect.listen(0,'127.0.0.1',resolve));
+    registerActionAdapter('harness_effect_fixture',async({idempotencyKey})=>{
+        const result=await (await fetch(`http://127.0.0.1:${(effect.address() as {port:number}).port}`,{method:'POST',headers:{'idempotency-key':idempotencyKey ?? ''}})).json();
+        if (process.argv.includes('--effect-unknown')) throw Error('Controlled receipt loss after external commit');
+        return {result};
+    });
+    await queue.createQueue(QUEUE.ACTION_EXECUTE);
+    await queue.work(QUEUE.ACTION_EXECUTE,async jobs=>{
+        for (const job of jobs) await runActionExecute(job.data as Parameters<typeof runActionExecute>[0]);
+    });
+    console.log('M4_APPROVAL_WORKER_READY');
+    await new Promise(()=>{});
+}
 await queue.createQueue(QUEUE.WORK_RUN);
 await queue.work<WorkRunPayload>(QUEUE.WORK_RUN, async (jobs) => {
     for (const job of jobs) {
@@ -98,11 +121,13 @@ assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_message WH
 console.log('M4_QUEUE_REDELIVERY_PASS',run.id);
 // Exercise the production queue handler and worker-owned proposal preflight API.
 const approvalKind='harness_effect_fixture';
-await db().insert(pack_action_definition).values({org_id:orgId,kind:approvalKind,readiness:'ready',definition_hash:'fixture',definition:{kind:approvalKind,inputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value'],additionalProperties:false}}});
+const beforeExecutions=(await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n;
+await db().insert(pack_action_definition).values({org_id:orgId,kind:approvalKind,readiness:'ready',definition_hash:'fixture',definition:{kind:approvalKind,inputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value'],additionalProperties:false}}}).onConflictDoNothing();
 await db().insert(action_policy).values({org_id:orgId,name:'Harness fixture approval',mode:'approval_required',applies_to_kinds:[approvalKind],applies_to_scopes:['external']});
 const admin=createServer(createAdminHandler({actionRequests:{create:async input=>{const request=await createActionRequest(input as Parameters<typeof createActionRequest>[0]);return {id:request.id,status:request.status};}}}));
 await new Promise<void>(resolve=>admin.listen(18122,'127.0.0.1',resolve));
-const approvalThread=await createWorkThread(orgId,'M4 pending approval');
+const approvalOwner=(await pool().query('SELECT solo_admin_user_id FROM organization WHERE id=$1',[orgId])).rows[0]?.solo_admin_user_id ?? null;
+const approvalThread=await createWorkThread(orgId,'M4 pending approval','web',approvalOwner);
 const approvalRun=await createWorkRun(orgId,approvalThread.id,'harness',{userId:null,role:'service'});
 const approvalMessage='Request approval to set the synthetic fixture value to 42.';
 await createWorkMessage({orgId,threadId:approvalThread.id,runId:approvalRun.id,role:'user',content:approvalMessage});
@@ -113,7 +138,7 @@ try {
  await waitForJob(approvalJob.id,approvalRun.id);
  const proposals=(await pool().query('SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2',[orgId,approvalRun.id])).rows;
  assert.equal(proposals.length,1);assert.equal(proposals[0].status,'pending_approval');
- assert.equal((await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n,0);
+ assert.equal((await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n,beforeExecutions);
  console.log('M4_QUEUE_APPROVAL_PASS',approvalThread.id,approvalRun.id,proposals[0].id);
 } finally {await new Promise<void>(resolve=>admin.close(()=>resolve()));}
 
@@ -192,6 +217,7 @@ try {
     await waitForJob(approvalRetry.id,approvalRun.id);
     const restored=(await pool().query('SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2',[orgId,approvalRun.id])).rows;
     assert.equal(restored.length,1);assert.equal(restored[0].status,'pending_approval');
+    assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='message' AND payload->>'role'='assistant'",[orgId,approvalRun.id])).rows[0].n,1,'recovery must not duplicate the rendered answer');
     assert.deepEqual(await (await fetch('http://127.0.0.1:18118/control')).json(),afterCalls);
     console.log('M4_QUEUE_APPROVAL_RESTART_PASS',approvalRun.id);
 

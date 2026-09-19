@@ -1,4 +1,4 @@
-import { emitHarnessApprovals } from "./harness-proposal";
+import { emitHarnessApprovals, emitHarnessRestoredAnswer } from "./harness-proposal";
 import { loadHarnessOperations } from "./harness-operation";
 import { withHarnessRunJournal, type HarnessRunJournal } from "./harness-run-journal";
 import { harnessResult } from "../agent-backends/harness";
@@ -763,7 +763,7 @@ function makeSandboxCore(
       await timed("harness_reconcile_cleanup", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       await input.emit({ type: "status", message: "Restored saved run result" });
       await emitHarnessApprovals(admission.result,{orgId:input.orgId,runId:input.runId},input.emit);
-      if (admission.result.finalText) await input.emit({ type: "message", role: "assistant", content: admission.result.finalText });
+      await emitHarnessRestoredAnswer(admission.result,{orgId:input.orgId,runId:input.runId},input.emit);
       return admission.result;
     }
     let harnessReceiptSaved = false;
