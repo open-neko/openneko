@@ -17,7 +17,7 @@ import (
 	"github.com/open-neko/harness/internal/agent"
 )
 
-type operation = agent.SavedLookup
+type operation = agent.SavedOperation
 
 type checkpoint struct {
 	Version    int           `json:"version"`
@@ -32,15 +32,23 @@ type checkpoint struct {
 // replay stored events without recontacting models or tools. Interrupted runs
 // require explicit Resume after reconciliation.
 func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, lookup func(context.Context, string) (json.RawMessage, error), emit func(agent.Event) error) (agent.Result, error) {
-	return run(ctx, root, spec, client, lookup, emit, false)
+	return run(ctx, root, spec, client, agent.Tools{Lookup: lookup}, emit, false)
 }
 
 // Resume is an explicit authorized new attempt; unresolved operations never dispatch.
 func Resume(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, lookup func(context.Context, string) (json.RawMessage, error), emit func(agent.Event) error) (agent.Result, error) {
-	return run(ctx, root, spec, client, lookup, emit, true)
+	return run(ctx, root, spec, client, agent.Tools{Lookup: lookup}, emit, true)
 }
 
-func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, lookup func(context.Context, string) (json.RawMessage, error), emit func(agent.Event) error, resume bool) (agent.Result, error) {
+func RunWithTools(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, tools agent.Tools, emit func(agent.Event) error) (agent.Result, error) {
+	return run(ctx, root, spec, client, tools, emit, false)
+}
+
+func ResumeWithTools(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, tools agent.Tools, emit func(agent.Event) error) (agent.Result, error) {
+	return run(ctx, root, spec, client, tools, emit, true)
+}
+
+func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, tools agent.Tools, emit func(agent.Event) error, resume bool) (agent.Result, error) {
 	if root == "" || spec.Version != 1 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
 		return agent.Result{}, fmt.Errorf("invalid persistent run")
 	}
@@ -105,38 +113,73 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 	if err := save(); err != nil {
 		return agent.Result{}, err
 	}
-	var durableLookup func(context.Context, string) (json.RawMessage, error)
 	var persistenceErr error
-	if lookup != nil {
-		durableLookup = func(ctx context.Context, instruction string) (json.RawMessage, error) {
-			if persistenceErr != nil {
-				return nil, persistenceErr
-			}
-			n := len(state.Operations)
-			state.Operations = append(state.Operations, operation{ID: n + 1, Instruction: instruction})
-			if err := save(); err != nil {
-				persistenceErr = err
-				return nil, err
-			}
-			raw, err := lookup(ctx, instruction)
-			if len(raw) > 262144 || !json.Valid(raw) || strings.TrimSpace(string(raw)) == "null" {
-				raw = nil
-				err = fmt.Errorf("lookup result invalid or exceeds limit")
-			}
-			state.Operations[n].Finished = true
-			state.Operations[n].Result = raw
-			if err != nil {
-				state.Operations[n].Error = "lookup_failed"
-				state.Operations[n].Result = nil
-			}
-			if saveErr := save(); saveErr != nil {
-				persistenceErr = saveErr
-				return nil, saveErr
-			}
-			return raw, err
+	record := func(ctx context.Context, name, instruction string, call func() (json.RawMessage, error)) (json.RawMessage, error) {
+		if persistenceErr != nil {
+			return nil, persistenceErr
+		}
+		n := len(state.Operations)
+
+		if agent.OperationID(ctx) != uint64(n+1) {
+			return nil, fmt.Errorf("tool operation identity mismatch")
+		}
+		op := operation{ID: n + 1, Instruction: instruction}
+		if name != "lookup" {
+			op.Tool = name
+		}
+		state.Operations = append(state.Operations, op)
+		if err := save(); err != nil {
+			persistenceErr = err
+			return nil, err
+		}
+		raw, err := call()
+		if len(raw) > 262144 || !json.Valid(raw) || strings.TrimSpace(string(raw)) == "null" {
+			raw = nil
+			err = fmt.Errorf("tool result invalid or exceeds limit")
+		}
+		state.Operations[n].Finished = true
+		state.Operations[n].Result = raw
+		if err != nil {
+			state.Operations[n].Error = name + "_failed"
+			state.Operations[n].Result = nil
+		}
+		if saveErr := save(); saveErr != nil {
+			persistenceErr = saveErr
+			return nil, saveErr
+		}
+		return raw, err
+	}
+	durable := agent.Tools{}
+	if tools.Lookup != nil {
+		durable.Lookup = func(ctx context.Context, instruction string) (json.RawMessage, error) {
+			return record(ctx, "lookup", instruction, func() (json.RawMessage, error) { return tools.Lookup(ctx, instruction) })
 		}
 	}
-	return agent.RunAttempt(ctx, spec, client, durableLookup, func(e agent.Event) error {
+	if tools.Propose != nil {
+		durable.Propose = func(ctx context.Context, proposal agent.Proposal) (agent.ProposalReceipt, error) {
+			input, err := json.Marshal(proposal)
+			if err != nil {
+				return agent.ProposalReceipt{}, err
+			}
+			raw, err := record(ctx, "propose", string(input), func() (json.RawMessage, error) {
+				receipt, err := tools.Propose(ctx, proposal)
+				if err != nil {
+					return nil, err
+				}
+				if err = receipt.Validate(); err != nil {
+					return nil, err
+				}
+				return json.Marshal(receipt)
+			})
+			if err != nil {
+				return agent.ProposalReceipt{}, err
+			}
+			var receipt agent.ProposalReceipt
+			err = json.Unmarshal(raw, &receipt)
+			return receipt, err
+		}
+	}
+	return agent.RunAttemptWithTools(ctx, spec, client, durable, func(e agent.Event) error {
 		if persistenceErr != nil {
 			return persistenceErr
 		}
@@ -221,6 +264,6 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 		}
 	}
 	prior.Sequence = uint64(len(state.Events))
-	prior.Operations = append([]agent.SavedLookup(nil), state.Operations...)
+	prior.Operations = append([]agent.SavedOperation(nil), state.Operations...)
 	return prior, nil
 }

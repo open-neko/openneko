@@ -440,3 +440,21 @@ GraphJin, Hermes, launcher/queue recovery and worker-death gates (worker-death r
 `a5580dee-7cbc-46c6-8940-814be6b50c9c`). It exits 1 at the known M2 upstream idle
 cancellation failure; sandbox deletion still closes that request. All owned test
 services were removed. This does not qualify full M4 approvals or governed effects.
+
+## Typed Go proposal recovery (2026-09-19)
+
+The standalone engine now accepts an optional host-installed `Propose` capability.
+Lookup and proposal calls share four operation IDs across all attempts. Proposal
+inputs exclude identity and approval state; receipts accept only pending approval
+or denial. Checkpoints bind each saved result to its tool type and original input.
+Continuation reuses a saved proposal receipt without invoking its writer again.
+A completed model turn with a pending proposal reports kind `approval`; this is
+not completion of the proposed effect. The command and OpenNeko broker wiring
+remain separate work. Existing lookup-only checkpoints remain compatible.
+
+`go test -race ./...` and `go vet ./...` pass. HTTP/Ax tests cover combined
+lookup/proposal recovery, terminal replay, cross-tool receipt rejection, rejection
+of executed receipts and the shared operation ceiling. The cumulative live
+OpenShell/GraphJin suite passed worker-death recovery and queue redelivery with
+this binary, and still exited nonzero on the known M2 upstream cancellation test.
+Owned fixture services were removed.

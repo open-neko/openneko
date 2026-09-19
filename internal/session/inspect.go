@@ -37,6 +37,7 @@ func Inspect(root string, spec agent.Spec) (Recovery, error) {
 
 // Receipt is trusted host evidence for one previously admitted operation.
 type Receipt struct {
+	Tool        string          `json:"tool,omitempty"`
 	ID          int             `json:"id"`
 	Instruction string          `json:"instruction"`
 	Result      json.RawMessage `json:"result"`
@@ -92,7 +93,7 @@ func inspect(root string, spec agent.Spec, receipts []Receipt) (Recovery, error)
 			}
 			seen[receipt.ID] = true
 			op := &state.Operations[receipt.ID-1]
-			if op.Instruction != receipt.Instruction || (op.Finished && (op.Error != "" || !sameJSON(op.Result, receipt.Result))) {
+			if op.Name() != (agent.SavedOperation{Tool: receipt.Tool}).Name() || op.Instruction != receipt.Instruction || (op.Finished && (op.Error != "" || !sameJSON(op.Result, receipt.Result))) {
 				return Recovery{}, fmt.Errorf("recovery receipt conflicts with operation")
 			}
 			op.Result, op.Finished = receipt.Result, true
@@ -107,7 +108,7 @@ func inspect(root string, spec agent.Spec, receipts []Receipt) (Recovery, error)
 			}
 			if !ended {
 				state.Events = append(state.Events, agent.Event{Version: 1, RunID: spec.RunID, InputID: spec.InputID,
-					Sequence: uint64(len(state.Events) + 1), Type: "tool.finished", Name: "lookup", OperationID: uint64(receipt.ID), Data: receipt.Result})
+					Sequence: uint64(len(state.Events) + 1), Type: "tool.finished", Name: op.Name(), OperationID: uint64(receipt.ID), Data: receipt.Result})
 			}
 		}
 		data, err := json.Marshal(state)
@@ -178,7 +179,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		return invalid()
 	}
 	for i, op := range s.Operations {
-		if op.ID != i+1 || len(op.Instruction) == 0 || len(op.Instruction) > 8000 || len(op.Result) > 262144 {
+		if op.ID != i+1 || !op.ValidInput() || len(op.Result) > 262144 {
 			return invalid()
 		}
 		if !op.Finished && (len(op.Result) != 0 || op.Error != "") {
@@ -190,9 +191,14 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		if len(op.Result) > 0 && (!json.Valid(op.Result) || bytes.Equal(bytes.TrimSpace(op.Result), []byte("null"))) {
 			return invalid()
 		}
+		if op.Name() == "propose" && len(op.Result) > 0 {
+			if _, err := agent.ParseProposalReceipt(op.Result); err != nil {
+				return invalid()
+			}
+		}
 	}
 	attempt := uint64(1)
-	started := map[uint64]bool{}
+	started := map[uint64]string{}
 	ended := map[uint64]bool{}
 	for i, e := range s.Events {
 		if e.Version != 1 || e.RunID != spec.RunID || e.InputID != spec.InputID || e.Sequence != uint64(i+1) {
@@ -215,16 +221,19 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 		case "tool.reused":
-			if !ended[e.OperationID] || e.Name != "lookup" {
+			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()
 			}
 		case "tool.started":
-			if e.OperationID != uint64(len(started)+1) || e.OperationID > 4 || e.Name != "lookup" {
+			if e.OperationID != uint64(len(started)+1) || e.OperationID > 4 || (e.Name != "lookup" && e.Name != "propose") {
 				return invalid()
 			}
-			started[e.OperationID] = true
+			started[e.OperationID] = e.Name
+			if e.OperationID <= uint64(len(s.Operations)) && s.Operations[e.OperationID-1].Name() != e.Name {
+				return invalid()
+			}
 		case "tool.finished":
-			if !started[e.OperationID] || ended[e.OperationID] || e.Name != "lookup" {
+			if started[e.OperationID] == "" || ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()
 			}
 			ended[e.OperationID] = true
@@ -252,6 +261,19 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 		if len(s.Result.Answer) > 65536 || (s.Result.Status == "completed" && s.Result.Answer == "") {
+			return invalid()
+		}
+		var expectedProposals []agent.ProposalReceipt
+		for _, op := range s.Operations {
+			if op.Name() == "propose" && op.Error == "" {
+				receipt, err := agent.ParseProposalReceipt(op.Result)
+				if err != nil {
+					return invalid()
+				}
+				expectedProposals = append(expectedProposals, receipt)
+			}
+		}
+		if !sameJSON(expectedProposals, s.Result.Proposals) {
 			return invalid()
 		}
 		for _, op := range s.Operations {
