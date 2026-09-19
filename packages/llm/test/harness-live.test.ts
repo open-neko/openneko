@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { db, pool, organization, data_source, work_thread, work_run, eq } from "@neko/db";
@@ -36,14 +37,41 @@ live("runs Harness through the real launcher, broker and GraphJin and replays it
         const denied = await forged.json();
         expect(denied.denied || denied.error, JSON.stringify(denied)).toBeTruthy();
         broker.release(runId);
-        const runCore = makeSandboxRunCore({ cli: process.env.HARNESS_M3_CLI!, gatewayName: "harness-m2", agentImage: "harness-openneko:m3", modelProvider: "harness-m3", modelHosts: [{ host: "host.docker.internal", port: 18118 }], hermesHomeHostPath: hermesHome, warmPoolSize: 0, brokerUrl: broker.url, brokerTokenFor: broker.tokenFor, brokerRelease: broker.release, onLog: () => { } });
+        // Lose the first checkpoint transfer after the real model/tool execution.
+        // This leaves only the retained sandbox, with no host receipt/checkpoint.
+        const cli = join(root, "recovery-cli");
+        const fault = join(root, "recovery-download-fault");
+        await writeFile(fault, "1");
+        await writeFile(cli, `#!/bin/sh
+if [ -f '${fault}' ]; then
+  for arg in "$@"; do
+    if [ "$arg" = download ]; then rm '${fault}'; exit 71; fi
+  done
+fi
+exec '${process.env.HARNESS_M3_CLI!}' "$@"
+`);
+        await chmod(cli, 0o700);
+        const runCore = makeSandboxRunCore({ cli, gatewayName: "harness-m2", agentImage: "harness-openneko:m3", modelProvider: "harness-m3", modelHosts: [{ host: "host.docker.internal", port: 18118 }], hermesHomeHostPath: hermesHome, warmPoolSize: 0, brokerUrl: broker.url, brokerTokenFor: broker.tokenFor, brokerRelease: broker.release, onLog: () => { } });
         const events: AgentEvent[] = [];
         const input = { backend: makeAgentBackend({ id: "harness" }), orgId, threadId, runId, workspace, prompt: "Find the seeded reference using lookup. Report the returned reference.", pluginActions: [], emit: async (e: AgentEvent) => { events.push(e); } };
+        await expect(runCore(input)).rejects.toThrow();
+        await expect(readFile(join(workspace.runRoot, ".harness", `${createHash("sha256").update(runId).digest("hex")}.json`))).rejects.toThrow();
+        const modelCalls = await (await fetch("http://127.0.0.1:18118/control")).json();
+        expect(modelCalls["harness-fixture"]).toBe(3);
+        expect(modelCalls["graphjin-fixture"]).toBeGreaterThan(0);
         const result = await runCore(input);
         expect(result.status, JSON.stringify(result)).toBe("completed");
         expect(result.finalText).toContain("REF-42");
         expect(events.some(e => e.type === "tool_start")).toBe(true);
         expect(JSON.stringify(result.backendState)).toContain("REF-42");
+        const inspected = JSON.parse(execFileSync(process.env.HARNESS_INSPECT_BIN!, [], {
+            env: { HARNESS_STATE_DIR: join(workspace.runRoot, ".harness") },
+            input: JSON.stringify({ version: 1, run_id: runId, input_id: runId, prompt: input.prompt }),
+            encoding: "utf8",
+        }));
+        expect(inspected.outcome).toBe("terminal");
+        expect(inspected.operations).toHaveLength(1);
+        expect(inspected.result.answer).toContain("REF-42");
         const receiptRoot = join(workspace.runsRoot, ".harness-launches", createHash("sha256").update(runId).digest("hex"));
         const receipt = JSON.parse(await readFile(join(receiptRoot, "result.json"), "utf8"));
         expect(receipt.result.status).toBe("completed");
@@ -51,11 +79,25 @@ live("runs Harness through the real launcher, broker and GraphJin and replays it
         expect(replay.status, JSON.stringify(replay)).toBe("completed");
         expect(replay.finalText).toBe(result.finalText);
         await expect(runCore({...input,prompt:"changed accepted input"})).rejects.toThrow("conflicts");
-        // Simulate losing the host process before committing its receipt: even with
-        // a downloaded Go checkpoint, redelivery must not recreate/delete a sandbox.
+        // Recover again from the downloaded checkpoint after loss of the host receipt.
         await rename(join(receiptRoot,"result.json"),join(receiptRoot,"saved-result.json"));
+        const recovery = await Promise.allSettled([runCore(input), runCore(input)]);
+        expect(recovery.filter(r => r.status === "fulfilled")).toHaveLength(1);
+        expect((recovery.find(r => r.status === "fulfilled") as PromiseFulfilledResult<typeof result>).value).toEqual(result);
+        // An unresolved operation must never be reissued, even on repeated delivery.
+        const snapshot = join(workspace.runRoot, ".harness", `${createHash("sha256").update(runId).digest("hex")}.json`);
+        const original = await readFile(snapshot, "utf8");
+        const unknown = JSON.parse(original);
+        delete unknown.result;
+        unknown.events = unknown.events.slice(0, unknown.events.findIndex((e: {type: string}) => e.type === "tool.started") + 1);
+        unknown.operations = [{id: 1, instruction: unknown.operations[0].instruction, finished: false}];
+        await rename(join(receiptRoot,"result.json"),join(receiptRoot,"reconciled-result.json"));
+        await writeFile(snapshot, JSON.stringify(unknown));
         await expect(runCore(input)).rejects.toThrow("outcome unknown");
+        await expect(runCore(input)).rejects.toThrow("outcome unknown");
+        await writeFile(snapshot, original);
         await rename(join(receiptRoot,"saved-result.json"),join(receiptRoot,"result.json"));
+        expect(await (await fetch("http://127.0.0.1:18118/control")).json()).toEqual(modelCalls);
     }
     finally {
         await broker.close();

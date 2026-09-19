@@ -103,6 +103,10 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock("node:child_process", () => ({ spawn: h.spawn }));
+vi.mock("../src/work/harness-launch-journal", async importOriginal => ({
+  ...await importOriginal<typeof import("../src/work/harness-launch-journal")>(),
+  withHarnessLaunchLock: (_root: string, run: (signal: AbortSignal) => Promise<unknown>) => run(new AbortController().signal),
+}));
 
 // Capture the job descriptor the launcher writes (then uploads to the box), so
 // we can assert exactly what crosses the host→sandbox boundary.
@@ -868,7 +872,7 @@ describe("makeSandboxRunCore", () => {
       expect(h.calls.find(c=>c.args.includes("create"))?.args).toContain("openneko.recovery=retain");
       const before=h.calls.length;
       await expect(core(input)).rejects.toThrow("outcome unknown");
-      expect(h.calls).toHaveLength(before);
+      expect(h.calls.slice(before).every(c => c.args.includes("/usr/local/bin/harness-inspect"))).toBe(true);
     } finally {await rm(root,{recursive:true,force:true});}
   });
 

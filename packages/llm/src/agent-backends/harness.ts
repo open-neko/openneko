@@ -59,8 +59,7 @@ export class HarnessBackend implements AgentBackend {
                 if (event.type === "run.finished") {
                     if (!["completed", "failed", "cancelled"].includes(event.result?.status))
                         throw new Error("Invalid harness result");
-                    result = { backendState: { harness: { version: 1, kind: event.result.kind, delegations: event.result.delegations ?? [], usageCoverage: "delegated-only" } }, status: event.result.status, finalText: typeof event.result.answer === "string" ? event.result.answer : "",
-                        ...(event.result.code ? { error: String(event.result.code) } : {}) };
+                    result = harnessResult(event.result);
                 }
                 else if (event.type === "tool.started") {
                     await opts.onEvent?.({ type: "tool_start", id: `harness-lookup-${event.operation_id}`, name: "neko_graphjin_agent" });
@@ -93,4 +92,10 @@ export class HarnessBackend implements AgentBackend {
             opts.signal?.removeEventListener("abort", abort);
         }
     }
+}
+
+/** Shared by live execution and validated checkpoint adoption. */
+export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; delegations?: unknown[]; answer?: string; code?: string}): AgentRunResult {
+    return { backendState: { harness: { version: 1, kind: result.kind, delegations: result.delegations ?? [], usageCoverage: "delegated-only" } }, status: result.status, finalText: result.answer ?? "",
+        ...(result.code ? {error: result.code} : {}) };
 }

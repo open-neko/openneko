@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { admitHarnessLaunch } from "../src/work/harness-launch-journal";
+import { admitHarnessLaunch, withHarnessLaunchLock } from "../src/work/harness-launch-journal";
 import { reapStrandedSandboxes } from "../src/work/sandbox-launcher";
 
 const roots: string[] = [];
@@ -53,7 +53,7 @@ it.each([false, true])("survives actual host SIGKILL (receipt saved: %s)", async
   const tsx = createRequire(import.meta.url).resolve("tsx", { paths: [join(process.cwd(), "../../apps/worker")] });
   const journal = pathToFileURL(join(process.cwd(), "src/work/harness-launch-journal.ts")).href;
   const child = spawn(process.execPath, ["--import", tsx, "--input-type=module", "-e", `
-    import { admitHarnessLaunch } from ${JSON.stringify(journal)};
+    import { admitHarnessLaunch, withHarnessLaunchLock } from ${JSON.stringify(journal)};
     const admission = await admitHarnessLaunch(${JSON.stringify(path)}, {input:"same"});
     ${saved ? 'await admission.complete({status:"completed",finalText:"durable read evidence"});' : ''}
     process.send("durable"); setInterval(()=>{},1000);
@@ -63,5 +63,47 @@ it.each([false, true])("survives actual host SIGKILL (receipt saved: %s)", async
     const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
     if (saved) expect((await admitHarnessLaunch(path, {input:"same"})).result?.finalText).toBe("durable read evidence");
     else await expect(admitHarnessLaunch(path, {input:"same"})).rejects.toThrow("outcome unknown");
+  } finally { child.kill("SIGKILL"); }
+});
+
+it("adopts a terminal result once, rejects conflicts and never reconciles a corrupt receipt", async () => {
+  const path = await root(); await admitHarnessLaunch(path, {input: "same"});
+  let calls = 0;
+  const reconcile = async () => { calls++; return {status: "completed" as const, finalText: "verified evidence"}; };
+  await expect(admitHarnessLaunch(path, {input: "different"}, reconcile)).rejects.toThrow("conflicts");
+  expect(calls).toBe(0);
+  expect((await admitHarnessLaunch(path, {input: "same"}, reconcile)).result?.finalText).toBe("verified evidence");
+  await admitHarnessLaunch(path, {input: "same"}, reconcile);
+  expect(calls).toBe(1);
+  await writeFile(join(path, "result.json"), "{");
+  await expect(admitHarnessLaunch(path, {input: "same"}, reconcile)).rejects.toThrow("outcome unknown");
+  expect(calls).toBe(1);
+});
+
+it.skipIf(!process.env.HARNESS_INSPECT_BIN)("fences active hosts and releases ownership on actual SIGKILL", async () => {
+  const { spawn } = await import("node:child_process");
+  const { once } = await import("node:events");
+  const { createRequire } = await import("node:module");
+  const { pathToFileURL } = await import("node:url");
+  const path = await root();
+  const tsx = createRequire(import.meta.url).resolve("tsx", { paths: [join(process.cwd(), "../../apps/worker")] });
+  const journal = pathToFileURL(join(process.cwd(), "src/work/harness-launch-journal.ts")).href;
+  const child = spawn(process.execPath, ["--import", tsx, "--input-type=module", "-e", `
+    import { withHarnessLaunchLock, admitHarnessLaunch } from ${JSON.stringify(journal)};
+    await withHarnessLaunchLock(${JSON.stringify(path)}, async () => {
+      await admitHarnessLaunch(${JSON.stringify(path)}, {input:"same"});
+      process.send("durable"); await new Promise(()=>{});
+    });
+  `], {stdio:["ignore","ignore","pipe","ipc"]});
+  try {
+    await once(child, "message");
+    await expect(withHarnessLaunchLock(path, async () => "bad")).rejects.toThrow("still active");
+    const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+    // The kernel closes the dead parent's pipe; wait for the helper to observe EOF.
+    await expect.poll(async () => {
+      try { return await withHarnessLaunchLock(path, async () => "released"); } catch { return "locked"; }
+    }).toBe("released");
+    const recovered = await withHarnessLaunchLock(path, () => admitHarnessLaunch(path, {input:"same"}, async () => ({status:"completed",finalText:"terminal proof"})));
+    expect(recovered.result?.finalText).toBe("terminal proof");
   } finally { child.kill("SIGKILL"); }
 });
