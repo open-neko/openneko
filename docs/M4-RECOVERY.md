@@ -496,6 +496,12 @@ purge is enabled by this change. Existing organization deletion remains explicit
 
 ## Final governed-action acceptance (2026-09-19)
 
+- A follow-up real filesystem failure check (2026-09-20) replaces the checkpoint
+  directory with a file immediately before proposal dispatch and immediately after
+  its callback. The first case executes no callback; the second executes once.
+  Both reject resume after storage is restored, preventing unreceipted replay.
+  `go test -race -count=1 -timeout 60s ./internal/session -run TestProposalCheckpointIOFailureStopsDispatchAndReplay`
+  passes both cases.
 - Standalone Go race suite and vet pass. Worker typechecking and the focused
   broker/executor/launch regression suite pass (17 tests, one opt-in test skipped).
 - The cumulative first live group passes 20 checks, including four effect crash

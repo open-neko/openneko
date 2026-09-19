@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -34,6 +36,63 @@ func proposalModel(t *testing.T, code string) (ax.AIClient, *atomic.Int32) {
 }
 
 const proposalCode = `const read=lookup('reference'); const approval=propose({action:'reference.update',arguments:{value:42},summary:'Update the reference'}); final('Answer',{read,approval});`
+
+func TestProposalCheckpointIOFailureStopsDispatchAndReplay(t *testing.T) {
+	for _, phase := range []string{"before_dispatch", "after_dispatch"} {
+		t.Run(phase, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "session")
+			backup := root + ".retained"
+			broken := false
+			breakStorage := func() {
+				t.Helper()
+				if err := os.Rename(root, backup); err != nil {
+					t.Fatal(err)
+				}
+				// A file in place of the directory reliably fails checkpoint writes,
+				// including when tests run with privileges that bypass permissions.
+				if err := os.WriteFile(root, []byte("unavailable"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				broken = true
+			}
+			client, _ := proposalModel(t, `const approval=propose({action:'a',arguments:{},summary:'Prepare'}); final('Answer',{approval});`)
+			spec := agent.Spec{Version: 1, RunID: "io-failure", InputID: "input", Prompt: "Prepare"}
+			calls := 0
+			tools := agent.Tools{Propose: func(context.Context, agent.Proposal) (agent.ProposalReceipt, error) {
+				calls++
+				if phase == "after_dispatch" {
+					breakStorage()
+				}
+				return agent.ProposalReceipt{ID: "request", Status: "pending_approval"}, nil
+			}}
+			_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+				if phase == "before_dispatch" && e.Type == "tool.started" {
+					breakStorage()
+				}
+				return nil
+			})
+			wantCalls := 0
+			if phase == "after_dispatch" {
+				wantCalls = 1
+			}
+			if err == nil || !broken || calls != wantCalls {
+				t.Fatalf("err=%v broken=%v calls=%d want=%d", err, broken, calls, wantCalls)
+			}
+			if err := os.Remove(root); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(backup, root); err != nil {
+				t.Fatal(err)
+			}
+			// Restoring storage cannot establish whether an unfinished operation ran.
+			// Resume must reject it before consulting a model or dispatching again.
+			_, err = ResumeWithTools(context.Background(), root, spec, nil, tools, func(agent.Event) error { return nil })
+			if err == nil || calls != wantCalls {
+				t.Fatalf("unfinished proposal replayed: err=%v calls=%d", err, calls)
+			}
+		})
+	}
+}
 
 func TestProposalCheckpointReuseAndTerminalReplay(t *testing.T) {
 	root := t.TempDir()
