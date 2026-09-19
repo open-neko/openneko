@@ -12,13 +12,15 @@ or run the standalone checks.
 - `internal/axbridge`: run-bound Ax tool callbacks for cancellation and telemetry.
 - `compat`: actual HTTP/Goja checks for tool pairing, cancellation and snapshots.
 - `integration`: isolated real OpenShell transport and credential-policy checks.
-- `internal/session`: bounded durable acceptance, read evidence and completed-run replay.
-- `adapters/openneko`: optional scoped GraphJin delegation and product launch adapter.
+- `internal/session`: bounded durable acceptance, typed operation receipts and recovery.
+- `adapters/openneko`: optional GraphJin lookup, governed proposals and product launch adapter.
 
-The [headless run protocol](docs/RUN-PROTOCOL.md) and read-only M3 product path are
-implemented. [Acceptance evidence](integration/m3/README.md) covers the real web,
-queue worker, broker, OpenShell and GraphJin. Arbitrary crash recovery and production
-rollout remain future milestones; M2 upstream cancellation is still unresolved.
+The [headless run protocol](docs/RUN-PROTOCOL.md), M3 product path and
+[M4 governed recovery](docs/M4-RECOVERY.md) are implemented and locally verified.
+Acceptance covers real web approval/reload, queue worker death, broker, OpenShell,
+GraphJin and controlled HTTP effects. Unknown effects are never automatically
+redispatched. M2 raw OpenShell proxy cancellation remains a release blocker;
+arbitrary VM recovery, M5–M8 and production rollout are not qualified.
 
 ```sh
 go test -race -count=1 -timeout 60s ./...

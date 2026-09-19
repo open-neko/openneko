@@ -1,120 +1,69 @@
 # Harness stocktake
 
-Reviewed 2026-09-19 against this working tree and local test results.
+Reviewed 2026-09-20. This replaces the earlier pre-M3 inventory.
 
-## Latest M2 follow-up
+## Implemented and verified locally
 
-Baseline committed as `3f0071d`. HTTPS streaming with credential replacement and
-Go CA trust now passes; removing the interception CA correctly fails TLS. Local
-Ax cancellation is bounded, but the real proxied HTTPS upstream does not observe
-cancellation within ten seconds. The direct HTTPS fixture control passes. The
-extended integration suite therefore currently **fails** its upstream cancellation
-gate; the baseline pass records below predate this extension. No worker/product
-upgrade should be inferred from the transport checks.
+The standalone Go runtime uses pinned Ax and has no dependency on an OpenNeko
+checkout. Its optional OpenNeko adapter provides server-side GraphJin lookup and
+governed action proposals; Hermes remains the default backend.
 
-## Current position
-
-This is an independent Go runtime with an optional OpenNeko adapter. M3 now has
-bounded AxAgent execution, scoped server-side GraphJin delegation, durable accepted
-input/read evidence, completed-run replay and real product acceptance. Hermes stays
-the default. See [M3 evidence](../integration/m3/README.md) for the tested deployment
-and remaining limits. M2 is still partial; M4–M8 are not complete.
-
-## Repository organization
-
-```text
-README.md                         Entry point, ownership and commands
-go.mod / go.sum                  Independent module and pinned Ax dependency
-internal/axbridge/               Run-bound Ax callback compatibility
-compat/                          Ax HTTP, Goja and lifecycle contract tests
-integration/                     Consumer-neutral OpenShell test deployment
-adapters/openneko/
-   cmd/openshell-compat/           Optional CLI shim executable
-   internal/openshellcompat/      Legacy argument translation and tests
-   integration.sh                 Optional real launcher compatibility checks
-   README.md                      Consumer contract and remaining integration
-docs/                            Design, OpenShell research, milestones, stocktake
-.github/workflows/go.yml         Race tests, vet and dependency-boundary check
-```
-
-Core code does not import consumer adapters. The Go module namespace identifies
-this project, not an application dependency. No OpenNeko checkout is needed for
-builds or standalone tests. The local `claude_code` reference dump, built probes
-and `bin/` outputs are ignored. No empty future-runtime packages were scaffolded.
-
-## Earlier M1/M2 baseline (historical)
-
-| Area | Present evidence | Limit |
+| Area | Completed scope | Evidence |
 | --- | --- | --- |
-| Ax HTTP execution | Native tool allow/deny/invalid-argument checks and provider-visible result pairing | Tests of pinned Ax behavior, not a durable harness invariant across crashes |
-| AxAgent / Goja | Full actor callback path, two callbacks, denial, responder evidence, CPU timeout | Background/native async tool mode remains unqualified |
-| Cancellation | HTTP stream closure, native cancellation result, partial-call non-dispatch, run-bound callback cancellation | No worker-to-sandbox-to-GraphJin cancellation chain yet |
-| Snapshots | Goja and Agent JSON state round trips; omitted functions and truncation behavior | Completed-step serialization only; no arbitrary crash resume |
-| Telemetry | In-process run-scoped model/tool span checks and missing-usage behavior | No end-to-end collector export, neutral event schema or production telemetry pipeline |
-| OpenShell transport | Separate 0.0.116 gateway, mTLS, actual sandbox Go/Ax streaming, synthetic key replacement | Model fixture uses HTTP; gateway mTLS does not prove model HTTPS interception |
-| OpenShell denial | Wrong credential-binding path and unauthorized curl binary each return HTTP 403 | Not a complete containment audit |
-| OpenNeko CLI adapter | Legacy failure reproduced; translated create/upload/exec/delete; failed-upload cleanup | CLI contract checks, not execution of the real worker launcher or warm pool |
-| Repository checks | Race tests, vet, shell syntax and no core dependency on adapters | Hosted Linux CI is configured but has not run |
+| M1 execution | Ax streaming, governed callbacks, tool pairing, cancellation, bounded actor work and run-scoped telemetry | Go race tests, vet and HTTP/Goja compatibility tests |
+| M2 transport | Real OpenShell 0.0.116, TLS/CA trust, credential replacement, destination/binary restrictions, rotation/detach, two slots, OAuth refresh, gateway restart and OTLP delivery | [Transport record](../integration/README.md) |
+| M3 integration | Browser and queue entrypoints, scoped GraphJin lookup, accepted-input deduplication, result/error projection, cancellation and Hermes regression coverage | [Consumer acceptance](../integration/m3/README.md) |
+| M4 recovery | Host/session ownership, durable operation receipts, bounded continuation, sandbox/host terminal reconciliation, worker-death redelivery and one restored answer | [Recovery record](M4-RECOVERY.md) |
+| M4 effects | Frozen human approvals, fresh authorization before dispatch, durable execution claims, optional provider-status recovery and explicit unknown outcomes without redispatch | Real process-kill, queue, controlled HTTP effect and browser approval/reload checks in the recovery record |
 
-Local commands successfully run during the organization work:
+The cumulative live suite passes the consumer checks but deliberately exits 1 at
+the remaining raw proxy cancellation gate. Successful consumer checks do not make
+the overall suite green. The actual Harness cancellation path deletes its sandbox,
+which closes the upstream request; cleanup failure is reported explicitly.
 
-```sh
-go test -race -count=1 -timeout 60s ./...
-go vet ./...
-OPENSHELL_TEST_CLI=/tmp/openneko-m2-tools/openshell ./integration/run.sh
-OPENSHELL_TEST_CLI=/tmp/openneko-m2-tools/openshell ./integration/run.sh adapters/openneko/integration.sh
-```
+## Remaining release blocker
 
-The CLI path is local evidence, not a dependency on that installation path. Both
-live runs ended with `openshell_transport_suite` success. The adapter run also
-reported `legacy_launcher_adapter_upload_exec_delete` and
-`legacy_launcher_upload_failure_cleanup` success. Test containers were cleaned up.
-Images remain cached. No real model credentials were used. See the
-[integration record](../integration/README.md) for platform and image digests.
+OpenShell's idle HTTP response relay does not promptly notice downstream
+disconnect. The direct HTTPS control cancels; the proxied request remains open
+beyond the ten-second observation window. See the exact
+[source trace](OPENSHELL.md#source-trace-idle-response-cancellation).
 
-## Earlier backlog (superseded for M3 by the acceptance record)
+GitHub's latest-release API was checked on 2026-09-20 and still reports
+[v0.0.116](https://github.com/NVIDIA/OpenShell/releases/tag/v0.0.116), published
+2026-08-28. There is no newer stable release to qualify. The previously inspected
+main revision also retained this response path; that is source evidence only.
 
-- Durable session reducer and persisted input acceptance. The initial headless
-  entrypoint/run/event/result contract now exists; see [run protocol](RUN-PROTOCOL.md).
-- Journal/checkpoints, operation reconciliation, approval continuations and
-  crash-recovery tests.
-- Production tool pipeline, read-parallel/write-exclusive scheduler, Read/Edit/Bash
-  tools, freshness checks and process-tree lifecycle management.
-- Approved routing profiles and fallback, aggregate budget controls, context
-  compaction and run-wide retry limits. Ax supplies capabilities; this project has
-  not yet integrated and qualified these controls.
-- GraphJin broker client, product event/result projection, deployable agent image
-  and real worker/queue/broker/web integration.
-- Production observability/export, evaluation corpus and release/rollback artifacts.
+Closing M2 requires an OpenShell relay fix and a passing rerun of the existing
+integration gate. It must preserve HTTP buffering/pipelining and define half-close
+behavior: reading EOF alone cannot distinguish a TCP write-half-close from a
+client abandoning its response. No speculative OpenShell fork, timeout workaround,
+waived test or active gateway upgrade is included in this delivery.
 
-## Remaining M2 gates
+## Deferred work
 
-Qualify model HTTPS interception and Go CA trust, query authentication, two provider
-routes, managed refresh/expiry, static rotation/detach, streaming cancellation/idle
-behavior and actual OTLP collector delivery. Then exercise the real consumer
-worker, queue and broker. Probe success does not close those gates.
+- M5: local file/process tools, freshness checks and artifact delivery.
+- M6: approved model routing/fallback, context compaction and aggregate budgets.
+- M7: task-quality evaluation, concurrent tenant/load checks and operational limits.
+- M8: deployment upgrade, canary and rollback qualification.
+- Hosted PR/CI checks and a separately budgeted live-provider smoke test. Current
+  model/effect fixtures are deterministic; they establish correctness, not quality.
 
-## Decisions and next sequence
+Recovery is bounded to persisted evidence and new Ax attempts, not arbitrary VM
+resumption. Production adapters need explicit read-only status implementations
+before ambiguous effects can reconcile automatically. Unknown effects, unfinished
+approvals and unreconciled sandboxes are retained for operator resolution; no
+purge is enabled. Queue death tests expire after the original sandbox finishes;
+overlap refusal is separately tested at the live launcher boundary.
 
-1. Keep this repository independent, with static consumer adapters. OpenNeko is the
-   concrete first consumer; do not add a generic plugin framework.
-2. Finish the transport gates, starting with HTTPS/Go CA trust and cancellation in
-   the real sandbox. They determine whether the deployed runtime path is sound.
-3. Implement one headless runtime slice with explicit input, ordered events, one
-   terminal result and cancellation. Define concrete types alongside that behavior;
-   integrate neutral telemetry at the same time.
-4. Connect that slice to the real OpenNeko worker and read-only server-side GraphJin
-   agent. Compare an adapter-only deployment with a minimal explicit product
-   entrypoint change before making the CLI shim a permanent requirement.
-5. Advance recovery, tools and routing using the progressive
-   [milestone gates](MILESTONES.md), including browser-visible verification.
+## Repository and delivery state
 
-## Repository and historical state
+Both repositories use `feat/openneko-harness`. OpenNeko integration changes are in
+`../Open-Neko/OpenNeko-harness-m3`, committed through `88992f7`. The original
+OpenNeko checkout was not changed by this delivery. Harness implementation and
+acceptance records are committed through `2fd91e0`, followed by this inventory
+update. Nothing has been pushed; Harness has no configured remote. No PR or main
+merge has been made. Earlier main commits documented in README are historical.
 
-The standalone baseline is committed on `main` as `3f0071d`. No remote is
-configured and nothing was pushed. Subsequent M2 changes are uncommitted. The earlier OpenNeko
-M1 commit `643b4a8` remains historical and has not been reverted. The sibling
-`OpenNeko-harness` worktree also retains earlier uncommitted README/integration
-copies; current implementation authority is this repository. Those copies need
-explicit reconciliation before any later product commit, not silent deletion.
-No OpenNeko source was changed during this organization pass.
+All owned M2/M3 test services and volumes were cleaned up. No additional cumulative
+run is needed for this documentation-only update; the final retained acceptance
+commands, logs and correlated run/request IDs are in the linked records.
