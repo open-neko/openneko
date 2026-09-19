@@ -55,7 +55,7 @@ live("Harness proposal identity and frozen approval survive retries and preparat
     expect((await createActionRequest(input)).status).toBe(decided!.status);
     expect(preparations).toBe(1);
     await expect(updateActionRequestPayload({orgId,id:request.id,payload:{value:44}})).rejects.toThrow("frozen");
-    if(decided?.status==="approved") await expect(executeApprovedActionRequest(orgId,request.id)).rejects.toThrow("execution is not enabled");
+    if(decided?.status==="approved") await expect(executeApprovedActionRequest(orgId,request.id)).rejects.toThrow("no bound action definition");
     await pool().query("UPDATE harness_run_journal SET fingerprint=$3 WHERE org_id=$1 AND run_id=$2",[orgId,runId,"b".repeat(64)]);
     await expect(createActionRequest(input)).rejects.toThrow("conflicts");
     await pool().query("UPDATE harness_run_journal SET fingerprint=$3 WHERE org_id=$1 AND run_id=$2",[orgId,runId,"a".repeat(64)]);

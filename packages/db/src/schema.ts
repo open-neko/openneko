@@ -2636,6 +2636,7 @@ export const action_execution = pgTable(
     created_at: ts("created_at").notNull().defaultNow(),
   },
   (t) => ({
+    harness_claim: uniqueIndex("action_execution_harness_claim").on(t.org_id,t.action_request_id).where(sql`${t.executor} = 'harness'`),
     request_idx: index("action_execution_request_idx").on(
       t.action_request_id,
       t.created_at.desc(),

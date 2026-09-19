@@ -1,3 +1,4 @@
+import { emitHarnessApprovals } from "./harness-proposal";
 import { loadHarnessOperations } from "./harness-operation";
 import { withHarnessRunJournal, type HarnessRunJournal } from "./harness-run-journal";
 import { harnessResult } from "../agent-backends/harness";
@@ -761,6 +762,7 @@ function makeSandboxCore(
       // Receipt is durable before cleanup, including redelivery after a cleanup crash.
       await timed("harness_reconcile_cleanup", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       await input.emit({ type: "status", message: "Restored saved run result" });
+      await emitHarnessApprovals(admission.result,{orgId:input.orgId,runId:input.runId},input.emit);
       if (admission.result.finalText) await input.emit({ type: "message", role: "assistant", content: admission.result.finalText });
       return admission.result;
     }
@@ -1077,12 +1079,12 @@ function makeSandboxCore(
                   orgId: input.orgId,
                   threadId,
                   kind,
-                  ...(input.backend.id === "harness" ? { profile: "harness-read-only" as const } : {}),
+                  ...(input.backend.id === "harness" ? { profile: "harness-governed" as const } : {}),
                 }),
                 }
               : {}),
             ...(opts.env ?? {}),
-            ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "" } : {}),
+            ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_PROPOSALS: kind === "work" ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
@@ -1113,6 +1115,7 @@ function makeSandboxCore(
         await timed("harness_receipt", () => admission.complete!(result));
         harnessReceiptSaved = true;
       }
+      if (input.backend.id === "harness") await emitHarnessApprovals(result,{orgId:input.orgId,runId:input.runId},input.emit);
       healthy = result.status === "completed" && !signal?.aborted;
       return result;
     } finally {
@@ -1144,7 +1147,13 @@ function makeSandboxCore(
       if (lease) {
         await lease.release(warmSlot, healthy && !signal?.aborted);
       } else if (sandboxCreated && !ownershipSignal?.aborted && (!admission || harnessReceiptSaved || signal?.aborted)) {
-        await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
+        await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {
+          if (input.backend.id === "harness" && signal?.aborted) {
+            startupEvent("harness.cancellation",{runId:input.runId,outcome:"cleanup_unknown"});
+            throw new Error("Harness cancellation cleanup unconfirmed; retained sandbox requires reconciliation");
+          }
+        });
+        if (input.backend.id === "harness" && signal?.aborted) startupEvent("harness.cancellation",{runId:input.runId,outcome:"sandbox_deleted"});
       }
       await rm(stageDir, { recursive: true, force: true });
       log(JSON.stringify({

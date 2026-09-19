@@ -9,6 +9,8 @@ import {
 
 export type ActionExecutionInput = {
   request: ActionRequestRecord;
+  /** Stable trusted key; adapters use it only when their provider supports idempotency. */
+  idempotencyKey?: string;
 };
 
 export type ActionExecutionOutcome = {
@@ -18,9 +20,10 @@ export type ActionExecutionOutcome = {
   changesetId?: string | null;
 };
 
-export type ActionAdapter = (
-  input: ActionExecutionInput,
-) => Promise<ActionExecutionOutcome>;
+export type ActionAdapter = ((input: ActionExecutionInput) => Promise<ActionExecutionOutcome>) & {
+  /** Read provider status only. Null means unknown, never permission to redispatch. */
+  reconcile?: (input: ActionExecutionInput & {idempotencyKey:string}) => Promise<ActionExecutionOutcome | null>;
+};
 
 export type ActionAdapterResolver = (
   request: ActionRequestRecord,
@@ -88,15 +91,12 @@ export async function executeApprovedActionRequest(
   if (!request) {
     throw new Error(`action_request ${actionRequestId} not found`);
   }
-  if (request.status !== "approved") {
-    throw new ActionRequestNotApprovedError(request.status);
-  }
-
-  // Harness proposals are durable, but its governed effect dispatcher is not
-  // enabled yet. Never let the legacy queue bypass that future boundary.
   if (request.actorBackend === "harness") {
-    throw new Error("Harness governed action execution is not enabled");
+    if (!request.harnessOperationId || !request.harnessPrepared) throw new Error("Harness governed action execution is not enabled for an unprepared request");
+    const {executeHarnessAction}=await import("./harness-executor");
+    return executeHarnessAction(request,async()=>adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined);
   }
+  if (request.status !== "approved") throw new ActionRequestNotApprovedError(request.status);
 
   const adapter = adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined;
   if (!adapter) {

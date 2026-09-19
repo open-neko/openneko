@@ -1,9 +1,12 @@
+import { createServer } from "node:http";
+import { createAdminHandler } from "../src/admin-server";
+import { createActionRequest } from "@neko/llm/workflows";
 // Acceptance driver: real queue and production handler, isolated synthetic stack only.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { db, pool, getOrgId, organization, customer_profile, data_source, llm_provider_config, processing_job, eq } from '@neko/db';
+import { db, pool, getOrgId, organization, customer_profile, data_source, llm_provider_config, processing_job, pack_action_definition, action_policy, eq } from '@neko/db';
 import { boss, enqueue, QUEUE, type WorkRunPayload } from '@neko/db/jobs';
 import { createWorkThread, createWorkRun, createWorkMessage, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
 import { runWorkRun } from '../src/jobs/work-run.js';
@@ -93,6 +96,27 @@ assert.deepEqual(await effectCounts(),beforeEffects,'replayed answers must not e
 assert.deepEqual((await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows,operations);
 assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role='assistant'",[orgId,run.id])).rows[0].n,1);
 console.log('M4_QUEUE_REDELIVERY_PASS',run.id);
+// Exercise the production queue handler and worker-owned proposal preflight API.
+const approvalKind='harness_effect_fixture';
+await db().insert(pack_action_definition).values({org_id:orgId,kind:approvalKind,readiness:'ready',definition_hash:'fixture',definition:{kind:approvalKind,inputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value'],additionalProperties:false}}});
+await db().insert(action_policy).values({org_id:orgId,name:'Harness fixture approval',mode:'approval_required',applies_to_kinds:[approvalKind],applies_to_scopes:['external']});
+const admin=createServer(createAdminHandler({actionRequests:{create:async input=>{const request=await createActionRequest(input as Parameters<typeof createActionRequest>[0]);return {id:request.id,status:request.status};}}}));
+await new Promise<void>(resolve=>admin.listen(18122,'127.0.0.1',resolve));
+const approvalThread=await createWorkThread(orgId,'M4 pending approval');
+const approvalRun=await createWorkRun(orgId,approvalThread.id,'harness',{userId:null,role:'service'});
+const approvalMessage='Request approval to set the synthetic fixture value to 42.';
+await createWorkMessage({orgId,threadId:approvalThread.id,runId:approvalRun.id,role:'user',content:approvalMessage});
+try {
+ await fetch('http://127.0.0.1:18118/control',{method:'POST',body:JSON.stringify({proposal:true})});
+ const [approvalJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-approval'}).returning();
+ await enqueue(QUEUE.WORK_RUN,{processingJobId:approvalJob.id,orgId,runId:approvalRun.id,threadId:approvalThread.id,message:approvalMessage},{retryLimit:0});
+ await waitForJob(approvalJob.id,approvalRun.id);
+ const proposals=(await pool().query('SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2',[orgId,approvalRun.id])).rows;
+ assert.equal(proposals.length,1);assert.equal(proposals[0].status,'pending_approval');
+ assert.equal((await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n,0);
+ console.log('M4_QUEUE_APPROVAL_PASS',approvalThread.id,approvalRun.id,proposals[0].id);
+} finally {await new Promise<void>(resolve=>admin.close(()=>resolve()));}
+
 // Crash the actual production handler process, including its broker, while
 // the remote responder waits. Let pg-boss expire the abandoned job, then restart
 // consumption after the original sandbox has had time to finish its response.
@@ -163,6 +187,14 @@ try {
     assert.equal(redelivered?.state,'completed');
     assert.equal(redelivered?.retryCount,1);
     console.log('M4_QUEUE_WORKER_DEATH_PASS',crashRun.id,queueId);
+    const [approvalRetry]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-approval-restart'}).returning();
+    await enqueue(QUEUE.WORK_RUN,{processingJobId:approvalRetry.id,orgId,runId:approvalRun.id,threadId:approvalThread.id,message:approvalMessage},{retryLimit:0});
+    await waitForJob(approvalRetry.id,approvalRun.id);
+    const restored=(await pool().query('SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2',[orgId,approvalRun.id])).rows;
+    assert.equal(restored.length,1);assert.equal(restored[0].status,'pending_approval');
+    assert.deepEqual(await (await fetch('http://127.0.0.1:18118/control')).json(),afterCalls);
+    console.log('M4_QUEUE_APPROVAL_RESTART_PASS',approvalRun.id);
+
 } finally {
     for(const child of children) {
         try {process.kill(-child.pid!,'SIGKILL');} catch(error) {if((error as NodeJS.ErrnoException).code!=='ESRCH') throw error;}
