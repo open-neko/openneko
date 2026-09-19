@@ -45,6 +45,8 @@ async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<Acti
     startupEvent("harness.effect",{runId:request.workRunId,actionRequestId:request.id,outcome:"restored"});
     return {ok:true,outcome:saved.result as ActionExecutionOutcome};
   }
+  // Ownership is exclusive: a surviving unfinished claim belongs to a dead attempt.
+  if (saved) await markUnknown(request);
   if ((!saved && request.status !== "approved") || !request.harnessPrepared || !request.workRunId || !(await hasHumanActionApproval(request))) throw Error("Harness action requires a prepared human approval");
   const row=(await pool().query("SELECT harness_proposal FROM action_request WHERE org_id=$1 AND id=$2",args)).rows[0];
   const proposal=row?.harness_proposal;
