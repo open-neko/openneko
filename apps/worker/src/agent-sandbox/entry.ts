@@ -176,6 +176,7 @@ export async function main(job = loadJob()): Promise<void> {
           }
         : undefined;
     result = await backend.run({
+      runId: job.runId,
       ...(job.agentRun ?? {}),
       prompt: job.prompt,
       userMessage: job.agentRun?.userMessage ?? (job.message || undefined),

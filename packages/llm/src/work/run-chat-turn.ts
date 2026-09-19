@@ -371,7 +371,7 @@ async function runChatTurnTraced(
   const actor = await startupPhase("identity.resolve", () => getWorkRunActor(runId));
 
   try {
-    if (dataSurface === "customer" && !backend.capabilities.mcpTools) {
+    if (dataSurface === "customer" && !backend.capabilities.mcpTools && !backend.capabilities.brokerLookup) {
       throw new Error(
         "Customer data access requires the native GraphJin broker tool; this backend does not support MCP tools.",
       );

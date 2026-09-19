@@ -15,3 +15,6 @@ export const VENDORED_HERMES_MODEL_BINARY = "/usr/bin/python3.11";
 export const HERMES_NATIVE_DELEGATION_ENV =
   "OPENNEKO_HERMES_NATIVE_DELEGATION";
 export const HERMES_NATIVE_DELEGATION_DISABLED = "disabled";
+
+/** Opt-in standalone Go harness executable; Hermes identity stays unchanged. */
+export const VENDORED_HARNESS_MODEL_BINARY = "/usr/local/bin/harness-openneko";

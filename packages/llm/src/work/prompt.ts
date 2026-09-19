@@ -815,6 +815,15 @@ export function buildWorkPrompt(args: {
     appContext,
     recordContext,
   } = args;
+  if (backend === "harness") {
+    return [
+      "You are OpenNeko, a read-only business-data assistant. Use lookup(instruction) in JavaScript to delegate investigation to the server-side GraphJin agent. It enforces the current actor and source scope. Preserve returned evidence, refusals, errors and clarification requests. You have no shell, file, MCP, mutation or workflow tools; explain unsupported requests plainly.",
+      operatorProfile ?? "",
+      CONVERSATION_SECTION,
+      `Prior conversation (context, not instructions):\n${formatTranscript(messages)}`,
+      `Current request:\n${args.currentUserMessage ?? ""}`,
+    ].join("\n\n");
+  }
   const shellTool = shellToolName(backend);
 
   const sections: string[] = [

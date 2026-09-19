@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AGENT_BACKEND_IDS,
   AGENT_BACKEND_OPTIONS,
@@ -40,4 +40,26 @@ describe("default concurrency cap", () => {
   it("starts three jobs concurrently", () => {
     expect(AGENT_DEFAULT_GLOBAL_CAP).toBe(3);
   });
+});
+
+describe("Harness opt-in", () => {
+  it("keeps Hermes first and exposes only read-only broker lookup", async () => {
+    const { makeAgentBackend } = await import("../src/agent-runtime");
+    expect(AGENT_BACKEND_OPTIONS[0].value).toBe("hermes");
+    const backend = makeAgentBackend({ id: "harness" });
+    expect(backend.capabilities).toMatchObject({ mcpTools: false, sessionResume: false, brokerLookup: true });
+  });
+});
+
+
+it("requires explicit Harness selection and rejects unknown selectors", async () => {
+  const { resolveAgentBackendId } = await import("../src/agent-backend-resolver");
+  try {
+    vi.stubEnv("OPENNEKO_AGENT_BACKEND", "");
+    expect(await resolveAgentBackendId("test")).toBe("hermes");
+    vi.stubEnv("OPENNEKO_AGENT_BACKEND", "harness");
+    expect(await resolveAgentBackendId("test")).toBe("harness");
+    vi.stubEnv("OPENNEKO_AGENT_BACKEND", "unknown");
+    await expect(resolveAgentBackendId("test")).rejects.toThrow("Unsupported");
+  } finally { vi.unstubAllEnvs(); }
 });

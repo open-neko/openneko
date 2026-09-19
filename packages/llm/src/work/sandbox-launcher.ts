@@ -21,7 +21,7 @@ import {
 import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
-import { VENDORED_HERMES_MODEL_BINARY } from "../agent-runtime-contract";
+import { VENDORED_HERMES_MODEL_BINARY, VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { copySkillOverrides } from "./workspace";
@@ -586,7 +586,7 @@ function makeSandboxCore(
   return async function sandboxRunCore(
     input: SandboxRunInput,
   ): Promise<AgentRunResult> {
-    const pool = kind === "work" ? getSandboxPool(opts, input.workspace) : undefined;
+    const pool = kind === "work" && input.backend.id === "hermes" ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
     const signal = isJob
@@ -622,6 +622,7 @@ function makeSandboxCore(
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "")
       .slice(0, 60);
+    if (input.backend.id === "harness") name = `h-${createHash("sha256").update(input.runId).digest("hex").slice(0, 16)}`;
 
     // The box is a separate filesystem; the host workspace path (~/.config/… or
     // /Users/…) can't be recreated under the sandbox user's home. Upload the
@@ -713,7 +714,7 @@ function makeSandboxCore(
             {
               host: u.hostname,
               port: Number(u.port) || 80,
-              binary: "/usr/local/bin/node",
+              binary: input.backend.id === "harness" ? VENDORED_HARNESS_MODEL_BINARY : "/usr/local/bin/node",
             },
           ];
         })()
@@ -721,12 +722,12 @@ function makeSandboxCore(
     const egressRules: SandboxEgressRule[] = [
       ...(opts.modelHosts ?? []).map((endpoint) => ({
         ...endpoint,
-        binary: VENDORED_HERMES_MODEL_BINARY,
+        binary: input.backend.id === "harness" ? VENDORED_HARNESS_MODEL_BINARY : VENDORED_HERMES_MODEL_BINARY,
       })),
       ...(kind === "workflow"
         ? ((input as RunWorkflowAgentBackendInput).networkHosts ?? []).map((host) => ({
             host,
-            binary: VENDORED_HERMES_MODEL_BINARY,
+            binary: input.backend.id === "harness" ? VENDORED_HARNESS_MODEL_BINARY : VENDORED_HERMES_MODEL_BINARY,
           }))
         : []),
       ...brokerEgress,
@@ -954,6 +955,15 @@ function makeSandboxCore(
         signal,
         (present) => { artifactsPresent = present; },
       ));
+      if (input.backend.id === "harness") {
+        // Persist the bounded checkpoint before reporting completion or deleting the sandbox.
+        // The next delivery stages this same runRoot, allowing deduplication without model replay.
+        await mkdir(path.join(input.workspace.runRoot, ".harness"), { recursive: true });
+        await timed("harness_checkpoint", () => runCleanup([
+          "sandbox", "download", name,
+          path.posix.join(boxWorkspace.runRoot, ".harness"), path.join(input.workspace.runRoot, ".harness"),
+        ], 30_000));
+      }
       healthy = result.status === "completed" && !signal?.aborted;
       return result;
     } finally {
