@@ -107,8 +107,10 @@ fences and legacy broker routes are disabled for Harness: its host-bound token
 permits only the journaled lookup route. Hermes behavior has regression coverage.
 Receipts are durable
 before cleanup; unknown operations and changed input/scope fail closed. Hermes
-retains its existing lifecycle. This completes the read-only terminal recovery
-slice, not full M4. See [M4 progress](M4-RECOVERY.md) for checks and deployment limits.
+retains its existing lifecycle. Host-side proposal storage now also preserves one prepared approval per runtime
+operation, freezes its arguments and refuses replay after interrupted preparation.
+The Go proposal tool and governed effect dispatch remain disabled. This completes
+the read-only terminal recovery slice and proposal storage, not full M4. See [M4 progress](M4-RECOVERY.md) for checks and deployment limits.
 
 **Deliver:** host-owned journal/checkpoint recovery using existing database/queue facilities; input deduplication; operation intent/result records; durable approval continuations; broker idempotency/status contracts where supported; cancellation propagation and reconciliation. Use controlled mutation fixtures before real application actions.
 

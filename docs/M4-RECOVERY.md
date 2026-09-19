@@ -27,7 +27,7 @@ full fingerprint. Missing user requests and legacy records retain exact-prompt
 matching. Stored context contains application content, never a copy of environment
 credentials; it needs the same access and retention controls as result receipts.
 
-Apply migrations 0084–0086 before deploying these workers, and drain older workers first;
+Apply migrations 0084–0087 before deploying these workers, and drain older workers first;
 mixed versions do not share database ownership. Legacy conflicting records remain
 blocked for explicit reconciliation. No Hermes path reads the new table or acquires
 these locks. Harness remains opt-in.
@@ -390,3 +390,53 @@ typechecking passed; the final audit-order adjustment also passed the six broker
 tests. The cumulative suite exits 1 only for the existing M2 idle-stream defect;
 sandbox deletion closes the upstream and owned services were removed. Product
 commit: `45001af` on `feat/openneko-harness`.
+
+
+## Durable proposal storage (host layer)
+
+OpenNeko migration 0087 extends its existing `action_request` records with a
+Harness runtime operation ID, the original proposal and the prepared approval
+snapshot. A unique tenant/run/operation index admits one preparation. The store
+requires an admitted Harness run, derives the actor from that run, and binds the
+proposal to its accepted fingerprint. Admission locks the run and journal rows
+while inserting so a concurrent terminal receipt or identity change cannot admit
+a stale proposal. No lock is held while preflight hooks execute.
+
+A new proposal starts as `draft`, regardless of a supplied status. Existing
+preflight hooks prepare its arguments. Publication atomically checks that those
+arguments still match the prepared record, freezes them and changes the request
+to `pending_approval`. Repeated identical proposals return the saved request and
+decision without rerunning preparation; changed proposals conflict. Interrupted
+or failed preparation remains unresolved and never automatically replays.
+Payload updates are refused after freezing. Only an explicit, currently authorized
+approver identity can decide a Harness proposal; approval/rejection uses a status
+compare-and-set so racing decisions cannot both succeed. A preflight cannot
+silently auto-approve this initial Harness path. Hermes retains its existing
+preparation and approval behavior and legacy record output shape.
+
+This is storage infrastructure, not an enabled action capability. The existing
+broker profile still denies proposal/mutation routes, and the legacy executor
+explicitly rejects Harness actions. Remaining wiring must include the neutral
+Go/Ax proposal tool, a shared operation budget with lookups, trusted descriptor and
+policy validation, waiting/continuation events, approval reload/restart acceptance,
+fresh execution authorization, and the effect claim/idempotency/reconciliation
+path. In particular, a saved approval is not yet permission for the existing
+executor to dispatch an effect.
+
+Verified with actual PostgreSQL and a SIGKILL during preflight: one request remains,
+repeat admission stays unknown, no preparation reruns, and incomplete proposals
+cannot be approved. Tests also cover a post-preflight payload race, changed input
+and accepted fingerprint, wrong tenant, forged actor/status fields, approval versus
+rejection concurrency, and blocked payload changes after a decision. Final focused
+checks in `/tmp/harness-proposal-focused-final.log` pass the new proposal gate and
+all seven existing action-flow tests. Four executor unit tests and worker typechecking
+pass. The exact final migration applies to a fresh isolated PostgreSQL database;
+the unique index and null-safe backend constraint were inspected. Both migration
+copies match. Proposal lifecycle telemetry contains IDs and classifications, not
+proposal content.
+
+The cumulative `/tmp/harness-proposal-live.log` also passed existing OpenShell,
+GraphJin, Hermes, launcher/queue recovery and worker-death gates (worker-death run
+`a5580dee-7cbc-46c6-8940-814be6b50c9c`). It exits 1 at the known M2 upstream idle
+cancellation failure; sandbox deletion still closes that request. All owned test
+services were removed. This does not qualify full M4 approvals or governed effects.
