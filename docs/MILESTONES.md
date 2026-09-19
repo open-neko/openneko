@@ -79,6 +79,14 @@ M3 completion does not qualify production rollout or remote cancellation.
 
 ## M4 — Durable recovery and governed effects
 
+**In progress (2026-09-19):** the optional OpenNeko host now fences Harness launches
+with durable admission and completion receipts. Redelivery reuses a completed
+receipt without another sandbox/model/tool call; mismatched input/authorization
+and unresolved attempts fail closed. Restart cleanup and name-collision handling
+preserve recovery-labelled sandboxes. Explicit cancellation still deletes the
+sandbox process boundary. This is the first recovery safeguard, not full M4.
+See [M4 progress](M4-RECOVERY.md) for checks and remaining acceptance cases.
+
 **Deliver:** host-owned journal/checkpoint recovery using existing database/queue facilities; input deduplication; operation intent/result records; durable approval continuations; broker idempotency/status contracts where supported; cancellation propagation and reconciliation. Use controlled mutation fixtures before real application actions.
 
 **Verify:** kill the worker before dispatch, after dispatch, after the external service commits but before the result is saved, and after the result is saved. Resume without duplicate accepted inputs or duplicate effects on an idempotent test service. For a service without reconciliation, surface `outcome unknown` and do not replay automatically. Restart while awaiting approval; reject changed arguments, wrong caller scope and revoked permissions. Reject incompatible/incomplete snapshots. Denial and cancellation still yield valid terminal tool results; late work cannot reopen the run. Journal failure prevents new effects.
