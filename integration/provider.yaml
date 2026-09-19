@@ -1,0 +1,17 @@
+id: harness-m2
+category: agent
+display_name: Harness M2 synthetic provider
+description: Test credentials only
+inference_capable: false
+credentials:
+  - name: api_key
+    env_vars: [MODEL_API_KEY]
+    required: true
+endpoints:
+  - host: model-fixture
+    port: 8080
+    path: /v1/**
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+binaries: [/usr/local/bin/harness-probe]

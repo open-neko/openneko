@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Owns only the fixed, isolated M2 test project. Never targets the active gateway.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+consumer_checks=${1:-}
+[[ $# -le 1 && ( -z "$consumer_checks" || -f "$consumer_checks" ) ]] || { echo "Usage: $0 [consumer-check-script]" >&2; exit 1; }
+cli=${OPENSHELL_TEST_CLI:?Set OPENSHELL_TEST_CLI to a verified OpenShell 0.0.116 binary}
+[[ "$("$cli" --version)" == 'openshell 0.0.116' ]] || { echo 'OpenShell 0.0.116 required' >&2; exit 1; }
+if docker network inspect harness-m2 >/dev/null 2>&1; then
+  echo 'M2 network already exists; stop the previous isolated test first.' >&2
+  exit 1
+fi
+state=$(mktemp -d "$HOME/.harness-m2.XXXXXX")
+export HARNESS_STATE="$state" XDG_CONFIG_HOME="$state/config"
+compose=(docker compose -p harness-m2 -f integration/compose.yml)
+oss=("$cli" --gateway harness-m2)
+cleanup() {
+  "${oss[@]}" sandbox delete harness-m2-probe >/dev/null 2>&1 || true
+  "${compose[@]}" down --remove-orphans >/dev/null 2>&1 || true
+  if docker network inspect harness-m2 >/dev/null 2>&1; then
+    echo "Cleanup incomplete; retained test state at $state" >&2
+    exit 1
+  fi
+  rm -rf "$state"
+}
+trap cleanup EXIT
+arch=$(docker info --format '{{.Architecture}}')
+case "$arch" in aarch64|arm64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo 'Unsupported Docker architecture' >&2; exit 1;; esac
+CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o integration/probe-bin ./integration/probe
+docker build -q -t harness-m2:local integration
+cat > "$state/gateway.toml" <<'TOML'
+[openshell]
+version = 1
+[openshell.drivers.docker]
+network_name = "harness-m2"
+grpc_endpoint = "https://openshell-gateway:18116"
+host_gateway_ip = "172.30.116.2"
+TOML
+"${compose[@]}" run --rm certgen
+reg="$XDG_CONFIG_HOME/openshell/gateways/harness-m2"
+mkdir -p "$reg/mtls"
+cp "$state/pki/ca.crt" "$reg/mtls/ca.crt"
+cp "$state/pki/client/tls.crt" "$reg/mtls/tls.crt"
+cp "$state/pki/client/tls.key" "$reg/mtls/tls.key"
+chmod 600 "$reg/mtls/tls.key"
+cat > "$reg/metadata.json" <<'JSON'
+{"name":"harness-m2","gateway_endpoint":"https://127.0.0.1:18116","is_remote":false,"gateway_port":0,"auth_mode":"mtls"}
+JSON
+"${compose[@]}" up -d openshell-gateway model-fixture
+ready=false
+for ((attempt=0; attempt<60; attempt++)); do
+  if "${oss[@]}" sandbox list >/dev/null 2>&1; then ready=true; break; fi
+  sleep 1
+done
+[[ "$ready" == true ]] || { echo 'M2 gateway did not become ready' >&2; exit 1; }
+"${oss[@]}" provider profile import --file integration/provider.yaml
+"${oss[@]}" provider create --name harness-m2 --type harness-m2 --credential api_key=synthetic-M2-credential
+# v0.0.116 treats this as the canonical main process; a short `true` can exit
+# before readiness. Keep the workload alive and use exec for each probe.
+"${oss[@]}" sandbox create --name harness-m2-probe --from harness-m2:local --provider harness-m2 --no-auto-providers --no-tty --detach --policy integration/policy.yaml -- sleep infinity
+"${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 30 -- sh -c 'export MODEL_API_KEY="$api_key"; exec /usr/local/bin/harness-probe'
+"${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 30 -- sh -c 'export MODEL_API_KEY="$api_key"; exec /usr/local/bin/harness-probe -deny'
+# Do not accept a DNS/connectivity failure as evidence of binary-policy denial.
+status=$("${oss[@]}" sandbox exec -n harness-m2-probe --no-tty --timeout 10 -- curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://model-fixture:8080/v1/chat/completions)
+[[ "$status" == 403 ]] || { echo "Expected curl policy denial, got HTTP $status" >&2; exit 1; }
+"${compose[@]}" logs --no-log-prefix model-fixture | grep -q '"check":"upstream_auth_verified","ok":true'
+# Optional consumer checks reuse this isolated gateway; none are required by default.
+if [[ -n "$consumer_checks" ]]; then bash "$consumer_checks"; fi
+printf '%s\n' '{"check":"openshell_transport_suite","ok":true}'
