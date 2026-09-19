@@ -1,8 +1,11 @@
 // Acceptance driver: real queue and production handler, isolated synthetic stack only.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { db, pool, getOrgId, organization, customer_profile, data_source, llm_provider_config, processing_job, eq } from '@neko/db';
 import { boss, enqueue, QUEUE, type WorkRunPayload } from '@neko/db/jobs';
-import { createWorkThread, createWorkRun, getWorkRun } from '@neko/llm/work';
+import { createWorkThread, createWorkRun, createWorkMessage, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
 import { runWorkRun } from '../src/jobs/work-run.js';
 import { extractActionRequestFences, extractWorkflowSaveFence, extractRuleSaveFence } from '../../../packages/llm/src/workflows/fence-parsers';
 import { extractMemoryFences } from '../../../packages/llm/src/agent-backends/memory-fence';
@@ -15,13 +18,6 @@ await db().insert(data_source).values({ org_id: orgId, graphql_url: 'http://127.
 await db().insert(customer_profile).values({ org_id: orgId, version: 1, is_current: true, company_note: 'Synthetic reference business', business_profile: 'Seeded reference data for Harness acceptance' }).onConflictDoNothing();
 if (process.argv.includes('--seed-only'))
     process.exit(0);
-// An adversarial model answer must not invoke legacy mutation fences.
-await fetch('http://127.0.0.1:18118/control', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({effect_fences:true})});
-const effectTables = ['action_request','action_policy','workflow_definition','work_memory'];
-async function effectCounts() {
-    return Promise.all(effectTables.map(async table => (await pool().query(`SELECT count(*)::int AS n FROM ${table} WHERE org_id=$1`,[orgId])).rows[0].n));
-}
-const beforeEffects=await effectCounts();
 const queue = await boss();
 await queue.createQueue(QUEUE.WORK_RUN);
 await queue.work<WorkRunPayload>(QUEUE.WORK_RUN, async (jobs) => {
@@ -38,13 +34,24 @@ await queue.work<WorkRunPayload>(QUEUE.WORK_RUN, async (jobs) => {
         }
     }
 });
+if (process.argv.includes('--worker-only')) {
+    process.send?.('ready');
+    await new Promise(() => {});
+}
+// An adversarial model answer must not invoke legacy mutation fences.
+await fetch('http://127.0.0.1:18118/control', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({effect_fences:true})});
+const effectTables = ['action_request','action_policy','workflow_definition','work_memory'];
+async function effectCounts() {
+    return Promise.all(effectTables.map(async table => (await pool().query(`SELECT count(*)::int AS n FROM ${table} WHERE org_id=$1`,[orgId])).rows[0].n));
+}
+const beforeEffects=await effectCounts();
 const thread = await createWorkThread(orgId, 'M3 queued lookup');
 const run = await createWorkRun(orgId, thread.id, 'harness', { userId: null, role: 'service' });
 const [job] = await db().insert(processing_job).values({ org_id: orgId, kind: QUEUE.WORK_RUN, trigger: 'test' }).returning();
 await enqueue(QUEUE.WORK_RUN, { processingJobId: job.id, orgId, runId: run.id, threadId: thread.id, message: 'Find the seeded reference using lookup.' }, { retryLimit: 0 });
-async function waitForJob(jobId:string) {
+async function waitForJob(jobId:string, runId=run.id) {
 for (let n = 0; n < 120; n++) {
-    const current = await getWorkRun(orgId, run.id);
+    const current = await getWorkRun(orgId, runId);
     if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
         assert.equal(current.status, 'completed', JSON.stringify(current));
         const [finished] = await db().select().from(processing_job).where(eq(processing_job.id, jobId));
@@ -86,6 +93,81 @@ assert.deepEqual(await effectCounts(),beforeEffects,'replayed answers must not e
 assert.deepEqual((await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows,operations);
 assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role='assistant'",[orgId,run.id])).rows[0].n,1);
 console.log('M4_QUEUE_REDELIVERY_PASS',run.id);
+// Crash the actual production handler process, including its broker, while
+// the remote responder waits. Let pg-boss expire the abandoned job, then restart
+// consumption after the original sandbox has had time to finish its response.
+await queue.offWork(QUEUE.WORK_RUN);
+await shutdownAgentBroker();
+await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pause_responder:true})});
+const crashThread=await createWorkThread(orgId,'M4 worker death');
+const crashRun=await createWorkRun(orgId,crashThread.id,'harness',{userId:null,role:'service'});
+await createWorkMessage({orgId,threadId:crashThread.id,runId:crashRun.id,role:'user',content:'Find the seeded reference using lookup.'});
+const [crashJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-worker-death'}).returning();
+const queueId=await enqueue(QUEUE.WORK_RUN,{processingJobId:crashJob.id,orgId,runId:crashRun.id,threadId:crashThread.id,message:'Find the seeded reference using lookup.'},{retryLimit:1,retryDelay:0,expireInSeconds:60});
+assert.ok(queueId);
+const children: ReturnType<typeof spawn>[]=[];
+async function startWorker() {
+    const child=spawn(process.execPath,['--import','tsx',fileURLToPath(import.meta.url),'--worker-only'],{detached:true,stdio:['ignore','inherit','pipe','ipc']});
+    children.push(child);
+    let error=''; child.stderr?.on('data',chunk=>{error=(error+chunk).slice(-4096);});
+    await Promise.race([
+        once(child,'message',{signal:AbortSignal.timeout(15_000)}),
+        once(child,'exit').then(()=>{throw Error(`Worker exited before readiness: ${error}`);}),
+    ]);
+    return child;
+}
+try {
+    const first=await startWorker();
+    let reached=false;
+    for(let n=0;n<300;n++) {
+        if((await (await fetch('http://127.0.0.1:18118/control')).json())['harness-fixture']===3) {reached=true;break;}
+        assert.equal(first.exitCode,null,'worker must remain alive until fault injection');
+        await new Promise(r=>setTimeout(r,100));
+    }
+    assert.ok(reached,'worker did not reach paused responder');
+    const crashCalls=await (await fetch('http://127.0.0.1:18118/control')).json();
+    const beforeCrash=(await pool().query('SELECT accepted_context,result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2',[orgId,crashRun.id])).rows[0];
+    assert.equal(beforeCrash.result,null);
+    const crashOperations=(await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,crashRun.id])).rows;
+    assert.equal(crashOperations.length,1);
+    assert.ok(crashOperations[0].result);
+    const exited=once(first,'exit'); first.kill('SIGKILL'); await exited;
+    assert.equal((await queue.getJobById(QUEUE.WORK_RUN,queueId))?.state,'active');
+    // Exercise pg-boss's real expiry/retry transition, without editing queue rows
+    // or enqueueing a replacement accepted input. The 60s lease also outlasts
+    // the fixture's 30s responder pause.
+    let expired=false;
+    for(let n=0;n<90;n++) {
+        await queue.maintain();
+        const state=await queue.getJobById(QUEUE.WORK_RUN,queueId);
+        if(state?.state==='retry') {expired=true;break;}
+        assert.equal(state?.state,'active');
+        await new Promise(r=>setTimeout(r,1000));
+    }
+    assert.ok(expired,'abandoned queue job did not become retryable');
+    await startWorker();
+    await waitForJob(crashJob.id,crashRun.id);
+    const recovered=(await pool().query('SELECT accepted_context,result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2',[orgId,crashRun.id])).rows[0];
+    assert.deepEqual(recovered.accepted_context,beforeCrash.accepted_context);
+    assert.equal(recovered.result.status,'completed');
+    assert.match(recovered.result.finalText,/REF-42/);
+    const afterCalls=await (await fetch('http://127.0.0.1:18118/control')).json();
+    for(const model of ['harness-fixture','graphjin-fixture']) assert.equal(afterCalls[model],crashCalls[model]);
+    assert.deepEqual((await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,crashRun.id])).rows,crashOperations);
+    for(const role of ['user','assistant']) assert.equal((await pool().query('SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role=$3',[orgId,crashRun.id,role])).rows[0].n,1);
+    let redelivered=await queue.getJobById(QUEUE.WORK_RUN,queueId);
+    for(let n=0;n<50 && redelivered?.state!=='completed';n++) {
+        await new Promise(r=>setTimeout(r,100));
+        redelivered=await queue.getJobById(QUEUE.WORK_RUN,queueId);
+    }
+    assert.equal(redelivered?.state,'completed');
+    assert.equal(redelivered?.retryCount,1);
+    console.log('M4_QUEUE_WORKER_DEATH_PASS',crashRun.id,queueId);
+} finally {
+    for(const child of children) {
+        try {process.kill(-child.pid!,'SIGKILL');} catch(error) {if((error as NodeJS.ErrnoException).code!=='ESRCH') throw error;}
+    }
+}
 await queue.stop({graceful:true,timeout:5000});
 await pool().end();
 console.log('M3_QUEUE_PASS',run.id);
