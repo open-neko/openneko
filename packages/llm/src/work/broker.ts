@@ -1,3 +1,4 @@
+import { proposeHarnessAction } from "./harness-proposal";
 import { startupEvent } from "@neko/telemetry/startup";
 import { recordHarnessLookup } from "./harness-operation";
 import {
@@ -25,7 +26,7 @@ import {
 /** What a per-run bearer token resolves to — the trust binding. */
 export interface RunBinding {
   /** Trusted launcher capability profile; never read from request JSON. */
-  profile?: "harness-read-only";
+  profile?: "harness-read-only" | "harness-governed";
   runId: string;
   orgId: string;
   /** Agent jobs have no work_run actor and intentionally use service reads. */
@@ -101,7 +102,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile === "harness-read-only" && path !== "/v1/harness/lookup") {
+  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -282,6 +283,10 @@ async function handle(
             }),
         }),
       );
+    }
+    case "/v1/harness/propose": {
+      if (binding.profile !== "harness-governed" || binding.kind !== "work") return send(res,403,{error:"Harness proposal capability denied"});
+      return send(res,200,await proposeHarnessAction(binding,body,cp));
     }
     case "/v1/harness/lookup": {
       const request = {
@@ -738,7 +743,7 @@ export async function startAgentBroker(
     port,
     tokenFor(binding) {
       const existing = byRun.get(binding.runId);
-      if (binding.profile !== undefined && binding.profile !== "harness-read-only") {
+      if (binding.profile !== undefined && binding.profile !== "harness-read-only" && binding.profile !== "harness-governed") {
         throw new Error("Unknown broker capability profile");
       }
       if (existing) {

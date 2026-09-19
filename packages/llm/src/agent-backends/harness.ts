@@ -32,7 +32,7 @@ export class HarnessBackend implements AgentBackend {
             throw new Error("Harness M3 requires host run identity and workspace");
         const child = spawn(VENDORED_HARNESS_MODEL_BINARY, [], {
             env: { ...env, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
-                HARNESS_MODEL_API_KEY: env.api_key, HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness") },
+                HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_PROPOSALS: env.OPENNEKO_HARNESS_PROPOSALS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness") },
             stdio: ["pipe", "pipe", "ignore"],
         });
         let killTimer: ReturnType<typeof setTimeout> | undefined;
@@ -62,10 +62,10 @@ export class HarnessBackend implements AgentBackend {
                     result = harnessResult(event.result);
                 }
                 else if (event.type === "tool.started") {
-                    await opts.onEvent?.({ type: "tool_start", id: `harness-lookup-${event.operation_id}`, name: "neko_graphjin_agent" });
+                    await opts.onEvent?.({ type: "tool_start", id: `harness-operation-${event.operation_id}`, name: event.name === "propose" ? "neko_action_proposal" : "neko_graphjin_agent" });
                 }
                 else if (event.type === "tool.finished") {
-                    await opts.onEvent?.({ type: "tool_end", id: `harness-lookup-${event.operation_id}`, result: event.data, ...(event.error ? { error: String(event.error) } : {}) });
+                    await opts.onEvent?.({ type: "tool_end", id: `harness-operation-${event.operation_id}`, result: event.data, ...(event.error ? { error: String(event.error) } : {}) });
                 }
                 else if (event.type === "run.started") {
                     await opts.onEvent?.({ type: "status", message: "Harness is working…" });
@@ -95,7 +95,7 @@ export class HarnessBackend implements AgentBackend {
 }
 
 /** Shared by live execution and validated checkpoint adoption. */
-export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; delegations?: unknown[]; answer?: string; code?: string}): AgentRunResult {
-    return { backendState: { harness: { version: 1, kind: result.kind, delegations: result.delegations ?? [], usageCoverage: "delegated-only" } }, status: result.status, finalText: result.answer ?? "",
+export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; proposals?: {id?:string;status:string}[]; delegations?: unknown[]; answer?: string; code?: string}): AgentRunResult {
+    return { backendState: { harness: { version: 1, kind: result.kind, proposals: result.proposals ?? [], delegations: result.delegations ?? [], usageCoverage: "delegated-only" } }, status: result.status, finalText: result.answer ?? "",
         ...(result.code ? {error: result.code} : {}) };
 }

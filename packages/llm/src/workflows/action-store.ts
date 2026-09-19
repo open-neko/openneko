@@ -344,6 +344,7 @@ function toRequestRecord(
 export type CreateActionRequestInput = {
   /** Trusted Harness runtime operation ID. The caller must authorize the proposal first. */
   harnessOperationId?: number;
+  harnessDefinition?: Record<string, unknown>;
   orgId: string;
   workflowRunId?: string | null;
   triggeredByObservationId?: string | null;
@@ -460,6 +461,7 @@ export async function createActionRequest(
     actor = {userId:admitted.actor_user_id,role:admitted.actor_role,backend:"harness"};
     harnessProposal = {
       fingerprint:admitted.fingerprint, actor, scope:input.scope, kind:input.kind,
+      ...(input.harnessDefinition ? {definition:input.harnessDefinition} : {}),
       target:input.target ?? null, payload:input.payload ?? {}, policyId:input.policyId ?? null,
       riskLevel:input.riskLevel ?? null, summary:input.summary ?? null, intent:input.intent ?? null,
     };
@@ -734,7 +736,7 @@ export async function autoApprovePreparedActionRequest(args: {
  * always may; member may unless the policy demands a different role;
  * service principals never decide.
  */
-async function assertMayDecide(
+export async function assertMayDecide(
   orgId: string,
   request: ActionRequestRecord,
   approver: { userId: string | null; role: "admin" | "member" | "service" },
