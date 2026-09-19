@@ -211,16 +211,21 @@ never treat an arbitrary command error as proof of absence. Its successful
 workspace-scoped list response is structured and capped at 1,000 entries by the
 server, so an incomplete page cannot establish absence either.
 
-## Remaining M4 work
+## Qualification scope and limits
 
-This completes automatic terminal reconciliation for the current read-only slice,
-not all M4 acceptance gates. Host continuation passes the live repaired-checkpoint gate. Still required:
-governed mutation/idempotency crash tests, durable approval continuations with fresh
-authorization, remote cancellation reconciliation, and retention policy for
-unresolved sandboxes. Accepted-context restoration passes launcher and production queue redelivery
-gates; approval/browser restart and the full worker-death queue matrix remain. Completed-run
-redelivery is not proof of every crash window in the surrounding product handler. No mutation capability or arbitrary
-Go/Ax continuation is enabled. Transcript pairing is not exactly-once effects.
+The bounded read-only recovery and governed pack-action paths now have real
+OpenShell, broker, PostgreSQL, queue, controlled HTTP-effect and browser evidence
+(see the final acceptance section below). A surviving active sandbox is refused,
+never duplicated. Queue expiry/retry is qualified after its original model turn
+finishes; earlier retry is covered at the launcher overlap boundary, not by a
+separate full queue timing matrix. This is not an arbitrary Go/Ax VM cursor resume.
+
+Provider reconciliation is opt-in: only adapters with a real status lookup may
+recover an external receipt. Other interrupted effects stop as unknown, with no
+automatic redispatch. No existing provider is silently treated as idempotent.
+Raw OpenShell idle-proxy cancellation remains the M2 failure; whole-sandbox
+cancellation passes. Retention is deliberately conservative as documented below.
+Transcript pairing is not an exactly-once external-effect guarantee.
 
 
 ## Launcher continuation verification (2026-09-19)
@@ -488,3 +493,46 @@ sandbox deletion occurs only after a durable receipt. Host checkpoints and datab
 receipts must be retained together for the deployment's accepted-input deduplication
 window; deleting one is not permission to rerun an accepted input. No background
 purge is enabled by this change. Existing organization deletion remains explicit.
+
+## Final governed-action acceptance (2026-09-19)
+
+- Standalone Go race suite and vet pass. Worker typechecking and the focused
+  broker/executor/launch regression suite pass (17 tests, one opt-in test skipped).
+- The cumulative first live group passes 20 checks, including four effect crash
+  cases: before dispatch, after commit without status support, after commit with
+  provider-status reconciliation, and after local receipt persistence. Actor,
+  schema/descriptor and policy changes deny new execution. A revoked policy during
+  recovery still records the abandoned effect as unknown.
+- The Go/Ax proposal runs inside OpenShell using credential replacement, reaches
+  the scoped broker, produces one durable approval and restores it without another
+  model call. Cancellation through the production launcher deletes the sandbox
+  and the controlled upstream observes closure.
+- Actual queue/worker restart retains the approval. The final replay also asserts
+  exactly one persisted assistant message event, fixing the duplicate answer found
+  during browser acceptance. `/tmp/harness-projection-queue-final.log` records
+  `M4_QUEUE_APPROVAL_RESTART_PASS` for run
+  `35658da3-793b-4998-bcf1-1e5c7129e3b6`.
+- In the existing web UI, thread `71fcb5aa-322c-4beb-abc9-5b7a65f0ddff`
+  restored its approval after reload; clicking Approve traversed the real action
+  queue and production handler to one controlled HTTP effect. The card showed Done
+  after another reload. Request `ec7e518a-3db5-4503-bcac-328eb1d50ef7` had one
+  execution row and executed status.
+- A fresh replayed thread `80b47892-5fd9-4ae5-8c03-8833443f093b` rendered one
+  answer and one approval. Its controlled HTTP effect then lost its receipt;
+  the UI displayed `Effect outcome unknown; automatic redispatch disabled`, including
+  after reload. Request `b25f2564-5402-4712-8b8c-35717e5cbb2c` had one execution
+  row, failed/unknown status and one assistant event. No UI styling changes were
+  needed. Synthetic threads seeded after web startup explicitly use the existing
+  solo owner, preserving normal thread access checks.
+
+The optional browser effect worker is reproducible with
+`apps/worker/scripts/harness-m3.ts --approval-worker-only` in the isolated M3
+environment; `--effect-unknown` injects receipt loss after the controlled HTTP call.
+It is guarded by `HARNESS_M3_LIVE=1` and port 18119. Stop it before releasing the
+browser phase's `web-done` marker. All credentials and business data in these
+checks are synthetic; these are correctness gates, not paid model-quality results.
+
+Final browser-stack cleanup removed all owned M2/M3 services and volumes. The
+cumulative command still exits 1 at `upstream_stream_cancelled=false`, followed by
+`sandbox_delete_closes_upstream=true`. That remaining M2 dependency defect is
+reported, not waived or hidden by the successful Harness cancellation gate.

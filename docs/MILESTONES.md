@@ -4,8 +4,8 @@ Status: M1 execution-contract and M3 read-only consumer gates have local evidenc
 M2 credential lifecycle, gateway restart and OTLP delivery now pass, but upstream
 idle-stream cancellation remains open. M4 terminal recovery is implemented;
 distributed PostgreSQL ownership/receipts have live crash evidence; operation
-recovery and governed effects remain in progress. Broker lookup intent/result journals
-now have live crash evidence. M5–M8 are not qualified.
+recovery and governed pack actions now have live crash, queue and browser evidence.
+M2 remains open at the raw idle-proxy cancellation test. M5–M8 are not qualified.
 Implementation is on `feat/openneko-harness` in Harness and the optional OpenNeko
 integration worktree; no further changes are being made on main.
 
@@ -86,7 +86,7 @@ M3 completion does not qualify production rollout or remote cancellation.
 
 ## M4 — Durable recovery and governed effects
 
-**In progress (2026-09-19):** automatic terminal reconciliation now adopts validated
+**Locally qualified governed-action path (2026-09-19):** automatic terminal reconciliation now adopts validated
 Go checkpoints from the host or retained OpenShell sandbox without model/tool replay.
 A PostgreSQL session lock fences concurrent launch/recovery across hosts; a
 local file lock protects legacy admissions. Broker lookup operations now persist
@@ -99,8 +99,9 @@ A separate live host-launcher SIGKILL gate proves overlap refusal while the remo
 Go process remains active and terminal adoption after it finishes, without new
 model or lookup calls. A production queue-handler process is also killed after
 a saved lookup: pg-boss expires and redelivers the same job, and a replacement
-worker adopts the answer without duplicate messages or calls. The earlier crash
-windows and approval/effect matrix remain open.
+worker adopts the answer without duplicate messages or calls. The governed effect tests now kill execution before dispatch, after external
+commit and after receipt persistence. Read-only provider status can reconcile a
+committed effect; unsupported or failed status leaves an explicit unknown result.
 Accepted context survives changed
 prompts on real queue redelivery without new model/tool calls. Legacy mutation
 fences and legacy broker routes are disabled for Harness: its host-bound token
@@ -109,8 +110,13 @@ Receipts are durable
 before cleanup; unknown operations and changed input/scope fail closed. Hermes
 retains its existing lifecycle. Host-side proposal storage now also preserves one prepared approval per runtime
 operation, freezes its arguments and refuses replay after interrupted preparation.
-The Go proposal tool and governed effect dispatch remain disabled. This completes
-the read-only terminal recovery slice and proposal storage, not full M4. See [M4 progress](M4-RECOVERY.md) for checks and deployment limits.
+The Go proposal tool, scoped broker route and governed dispatcher are now wired.
+Production queue restart preserves one pending approval without model replay.
+Browser acceptance proves pending approval reload, approval through the action
+queue to a controlled HTTP effect, completed reload and an honest unknown-outcome
+card after receipt loss. A browser-discovered duplicate answer on recovery was
+fixed and verified through the real queue and browser. See [M4 evidence](M4-RECOVERY.md)
+for the bounded scope, provider reconciliation and retention limits.
 
 **Deliver:** host-owned journal/checkpoint recovery using existing database/queue facilities; input deduplication; operation intent/result records; durable approval continuations; broker idempotency/status contracts where supported; cancellation propagation and reconciliation. Use controlled mutation fixtures before real application actions.
 

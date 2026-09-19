@@ -126,3 +126,15 @@ unchanged accepted context and lookup receipt, and no new model/GraphJin calls.
 The broker runs in the killed process; the remote sandbox is left to complete its
 30-second delayed responder before queue redelivery. This adds about one minute
 to the suite. It covers terminal adoption after worker death, not all crash windows.
+
+The governed-action gate includes real broker/DB proposal validation, exclusive
+execution claims, process death and provider-status reconciliation. With
+`HARNESS_M3_WEB=1`, the queue driver leaves a pending approval and prints
+`M4_QUEUE_APPROVAL_PASS <thread> <run> <request>`. Open
+`http://localhost:18121/work/<thread>` (localhost is the Next development origin).
+In the same isolated database environment, run the worker script with
+`--approval-worker-only` to consume the production action queue and invoke a
+controlled local HTTP effect. Add `--effect-unknown` to lose the receipt after
+that call. Verify approval and unknown/completed states across reload, stop the
+fixture worker, then touch the printed state's `web-done` marker. These flags are
+acceptance fixtures only; they cannot start against the normal database port.
