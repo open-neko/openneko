@@ -343,3 +343,50 @@ that assertion as well as queue completion.
 The full suite still exits 1 at the known M2 idle upstream cancellation failure;
 sandbox deletion closes that request. Owned services were removed. The queue
 fixture change is OpenNeko commit `b59ebee` on `feat/openneko-harness`.
+
+
+## Approval boundary prerequisites
+
+Source review of OpenNeko's current `action-store.ts`, `action-executor.ts`, broker
+and action queue handler identifies the contracts Harness must add before exposing
+mutations. Reuse the existing action-request rows, approval UI and event transport,
+but do not expose their legacy broker routes directly to Harness:
+
+- `createActionRequest` accepts a supplied status and optional actor fields. A
+  Harness proposal endpoint must derive actor and policy decisions from the bound
+  run, persist an operation-to-request identity, and reject changed proposals on
+  repeated delivery. The model cannot select `approved` or an approver.
+- `updateActionRequestPayload` currently permits updates regardless of status;
+  preflight adapters use it to prepare execution. Freeze the approved operation
+  after preparation, and compare its immutable arguments and relevant resource
+  revisions on continuation. Recheck current caller, policy and connection access
+  before dispatch; an old approval cannot authorize a changed operation.
+- `executeApprovedActionRequest` reads `approved`, writes an execution row, and
+  invokes the adapter without an atomic cross-worker claim. Harness effects need
+  a durable exclusive admission before dispatch. A prior unresolved dispatch
+  cannot be retried merely because its worker died. Use provider idempotency/status
+  where available; otherwise preserve an unknown outcome.
+- Approval waiting must return a durable continuation and release sandbox/model
+  resources. Resume from the saved request and result, not rerun the actor code
+  that produced the proposal. Existing action-result events can supply the product
+  presentation, but receipt publication must precede continuation.
+
+The current launcher now mints an immutable `harness-read-only` broker binding.
+That profile allows only `/v1/harness/lookup`, which has its own operation journal.
+All legacy routes, including action requests/enqueue, arbitrary GraphJin tools and
+broker-posted events, are rejected with HTTP 403 before dispatch. Thus the existing
+answer-fence restriction is backed by the host capability boundary. Tokens cannot
+change profile or identity on reuse, and mutation of the caller's binding object
+cannot widen a minted token. Denials emit metadata-only
+`harness.broker_capability` observations. Hermes retains its existing route access.
+This closes a prerequisite gap; it does not enable or complete approval handling.
+
+Verification: `/tmp/harness-broker-profile-live.log` records six denied legacy
+routes, no created action request, and successful Go/Ax lookup and recovery with
+the restricted token. It also passes Hermes cold/warm and memory-fence regressions,
+completed queue redelivery, and worker-death recovery for run
+`6d002a6a-42af-4be6-98b7-65b0c01937df`. All 66 focused broker/launcher tests and worker
+typechecking passed; the final audit-order adjustment also passed the six broker
+tests. The cumulative suite exits 1 only for the existing M2 idle-stream defect;
+sandbox deletion closes the upstream and owned services were removed. Product
+commit: `45001af` on `feat/openneko-harness`.

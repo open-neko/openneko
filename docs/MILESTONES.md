@@ -103,7 +103,8 @@ worker adopts the answer without duplicate messages or calls. The earlier crash
 windows and approval/effect matrix remain open.
 Accepted context survives changed
 prompts on real queue redelivery without new model/tool calls. Legacy mutation
-fences are disabled for Harness; their Hermes behavior has regression coverage.
+fences and legacy broker routes are disabled for Harness: its host-bound token
+permits only the journaled lookup route. Hermes behavior has regression coverage.
 Receipts are durable
 before cleanup; unknown operations and changed input/scope fail closed. Hermes
 retains its existing lifecycle. This completes the read-only terminal recovery
