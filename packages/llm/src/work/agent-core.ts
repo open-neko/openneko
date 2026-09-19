@@ -238,6 +238,7 @@ export async function runAgentBackend(
     : undefined;
 
   return backend.run({
+    runId,
     prompt,
     userMessage,
     orgId,

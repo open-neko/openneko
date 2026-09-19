@@ -1,6 +1,6 @@
 import type { HarnessRunSummary, NormalizedUsage } from "@neko/telemetry";
 
-export const AGENT_BACKEND_IDS = ["hermes"] as const;
+export const AGENT_BACKEND_IDS = ["hermes", "harness"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
 // Every concurrent job can own an OpenShell sandbox. Keep the out-of-box
@@ -14,6 +14,7 @@ export const AGENT_BACKEND_OPTIONS = [
     label: "Hermes",
     description: "Subprocess agent. Works with any LLM provider.",
   },
+  { value: "harness", label: "Harness", description: "Opt-in Go/Ax agent with read-only GraphJin delegation." },
 ] as const;
 
 export function isAgentBackendId(value: string): value is AgentBackendId {
@@ -285,6 +286,8 @@ function isReasoningEffort(value: unknown): value is AgentReasoningEffort {
 export type AgentNativeDelegationPolicy = "enabled" | "disabled";
 
 export type AgentRunOptions = {
+  /** Trusted host execution identity for durable backend input acceptance. */
+  runId?: string;
   prompt: string;
   userMessage?: string;
   timeoutMs?: number;
@@ -346,6 +349,8 @@ export type AgentNativeDelegation = "hermes-delegate-task";
 export interface AgentBackendCapabilities {
   /** Accepts in-process SDK MCP servers via run().mcpServers. */
   readonly mcpTools: boolean;
+  /** Scoped read-only server agent delegation without an MCP client. */
+  readonly brokerLookup?: boolean;
   /** Honors resume: sessionId in AgentRunOptions to reload prior turns out-of-band. */
   readonly sessionResume: boolean;
   /** Native backend subagent/delegation primitive, when available. */

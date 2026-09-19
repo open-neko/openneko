@@ -1,7 +1,7 @@
 /**
  * Per-org agent backend resolution.
  *
- * Hermes is the sole runtime. The agent row only stores concurrency settings;
+ * Hermes is the default runtime; Harness requires an explicit operator opt-in. The agent row only stores concurrency settings;
  * provider credentials are provisioned independently. The non-secret primary
  * provider/model selection is retained so callers can attest it against the
  * identity reported by the live Hermes ACP session.
@@ -50,7 +50,9 @@ async function loadRow(orgId: string, scope: string): Promise<StoredRow | null> 
 
 export async function resolveAgentBackendId(orgId: string): Promise<AgentBackendId> {
   void orgId;
-  return "hermes";
+  const selected = process.env.OPENNEKO_AGENT_BACKEND;
+  if (selected && selected !== "hermes" && selected !== "harness") throw new Error("Unsupported OPENNEKO_AGENT_BACKEND");
+  return selected === "harness" ? "harness" : "hermes";
 }
 
 export type AgentConcurrency = {
@@ -101,7 +103,7 @@ function configuredHermesModelIdentity(
 }
 
 /**
- * Resolve the sole backend and its non-secret configured model identity. The
+ * Resolve the selected backend and its non-secret configured model identity. The
  * real provider key remains independently provisioned through OpenShell and is
  * never returned with the backend.
  */
