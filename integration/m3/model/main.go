@@ -15,6 +15,12 @@ func main() {
 	counts := map[string]int{}
 	delay := 0
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			mu.Lock()
+			defer mu.Unlock()
+			_ = json.NewEncoder(w).Encode(counts)
+			return
+		}
 		if r.Method != "POST" {
 			http.Error(w, "POST required", 405)
 			return

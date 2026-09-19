@@ -1,64 +1,91 @@
-# M4 progress: host admission and completion receipts
+# M4 progress: automatic terminal reconciliation
 
-The M3 Go checkpoint was durable inside the sandbox, but the host retrieved it only
-after execution. A worker death left a deterministic sandbox name that the legacy
-launcher would reclaim by deleting. The boot-time orphan reaper could also delete
-it. Both paths could destroy evidence before recovery.
+The optional OpenNeko adapter fences a run before sandbox creation using an
+exclusive, fsynced host admission record. The fingerprint binds input, run, tenant,
+thread, principal, tool policy, allowed skills, model route, image and environment.
+Records live in `runs/.harness-launches/<run-hash>`, outside the uploaded workspace.
+Changed input or scope is rejected before inspecting or returning evidence.
 
-The optional OpenNeko adapter now writes an exclusive, fsynced admission record
-before staging or creating a Harness sandbox. It hashes the accepted input, run,
-tenant, thread, principal/authorization revision, model route, image and trusted
-environment. Records live under the host's `runs/.harness-launches/<run-hash>`;
-that sibling directory is not staged into the sandbox. There are no credentials or
-prompts in the admission record, only its fingerprint. Result receipts contain
-application content and need the same host retention/access policy as checkpoints.
+Every Harness launch holds a POSIX file lock through `harness-inspect --lock DIR`.
+The helper signals readiness and holds the lock until the host closes stdin; host
+SIGKILL closes that pipe too. Another live owner is refused, with no timeout-based
+lock stealing. Unexpected helper exit aborts execution and prevents normal receipt
+publication/cleanup. All deliveries of a run must share the same persistent POSIX
+filesystem with working flock semantics. Separate host disks are not a distributed
+ownership scheme; database fencing is required before that deployment topology.
+Hermes does not use this helper or change its existing warm-pool lifecycle.
 
-After execution, the launcher retrieves the Go checkpoint and atomically saves a
-bounded 8 MiB host completion receipt before deleting the sandbox. A duplicate with
-the same fingerprint returns the receipt without contacting OpenShell. A changed
-input or authorization scope is rejected. Concurrent launches admit one owner.
-Incomplete/corrupt records produce `outcome unknown` and prohibit automatic
-relaunch, even when a Go checkpoint happens to be present.
+On redelivery, a valid host receipt is returned. If the receipt is missing, the
+launcher automatically inspects the downloaded Go checkpoint, or invokes the Go
+inspector in the retained sandbox when no local checkpoint exists. It supplies the
+exact trusted run specification, including remapped paths and user message. The
+inspector acquires the Go execution lock, validates bounded checkpoint contents,
+and classifies the outcome:
 
-Harness sandboxes are labelled `openneko.recovery=retain`. The generic restart
-reaper skips them, and name-collision handling cannot delete them. An execution or
-checkpoint error retains the sandbox. Explicit cancellation still tears down the
-process boundary; it may leave an unresolved admission, which cannot be retried
-silently. Broker capabilities are released in existing cleanup paths. Hermes
-continues using its original warm pool, collision recovery and orphan cleanup.
+- `terminal`: adopt the saved result through the same mapper as live execution.
+- `interrupted`: retained read evidence, but no final answer; do not re-execute.
+- `outcome_unknown`: a durable intent lacks a result; do not re-execute.
+
+Busy locks, corrupt/version-mismatched records, conflicting input, unavailable
+sandboxes and invalid inspection output fail closed. A corrupt local checkpoint
+is not silently replaced. Recovery never calls a model or tool. The terminal host
+receipt is atomically saved and fsynced before sandbox deletion. Receipt replay
+also retries deletion, covering a crash between receipt publication and cleanup.
+Cleanup failure preserves the receipt and is visible in phase telemetry.
+
+Harness sandboxes carry `openneko.recovery=retain`; generic restart reaping and
+name-collision handling cannot destroy unresolved evidence. Explicit cancellation
+still tears down the sandbox process boundary and can leave an unresolved admission.
+Local cancellation does not prove an upstream operation stopped. Checkpoints and
+result receipts contain application content and need host access/retention controls.
+
+## Packaging and inspection
+
+Install the matching native `harness-inspect` on every worker/web host that can
+launch Harness, on PATH or via absolute `HARNESS_INSPECT_BIN`. Missing helpers fail
+before launch. `adapters/openneko/build-image.sh` also installs the Linux inspector
+inside the sandbox. No inspector provider credentials or model egress are needed.
+
+```sh
+go build -o bin/harness-inspect ./cmd/harness-inspect
+HARNESS_STATE_DIR=/trusted/run/.harness ./bin/harness-inspect < accepted-run.json
+```
+
+Inspection never changes the checkpoint. Its JSON includes operation content;
+only source/outcome classifications and phase timings go to recovery telemetry.
+Normal replay and inspection share validation of version, exact input, event
+sequence, tool/result pairing, bounded operations and consistent terminal results.
 
 ## Verification
 
-- Real subprocess SIGKILL after admission: a new process cannot relaunch the run.
-- Real subprocess SIGKILL after durable completion: the saved result is recovered.
-- Concurrent admission, changed input/scope and corrupt/version-mismatched receipts.
-- Launcher name collision and missing result stream: sandbox not deleted; redelivery
-  performs no additional CLI calls.
-- Restart reaper preserves recovery-labelled boxes and still deletes old Hermes boxes.
-- Real OpenShell → Go/Ax → broker → GraphJin lookup, completed host-receipt replay,
-  altered-input rejection, and unresolved-admission rejection passed.
-- The production pg-boss handler completed live run
-  `6f36f348-5cbf-4ebc-83d1-d1d6fa2bf02e`; phase observations include
-  `sandbox.harness_admission` and `sandbox.harness_receipt`.
+`go test -race ./...` covers active execution locks, saved versus unknown evidence,
+corrupt checkpoints and rejection by inspection and normal replay. Product tests
+cover admission/receipt conflicts, corrupt receipts, terminal adoption, preserved
+Hermes cleanup, and actual host SIGKILL while holding the native helper lock.
+Run the lock test with `HARNESS_INSPECT_BIN` pointing to the built host binary.
 
-The real integration command is unchanged: `integration/m3/run.sh` with the
-consumer checkout and pinned CLI variables documented in its README. Its final
-nonzero exit remains the known M2 upstream idle-stream cancellation failure;
-M4 changes do not resolve that proxy limitation.
+The isolated `integration/m3/run.sh` suite runs a real OpenShell sandbox, Go/Ax,
+broker, GraphJin and PostgreSQL. It injects a checkpoint-transfer failure after
+execution, recovers from the retained sandbox, then removes the receipt and
+recovers from the downloaded checkpoint. Concurrent recovery admits one owner.
+Repeated unknown-operation recovery stays blocked. Model request counters must
+remain unchanged across every recovery. The production pg-boss run follows this
+check. No browser UI changed in this slice; earlier M3 browser qualification is
+not a claim of a fresh browser recovery test.
+
+Verified 2026-09-19: Go race tests and vet passed; 99 product tests passed (six
+metadata-DB-dependent resolver tests skipped in the local regression command),
+worker typechecking passed, and the live recovery assertions passed. The production
+queue run `afc0aa95-b727-4223-9065-5ec442ba430f` completed.
+
+The suite's final nonzero exit remains the known M2 upstream idle-stream
+cancellation failure. Terminal reconciliation does not fix that proxy limitation.
 
 ## Remaining M4 work
 
-This is a conservative admission fence, not automatic recovery. It does not infer
-that an external effect did or did not happen. Interrupted attempts need a scoped
-reconciliation flow that inspects retained evidence and remote operation status.
-A retained sandbox can keep running until its deadline if the worker dies; the
-reconciler must terminate or fence old execution before adopting it. A host crash
-after receipt commit but before deletion can leave an orphan; replay does not yet
-clean that orphan automatically.
-
-Still required: host-owned per-operation journal in the existing database/queue,
-controlled mutation crash matrix, explicit idempotency/status contracts, durable
-approval continuations with current authorization checks, remote cancellation
-reconciliation, and retention/cleanup for unresolved sandboxes. No production
-mutations are enabled, and this work does not claim M4 completion or exactly-once
-effects. Arbitrary Go/Ax continuation remains disabled.
+This completes automatic terminal reconciliation for the current read-only slice,
+not all M4 acceptance gates. Still required: distributed database ownership and
+per-operation journals, governed mutation/idempotency crash tests, durable approval
+continuations with fresh authorization, remote cancellation reconciliation, and
+retention policy for unresolved sandboxes. No mutation capability or arbitrary
+Go/Ax continuation is enabled. Transcript pairing is not exactly-once effects.

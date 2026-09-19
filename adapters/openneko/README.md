@@ -36,8 +36,15 @@ existing server-side agent broker capability; caller identity and approvals rema
 OpenNeko-owned. Map neutral observations into product telemetry without double
 counting model or delegated usage.
 
-These bindings are design requirements, not implemented features. Existing
-entrypoint, binary egress policy and Hermes warm lifecycle still require image and
-packaging qualification. Real worker/queue/broker/web gates remain open. If a
-contract cannot be met externally, document the specific blocker before proposing
-an OpenNeko change; do not silently couple the core to product internals.
+The host must also install the matching native recovery helper:
+
+```sh
+go build -o bin/harness-inspect ./cmd/harness-inspect
+export HARNESS_INSPECT_BIN=/absolute/path/to/bin/harness-inspect
+```
+
+Both worker and web launchers require it when Harness is selected. The image build
+includes the Linux helper. Host run storage must persist across restart and all
+owners must share the same filesystem with POSIX locking; separate host disks are
+unsupported. See [recovery](../../docs/M4-RECOVERY.md) for adoption, ambiguity and
+remaining M4 gates. Hermes requires neither helper nor configuration change.

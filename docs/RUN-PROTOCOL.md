@@ -53,3 +53,9 @@ aggregate remote usage is counted once, never summed again with nested actor usa
 Outer Ax token accounting and collector export remain unqualified and are explicitly
 reported as incomplete. Ax stage timings and remote trace IDs are retained locally.
 See [M3 acceptance](../integration/m3/README.md) for actual product evidence.
+
+For non-executing recovery evidence, build `cmd/harness-inspect` and supply the
+same trusted input and `HARNESS_STATE_DIR`, without model credentials. It rejects
+active locks and inconsistent snapshots and reports terminal/interrupted/unknown
+operation outcomes. It never resumes an agent. The optional OpenNeko host uses terminal inspection
+to adopt a durable receipt under a host launch lock; see [recovery](M4-RECOVERY.md).

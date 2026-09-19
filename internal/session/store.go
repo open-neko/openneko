@@ -62,11 +62,9 @@ func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		file.Close()
 	}
 	if err == nil {
-		if len(data) > 8<<20 || json.Unmarshal(data, &state) != nil || state.Version != 1 {
-			return agent.Result{}, fmt.Errorf("invalid checkpoint")
-		}
-		if state.Spec != spec {
-			return agent.Result{}, fmt.Errorf("run input conflicts with accepted input")
+		state, err = decodeCheckpoint(data, spec)
+		if err != nil {
+			return agent.Result{}, err
 		}
 		if state.Result == nil {
 			return agent.Result{}, fmt.Errorf("interrupted run requires reconciliation; stored operations retained")
@@ -131,9 +129,9 @@ func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 				return nil, err
 			}
 			raw, err := lookup(ctx, instruction)
-			if len(raw) > 262144 {
+			if len(raw) > 262144 || !json.Valid(raw) || strings.TrimSpace(string(raw)) == "null" {
 				raw = nil
-				err = fmt.Errorf("lookup result exceeds limit")
+				err = fmt.Errorf("lookup result invalid or exceeds limit")
 			}
 			state.Operations[n].Finished = true
 			state.Operations[n].Result = raw

@@ -3,6 +3,8 @@ set -euo pipefail
 product=${OPENNEKO_TEST_SOURCE:?}
 cli=${OPENSHELL_TEST_CLI:?}
 go build -o "$HARNESS_STATE/openshell-compat" ./adapters/openneko/cmd/openshell-compat
+go build -o "$HARNESS_STATE/harness-inspect" ./cmd/harness-inspect
+export HARNESS_INSPECT_BIN="$HARNESS_STATE/harness-inspect"
 export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$HARNESS_STATE/openshell-compat"
 cat > "$HARNESS_STATE/m3-provider.yaml" <<'YAML'
 id: harness-m3

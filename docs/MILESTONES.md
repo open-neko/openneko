@@ -79,13 +79,12 @@ M3 completion does not qualify production rollout or remote cancellation.
 
 ## M4 — Durable recovery and governed effects
 
-**In progress (2026-09-19):** the optional OpenNeko host now fences Harness launches
-with durable admission and completion receipts. Redelivery reuses a completed
-receipt without another sandbox/model/tool call; mismatched input/authorization
-and unresolved attempts fail closed. Restart cleanup and name-collision handling
-preserve recovery-labelled sandboxes. Explicit cancellation still deletes the
-sandbox process boundary. This is the first recovery safeguard, not full M4.
-See [M4 progress](M4-RECOVERY.md) for checks and remaining acceptance cases.
+**In progress (2026-09-19):** automatic terminal reconciliation now adopts validated
+Go checkpoints from the host or retained OpenShell sandbox without model/tool replay.
+A native host file lock fences concurrent launch/recovery. Receipts are durable
+before cleanup; unknown operations and changed input/scope fail closed. Hermes
+retains its existing lifecycle. This completes the read-only terminal recovery
+slice, not full M4. See [M4 progress](M4-RECOVERY.md) for checks and deployment limits.
 
 **Deliver:** host-owned journal/checkpoint recovery using existing database/queue facilities; input deduplication; operation intent/result records; durable approval continuations; broker idempotency/status contracts where supported; cancellation propagation and reconciliation. Use controlled mutation fixtures before real application actions.
 
