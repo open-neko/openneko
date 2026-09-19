@@ -1,3 +1,4 @@
+import { admitHarnessLaunch } from "./harness-launch-journal";
 import { startupEvent, startupPhase } from "@neko/telemetry/startup";
 import { copyAllowedTeamLibrary, type AllowedLibrary } from "../library/staging";
 import { createHash, randomUUID } from "node:crypto";
@@ -68,7 +69,7 @@ export async function reapStrandedSandboxes(
   const listed = JSON.parse(
     await run(["sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`, "-o", "json", "--limit", "500"], 30_000),
   ) as Array<{ name: string; labels?: Record<string, string> }>;
-  const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot).map((box) => box.name);
+  const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot && box.labels?.["openneko.recovery"] !== "retain").map((box) => box.name);
   await Promise.allSettled(stranded.map((name) => run(["sandbox", "delete", name], 60_000)));
   return stranded;
 }
@@ -632,6 +633,24 @@ function makeSandboxCore(
       .slice(0, 60);
     if (input.backend.id === "harness") name = `h-${createHash("sha256").update(input.runId).digest("hex").slice(0, 16)}`;
 
+    const admission = input.backend.id === "harness"
+      ? await timed("harness_admission", () => admitHarnessLaunch(
+          path.join(input.workspace.runsRoot, ".harness-launches", createHash("sha256").update(input.runId).digest("hex")),
+          { version: 1, runId: input.runId, orgId: input.orgId, kind,
+            threadId: !isJob ? (input as RunAgentBackendInput).threadId : null,
+            userMessage: jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : null),
+            prompt: inputPrompt, backend: input.backend.id, model: input.backend.configuredIdentity,
+            principal: !isJob ? (input as RunAgentBackendInput).sandboxUser ?? null : null,
+            environment: opts.env, image: opts.agentImage, provider: opts.modelProvider, endpoints: opts.modelHosts },
+        ))
+      : undefined;
+    if (admission?.result) {
+      await input.emit({ type: "status", message: "Restored saved run result" });
+      if (admission.result.finalText) await input.emit({ type: "message", role: "assistant", content: admission.result.finalText });
+      return admission.result;
+    }
+    let harnessReceiptSaved = false;
+
     // The box is a separate filesystem; the host workspace path (~/.config/… or
     // /Users/…) can't be recreated under the sandbox user's home. Upload the
     // workspace under /sandbox and remap every workspace path + the prompt from
@@ -884,6 +903,7 @@ function makeSandboxCore(
           "--no-tty",
           "--no-auto-providers",
           ...sandboxOwnerLabelArgs(),
+          ...(admission ? ["--label", "openneko.recovery=retain"] : []),
           ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
           "--policy",
           policyFile,
@@ -897,6 +917,7 @@ function makeSandboxCore(
           "true",
         ];
         const reclaimAndCreate = async () => {
+            if (admission) throw new Error("Harness launch outcome unknown: existing sandbox requires reconciliation");
           // Run names are deterministic so a durable queue retry can collide
           // with an OpenShell sandbox orphaned by a worker restart or deploy.
           // Replace only that exact run sandbox, then let the normal finally
@@ -984,6 +1005,10 @@ function makeSandboxCore(
           path.posix.join(boxWorkspace.runRoot, ".harness"), path.join(input.workspace.runRoot, ".harness"),
         ], 30_000));
       }
+      if (admission?.complete) {
+        await timed("harness_receipt", () => admission.complete!(result));
+        harnessReceiptSaved = true;
+      }
       healthy = result.status === "completed" && !signal?.aborted;
       return result;
     } finally {
@@ -1014,7 +1039,7 @@ function makeSandboxCore(
       // already-aborted run signal.
       if (lease) {
         await lease.release(warmSlot, healthy && !signal?.aborted);
-      } else if (sandboxCreated) {
+      } else if (sandboxCreated && (!admission || harnessReceiptSaved || signal?.aborted)) {
         await timed("delete", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
       }
       await rm(stageDir, { recursive: true, force: true });
