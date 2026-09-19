@@ -1077,6 +1077,7 @@ function makeSandboxCore(
                   orgId: input.orgId,
                   threadId,
                   kind,
+                  ...(input.backend.id === "harness" ? { profile: "harness-read-only" as const } : {}),
                 }),
                 }
               : {}),

@@ -41,6 +41,13 @@ live("runs Harness through the real launcher, broker and GraphJin and replays it
         const denied = await forged.json();
         expect(denied.denied || denied.error, JSON.stringify(denied)).toBeTruthy();
         broker.release(runId);
+        const restricted=broker.tokenFor({orgId,runId,threadId,kind:"work",profile:"harness-read-only"});
+        for(const route of ["/v1/action/request","/v1/action/enqueue","/v1/memory/remember","/v1/events","/v1/graphjin/agent","/v1/graphjin/tools/call"]) {
+          const response=await fetch(`http://127.0.0.1:${broker.port}${route}`,{method:"POST",headers:{authorization:`Bearer ${restricted}`,"content-type":"application/json"},body:JSON.stringify({profile:"legacy",status:"approved",scope:"external",kind:"fixture",summary:"must not execute",events:[]})});
+          expect(response.status,route).toBe(403);
+        }
+        expect((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1",[orgId])).rows[0].n).toBe(0);
+        broker.release(runId);
         // Lose the first checkpoint transfer after the real model/tool execution.
         // This leaves only the retained sandbox, with no host receipt/checkpoint.
         const cli = join(root, "recovery-cli");
@@ -199,7 +206,7 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
         child.stdin.end(JSON.stringify({
           options:{cli,gatewayName:"harness-m2",agentImage:"harness-openneko:m3",modelProvider:"harness-m3",modelHosts:[{host:"host.docker.internal",port:18118}],hermesHomeHostPath:hermesHome,warmPoolSize:0,brokerUrl:broker.url},
           input:{...hostInput,backend:undefined,emit:undefined},
-          token:broker.tokenFor({orgId,runId:hostRunId,threadId,kind:"work"}),
+          token:broker.tokenFor({orgId,runId:hostRunId,threadId,kind:"work",profile:"harness-read-only"}),
         }));
         try {
           await expect.poll(async()=>{
