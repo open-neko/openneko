@@ -97,7 +97,10 @@ checkpoint tool results without execution. The launcher now starts a bounded new
 Ax attempt from repaired evidence; the live gate verifies saved lookup reuse.
 A separate live host-launcher SIGKILL gate proves overlap refusal while the remote
 Go process remains active and terminal adoption after it finishes, without new
-model or lookup calls. The full production worker crash matrix remains open.
+model or lookup calls. A production queue-handler process is also killed after
+a saved lookup: pg-boss expires and redelivers the same job, and a replacement
+worker adopts the answer without duplicate messages or calls. The earlier crash
+windows and approval/effect matrix remain open.
 Accepted context survives changed
 prompts on real queue redelivery without new model/tool calls. Legacy mutation
 fences are disabled for Harness; their Hermes behavior has regression coverage.

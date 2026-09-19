@@ -40,12 +40,14 @@ inspector acquires the Go execution lock, validates bounded checkpoint contents,
 and classifies the outcome:
 
 - `terminal`: adopt the saved result through the same mapper as live execution.
-- `interrupted`: retained read evidence, but no final answer; do not re-execute.
+- `interrupted`: retained read evidence, but no final answer; only the separately
+  admitted bounded continuation described below may execute again.
 - `outcome_unknown`: a durable intent lacks a result; do not re-execute.
 
 Busy locks, corrupt/version-mismatched records, conflicting input, unavailable
 sandboxes and invalid inspection output fail closed. A corrupt local checkpoint
-is not silently replaced. Recovery never calls a model or tool. The terminal database
+is not silently replaced. Inspection, receipt repair and terminal adoption never call a model or tool.
+Explicit continuation is a new attempt, described below. The terminal database
 receipt is committed before sandbox deletion. Receipt replay
 also retries deletion, covering a crash between receipt publication and cleanup.
 Cleanup failure preserves the receipt and is visible in phase telemetry.
@@ -195,7 +197,8 @@ Real HTTP/Goja tests verify evidence reaches Ax, one old lookup is reused, one n
 lookup receives ID 2, unknown outcomes are refused, and attempt/lookup budgets do
 not reset. The optional OpenNeko launcher now invokes this new attempt path after
 validating scope, stopped remote execution, broker receipts and transferred state.
-Browser/worker restart acceptance remains open.
+Active and terminal browser reload have passed; approval restart and the full
+worker crash matrix remain open.
 No old JavaScript stack or function closure is restored.
 
 The inspector now exposes `can_resume` and `next_attempt` from the same Go
@@ -215,7 +218,7 @@ not all M4 acceptance gates. Host continuation passes the live repaired-checkpoi
 governed mutation/idempotency crash tests, durable approval continuations with fresh
 authorization, remote cancellation reconciliation, and retention policy for
 unresolved sandboxes. Accepted-context restoration passes launcher and production queue redelivery
-gates; browser recovery and full worker-death queue gates remain. Completed-run
+gates; approval/browser restart and the full worker-death queue matrix remain. Completed-run
 redelivery is not proof of every crash window in the surrounding product handler. No mutation capability or arbitrary
 Go/Ax continuation is enabled. Transcript pairing is not exactly-once effects.
 
@@ -306,3 +309,37 @@ sandbox deletion still closed the upstream request. Owned test services were
 removed. Separate launcher regression tests passed all 60 cases and worker
 TypeScript checking passed. The OpenNeko test change is commit `87a035e` on
 `feat/openneko-harness`.
+
+
+## Queue worker death verification (2026-09-19)
+
+The queue acceptance driver now runs the production `runWorkRun` handler and its
+broker in a separate process. It stores the user message through the normal
+`createWorkMessage` entry contract, queues one accepted run, and sends SIGKILL to
+the worker after GraphJin's result is durable while the remote responder waits.
+The job is still active after worker death. pg-boss's own maintenance expires its
+60-second lease and moves that same job to retry; no queue row is edited and no
+replacement input is enqueued. A new worker consumes the retry after the fixture's
+30-second responder pause has elapsed.
+
+The gate verifies the queue job completes with retry count 1, the original accepted
+context is unchanged, one user message and one assistant message remain, and the
+single lookup receipt is unchanged. The recovered answer contains `REF-42` and
+neither outer model nor GraphJin request counts increase. Recovery telemetry shows
+terminal inspection of the retained sandbox, receipt reconciliation and cleanup.
+This covers worker and broker loss after a saved read result, followed by terminal
+adoption. It does not yet cover worker death before dispatch, unknown external
+effects, restart during approval, or retry arriving before remote completion.
+
+Evidence: `/tmp/harness-worker-death-final.log`, run
+`09dddd28-d319-4741-a0a9-10a774039751`, pg-boss job
+`cc0be4dd-ff63-4730-9189-24ee5d7eb50a`. The same run passes prior launcher/journal/
+operation crash checks, direct GraphJin disconnect cancellation, real Hermes
+cold/warm and memory-fence checks, and completed-run queue redelivery. The initial
+fixture attempt omitted the user-message entry step; its expected message-count
+assertion failed even though recovery succeeded. The corrected full rerun passes
+that assertion as well as queue completion.
+
+The full suite still exits 1 at the known M2 idle upstream cancellation failure;
+sandbox deletion closes that request. Owned services were removed. The queue
+fixture change is OpenNeko commit `b59ebee` on `feat/openneko-harness`.

@@ -116,3 +116,13 @@ also verified active and terminal reload with a delayed model fixture; completed
 run `bbece083-d945-4a5a-a4f4-db626648210b` had exactly one user message, assistant
 message and lookup. See [M4 evidence](../../docs/M4-RECOVERY.md) for the JSON receipt
 ordering and Goja deadline fixes exposed by these checks, and the remaining gates.
+
+
+The automated queue driver also kills its production-handler worker and broker
+process after a saved lookup, lets pg-boss expire the abandoned job's 60-second
+lease, and starts a replacement worker. `M4_QUEUE_WORKER_DEATH_PASS` requires the
+same queue job to complete on retry 1 with one user message, one assistant message,
+unchanged accepted context and lookup receipt, and no new model/GraphJin calls.
+The broker runs in the killed process; the remote sandbox is left to complete its
+30-second delayed responder before queue redelivery. This adds about one minute
+to the suite. It covers terminal adoption after worker death, not all crash windows.
