@@ -17,13 +17,8 @@ import (
 	"github.com/open-neko/harness/internal/agent"
 )
 
-type operation struct {
-	ID          int             `json:"id"`
-	Instruction string          `json:"instruction"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       string          `json:"error,omitempty"`
-	Finished    bool            `json:"finished"`
-}
+type operation = agent.SavedLookup
+
 type checkpoint struct {
 	Version    int           `json:"version"`
 	Spec       agent.Spec    `json:"spec"`
@@ -34,18 +29,33 @@ type checkpoint struct {
 
 // Run requires a trusted, consumer-scoped local directory. It rejects concurrent
 // execution, conflicting input and unfinished previous attempts. Completed runs
-// replay stored events without recontacting models or tools. Crash continuation is
-// deliberately disabled; completed read evidence remains in the checkpoint.
+// replay stored events without recontacting models or tools. Interrupted runs
+// require explicit Resume after reconciliation.
 func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, lookup func(context.Context, string) (json.RawMessage, error), emit func(agent.Event) error) (agent.Result, error) {
+	return run(ctx, root, spec, client, lookup, emit, false)
+}
+
+// Resume is an explicit authorized new attempt; unresolved operations never dispatch.
+func Resume(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, lookup func(context.Context, string) (json.RawMessage, error), emit func(agent.Event) error) (agent.Result, error) {
+	return run(ctx, root, spec, client, lookup, emit, true)
+}
+
+func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, lookup func(context.Context, string) (json.RawMessage, error), emit func(agent.Event) error, resume bool) (agent.Result, error) {
 	if root == "" || spec.Version != 1 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
 		return agent.Result{}, fmt.Errorf("invalid persistent run")
 	}
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return agent.Result{}, err
+	if !resume {
+		if err := os.MkdirAll(root, 0700); err != nil {
+			return agent.Result{}, err
+		}
 	}
 	sum := sha256.Sum256([]byte(spec.RunID))
 	path := filepath.Join(root, hex.EncodeToString(sum[:]))
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0600)
+	flags := os.O_RDWR
+	if !resume {
+		flags |= os.O_CREATE
+	}
+	lock, err := os.OpenFile(path+".lock", flags, 0600)
 	if err != nil {
 		return agent.Result{}, err
 	}
@@ -61,57 +71,37 @@ func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		data, err = io.ReadAll(io.LimitReader(file, (8<<20)+1))
 		file.Close()
 	}
+	prior := agent.Continuation{Attempt: 1}
 	if err == nil {
 		state, err = decodeCheckpoint(data, spec)
 		if err != nil {
 			return agent.Result{}, err
 		}
 		if state.Result == nil {
-			return agent.Result{}, fmt.Errorf("interrupted run requires reconciliation; stored operations retained")
+			if !resume {
+				return agent.Result{}, fmt.Errorf("interrupted run requires reconciliation; stored operations retained")
+			}
+			prior, err = continuation(state)
+			if err != nil {
+				return agent.Result{}, err
+			}
 		}
 		for _, e := range state.Events {
 			if err := emit(e); err != nil {
 				return agent.Result{}, err
 			}
 		}
-		return *state.Result, nil
+		if state.Result != nil {
+			return *state.Result, nil
+		}
 	}
-	if !os.IsNotExist(err) {
+	if err != nil && resume && os.IsNotExist(err) {
+		return agent.Result{}, fmt.Errorf("cannot resume missing checkpoint")
+	}
+	if err != nil && !os.IsNotExist(err) {
 		return agent.Result{}, err
 	}
-	save := func() error {
-		data, err := json.Marshal(state)
-		if err != nil {
-			return err
-		}
-		if len(data) > 8<<20 {
-			return fmt.Errorf("checkpoint limit exceeded")
-		}
-		tmp, err := os.CreateTemp(root, ".checkpoint-")
-		if err != nil {
-			return err
-		}
-		defer os.Remove(tmp.Name())
-		if _, err = tmp.Write(data); err == nil {
-			err = tmp.Sync()
-		}
-		closeErr := tmp.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if err = os.Rename(tmp.Name(), path+".json"); err != nil {
-			return err
-		}
-		dir, err := os.Open(root)
-		if err != nil {
-			return err
-		}
-		defer dir.Close()
-		return dir.Sync()
-	}
+	save := func() error { return saveCheckpoint(root, path, state) }
 	if err := save(); err != nil {
 		return agent.Result{}, err
 	}
@@ -146,7 +136,7 @@ func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 			return raw, err
 		}
 	}
-	return agent.Run(ctx, spec, client, durableLookup, func(e agent.Event) error {
+	return agent.RunAttempt(ctx, spec, client, durableLookup, func(e agent.Event) error {
 		if persistenceErr != nil {
 			return persistenceErr
 		}
@@ -159,5 +149,78 @@ func Run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 			return err
 		}
 		return emit(e)
-	})
+	}, prior)
+}
+
+func saveCheckpoint(root, path string, state checkpoint) error {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	if len(data) > 8<<20 {
+		return fmt.Errorf("checkpoint limit exceeded")
+	}
+	tmp, err := os.CreateTemp(root, ".checkpoint-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err = tmp.Write(data); err == nil {
+		err = tmp.Sync()
+	}
+	closeErr := tmp.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err = os.Rename(tmp.Name(), path+".json"); err != nil {
+		return err
+	}
+	dir, err := os.Open(root)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}
+
+// continuation is shared by inspection and execution; eligibility is not authorization.
+func continuation(state checkpoint) (agent.Continuation, error) {
+	prior := agent.Continuation{}
+	prior.Attempt = 2
+	if len(state.Events) == 0 {
+		prior.Attempt = 1
+	}
+	ended := map[uint64]bool{}
+	started := 0
+	for _, event := range state.Events {
+		if event.Type == "run.resumed" {
+			prior.Attempt++
+		}
+		if event.Type == "tool.started" {
+			started++
+		}
+		if event.Type == "tool.finished" {
+			ended[event.OperationID] = true
+		}
+		if event.SpanID > prior.SpanID {
+			prior.SpanID = event.SpanID
+		}
+	}
+	if prior.Attempt > 3 {
+		return agent.Continuation{}, fmt.Errorf("continuation attempt limit exceeded")
+	}
+	if started != len(state.Operations) || len(ended) != started {
+		return agent.Continuation{}, fmt.Errorf("unresolved tool results prevent continuation")
+	}
+	for _, op := range state.Operations {
+		if !op.Finished {
+			return agent.Continuation{}, fmt.Errorf("unknown operation prevents continuation")
+		}
+	}
+	prior.Sequence = uint64(len(state.Events))
+	prior.Operations = append([]agent.SavedLookup(nil), state.Operations...)
+	return prior, nil
 }

@@ -37,10 +37,13 @@ runs only the real `runWorkRun` handler, not unrelated worker channel/records jo
 The fixture does not provision the Records subsystem; its navigation can show
 “Temporarily unavailable”. That is outside the GraphJin assistant path.
 
-The external model fixture is deliberately bounded to three calls per model and
+The external model fixture defaults to three calls per model and
 requires actual reference/trace evidence in the responder request. Reset it between
 scenarios with `POST http://localhost:18118/control`, body `{"delay":0}`. Set delay
-30 for cancellation. It is a test-only service with synthetic data, not an LLM
+30 for cancellation. `{ "continue": true }` preserves counters and permits one
+additional three-stage Harness attempt, requiring recovered evidence on its first
+request. `{ "pause_responder": true }` pauses the first Harness responder for the
+process-kill recovery test. It is a test-only service with synthetic data, not an LLM
 quality test or a production endpoint.
 
 ## Observed results
@@ -89,8 +92,27 @@ normalizer. No UI rewrite or alternative queue implementation was added.
 
 M3 qualifies the read-only internal demo only. Native provider protocols beyond
 OpenAI-compatible routes, arbitrary crash continuation, mutations, workflow/Records
-actions, native subagents, outer token accounting and collector export are not
-qualified. Interrupted attempts fail closed. Worker death before checkpoint
-retrieval remains an M4 issue. M2 cancellation/revocation qualification remains
-open. A live-model quality smoke test was **not run**; deterministic external-model
+actions, native subagents and outer token accounting are not qualified.
+Interrupted attempts fail closed. [M4 terminal recovery](../../docs/M4-RECOVERY.md)
+now covers lost checkpoint transfers and cross-host recovery using PostgreSQL
+ownership and receipts. The cumulative gate also redelivers a completed run through pg-boss with changed
+business context, verifies no extra model/lookup calls or duplicate assistant
+messages, and rejects valid mutation fences without changing effect tables.
+A sequential cancellation gate traverses the real GraphJin server and observes
+its model connection closing after broker-client abort. Operation records stay
+unknown and prevent repeat dispatch. This does not qualify cancellation through
+the separate OpenShell inference proxy.
+Full operation recovery and approvals remain open.
+The [expanded M2 suite](../README.md) qualifies credential rotation/detach,
+OAuth refresh and gateway/Docker OTLP delivery; upstream idle-stream cancellation
+still fails. A live-model quality smoke test was **not run**; deterministic external-model
 fixtures establish integration correctness, not model quality.
+
+
+The M4 extension now includes repaired-checkpoint continuation and a real Go
+process `SIGKILL` while the responder is pending. It requires unchanged broker
+receipts and no repeated GraphJin call after recovery. The 2026-09-19 browser rerun
+also verified active and terminal reload with a delayed model fixture; completed
+run `bbece083-d945-4a5a-a4f4-db626648210b` had exactly one user message, assistant
+message and lookup. See [M4 evidence](../../docs/M4-RECOVERY.md) for the JSON receipt
+ordering and Goja deadline fixes exposed by these checks, and the remaining gates.

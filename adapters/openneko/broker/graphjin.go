@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/open-neko/harness/internal/agent"
 )
 
 // GraphJin binds URL, token and source at the trusted host boundary. Actor input
@@ -20,18 +22,23 @@ func GraphJin(base, token, source string) (func(context.Context, string) (json.R
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || token == "" {
 		return nil, fmt.Errorf("invalid broker binding")
 	}
-	u.Path = "/v1/graphjin/agent"
+	u.Path = "/v1/harness/lookup"
 	u.RawPath = ""
 	client := &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return func(ctx context.Context, instruction string) (json.RawMessage, error) {
 		if strings.TrimSpace(instruction) == "" || len(instruction) > 8000 {
 			return nil, fmt.Errorf("invalid lookup instruction")
 		}
+		operationID := agent.OperationID(ctx)
+		if operationID == 0 || operationID > 4 {
+			return nil, fmt.Errorf("missing or invalid runtime operation ID")
+		}
 		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
 			Instruction string `json:"instruction"`
 			Source      string `json:"dataSourceId,omitempty"`
 			MaxSteps    int    `json:"maxSteps"`
-		}{instruction, source, 12})
+		}{operationID, instruction, source, 12})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 		if err != nil {
 			return nil, fmt.Errorf("invalid broker request")

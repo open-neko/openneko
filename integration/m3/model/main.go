@@ -14,6 +14,9 @@ func main() {
 	var mu sync.Mutex
 	counts := map[string]int{}
 	delay := 0
+	effectFences := false
+	continuation := false
+	pauseResponder := false
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			mu.Lock()
@@ -26,21 +29,30 @@ func main() {
 			return
 		}
 		var c struct {
-			Delay int `json:"delay"`
+			Delay          int  `json:"delay"`
+			EffectFences   bool `json:"effect_fences"`
+			Continue       bool `json:"continue"`
+			PauseResponder bool `json:"pause_responder"`
 		}
 		if json.NewDecoder(r.Body).Decode(&c) != nil || c.Delay < 0 || c.Delay > 30 {
 			http.Error(w, "invalid", 400)
 			return
 		}
 		mu.Lock()
-		counts = map[string]int{}
+		if !c.Continue {
+			counts = map[string]int{}
+		}
+		continuation = c.Continue
+		pauseResponder = c.PauseResponder
 		delay = c.Delay
+		effectFences = c.EffectFences
 		mu.Unlock()
 		w.WriteHeader(204)
 	})
 	http.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Model    string          `json:"model"`
+			Stream   bool            `json:"stream"`
 			Messages json.RawMessage `json:"messages"`
 		}
 		if json.NewDecoder(r.Body).Decode(&req) != nil {
@@ -49,15 +61,42 @@ func main() {
 		}
 		mu.Lock()
 		wait := delay
+		effects := effectFences
+		resume := continuation
 		n := counts[req.Model]
+		if pauseResponder && req.Model == "harness-fixture" && n == 2 {
+			wait = 30
+		}
 		counts[req.Model]++
 		mu.Unlock()
 		if wait > 0 {
 			select {
 			case <-time.After(time.Duration(wait) * time.Second):
 			case <-r.Context().Done():
+				mu.Lock()
+				counts["cancelled:"+req.Model]++
+				mu.Unlock()
 				return
 			}
+		}
+		if req.Model == "hermes-fixture" {
+			if req.Stream {
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, "data: {\"id\":\"hermes-fixture\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"HERMES-OK\"},\"finish_reason\":null}]}\n\n")
+				fmt.Fprint(w, "data: {\"id\":\"hermes-fixture\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+			} else {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"id":"hermes-fixture","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"HERMES-OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":10,"total_tokens":20}}`)
+			}
+			fmt.Println("hermes_fixture_completed")
+			return
+		}
+		if resume && req.Model == "harness-fixture" && n >= 3 && n < 6 {
+			if n == 3 && (!strings.Contains(string(req.Messages), "recoveredOperations") || !strings.Contains(string(req.Messages), "REF-42")) {
+				http.Error(w, "missing recovered evidence", 422)
+				return
+			}
+			n -= 3
 		}
 		refused := strings.Contains(string(req.Messages), "not configured read-only") && !strings.Contains(string(req.Messages), "trace_id")
 		if n == 2 && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
@@ -73,6 +112,23 @@ func main() {
 			}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
+		}
+		if n == 2 && req.Model != "graphjin-fixture" && effects {
+			answer := "The reference is REF-42."
+			for _, fence := range []struct {
+				name string
+				body any
+			}{
+				{"neko_action_request", map[string]any{"scope": "external", "kind": "fixture_action", "target": "fixture:blocked", "payload": map[string]any{"text": "blocked"}, "risk_level": "low", "summary": "Must not execute"}},
+				{"neko_workflow_save", map[string]any{"name": "Blocked fixture workflow", "steps": []any{map[string]any{"id": "fixture", "description": "Must not execute"}}}},
+				{"neko_rule_save", map[string]any{"name": "Blocked fixture policy", "applies_to_kinds": []string{"fixture_action"}, "applies_to_scopes": []string{"external"}, "mode": "auto_approve", "risk_threshold_auto_approve": "low"}},
+				{"neko_memory", []any{map[string]any{"save": map[string]any{"text": "Blocked fixture memory", "scope": "global"}}}},
+			} {
+				body, _ := json.Marshal(fence.body)
+				answer += "\n```" + fence.name + "\n" + string(body) + "\n```"
+			}
+			encoded, _ := json.Marshal(map[string]string{"answer": answer})
+			responses[n] = string(encoded)
 		}
 		if n == 2 && refused {
 			responses[n] = `{"answer":"The lookup was refused because the data agent is not configured read-only."}`

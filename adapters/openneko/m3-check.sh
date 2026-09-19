@@ -26,7 +26,15 @@ YAML
 "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m3-provider.yaml"
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
-(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts)
+(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts)
+(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-remote-cancel-live.test.ts)
+
+# Qualify the unchanged Hermes cold and warm paths on the same gateway/image.
+sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/usr/bin/python3.11|g' "$HARNESS_STATE/m3-provider.yaml" > "$HARNESS_STATE/hermes-provider.yaml"
+"$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/hermes-provider.yaml"
+"$cli" --gateway harness-m2 provider create --name harness-hermes --type harness-hermes --credential api_key=synthetic-m3
+(cd "$product" && pnpm --filter @neko/llm exec vitest run test/hermes-live.test.ts)
+(cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/work-run-memory-fence.test.ts)
 
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
@@ -38,9 +46,12 @@ export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
 if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   docker compose -p harness-m3 -f integration/m3/compose.yml restart model
-  (cd "$product" && pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &
+  # Own the whole process group: terminating pnpm alone leaves Next listening.
+  set -m
+  (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &
   web_pid=$!
-  trap 'kill "$web_pid" 2>/dev/null || true' EXIT
+  set +m
+  trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
   echo "M3_WEB_READY state=$HARNESS_STATE"
   for ((n=0; n<900; n++)); do
     [[ ! -f "$HARNESS_STATE/web-done" ]] || break

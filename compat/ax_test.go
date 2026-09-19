@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -256,5 +257,73 @@ func TestAgentSessionSnapshotBoundary(t *testing.T) {
 	}
 	if _, ok := object(agent.ExportRuntimeState())["context_events"]; !ok {
 		t.Fatal("context event state unavailable")
+	}
+}
+
+// ExportSessionState restores data, not the stage/statement at which Forward stopped.
+func TestAgentSnapshotDoesNotResumeForwardCursor(t *testing.T) {
+	var calls, lookups atomic.Int32
+	answers := []string{`{"javascriptCode":"final('Read reference', {})"}`, `{"javascriptCode":"const evidence=lookup('read'); final('Report reference',{evidence});"}`, `{"answer":"REF-42"}`}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := int(calls.Add(1)) - 1
+		if n == 2 {
+			http.Error(w, "injected responder failure", 400)
+			return
+		}
+		if n >= 6 {
+			http.Error(w, "unexpected model call", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[n%3]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	makeAgent := func() (*ax.AxAgent, ax.CodeRuntime) {
+		runtime := axgoja.NewRuntime(axgoja.WithCallable("lookup", func(ax.Value) (ax.Value, error) { lookups.Add(1); return ax.Object("reference", "REF-42"), nil }))
+		return ax.NewAgent("question:string -> answer:string", ax.Object("runtime", runtime, "directResponse", "off", "validationRetries", 0, "infraRetries", 0)), runtime
+	}
+	first, _ := makeAgent()
+	defer first.CloseRuntimeSession()
+	opts := ax.Object("validationRetries", 0, "infraRetries", 0)
+	if _, err := first.Forward(context.Background(), client, ax.Object("question", "Read the reference"), opts); err == nil {
+		t.Fatal("expected interrupted responder")
+	}
+	if calls.Load() != 3 || lookups.Load() != 1 {
+		t.Fatalf("unexpected first attempt: calls=%d lookups=%d", calls.Load(), lookups.Load())
+	}
+	func() {
+		defer func() {
+			if value := recover(); fmt.Sprint(value) != "runtime session snapshot globals must be an object" {
+				t.Errorf("failed Forward snapshot contract changed: %v", value)
+			}
+		}()
+		first.ExportSessionState(nil)
+	}()
+	// The supported export boundary is a separately completed actor step.
+	seed, seedRuntime := makeAgent()
+	defer seed.CloseRuntimeSession()
+	if _, err := seed.ExecuteActorStep(seedRuntime, "const evidence=lookup('read'); final('Report reference',{evidence});", ax.Object("question", "read"), nil); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(seed.ExportSessionState(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot ax.Value
+	if err = json.Unmarshal(encoded, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	restored, runtime := makeAgent()
+	defer restored.CloseRuntimeSession()
+	if _, err = restored.ExecuteActorStep(runtime, "checkpointMarker=1", ax.Object("question", "restore"), nil); err != nil {
+		t.Fatal(err)
+	}
+	restored.RestoreSessionState(snapshot, nil)
+	if _, err = restored.Forward(context.Background(), client, ax.Object("question", "Read the reference"), opts); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 6 || lookups.Load() != 3 {
+		t.Fatalf("Ax continuation contract changed: calls=%d lookups=%d", calls.Load(), lookups.Load())
 	}
 }

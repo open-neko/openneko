@@ -44,3 +44,35 @@ func TestFixtureObservesDirectCancellation(t *testing.T) {
 		t.Fatal("direct fixture cancellation timed out")
 	}
 }
+
+func TestSyntheticOAuthAndQueryCredentials(t *testing.T) {
+	t.Run("refresh rejects invalid client", func(t *testing.T) {
+		r := httptest.NewRequest("POST", "/token", strings.NewReader("grant_type=client_credentials&client_id=fixture&client_secret=wrong"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		oauthFixture(w, r)
+		if w.Code != 401 {
+			t.Fatalf("got %d", w.Code)
+		}
+	})
+	t.Run("refresh mints bounded token", func(t *testing.T) {
+		r := httptest.NewRequest("POST", "/token", strings.NewReader("grant_type=client_credentials&client_id=fixture&client_secret=synthetic-refresh-secret"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		oauthFixture(w, r)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `"expires_in":3600`) {
+			t.Fatal("invalid token response")
+		}
+	})
+	for _, key := range []string{"synthetic-M2-credential", "wrong"} {
+		w := httptest.NewRecorder()
+		fixture(w, httptest.NewRequest("GET", "/v1/query?key="+key, nil))
+		want := 401
+		if key == "synthetic-M2-credential" {
+			want = 200
+		}
+		if w.Code != want {
+			t.Fatalf("query status %d, want %d", w.Code, want)
+		}
+	}
+}

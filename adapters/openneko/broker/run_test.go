@@ -27,7 +27,7 @@ func TestAgentDelegatesThroughBrokerHTTP(t *testing.T) {
 				lookups++
 				var request map[string]any
 				json.NewDecoder(r.Body).Decode(&request)
-				if request["instruction"] != "Find reference" || request["dataSourceId"] != "source-1" {
+				if r.URL.Path != "/v1/harness/lookup" || request["operationId"] != float64(1) || request["instruction"] != "Find reference" || request["dataSourceId"] != "source-1" {
 					t.Errorf("wrong lookup: %v", request)
 				}
 				io.WriteString(w, `{"response":{"status":"`+tc.status+`","answer":"REF-42","evidence":["record-42"],"trace_id":"trace-42"}}`)

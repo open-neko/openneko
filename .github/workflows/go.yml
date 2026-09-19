@@ -11,6 +11,7 @@ jobs:
           cache: true
       - run: go test -race -count=1 -timeout 60s ./...
       - run: go vet ./...
+      - run: python3 integration/check-telemetry.py --self-test
       - name: Core must not import consumer adapters
         run: |
           deps=$(go list -deps ./internal/... ./compat/... ./integration/probe)

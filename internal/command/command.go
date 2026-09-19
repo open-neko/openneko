@@ -55,9 +55,20 @@ func execute(ctx context.Context, input io.Reader, output io.Writer, lookup func
 	encoder := json.NewEncoder(output)
 	emit := func(e agent.Event) error { return encoder.Encode(e) }
 	var result agent.Result
+	resume := os.Getenv("HARNESS_RESUME")
+	if resume != "" && resume != "1" {
+		return 2, fmt.Errorf("HARNESS_RESUME must be unset or 1")
+	}
 	if root := os.Getenv("HARNESS_STATE_DIR"); root != "" {
-		result, err = session.Run(ctx, root, spec, client, lookup, emit)
+		if resume == "1" {
+			result, err = session.Resume(ctx, root, spec, client, lookup, emit)
+		} else {
+			result, err = session.Run(ctx, root, spec, client, lookup, emit)
+		}
 	} else {
+		if resume != "" {
+			return 2, fmt.Errorf("continuation requires HARNESS_STATE_DIR")
+		}
 		result, err = agent.Run(ctx, spec, client, lookup, emit)
 	}
 	if err != nil {

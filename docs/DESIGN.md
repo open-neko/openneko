@@ -4,7 +4,7 @@ Status: working design; M1 compatibility implementation started. Updated: 2026-0
 
 **Integration boundary:** build and package the harness independently. OpenNeko is the first consumer. Prefer its existing launch, policy, event and result contracts; keep compatibility in the adapter. A small, justified product integration change may be preferable to a permanent workaround and should be reviewed explicitly. Seamless worker/web operation is an acceptance gate, not yet a verified property.
 
-This document records the current design direction, source findings, implementation notes, and questions to resolve. Proposed behavior is not a claim that Ax or OpenNeko already implements it. Initial HTTP/Goja compatibility and cancellation checks now exist in [the Go module](../README.md); OpenShell/worker/web qualification and durable crash-recovery tests remain outstanding.
+This document records the current design direction, source findings, implementation notes, and questions to resolve. Proposed behavior is not a claim that Ax or OpenNeko already implements it. HTTP/Goja checks and isolated OpenShell/worker/web evidence now exist; see [milestone status](MILESTONES.md) for the qualified paths and remaining cancellation, recovery and governed-effect gates.
 
 Detailed integration research: [OpenShell, broker and Ax compatibility](OPENSHELL.md). This covers the checked-in OpenShell version, credential replacement, transport requirements, multi-provider routing, broker recovery, sandbox lifecycle and required integration tests.
 
@@ -96,6 +96,7 @@ Important limits found during source review:
 | Finding | Design consequence |
 | --- | --- |
 | Context checkpoints summarize action history | They are not durable execution checkpoints |
+| Go `ExportSessionState` / `RestoreSessionState` | Completed actor-step globals restore, but `Forward` restarts stages; failed `Forward` leaves no exportable session. See the executable [M4 boundary](M4-RECOVERY.md#ax-continuation-boundary). |
 | Goja exports selected JSON-compatible globals, omits functions, and can truncate snapshots | Detect incomplete snapshots; keep critical state and large artifacts outside the interpreter |
 | `ReplayTrace` checks recorded event/output fixtures | Build separate replay tests that exercise changed harness code against recorded dependencies |
 | Context events are recorded in Go state; the reviewed file did not expose the documented `onContextEvent` or Aithy-style `onFunctionCall` names | Verify live Go hook coverage before relying on it; do not infer TypeScript parity |
@@ -153,7 +154,7 @@ A durable checkpoint should include:
 
 Define journal/checkpoint semantics in the harness, with persistence supplied at the host boundary. The OpenNeko adapter may bind its existing database and queue without importing application schema or queue types into the core. Prefer transactional journal/checkpoint updates and scoped artifact storage over unbounded transcript files. Snapshots should accelerate recovery; they must not silently discard unreconciled operations.
 
-Ax's event runtime is a candidate for continuation semantics, but its documented Go runtime is inline/single-worker. Persistent multi-worker behavior needs a conforming store. Decide whether to adapt that contract to OpenNeko persistence or retain host-owned continuations after a focused compatibility evaluation.
+The focused Go compatibility evaluation found that Ax snapshots do not preserve a `Forward` execution cursor. The implemented [recovery contract](M4-RECOVERY.md#ax-continuation-boundary) therefore uses host-owned operation evidence and explicit bounded new Ax attempts. It does not restore an old JavaScript stack.
 
 Recovery must distinguish:
 

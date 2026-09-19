@@ -7,6 +7,16 @@ credentials:
   - name: api_key
     env_vars: [MODEL_API_KEY]
     required: true
+    refresh:
+      strategy: oauth2_client_credentials
+      token_url: http://127.0.0.1:18081/token
+      refresh_before_seconds: 5
+      material:
+        - name: client_id
+          required: true
+        - name: client_secret
+          required: true
+          secret: true
 endpoints:
   - host: model-fixture
     port: 8443

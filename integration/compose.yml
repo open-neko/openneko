@@ -11,6 +11,7 @@ services:
     command: [--config, "${HARNESS_STATE}/gateway.toml", --bind-address, 0.0.0.0, --port, "18116", --name, harness-m2]
     environment:
       OPENSHELL_DRIVERS: docker
+      OTEL_BSP_SCHEDULE_DELAY: "100"
       OPENSHELL_LOCAL_TLS_DIR: ${HARNESS_STATE}/pki
       XDG_DATA_HOME: ${HARNESS_STATE}/data
       XDG_STATE_HOME: ${HARNESS_STATE}/state
@@ -22,6 +23,20 @@ services:
     networks:
       default:
         ipv4_address: 172.30.116.2
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.121.0@sha256:789689988e379c58ac12b07718dbcf4b23c2214bd804173c1c77af346d381c15
+    user: "0:0"
+    command: [--config=/etc/otelcol/config.yaml]
+    volumes:
+      - ./collector.yaml:/etc/otelcol/config.yaml:ro
+      - ${HARNESS_STATE}/telemetry:/evidence
+    networks:
+      default:
+        ipv4_address: 172.30.116.4
+  oauth-fixture:
+    image: harness-m2:local
+    command: [/usr/local/bin/harness-probe, -oauth-serve]
+    network_mode: service:openshell-gateway
   model-fixture:
     image: harness-m2:local
     command: [/usr/local/bin/harness-probe, -serve]

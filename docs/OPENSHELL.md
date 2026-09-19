@@ -14,7 +14,7 @@ Evidence levels used below:
 - **Documented upstream:** current NVIDIA documentation; not proof of availability in OpenNeko's pinned version.
 - **Proposed:** implementation direction that still needs integration tests.
 
-Research below is supplemented by [M2's initial live compatibility results](../integration/README.md). A separate 0.0.116 test gateway/sandbox now passes synthetic HTTP credential and policy checks; the active application stack was not changed and no real-provider credentials or requests were used. Full worker/web qualification remains outstanding.
+Research below is supplemented by [M2's initial live compatibility results](../integration/README.md). A separate 0.0.116 test gateway/sandbox now passes synthetic HTTP credential and policy checks; the active application stack was not changed and no real-provider credentials or requests were used. Read-only worker/queue/browser gates now have local evidence in [M3 acceptance](../integration/m3/README.md); upstream idle-stream cancellation and full M4 recovery remain open.
 
 ## 1. Recommendation
 
@@ -81,7 +81,7 @@ Initial choice: retain OpenNeko's host launcher and file-transfer path. If a Go 
 
 ### Upgrade qualification and rollout notes
 
-**New live finding:** the exact existing cold-create command `/bin/sh -lc true` fails 0.0.116 provisioning with `MainProcessExited`; a long-lived canonical main process followed by exec works. The standalone CLI adapter now translates that legacy call into detached creation followed by upload, without changing the launcher source. Worker integration remains unverified. This was reproduced in an isolated Docker gateway, not inferred solely from release notes.
+**New live finding:** the exact existing cold-create command `/bin/sh -lc true` fails 0.0.116 provisioning with `MainProcessExited`; a long-lived canonical main process followed by exec works. The standalone CLI adapter now translates that legacy call into detached creation followed by upload, without changing the launcher source. The real worker/queue and unchanged Hermes cold/warm paths now pass with this adapter. This was reproduced in an isolated Docker gateway, not inferred solely from release notes.
 
 1. Record actual CLI, gateway and sandbox image versions first; checked-in defaults do not establish deployed versions. Pin the gateway/CLI/sandbox image tuple and image digests for qualification.
 2. Run a separate test gateway with its own storage, certificates and synthetic provider credentials. Exercise the existing Hermes path as well as the new Go/Ax transport so an upgrade does not silently regress current work.

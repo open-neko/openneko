@@ -166,3 +166,28 @@ func TestModelFailureHasOneRedactedTerminal(t *testing.T) {
 		t.Fatalf("unexpected result %+v", result)
 	}
 }
+
+func TestContinuationRequiresExplicitValidState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("invalid continuation called model")
+		http.Error(w, "unexpected", 400)
+	}))
+	defer server.Close()
+	configure(t, server.URL)
+	for _, tc := range []struct {
+		name, resume, root string
+		code               int
+	}{
+		{"missing root", "1", "", 2}, {"invalid flag", "yes", t.TempDir(), 2}, {"missing checkpoint", "1", t.TempDir(), 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HARNESS_RESUME", tc.resume)
+			t.Setenv("HARNESS_STATE_DIR", tc.root)
+			var output bytes.Buffer
+			code, err := run(context.Background(), strings.NewReader(request), &output)
+			if code != tc.code || err == nil || output.Len() != 0 {
+				t.Fatalf("invalid continuation accepted: code=%d err=%v output=%s", code, err, output.String())
+			}
+		})
+	}
+}

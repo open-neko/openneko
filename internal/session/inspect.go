@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"syscall"
 
 	"github.com/open-neko/harness/internal/agent"
@@ -17,17 +18,40 @@ import (
 // Recovery is evidence, not authorization to repeat an operation. Inspect never
 // contacts models/tools or rewrites a checkpoint. Operations may contain content.
 type Recovery struct {
-	Version    int           `json:"version"`
-	RunID      string        `json:"run_id"`
-	Outcome    string        `json:"outcome"`
-	Operations []operation   `json:"operations"`
-	Result     *agent.Result `json:"result,omitempty"`
+	Sequence    uint64        `json:"sequence"`
+	CanResume   bool          `json:"can_resume"`
+	NextAttempt uint64        `json:"next_attempt,omitempty"`
+	Version     int           `json:"version"`
+	RunID       string        `json:"run_id"`
+	Outcome     string        `json:"outcome"`
+	Operations  []operation   `json:"operations"`
+	Result      *agent.Result `json:"result,omitempty"`
 }
 
 // Inspect requires exact trusted input and obtains the same lock as execution.
 // A busy process is not a stopped attempt; an unfinished remote operation remains
 // unknown even after its local process has gone away.
 func Inspect(root string, spec agent.Spec) (Recovery, error) {
+	return inspect(root, spec, nil)
+}
+
+// Receipt is trusted host evidence for one previously admitted operation.
+type Receipt struct {
+	ID          int             `json:"id"`
+	Instruction string          `json:"instruction"`
+	Result      json.RawMessage `json:"result"`
+}
+
+// Reconcile repairs missing operation results under the execution lock. It never
+// executes a model/tool, changes a terminal answer, or claims VM continuation.
+func Reconcile(root string, spec agent.Spec, receipts []Receipt) (Recovery, error) {
+	if len(receipts) == 0 || len(receipts) > 4 {
+		return Recovery{}, fmt.Errorf("invalid recovery receipts")
+	}
+	return inspect(root, spec, receipts)
+}
+
+func inspect(root string, spec agent.Spec, receipts []Receipt) (Recovery, error) {
 	if root == "" || spec.RunID == "" {
 		return Recovery{}, fmt.Errorf("invalid recovery input")
 	}
@@ -55,7 +79,49 @@ func Inspect(root string, spec agent.Spec) (Recovery, error) {
 	if err != nil {
 		return Recovery{}, err
 	}
-	report := Recovery{Version: 1, RunID: spec.RunID, Outcome: "interrupted", Operations: state.Operations, Result: state.Result}
+	if receipts != nil {
+		if state.Result != nil {
+			return Recovery{}, fmt.Errorf("terminal checkpoint cannot be reconciled")
+		}
+		seen := map[int]bool{}
+		for _, receipt := range receipts {
+			if receipt.ID < 1 || receipt.ID > len(state.Operations) || seen[receipt.ID] ||
+				len(receipt.Result) == 0 || len(receipt.Result) > 262144 || !json.Valid(receipt.Result) ||
+				bytes.Equal(bytes.TrimSpace(receipt.Result), []byte("null")) {
+				return Recovery{}, fmt.Errorf("invalid recovery receipt")
+			}
+			seen[receipt.ID] = true
+			op := &state.Operations[receipt.ID-1]
+			if op.Instruction != receipt.Instruction || (op.Finished && (op.Error != "" || !sameJSON(op.Result, receipt.Result))) {
+				return Recovery{}, fmt.Errorf("recovery receipt conflicts with operation")
+			}
+			op.Result, op.Finished = receipt.Result, true
+			ended := false
+			for _, event := range state.Events {
+				if event.Type == "tool.finished" && event.OperationID == uint64(receipt.ID) {
+					if event.Error != "" || !sameJSON(event.Data, receipt.Result) {
+						return Recovery{}, fmt.Errorf("receipt conflicts with published tool result")
+					}
+					ended = true
+				}
+			}
+			if !ended {
+				state.Events = append(state.Events, agent.Event{Version: 1, RunID: spec.RunID, InputID: spec.InputID,
+					Sequence: uint64(len(state.Events) + 1), Type: "tool.finished", Name: "lookup", OperationID: uint64(receipt.ID), Data: receipt.Result})
+			}
+		}
+		data, err := json.Marshal(state)
+		if err != nil {
+			return Recovery{}, err
+		}
+		if _, err = decodeCheckpoint(data, spec); err != nil {
+			return Recovery{}, err
+		}
+		if err = saveCheckpoint(root, path, state); err != nil {
+			return Recovery{}, err
+		}
+	}
+	report := Recovery{Sequence: uint64(len(state.Events)), Version: 1, RunID: spec.RunID, Outcome: "interrupted", Operations: append([]operation{}, state.Operations...), Result: state.Result}
 	if state.Result != nil {
 		report.Outcome = "terminal"
 	} else {
@@ -66,13 +132,30 @@ func Inspect(root string, spec agent.Spec) (Recovery, error) {
 			}
 		}
 	}
+	if state.Result == nil {
+		if prior, err := continuation(state); err == nil {
+			report.CanResume = true
+			report.NextAttempt = prior.Attempt
+		}
+	}
 	return report, nil
 }
 
 func sameJSON(a, b any) bool {
-	x, _ := json.Marshal(a)
-	y, _ := json.Marshal(b)
-	return bytes.Equal(x, y)
+	decode := func(value any) (any, error) {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.UseNumber()
+		var result any
+		err = decoder.Decode(&result)
+		return result, err
+	}
+	x, xerr := decode(a)
+	y, yerr := decode(b)
+	return xerr == nil && yerr == nil && reflect.DeepEqual(x, y)
 }
 
 // Validate the durable prefix before either recovery or ordinary replay. Partial
@@ -80,7 +163,9 @@ func sameJSON(a, b any) bool {
 func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	var s checkpoint
 	invalid := func() (checkpoint, error) { return checkpoint{}, fmt.Errorf("invalid or inconsistent checkpoint") }
-	if len(data) > 8<<20 || json.Unmarshal(data, &s) != nil || s.Version != 1 {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if len(data) > 8<<20 || !json.Valid(data) || decoder.Decode(&s) != nil || s.Version != 1 {
 		return invalid()
 	}
 	if s.Spec != spec {
@@ -106,6 +191,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
+	attempt := uint64(1)
 	started := map[uint64]bool{}
 	ended := map[uint64]bool{}
 	for i, e := range s.Events {
@@ -123,6 +209,15 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 		switch e.Type {
 		case "run.started", "span.started", "span.finished":
+		case "run.resumed":
+			attempt++
+			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {
+				return invalid()
+			}
+		case "tool.reused":
+			if !ended[e.OperationID] || e.Name != "lookup" {
+				return invalid()
+			}
 		case "tool.started":
 			if e.OperationID != uint64(len(started)+1) || e.OperationID > 4 || e.Name != "lookup" {
 				return invalid()

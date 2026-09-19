@@ -22,9 +22,34 @@ func main() {
 	base := flag.String("url", "http://model-fixture:8080", "model fixture origin")
 	cancelStream := flag.Bool("cancel", false, "cancel after first event")
 	untrusted := flag.Bool("untrusted", false, "expect missing interception CA")
+	oauth := flag.Bool("oauth-serve", false, "serve synthetic OAuth on gateway loopback")
+	query := flag.Bool("query", false, "exercise query credential replacement")
+	revoked := flag.Bool("revoked", false, "expect revoked binding rejection")
+	configure := flag.String("configure-key", "", "set synthetic fixture credential")
 	flag.Parse()
+	if *oauth {
+		if err := http.ListenAndServe("127.0.0.1:18081", http.HandlerFunc(oauthFixture)); err != nil {
+			panic(err)
+		}
+		return
+	}
+	if *configure != "" {
+		if err := configureKey(*configure); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *query {
+		if err := queryProbe(*base, os.Getenv("MODEL_API_KEY")); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *serve {
 		http.HandleFunc("/", fixture)
+		http.HandleFunc("/control", control)
 		go func() {
 			if err := http.ListenAndServeTLS(":8443", "/tls/fixture.crt", "/tls/fixture.key", nil); err != nil {
 				panic(err)
@@ -35,12 +60,17 @@ func main() {
 		}
 		return
 	}
-	if err := probe(*base, *deny, *cancelStream, *untrusted); err != nil {
+	if err := probe(*base, *deny, *cancelStream, *untrusted, *revoked); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
-func probe(origin string, deny, cancelStream, untrusted bool) error {
+func probe(origin string, deny, cancelStream, untrusted, revoked bool) error {
+	for _, value := range os.Environ() {
+		if strings.Contains(value, "synthetic-M2-") || strings.Contains(value, "synthetic-refresh-secret") {
+			return fmt.Errorf("real synthetic credential exposed in workload environment")
+		}
+	}
 	key := os.Getenv("MODEL_API_KEY")
 	if !strings.HasPrefix(key, "openshell:resolve:") {
 		return fmt.Errorf("workload did not receive a credential placeholder")
@@ -69,7 +99,7 @@ func probe(origin string, deny, cancelStream, untrusted bool) error {
 		fmt.Println(`{"check":"missing_interception_ca_rejected","ok":true}`)
 		return nil
 	}
-	if deny {
+	if deny || revoked {
 		if err == nil {
 			stream.Close()
 			return fmt.Errorf("forbidden credential destination was accepted")
@@ -114,6 +144,21 @@ func probe(origin string, deny, cancelStream, untrusted bool) error {
 	return nil
 }
 func fixture(w http.ResponseWriter, r *http.Request) {
+	credentialState.RLock()
+	expected := credentialState.key
+	credentialState.RUnlock()
+	if r.URL.Path == "/v1/query" {
+		if r.URL.Query().Get("key") != expected {
+			http.Error(w, "query substitution failed", 401)
+			return
+		}
+		fmt.Fprint(w, "verified")
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/alternate/") {
+		expected = "synthetic-M2-alternate"
+	}
+
 	var body struct {
 		Messages []struct {
 			Content string `json:"content"`
@@ -123,11 +168,11 @@ func fixture(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", 400)
 		return
 	}
-	if r.URL.Path != "/v1/chat/completions" {
+	if r.URL.Path != "/v1/chat/completions" && r.URL.Path != "/alternate/v1/chat/completions" {
 		http.Error(w, "wrong route", 400)
 		return
 	}
-	if r.Header.Get("Authorization") != "Bearer synthetic-M2-credential" {
+	if r.Header.Get("Authorization") != "Bearer "+expected {
 		http.Error(w, "credential substitution failed", 401)
 		return
 	}

@@ -1,6 +1,13 @@
 # Go harness implementation milestones
 
-Status: implementation started, 2026-09-19. M1's initial synchronous/Goja path is committed on main (`643b4a8`). M2 has passing real OpenShell transport checks but remains open; M3–M8 remain unverified. Background/native async tool mode is not enabled or qualified. Active implementation workspace: this standalone `Harness` directory. No OpenNeko source changes are part of this organization pass; the earlier M1 commit is historical.
+Status: M1 execution-contract and M3 read-only consumer gates have local evidence.
+M2 credential lifecycle, gateway restart and OTLP delivery now pass, but upstream
+idle-stream cancellation remains open. M4 terminal recovery is implemented;
+distributed PostgreSQL ownership/receipts have live crash evidence; operation
+recovery and governed effects remain in progress. Broker lookup intent/result journals
+now have live crash evidence. M5–M8 are not qualified.
+Implementation is on `feat/openneko-harness` in Harness and the optional OpenNeko
+integration worktree; no further changes are being made on main.
 
 Companions: [design](DESIGN.md) and [OpenShell qualification](OPENSHELL.md).
 
@@ -51,7 +58,7 @@ stream cancellation through 0.0.116 fails the ten-second observation limit while
 the direct HTTPS control passes. The extended live suite exits nonzero; M2 stays
 open. See [the integration record](../integration/README.md).
 
-**Partial implementation evidence:** [isolated OpenShell suite](../integration/README.md) passes mTLS lifecycle, actual Ax HTTP streaming through the proxy, synthetic credential replacement, destination-path rejection and unauthorized-binary rejection. It reproduces `MainProcessExited` for the existing cold-create `/bin/sh -lc true` command; the standalone adapter translates that lifecycle without modifying the launcher. HTTPS/rotation/OTLP delivery and actual worker/queue/broker integration remain required. The test stack cleans up without changing the active gateway.
+**Partial implementation evidence:** [isolated OpenShell suite](../integration/README.md) passes mTLS lifecycle, actual Ax HTTP streaming through the proxy, synthetic credential replacement, destination-path rejection and unauthorized-binary rejection. It reproduces `MainProcessExited` for the existing cold-create `/bin/sh -lc true` command; the standalone adapter translates that lifecycle without modifying the launcher. HTTPS, static rotation/detach, two bindings, managed OAuth refresh, gateway restart and actual OTLP delivery now pass. The M3 suite provides real worker/queue/broker evidence; real Hermes cold/warm/reuse regressions pass; hosted CI remains open. The test stack cleans up without changing the active gateway.
 
 **Deliver:** an isolated gateway and minimal Go agent image with standalone lifecycle checks plus optional existing-host-launcher adapter checks. Pin the CLI/gateway/image tuple. Configure exact executable egress rules, endpoint-bound synthetic credentials and two distinct provider slots.
 
@@ -81,7 +88,17 @@ M3 completion does not qualify production rollout or remote cancellation.
 
 **In progress (2026-09-19):** automatic terminal reconciliation now adopts validated
 Go checkpoints from the host or retained OpenShell sandbox without model/tool replay.
-A native host file lock fences concurrent launch/recovery. Receipts are durable
+A PostgreSQL session lock fences concurrent launch/recovery across hosts; a
+local file lock protects legacy admissions. Broker lookup operations now persist
+intent/results before dispatch/delivery and reject duplicate execution after crashes.
+Broker disconnects cancel the real GraphJin model request; ambiguous operation
+records remain unknown without a receipt. Saved broker receipts can repair missing
+checkpoint tool results without execution. The launcher now starts a bounded new
+Ax attempt from repaired evidence; the live gate verifies saved lookup reuse.
+Accepted context survives changed
+prompts on real queue redelivery without new model/tool calls. Legacy mutation
+fences are disabled for Harness; their Hermes behavior has regression coverage.
+Receipts are durable
 before cleanup; unknown operations and changed input/scope fail closed. Hermes
 retains its existing lifecycle. This completes the read-only terminal recovery
 slice, not full M4. See [M4 progress](M4-RECOVERY.md) for checks and deployment limits.

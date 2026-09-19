@@ -111,3 +111,104 @@ func TestInspectAndReplayRejectInconsistentCheckpoints(t *testing.T) {
 		t.Fatalf("%+v %v", report, err)
 	}
 }
+
+func TestReconcileRestoresEvidenceWithoutExecutingOrCompletingRun(t *testing.T) {
+	state := prefix()
+	root, path := fixture(t, state)
+	receipt := Receipt{ID: 1, Instruction: "read", Result: json.RawMessage(`{"response":{"answer":"REF-42"}}`)}
+	report, err := Reconcile(root, state.Spec, []Receipt{receipt})
+	if err != nil || report.Outcome != "interrupted" || report.Result != nil || !report.Operations[0].Finished {
+		t.Fatalf("%+v %v", report, err)
+	}
+	data, _ := os.ReadFile(path + ".json")
+	saved, err := decodeCheckpoint(data, state.Spec)
+	if err != nil || len(saved.Events) != 3 || saved.Events[2].Type != "tool.finished" {
+		t.Fatalf("missing paired event: %s %v", data, err)
+	}
+	if _, err = Reconcile(root, state.Spec, []Receipt{receipt}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path + ".json")
+	if string(data) != string(after) {
+		t.Fatal("idempotent reconciliation changed checkpoint")
+	}
+	if _, err = Run(context.Background(), root, state.Spec, nil, nil, func(agent.Event) error { t.Fatal("unexpected replay"); return nil }); err == nil {
+		t.Fatal("repair authorized automatic execution")
+	}
+}
+
+func TestReconcileRejectsConflictingReceiptsWithoutChangingCheckpoint(t *testing.T) {
+	valid := Receipt{ID: 1, Instruction: "read", Result: json.RawMessage(`{"answer":"REF-42"}`)}
+	for name, receipts := range map[string][]Receipt{
+		"missing": nil, "duplicate": {valid, valid},
+		"wrong instruction": {{ID: 1, Instruction: "write", Result: valid.Result}},
+		"unknown operation": {{ID: 2, Instruction: "read", Result: valid.Result}},
+		"null":              {{ID: 1, Instruction: "read", Result: json.RawMessage(`null`)}},
+		"invalid":           {{ID: 1, Instruction: "read", Result: json.RawMessage(`{`)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := prefix()
+			root, path := fixture(t, state)
+			before, _ := os.ReadFile(path + ".json")
+			if _, err := Reconcile(root, state.Spec, receipts); err == nil {
+				t.Fatal("accepted invalid receipt")
+			}
+			after, _ := os.ReadFile(path + ".json")
+			if string(before) != string(after) {
+				t.Fatal("changed checkpoint on rejection")
+			}
+		})
+	}
+	state := prefix()
+	root, path := fixture(t, state)
+	lock, err := os.OpenFile(path+".lock", os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Reconcile(root, state.Spec, []Receipt{valid}); err == nil {
+		t.Fatal("repaired active execution")
+	}
+}
+
+func TestReconcileCannotReplacePublishedResultOrTerminalRun(t *testing.T) {
+	for _, state := range []checkpoint{terminal(), prefix()} {
+		if state.Result == nil {
+			state.Events = append(state.Events, agent.Event{Version: 1, RunID: "r", InputID: "i", Sequence: 3, Type: "tool.finished", Name: "lookup", OperationID: 1, Error: "lookup_failed"})
+		}
+		root, path := fixture(t, state)
+		before, _ := os.ReadFile(path + ".json")
+		if _, err := Reconcile(root, state.Spec, []Receipt{{ID: 1, Instruction: "read", Result: json.RawMessage(`{"answer":"REF-42"}`)}}); err == nil {
+			t.Fatal("overwrote published outcome")
+		}
+		after, _ := os.ReadFile(path + ".json")
+		if string(before) != string(after) {
+			t.Fatal("changed published outcome")
+		}
+	}
+}
+
+func TestReconcileIgnoresObjectOrderWithoutRoundingIntegers(t *testing.T) {
+	state := prefix()
+	root, _ := fixture(t, state)
+	receipt := Receipt{ID: 1, Instruction: "read", Result: json.RawMessage(`{"response":{"id":9007199254740993,"label":"REF-42"},"trace":"saved"}`)}
+	if _, err := Reconcile(root, state.Spec, []Receipt{receipt}); err != nil {
+		t.Fatal(err)
+	}
+	// JSONB may return the same object in a different key order.
+	receipt.Result = json.RawMessage(`{"trace":"saved","response":{"label":"REF-42","id":9007199254740993}}`)
+	if _, err := Reconcile(root, state.Spec, []Receipt{receipt}); err != nil {
+		t.Fatal(err)
+	}
+	receipt.Result = json.RawMessage(`{"trace":"saved","response":{"label":"REF-42","id":9007199254740992}}`)
+	if _, err := Reconcile(root, state.Spec, []Receipt{receipt}); err == nil {
+		t.Fatal("rounded distinct integers into matching evidence")
+	}
+	report, err := Inspect(root, state.Spec)
+	if err != nil || !report.CanResume {
+		t.Fatalf("%+v %v", report, err)
+	}
+}

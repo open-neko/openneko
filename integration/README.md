@@ -1,8 +1,9 @@
 # M2 — real OpenShell transport qualification
 
-This is the first part of M2, not its worker/queue acceptance gate.
+The standalone suite qualifies OpenShell transport and credential lifecycle.
+The optional M3 consumer suite also covers the real broker and queue worker.
 
-Prerequisites: local Docker with host-shared home paths, Go, Bash, OpenSSL, and a separately
+Prerequisites: local Docker with host-shared home paths, Go, Bash, OpenSSL, Python 3, and a separately
 installed, checksum-verified OpenShell **0.0.116** CLI. Do not upgrade the active
 CLI/gateway to run this check. The Docker build installs packages from Debian;
 the fixture and sandbox contain no real provider credentials.
@@ -60,15 +61,46 @@ observe cancellation within ten seconds through OpenShell 0.0.116. The runner
 exits nonzero and prints `upstream_stream_cancelled` with `ok:false`. A direct
 HTTPS control using the same fixture observes cancellation successfully. The [source trace](../docs/OPENSHELL.md#source-trace-idle-response-cancellation)
 confirms the relay awaits upstream reads without concurrently observing client
-closure; inspected upstream main retains that behavior. Consumer checks run only after these transport gates pass.
+closure; inspected upstream main retains that behavior. Consumer checks run before the final upstream-cancellation gate, so that known
+failure does not prevent qualification of the remaining consumer path.
 
-Query authentication, managed expiry/refresh, static-key rotation/detach, two
-providers, upstream cancellation and actual OTLP export remain open.
-The gateway emits structured trace/log metadata, but that is not proof of
-collector delivery. Linux CI execution has not occurred.
+## Additional live qualification, 2026-09-19
 
-Run the unchanged launcher through the external adapter in a real worker/queue
-with the broker. Package existing entrypoint and executable-policy contracts in
-the harness image without changing OpenNeko source. Re-test
-the existing Hermes path. The web and seeded GraphJin flows enter in M3. These are
-explicit remaining gates; this script does not substitute a probe for those services.
+The expanded suite passed these checks on the same 0.0.116 tuple:
+
+- Query-parameter placeholder replacement through Go HTTP; Ax uses Bearer auth.
+- Static credential rotation while a sandbox remains live.
+- Two distinct credential slots and endpoint bindings prebound to one sandbox.
+- Provider detach rejects a previously saved placeholder with HTTP 403, then
+  reattach restores access. Detach propagation measured about ten seconds; it is
+  **not instantaneous revocation**. Rotation/reattach checks poll boundedly too.
+- An expired managed credential is renewed by the gateway through a synthetic
+  OAuth client-credentials endpoint. The profile owns the endpoint and refresh
+  material stays gateway-side. The pinned refresh worker ticks every 60 seconds,
+  so this test allows up to 75 bounded polls. Pending expiry is not a reason to
+  inject a real token into a workload.
+- Gateway restart recovers the live sandbox, its saved filesystem marker and
+  model access after sandbox readiness returns.
+- A pinned OpenTelemetry Collector receives actual gateway and Docker-driver
+  spans with trace/span IDs. The check scans exported data for synthetic keys,
+  refresh secrets and credential placeholders. One standalone run exported 1,081
+  spans from `harness-m2-gateway` and `openshell-driver-docker`, with no scanned
+  credential material found.
+
+The collector is isolated at `172.30.116.4`, with no published collector port.
+Synthetic OAuth listens only in the test gateway's loopback network namespace.
+The image is pinned by digest in `compose.yml`; collector evidence is inspected
+before cleanup and only content-free counts/names enter the test log.
+
+The cumulative consumer suite also passes real Hermes cold execution and two
+warm executions reusing one sandbox. OpenShell 0.0.116 limits sandbox names to
+19 bytes; the shared launcher now bounds long names while preserving short ones.
+A separate cancellation check proves deleting the sandbox closes the idle upstream
+stream. This containment fallback does not pass the context-only cancellation gate.
+
+Still open: upstream idle-stream cancellation; Linux/hosted CI qualification; and any credential
+strategy beyond the tested static and OAuth client-credentials flows. The final
+exit remains nonzero until the cancellation gate passes. No active installation
+was upgraded. Current upstream main was rechecked at
+`fa0bfa490e42c87a74a70be6ebb40faee7fb8faa`; its ordinary response path still accepts
+only an `AsyncWrite` downstream and cannot concurrently observe its EOF.

@@ -6,16 +6,33 @@ thread, principal, tool policy, allowed skills, model route, image and environme
 Records live in `runs/.harness-launches/<run-hash>`, outside the uploaded workspace.
 Changed input or scope is rejected before inspecting or returning evidence.
 
-Every Harness launch holds a POSIX file lock through `harness-inspect --lock DIR`.
-The helper signals readiness and holds the lock until the host closes stdin; host
-SIGKILL closes that pipe too. Another live owner is refused, with no timeout-based
-lock stealing. Unexpected helper exit aborts execution and prevents normal receipt
-publication/cleanup. All deliveries of a run must share the same persistent POSIX
-filesystem with working flock semantics. Separate host disks are not a distributed
-ownership scheme; database fencing is required before that deployment topology.
-Hermes does not use this helper or change its existing warm-pool lifecycle.
+PostgreSQL is now authoritative for ownership and receipts. Migration 0084 adds
+`harness_run_journal`, scoped by tenant/run. A dedicated PG session holds an
+advisory lock for the entire launch or recovery; another worker is refused until
+the owner exits. Connection loss aborts the owner. Receipt publication uses that
+same connection. An admitted row without a result can only reconcile, never start
+another model attempt. Database failure prevents dispatch/publication.
 
-On redelivery, a valid host receipt is returned. If the receipt is missing, the
+The native `harness-inspect --lock DIR` file lock remains a local guard for existing
+filesystem admissions. Legacy fingerprints are validated before inserting a new DB
+admission; a rejected import cannot authorize a later retry under changed scope.
+All participating hosts share PostgreSQL and the same gateway, not a filesystem.
+The accepted prompt is hashed after sandbox path remapping. Hosts must use the
+same sandbox workspace layout and unchanged user request/authorization to recover.
+Migration 0085 stores the bounded accepted prompt and a scope fingerprint. When a
+separate user request is present, recovery restores that prompt instead of accepting
+newly generated context. The current principal, policy, request and execution
+configuration must still match, and the restored prompt must match the original
+full fingerprint. Missing user requests and legacy records retain exact-prompt
+matching. Stored context contains application content, never a copy of environment
+credentials; it needs the same access and retention controls as result receipts.
+
+Apply migrations 0084–0086 before deploying these workers, and drain older workers first;
+mixed versions do not share database ownership. Legacy conflicting records remain
+blocked for explicit reconciliation. No Hermes path reads the new table or acquires
+these locks. Harness remains opt-in.
+
+On redelivery, a valid database receipt is returned. If the receipt is missing, the
 launcher automatically inspects the downloaded Go checkpoint, or invokes the Go
 inspector in the retained sandbox when no local checkpoint exists. It supplies the
 exact trusted run specification, including remapped paths and user message. The
@@ -28,8 +45,8 @@ and classifies the outcome:
 
 Busy locks, corrupt/version-mismatched records, conflicting input, unavailable
 sandboxes and invalid inspection output fail closed. A corrupt local checkpoint
-is not silently replaced. Recovery never calls a model or tool. The terminal host
-receipt is atomically saved and fsynced before sandbox deletion. Receipt replay
+is not silently replaced. Recovery never calls a model or tool. The terminal database
+receipt is committed before sandbox deletion. Receipt replay
 also retries deletion, covering a crash between receipt publication and cleanup.
 Cleanup failure preserves the receipt and is visible in phase telemetry.
 
@@ -38,6 +55,42 @@ name-collision handling cannot destroy unresolved evidence. Explicit cancellatio
 still tears down the sandbox process boundary and can leave an unresolved admission.
 Local cancellation does not prove an upstream operation stopped. Checkpoints and
 result receipts contain application content and need host access/retention controls.
+
+## Broker operation records
+
+Migration 0086 adds `harness_operation`, keyed by tenant/run/runtime operation ID
+and linked to the admitted run. The Go runtime carries that ID through the callback
+context; the fixed adapter posts it to `/v1/harness/lookup`. The broker commits
+intent before calling the existing GraphJin control plane and records its bounded
+response before delivering it. No admitted run means no dispatch. Duplicate IDs
+with changed arguments conflict; unfinished records are unknown and cannot replay.
+Finished responses remain available to trusted host recovery, not repeated bearer
+requests. Journal/result failure never returns an unpersisted successful response.
+Telemetry records run/operation IDs and outcomes without instruction/result content.
+
+Harness broker disconnects now abort GraphJin preflight and lookup requests through
+the shared control plane's optional caller signal. The legacy Hermes route keeps
+its existing behavior. Cancellation before admission prevents dispatch; cancellation
+after admission leaves an unknown operation, and late responses cannot publish a
+successful result. Controlled HTTP endpoints verify connection closure in both
+phases. A sequential live test also traverses the real GraphJin server: after the
+provider fixture observes a model request, disconnecting the broker caller closes
+that provider request within the five-second observation window. The operation
+stays unknown and redelivery does not increase provider calls. This is separate
+from the M2 OpenShell inference-proxy cancellation issue; no remote mutation
+rollback or cancellation-status reconciliation is implied.
+
+This records read-only delegation boundaries. It does not authorize mutations or
+resume an interrupted Ax VM. A saved GraphJin error response also does not prove
+that remote work stopped. When inspection finds unfinished operations, the authorized launcher loads saved
+broker receipts and invokes `harness-inspect --reconcile`. Under the same execution
+lock, Go checks operation IDs/instructions, rejects conflicting published results,
+restores missing tool-result events and atomically saves the checkpoint. Missing
+receipts stay unknown. Terminal checkpoints cannot be rewritten. Repaired evidence
+is retained and repair alone leaves the run interrupted. The Go continuation API
+can explicitly start a new attempt from resolved evidence; the launcher now admits
+that path after validating scope, stopped execution and broker receipts. Repair synthesizes no final answer and executes no tool/model.
+Remote cancellation-status reconciliation remains open.
 
 ## Packaging and inspection
 
@@ -51,7 +104,8 @@ go build -o bin/harness-inspect ./cmd/harness-inspect
 HARNESS_STATE_DIR=/trusted/run/.harness ./bin/harness-inspect < accepted-run.json
 ```
 
-Inspection never changes the checkpoint. Its JSON includes operation content;
+Default inspection never changes the checkpoint; the explicit trusted-host
+`--reconcile` mode repairs only matched operation receipts. Its JSON includes operation content;
 only source/outcome classifications and phase timings go to recovery telemetry.
 Normal replay and inspection share validation of version, exact input, event
 sequence, tool/result pairing, bounded operations and consistent terminal results.
@@ -61,12 +115,14 @@ sequence, tool/result pairing, bounded operations and consistent terminal result
 `go test -race ./...` covers active execution locks, saved versus unknown evidence,
 corrupt checkpoints and rejection by inspection and normal replay. Product tests
 cover admission/receipt conflicts, corrupt receipts, terminal adoption, preserved
-Hermes cleanup, and actual host SIGKILL while holding the native helper lock.
+Hermes cleanup, and actual host SIGKILL while holding the native helper lock. Live PostgreSQL tests
+also kill owners before and after receipt publication, reject concurrent ownership,
+and recover from a different host directory.
 Run the lock test with `HARNESS_INSPECT_BIN` pointing to the built host binary.
 
 The isolated `integration/m3/run.sh` suite runs a real OpenShell sandbox, Go/Ax,
 broker, GraphJin and PostgreSQL. It injects a checkpoint-transfer failure after
-execution, recovers from the retained sandbox, then removes the receipt and
+execution, recovers from the retained sandbox on a different host, then removes the receipt and
 recovers from the downloaded checkpoint. Concurrent recovery admits one owner.
 Repeated unknown-operation recovery stays blocked. Model request counters must
 remain unchanged across every recovery. The production pg-boss run follows this
@@ -75,17 +131,149 @@ not a claim of a fresh browser recovery test.
 
 Verified 2026-09-19: Go race tests and vet passed; 99 product tests passed (six
 metadata-DB-dependent resolver tests skipped in the local regression command),
-worker typechecking passed, and the live recovery assertions passed. The production
-queue run `afc0aa95-b727-4223-9065-5ec442ba430f` completed.
+worker typechecking passed, and the live recovery assertions passed. The expanded
+accepted-context checks also pass: changed dynamic prompts restore the original;
+changed requests/principals/policies, missing request identity and tampered stored
+context fail closed. The production queue run
+`d79859da-7723-4149-8bbe-9cda4226cf5f` completed and was redelivered through
+pg-boss after its business context changed. The accepted prompt remained unchanged,
+model/GraphJin request counts did not increase and exactly one assistant message
+remained. Valid adversarial action/workflow/policy/memory fences created no rows
+on either delivery; denial telemetry was observed. Existing Hermes memory-fence
+persistence tests also passed against the isolated database. The latest cumulative
+run also verifies one durable broker operation/result remains unchanged after
+queue redelivery. Two additional real-PostgreSQL crash tests kill the caller after
+an HTTP response with and without a saved result; concurrent/repeated dispatch and
+changed arguments never call the endpoint twice. Missing admissions, invalid IDs
+and loss of the result journal cannot yield an unrecorded success. A further
+live recovery check removes the local checkpoint result while keeping the real
+broker receipt: conflicting receipt instructions fail, the matching receipt restores
+one tool-result event, and request counters do not increase. This injects a missing
+checkpoint result; it is not a full worker-death continuation test.
 
 The suite's final nonzero exit remains the known M2 upstream idle-stream
 cancellation failure. Terminal reconciliation does not fix that proxy limitation.
 
+The read-only Harness cannot execute the legacy action/workflow/policy/memory
+fences in model answers. Those remain available on the Hermes path. Harness
+mutations must pass the future operation-journal/approval boundary rather than
+piggybacking on text parsing. Rejected fence attempts emit metadata-only telemetry.
+
+## Ax continuation boundary
+
+`TestAgentSnapshotDoesNotResumeForwardCursor` qualifies pinned Ax
+`5c43344f9ef3` over real HTTP and Goja. A failed responder occurs after one lookup.
+Calling `ExportSessionState` after failed `Forward` panics because the runtime
+session is no longer exportable. A separately completed actor-step snapshot does
+round-trip through JSON, but restoring it and calling `Forward` starts the
+distiller/executor/responder stages again and invokes the lookup callback again.
+This test strengthens the earlier globals-only snapshot check; that check never
+proved a resumable execution cursor.
+
+The supported harness continuation must therefore be an explicit new attempt:
+
+- Preserve the original accepted input and resolved operation evidence; do not
+  treat an exported JavaScript globals map as a program counter.
+- Refuse continuation while any operation remains unknown. Reconcile durable
+  results before asking a model for more work.
+- Seed Ax with the recovered evidence and identify the attempt in the event stream.
+  Keep operation identity and total operation/attempt budgets across attempts.
+- Admit and persist the new attempt before model calls. Returning the stored
+  terminal result remains ordinary replay and needs no model call.
+- Approval continuation must use the saved proposal and current authorization;
+  it must not recreate an action by rerunning old actor code.
+
+The Go core now implements this contract through `session.Resume` and the explicit
+trusted-host `HARNESS_RESUME=1` switch. It starts a new Ax attempt with a declared
+`recoveredOperations` input, reuses matching saved lookups, allocates new operation
+IDs after the saved prefix, and keeps span/event sequences monotonic. Total limits
+are three attempts and four dispatched lookups per accepted run. The `run.resumed`
+event is durable before model execution; `tool.reused` references existing evidence
+without admitting another operation. Terminal results still replay without a model.
+
+Real HTTP/Goja tests verify evidence reaches Ax, one old lookup is reused, one new
+lookup receives ID 2, unknown outcomes are refused, and attempt/lookup budgets do
+not reset. The optional OpenNeko launcher now invokes this new attempt path after
+validating scope, stopped remote execution, broker receipts and transferred state.
+Browser/worker restart acceptance remains open.
+No old JavaScript stack or function closure is restored.
+
+The inspector now exposes `can_resume` and `next_attempt` from the same Go
+validation used by execution. Regression tests cover repaired evidence, unknown
+operations, terminal replay, and exhaustion of the three-attempt budget. The host checks for a retained sandbox before
+using a nonterminal local checkpoint, and inspects its execution lock when present:
+a local file lock alone cannot prove that the remote execution has stopped. OpenShell
+0.0.116 `sandbox get -o json` formats failures as diagnostics, not structured JSON;
+never treat an arbitrary command error as proof of absence. Its successful
+workspace-scoped list response is structured and capped at 1,000 entries by the
+server, so an incomplete page cannot establish absence either.
+
 ## Remaining M4 work
 
 This completes automatic terminal reconciliation for the current read-only slice,
-not all M4 acceptance gates. Still required: distributed database ownership and
-per-operation journals, governed mutation/idempotency crash tests, durable approval
-continuations with fresh authorization, remote cancellation reconciliation, and
-retention policy for unresolved sandboxes. No mutation capability or arbitrary
+not all M4 acceptance gates. Host continuation passes the live repaired-checkpoint gate. Still required:
+governed mutation/idempotency crash tests, durable approval continuations with fresh
+authorization, remote cancellation reconciliation, and retention policy for
+unresolved sandboxes. Accepted-context restoration passes launcher and production queue redelivery
+gates; browser recovery and full worker-death queue gates remain. Completed-run
+redelivery is not proof of every crash window in the surrounding product handler. No mutation capability or arbitrary
 Go/Ax continuation is enabled. Transcript pairing is not exactly-once effects.
+
+
+## Launcher continuation verification (2026-09-19)
+
+The isolated OpenShell 0.0.116 / real GraphJin suite now repairs a missing lookup
+result from the broker journal and continues the same accepted run in a new
+sandbox. Its assertions require exactly one `run.resumed`, one `tool.reused`, one
+operation record, three additional outer model requests, and no additional
+GraphJin request. A subsequent delivery restores the terminal receipt without
+model or tool calls. The controlled model checks that recovered evidence reaches
+Ax on the first request of the new attempt.
+
+Launcher checks also reject a live remote process despite a stale local copy,
+incomplete/invalid sandbox inventory, mismatched downloaded evidence, unknown
+broker outcomes, and exhausted attempts. Trusted launch code sets `HARNESS_RESUME`
+after environment overrides. The native inspector includes the durable event
+sequence so a transferred checkpoint must match the inspected recovery report.
+
+Evidence: `/tmp/harness-launcher-continuation-live.log`; queued run
+`8d92f803-2ffa-42a2-8896-e432d1405bae` passed initial execution and redelivery. The
+same suite passed Hermes cold/warm and memory-fence regressions. It exited nonzero
+only at the separately reported M2 idle upstream cancellation gate. That run used
+an injected checkpoint gap. The subsequent `/tmp/harness-recovery-browser-final.log`
+run also passed an actual `SIGKILL` of the in-sandbox Go process while its final
+model response was pending. There was no host checkpoint; recovery downloaded the
+retained sandbox checkpoint, validated it, replaced the stopped sandbox and
+completed attempt 2. Assertions prove one saved operation, one reused lookup,
+unchanged broker receipts, three new outer model requests and no new GraphJin
+request. Killing the entire queue worker remains a separate acceptance gate.
+
+
+The real process-kill gate exposed an ordering bug in receipt comparison: a
+PostgreSQL JSONB receipt can reorder object keys relative to the HTTP result saved
+inside Go. Recovery now compares decoded JSON structure, using `json.Number` when
+decoding checkpoints and receipts so distinct large integer IDs cannot collapse
+through floating-point rounding. The regression verifies reordered nested objects
+and rejects distinct IDs above JavaScript's exact-integer range. This guarantee
+covers the Go checkpoint boundary; it does not change JavaScript provider parsing.
+
+
+The fixture now waits for PostgreSQL TCP readiness rather than its temporary
+initialization socket and fails if metadata/GraphJin readiness expires. Generated
+GraphJin discovery/artifact state lives in a suite-owned volume removed at teardown,
+so an unsuccessful startup cannot contaminate the next run through the config
+bind mount. The test configuration itself is mounted read-only.
+
+
+Fresh browser verification on the same isolated stack passed active-page reload
+and terminal reload for run `bbece083-d945-4a5a-a4f4-db626648210b`, thread
+`89a93409-eeac-43aa-9ba5-dd6e0374afb3`: the rendered answer was `REF-42`; PostgreSQL
+held one user message, one assistant message and one completed broker operation.
+This does not substitute for worker-process death or approval restart tests.
+
+The delayed browser fixture exposed Goja's default five-second wall-clock step
+limit, which also includes host lookup wait time. The configured lookup runtime
+now allows 60 seconds per step, within the two-minute attempt limit and above the
+broker's 45-second timeout. Tool-free runs keep the SDK default. A six-second
+lookup regression and the rebuilt image's delayed browser run both pass. No
+separate JavaScript CPU-time accounting is claimed.

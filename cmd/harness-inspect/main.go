@@ -1,4 +1,4 @@
-// harness-inspect reads recovery evidence without model credentials or execution.
+// harness-inspect inspects or reconciles trusted recovery evidence without model execution.
 package main
 
 import (
@@ -41,25 +41,43 @@ func inspect() error {
 		_, err = io.Copy(io.Discard, os.Stdin) // Parent exit closes the pipe, releasing ownership.
 		return err
 	}
-	if len(os.Args) != 1 {
+	reconcile := len(os.Args) == 2 && os.Args[1] == "--reconcile"
+	if len(os.Args) != 1 && !reconcile {
 		return fmt.Errorf("invalid inspector arguments")
 	}
 
-	data, err := io.ReadAll(io.LimitReader(os.Stdin, 131073))
-	if err != nil || len(data) > 131072 {
+	limit := int64(131072)
+	if reconcile {
+		limit = 2 << 20
+	}
+	data, err := io.ReadAll(io.LimitReader(os.Stdin, limit+1))
+	if err != nil || int64(len(data)) > limit {
 		return fmt.Errorf("invalid recovery input")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var spec agent.Spec
-	if decoder.Decode(&spec) != nil {
+	var request struct {
+		Spec     agent.Spec        `json:"spec"`
+		Receipts []session.Receipt `json:"receipts"`
+	}
+	var target any = &spec
+	if reconcile {
+		target = &request
+	}
+	if decoder.Decode(target) != nil {
 		return fmt.Errorf("invalid recovery input")
 	}
 	var extra any
 	if decoder.Decode(&extra) != io.EOF {
 		return fmt.Errorf("expected one recovery specification")
 	}
-	result, err := session.Inspect(os.Getenv("HARNESS_STATE_DIR"), spec)
+	var result session.Recovery
+	if reconcile {
+		result, err = session.Reconcile(os.Getenv("HARNESS_STATE_DIR"), request.Spec, request.Receipts)
+	} else {
+		result, err = session.Inspect(os.Getenv("HARNESS_STATE_DIR"), spec)
+	}
 	if err != nil {
 		return err
 	}

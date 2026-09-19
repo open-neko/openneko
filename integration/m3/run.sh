@@ -11,10 +11,12 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o integration/m3/model-bin ./i
 compose=(docker compose -p harness-m3 -f integration/m3/compose.yml)
 trap '"${compose[@]}" down --volumes --remove-orphans' EXIT
 "${compose[@]}" up -d
+ready=0
 for ((n=0; n<60; n++)); do
-  if "${compose[@]}" exec -T metadata pg_isready -h 127.0.0.1 -U neko >/dev/null 2>&1 && curl -fsS http://127.0.0.1:18117/health >/dev/null 2>&1; then break; fi
+  if "${compose[@]}" exec -T metadata pg_isready -h 127.0.0.1 -U neko >/dev/null 2>&1 && curl -fsS http://127.0.0.1:18117/health >/dev/null 2>&1; then ready=1; break; fi
   sleep 1
 done
+[[ "$ready" == 1 ]] || { echo "Isolated metadata/GraphJin readiness failed" >&2; exit 1; }
 # Resolve the host address used by this Docker installation (including OrbStack).
 if [[ -z ${HARNESS_HOST_GATEWAY_IP:-} ]]; then
   HARNESS_HOST_GATEWAY_IP=$(docker run --rm debian:bookworm-slim getent ahostsv4 host.docker.internal | awk 'NR==1 {print $1}')
