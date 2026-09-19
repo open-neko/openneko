@@ -1,7 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
 import { join } from "node:path";
+import { once } from "node:events";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import { withHarnessRunJournal } from "../src/work/harness-run-journal";
 import { expect, it } from "vitest";
 import { db, pool, organization, data_source, work_thread, work_run, eq } from "@neko/db";
 import { makeAgentBackend } from "../src/agent-runtime";
@@ -169,10 +173,80 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
         const replayCalls = await (await fetch("http://127.0.0.1:18118/control")).json();
         for (const model of ["harness-fixture","graphjin-fixture"]) expect(replayCalls[model]).toBe(afterCrashCalls[model]);
 
+
+        // Lose the host launcher while the remote Go process still owns its lock.
+        // The broker stays alive to isolate host ownership from broker failure.
+        const hostRunId = randomUUID();
+        await db().insert(work_run).values({id:hostRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"service"});
+        const hostWorkspace = Object.fromEntries(Object.entries(workspace).map(([key,value])=>[key,value.replaceAll(runId,hostRunId)])) as AgentWorkspace;
+        for (const dir of Object.values(hostWorkspace)) await mkdir(dir,{recursive:true});
+        const hostInput = {...input,runId:hostRunId,workspace:hostWorkspace};
+        const tsx = createRequire(import.meta.url).resolve("tsx",{paths:[join(process.cwd(),"../../apps/worker")]});
+        const launcherModule = pathToFileURL(join(process.cwd(),"src/work/sandbox-launcher.ts")).href;
+        const backendModule = pathToFileURL(join(process.cwd(),"src/agent-runtime.ts")).href;
+        await fetch("http://127.0.0.1:18118/control",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pause_responder:true})});
+        const child = spawn(process.execPath,["--import",tsx,"--input-type=module","-e",`
+          import { makeSandboxRunCore } from ${JSON.stringify(launcherModule)};
+          import { makeAgentBackend } from ${JSON.stringify(backendModule)};
+          let raw=""; for await (const chunk of process.stdin) raw+=chunk;
+          const {options,input,token}=JSON.parse(raw);
+          const core=makeSandboxRunCore({...options,brokerTokenFor:()=>token,brokerRelease:()=>{},onLog:()=>{}});
+          await core({...input,backend:makeAgentBackend({id:"harness"}),emit:async()=>{}});
+          process.exit(0);
+        `],{detached:true,stdio:["pipe","ignore","pipe"]});
+        let childError="";
+        child.stderr.on("data",chunk=>{childError=(childError+chunk).slice(-4096);});
+        child.stdin.end(JSON.stringify({
+          options:{cli,gatewayName:"harness-m2",agentImage:"harness-openneko:m3",modelProvider:"harness-m3",modelHosts:[{host:"host.docker.internal",port:18118}],hermesHomeHostPath:hermesHome,warmPoolSize:0,brokerUrl:broker.url},
+          input:{...hostInput,backend:undefined,emit:undefined},
+          token:broker.tokenFor({orgId,runId:hostRunId,threadId,kind:"work"}),
+        }));
+        try {
+          await expect.poll(async()=>{
+            if(child.exitCode!==null) throw Error(`Launcher child exited: ${childError}`);
+            return (await (await fetch("http://127.0.0.1:18118/control")).json())["harness-fixture"];
+          },{timeout:20_000}).toBe(3);
+          const callsBeforeHostDeath=await (await fetch("http://127.0.0.1:18118/control")).json();
+          const exit=once(child,"exit"); child.kill("SIGKILL"); await exit;
+          await expect.poll(async()=>{
+            try {return await withHarnessRunJournal({orgId,runId:hostRunId},async()=>"released");}
+            catch {return "owned";}
+          }).toBe("released");
+          const hostName="h-"+createHash("sha256").update(hostRunId).digest("hex").slice(0,16);
+          const hostContainers=execFileSync("docker",["ps","--filter",`label=openshell.ai/sandbox-name=${hostName}`,"--filter","network=harness-m2","--format","{{.ID}}"],{encoding:"utf8"}).trim().split("\n").filter(Boolean);
+          expect(hostContainers).toHaveLength(1);
+          const assertRemoteRunning=()=>execFileSync("docker",["exec","--user","0",hostContainers[0],"/bin/sh","-c",
+            'for comm in /proc/[0-9]*/comm; do read -r name < "$comm" || continue; case "$name" in harness-opennek|harness-openneko) exit 0;; esac; done; exit 1'],{timeout:5000});
+          assertRemoteRunning();
+          // Database ownership is free, but remote execution is not. This must
+          // reject without deleting the sandbox or dispatching a second attempt.
+          await expect(runCore(hostInput)).rejects.toThrow("outcome unknown");
+          assertRemoteRunning();
+          const afterRefusal=await (await fetch("http://127.0.0.1:18118/control")).json();
+          for(const model of ["harness-fixture","graphjin-fixture"]) expect(afterRefusal[model]).toBe(callsBeforeHostDeath[model]);
+          // The original remote responder finishes after its controlled pause.
+          // Retry inspection only; admission cannot start another live attempt.
+          let adopted: Awaited<ReturnType<typeof runCore>> | undefined;
+          await expect.poll(async()=>{
+            try {adopted=await runCore(hostInput); return adopted.status;}
+            catch(error) {if(!String(error).includes("outcome unknown")) throw error; return "running";}
+          },{timeout:45_000,interval:1000}).toBe("completed");
+          expect(adopted!.finalText).toContain("REF-42");
+          const hostSnapshot=JSON.parse(await readFile(join(hostWorkspace.runRoot,".harness",createHash("sha256").update(hostRunId).digest("hex")+".json"),"utf8"));
+          expect(hostSnapshot.events.filter((event:{type:string})=>event.type==="run.resumed")).toHaveLength(0);
+          const afterAdoption=await (await fetch("http://127.0.0.1:18118/control")).json();
+          for(const model of ["harness-fixture","graphjin-fixture"]) expect(afterAdoption[model]).toBe(callsBeforeHostDeath[model]);
+          expect((await pool().query("SELECT operation_id,result FROM harness_operation WHERE org_id=$1 AND run_id=$2",[orgId,hostRunId])).rows).toMatchObject([{operation_id:1,result:expect.anything()}]);
+        } finally {
+          // Only this detached test-owned process group, including orphaned CLI.
+          try {process.kill(-child.pid!,"SIGKILL");} catch(error) {if((error as NodeJS.ErrnoException).code!=="ESRCH") throw error;}
+          broker.release(hostRunId);
+        }
+
     }
     finally {
         await broker.close();
         await db().delete(organization).where(eq(organization.id, orgId));
         await pool().end();
     }
-}, 180000);
+}, 240000);
