@@ -2409,6 +2409,9 @@ export const action_request = pgTable(
   "action_request",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    harness_operation_id: integer("harness_operation_id"),
+    harness_proposal: jsonb("harness_proposal"),
+    harness_prepared: jsonb("harness_prepared"),
     org_id: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
@@ -2459,6 +2462,11 @@ export const action_request = pgTable(
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
   (t) => ({
+    harness_operation_unique: uniqueIndex("action_request_harness_operation_unique")
+      .on(t.org_id,t.work_run_id,t.harness_operation_id).where(sql`${t.harness_operation_id} IS NOT NULL`),
+    harness_operation_valid: check("action_request_harness_operation_valid",sql`${t.harness_operation_id} IS NULL OR (${t.harness_operation_id} BETWEEN 1 AND 4 AND ${t.work_run_id} IS NOT NULL AND ${t.actor_backend} IS NOT DISTINCT FROM 'harness' AND ${t.harness_proposal} IS NOT NULL)`),
+    harness_proposal_bound: check("action_request_harness_proposal_bound",sql`${t.harness_proposal} IS NULL OR octet_length(${t.harness_proposal}::text) <= 65536`),
+    harness_prepared_bound: check("action_request_harness_prepared_bound",sql`${t.harness_prepared} IS NULL OR octet_length(${t.harness_prepared}::text) <= 65536`),
     org_status_idx: index("action_request_org_status_idx").on(
       t.org_id,
       t.status,

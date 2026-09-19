@@ -92,6 +92,12 @@ export async function executeApprovedActionRequest(
     throw new ActionRequestNotApprovedError(request.status);
   }
 
+  // Harness proposals are durable, but its governed effect dispatcher is not
+  // enabled yet. Never let the legacy queue bypass that future boundary.
+  if (request.actorBackend === "harness") {
+    throw new Error("Harness governed action execution is not enabled");
+  }
+
   const adapter = adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined;
   if (!adapter) {
     await markActionRequestFailed(
