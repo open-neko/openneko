@@ -1,3 +1,5 @@
+import { startupEvent } from "@neko/telemetry/startup";
+import { isDeepStrictEqual } from "node:util";
 import {
   ADMINISTRATORS_GROUP_SLUG,
   builtinGroupId,
@@ -11,6 +13,9 @@ import {
   desc,
   eq,
   work_run,
+  pool,
+  sql,
+  inArray,
 } from "@neko/db";
 
 import { resolveDeploymentProfile } from "../work/deployment-profile";
@@ -257,6 +262,8 @@ export async function updateActionPolicy(
 }
 
 export type ActionRequestRecord = {
+  harnessOperationId?: number | null;
+  harnessPrepared?: Record<string, unknown> | null;
   id: string;
   orgId: string;
   /** SEC5: the human principal + agent backend, snapshotted at creation. */
@@ -304,6 +311,10 @@ function toRequestRecord(
   return {
     id: row.id,
     orgId: row.org_id,
+    ...(row.harness_operation_id != null ? {
+      harnessOperationId: row.harness_operation_id,
+      harnessPrepared: row.harness_prepared as Record<string, unknown> | null,
+    } : {}),
     actorUserId: row.actor_user_id,
     actorRole: row.actor_role,
     actorBackend: row.actor_backend,
@@ -331,6 +342,8 @@ function toRequestRecord(
 }
 
 export type CreateActionRequestInput = {
+  /** Trusted Harness runtime operation ID. The caller must authorize the proposal first. */
+  harnessOperationId?: number;
   orgId: string;
   workflowRunId?: string | null;
   triggeredByObservationId?: string | null;
@@ -389,10 +402,11 @@ export async function updateActionRequestPayload(args: {
       and(
         eq(action_request.org_id, args.orgId),
         eq(action_request.id, args.id),
+        sql`(${action_request.harness_operation_id} IS NULL OR ${action_request.harness_prepared} IS NULL)`,
       ),
     )
     .returning();
-  if (!row) throw new Error(`action_request ${args.id} not found`);
+  if (!row) throw new Error(`action_request ${args.id} missing or Harness proposal already frozen`);
   const record = toRequestRecord(row);
   const { recordAuditEvent } = await import("./audit-chain");
   await recordAuditEvent({
@@ -462,9 +476,24 @@ export async function createActionRequest(
       };
     }
   }
-  const [row] = await db()
-    .insert(action_request)
-    .values({
+  let harnessProposal: Record<string, unknown> | null = null;
+  if (input.harnessOperationId !== undefined) {
+    if (!Number.isInteger(input.harnessOperationId) || input.harnessOperationId < 1 || input.harnessOperationId > 4 || !input.workRunId) {
+      throw new Error("Invalid Harness proposal operation");
+    }
+    const admitted = (await pool().query(`SELECT r.actor_user_id,r.actor_role,j.fingerprint
+      FROM work_run r JOIN harness_run_journal j ON j.org_id=r.org_id AND j.run_id=r.id::text
+      WHERE r.org_id=$1 AND r.id=$2 AND r.backend='harness' AND j.result IS NULL`,[input.orgId,input.workRunId])).rows[0];
+    if (!admitted) throw new Error("Harness proposal requires an admitted run");
+    actor = {userId:admitted.actor_user_id,role:admitted.actor_role,backend:"harness"};
+    harnessProposal = {
+      fingerprint:admitted.fingerprint, actor, scope:input.scope, kind:input.kind,
+      target:input.target ?? null, payload:input.payload ?? {}, policyId:input.policyId ?? null,
+      riskLevel:input.riskLevel ?? null, summary:input.summary ?? null, intent:input.intent ?? null,
+    };
+    if (Buffer.byteLength(JSON.stringify(harnessProposal)) > 65536) throw new Error("Harness proposal exceeds limit");
+  }
+  const values = {
       org_id: input.orgId,
       actor_user_id: actor.userId,
       actor_role: actor.role,
@@ -477,16 +506,42 @@ export async function createActionRequest(
       target: input.target ?? null,
       payload: input.payload ?? {},
       risk_level: input.riskLevel ?? null,
-      status: input.status,
+      status: harnessProposal ? "draft" : input.status,
+      harness_operation_id: input.harnessOperationId ?? null,
+      harness_proposal: harnessProposal,
       summary: input.summary ?? null,
       intent: input.intent ?? null,
       minutes_saved: input.minutesSaved ?? null,
       minutes_saved_basis: input.minutesSavedBasis ?? null,
       work_run_id: input.workRunId ?? null,
       requested_by_run_id: input.requestedByRunId ?? null,
+    };
+  const [row] = harnessProposal
+    ? await db().transaction(async tx => {
+      // Serialize admission with a terminal receipt or identity change. The
+      // unique index then admits one preparation without holding locks over hooks.
+      const gate=await tx.execute(sql`SELECT 1 FROM harness_run_journal j JOIN work_run r ON r.org_id=j.org_id AND r.id::text=j.run_id
+        WHERE j.org_id=${input.orgId} AND j.run_id=${input.workRunId} AND j.result IS NULL
+        AND j.fingerprint=${harnessProposal!.fingerprint} AND r.backend='harness'
+        AND r.actor_user_id IS NOT DISTINCT FROM ${actor.userId}
+        AND r.actor_role IS NOT DISTINCT FROM ${actor.role} FOR UPDATE OF j,r`);
+      if (!gate.rows.length) throw new Error("Harness proposal admission changed");
+      return tx.insert(action_request).values(values).onConflictDoNothing().returning();
     })
-    .returning();
+    : await db().insert(action_request).values(values).returning();
+  if (!row && harnessProposal) {
+    const [saved] = await db().select().from(action_request).where(and(
+      eq(action_request.org_id,input.orgId),eq(action_request.work_run_id,input.workRunId!),
+      eq(action_request.harness_operation_id,input.harnessOperationId!),
+    )).limit(1);
+    const outcome=!saved || !isDeepStrictEqual(saved.harness_proposal,harnessProposal) ? "conflict" : !saved.harness_prepared ? "outcome_unknown" : "restored";
+    startupEvent("harness.proposal",{runId:input.workRunId,operationId:input.harnessOperationId,outcome});
+    if (outcome === "conflict") throw new Error("Harness proposal conflicts with accepted operation");
+    if (outcome === "outcome_unknown") throw new Error("Harness proposal preparation outcome unknown; automatic replay disabled");
+    return toRequestRecord(saved);
+  }
   const record = toRequestRecord(row);
+  if (harnessProposal) startupEvent("harness.proposal",{runId:input.workRunId,operationId:input.harnessOperationId,actionRequestId:record.id,outcome:"admitted"});
   // SEC10: governance events ride the tamper-evident chain.
   const { recordAuditEvent } = await import("./audit-chain");
   await recordAuditEvent({
@@ -509,10 +564,40 @@ export async function createActionRequest(
     for (const hook of actionRequestCreatedHooks) {
       prepared = (await hook(prepared)) ?? prepared;
     }
+    if (harnessProposal) {
+      if (prepared.id !== record.id || prepared.orgId !== input.orgId || prepared.workRunId !== input.workRunId) {
+        throw new Error("Harness preflight returned a different request");
+      }
+      const frozen = {scope:prepared.scope,kind:prepared.kind,target:prepared.target,payload:prepared.payload,
+        policyId:prepared.policyId,riskLevel:prepared.riskLevel,actorUserId:prepared.actorUserId,
+        actorRole:prepared.actorRole,actorBackend:prepared.actorBackend};
+      const snapshot = sql`jsonb_build_object('scope',scope,'kind',kind,'target',target,'payload',payload,
+        'policyId',policy_id,'riskLevel',risk_level,'actorUserId',actor_user_id,
+        'actorRole',actor_role,'actorBackend',actor_backend)`;
+      const [ready] = await db().update(action_request).set({
+        // Compare and freeze under the row lock; a concurrent payload change
+        // cannot replace the arguments the preflight actually prepared.
+        harness_prepared:snapshot,
+        status:"pending_approval",approved_by_user_id:null,approved_at:null,updated_at:new Date(),
+      }).where(and(eq(action_request.id,record.id),eq(action_request.org_id,input.orgId),
+        inArray(action_request.status,["draft","pending_approval","approved"]),
+        sql`${action_request.harness_prepared} IS NULL`,
+        sql`${snapshot} = ${JSON.stringify(frozen)}::jsonb`,
+      )).returning();
+      if (!ready) throw new Error("Harness proposal changed during preparation");
+      startupEvent("harness.proposal",{runId:input.workRunId,operationId:input.harnessOperationId,actionRequestId:record.id,outcome:"prepared"});
+      return toRequestRecord(ready);
+    }
     return prepared;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await markActionRequestFailed(record.id, `action preflight failed: ${message}`);
+    if (harnessProposal) {
+      startupEvent("harness.proposal",{runId:input.workRunId,operationId:input.harnessOperationId,actionRequestId:record.id,outcome:"preparation_failed"});
+      await db().update(action_request).set({status:"failed",rejection_reason:`action preflight failed: ${message}`,updated_at:new Date()})
+        .where(and(eq(action_request.id,record.id),inArray(action_request.status,["draft","pending_approval","approved"])));
+    } else {
+      await markActionRequestFailed(record.id, `action preflight failed: ${message}`);
+    }
     await recordAuditEvent({
       orgId: input.orgId,
       entityKind: "action_request",
@@ -586,6 +671,10 @@ export async function approveActionRequest(args: {
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (existing.harnessOperationId != null && !existing.harnessPrepared) throw new Error("Harness proposal preparation is not complete");
+  if (existing.harnessOperationId != null && (!args.approver || args.approver.userId !== args.approverUserId)) {
+    throw new Error("Harness approval requires matching current approver identity");
+  }
   if (args.approver) await assertMayDecide(args.orgId, existing, args.approver);
   assertTransition(existing.status, "approved", ["draft", "pending_approval"]);
   const [row] = await db()
@@ -596,8 +685,11 @@ export async function approveActionRequest(args: {
       approved_at: new Date(),
       updated_at: new Date(),
     })
-    .where(eq(action_request.id, args.id))
+    .where(existing.harnessOperationId != null
+      ? and(eq(action_request.id,args.id),eq(action_request.org_id,args.orgId),eq(action_request.status,existing.status))
+      : eq(action_request.id,args.id))
     .returning();
+  if (!row) throw new Error("Action request changed before approval");
   const record = toRequestRecord(row);
   const { recordAuditEvent } = await import("./audit-chain");
   await recordAuditEvent({
@@ -635,6 +727,7 @@ export async function autoApprovePreparedActionRequest(args: {
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (existing.harnessOperationId != null) throw new Error("Harness proposals require explicit approval");
   assertTransition(existing.status, "approved", ["draft", "pending_approval"]);
   const [row] = await db()
     .update(action_request)
@@ -704,6 +797,9 @@ export async function rejectActionRequest(args: {
 }): Promise<ActionRequestRecord> {
   const existing = await getActionRequest(args.orgId, args.id);
   if (!existing) throw new Error(`action_request ${args.id} not found`);
+  if (existing.harnessOperationId != null && (!args.approver || args.approver.userId !== args.approverUserId)) {
+    throw new Error("Harness approval requires matching current approver identity");
+  }
   if (args.approver) await assertMayDecide(args.orgId, existing, args.approver);
   assertTransition(existing.status, "rejected", ["draft", "pending_approval"]);
   const [row] = await db()
@@ -715,8 +811,11 @@ export async function rejectActionRequest(args: {
       rejection_reason: args.reason ?? null,
       updated_at: new Date(),
     })
-    .where(eq(action_request.id, args.id))
+    .where(existing.harnessOperationId != null
+      ? and(eq(action_request.id,args.id),eq(action_request.org_id,args.orgId),eq(action_request.status,existing.status))
+      : eq(action_request.id,args.id))
     .returning();
+  if (!row) throw new Error("Action request changed before rejection");
   const record = toRequestRecord(row);
   const { recordAuditEvent } = await import("./audit-chain");
   await recordAuditEvent({

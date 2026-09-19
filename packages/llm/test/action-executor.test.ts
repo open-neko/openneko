@@ -55,3 +55,11 @@ it("uses the pack fallback only when no exact adapter is registered", async () =
     unregister();
   }
 });
+
+it("cannot execute Harness proposals through the legacy executor", async () => {
+  const adapter=vi.fn(); registerActionAdapter("harness_fixture",adapter);
+  vi.mocked(store.getActionRequest).mockResolvedValue({id:"request",orgId:"org",kind:"harness_fixture",status:"approved",payload:{},actorBackend:"harness"} as Awaited<ReturnType<typeof store.getActionRequest>>);
+  await expect(executeApprovedActionRequest("org","request")).rejects.toThrow("Harness governed action execution is not enabled");
+  expect(adapter).not.toHaveBeenCalled();
+  expect(store.recordActionExecution).not.toHaveBeenCalled();
+});
