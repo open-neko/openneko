@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/open-neko/openneko/compare/v3.4.0...v3.5.0) (2026-09-23)
+
+
+### Features
+
+* **workflows:** configure API limits for Reckon parity ([#346](https://github.com/open-neko/openneko/issues/346)) ([3a9ea74](https://github.com/open-neko/openneko/commit/3a9ea7426c0f4da3a5788219a35eb2f58a7a774f))
+
 ## [3.4.0](https://github.com/open-neko/openneko/compare/v3.3.0...v3.4.0) (2026-09-18)
 
 
