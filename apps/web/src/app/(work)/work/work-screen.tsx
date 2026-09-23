@@ -129,7 +129,7 @@ import { Input, Textarea } from "@/components/ui/field";
 import { Disclosure } from "@/components/ui/disclosure";
 import { renderComponent, renderChildren } from "@/a2ui/renderer";
 import { applyMessage, getRootComponent, setDataModelValue } from "@/a2ui/surface";
-import { buildActionFollowUp } from "@/a2ui/action";
+import { buildActionFollowUp, parseClarificationReply } from "@/a2ui/action";
 import type { SurfaceState, A2UIMessage } from "@/a2ui/types";
 import { useWorkShell } from "../work-shell-context";
 import { formatSavedShort } from "@/lib/hours-saved";
@@ -1299,6 +1299,10 @@ export default function WorkScreen() {
               message.role === "user"
                 ? parseBriefingCardMessage(message.content)
                 : null;
+            const clarificationReply =
+              message.role === "user"
+                ? parseClarificationReply(message.content)
+                : null;
             // If this user message's run terminated (cancelled/failed)
             // and the next message is NOT the assistant reply for it,
             // render a status badge so the cancelled run is visible.
@@ -1331,7 +1335,9 @@ export default function WorkScreen() {
                       isPersistedUser
                         ? () =>
                             void copyUserMessage(
-                              stripWorkMentionBlock(message.content),
+                              clarificationReply
+                                ? clarificationReply.map(({ question, answer }) => `${question}\n${answer}`).join("\n\n")
+                                : stripWorkMentionBlock(message.content),
                             )
                         : undefined
                     }
@@ -1345,7 +1351,7 @@ export default function WorkScreen() {
                         : undefined
                     }
                     onEdit={
-                      isPersistedUser && !sending
+                      isPersistedUser && !sending && !clarificationReply
                         ? (text) =>
                             void retryOrEditUserMessage(message.id, text)
                         : undefined
@@ -1795,6 +1801,7 @@ function MessageBubble({
   // What the operator sees: the raw content minus the machine-readable
   // workflow-mention block (the agent still reads the full content).
   const display = stripWorkMentionBlock(message.content);
+  const clarificationReply = parseClarificationReply(message.content);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(display);
   const [copied, setCopied] = useState(false);
@@ -1876,7 +1883,21 @@ function MessageBubble({
   return (
     <div className="work-bubble-row is-user has-actions">
       <div className="work-bubble is-user">
-        <div className="work-markdown user-copy">{display}</div>
+        {clarificationReply ? (
+          <div className="work-markdown user-copy">
+            <div className="text-ui-label font-bold uppercase tracking-[0.12em] opacity-60 mb-2">Your answers</div>
+            <div className="space-y-3">
+              {clarificationReply.map(({ question, answer }, index) => (
+                <div key={index}>
+                  <div className="opacity-70">{question}</div>
+                  <div className="whitespace-pre-wrap font-semibold">{answer}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="work-markdown user-copy">{display}</div>
+        )}
       </div>
       {showActions ? (
         <div className="work-bubble-actions">
