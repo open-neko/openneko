@@ -57,6 +57,17 @@ export function nativeArtifactStateHash(
   );
 }
 
+/** Older pack receipts hashed an approver role that action_policy never stored. */
+export function policyArtifactStateHash(
+  policy: Record<string, unknown>,
+  lastAppliedHash?: string,
+): string {
+  const current = nativeArtifactStateHash("policy", policy);
+  if (!lastAppliedHash || current === lastAppliedHash || Object.hasOwn(policy, "approver_role")) return current;
+  const legacy = nativeArtifactStateHash("policy", { ...policy, approver_role: "admin" });
+  return legacy === lastAppliedHash ? legacy : current;
+}
+
 function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
@@ -159,6 +170,7 @@ async function inspectNative(
   kind: "metric" | "workflow" | "watcher" | "policy" | "action",
   targetRef: string,
   locator: PackArtifactLocator,
+  lastAppliedHash?: string,
 ): Promise<string | null> {
   switch (kind) {
     case "metric": {
@@ -189,7 +201,7 @@ async function inspectNative(
         eq(action_policy.org_id, orgId),
         eq(action_policy.name, locator.name ?? targetRef),
       )).limit(1);
-      return row ? nativeArtifactStateHash("policy", row as unknown as Record<string, unknown>) : null;
+      return row ? policyArtifactStateHash(row as unknown as Record<string, unknown>, lastAppliedHash) : null;
     }
     case "action": {
       const [row] = await db().select().from(pack_action_definition).where(and(
@@ -243,6 +255,7 @@ export async function inspectInstalledPackArtifactCurrent(input: {
   metadata: ArtifactMetadata;
   graphjinConfigFile: string;
   fallbackArtifact?: PackArtifact;
+  lastAppliedHash?: string;
 }): Promise<string | null> {
   const locator = locatorFromMetadata(input.metadata, input.fallbackArtifact);
   switch (input.kind) {
@@ -265,7 +278,7 @@ export async function inspectInstalledPackArtifactCurrent(input: {
     case "watcher":
     case "policy":
     case "action":
-      return inspectNative(input.orgId, input.kind, input.targetRef, locator);
+      return inspectNative(input.orgId, input.kind, input.targetRef, locator, input.lastAppliedHash);
   }
 }
 
