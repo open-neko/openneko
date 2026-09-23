@@ -934,7 +934,7 @@ describe("makeSandboxRunCore", () => {
       onLog: () => {},
     });
 
-    await runCore(fakeWorkflowInput(async () => {}));
+    await runCore({ ...fakeWorkflowInput(async () => {}), timeoutMs: 1_800_000 });
 
     const job = jobCapture.jobs.at(-1);
     expect(job).toMatchObject({
@@ -948,7 +948,10 @@ describe("makeSandboxRunCore", () => {
       networkHosts: [],
       backendId: "hermes",
       message: "begin",
+      agentRun: { timeoutMs: 1_800_000 },
     });
+    const execArgs = h.calls.find((call) => call.args.includes("exec"))?.args ?? [];
+    expect(execArgs[execArgs.indexOf("--timeout") + 1]).toBe("1920");
     expect(job).not.toHaveProperty("model");
     expect(job).not.toHaveProperty("backendState");
     expect(job).not.toHaveProperty("pluginActions");

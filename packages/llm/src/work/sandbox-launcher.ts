@@ -696,6 +696,10 @@ function makeSandboxCore(
             networkHosts: (input as RunWorkflowAgentBackendInput).networkHosts,
             triggeredByObservationId:
               (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
+            agentRun: serializableAgentRunOptions({
+              prompt: inputPrompt,
+              timeoutMs: (input as RunWorkflowAgentBackendInput).timeoutMs,
+            }),
             }
           : {
               agentAccess: jobInput?.access ?? {},
@@ -950,7 +954,9 @@ function makeSandboxCore(
         // dies as the backend's honest timeout error — not an opaque
         // exec-stream kill from out here.
         opts.execTimeoutMs ??
-          (jobInput?.run.timeoutMs ?? agentTurnTimeoutMs()) + 120_000,
+          (jobInput?.run.timeoutMs ??
+            (kind === "workflow" ? (input as RunWorkflowAgentBackendInput).timeoutMs : undefined) ??
+            agentTurnTimeoutMs()) + 120_000,
         signal,
         (present) => { artifactsPresent = present; },
       ));

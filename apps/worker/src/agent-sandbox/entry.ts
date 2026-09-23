@@ -219,6 +219,7 @@ export async function main(job = loadJob()): Promise<void> {
       workspace: job.workspace,
       controlPlane,
       emit,
+      timeoutMs: job.agentRun?.timeoutMs,
     });
   } else {
     if (!controlPlane) {
