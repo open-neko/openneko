@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.2](https://github.com/open-neko/openneko/compare/v3.5.1...v3.5.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* clarify Work replies and unblock Magento pack review ([7821513](https://github.com/open-neko/openneko/commit/78215135eeed6304e8643495e146593973286cc9))
+
 ## [3.5.1](https://github.com/open-neko/openneko/compare/v3.5.0...v3.5.1) (2026-09-23)
 
 
