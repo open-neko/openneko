@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.5.1](https://github.com/open-neko/openneko/compare/v3.5.0...v3.5.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **workflows:** carry API timeout into sandbox ([8d3e44a](https://github.com/open-neko/openneko/commit/8d3e44ada34a1dd46bd478bbe1efab040c14449c))
+* **workflows:** carry API timeout into sandbox ([f6229b2](https://github.com/open-neko/openneko/commit/f6229b2c227c7b4d14785be1494fc0d6a0b76b23))
+
 ## [3.5.0](https://github.com/open-neko/openneko/compare/v3.4.0...v3.5.0) (2026-09-23)
 
 
