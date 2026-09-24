@@ -225,7 +225,7 @@ export function graphqlUrlFromMcpUrl(mcpUrl: string): string {
 const AGENTIC_INDEX_BODY = `# GraphJin knowledge pack (agentic mode)
 
 This directory holds a SLIM bootstrap prefetched from the role-aware
-\`gj_catalog\` root: table and database summaries, the help-card index,
+\`gj_catalog\` root: table, database, and API operation summaries, the help-card index,
 and the query-DSL essentials. It is deliberately not the whole schema.
 
 Everything deeper you discover ON DEMAND with catalog queries through the
@@ -238,7 +238,7 @@ query { gj_catalog(id: "table:<db>:<schema>.<table>") { id name summary details_
 query { gj_catalog(where: { kind: { eq: "column" } }, search: "<table name>", limit: 30) { id name summary } }
 \`\`\`
 
-Catalog row kinds: help, database, table, column, relationship,
+Catalog row kinds: help, database, table, api_operation, column, relationship,
 function, capability. \`gj_catalog(id: "...")\` returns one detailed
 card (details_json, examples_json, edges_json, safety_json). Start from
 \`help:discovery\` when unsure.
@@ -256,7 +256,7 @@ deployments may disable GraphJin dev tools, so do not call \`find_path\`,
   \`gj_catalog(id:)\` for column-level detail.
 - **\`namespaces.json\`** — the configured databases/sources.
 - **\`insights.json\`** — the help-card index: what the catalog can
-  teach you and which card to pull for each topic.
+  teach you and which card to pull for each topic, plus API operations.
 - **\`syntax.json\`** — query-DSL essentials (filters + query shape)
   pulled from the catalog's help cards. Pull other help cards on
   demand for mutations, fragments, workflows, errors.
@@ -327,7 +327,7 @@ export async function prefetchAgenticKnowledgePack(args: {
 
   await mkdir(args.destDir, { recursive: true });
   try {
-    const [tables, databases, helpIndex, helpDetails, relationships, languageIndex] =
+    const [tables, databases, apiOperations, helpIndex, helpDetails, relationships, languageIndex] =
       await Promise.all([
         catalogRows(
           query,
@@ -336,6 +336,10 @@ export async function prefetchAgenticKnowledgePack(args: {
         catalogRows(
           query,
           `query { gj_catalog(where: { kind: { eq: "database" } }, limit: 50) { id name summary } }`,
+        ),
+        catalogRows(
+          query,
+          `query { gj_catalog(where: { kind: { eq: "api_operation" } }, limit: 500) { id name summary } }`,
         ),
         catalogRows(
           query,
@@ -557,6 +561,7 @@ export async function prefetchAgenticKnowledgePack(args: {
         json: JSON.stringify(
           {
             hub_tables: hubTables,
+            api_operations: apiOperations,
             help_cards: helpIndex,
             note:
               "Pull any card's full guidance on demand: gj_catalog(id: \"help:<topic>\") { details_json examples_json }",
@@ -627,7 +632,7 @@ export async function prefetchKnowledgeForOrg(
     const graphqlUrl = src.graphqlUrl || graphqlUrlFromMcpUrl(src.mcpUrl as string);
     const result = await refreshKnowledgeSnapshot({
       root: destDir, mode: "agentic", refresh: options.refresh,
-      source: JSON.stringify([orgId, src.id, graphqlUrl, src.authMode, "service", 1]),
+      source: JSON.stringify([orgId, src.id, graphqlUrl, src.authMode, "service", 2]),
       revision: async () => {
         // Revision metadata is admin-only; knowledge content remains service-scoped.
         const response = await fetch(graphqlUrl, {

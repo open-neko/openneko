@@ -206,6 +206,12 @@ Tables visible to the service role (deeper detail via gj_catalog):
 ${compactTableDigest(knowledge.tables)}
 
 ================================================================================
+API operations visible to the service role (load details via query_catalog):
+==============================================================================
+
+${compactApiOperationDigest(knowledge.insights)}
+
+==============================================================================
 Hub tables and ready query templates:
 ================================================================================
 
@@ -352,6 +358,26 @@ export function compactInsightsDigest(raw: string): string {
 }
 
 const HELP_INDEX_MAX_CHARS = 2_000;
+const API_OPERATION_INDEX_MAX_CHARS = 4_000;
+
+/** Keep catalog-backed API operations visible in an API-only source. */
+export function compactApiOperationDigest(raw: string): string {
+  let operations: Array<{ name?: string; summary?: string }>;
+  try {
+    const parsed = JSON.parse(raw) as { api_operations?: typeof operations };
+    operations = Array.isArray(parsed.api_operations) ? parsed.api_operations : [];
+  } catch {
+    return "";
+  }
+  let out = "";
+  for (const operation of operations) {
+    if (!operation.name) continue;
+    const line = `- ${operation.name}${operation.summary ? ` — ${String(operation.summary).slice(0, 90)}` : ""}\n`;
+    if (out.length + line.length > API_OPERATION_INDEX_MAX_CHARS) break;
+    out += line;
+  }
+  return out.trimEnd();
+}
 
 /** One line per help card from the agentic pack's insights file. The raw
  *  file also carries hub_tables (rendered separately by
