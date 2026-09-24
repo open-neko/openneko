@@ -291,10 +291,9 @@ export class HermesBackend implements AgentBackend {
       ? `${prompt}\n\nCurrent user message:\n${userMessage}`
       : prompt;
 
-    // Streaming turns normally cannot be retried because replaying tool and
-    // message events would duplicate visible work. A completely empty ACP
-    // turn is the exception: runOnce marks it retryable only when Hermes
-    // emitted neither content nor tool activity.
+    // Streaming turns normally cannot be retried because replaying tools can
+    // repeat side effects. runOnce permits a retry only with no tool activity
+    // or when all observed calls were read-only discovery tools.
     const maxAttempts = retries + 1;
     let lastErr: Error | undefined;
 
@@ -326,7 +325,7 @@ export class HermesBackend implements AgentBackend {
           if (onEvent && attempt + 1 < maxAttempts) {
             await onEvent({
               type: "status",
-              message: "Hermes returned no output; retrying…",
+              message: "Hermes returned no answer; retrying…",
             });
           }
           continue;
@@ -593,6 +592,8 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     let emittedOutsideLen = 0;
     let surfaceEmittedDuringStream = false;
     let toolActivityObserved = false;
+    let unsafeToolActivityObserved = false;
+    const discoveryToolCallIds = new Set<string>();
     const pendingValidRenderToolCalls = new Map<string, unknown>();
     let pendingProviderSummary = "";
     let providerSummarySequence = 0;
@@ -683,6 +684,11 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         }
         case "tool_call": {
           toolActivityObserved = true;
+          if (update.title === "tool_describe" || update.title?.startsWith("search:")) {
+            discoveryToolCallIds.add(update.toolCallId);
+          } else {
+            unsafeToolActivityObserved = true;
+          }
           flushProviderSummary();
           if (!onEvent) return;
           const meta = (update.fieldMeta ?? update._meta) as { openneko?: { usage?: unknown } } | undefined;
@@ -730,6 +736,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         }
         case "tool_call_update": {
           toolActivityObserved = true;
+          if (!discoveryToolCallIds.has(update.toolCallId)) unsafeToolActivityObserved = true;
           if (!onEvent) return;
           const id = update.toolCallId;
           if (pendingValidRenderToolCalls.has(id)) {
@@ -854,7 +861,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         error:
           `hermes response truncated due to output length limit` +
           ` (stopReason=${promptStopReason ?? "unknown"})`,
-        retryable: !toolActivityObserved,
+        retryable: !toolActivityObserved || (!unsafeToolActivityObserved && !surfaceEmittedDuringStream),
       };
     }
 

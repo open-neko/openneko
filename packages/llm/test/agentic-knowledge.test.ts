@@ -33,6 +33,9 @@ const catalogFixture = (query: string) => {
   if (query.includes('kind: { eq: "database" }')) {
     return [{ id: "database:demo", name: "demo", summary: "postgres (default)" }];
   }
+  if (query.includes('kind: { eq: "api_operation" }')) {
+    return [{ id: "api_operation:importyeti:us_import_suppliers", name: "us_import_suppliers", summary: "Search US shipment suppliers" }];
+  }
   if (query.includes('kind: { eq: "help" }')) {
     return [
       { id: "help:discovery", name: "Discovery help", summary: "Start here." },
@@ -81,6 +84,7 @@ describe("prefetchAgenticKnowledgePack", () => {
     expect(pack.mode).toBe("agentic");
     expect(pack.tables).toContain("table:demo:sales.orders");
     expect(pack.insights).toContain("help:discovery");
+    expect(pack.insights).toContain("us_import_suppliers");
     expect(pack.syntax).toContain("help:query");
 
     const index = await readFile(join(dest, "INDEX.md"), "utf8");
@@ -91,6 +95,23 @@ describe("prefetchAgenticKnowledgePack", () => {
   it("a legacy pack (no mode file) still reads as legacy", async () => {
     const pack = await readKnowledgePack(knowledgePackPaths(join(dir, "missing")));
     expect(pack.mode).toBe("legacy");
+  });
+
+  it("shows catalog API operations when a source has no tables", () => {
+    const section = buildDataAccessSection({
+      shellTool: "bash",
+      queryTool: "mcp_neko_graphjin_execute_graphql",
+      workspace: { orgRoot: "/w", knowledgeRoot: "/w/knowledge" } as AgentWorkspace,
+      knowledge: {
+        mode: "agentic",
+        tables: '{"tables":[]}',
+        namespaces: '{"databases":[]}',
+        insights: '{"api_operations":[{"name":"us_import_suppliers","summary":"Search US shipment suppliers"}]}',
+        syntax: "{}",
+      },
+    });
+    expect(section).toContain("us_import_suppliers — Search US shipment suppliers");
+    expect(section).toContain("mcp_neko_graphjin_query_catalog");
   });
 });
 

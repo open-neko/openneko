@@ -173,6 +173,7 @@ COPY scripts/patches/hermes-acp-interim-messages.patch /tmp/hermes-acp-interim-m
 COPY scripts/patches/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-anthropic-reasoning.patch
 COPY scripts/patches/hermes-acp-native-delegation-policy.patch /tmp/hermes-acp-native-delegation-policy.patch
 COPY scripts/patches/hermes-acp-tool-usage.patch /tmp/hermes-acp-tool-usage.patch
+COPY scripts/patches/hermes-acp-mcp-output.patch /tmp/hermes-acp-mcp-output.patch
 COPY scripts/patches/hermes-acp-cost.patch /tmp/hermes-acp-cost.patch
 COPY scripts/test-hermes-acp-tool-usage.py /tmp/test-hermes-acp-tool-usage.py
 COPY scripts/test-hermes-acp-cost.py /tmp/test-hermes-acp-cost.py
@@ -190,8 +191,9 @@ RUN --mount=type=cache,id=hermes-uv,target=/tmp/uv-cache \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-anthropic-reasoning.patch \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-native-delegation-policy.patch \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-tool-usage.patch \
+    && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-mcp-output.patch \
     && patch --batch --forward --fuzz=0 -d /usr/local/lib/hermes-agent -p1 < /tmp/hermes-acp-cost.patch \
-    && rm /tmp/hermes-acp-cost.patch /tmp/hermes-acp-tool-usage.patch /tmp/hermes-acp-reasoning-config.patch /tmp/hermes-acp-interim-messages.patch /tmp/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-native-delegation-policy.patch \
+    && rm /tmp/hermes-acp-cost.patch /tmp/hermes-acp-mcp-output.patch /tmp/hermes-acp-tool-usage.patch /tmp/hermes-acp-reasoning-config.patch /tmp/hermes-acp-interim-messages.patch /tmp/hermes-acp-anthropic-reasoning.patch /tmp/hermes-acp-native-delegation-policy.patch \
     && cd /usr/local/lib/hermes-agent \
     && UV_PROJECT_ENVIRONMENT=/usr/local/uv/tools/hermes-agent \
        UV_CACHE_DIR=/tmp/uv-cache \
