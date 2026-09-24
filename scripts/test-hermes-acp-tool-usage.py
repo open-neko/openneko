@@ -5,7 +5,7 @@ import textwrap
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from acp_adapter.events import make_tool_progress_cb
+from acp_adapter.events import make_step_cb, make_tool_progress_cb
 from acp_adapter.server import HermesACPAgent
 
 # Exercise the actual server snapshot expression, including prior-turn counters.
@@ -32,4 +32,22 @@ with patch("acp_adapter.events._send_update") as send:
     callback = make_tool_progress_cb(None, "test", None, {}, {}, usage_getter=lambda: None)
     callback("tool.started", "terminal", args={})
     assert "_meta" not in send.call_args.args[-1].model_dump(by_alias=True, exclude_none=True)
+    ids, meta = {}, {}
+    callback = make_tool_progress_cb(None, "test", None, ids, meta)
+    callback("tool.started", "mcp__neko__data_source_manager_list_data_sources", args={})
+    started = send.call_args.args[-1].model_dump(by_alias=True, exclude_none=True)
+    callback("tool.completed", "mcp__neko__data_source_manager_list_data_sources",
+             result='{"sources":[{"name":"default"}]}')
+    completed = send.call_args.args[-1].model_dump(by_alias=True, exclude_none=True)
+    assert completed["toolCallId"] == started["toolCallId"]
+    assert completed["status"] == "completed"
+    assert "default" in str(completed.get("content") or completed.get("rawOutput"))
+    count = send.call_count
+    make_step_cb(None, "test", None, ids, meta)(1, [{"name": "mcp__neko__data_source_manager_list_data_sources", "result": "duplicate"}])
+    assert send.call_count == count
+    callback("tool.started", "mcp__neko__data_source_manager_list_data_sources", args={})
+    callback("tool.completed", "mcp__neko__data_source_manager_list_data_sources",
+             result="service unavailable", is_error=True)
+    failed = send.call_args.args[-1].model_dump(by_alias=True, exclude_none=True)
+    assert failed["status"] == "failed"
 print("Hermes tool usage contract passed")
