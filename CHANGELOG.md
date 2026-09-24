@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.4](https://github.com/open-neko/openneko/compare/v3.5.3...v3.5.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **magento:** make catalog action guidance explicit ([#354](https://github.com/open-neko/openneko/issues/354)) ([9317d4c](https://github.com/open-neko/openneko/commit/9317d4ceee6e2cf7a120ce71543bc47955b53923))
+
 ## [3.5.3](https://github.com/open-neko/openneko/compare/v3.5.2...v3.5.3) (2026-09-24)
 
 
