@@ -10,12 +10,15 @@ const mocks = vi.hoisted(() => ({
   setAdministrator: vi.fn(async (...args: [string, string, boolean]) => void args),
   administrators: new Set<string>(),
   signInProvider: { providerLabel: "Email link" } as unknown,
+  pendingProvider: null as unknown,
   requestWorker: vi.fn(async (path: string, body?: unknown) => ({ status: 200, body: { path, body } })),
 }));
 
 vi.mock("@/lib/groups-admin", () => ({ requestWorker: mocks.requestWorker }));
 
-vi.mock("@/lib/auth", () => ({ getAuthProvider: async () => mocks.signInProvider }));
+vi.mock("@/lib/auth", () => ({
+  getAuthGateStatus: async () => ({ provider: mocks.signInProvider, pending: mocks.pendingProvider }),
+}));
 
 vi.mock("@/lib/admin-auth", () => ({
   requireAdminActor: async () => ({ userId: mocks.actorId, role: "admin" }),
@@ -110,6 +113,7 @@ describe("POST /api/admin/users", () => {
     mocks.actorId = "admin-1";
     mocks.administrators = new Set();
     mocks.signInProvider = { providerLabel: "Email link" };
+    mocks.pendingProvider = null;
   });
 
   it("adds the solo owner's email in place without creating another account", async () => {
@@ -182,6 +186,15 @@ describe("POST /api/admin/users", () => {
     expect(mocks.updates).toHaveLength(0);
   });
 
+  it("claims the solo admin while the installed provider is pending", async () => {
+    mocks.signInProvider = null;
+    mocks.pendingProvider = { providerLabel: "Email link" };
+    mocks.selectResults = [[], [{ owner: "admin-1" }], [{ email: "local@solo.openneko.invalid", sub: null }]];
+    const res = await POST(postRequest({ email: "owner@company.com", role: "admin", updateSoloAccount: true }) as never);
+    expect(res.status).toBe(200);
+    expect(mocks.updates[0]).toMatchObject({ email: "owner@company.com" });
+  });
+
   it("rejects invalid emails and roles", async () => {
     expect(
       (await POST(postRequest({ email: "not-an-email", role: "member" }) as never))
@@ -204,6 +217,7 @@ describe("PATCH /api/admin/users/[userId]", () => {
     mocks.actorId = "admin-1";
     mocks.administrators = new Set();
     mocks.signInProvider = { providerLabel: "Email link" };
+    mocks.pendingProvider = null;
   });
 
   it("refuses to demote the last active admin", async () => {
