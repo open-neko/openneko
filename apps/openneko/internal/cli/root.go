@@ -128,6 +128,7 @@ Getting started: setup (guided install — preflight, bring-up, configure).
 Plugin ops: init, install, list, remove, marketplace, secrets, doctor.
 Solution packs: pack list, pack inspect, pack plan, pack install, pack status.
 Stack ops:  instances, start, upgrade, stop, logs, status, backup, restore, storage, migrate, seed, reset.
+GraphJin:   graphjin import.
 Developer ops: eval.`,
 		Version:       version.Version,
 		SilenceUsage:  true,
@@ -168,6 +169,7 @@ Developer ops: eval.`,
 		newLogsCmd(),
 		newMigrateCmd(),
 		newSeedCmd(),
+		newGraphjinCmd(),
 		newResetCmd(),
 		newEvalCmd(),
 	)
