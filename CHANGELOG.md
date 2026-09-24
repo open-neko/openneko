@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.3](https://github.com/open-neko/openneko/compare/v3.5.2...v3.5.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* **magento:** expose product text attributes to analytics ([#352](https://github.com/open-neko/openneko/issues/352)) ([4b6ba85](https://github.com/open-neko/openneko/commit/4b6ba851053f695ed0bcf833c9fc14e1a179de19))
+
 ## [3.5.2](https://github.com/open-neko/openneko/compare/v3.5.1...v3.5.2) (2026-09-23)
 
 
