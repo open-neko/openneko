@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.5.6](https://github.com/open-neko/openneko/compare/v3.5.5...v3.5.6) (2026-09-24)
+
+
+### Bug Fixes
+
+* **agent:** preserve Hermes MCP tool output in ACP ([23ac3bd](https://github.com/open-neko/openneko/commit/23ac3bd610dea7b90492bbed84af629a6768d39e))
+* **agent:** show MCP results and GraphJin API sources ([4855bef](https://github.com/open-neko/openneko/commit/4855bef9a0b674ce622624f032a1682f0527510f))
+* **llm:** include GraphJin API operations in knowledge pack ([46c7f54](https://github.com/open-neko/openneko/commit/46c7f549c7722a5ea1d7c2a076324c67099b7175))
+* **llm:** retry Hermes truncation after discovery tools ([bea979f](https://github.com/open-neko/openneko/commit/bea979fa5255df9f3d1533d7426b667117a0dd27))
+
 ## [3.5.5](https://github.com/open-neko/openneko/compare/v3.5.4...v3.5.5) (2026-09-24)
 
 
