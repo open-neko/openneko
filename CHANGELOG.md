@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.5](https://github.com/open-neko/openneko/compare/v3.5.4...v3.5.5) (2026-09-24)
+
+
+### Bug Fixes
+
+* bootstrap admin email with pending sign-in provider ([#356](https://github.com/open-neko/openneko/issues/356)) ([3607a55](https://github.com/open-neko/openneko/commit/3607a55c152e4a34bba8c978eb99b509f40deaa5))
+
 ## [3.5.4](https://github.com/open-neko/openneko/compare/v3.5.3...v3.5.4) (2026-09-24)
 
 
