@@ -74,6 +74,7 @@ func (t Tools) admitted() ([]admittedTool, error) {
 			return json.Marshal(receipt)
 		}})
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	seen := map[string]bool{}
 	admitted := make([]admittedTool, 0, len(list))
 	for _, cap := range list {

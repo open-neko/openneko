@@ -22,6 +22,12 @@ M5b and full M5c acceptance need the feature worker, harness image and matching
 OpenShell gateway; demo health alone does not qualify them.
 Hermes remains the default until rollout.
 
+The isolated v3.5.6 M3/M4 consumer suite passed serially with the demo stopped:
+20 product tests, the approval, worker-death and approval-restart queue checks,
+and the pinned OpenShell 0.0.116 transport suite. The accepted upstream idle
+cancellation warning remains; sandbox teardown passed. The suite left no test
+containers or networks running under Docker's 4.87 GiB limit.
+
 ## Discovery that changes the plan
 
 OpenNeko does not supply one fixed Hermes prompt. `buildWorkPrompt` assembles
@@ -118,6 +124,8 @@ result validation. Each admitted entry binds a stable identity, schema/version,
 trusted origin, eligibility, limits, effect classification and recovery policy.
 MCP annotations and descriptions are untrusted hints, not permission decisions.
 Unknown tools are not presumed read-only, concurrent-safe or retryable.
+The admitted catalog is sorted by tool name before binding to Ax, so the same
+run scope and capability set produce deterministic tool order.
 
 The OpenNeko adapter derives prompt sections and tool bindings from the same
 admitted catalog. Retain consumer-neutral core types and static adapters; no
@@ -143,6 +151,17 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 design and deterministic fixture work can be prepared without one, but the real
 script → authorized GraphJin → file → browser acceptance below cannot be claimed
 from a simulated endpoint.
+
+The current Harness broker profiles admit only the dedicated lookup/proposal
+routes. Before advertising MCP reads, qualify each broker path for that profile
+with bound actor/run identity and the existing operation journal. A working stdio
+connection alone does not authorize or make those tools available.
+
+The Go MCP SDK now has an opt-in integration check against the real OpenNeko
+multiplexed stdio bridge (`OPENNEKO_TEST_SOURCE=... go test ./integration/m5b`).
+With a synthetic broker and a read-only memory server, it verifies discovery,
+one scoped search call, and child-process exit on close. This is transport and
+lifecycle evidence only; the product Harness backend still has no MCP admission.
 
 **Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
 its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or
