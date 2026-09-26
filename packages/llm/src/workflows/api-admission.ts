@@ -27,6 +27,7 @@ import {
   type WorkflowApiExecutionMode,
   type WorkflowApiLimits,
 } from "./api-contract";
+import { activeBatchExecutor } from "./batch-executor-registry";
 import {
   verifyWorkflowApiAccessToken,
   type VerifiedWorkflowApiAccess,
@@ -633,9 +634,18 @@ export async function admitWorkflowApiRun(input: {
       if (rawExecutorContract !== undefined && !executorContract) {
         throw new WorkflowApiError("invalid_executor_contract", "The workflow query-to-file contract is invalid.", 422);
       }
-      if (executorContract && process.env.HARNESS_BATCH_WORKFLOW_ID !== access.workflow_id) {
+      let selectedExecutor;
+      try {
+        selectedExecutor = executorContract ? activeBatchExecutor(access.workflow_id) : null;
+      } catch {
+        throw new WorkflowApiError("executor_unavailable", "The workflow query-to-file executor is unavailable.", 503);
+      }
+      if (executorContract && !selectedExecutor) {
         throw new WorkflowApiError("executor_unavailable", "The workflow query-to-file executor is not configured.", 422);
       }
+      const pinnedExecutorContract = executorContract && selectedExecutor
+        ? { ...executorContract, binding: { revision: selectedExecutor.revision,
+            fingerprint: selectedExecutor.fingerprint } } : null;
       const targetDay = executorContract ? validateQueryToFileInput(validation.input) : null;
       const executorOwnerId = executorContract ? access.owner_user_id || null : null;
       if (executorOwnerId) {
@@ -722,7 +732,7 @@ export async function admitWorkflowApiRun(input: {
           JSON.stringify(progress),
           now,
           expiresAt,
-          executorContract ? JSON.stringify(executorContract) : null,
+          pinnedExecutorContract ? JSON.stringify(pinnedExecutorContract) : null,
         ],
       );
       await client.query(

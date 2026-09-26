@@ -1,4 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pool } from "@neko/db";
 import { withTestOrg, dbReachable } from "@neko/db/test-helpers";
 import {
@@ -164,8 +167,17 @@ describeIfDb("workflow store", () => {
       });
       const contract = { version: 1, executor: "query-to-file", artifactName: "leads.csv", columns: ["lead_id"] };
       await pool().query("update workflow_definition set output_contract=$2::jsonb where id=$1", [workflow.id, JSON.stringify({ harnessBatch: contract })]);
-      const priorExecutor = process.env.HARNESS_BATCH_WORKFLOW_ID;
-      process.env.HARNESS_BATCH_WORKFLOW_ID = workflow.id;
+      const registryDir = await mkdtemp(join(tmpdir(), "neko-batch-registry-"));
+      const priorExecutor = process.env.HARNESS_BATCH_EXECUTOR_REGISTRY;
+      process.env.HARNESS_BATCH_EXECUTOR_REGISTRY = join(registryDir, "registry.json");
+      const registryEntry = {
+        workflowId: workflow.id, revision: "fixture-v1", active: true,
+        binary: "/tmp/batch", binarySha256: "0".repeat(64),
+        openshellBin: "/tmp/openshell", openshellSha256: "0".repeat(64),
+        gateway: "fixture", image: "fixture", script: "/tmp/run.py",
+        scriptSha256: "0".repeat(64), bundleDir: "/tmp/bundle", bundleSha256: "0".repeat(64),
+      };
+      await writeFile(process.env.HARNESS_BATCH_EXECUTOR_REGISTRY, JSON.stringify({ version: 1, executors: [registryEntry] }));
       try {
         const { token } = await enableWorkflowApiAccess({ orgId, workflowId: workflow.id, actor: { userId: null, role: "admin" } });
         const input = { workflowId: workflow.id, token, idempotencyKey: "query-to-file-snapshot", mode: "single" as const,
@@ -175,14 +187,18 @@ describeIfDb("workflow store", () => {
           admission.reserved_tokens, admission.request_payload
           from workflow_run run join work_run work on work.id=run.work_run_id
           join workflow_api_admission admission on admission.workflow_run_id=run.id where run.id=$1`, [admitted.runId]);
-        expect(linked.rows[0]).toMatchObject({ backend: "harness", executor_contract: contract,
+        expect(linked.rows[0]).toMatchObject({ backend: "harness", executor_contract: {
+          ...contract, binding: { revision: "fixture-v1", fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/) } },
           trigger_payload: { targetDay: "2026-09-15" }, reserved_tokens: 0,
           request_payload: { targetDay: "2026-09-15" } });
+        await writeFile(process.env.HARNESS_BATCH_EXECUTOR_REGISTRY!, JSON.stringify({ version: 1, executors: [
+          { ...registryEntry, active: false }, { ...registryEntry, revision: "fixture-v2", active: true },
+        ] }));
         await pool().query("update workflow_definition set output_contract=$2::jsonb where id=$1", [workflow.id,
           JSON.stringify({ harnessBatch: { ...contract, artifactName: "later.csv" } })]);
         expect(await admitWorkflowApiRun(input)).toMatchObject({ runId: admitted.runId, replay: true });
         const after = await pool().query("select executor_contract from workflow_run where id=$1", [admitted.runId]);
-        expect(after.rows[0].executor_contract).toEqual(contract);
+        expect(after.rows[0].executor_contract).toEqual(linked.rows[0].executor_contract);
         const [firstLease] = await leasePendingWorkflowApiAdmissions();
         await pool().query("update workflow_api_admission set status='running',lease_until=now()-interval '1 second' where id=$1", [firstLease.id]);
         await pool().query("update workflow_run set status='running' where id=$1", [admitted.runId]);
@@ -197,8 +213,9 @@ describeIfDb("workflow store", () => {
         expect(await claimWorkflowApiAdmission({ ...claimInput, attempt: firstLease.attempts })).toEqual({ action: "duplicate" });
         expect(await claimWorkflowApiAdmission({ ...claimInput, attempt: secondLease.attempts })).toMatchObject({ action: "claimed", attempt: secondLease.attempts });
       } finally {
-        if (priorExecutor === undefined) delete process.env.HARNESS_BATCH_WORKFLOW_ID;
-        else process.env.HARNESS_BATCH_WORKFLOW_ID = priorExecutor;
+        if (priorExecutor === undefined) delete process.env.HARNESS_BATCH_EXECUTOR_REGISTRY;
+        else process.env.HARNESS_BATCH_EXECUTOR_REGISTRY = priorExecutor;
+        await rm(registryDir, { recursive: true, force: true });
       }
     });
   });

@@ -1,33 +1,17 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, lstat, readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { pool } from "@neko/db";
 import type { HarnessBatchPayload } from "@neko/db/jobs";
 import { ensureAgentBroker, ensureWorkWorkspace, getWorkRun, runEntitlementActor, runHeldItemIds } from "@neko/llm/work";
-import { parseQueryToFileContract } from "@neko/llm/workflows";
+import { parsePinnedQueryToFileContract, pinnedBatchExecutor } from "@neko/llm/workflows";
 
 const execFileAsync = promisify(execFile);
 
 type BatchReceipt = { artifact: string; sha256: string; rows: number; queries: number };
 type BatchResult = { rows: number; queries: number; artifactBytes: number };
-
-function batchConfig() {
-  const vars = [
-    "OPENNEKO_HARNESS_BATCH_BIN", "HARNESS_OPENSHELL_BIN", "OPENSHELL_GATEWAY",
-    "HARNESS_BATCH_IMAGE", "HARNESS_BATCH_SCRIPT", "HARNESS_BATCH_SCRIPT_SHA256",
-    "HARNESS_BATCH_BUNDLE_DIR", "HARNESS_BATCH_BUNDLE_SHA256", "HARNESS_BATCH_WORKFLOW_ID",
-  ] as const;
-  const values = Object.fromEntries(vars.map((name) => [name, process.env[name] ?? ""]));
-  if (vars.some((name) => !values[name]) || !isAbsolute(values.OPENNEKO_HARNESS_BATCH_BIN) ||
-      !isAbsolute(values.HARNESS_OPENSHELL_BIN) || !isAbsolute(values.HARNESS_BATCH_SCRIPT) ||
-      !isAbsolute(values.HARNESS_BATCH_BUNDLE_DIR) ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.HARNESS_BATCH_WORKFLOW_ID)) {
-    throw new Error("Harness batch worker is not configured");
-  }
-  return values;
-}
 
 /** A pg-boss retry may enter here after SIGKILL. The database lock fences hosts;
  * the Go runner then removes only a sandbox carrying this exact run label. */
@@ -37,7 +21,6 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<Bat
       !/^[0-9a-f-]{36}$/i.test(payload.workflowRunId)) {
     throw new Error("Invalid Harness batch job identity");
   }
-  const config = batchConfig();
   const client = await pool().connect();
   const lockKey = JSON.stringify(["harness-batch", payload.orgId, payload.runId]);
   let locked = false;
@@ -68,12 +51,12 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<Bat
       WHERE wr.org_id=$1 AND wr.id=$2 AND wr.work_run_id=$3 AND wr.thread_id=$4`,
       [payload.orgId, payload.workflowRunId, payload.runId, payload.threadId]);
     const workflow = binding.rows[0];
-    const executor = parseQueryToFileContract(workflow?.executor_contract);
+    const executor = parsePinnedQueryToFileContract(workflow?.executor_contract);
+    const config = executor && workflow ? pinnedBatchExecutor(workflow.workflow_id, executor.binding) : null;
     const columns = executor?.columns;
     const artifactName = executor?.artifactName;
     if (!workflow || !workflow.enabled || workflow.definition_status !== "active" ||
-        workflow.workflow_id !== config.HARNESS_BATCH_WORKFLOW_ID ||
-        !executor || !columns || !artifactName ||
+        !executor || !config || !columns || !artifactName ||
         (workflow.trigger_kind === "api" &&
           (workflow.api_status !== "running" || workflow.api_attempt !== payload.apiAttempt)) ||
         !["running", "completed"].includes(workflow.workflow_status) ||
@@ -97,6 +80,10 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<Bat
     if (allowedWorkflows && !allowedWorkflows.includes(workflow.workflow_id) &&
         workflow.owner_user_id !== run.actor_user_id) {
       throw new Error("Harness batch workflow is not granted to this actor");
+    }
+    if (createHash("sha256").update(await readFile(config.binary)).digest("hex") !== config.binarySha256 ||
+        createHash("sha256").update(await readFile(config.openshellBin)).digest("hex") !== config.openshellSha256) {
+      throw new Error("Harness batch executor binary changed");
     }
     const workspace = await ensureWorkWorkspace(payload.orgId, payload.threadId, payload.runId);
     const artifact = join(workspace.artifactRoot, artifactName);
@@ -147,12 +134,17 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<Bat
     }, 2_000);
     poll.unref();
     try {
-      const { stdout } = await execFileAsync(config.OPENNEKO_HARNESS_BATCH_BIN, [workflow.trigger_payload.targetDay], {
+      const { stdout } = await execFileAsync(config.binary, [workflow.trigger_payload.targetDay], {
         timeout: Math.min(22 * 60_000, (payload.maxRuntimeSeconds ?? 22 * 60) * 1_000), maxBuffer: 16 * 1024, signal: abort.signal,
         env: {
           PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "",
           ...(process.env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME } : {}),
-          ...config, HARNESS_BATCH_RUN_ID: payload.runId,
+          HARNESS_OPENSHELL_BIN: config.openshellBin, OPENSHELL_GATEWAY: config.gateway,
+          HARNESS_BATCH_IMAGE: config.image, HARNESS_BATCH_SCRIPT: config.script,
+          HARNESS_BATCH_SCRIPT_SHA256: config.scriptSha256,
+          HARNESS_BATCH_BUNDLE_DIR: config.bundleDir,
+          HARNESS_BATCH_BUNDLE_SHA256: config.bundleSha256,
+          HARNESS_BATCH_RUN_ID: payload.runId,
           HARNESS_BATCH_COLUMNS_JSON: JSON.stringify(columns),
           HARNESS_BATCH_ARTIFACT_NAME: artifactName,
           HARNESS_BATCH_WORK_DIR: workDir, HARNESS_BATCH_ARTIFACT_DIR: workspace.artifactRoot,

@@ -1072,7 +1072,7 @@ for (let i = 0; i < concurrency.globalCap; i++) {
   );
 }
 
-if (process.env.OPENNEKO_HARNESS_BATCH_BIN) {
+if (process.env.HARNESS_BATCH_EXECUTOR_REGISTRY) {
   await b.work(
     QUEUE.HARNESS_BATCH,
     { batchSize: 1, pollingIntervalSeconds: 0.5 },

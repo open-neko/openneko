@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db, eq, organization, work_run, work_run_event, work_thread, workflow_definition, workflow_run } from "@neko/db";
 import { deleteTestOrg } from "@neko/db/test-helpers";
 import { ensureWorkWorkspace, shutdownAgentBroker } from "@neko/llm/work";
 import { admitWorkflowApiRun, enableWorkflowApiAccess, getWorkflowApiRunStatus,
-  leasePendingWorkflowApiAdmissions, markWorkflowApiAdmissionEnqueued } from "@neko/llm/workflows";
+  leasePendingWorkflowApiAdmissions, markWorkflowApiAdmissionEnqueued, activeBatchExecutor } from "@neko/llm/workflows";
 import { expect, it } from "vitest";
 import { runHarnessBatch } from "../../src/jobs/harness-batch";
 import { runWorkflowRunFire } from "../../src/jobs/workflow-run-fire";
@@ -20,9 +20,7 @@ live("publishes one host-owned batch artifact without provider credentials", asy
   const threadId = randomUUID();
   const runId = randomUUID();
   const root = join(process.env.HARNESS_STATE, "batch-worker", runId);
-  const envNames = ["OPENNEKO_AGENT_HOME", "OPENNEKO_HARNESS_BATCH_BIN", "HARNESS_OPENSHELL_BIN", "OPENSHELL_GATEWAY",
-    "HARNESS_BATCH_IMAGE", "HARNESS_BATCH_SCRIPT", "HARNESS_BATCH_SCRIPT_SHA256", "HARNESS_BATCH_BUNDLE_DIR",
-    "HARNESS_BATCH_BUNDLE_SHA256", "HARNESS_BATCH_WORKFLOW_ID", "MODEL_API_KEY"] as const;
+  const envNames = ["OPENNEKO_AGENT_HOME", "HARNESS_BATCH_EXECUTOR_REGISTRY", "MODEL_API_KEY"] as const;
   const prior = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
   await mkdir(root, { recursive: true });
   const fake = join(root, "batch-fixture");
@@ -38,10 +36,7 @@ process.stdout.write(JSON.stringify({artifact,sha256:crypto.createHash('sha256')
 `);
   await chmod(fake, 0o700);
   Object.assign(process.env, {
-    OPENNEKO_AGENT_HOME: join(process.env.HARNESS_STATE, "agent"), OPENNEKO_HARNESS_BATCH_BIN: fake,
-    HARNESS_OPENSHELL_BIN: fake, OPENSHELL_GATEWAY: "fixture", HARNESS_BATCH_IMAGE: "fixture",
-    HARNESS_BATCH_SCRIPT: fake, HARNESS_BATCH_SCRIPT_SHA256: "fixture",
-    HARNESS_BATCH_BUNDLE_DIR: root, HARNESS_BATCH_BUNDLE_SHA256: "fixture", MODEL_API_KEY: "host-only-secret",
+    OPENNEKO_AGENT_HOME: join(process.env.HARNESS_STATE, "agent"), MODEL_API_KEY: "host-only-secret",
   });
   await db().insert(organization).values({ id: orgId, name: "Harness batch acceptance" });
   await db().insert(work_thread).values({ id: threadId, org_id: orgId, title: "Batch" });
@@ -50,10 +45,20 @@ process.stdout.write(JSON.stringify({artifact,sha256:crypto.createHash('sha256')
   const [workflow] = await db().insert(workflow_definition).values({ id: process.env.HARNESS_M3_WORKFLOW_ID ?? randomUUID(),
     org_id: orgId, name: "Fixture batch workflow",
     output_contract: { harnessBatch: contract } }).returning({ id: workflow_definition.id });
-  process.env.HARNESS_BATCH_WORKFLOW_ID = workflow.id;
+  const binarySha256 = createHash("sha256").update(await readFile(fake)).digest("hex");
+  process.env.HARNESS_BATCH_EXECUTOR_REGISTRY = join(root, "registry.json");
+  const registryEntry = {
+    workflowId: workflow.id, revision: "fixture-v1", active: true,
+    binary: fake, binarySha256, openshellBin: fake, openshellSha256: binarySha256,
+    gateway: "fixture", image: "fixture", script: fake, scriptSha256: binarySha256,
+    bundleDir: root, bundleSha256: binarySha256,
+  };
+  await writeFile(process.env.HARNESS_BATCH_EXECUTOR_REGISTRY, JSON.stringify({ version: 1, executors: [registryEntry] }));
+  const selected = activeBatchExecutor(workflow.id)!;
+  const pinnedContract = { ...contract, binding: { revision: selected.revision, fingerprint: selected.fingerprint } };
   const [workflowRun] = await db().insert(workflow_run).values({ org_id: orgId, workflow_id: workflow.id,
     thread_id: threadId, work_run_id: runId, trigger_kind: "manual", trigger_payload: { targetDay: "2026-09-15" },
-    executor_contract: contract, status: "running" }).returning({ id: workflow_run.id });
+    executor_contract: pinnedContract, status: "running" }).returning({ id: workflow_run.id });
   try {
     const payload = { orgId, threadId, runId, workflowRunId: workflowRun.id };
     await db().update(workflow_definition).set({ enabled: false }).where(eq(workflow_definition.id, workflow.id));
@@ -87,6 +92,9 @@ process.stdout.write(JSON.stringify({artifact,sha256:crypto.createHash('sha256')
     const [leased] = await leasePendingWorkflowApiAdmissions();
     expect(leased.workflowRunId).toBe(admitted.runId);
     await markWorkflowApiAdmissionEnqueued(leased.id, randomUUID());
+    await writeFile(process.env.HARNESS_BATCH_EXECUTOR_REGISTRY!, JSON.stringify({ version: 1, executors: [
+      { ...registryEntry, active: false }, { ...registryEntry, revision: "fixture-v2", active: true },
+    ] }));
     await db().update(workflow_definition).set({ name: "Edited after API admission",
       output_contract: { harnessBatch: { ...contract, artifactName: "changed.csv", columns: ["changed"] } } })
       .where(eq(workflow_definition.id, workflow.id));
