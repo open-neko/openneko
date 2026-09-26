@@ -1,4 +1,7 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createAdminHandler } from "../src/admin-server";
 import { runActionExecute } from "../src/jobs/action-execute";
 import { registerActionAdapter, createActionRequest } from "@neko/llm/workflows";
@@ -9,7 +12,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { db, pool, getOrgId, organization, customer_profile, data_source, llm_provider_config, processing_job, pack_action_definition, action_policy, eq } from '@neko/db';
 import { boss, enqueue, QUEUE, type WorkRunPayload } from '@neko/db/jobs';
-import { createWorkThread, createWorkRun, createWorkMessage, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
+import { createWorkThread, createWorkRun, createWorkMessage, ensureWorkWorkspace, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
 import { runWorkRun } from '../src/jobs/work-run.js';
 import { extractActionRequestFences, extractWorkflowSaveFence, extractRuleSaveFence } from '../../../packages/llm/src/workflows/fence-parsers';
 import { extractMemoryFences } from '../../../packages/llm/src/agent-backends/memory-fence';
@@ -119,6 +122,28 @@ assert.deepEqual(await effectCounts(),beforeEffects,'replayed answers must not e
 assert.deepEqual((await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows,operations);
 assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role='assistant'",[orgId,run.id])).rows[0].n,1);
 console.log('M4_QUEUE_REDELIVERY_PASS',run.id);
+// A staged upload must reach the Go harness through the production queue and
+// OpenShell sandbox, while another thread's upload remains invisible.
+const uploadThread=await createWorkThread(orgId,'M5 staged upload');
+const uploadRun=await createWorkRun(orgId,uploadThread.id,'harness',{userId:null,role:'service'});
+const uploadWorkspace=await ensureWorkWorkspace(orgId,uploadThread.id,uploadRun.id);
+await writeFile(join(uploadWorkspace.threadUploadsRoot,'lead.csv'),'lead_id\nLEAD-42\n');
+await mkdir(join(uploadWorkspace.uploadsRoot,'other-thread'),{recursive:true});
+await writeFile(join(uploadWorkspace.uploadsRoot,'other-thread','hidden.txt'),'OTHER-SECRET');
+const uploadControl=await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({upload:true})});
+assert.equal(uploadControl.status,204);
+const [uploadJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-upload'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:uploadJob.id,orgId,runId:uploadRun.id,threadId:uploadThread.id,message:'Read the uploaded lead file.'},{retryLimit:0});
+await waitForJob(uploadJob.id,uploadRun.id);
+const uploadResult=(await pool().query('SELECT result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2',[orgId,uploadRun.id])).rows[0].result;
+assert.match(uploadResult.finalText,/LEAD-42/);
+const uploadSnapshot=JSON.parse(await readFile(join(uploadWorkspace.runRoot,'.harness',`${createHash('sha256').update(uploadRun.id).digest('hex')}.json`),'utf8'));
+assert.deepEqual(uploadSnapshot.operations.map((op:{tool:string})=>op.tool),['upload_search','upload_search','upload_read']);
+assert.deepEqual(uploadSnapshot.operations[0].result.paths,[]);
+assert.deepEqual(uploadSnapshot.operations[1].result.paths,['lead.csv']);
+assert.match(uploadSnapshot.operations[2].result.content,/LEAD-42/);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,uploadRun.id])).rows[0].n,0);
+console.log('M5_QUEUE_UPLOAD_PASS',uploadRun.id);
 // Exercise the production queue handler and worker-owned proposal preflight API.
 const approvalKind='harness_effect_fixture';
 const beforeExecutions=(await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n;
