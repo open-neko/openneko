@@ -214,6 +214,47 @@ func TestUploadCapabilitiesAreReadOnly(t *testing.T) {
 	}
 }
 
+func TestUploadReadsUseAxJournal(t *testing.T) {
+	uploads := t.TempDir()
+	if err := os.WriteFile(filepath.Join(uploads, "invoice.txt"), []byte("Invoice approved"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(uploads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	answers := []string{
+		`{"javascriptCode":"final('Find the invoice',{})"}`,
+		`{"javascriptCode":"const matches=upload_search({query:'invoice'}); const file=upload_read({path:matches.paths[0]}); final('Found the invoice',{matches,file});"}`,
+		`{"answer":"Invoice approved"}`,
+	}
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls >= len(answers) {
+			t.Errorf("unexpected model call")
+			http.Error(w, "unexpected", 400)
+			return
+		}
+		response := answers[calls]
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", response), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	spec := agent.Spec{Version: 1, RunID: "upload", InputID: "input", Prompt: "Read the uploaded invoice"}
+	state := t.TempDir()
+	result, err := session.RunWithTools(context.Background(), state, spec, client, agent.Tools{Capabilities: f.UploadCapabilities(), Scope: uploads}, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || result.Answer != "Invoice approved" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	recovery, err := session.Inspect(state, spec)
+	if err != nil || len(recovery.Operations) != 2 || recovery.Operations[0].Tool != "upload_search" || recovery.Operations[1].Tool != "upload_read" {
+		t.Fatalf("recovery=%+v err=%v", recovery, err)
+	}
+}
+
 func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
