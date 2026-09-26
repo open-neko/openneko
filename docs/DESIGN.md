@@ -299,6 +299,20 @@ Every candidate route must satisfy capability, tenant policy, data residency and
 
 Budget model attempts, tokens/cost, actor steps, tool operations, wall time and child work. Use reservations/admission controls and reconciliation for hard limits. Unknown usage is not zero. Do not independently retry at every layer and multiply attempts accidentally.
 
+For variable task size, evaluate a Jev-style Ax Go decision at admission: classify
+an approved, bounded task summary and trusted metadata into a few workload tiers
+(short answer, multi-step investigation, artifact/data pipeline, uncertain).
+Map the class to an initial budget profile for model calls, tool operations,
+tokens/cost and wall time. The pinned Ax Go package already exposes
+[`Typesafe(...).SystemOne`](https://axllm.dev/go/skills/ax-go-typesafe/) for
+typed choices and probabilities; no generative planning pass is needed for this
+decision. The trusted host sets the run-wide ceiling and eligibility first.
+Classification may allocate within that ceiling, never raise it or grant tools.
+Low confidence, missing classifier service or disallowed data transfer uses the
+existing fixed host default. At durable checkpoints, the host may extend the
+initial allocation within the same ceiling using observed progress; it records
+the reason and remaining budget so restart cannot reset or multiply it.
+
 ## 8. Telemetry contract
 
 Telemetry is a required part of each capability's acceptance criteria. Own a neutral observation and usage schema in the harness. Export through OpenTelemetry and map to OpenNeko's `HarnessObservation` and `NormalizedUsage` only in its adapter, with conformance fixtures. No product telemetry package is a core dependency.
@@ -321,6 +335,7 @@ Operational telemetry is content-free by default. Do not export prompts, raw rea
 | Context/distiller | Input size, evidence size, pressure, compaction/checkpoint events | Are we losing intent or wasting context? |
 | Model attempts | Stage, logical profile, actual model/provider, first chunk, duration, usage, validation/correction count | Which models and prompts work best? |
 | Routing | Candidate/selected routes, fallback category, cost/deadline scores | Does routing improve outcomes under constraints? |
+| Budget triage | Classifier/version, class, confidence band, chosen profile, latency, allocation changes and exhaustion | Does dynamic allocation improve verified completion per unit cost without premature cutoffs? |
 | Actor runtime | Step count, duration, errors, repeated operations, snapshot completeness | Is the agent looping or losing working state? |
 | Tools | Stable identity/schema, native/MCP/direct transport, validation, policy, approval wait, dispatch, outcome, payload sizes | Are tools understandable and reliable? |
 | GraphJin | Remote status, latency, trace link, usage coverage, clarification/refusal category | Is data delegation effective? |

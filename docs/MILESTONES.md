@@ -367,6 +367,19 @@ Reserve budget before each new model or remote call. Check observed usage on eve
 event, but do not rely on a provider's final cumulative snapshot to halt a run;
 missing usage requires a conservative admission limit.
 
+Add a Jev-style budget triage experiment using Ax Go's existing Typesafe native
+decision client. At admission, classify an approved bounded task summary plus
+trusted signals (requested artifact, admitted tool families and input size) into
+short-answer, multi-step, artifact/data-pipeline or uncertain work. Map that
+result to a versioned initial budget profile inside the host's fixed hard cap.
+Record model/version, class, confidence, profile and classifier latency/cost; do
+not record task content in ordinary telemetry. The classification call has a
+short deadline and counts against the run's total cost ceiling. An unavailable
+or uncertain classifier uses the current fixed default. Reassess only at durable
+checkpoints when actual progress warrants more allocation; persist each extension and never
+reset spent budget on resume. The classifier does not choose permissions, broker
+grants or model/provider routes.
+
 Persist large observations with scoped retrievable references and bounded excerpts.
 Measure admitted-tool schema cost and selection errors. If they are material,
 add search/describe over the pinned run catalog while keeping frequent tools
@@ -383,6 +396,12 @@ approvals, user constraints, tool-result pairing and evidence after compaction.
 References survive restart and reject another tenant. Retry/compaction loops hit
 ceilings; unavailable usage cannot authorize unlimited work. Measure cost per
 successful task, cache traffic, repeated-output bytes and retrieval/compaction cost.
+First run budget triage in shadow mode on held-out short, investigation and
+Daily Lead-style artifact tasks. Compare premature budget failures, verified
+completion, tokens/cost and latency against the fixed default; include misleading
+short prompts, classifier failure, low confidence and restart/extension cases.
+Enable dynamic allocation only if it improves cost per verified success without
+materially increasing false-low failures; retain a fixed-budget fallback.
 
 **Exit:** routing, budgets and context preservation pass; optimizations require
 held-out quality evidence, not token savings alone.
