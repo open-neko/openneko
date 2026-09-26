@@ -1704,6 +1704,7 @@ export const workflow_run = pgTable(
     trigger_payload: jsonb("trigger_payload")
       .notNull()
       .default(sql`'{}'::jsonb`),
+    executor_contract: jsonb("executor_contract"),
     // Public API mode is typed run metadata, not something callers can hide
     // inside trigger_payload. Null retains the historical meaning for manual,
     // cron, subscription, and watcher runs.

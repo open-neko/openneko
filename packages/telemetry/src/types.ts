@@ -57,6 +57,7 @@ export type ObservationMeasurements = NormalizedUsage & {
   processedRows?: number;
   finalRows?: number;
   chunkCount?: number;
+  queryCount?: number;
   artifactBytes?: number;
 };
 

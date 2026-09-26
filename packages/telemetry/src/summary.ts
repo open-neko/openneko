@@ -41,6 +41,7 @@ export type HarnessRunSummary = {
     processedRows?: number;
     finalRows?: number;
     chunkCount?: number;
+    queryCount?: number;
     artifactBytes?: number;
   };
   usage: NormalizedUsage;
@@ -138,6 +139,7 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
         measurements.processedRows !== undefined ||
         measurements.finalRows !== undefined ||
         measurements.chunkCount !== undefined ||
+        measurements.queryCount !== undefined ||
         measurements.artifactBytes !== undefined
       ) {
         this.value.batch = {
@@ -153,6 +155,9 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
             : {}),
           ...(measurements.chunkCount !== undefined
             ? { chunkCount: measurements.chunkCount }
+            : {}),
+          ...(measurements.queryCount !== undefined
+            ? { queryCount: measurements.queryCount }
             : {}),
           ...(measurements.artifactBytes !== undefined
             ? { artifactBytes: measurements.artifactBytes }

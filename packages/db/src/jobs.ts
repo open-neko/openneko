@@ -81,6 +81,9 @@ export type HarnessBatchPayload = {
   threadId: string;
   runId: string;
   workflowRunId: string;
+  apiAttempt?: number;
+  maxRuntimeSeconds?: number;
+  maxArtifactBytes?: number;
 };
 
 /**

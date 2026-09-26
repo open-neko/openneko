@@ -43,6 +43,7 @@ import {
   createWorkerHarnessObserver,
   persistWorkflowRunTelemetry,
 } from "../telemetry.js";
+import { runHarnessBatch } from "./harness-batch.js";
 
 // Thrown when worker shutdown cuts a non-API headless run short, so pg-boss
 // can retry its existing scheduler/subscription delivery contract.
@@ -150,6 +151,7 @@ async function claimApiPayload(
     workflowRunId: payload.workflowRunId,
     orgId: payload.orgId,
     workflowId: payload.workflowId,
+    attempt: payload.queueAttempt ?? -1,
   });
   if (claim.action === "deferred") {
     console.log(
@@ -182,6 +184,7 @@ async function emitRunTelemetry(input: {
     await persistWorkflowApiTelemetry({
       admissionId: input.apiClaim!.id,
       workflowRunId: input.prepared.workflowRun.id,
+      attempt: input.apiClaim!.attempt,
       summary,
     });
   } else {
@@ -280,6 +283,7 @@ async function runApiBatch(input: {
     admissionId: input.claim.id,
     workflowRunId: input.claim.workflowRunId,
     workRunId: input.claim.workRunId,
+    attempt: input.claim.attempt,
     status: "completed",
     summary: finalText,
     terminalResult: {
@@ -402,7 +406,28 @@ async function runWorkflowRunFireTraced(
       finalText: string;
       error?: string;
     };
-    if (apiClaim?.mode === "batch") {
+    if (apiClaim?.mode === "single" && prepared.workflowRun.executorContract?.executor === "query-to-file") {
+      const stageId = `${operationId}:query-to-file`;
+      await observeSafely(telemetry.observer, { kind: "stage.start", operationId: stageId,
+        parentOperationId: operationId, attributes: { "openneko.stage": "query_to_file" } });
+      const batch = await startupPhase("workflow.query_to_file", async () => runHarnessBatch({
+        orgId: payload.orgId,
+        threadId: prepared!.threadId,
+        runId: prepared!.workRunId,
+        workflowRunId: prepared!.workflowRun.id,
+        apiAttempt: apiClaim!.attempt,
+        maxRuntimeSeconds: apiClaim!.limits.maxRuntimeSeconds,
+        maxArtifactBytes: apiClaim!.limits.maxArtifactBytes,
+      }));
+      if (!batch) throw new Error("Claimed query-to-file run had already completed.");
+      await observeSafely(telemetry.observer, { kind: "stage.end", operationId: stageId,
+        parentOperationId: operationId, status: "ok", attributes: { "openneko.stage": "query_to_file" },
+        measurements: { finalRows: batch.rows, queryCount: batch.queries,
+          artifactBytes: batch.artifactBytes, coverage: "complete" } });
+      await observeSafely(telemetry.observer, { kind: "output.contract", operationId: `${stageId}:output`,
+        parentOperationId: stageId, status: "ok", attributes: { "openneko.output.kind": "csv" } });
+      result = { status: "completed", finalText: "Query-to-file workflow completed with a validated CSV artifact." };
+    } else if (apiClaim?.mode === "batch") {
       result = await startupPhase("workflow.batch", async () => runApiBatch({
         claim: apiClaim!,
         prepared: prepared!,
@@ -473,6 +498,7 @@ async function runWorkflowRunFireTraced(
           admissionId: apiClaim!.id,
           workflowRunId: apiClaim!.workflowRunId,
           workRunId: apiClaim!.workRunId,
+          attempt: apiClaim!.attempt,
           status: result.status,
           summary: result.finalText.slice(0, 4_000) || null,
           terminalResult: boundedWorkflowApiResult(
@@ -490,7 +516,7 @@ async function runWorkflowRunFireTraced(
     if (result.status === "cancelled" && !apiClaim) {
       throw new WorkflowRunInterrupted();
     }
-    if (apiClaim?.mode !== "batch") {
+    if (apiClaim?.mode !== "batch" && prepared.workflowRun.executorContract?.executor !== "query-to-file") {
       await observeSafely(telemetry.observer, {
         kind: "output.contract",
         operationId: `${operationId}:terminal-output`,
@@ -555,6 +581,7 @@ async function runWorkflowRunFireTraced(
         admissionId: apiClaim!.id,
         workflowRunId: apiClaim!.workflowRunId,
         workRunId: apiClaim!.workRunId,
+        attempt: apiClaim!.attempt,
         status: "failed",
         error:
           error instanceof Error

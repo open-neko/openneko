@@ -506,6 +506,7 @@ export type WorkflowRunRecord = {
   workRunId: string;
   triggerKind: "manual" | "cron" | "subscription" | "watcher" | "api";
   triggerPayload: Record<string, unknown>;
+  executorContract: Record<string, unknown> | null;
   executionMode: "single" | "batch" | null;
   triggerInputPreview: Record<string, unknown> | null;
   triggeredBySubscriptionId: string | null;
@@ -535,6 +536,7 @@ export type CreateWorkflowRunInput = {
   workRunId: string;
   triggerKind: "manual" | "cron" | "subscription" | "watcher" | "api";
   triggerPayload?: Record<string, unknown>;
+  executorContract?: Record<string, unknown> | null;
   executionMode?: "single" | "batch" | null;
   triggerInputPreview?: Record<string, unknown> | null;
   chainDepth?: number;
@@ -554,6 +556,7 @@ function toRunRecord(
     workRunId: row.work_run_id,
     triggerKind: row.trigger_kind as WorkflowRunRecord["triggerKind"],
     triggerPayload: (row.trigger_payload as Record<string, unknown>) ?? {},
+    executorContract: (row.executor_contract as Record<string, unknown> | null) ?? null,
     executionMode:
       row.execution_mode === "single" || row.execution_mode === "batch"
         ? row.execution_mode
@@ -602,6 +605,7 @@ export async function createWorkflowRun(
       work_run_id: input.workRunId,
       trigger_kind: input.triggerKind,
       trigger_payload: input.triggerPayload ?? {},
+      executor_contract: input.executorContract ?? null,
       execution_mode: input.executionMode ?? null,
       trigger_input_preview: input.triggerInputPreview ?? null,
       triggered_by_subscription_id: input.triggeredBySubscriptionId ?? null,
