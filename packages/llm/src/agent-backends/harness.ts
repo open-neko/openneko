@@ -33,7 +33,8 @@ export class HarnessBackend implements AgentBackend {
         const child = spawn(VENDORED_HARNESS_MODEL_BINARY, [], {
             env: { ...env, ...opts.mcpBridgeEnv, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
                 HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_ACTION_KINDS: env.OPENNEKO_HARNESS_ACTION_KINDS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness"),
-                OPENNEKO_HARNESS_UPLOADS_DIR: opts.workspace.threadUploadsRoot },
+                OPENNEKO_HARNESS_UPLOADS_DIR: opts.workspace.threadUploadsRoot,
+                OPENNEKO_HARNESS_WORKSPACE_DIR: opts.workspace.artifactRoot },
             stdio: ["pipe", "pipe", "ignore"],
         });
         let killTimer: ReturnType<typeof setTimeout> | undefined;

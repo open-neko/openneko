@@ -144,6 +144,27 @@ assert.deepEqual(uploadSnapshot.operations[1].result.paths,['lead.csv']);
 assert.match(uploadSnapshot.operations[2].result.content,/LEAD-42/);
 assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,uploadRun.id])).rows[0].n,0);
 console.log('M5_QUEUE_UPLOAD_PASS',uploadRun.id);
+// Only this run's artifact directory is writable by the Go file tools. The
+// existing Work artifact projection must expose the completed CSV once.
+const artifactThread=await createWorkThread(orgId,'M5 CSV artifact');
+const artifactRun=await createWorkRun(orgId,artifactThread.id,'harness',{userId:null,role:'service'});
+const artifactWorkspace=await ensureWorkWorkspace(orgId,artifactThread.id,artifactRun.id);
+const otherArtifacts=join(artifactWorkspace.runsRoot,'other-run','artifacts');
+await mkdir(otherArtifacts,{recursive:true});
+await writeFile(join(otherArtifacts,'hidden.txt'),'OTHER-RUN-SECRET');
+const artifactControl=await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({artifact:true})});
+assert.equal(artifactControl.status,204);
+const [artifactJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-artifact'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:artifactJob.id,orgId,runId:artifactRun.id,threadId:artifactThread.id,message:'Create a CSV artifact with the synthetic lead.'},{retryLimit:0});
+await waitForJob(artifactJob.id,artifactRun.id);
+assert.equal(await readFile(join(artifactWorkspace.artifactRoot,'result.csv'),'utf8'),'lead_id\nLEAD-42\n');
+const artifactEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,artifactRun.id])).rows;
+assert.deepEqual(artifactEvents.map(row=>row.payload.artifact.path),[`runs/${artifactRun.id}/artifacts/result.csv`]);
+const artifactSnapshot=JSON.parse(await readFile(join(artifactWorkspace.runRoot,'.harness',`${createHash('sha256').update(artifactRun.id).digest('hex')}.json`),'utf8'));
+assert.deepEqual(artifactSnapshot.operations.map((op:{tool:string})=>op.tool),['file_search','file_write']);
+assert.deepEqual(artifactSnapshot.operations[0].result.paths,[]);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,artifactRun.id])).rows[0].n,0);
+console.log('M5_QUEUE_ARTIFACT_PASS',artifactRun.id);
 // Exercise the production queue handler and worker-owned proposal preflight API.
 const approvalKind='harness_effect_fixture';
 const beforeExecutions=(await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n;
