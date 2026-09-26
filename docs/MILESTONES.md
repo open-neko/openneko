@@ -166,7 +166,7 @@ used a synthetic broker behind the real bridge and still need data-backed
 acceptance. Uploaded-document and browser search tasks, and the Daily Lead Union
 batch, still need connected acceptance.
 
-The controlled batch runner now consumes the ported skill's cache-miss
+The controlled query-to-file runner now consumes the pinned script's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query
 receipts, reruns the script without model turns per query, and publishes only a
 CSV whose header and row count match the compact summary. The OpenNeko broker
@@ -176,24 +176,39 @@ runs in a separate OpenShell 0.0.116 sandbox with no provider, network grant or
 broker token. An isolated live fixture verifies a cache miss, host-owned query,
 response upload, validated CSV, HTTP 403 on model egress, and sandbox deletion.
 Artifact publication is blocked if sandbox deletion fails.
+This executor is distinct from OpenNeko's existing compiled API batch, which
+projects admitted input records to CSV without querying GraphJin. Both belong
+to workflow definitions and produce `workflow_run` results; neither is a skill
+execution mode.
 Query responses now persist before their receipts; if a host dies in that gap,
 resume validates the saved response and repairs its receipt without dispatching
 the read again. A receipt without response still fails closed.
 With a trusted run ID, the runner also names and labels its OpenShell sandbox
 deterministically; a retry can remove an exact-match orphan but refuses to
 delete a mismatched owner. The host must hold database ownership before using
-this retry path. The worker queue and that owner lock are not wired yet.
+this retry path. The opt-in worker queue now binds a `workflow_run` and locks
+the database owner before execution; the isolated handler and real pg-boss
+queue fixtures use a fake runner and prove one artifact on duplicate delivery.
+A connected GraphJin/script run remains open.
 This is **not yet** an Ax tool
-or a worker/web acceptance: do not mint that grant in normal runs until the
-host-owned job, batch recovery and artifact projection are wired.
+or browser acceptance: do not mint that grant in normal runs until workflow
+admission, batch recovery and artifact projection are fully qualified.
 The 20-minute pipeline should run as a host-owned operation with progress and
 durable continuation, rather than blocking the current two-minute Ax callback.
-Reuse OpenNeko's pg-boss processing-job queue and Work artifact event contract;
-bind a dedicated batch run and its actor before minting `batchRead`. The worker
+Reuse OpenNeko's pg-boss queue, workflow-run and Work artifact contracts;
+bind a dedicated workflow run and its actor before minting `batchRead`. The worker
 restart reconciler must preserve a batch run with a retryable queue owner, while
 the host verifies sandbox teardown and CSV bytes before publishing the event.
-Skill files and scripts must not call LLMs directly. Harness/Ax alone owns model
-routing, budgets and telemetry; scripts exchange governed data requests and files.
+Batch contracts belong to workflow definitions, never skill entitlements. A
+workflow may use zero or more skills. Skill files and scripts must not call
+LLMs directly. Harness/Ax alone owns model routing, budgets and telemetry;
+scripts exchange governed data requests and files.
+The prototype pins one workflow name and script in trusted worker config.
+Before general admission, replace that binding with a versioned workflow
+executor registry and snapshot the selected contract at admission so edits
+cannot silently change a queued run. The dispatch outbox, pg-boss expiry for
+long executions, cancellation, and browser-visible workflow result remain
+part of that admission path.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal

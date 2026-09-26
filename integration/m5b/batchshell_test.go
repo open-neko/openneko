@@ -44,7 +44,7 @@ func TestOpenShellBatchCompartment(t *testing.T) {
 		t.Skip("set OPENSHELL_TEST_CLI and HARNESS_BATCH_TEST_GATEWAY for isolated OpenShell test")
 	}
 	root := t.TempDir()
-	bundle, work, artifacts := filepath.Join(root, "skill"), filepath.Join(root, "work"), filepath.Join(root, "artifacts")
+	bundle, work, artifacts := filepath.Join(root, "workflow-bundle"), filepath.Join(root, "work"), filepath.Join(root, "artifacts")
 	for _, dir := range []string{bundle, work, artifacts} {
 		if err := os.Mkdir(dir, 0700); err != nil {
 			t.Fatal(err)

@@ -165,7 +165,12 @@ revalidation before dispatch or recovery. Handle name collisions explicitly.
 OpenNeko's actual surface includes records, memory/library, skills, clarification,
 UI rendering, workflows/rules, plugin/pack actions and administrative tools, in
 addition to GraphJin. Workflow-specific output/action tools require a trusted
-workflow identity. File/terminal execution and native child agents are not MCP
+workflow identity. Batch runs are workflow executions: the definition owns the
+batch contract, `workflow_run` owns the trigger and result, and `work_run`
+owns the agent transcript and artifact. A workflow may use any number of skills
+or none. Skills provide instructions and files; they cannot invoke a model
+provider directly. Every model call must cross Harness/Ax routing, budget,
+policy and telemetry. File/terminal execution and native child agents are not MCP
 requirements. The [milestone capability inventory](MILESTONES.md#capability-coverage-to-deliver)
 is the scope of product qualification.
 

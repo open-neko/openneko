@@ -37,7 +37,7 @@ type Runner struct {
 var sha256Hex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 var runIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,128}$`)
 
-// New snapshots the entire trusted skill bundle before uploading it. A pinned
+// New snapshots the entire trusted workflow script bundle before uploading it. A pinned
 // top-level script hash alone cannot protect imported vendor code.
 func New(cfg batch.Config, opts Options) (*Runner, error) {
 	if !filepath.IsAbs(opts.CLI) || !filepath.IsAbs(opts.BundleRoot) || !filepath.IsAbs(cfg.Script) || !sha256Hex.MatchString(opts.BundleSHA256) ||
@@ -59,7 +59,7 @@ func New(cfg batch.Config, opts Options) (*Runner, error) {
 		os.RemoveAll(stage)
 		return nil, fmt.Errorf("batch bundle changed")
 	}
-	stagedScript, err := os.ReadFile(filepath.Join(stage, "skill", rel))
+	stagedScript, err := os.ReadFile(filepath.Join(stage, "bundle", rel))
 	if err != nil {
 		os.RemoveAll(stage)
 		return nil, fmt.Errorf("batch script missing from bundle")
@@ -98,7 +98,7 @@ func New(cfg batch.Config, opts Options) (*Runner, error) {
 		name = "hb-" + hex.EncodeToString(sum[:8])
 	}
 	return &Runner{opts: opts, workDir: cfg.WorkDir,
-		script: "/sandbox/batch/skill/" + filepath.ToSlash(rel),
+		script: "/sandbox/batch/bundle/" + filepath.ToSlash(rel),
 		name:   name, stage: stage, policy: policy}, nil
 }
 
@@ -125,7 +125,7 @@ func (r *Runner) Step(ctx context.Context, cfg batch.Config, output io.Writer) e
 		if err := r.call(ctx, nil, create...); err != nil {
 			return err
 		}
-		if err := r.call(ctx, nil, "sandbox", "upload", r.name, filepath.Join(r.stage, "skill"), "/sandbox/batch", "--no-git-ignore"); err != nil {
+		if err := r.call(ctx, nil, "sandbox", "upload", r.name, filepath.Join(r.stage, "bundle"), "/sandbox/batch", "--no-git-ignore"); err != nil {
 			return err
 		}
 		if err := r.call(ctx, nil, "sandbox", "exec", "-n", r.name, "--no-tty", "--",
@@ -241,7 +241,7 @@ func snapshot(root string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	dest := filepath.Join(stage, "skill")
+	dest := filepath.Join(stage, "bundle")
 	if err := os.Mkdir(dest, 0700); err != nil {
 		os.RemoveAll(stage)
 		return "", "", err

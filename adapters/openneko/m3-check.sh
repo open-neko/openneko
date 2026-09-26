@@ -29,6 +29,8 @@ export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-live.test.ts)
+(cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/harness-batch-live.test.ts)
+./integration/m5b/batch-check.sh
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-approval-sandbox-live.test.ts)
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-remote-cancel-live.test.ts)
 
@@ -38,6 +40,7 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
 "$cli" --gateway harness-m2 provider create --name harness-hermes --type harness-hermes --credential api_key=synthetic-m3
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/hermes-live.test.ts)
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/work-run-memory-fence.test.ts)
+(cd "$product" && pnpm --filter @neko/worker exec vitest run test/reconciler.test.ts)
 
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"

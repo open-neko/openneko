@@ -1,5 +1,5 @@
-// harness-batch runs the admitted Daily Lead Union script outside the model
-// transcript. The trusted launcher provides the pinned script and workspace.
+// harness-batch runs a pinned workflow script outside the model transcript.
+// The trusted launcher provides the script bundle and workspace.
 package main
 
 import (

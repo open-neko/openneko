@@ -15,16 +15,21 @@ It takes one UTC day argument and trusted `HARNESS_BATCH_SCRIPT`,
 and `OPENSHELL_GATEWAY` bindings. A trusted worker may also set
 `HARNESS_BATCH_RUN_ID` after acquiring database ownership for that Work run;
 this gives its sandbox a stable name and lets a retry remove only a stranded
-sandbox carrying the same run label. The whole skill bundle, including imports, is
+sandbox carrying the same run label. The whole script bundle, including imports, is
 pinned. The script runs in a separate OpenShell sandbox without a provider,
 broker token, or network grant. Its only data channel is the query-cache file
 handoff; the host owns `batchRead` GraphJin calls, receipts and artifact
-validation. Skill files and scripts must never call a model provider directly:
+validation. This executor must be bound to a workflow definition and
+`workflow_run`; its eligibility does not depend on skill grants. Skill files
+and scripts must never call a model provider directly:
 model routing, budgets and telemetry belong to Harness/Ax. The isolated fixture
-passes with OpenShell 0.0.116. This binary is not installed in the product image
-or exposed to the model yet; the host-owned job/continuation and connected
-artifact gate in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
-must be completed first.
+passes with OpenShell 0.0.116. An opt-in OpenNeko worker job is configured with
+`OPENNEKO_HARNESS_BATCH_BIN` and `HARNESS_BATCH_WORKFLOW_NAME`; it verifies the
+linked workflow definition, `workflow_run`, actor and pinned script before
+publishing the artifact. This binary is not installed in the product image or
+exposed to the model yet; general workflow admission and connected artifact
+acceptance in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
+remain open.
 
 The Harness MCP adapter admits pinned memory/library reads and the records
 catalog/find/get subset through OpenNeko's trusted stdio bridge. Records-only
