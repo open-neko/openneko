@@ -1,0 +1,1 @@
+Apple Pay broke at 2:14am. OpenNeko caught it, traced it to the deploy, and drafted the rollback — then waited for you to approve it over coffee. Self-hosted, any LLM, Apache-2.0: the intelligence is rented, the decisions are yours. openneko.app

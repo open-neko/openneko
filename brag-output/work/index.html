@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="proto.css">
+<style>
+/* Video stage. Product styles come verbatim from proto.css (briefing-command-deck-prototype.html). */
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+body{overflow:hidden}
+.command,.dcard,.sweepline{animation:none !important}
+.pulse::after{animation:none !important}
+*{transition:none !important}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+#stage::before{content:"";position:absolute;inset:0;background:radial-gradient(1200px 700px at 78% 40%, rgba(107,92,231,.07), transparent 60%),radial-gradient(900px 600px at 10% 90%, rgba(108,255,127,.06), transparent 60%)}
+
+/* captions */
+#cap{position:absolute;left:120px;top:0;width:600px;height:1080px;display:flex;flex-direction:column;justify-content:center;gap:22px}
+.eyebrow{font-family:var(--body);font-weight:800;font-size:17px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:12px}
+.eyebrow .bar{width:36px;height:2px;background:var(--accent)}
+.capline{position:absolute;left:0;top:0;width:600px;font-family:var(--display);font-weight:800;font-size:78px;line-height:1.02;letter-spacing:-.035em;color:var(--text)}
+.capwrap{position:relative;height:250px}
+.capsub{font-family:var(--body);font-size:24px;line-height:1.45;color:var(--text2);max-width:30ch}
+.iris{color:var(--accent)}
+
+/* app window */
+#win{position:absolute;left:780px;top:96px;width:1020px;height:888px;border-radius:26px;background:var(--bg);border:1px solid var(--border);box-shadow:0 2px 6px rgba(20,18,12,.05),0 40px 90px -30px rgba(20,18,12,.28);overflow:hidden}
+#wininner{zoom:1.3;width:784px;height:683px;position:relative;overflow:hidden}
+#wininner .bhead{position:relative}
+#wininner .deck{max-width:none;padding:18px 20px 40px}
+#scroller{will-change:transform}
+.chrome{display:flex;align-items:center;gap:7px;height:30px;padding:0 14px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--card) 60%,var(--bg))}
+.chrome i{width:10px;height:10px;border-radius:50%;background:#E4E0D6;display:block}
+.chrome .url{margin-left:14px;font-size:11px;color:var(--text3);background:var(--neutral);border-radius:999px;padding:2px 12px}
+.bhead .brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:800;font-size:15px}
+.bhead .brand img{width:22px;height:22px;mix-blend-mode:multiply}
+.cmd-head{flex-wrap:nowrap}
+.cmd-lede h1{font-size:31px}
+.approved{display:none;align-items:center;gap:10px;margin-top:16px;position:relative;z-index:1}
+.okpill{display:inline-flex;align-items:center;gap:7px;background:var(--success-soft);color:var(--success-mid);font-weight:700;font-size:13px;padding:8px 13px;border-radius:10px;border:1px solid color-mix(in srgb,var(--success-mid) 22%,transparent)}
+.okpill svg{width:15px;height:15px}
+.approved .by{font-size:12px;color:var(--text3)}
+.toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--text);color:var(--bg);font-size:13px;font-weight:600;padding:11px 16px;border-radius:12px;box-shadow:var(--shadow-lift);white-space:nowrap;opacity:0}
+.toast .pulse{width:7px;height:7px}
+.toast span.m{color:var(--on-dark-3);font-weight:500}
+
+/* ink panels */
+.ink{position:absolute;background:var(--text);overflow:hidden}
+#ink1{left:0;top:0;width:1920px;height:1080px}
+#hook{position:absolute;left:170px;top:0;height:1080px;display:flex;flex-direction:column;justify-content:center}
+#h-time{font-family:var(--display);font-weight:900;font-size:210px;line-height:.9;letter-spacing:-.05em;color:var(--bg);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:34px}
+#h-dot{width:26px;height:26px;border-radius:50%;background:var(--danger-bright);position:relative;flex:none}
+#h-ring{position:absolute;inset:-14px;border-radius:50%;border:3px solid var(--danger-bright)}
+#h-what{margin-top:34px;font-family:var(--display);font-weight:800;font-size:82px;letter-spacing:-.035em;line-height:1.02;color:var(--danger-bright)}
+#h-you{margin-top:26px;font-family:var(--body);font-weight:600;font-size:34px;color:var(--on-dark-3)}
+
+#ink2{left:0;top:0;width:1920px;height:1080px}
+#own{position:absolute;left:170px;top:0;height:1080px;display:flex;flex-direction:column;justify-content:center}
+.ownl{font-family:var(--display);font-weight:800;font-size:118px;letter-spacing:-.045em;line-height:1.02;color:var(--bg)}
+.ownl .w{display:inline-block}
+#own2{color:var(--success)}
+#own3{margin-top:40px;display:flex;gap:14px}
+.ochip{font-family:var(--body);font-weight:700;font-size:26px;color:var(--on-dark-2);padding:12px 22px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14)}
+
+/* outro */
+#outro{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;opacity:0}
+#o-cat{width:190px;height:197px;mix-blend-mode:multiply}
+#o-name{margin-top:8px;font-family:var(--display);font-weight:900;font-size:128px;letter-spacing:-.05em;line-height:1}
+#o-tag{margin-top:22px;font-family:var(--body);font-size:34px;line-height:1.4;color:var(--text2);max-width:34ch}
+#o-tag b{color:var(--text);font-weight:700}
+#o-cmd{margin-top:40px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:26px;font-weight:500;background:var(--text);color:var(--bg);padding:18px 28px;border-radius:14px;box-shadow:var(--shadow-lift)}
+#o-cmd .p{color:var(--success)}
+#o-foot{margin-top:24px;font-size:20px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}
+
+#cursor{position:absolute;left:0;top:0;width:44px;height:44px;opacity:0;filter:drop-shadow(0 4px 8px rgba(0,0,0,.25))}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- captions -->
+  <div id="cap">
+    <div class="eyebrow" id="eyebrow"><span class="bar"></span><span id="eyetxt">03:02 · Briefing</span></div>
+    <div class="capwrap">
+      <div class="capline" id="c2">OpenNeko wasn&rsquo;t.</div>
+      <div class="capline" id="c3">Every finding carries its evidence.</div>
+      <div class="capline" id="c4">Drafted, not auto&#8209;fired.<br><span class="iris" id="c4b">You approve.</span></div>
+    </div>
+  </div>
+
+  <!-- app window: real briefing markup from the prototype -->
+  <div id="win"><div id="wininner">
+    <div class="chrome"><i></i><i></i><i></i><span class="url">localhost:3000 / briefing</span></div>
+    <header class="bhead">
+      <span class="brand"><img src="cat.png" alt="">Briefing</span>
+      <span class="spacer"></span>
+      <div class="roles"><button class="role" aria-pressed="true"><span class="rd"></span>COO</button><button class="role" aria-pressed="false">CFO</button><button class="role" aria-pressed="false">CEO</button></div>
+      <button class="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Ask</button>
+    </header>
+    <div style="position:relative;height:590px;overflow:hidden">
+    <div id="scroller"><main class="deck">
+      <section class="command" id="strip">
+        <div class="sweepline" id="sweep"></div>
+        <div class="cmd-status" id="cstat">
+          <span class="pulse" id="spulse"></span>
+          <span>OpenNeko swept <b>6 systems</b></span><span class="dot"></span>
+          <span>last check <b>3 min ago</b></span><span class="dot"></span>
+          <span class="srcs">Magento, Stripe, NetSuite, Zendesk</span>
+        </div>
+        <div class="cmd-head" id="chead">
+          <div class="cmd-lede">
+            <h1><span class="n">Two decisions</span> need you this morning.</h1>
+            <p>One revenue fault and one stock risk crossed a threshold overnight. The <span class="amber">agent drafted a fix for each</span>. Everything else held.</p>
+          </div>
+          <div class="cmd-aside">
+            <div class="cmd-chip"><div class="k">Need you</div><div class="v act">2</div><div class="s">since 2:14am</div></div>
+            <div class="cmd-chip"><div class="k">Handled</div><div class="v">38</div><div class="s">this week</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" id="qsec">
+        <div class="sec-h"><h2>Waiting on your decision</h2><span class="count">2</span><span class="rule"></span></div>
+        <article class="dcard act" id="card">
+          <div class="d-top">
+            <span class="tag act" id="tag"><span class="td"></span><span id="tagtxt">Act now</span></span>
+            <span class="d-since">crossed <b>2:14am</b></span>
+            <button class="d-menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+          </div>
+          <h3 class="d-title">Apple Pay place-order rate fell 94% overnight.</h3>
+          <p class="d-body">Card checkout still completes, so revenue is not fully stopped. OpenNeko traced the drop to a failing wallet handshake after the <code>payment_method</code> deploy at 2:09am, and drafted a config rollback that restores the prior handshake.</p>
+          <div class="d-ev">
+            <span class="ev" id="ev0"><span class="evk">place-order</span><span class="evv down">−94%</span></span>
+            <span class="ev" id="ev1"><span class="evk">since</span><span class="evv">2:14am</span></span>
+            <span class="ev" id="ev2"><span class="evk">orders at risk</span><span class="evv">~28 / hr</span></span>
+            <span class="ev" id="ev3"><span class="evk">source</span><span class="evv">sales_order_payment</span></span>
+          </div>
+          <div class="d-acts" id="acts">
+            <button class="btn primary" id="fix"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Review the fix</button>
+            <button class="btn secondary">See evidence</button>
+            <span class="push"></span>
+            <button class="btn ghost">Dismiss</button>
+          </div>
+          <div class="approved" id="approved">
+            <span class="okpill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Rollback approved</span>
+            <span class="by">by Jordan Lee · running under policy</span>
+          </div>
+        </article>
+        <article class="dcard watch" id="card2">
+          <div class="d-top"><span class="tag watch"><span class="td"></span>Watch</span><span class="d-since">will miss by <b>04 Sep</b></span></div>
+          <h3 class="d-title">Low stock will short 3 open orders by 04 September.</h3>
+          <p class="d-body">SKU <code>BH-4021</code> holds 12 units. Three open orders reserve 15 through MSI, so one ships short in 4 days.</p>
+        </article>
+      </section>
+    </main></div>
+    </div>
+    <div class="toast" id="toast"><span class="pulse"></span>Rollback executing <span class="m">· receipt logged to Runs</span></div>
+  </div></div>
+
+  <!-- scene 1: hook -->
+  <div class="ink" id="ink1">
+    <div id="hook">
+      <div id="h-time"><span id="h-t">2:14am.</span><span id="h-dot"><span id="h-ring"></span></span></div>
+      <div id="h-what">Apple Pay checkout just broke.</div>
+      <div id="h-you">You&rsquo;re asleep.</div>
+    </div>
+  </div>
+
+  <!-- outro -->
+  <div id="outro">
+    <img id="o-cat" src="cat.png" alt="">
+    <div id="o-name">OpenNeko</div>
+    <div id="o-tag">Watches your business data and drafts the next action — <b>for you to approve.</b></div>
+    <div id="o-cmd"><span class="p">$</span> curl -fsSL https://openneko.app/install.sh | sh</div>
+    <div id="o-foot">Self-hosted · Apache-2.0 · openneko.app</div>
+  </div>
+
+  <!-- scene 5: ownership -->
+  <div class="ink" id="ink2">
+    <div id="own">
+      <div class="ownl" id="own1"></div>
+      <div class="ownl" id="own2"></div>
+      <div id="own3"><span class="ochip">Self-hosted</span><span class="ochip">Your Postgres</span><span class="ochip">Any LLM</span></div>
+    </div>
+  </div>
+
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2.5v17.2l4.6-4.3 2.9 6.6 3.1-1.4-2.9-6.4 6.3-.2z" fill="#fff" stroke="#2D2A24" stroke-width="1.4" stroke-linejoin="round"/></svg>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lin = (t,a,b)=>clamp((t-a)/(b-a));
+const eo = x=>1-Math.pow(1-x,3);            // ease out cubic
+const eio = x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const eback = x=>{const c=1.5;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+const mix=(a,b,p)=>a+(b-a)*p;
+
+// split ownership lines into words for staggering
+function words(el,text){el.innerHTML=text.split(' ').map(w=>`<span class="w">${w}</span>`).join(' ');return [...el.querySelectorAll('.w')];}
+const W1 = words($('own1'),'The intelligence is rented.');
+const W2 = words($('own2'),'The decisions are yours.');
+const chips3 = [...$('own3').children];
+
+// fade+rise helper; returns progress
+function rise(el,t,a,dur=.45,dy=24,out=null){
+  let p=eo(lin(t,a,a+dur)); let o=p;
+  if(out){const q=eio(lin(t,out[0],out[1])); o=p*(1-q); dy = dy; el.style.transform=`translateY(${(1-p)*dy - q*(out[2]||0)}px)`;}
+  else el.style.transform=`translateY(${(1-p)*dy}px)`;
+  el.style.opacity=o; return p;
+}
+
+let STRIP=null, WIN=null, FIX=null;
+function measure(){
+  const r=$('strip').getBoundingClientRect(); STRIP={x:r.left,y:r.top,w:r.width,h:r.height};
+}
+
+window.render = function(t){
+  // ---------- Scene 1: hook (0–3.0) ----------
+  const ink=$('ink1');
+  const outHook = eio(lin(t,2.72,2.98));
+  rise($('h-t'),t,0.12,.4,30); $('h-t').style.opacity*= (1-outHook);
+  rise($('h-dot'),t,0.35,.35,0); $('h-dot').style.opacity*= (1-outHook);
+  const ring=lin((t-0.35)%1.0,0,1); $('h-ring').style.transform=`scale(${1+ring*1.2})`; $('h-ring').style.opacity=t<0.35?0:(1-ring)*.6;
+  rise($('h-what'),t,0.62,.45,28); $('h-what').style.opacity*=(1-outHook);
+  rise($('h-you'),t,1.55,.45,18); $('h-you').style.opacity*=(1-outHook);
+  // collapse ink into the command strip (3.0–3.65)
+  const c=eio(lin(t,3.0,3.65));
+  if(STRIP){
+    ink.style.left=mix(0,STRIP.x,c)+'px'; ink.style.top=mix(0,STRIP.y,c)+'px';
+    ink.style.width=mix(1920,STRIP.w,c)+'px'; ink.style.height=mix(1080,STRIP.h,c)+'px';
+    ink.style.borderRadius=mix(0,26,c)+'px';
+  }
+  ink.style.opacity = 1-lin(t,3.65,3.8);
+  ink.style.display = t>3.8?'none':'block';
+  $('hook').style.display = t>3.0?'none':'flex';
+
+  // ---------- Window + strip (3.0–15) ----------
+  $('sweep').style.transform=`scaleX(${eo(lin(t,3.6,4.5))})`;
+  rise($('cstat'),t,3.7,.45,10);
+  rise($('chead'),t,3.9,.5,12);
+  const sp=((t-3.7)%1.9)/1.9; const pa=$('spulse');
+  pa.style.setProperty('--b',sp);
+  document.documentElement.style.setProperty('--pscale',1+Math.sin(sp*Math.PI)*.5);
+  document.documentElement.style.setProperty('--pop',.5*(1-Math.sin(sp*Math.PI)));
+
+  // scroll to the card (6.8–7.6)
+  const s=eio(lin(t,6.75,7.6));
+  $('scroller').style.transform=`translateY(${-mix(0,272,s)}px)`;
+  rise($('qsec').querySelector('.sec-h'),t,4.5,.45,10);
+  rise($('card'),t,4.65,.5,16);
+  rise($('card2'),t,4.8,.5,16);
+  $('strip').style.opacity = 1-.55*eio(lin(t,6.75,7.4));
+  // evidence chips pop on the beat
+  [8.0,8.5,9.0,9.5].forEach((a,i)=>{const e=$('ev'+i);const p=lin(t,a,a+.32);e.style.opacity=clamp(p*3);e.style.transform=`scale(${mix(.7,1,eback(p))})`;e.style.boxShadow=`0 0 0 ${3*(1-p)*(p>0?1:0)}px rgba(107,92,231,.35)`;});
+
+  // cursor + approve (11.5–15)
+  const cur=$('cursor'); const fb=FIX||{left:0,top:0,width:0,height:0};
+  const tx=fb.left+fb.width*.55, ty=fb.top+fb.height*.55;
+  const m=eio(lin(t,11.55,12.35));
+  cur.style.left=mix(1880,tx,m)+'px'; cur.style.top=mix(1120,ty,m)+'px';
+  const press = t>12.4&&t<12.58;
+  cur.style.transform=`scale(${press?.86:1})`;
+  cur.style.opacity=lin(t,11.5,11.7)*(1-lin(t,13.7,14.0));
+  const hov=t>12.25;
+  $('fix').style.background=hov?'var(--accent)':''; $('fix').style.borderColor=hov?'var(--accent)':''; $('fix').style.transform=press?'scale(.96)':(hov?'translateY(-1px)':'');
+  const ap=t>12.62;
+  $('acts').style.display=ap?'none':'flex'; $('approved').style.display=ap?'flex':'none';
+  if(ap){const p=eo(lin(t,12.62,12.95));$('approved').style.opacity=p;$('approved').style.transform=`translateY(${(1-p)*8}px)`;}
+  $('card').style.setProperty('--m', ap?'var(--success-mid)':'var(--danger)');
+  $('card').style.setProperty('--mt', ap?'var(--success-soft)':'var(--danger-soft)');
+  const tg=$('tag'); tg.className= ap?'tag':'tag act';
+  if(ap){tg.style.background='var(--success-soft)';tg.style.color='var(--success-mid)';tg.style.borderColor='color-mix(in srgb,var(--success-mid) 22%,transparent)';$('tagtxt').textContent='Resolved';}
+  else {tg.style.background='';tg.style.color='';tg.style.borderColor='';$('tagtxt').textContent='Act now';}
+  const to=eo(lin(t,12.95,13.35)); $('toast').style.opacity=to; $('toast').style.transform=`translate(-50%,${(1-to)*20}px)`;
+
+  // ---------- captions ----------
+  const eb=$('eyebrow'); rise(eb,t,3.45,.45,10);
+  $('eyetxt').textContent = t<11.3 ? (t<6.9?'2:15am · OpenNeko':'Briefing · 7:40am') : 'Review queue';
+  eb.style.opacity*= (1-eio(lin(t,6.72,6.9)))+ (t>6.9?eo(lin(t,7.0,7.3)):0) ;
+  if(t>11.3) eb.style.opacity = eo(lin(t,11.45,11.75));
+  rise($('c2'),t,3.5,.5,26,[6.72,6.92,-10]);
+  rise($('c3'),t,7.05,.5,26,[11.2,11.42,-10]);
+  rise($('c4'),t,11.55,.5,26);
+  $('c4b').style.opacity=eo(lin(t,12.62,12.9));
+  $('c4b').style.display='inline-block'; $('c4b').style.transform=`translateY(${(1-eo(lin(t,12.62,12.9)))*14}px)`;
+  // window entrance subtle (it's revealed by the ink collapse)
+  const push=eio(lin(t,6.75,7.8))*(1-eio(lin(t,14.0,14.8)));
+  $('win').style.transformOrigin='100% 62%';
+  $('win').style.transform=`scale(${mix(1.015,1,eo(lin(t,3.0,4.0)))*(1+.09*push)})`;
+
+  // ---------- Scene 5: ownership (14.85–18.75) ----------
+  const i2=$('ink2');
+  const wipeIn=eio(lin(t,14.8,15.25)), wipeOut=eio(lin(t,18.35,18.8));
+  i2.style.clipPath=`inset(${(1-wipeIn)*100}% 0 ${0}% 0)`;
+  i2.style.transform=`translateY(${-wipeOut*1080}px)`;
+  i2.style.display=(t<14.8||t>18.8)?'none':'block';
+  const o5=1-eio(lin(t,18.2,18.4));
+  W1.forEach((w,i)=>{const a=15.3+i*.09;const p=eo(lin(t,a,a+.4));w.style.opacity=p*o5;w.style.transform=`translateY(${(1-p)*40}px)`;});
+  W2.forEach((w,i)=>{const a=16.05+i*.09;const p=eo(lin(t,a,a+.4));w.style.opacity=p*o5;w.style.transform=`translateY(${(1-p)*40}px)`;});
+  chips3.forEach((c,i)=>{const a=16.75+i*.12;const p=eo(lin(t,a,a+.35));c.style.opacity=p*o5;c.style.transform=`translateY(${(1-p)*16}px)`;});
+
+  // ---------- Scene 6: outro (18.4–22.5) ----------
+  $('outro').style.opacity = t>18.35?1:0;
+  $('cap').style.display = $('win').style.display = t>18.4?'none':'';
+  const oc=eo(lin(t,18.55,19.05)); $('o-cat').style.opacity=oc; $('o-cat').style.transform=`translateY(${(1-oc)*20}px) rotate(${(1-oc)*-4}deg)`;
+  rise($('o-name'),t,18.7,.5,24);
+  rise($('o-tag'),t,18.95,.5,18);
+  rise($('o-cmd'),t,19.25,.5,18);
+  rise($('o-foot'),t,19.5,.5,12);
+};
+
+window.ready = (async()=>{
+  await document.fonts.ready;
+  await Promise.all(['800 20px Archivo','900 20px Archivo','700 20px Archivo','400 20px Manrope','600 20px Manrope','700 20px Manrope','800 20px Manrope'].map(f=>document.fonts.load(f)));
+  await Promise.all([...document.images].map(i=>i.complete?1:new Promise(r=>i.onload=r)));
+  window.render(3.9); measure(); window.render(12.3); {const r=$('fix').getBoundingClientRect(); FIX={left:r.left,top:r.top,width:r.width,height:r.height};} window.render(0);
+  return true;
+})();
+</script>
+<style>
+/* pulse driven by time vars */
+.pulse::after{transform:scale(var(--pscale,1));opacity:var(--pop,.5)}
+</style>
+</body>
+</html>
