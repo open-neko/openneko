@@ -75,6 +75,32 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("admits only an explicitly bound Harness batch read to GraphJin", async () => {
+    const cp = stubControlPlane();
+    cp.queryGraphjinRead = vi.fn(async () => ({ data: { rows: [{ id: 1 }] } }));
+    const handle = await startAgentBroker({ controlPlane: cp, port: 0 });
+    const query = async (token: string) => fetch(`http://127.0.0.1:${handle.port}/v1/graphjin/query`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ query: "query { rows { id } }", orgId: "forged", runId: "forged" }),
+    });
+    try {
+      const denied = handle.tokenFor({ runId: "no-batch", orgId: "org", kind: "work", profile: "harness-read-only" });
+      expect((await query(denied)).status).toBe(403);
+      const binding: RunBinding = { runId: "batch", orgId: "org", kind: "work", profile: "harness-read-only", batchRead: true };
+      const allowed = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({ ...binding, batchRead: false })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, kind: "workflow" })).toThrow("Invalid broker batch grant");
+      expect((await query(allowed)).status).toBe(200);
+      expect(cp.queryGraphjinRead).toHaveBeenCalledWith({ query: "query { rows { id } }", orgId: "org", runId: "batch" });
+      const invalid = await fetch(`http://127.0.0.1:${handle.port}/v1/graphjin/query`, {
+        method: "POST", headers: { authorization: `Bearer ${allowed}`, "content-type": "application/json" },
+        body: JSON.stringify({ query: "query { rows { id } }", variables: { bypass: true } }),
+      });
+      expect(invalid.status).toBe(400);
+      expect(cp.queryGraphjinRead).toHaveBeenCalledTimes(1);
+    } finally { await handle.close(); }
+  });
+
   it("bounds Harness tokens to journaled lookup without widening on reuse", async () => {
     const cp=stubControlPlane();
     cp.createActionRequest=vi.fn(async()=>({id:"unexpected",status:"approved"}));

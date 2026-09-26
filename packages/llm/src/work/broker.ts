@@ -29,6 +29,8 @@ export interface RunBinding {
   profile?: "harness-read-only" | "harness-governed";
   /** Explicit customer-surface read grant; records-only runs omit it. */
   memoryRead?: boolean;
+  /** Controlled file-backed batch reads; never grants general GraphJin MCP. */
+  batchRead?: boolean;
   runId: string;
   orgId: string;
   /** Agent jobs have no work_run actor and intentionally use service reads. */
@@ -104,7 +106,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search")) {
+  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -243,6 +245,9 @@ async function handle(
       );
     }
     case "/v1/graphjin/query": {
+      if (binding.batchRead && (typeof body.query !== "string" || !body.query.trim() || body.query.length > 60_000 || body.variables !== undefined || body.operationName !== undefined)) {
+        return send(res, 400, { error: "Invalid Harness batch query" });
+      }
       const query = String(body.query ?? "");
       const variables =
         body.variables && typeof body.variables === "object"
@@ -770,12 +775,15 @@ export async function startAgentBroker(
       if (binding.memoryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker memory grant");
       }
+      if (binding.batchRead && (!binding.profile || binding.kind !== "work")) {
+        throw new Error("Invalid broker batch grant");
+      }
       if (existing) {
         const saved = tokens.get(existing)!;
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.memoryRead !== binding.memoryRead)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.memoryRead !== binding.memoryRead || saved.batchRead !== binding.batchRead)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }
