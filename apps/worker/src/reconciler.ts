@@ -3,6 +3,7 @@ import {
   db,
   eq,
   inArray,
+  notInArray,
   lte,
   metric,
   processing_job,
@@ -38,6 +39,15 @@ export async function reconcileStaleRuns(opts?: {
 }): Promise<{ cancelled: number }> {
   const cutoff = new Date(Date.now() - (opts?.minAgeMs ?? 0));
   const now = new Date();
+  // A host-owned batch survives worker death through pg-boss retry. Its Work
+  // row remains active while the queue owns it, including a retry delay.
+  const [relation] = (await db().execute<{ rel: string | null }>(sql`SELECT to_regclass('pgboss.job')::text AS rel`)).rows;
+  const batchRows = relation?.rel
+    ? (await db().execute<{ run_id: string }>(sql`SELECT data->>'runId' AS run_id FROM pgboss.job
+        WHERE name='harness_batch' AND state::text IN ('created','active','retry')`)).rows
+    : [];
+  const batchRunIds = batchRows.map((row) => row.run_id).filter(Boolean);
+  const outsideBatch = batchRunIds.length ? notInArray(work_run.id, batchRunIds) : undefined;
 
   const stale = await db()
     .update(work_run)
@@ -47,7 +57,7 @@ export async function reconcileStaleRuns(opts?: {
       finished_at: now,
       updated_at: now,
     })
-    .where(and(eq(work_run.status, "running"), lte(work_run.updated_at, cutoff)))
+    .where(and(eq(work_run.status, "running"), lte(work_run.updated_at, cutoff), outsideBatch))
     .returning({ id: work_run.id });
 
   // Queued chat runs have no durable queue behind them — the web process
@@ -66,7 +76,7 @@ export async function reconcileStaleRuns(opts?: {
       updated_at: now,
     })
     .where(
-      and(eq(work_run.status, "queued"), lte(work_run.created_at, queuedCutoff)),
+      and(eq(work_run.status, "queued"), lte(work_run.created_at, queuedCutoff), outsideBatch),
     )
     .returning({ id: work_run.id });
   stale.push(...staleQueued);

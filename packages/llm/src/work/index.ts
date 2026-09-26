@@ -1,5 +1,6 @@
 export * from "./workspace";
 export * from "./artifacts";
+export { runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 export * from "./sandbox-net";
 export * from "./behavior-monitor";
 export * from "./deployment-profile";

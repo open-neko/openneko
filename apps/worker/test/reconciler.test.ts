@@ -462,6 +462,44 @@ describeIfDb("reconcileStaleRuns", () => {
   });
 });
 
+describeIfReady("reconcileStaleRuns with a queued Harness batch owner", () => {
+  const orgId = uniqueOrgId("batch-reconcile");
+  let jobId: string | undefined;
+  beforeAll(async () => {
+    await createTestOrg(orgId);
+    await (await boss()).createQueue(QUEUE.HARNESS_BATCH);
+  });
+  afterAll(async () => {
+    if (jobId) await db().execute(sql`DELETE FROM pgboss.job WHERE id=${jobId}::uuid`);
+    await deleteTestOrg(orgId);
+  });
+
+  it("preserves a retryable batch run and cancels it after queue ownership ends", async () => {
+    const stale = new Date(Date.now() - 20 * 60_000);
+    const [thread] = await db().insert(work_thread).values({ org_id: orgId, title: "Batch" }).returning({ id: work_thread.id });
+    const [run] = await db().insert(work_run).values({ org_id: orgId, thread_id: thread.id,
+      backend: "harness", status: "running", created_at: stale, updated_at: stale }).returning({ id: work_run.id });
+    const [workflow] = await db().insert(workflow_definition).values({ org_id: orgId, name: "Batch owner" }).returning({ id: workflow_definition.id });
+    const [workflowRun] = await db().insert(workflow_run).values({ org_id: orgId, workflow_id: workflow.id,
+      thread_id: thread.id, work_run_id: run.id, trigger_kind: "manual", status: "running" }).returning({ id: workflow_run.id });
+    const rows = await db().execute<{ id: string }>(sql`INSERT INTO pgboss.job (name,data,state)
+      VALUES (${QUEUE.HARNESS_BATCH},${JSON.stringify({orgId,runId:run.id})}::jsonb,'retry'::pgboss.job_state)
+      RETURNING id`);
+    jobId = rows.rows[0]?.id;
+    await reconcileStaleRuns();
+    const [active] = await db().select({ status: work_run.status }).from(work_run).where(eq(work_run.id, run.id));
+    expect(active.status).toBe("running");
+    const [activeWorkflow] = await db().select({ status: workflow_run.status }).from(workflow_run).where(eq(workflow_run.id, workflowRun.id));
+    expect(activeWorkflow.status).toBe("running");
+    await db().execute(sql`UPDATE pgboss.job SET state='failed'::pgboss.job_state WHERE id=${jobId}::uuid`);
+    await reconcileStaleRuns();
+    const [terminal] = await db().select({ status: work_run.status }).from(work_run).where(eq(work_run.id, run.id));
+    expect(terminal.status).toBe("cancelled");
+    const [terminalWorkflow] = await db().select({ status: workflow_run.status }).from(workflow_run).where(eq(workflow_run.id, workflowRun.id));
+    expect(terminalWorkflow.status).toBe("cancelled");
+  });
+});
+
 if (reachable) {
   afterAll(async () => {
     await pool().end();
