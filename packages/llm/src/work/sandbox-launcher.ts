@@ -667,7 +667,7 @@ function makeSandboxCore(
       try { await access(snapshot); local = true; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       const inspect = (args:string[], payload:string) => local
-        ? runProcessOnce(harnessInspector(), args, 30_000, signal, payload, {HARNESS_STATE_DIR: state})
+        ? runProcessOnce(harnessInspector(), args, 30_000, signal, payload, {NODE_ENV: process.env.NODE_ENV, HARNESS_STATE_DIR: state})
         : run(["sandbox", "exec", "-n", name, "--no-tty", "--", "/usr/bin/env",
             `HARNESS_STATE_DIR=${path.posix.join(boxWorkspace.runRoot, ".harness")}`,
             "/usr/local/bin/harness-inspect", ...args], 30_000, payload);
