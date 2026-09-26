@@ -103,7 +103,7 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<Bat
       "UPDATE work_run SET status='running', updated_at=now() WHERE org_id=$1 AND id=$2 AND status IN ('queued','running')",
       [payload.orgId, payload.runId],
     );
-    await client.query(`UPDATE workflow_run SET queue_attempts=queue_attempts+1,
+    await client.query(`UPDATE workflow_run SET queue_attempts=queue_attempts+CASE WHEN trigger_kind='api' THEN 0 ELSE 1 END,
       progress=jsonb_build_object('stage','executing'),updated_at=now()
       WHERE org_id=$1 AND id=$2 AND status='running'`, [payload.orgId, payload.workflowRunId]);
     const workDir = join(workspace.runRoot, "batch");

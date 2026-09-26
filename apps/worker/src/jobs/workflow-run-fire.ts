@@ -423,7 +423,8 @@ async function runWorkflowRunFireTraced(
       await observeSafely(telemetry.observer, { kind: "stage.end", operationId: stageId,
         parentOperationId: operationId, status: "ok", attributes: { "openneko.stage": "query_to_file" },
         measurements: { finalRows: batch.rows, queryCount: batch.queries,
-          artifactBytes: batch.artifactBytes, coverage: "complete" } });
+          artifactBytes: batch.artifactBytes, totalTokens: 0, billedCostUsd: 0,
+          coverage: "complete" } });
       await observeSafely(telemetry.observer, { kind: "output.contract", operationId: `${stageId}:output`,
         parentOperationId: stageId, status: "ok", attributes: { "openneko.output.kind": "csv" } });
       result = { status: "completed", finalText: "Query-to-file workflow completed with a validated CSV artifact." };
