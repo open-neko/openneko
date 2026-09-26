@@ -141,7 +141,8 @@ OpenNeko's conversation, evidence, workspace and channel contracts, but replace
 Hermes-specific names and native delegation instructions with available bindings.
 Do not copy the Hermes prompt wholesale. Tool descriptions and installed skills
 remain contextual instructions, not policy. The current read-only Harness prompt
-and `mcpTools: false` represent an implementation gap, not the target architecture.
+and `mcpTools: false` represent the remaining implementation gap beyond the
+qualified search-only memory read, not the target architecture.
 
 ### MCP integration and credential boundary
 
@@ -347,8 +348,9 @@ Required proof before treating AxAgent as the production foundation:
 
 - M5a: the local Ax catalog now pins schemas and a run catalog hash, preserves
   operation identity and old four-operation checkpoints, and admits local MCP
-  read fixtures through the official SDK. Connecting the actual OpenNeko bridge
-  and qualifying its transport belongs to M5b.
+  read fixtures through the official SDK. M5b has connected the actual OpenNeko
+  bridge for one search-only memory read; the broader transport and product
+  surface remain open.
 - M5b/d: qualify the existing MCP bridge transport and trusted process placement
   before exposing shell access; prove broker credentials are inaccessible to children.
 - M5c: inventory each actual mutation handler's approval, persistence and recovery

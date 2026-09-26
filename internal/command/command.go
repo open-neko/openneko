@@ -22,9 +22,20 @@ func Main(lookup func(context.Context, string) (json.RawMessage, error)) {
 }
 
 func MainWithTools(tools agent.Tools) {
+	MainWithToolsAndCleanup(tools, nil)
+}
+
+// MainWithToolsAndCleanup closes external tool sessions before exiting.
+func MainWithToolsAndCleanup(tools agent.Tools, cleanup func() error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	code, err := executeWithTools(ctx, os.Stdin, os.Stdout, tools)
+	if cleanup != nil {
+		if closeErr := cleanup(); closeErr != nil {
+			code = 1
+			err = fmt.Errorf("tool session cleanup failed: %w", closeErr)
+		}
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}

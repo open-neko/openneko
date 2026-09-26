@@ -103,7 +103,11 @@ func main() {
 			n -= 3
 		}
 		refused := strings.Contains(string(req.Messages), "not configured read-only") && !strings.Contains(string(req.Messages), "trace_id")
-		if n == 2 && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model == "harness-memory-fixture" && !strings.Contains(string(req.Messages), "memory-1") {
+			http.Error(w, "missing memory evidence", 422)
+			return
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -114,6 +118,8 @@ func main() {
 				`{"javascriptCode":"const evidence=execute_graphql({query:'query { references { id label } }'}); final({status:'answered',answer:'The reference is REF-42.',data:evidence.data},{evidence});"}`,
 				`{"status":"answered","answer":"The reference is REF-42.","data":{"references":[{"id":42,"label":"REF-42"}]},"evidence":[],"actions":[],"next":[]}`,
 			}
+		} else if req.Model == "harness-memory-fixture" {
+			responses = []string{`{"javascriptCode":"final('Search saved memory', {})"}`, `{"javascriptCode":"const memory=mcp_memory_search({query:'find policy'}); final('Report memory',{memory});"}`, `{"answer":"Saved policy found in memory-1."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
 			if propose {

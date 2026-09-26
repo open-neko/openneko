@@ -18,8 +18,11 @@ separate OpenNeko v3.5.6 demo instance was started and verified locally on the
 Mac, then stopped to respect the host's 4 GB Docker memory limit; its volumes
 remain. Onboarding was skipped, so no admin password or model key was configured.
 The released worker still uses Hermes and OpenShell 0.0.54.
-M5b and full M5c acceptance need the feature worker, harness image and matching
-OpenShell gateway; demo health alone does not qualify them.
+The first M5b memory-read slice passed through the feature worker, Harness
+image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
+The broker result was seeded; the batch task and broader MCP/interaction surface
+still need connected acceptance. Full M5c remains open. Demo health alone does
+not qualify either milestone.
 Hermes remains the default until rollout.
 
 The isolated v3.5.6 M3/M4 consumer suite passed serially with the demo stopped:
@@ -37,10 +40,11 @@ context and conversation. Tool schemas/descriptions supply additional instructio
 multiplexed stdio bridge. Workflow/agent-job modes have additional or narrower
 surfaces. Native file/terminal/delegation capabilities are separate from MCP.
 
-The current Harness backend still advertises `mcpTools: false` because the local
-Go MCP adapter is not yet connected to OpenNeko's bridge. The product prompt now
-defers tool contracts to the run's admitted Go catalog and lists only held pack
-action candidates. It does not claim that all Hermes MCP capabilities are present.
+The current Harness backend still advertises `mcpTools: false` because only a
+narrow search-only memory server is admitted through OpenNeko's bridge. The
+product prompt defers tool contracts to the run's admitted Go catalog and lists
+only held pack action candidates. It does not claim that all Hermes MCP
+capabilities are present.
 
 Sources in the isolated OpenNeko integration checkout:
 
@@ -147,21 +151,23 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 
 ## M5b — File-backed batch path and MCP read/interaction slice
 
-**Schedule:** parked until an OpenNeko/GraphJin instance is connected. The batch
-design and deterministic fixture work can be prepared without one, but the real
-script → authorized GraphJin → file → browser acceptance below cannot be claimed
-from a simulated endpoint.
+**Partial status (2026-09-26):** one customer-surface memory read is admitted
+through the actual OpenNeko stdio bridge with a pinned schema. The broker binds
+org/run identity and grants the route only to customer Harness tokens; records
+runs and writes remain denied. An isolated OpenShell + worker + broker + Ax run
+searched a seeded result, recorded one finished Go operation and returned the
+answer. Hermes regression checks passed. The Daily Lead Union batch case still
+needs its connected source and artifact acceptance.
 
-The current Harness broker profiles admit only the dedicated lookup/proposal
-routes. Before advertising MCP reads, qualify each broker path for that profile
-with bound actor/run identity and the existing operation journal. A working stdio
-connection alone does not authorize or make those tools available.
+The remaining Harness MCP routes are denied by the broker profiles. Qualify
+each route with bound actor/run identity and the existing operation journal
+before admission. A working stdio connection alone does not authorize tools.
 
 The Go MCP SDK now has an opt-in integration check against the real OpenNeko
 multiplexed stdio bridge (`OPENNEKO_TEST_SOURCE=... go test ./integration/m5b`).
 With a synthetic broker and a read-only memory server, it verifies discovery,
-one scoped search call, and child-process exit on close. This is transport and
-lifecycle evidence only; the product Harness backend still has no MCP admission.
+one scoped search call, and child-process exit on close. The separate isolated
+OpenShell check qualifies the product's first read admission, not general MCP.
 
 **Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
 its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or

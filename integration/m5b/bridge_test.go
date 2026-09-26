@@ -15,6 +15,7 @@ import (
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
 	adapter "github.com/open-neko/harness/adapters/mcp"
+	product "github.com/open-neko/harness/adapters/openneko/mcp"
 )
 
 // Runs the actual OpenNeko stdio multiplexer through the Go MCP SDK. The
@@ -94,5 +95,17 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	}
 	if err := session.Close(); err != nil || cmd.ProcessState == nil {
 		t.Fatalf("stdio bridge did not exit on close: err=%v state=%v", err, cmd.ProcessState)
+	}
+	productCaps, closeProduct, err := product.ConnectMemory(ctx, product.MemoryConfig{
+		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,
+		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeProduct()
+	result, err = productCaps[0].Call(ctx, json.RawMessage(`{"query":"find policy"}`))
+	if err != nil || !strings.Contains(string(result), "memory-1") || requests.Load() != 2 {
+		t.Fatalf("product MCP read failed: result=%s err=%v requests=%d", result, err, requests.Load())
 	}
 }

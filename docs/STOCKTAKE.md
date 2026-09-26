@@ -41,9 +41,11 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
   existing pack-action proposal path. Existing OpenNeko MCP tools, other governed
   product mutations, local file/process/artifact work and bounded delegation remain
   open. This is not Hermes parity.
-- M5b connected acceptance is parked while no OpenNeko/GraphJin instance is
-  available. Local M5c handler qualification, M5d foundations and M6 budget/context
-  work can proceed with fixtures; they do not prove the real batch path.
+- M5b has one isolated OpenShell/worker/MCP memory-read acceptance with seeded
+  broker data. The Daily Lead Union batch artifact, library/records reads,
+  clarification and rendering still need connected acceptance. Local M5c handler
+  qualification, M5d foundations and M6 budget/context work can proceed with
+  fixtures; they do not prove the real batch path.
 - M6: approved model routing/fallback, context compaction and aggregate budgets.
 - M7: full capability parity against Hermes, task-quality evaluation, concurrent
   tenant/load checks and operational limits.
@@ -66,6 +68,6 @@ Nothing has been pushed; Harness has no configured remote. No PR or main merge h
 been made. Earlier main commits documented in README are historical.
 
 All owned M2/M3 test services and volumes were cleaned up. M5a's local Ax/MCP
-fixture and M5c's narrowed proposal checks are new local evidence. They do not
-replace the connected OpenShell/worker/browser acceptance still required for M5b
-and the remaining M5c tool families.
+fixture, M5b's narrow memory read through OpenShell and M5c's narrowed proposal
+checks are local evidence. Browser acceptance, the batch artifact and the
+remaining M5c tool families are still open.

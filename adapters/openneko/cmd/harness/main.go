@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/open-neko/harness/adapters/openneko/broker"
+	productmcp "github.com/open-neko/harness/adapters/openneko/mcp"
 	"github.com/open-neko/harness/internal/agent"
 	"github.com/open-neko/harness/internal/command"
 	"os"
@@ -30,7 +31,26 @@ func main() {
 		}
 		tools.Scope = kinds
 	}
-	command.MainWithTools(tools)
+	var cleanup func() error
+	if flag := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ"); flag != "" {
+		if flag != "1" {
+			fmt.Fprintln(os.Stderr, "invalid memory capability binding")
+			os.Exit(2)
+		}
+		capabilities, closeSession, connectErr := productmcp.ConnectMemory(context.Background(), productmcp.MemoryConfig{
+			BridgePath: os.Getenv("OPENNEKO_MCP_BRIDGE"),
+			BrokerURL:  os.Getenv("OPENNEKO_BROKER_URL"), BrokerToken: os.Getenv("OPENNEKO_BROKER_TOKEN"),
+			OrgID: os.Getenv("OPENNEKO_MCP_ORG_ID"), ThreadID: os.Getenv("OPENNEKO_MCP_THREAD_ID"),
+			RunID: os.Getenv("OPENNEKO_MCP_RUN_ID"), SkillsRoot: os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"),
+		})
+		if connectErr != nil {
+			fmt.Fprintln(os.Stderr, "memory capability unavailable:", connectErr)
+			os.Exit(2)
+		}
+		tools.Capabilities = append(tools.Capabilities, capabilities...)
+		cleanup = closeSession
+	}
+	command.MainWithToolsAndCleanup(tools, cleanup)
 }
 
 // This narrows the model-visible proposal tool to the host's run-scoped
