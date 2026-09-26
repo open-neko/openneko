@@ -120,6 +120,75 @@ func TestReadCanOverlapReadButEditWaits(t *testing.T) {
 	}
 }
 
+func TestFileWriteCreatesOnlyInsideWorkspace(t *testing.T) {
+	workspace, other := t.TempDir(), t.TempDir()
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	write := f.Capabilities()[2].Call
+	input := json.RawMessage(`{"path":"result.txt","content":"ready"}`)
+	result, err := write(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt struct{ Path, Version string }
+	if json.Unmarshal(result, &receipt) != nil || receipt.Path != "result.txt" || receipt.Version != digest([]byte("ready")) {
+		t.Fatalf("invalid write receipt: %s", result)
+	}
+	if _, err := write(context.Background(), json.RawMessage(`{"path":"result.txt","content":"replaced"}`)); err == nil {
+		t.Fatal("write replaced an existing file")
+	}
+	if data, err := os.ReadFile(filepath.Join(workspace, "result.txt")); err != nil || string(data) != "ready" {
+		t.Fatalf("existing file changed: %q %v", data, err)
+	}
+	if _, err := write(context.Background(), json.RawMessage(`{"path":"../escape.txt","content":"no"}`)); err == nil {
+		t.Fatal("write escaped workspace")
+	}
+	if err := os.Symlink(other, filepath.Join(workspace, "outside")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := write(context.Background(), json.RawMessage(`{"path":"outside/escape.txt","content":"no"}`)); err == nil {
+		t.Fatal("write followed external symlink")
+	}
+	if _, err := os.Stat(filepath.Join(other, "escape.txt")); !os.IsNotExist(err) {
+		t.Fatalf("external file created: %v", err)
+	}
+}
+
+func TestFileSearchStaysInsideWorkspace(t *testing.T) {
+	workspace, other := t.TempDir(), t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "nested", "note.txt"), []byte("The answer is here"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "secret.txt"), []byte("The answer is private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, filepath.Join(workspace, "outside")); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	result, err := f.Capabilities()[3].Call(context.Background(), json.RawMessage(`{"query":"answer"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found struct {
+		Paths     []string
+		Truncated bool
+	}
+	if json.Unmarshal(result, &found) != nil || len(found.Paths) != 1 || found.Paths[0] != "nested/note.txt" || found.Truncated {
+		t.Fatalf("unexpected search result: %s", result)
+	}
+}
+
 func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
@@ -132,7 +201,7 @@ func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 	defer f.Close()
 	answers := []string{
 		`{"javascriptCode":"final('Update the note',{})"}`,
-		`{"javascriptCode":"const r=file_read({path:'note.txt'}); const e=file_edit({path:'note.txt',version:r.version,content:'done'}); final('Updated the note',{r,e});"}`,
+		`{"javascriptCode":"const r=file_read({path:'note.txt'}); const e=file_edit({path:'note.txt',version:r.version,content:'done'}); const w=file_write({path:'result.txt',content:'created'}); final('Updated the note',{r,e,w});"}`,
 		`{"answer":"Updated the note"}`,
 	}
 	calls := 0
@@ -156,12 +225,16 @@ func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	recovery, err := session.Inspect(state, spec)
-	if err != nil || len(recovery.Operations) != 2 || recovery.Operations[0].Tool != "file_read" || recovery.Operations[1].Tool != "file_edit" || !recovery.Operations[1].Finished {
+	if err != nil || len(recovery.Operations) != 3 || recovery.Operations[0].Tool != "file_read" || recovery.Operations[1].Tool != "file_edit" || recovery.Operations[2].Tool != "file_write" || !recovery.Operations[2].Finished {
 		t.Fatalf("recovery=%+v err=%v", recovery, err)
 	}
 	data, err := os.ReadFile(filepath.Join(workspace, "note.txt"))
 	if err != nil || string(data) != "done" {
 		t.Fatalf("edited file=%q err=%v", data, err)
+	}
+	data, err = os.ReadFile(filepath.Join(workspace, "result.txt"))
+	if err != nil || string(data) != "created" {
+		t.Fatalf("created file=%q err=%v", data, err)
 	}
 }
 

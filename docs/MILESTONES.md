@@ -284,12 +284,14 @@ slice; the remaining MCP-backed product writes depend on M5b bridge qualificatio
 ## M5d — Local tools, skills and artifacts
 
 **Local status (2026-09-26):** an opt-in Go file capability now reads bounded
-UTF-8 files from a host-selected workspace and atomically replaces an existing
-file only after a same-run read at the matching content version. Go's `os.Root`
+UTF-8 files from a host-selected workspace, atomically replaces an existing
+file only after a same-run read at the matching content version, creates new
+files without replacement and searches small text files by literal path/content.
+Go's `os.Root`
 contains paths; regular-file checks reject final symlinks, oversized files and
 cross-run traversal. A per-workspace read/write gate allows concurrent reads and
-serializes harness edits. Saved read/edit receipts restore the freshness state
-for a new Ax attempt. A synthetic Ax run exercised Read → Edit through the
+serializes harness edits/writes. Saved read/edit receipts restore the freshness state
+for a new Ax attempt. A synthetic Ax run exercised Read → Edit → Write through the
 durable operation journal, and the full race suite passes. The OpenNeko worker
 does not yet supply `OPENNEKO_HARNESS_WORKSPACE_DIR`, so these tools are not
 advertised to product runs. Shell, uploaded-file mounting, artifact publication

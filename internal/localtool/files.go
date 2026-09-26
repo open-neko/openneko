@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -91,6 +93,8 @@ func (f *Files) Capabilities() []agent.Capability {
 	return []agent.Capability{
 		{Name: "file_read", Version: "1", Origin: "workspace", Effect: "read", Description: "Read a small regular file in the run workspace and receive its version.", InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024}},"additionalProperties":false}`), Call: f.read},
 		{Name: "file_edit", Version: "1", Origin: "workspace", Effect: "durable", Description: "Replace an existing file previously read in this run; supply its exact version. This is a workspace mutation.", InputSchema: json.RawMessage(`{"type":"object","required":["path","version","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"version":{"type":"string","minLength":64,"maxLength":64},"content":{"type":"string","maxLength":65536}},"additionalProperties":false}`), Call: f.edit},
+		{Name: "file_write", Version: "1", Origin: "workspace", Effect: "durable", Description: "Create a new small text file in the run workspace; refuse to replace an existing path.", InputSchema: json.RawMessage(`{"type":"object","required":["path","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"content":{"type":"string","maxLength":65536}},"additionalProperties":false}`), Call: f.write},
+		{Name: "file_search", Version: "1", Origin: "workspace", Effect: "read", Description: "Find small text files in the run workspace whose path or content contains a literal query; returns bounded paths only.", InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string","minLength":1,"maxLength":256}},"additionalProperties":false}`), Call: f.search},
 	}
 }
 
@@ -203,6 +207,115 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 		Path    string `json:"path"`
 		Version string `json:"version"`
 	}{input.Path, version})
+}
+
+func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	var input struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || len(input.Content) > maxFile {
+		return nil, fmt.Errorf("invalid file write")
+	}
+	f.gate.Lock()
+	defer f.gate.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var nonce [12]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, err
+	}
+	tmp := filepath.Join(filepath.Dir(input.Path), ".harness-write-"+hex.EncodeToString(nonce[:]))
+	file, err := f.root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, err
+	}
+	defer f.root.Remove(tmp)
+	if _, err = io.WriteString(file, input.Content); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Linking is atomic and fails if the destination already exists. Rename
+	// could silently replace another file created after admission.
+	if err := f.root.Link(tmp, input.Path); err != nil {
+		return nil, fmt.Errorf("file already exists or path unavailable: %w", err)
+	}
+	dir, err := f.root.Open(filepath.Dir(input.Path))
+	if err == nil {
+		err = dir.Sync()
+		_ = dir.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		Path    string `json:"path"`
+		Version string `json:"version"`
+	}{input.Path, digest([]byte(input.Content))})
+}
+
+func (f *Files) search(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	var input struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil || strings.TrimSpace(input.Query) == "" || len(input.Query) > 256 {
+		return nil, fmt.Errorf("invalid file search")
+	}
+	f.gate.RLock()
+	defer f.gate.RUnlock()
+	query := []byte(strings.ToLower(input.Query))
+	paths := make([]string, 0)
+	visited, truncated := 0, false
+	stop := fmt.Errorf("file search limit reached")
+	err := fs.WalkDir(f.root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		visited++
+		if visited > 1000 {
+			truncated = true
+			return stop
+		}
+		if !entry.Type().IsRegular() {
+			return nil // WalkDir does not follow directory symlinks.
+		}
+		info, err := entry.Info()
+		if err != nil || info.Size() > maxFile {
+			return err
+		}
+		data, _, err := f.load(path)
+		if err != nil {
+			return nil // A changed, non-text or inaccessible file is not a match.
+		}
+		if strings.Contains(strings.ToLower(path), string(query)) || strings.Contains(strings.ToLower(string(data)), string(query)) {
+			paths = append(paths, path)
+			if len(paths) == 20 {
+				truncated = true
+				return stop
+			}
+		}
+		return nil
+	})
+	if err != nil && err != stop {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		Paths     []string `json:"paths"`
+		Truncated bool     `json:"truncated"`
+	}{paths, truncated})
 }
 
 func (f *Files) load(path string) ([]byte, os.FileMode, error) {
