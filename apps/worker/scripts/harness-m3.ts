@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { db, pool, getOrgId, organization, customer_profile, data_source, llm_provider_config, processing_job, pack_action_definition, action_policy, eq } from '@neko/db';
+import { db, pool, getOrgId, getOrCreateSoloAdmin, organization, customer_profile, data_source, llm_provider_config, processing_job, pack_action_definition, action_policy, eq } from '@neko/db';
 import { boss, enqueue, QUEUE, type WorkRunPayload } from '@neko/db/jobs';
 import { createWorkThread, createWorkRun, createWorkMessage, ensureWorkWorkspace, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
 import { runWorkRun } from '../src/jobs/work-run.js';
@@ -146,7 +146,9 @@ assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operati
 console.log('M5_QUEUE_UPLOAD_PASS',uploadRun.id);
 // Only this run's artifact directory is writable by the Go file tools. The
 // existing Work artifact projection must expose the completed CSV once.
-const artifactThread=await createWorkThread(orgId,'M5 CSV artifact');
+const soloAdmin=await getOrCreateSoloAdmin(orgId);
+assert.ok(soloAdmin,'isolated solo operator required for web download');
+const artifactThread=await createWorkThread(orgId,'M5 CSV artifact','web',soloAdmin.id);
 const artifactRun=await createWorkRun(orgId,artifactThread.id,'harness',{userId:null,role:'service'});
 const artifactWorkspace=await ensureWorkWorkspace(orgId,artifactThread.id,artifactRun.id);
 const otherArtifacts=join(artifactWorkspace.runsRoot,'other-run','artifacts');
