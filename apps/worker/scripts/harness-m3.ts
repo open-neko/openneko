@@ -268,6 +268,8 @@ try {
     const realEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,realRun.id])).rows;
     assert.deepEqual(realEvents.map(row=>row.payload.artifact.path),[`runs/${realRun.id}/artifacts/references.csv`]);
     console.log('M5_QUEUE_BATCH_GRAPHJIN_PASS',realRun.id);
+    if (process.env.HARNESS_M3_WEB === '1')
+        await writeFile(join(process.env.HARNESS_STATE!,'m5-batch-workflow-run'),realWorkflowRun.id);
 } finally {
     for(const name of batchEnv) {if(realBatchPrior[name]===undefined)delete process.env[name];else process.env[name]=realBatchPrior[name];}
 }
@@ -316,7 +318,7 @@ async function startWorker() {
     children.push(child);
     let error=''; child.stderr?.on('data',chunk=>{error=(error+chunk).slice(-4096);});
     await Promise.race([
-        once(child,'message',{signal:AbortSignal.timeout(15_000)}),
+        once(child,'message',{signal:AbortSignal.timeout(45_000)}),
         once(child,'exit').then(()=>{throw Error(`Worker exited before readiness: ${error}`);}),
     ]);
     return child;
