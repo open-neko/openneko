@@ -900,6 +900,19 @@ describe("makeSandboxRunCore", () => {
     } finally {await rm(root,{recursive:true,force:true});}
   });
 
+  it("grants the governed Harness broker profile only with admitted pack actions", async () => {
+    const root = await mkdtemp(join(tmpdir(),"harness-profile-test-"));
+    try {
+      h.state.execLines = [];
+      const tokenFor = vi.fn(() => "restricted-token");
+      const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{},brokerUrl:"http://broker",brokerTokenFor:tokenFor});
+      const input = {...fakeInput(async()=>{}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]),workspace:fullWorkspace(root)};
+      input.packActions = [{kind:"fixture.update",description:"Update fixture",scope:"external",default_mode:"ask"}];
+      await expect(core(input)).rejects.toThrow("without a result");
+      expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-governed"}));
+    } finally { await rm(root,{recursive:true,force:true}); }
+  });
+
   it.each(["ready", "busy", "unknown", "exhausted", "broker-unknown", "stale-active", "inventory-full", "inventory-invalid", "transfer-mismatch", "absent"])("handles interrupted Harness continuation: %s", async mode => {
     const root = await mkdtemp(join(tmpdir(), "harness-continue-test-"));
     try {

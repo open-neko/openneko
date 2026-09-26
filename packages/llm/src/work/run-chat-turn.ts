@@ -451,6 +451,11 @@ async function runChatTurnTraced(
         filterHeldActions(runActor, opts.pluginActions ?? []),
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
+    const admittedPackActions = customerSurface
+      ? backend.id === "harness"
+        ? [...heldPackActions].sort((a, b) => a.kind.localeCompare(b.kind)).slice(0, 64)
+        : heldPackActions
+      : [];
     const [memoryContext, installedSkills, profile] = await Promise.all([
       customerSurface
         ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
@@ -519,6 +524,7 @@ async function runChatTurnTraced(
       pluginCatalog,
       inlineTranscript,
       pluginActions: customerSurface ? heldPluginActions : [],
+      packActions: admittedPackActions,
       dataSurface,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
@@ -550,7 +556,7 @@ async function runChatTurnTraced(
       workspace,
       backendState: bundle.thread.backendState,
       pluginActions: customerSurface ? heldPluginActions : [],
-      packActions: customerSurface ? heldPackActions : [],
+      packActions: admittedPackActions,
       sourceConfigEnabled: supportsSourceConfigTool,
       dataSurface,
       ...(opts.graphjinToolPolicy
