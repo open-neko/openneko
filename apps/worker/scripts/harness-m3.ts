@@ -108,6 +108,13 @@ throw Error('queued run timed out');
 }
 await waitForJob(job.id);
 const modelCalls = await (await fetch('http://127.0.0.1:18118/control')).json();
+const outerUsageEvents = async () => (await pool().query(
+    "SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='usage' AND payload->>'source'='outer' ORDER BY id",
+    [orgId,run.id],
+)).rows;
+const initialUsage = await outerUsageEvents();
+assert.equal(initialUsage.length,1,'one outer usage event per completed Harness run');
+assert.deepEqual(initialUsage[0].payload.usage,{coverage:'complete',inputTokens:30,outputTokens:30,totalTokens:60,cacheReadTokens:0,cacheWriteTokens:0,reasoningTokens:0});
 const receipt = (await pool().query('SELECT accepted_context, result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows[0];
 const context=receipt.accepted_context;
 // These are valid legacy commands, not malformed text that would be ignored anyway.
@@ -132,6 +139,7 @@ assert.deepEqual((await pool().query('SELECT accepted_context FROM harness_run_j
 assert.deepEqual(await effectCounts(),beforeEffects,'replayed answers must not execute effect fences');
 assert.deepEqual((await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows,operations);
 assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role='assistant'",[orgId,run.id])).rows[0].n,1);
+assert.deepEqual(await outerUsageEvents(),initialUsage,'redelivery must not record model usage twice');
 console.log('M4_QUEUE_REDELIVERY_PASS',run.id);
 // A staged upload must reach the Go harness through the production queue and
 // OpenShell sandbox, while another thread's upload remains invisible.

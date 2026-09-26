@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { parse } from "yaml";
-import type { AgentBackend, AgentModelIdentity, AgentRunOptions, AgentRunResult } from "../agent-backend";
+import type { AgentBackend, AgentModelIdentity, AgentRunOptions, AgentRunResult, AgentTokenUsage } from "../agent-backend";
 import { VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
 /** Opt-in read-only M3 backend. Hermes remains the default and keeps its warm pool. */
 export class HarnessBackend implements AgentBackend {
@@ -62,6 +62,7 @@ export class HarnessBackend implements AgentBackend {
                     if (!["completed", "failed", "cancelled"].includes(event.result?.status))
                         throw new Error("Invalid harness result");
                     result = harnessResult(event.result);
+                    await opts.onEvent?.({ type: "usage", source: "outer", usage: harnessUsage(event.result?.usage) });
                 }
                 else if (event.type === "tool.started") {
                     const name = event.name === "propose" ? "neko_action_proposal" : event.name === "lookup" ? "neko_graphjin_agent" : event.name === "mcp_memory_search" ? "mcp_neko_memory_search" : event.name;
@@ -98,7 +99,39 @@ export class HarnessBackend implements AgentBackend {
 }
 
 /** Shared by live execution and validated checkpoint adoption. */
-export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; proposals?: {id?:string;status:string}[]; delegations?: unknown[]; answer?: string; code?: string}): AgentRunResult {
-    return { backendState: { harness: { version: 1, kind: result.kind, proposals: result.proposals ?? [], delegations: result.delegations ?? [], usageCoverage: "delegated-only" } }, status: result.status, finalText: result.answer ?? "",
+export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; proposals?: {id?:string;status:string}[]; delegations?: unknown[]; usage?: unknown; answer?: string; code?: string}): AgentRunResult {
+    const outer = harnessUsage(result.usage);
+    return { backendState: { harness: { version: 1, kind: result.kind, proposals: result.proposals ?? [], delegations: result.delegations ?? [], usageCoverage: outer.coverage, usageScope: "outer-only" } }, status: result.status, finalText: result.answer ?? "",
         ...(result.code ? {error: result.code} : {}) };
+}
+
+export function harnessUsage(raw: unknown): AgentTokenUsage {
+    const usage = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const requests = usage.requests;
+    const reported = usage.reported;
+    const coverage = usage.coverage;
+    if (!Number.isSafeInteger(requests) || !Number.isSafeInteger(reported) ||
+        (requests as number) < 0 || (requests as number) > 64 || (reported as number) < 0 || (reported as number) > (requests as number) ||
+        !["complete", "partial", "unavailable"].includes(String(coverage))) {
+        return { coverage: "unavailable", missingReasons: ["Harness omitted valid model usage"] };
+    }
+    const expectedCoverage = reported === requests && (requests as number) > 0 ? "complete" : (reported as number) > 0 ? "partial" : "unavailable";
+    if (coverage !== expectedCoverage) return { coverage: "unavailable", missingReasons: ["Harness reported inconsistent model usage coverage"] };
+    const fields = ["input_tokens", "output_tokens", "total_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"] as const;
+    if ((reported as number) > 0 && fields.slice(0, 3).some(field => usage[field] === undefined) ||
+        fields.some(field => usage[field] !== undefined && (!Number.isSafeInteger(usage[field]) || (usage[field] as number) < 0 || (usage[field] as number) > 64_000_000_000_000))) {
+        return { coverage: "unavailable", missingReasons: ["Harness reported invalid token counts"] };
+    }
+    return {
+        coverage: coverage as AgentTokenUsage["coverage"],
+        ...(reported ? {
+            inputTokens: usage.input_tokens as number ?? 0,
+            outputTokens: usage.output_tokens as number ?? 0,
+            totalTokens: usage.total_tokens as number ?? 0,
+            cacheReadTokens: usage.cache_read_tokens as number ?? 0,
+            cacheWriteTokens: usage.cache_write_tokens as number ?? 0,
+            reasoningTokens: usage.reasoning_tokens as number ?? 0,
+        } : {}),
+        ...(coverage === "complete" ? {} : { missingReasons: [`Provider usage was available for ${reported} of ${requests} Harness model requests`] }),
+    };
 }
