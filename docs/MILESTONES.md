@@ -433,7 +433,11 @@ measure tokens, cost, multi-provider routing or child/remote work. A run-local
 Goja handoff now preserves bounded distilled evidence for executor code. A local
 Ax fixture verified that an 85 KB observation stayed out of the executor model
 request while its narrowed reference supported a second tool call; the connected
-worker/OpenShell/GraphJin regression passed after this change.
+worker/OpenShell/GraphJin regression passed after this change. Failed or partial
+tool outcomes no longer return `status: completed` with the responder's
+unverified success claim; the focused durable-write and broker tests cover the
+terminal mapping, and a checkpoint test proves an `is_error` result remains
+incomplete after resume. General claim-to-receipt verification remains open.
 
 **Deliver:** approved Ax model profiles and fallback; aggregate limits across model
 stages, tools, retries and child/remote work; context compaction preserving original

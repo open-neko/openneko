@@ -166,6 +166,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	toolFailed := false
 	for _, op := range prior.Operations {
 		if len(op.Result) > 0 {
+			if toolResultFailed(op.Result) {
+				toolFailed = true
+			}
 			if op.Name() == "lookup" {
 				delegations = append(delegations, op.Result)
 			} else if op.Name() == "propose" {
@@ -243,13 +246,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					return ax.Object("error", "invalid_"+name+"_result"), nil
 				}
 				finished.Data = append(json.RawMessage(nil), raw...)
-				if name != "lookup" && name != "propose" {
-					var status struct {
-						IsError bool `json:"is_error"`
-					}
-					if json.Unmarshal(raw, &status) == nil && status.IsError {
-						toolFailed = true
-					}
+				if toolResultFailed(raw) {
+					toolFailed = true
 				}
 				if name == "lookup" {
 					delegations = append(delegations, append(json.RawMessage(nil), raw...))
@@ -345,10 +343,23 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 	}
+	if result.Status == "completed" && (toolFailed || result.Kind == "partial") {
+		result.Status = "failed"
+		result.Kind = "partial"
+		result.Code = "incomplete_result"
+		result.Answer = "The run did not complete; a tool returned an incomplete or failed result."
+	}
 	events.send(Event{Type: "run.finished", Result: &result})
 	events.mu.Lock()
 	defer events.mu.Unlock()
 	return result, events.err
+}
+
+func toolResultFailed(raw json.RawMessage) bool {
+	var status struct {
+		IsError bool `json:"is_error"`
+	}
+	return json.Unmarshal(raw, &status) == nil && status.IsError
 }
 
 type recorder struct {

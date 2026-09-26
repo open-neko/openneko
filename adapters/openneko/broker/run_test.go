@@ -80,11 +80,15 @@ func TestAgentDelegatesThroughBrokerHTTP(t *testing.T) {
 				return
 			}
 
-			if err != nil || result.Status != "completed" || result.Kind != tc.kind || result.Answer != "REF-42" || lookups != 1 || calls != 3 {
+			wantStatus, wantAnswer := "completed", "REF-42"
+			if tc.status == "error" {
+				wantStatus, wantAnswer = "failed", "The run did not complete; a tool returned an incomplete or failed result."
+			}
+			if err != nil || result.Status != wantStatus || result.Kind != tc.kind || result.Answer != wantAnswer || lookups != 1 || calls != 3 {
 				t.Fatalf("result=%+v err=%v lookups=%d calls=%d", result, err, lookups, calls)
 			}
 			replayed, err := session.Run(context.Background(), root, agent.Spec{Version: 1, RunID: "r", InputID: "i", Prompt: "Find reference"}, client, lookup, func(agent.Event) error { return nil })
-			if err != nil || replayed.Answer != "REF-42" || lookups != 1 || calls != 3 || len(replayed.Delegations) != 1 {
+			if err != nil || replayed.Status != wantStatus || replayed.Answer != wantAnswer || lookups != 1 || calls != 3 || len(replayed.Delegations) != 1 {
 				t.Fatalf("durable replay failed: %+v %v", replayed, err)
 			}
 			starts, ends := 0, 0

@@ -163,10 +163,11 @@ executor code as `harnessEvidence` across Ax's stage patch. The integration
 fixture passes a large read result through the distiller, verifies the executor
 uses its narrow reference without another read, and checks that the bulk value
 does not enter the executor model request. The binding is redacted from runtime
-inspection and snapshots; it is not a durable checkpoint. The runner still
-accepts any nonempty answer as `completed`, then labels some failed tool
-outcomes `partial`; it has no general evidence-qualified terminal gate. Add
-that narrow check where the real tool/result contract needs it, without
+inspection and snapshots; it is not a durable checkpoint. The runner now
+turns failed or partial tool outcomes into a failed terminal result with a
+safe answer, even when the responder claims success. It still has no general
+evidence-qualified terminal gate for arbitrary answer claims. Add that check
+where the real tool/result contract needs it, without
 importing GraphJin's large domain protocol into the core.
 
 Before broadening the executor, test a denied operation that produces no effect,

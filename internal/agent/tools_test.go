@@ -54,6 +54,34 @@ func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
 	}
 }
 
+func TestFailedDurableToolCannotReportCompletedAction(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Save the file',{})"}`,
+		`{"javascriptCode":"const receipt=file_write({}); final('Report completion',{receipt});"}`,
+		`{"answer":"I saved the file."}`,
+	}
+	var calls atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	tool := Capability{Name: "file_write", Version: "1", Origin: "fixture", Effect: "durable", Description: "Save a file.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"is_error":true,"error":"write_denied"}`), nil
+	}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "failed-write", InputID: "input", Prompt: "Save the file"},
+		client, Tools{Capabilities: []Capability{tool}}, func(Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Kind != "partial" || result.Code != "incomplete_result" || result.Answer != "The run did not complete; a tool returned an incomplete or failed result." || calls.Load() != 3 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+}
+
 func TestProposalTrustBoundary(t *testing.T) {
 	for _, input := range []string{
 		`{"action":"a","arguments":{},"summary":"Ask","status":"approved"}`,

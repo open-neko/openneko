@@ -83,6 +83,32 @@ func TestResumeUsesSavedEvidenceAndContinuesOperationSequence(t *testing.T) {
 	}
 }
 
+func TestResumeKeepsPersistedToolFailureIncomplete(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "failed-tool", InputID: "input", Prompt: "Save the file"}
+	var writes int
+	tools := agent.Tools{Capabilities: []agent.Capability{{Name: "file_write", Version: "1", Origin: "fixture", Effect: "durable", Description: "Save a file.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			writes++
+			return json.RawMessage(`{"is_error":true,"error":"write_denied"}`), nil
+		}}}}
+	client, _ := proposalModel(t, `const receipt=file_write({}); final('Report completion',{receipt});`)
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || writes != 1 {
+		t.Fatalf("failed tool was not checkpointed: err=%v writes=%d", err, writes)
+	}
+	client, calls := proposalModel(t, `const receipt=file_write({}); final('Report completion',{receipt});`)
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Kind != "partial" || result.Code != "incomplete_result" || writes != 1 || calls.Load() != 3 {
+		t.Fatalf("result=%+v err=%v writes=%d calls=%d", result, err, writes, calls.Load())
+	}
+}
+
 func TestResumeRefusesUnknownAndPersistsAttemptBudgetBeforeModel(t *testing.T) {
 	s := prefix()
 	root, _ := fixture(t, s)
