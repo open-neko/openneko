@@ -116,6 +116,11 @@ completed run and the exact 19-byte CSV. The API download filename is
 The web process and worker read the same versioned executor registry, and a
 separate live worker check retains a queued v1 revision after v2 becomes active.
 This fixture uses synthetic GraphJin data and no live model key.
+The isolated browser also rendered the completed API workflow run and its
+Download CSV link. Clicking it returned HTTP 200, and the same route returned
+the exact `reference\r\nREF-42\r\n` bytes with attachment headers. The live
+worker regression checks that one claim records one queue attempt and that the
+no-model batch path reports zero tokens and complete usage coverage.
 
 An additional isolated rerun passed `mcp_library_search` through the real
 OpenNeko bridge, scoped broker, OpenShell worker and Go/Ax checkpoint. A later

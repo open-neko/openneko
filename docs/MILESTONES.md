@@ -195,7 +195,8 @@ CSV columns and artifact filename; neither is fixed to Daily Lead Union.
 A real-data Daily Lead Union run remains open. The isolated web route returned
 the exact 19-byte CSV through the authorized workflow-run artifact URL with
 attachment headers and rejected an unknown run with 404. The workflow detail
-page still needs a rendered browser check. This is **not yet** an Ax tool: do
+page also rendered a completed API run and its CSV link in the isolated browser;
+the clicked link returned HTTP 200 and the exact 19-byte CSV. This is **not yet** an Ax tool: do
 not mint that grant in normal runs until general workflow admission and batch
 recovery are fully qualified.
 The 20-minute pipeline should run as a host-owned operation with progress and
@@ -213,13 +214,14 @@ snapshots the active revision and configuration fingerprint with the selected
 contract; the worker can execute that pinned revision after a later active
 switch, but refuses a changed or removed entry. The caller submits immutable
 input and receives `202 Accepted`
-with a run ID; it cannot edit or approve the run while queued. A later operator
-edit to the workflow's name or output contract affects only later admissions;
+with a run ID; it cannot edit or approve the run while queued. Any different
+input requires a new admission and idempotency key. A later operator edit to
+the workflow's name or output contract affects only later admissions;
 disabling the workflow may revoke a queued run. The caller polls for completed,
 failed, or cancelled status and downloads an artifact only after successful
 validation and publication.
-The dispatch outbox, pg-boss expiry for long executions, cancellation, and
-browser-visible workflow result remain part of that admission path.
+The dispatch outbox, pg-boss expiry for long executions, and cancellation
+remain part of that admission path.
 
 The isolated API acceptance now covers `POST` through the real web server,
 transactional admission, a worker claim, file-backed execution with no provider
