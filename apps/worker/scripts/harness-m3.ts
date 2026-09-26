@@ -167,6 +167,10 @@ assert.deepEqual(artifactSnapshot.operations.map((op:{tool:string})=>op.tool),['
 assert.deepEqual(artifactSnapshot.operations[0].result.paths,[]);
 assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,artifactRun.id])).rows[0].n,0);
 console.log('M5_QUEUE_ARTIFACT_PASS',artifactRun.id);
+if (process.env.HARNESS_M3_WEB === '1') {
+    assert.ok(process.env.HARNESS_STATE);
+    await writeFile(join(process.env.HARNESS_STATE, 'm5-artifact-run'), artifactRun.id);
+}
 // Exercise the production queue handler and worker-owned proposal preflight API.
 const approvalKind='harness_effect_fixture';
 const beforeExecutions=(await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n;
