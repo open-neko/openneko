@@ -192,10 +192,12 @@ the Go runner and OpenShell, obtains the seeded `REF-42` row through the host-on
 GraphJin broker, and publishes a validated CSV with one query. The duplicate
 delivery fixture proves one artifact event. The workflow contract supplies the
 CSV columns and artifact filename; neither is fixed to Daily Lead Union.
-A real-data Daily Lead Union run remains open.
-This is **not yet** an Ax tool
-or browser acceptance: do not mint that grant in normal runs until workflow
-admission, batch recovery and artifact projection are fully qualified.
+A real-data Daily Lead Union run remains open. The isolated web route returned
+the exact 19-byte CSV through the authorized workflow-run artifact URL with
+attachment headers and rejected an unknown run with 404. The workflow detail
+page still needs a rendered browser check. This is **not yet** an Ax tool: do
+not mint that grant in normal runs until general workflow admission and batch
+recovery are fully qualified.
 The 20-minute pipeline should run as a host-owned operation with progress and
 durable continuation, rather than blocking the current two-minute Ax callback.
 Reuse OpenNeko's pg-boss queue, workflow-run and Work artifact contracts;

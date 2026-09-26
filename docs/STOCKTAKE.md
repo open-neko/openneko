@@ -41,7 +41,7 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | --- | --- | --- |
 | M1–M4 | Locally qualified at their bounded scope; recovery and real OpenShell/consumer checks recorded above | Preserve regression coverage as capabilities expand; accepted idle-proxy cancellation remains observable |
 | M5a catalog | Native/direct/MCP fixture calls share Ax, schema admission, operation journal and catalog binding | Package and compare the full consumer capability inventory and recovery behavior on connected runs |
-| M5b reads/batch | Seeded memory search, real pgvector/entitlement library search, and an empty-registry records-only catalog turn passed worker/OpenShell/broker/MCP/Ax; records find/get passed the real bridge with a synthetic broker; controlled query-to-file runner and scoped batch-read grant pass local fixtures; a separate no-provider/no-network OpenShell sandbox completed a synthetic CSV with host-owned query handoff and mandatory deletion; response-before-receipt crash recovery passed a local no-redispatch check; run-bound sandbox inventory/deletion refuses foreign labels; the production pg-boss queue used the Go runner, OpenShell, host-only GraphJin broker and seeded `REF-42` to publish one validated workflow CSV; duplicate delivery produced one artifact event | Add general workflow admission, connect real GraphJin data, download the workflow CSV through the browser, then qualify data-backed records find/get, uploaded-document/browser search and clarification/UI paths |
+| M5b reads/batch | Seeded memory search, real pgvector/entitlement library search, and an empty-registry records-only catalog turn passed worker/OpenShell/broker/MCP/Ax; records find/get passed the real bridge with a synthetic broker; controlled query-to-file runner and scoped batch-read grant pass local fixtures; a separate no-provider/no-network OpenShell sandbox completed a synthetic CSV with host-owned query handoff and mandatory deletion; response-before-receipt crash recovery passed a local no-redispatch check; run-bound sandbox inventory/deletion refuses foreign labels; the production pg-boss queue used the Go runner, OpenShell, host-only GraphJin broker and seeded `REF-42` to publish one validated workflow CSV; duplicate delivery produced one artifact event; the workflow-run web route returned the exact CSV and attachment headers | Add general workflow admission, connect real GraphJin data, check the workflow detail page in a rendered browser, then qualify data-backed records find/get, uploaded-document/browser search and clarification/UI paths |
 | M5c mutations | Pack-action proposal is narrowed to host-admitted action kinds and governed effects | Qualify remaining product writes at their actual effect boundaries, including crash and duplicate delivery |
 | M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; an artifact-only root produced a CSV and one Work artifact event; the Work browser rendered and requested its link, and the live route returned exact bytes | Add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
 | M5e delegation | Ax API and ownership design researched | Implement narrowed child execution with shared budgets and cancellation, then connected verification |
@@ -88,6 +88,14 @@ qualifies the small solo-owner artifact path; multi-user authorization and the
 full batch artifact still need connected verification.
 The optional M3 web run now repeats the exact-byte/attachment/404 route checks
 against each newly created queue artifact and reports `M5_WEB_ARTIFACT_PASS`.
+On 2026-09-27 the same isolated suite reported `M5_QUEUE_BATCH_GRAPHJIN_PASS`
+and `M5_WEB_BATCH_PASS`: the workflow-run URL returned the pinned script's
+`reference\r\nREF-42\r\n` bytes with CSV attachment headers; an unknown run
+returned 404. The earlier Work file route correctly denied a workflow-channel
+thread. A stale Next dev route cache once returned HTML 404 for every API route;
+the test now moves that generated cache aside before starting Next. The
+workflow detail page still needs a rendered browser check. No real model key
+or customer database was used.
 The isolated M3 suite also passed a library search against its actual Postgres
 pgvector row and server-side run entitlement, using a deterministic embedding
 response. The fixture organization is deleted before queued acceptance so it

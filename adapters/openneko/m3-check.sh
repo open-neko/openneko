@@ -56,6 +56,7 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
 if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   docker compose -p harness-m3 -f integration/m3/compose.yml restart model
+  [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
   # Own the whole process group: terminating pnpm alone leaves Next listening.
   set -m
   (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &
@@ -74,6 +75,14 @@ if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   rg -qi '^content-type: text/csv' "$HARNESS_STATE/artifact.headers"
   [[ $(curl -sS -o /dev/null -w '%{http_code}' "${artifact_url%result.csv}hidden.txt") == 404 ]]
   echo "M5_WEB_ARTIFACT_PASS $artifact_run"
+  batch_run=$(cat "$HARNESS_STATE/m5-batch-workflow-run")
+  batch_url="http://localhost:18121/api/workflow-runs/$batch_run/artifact"
+  curl -fsS --max-time 10 -D "$HARNESS_STATE/batch.headers" -o "$HARNESS_STATE/batch.csv" "$batch_url"
+  printf 'reference\r\nREF-42\r\n' | cmp -s - "$HARNESS_STATE/batch.csv"
+  rg -qi '^content-disposition: attachment; filename="references.csv"' "$HARNESS_STATE/batch.headers"
+  rg -qi '^content-type: text/csv' "$HARNESS_STATE/batch.headers"
+  [[ $(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:18121/api/workflow-runs/00000000-0000-0000-0000-000000000000/artifact") == 404 ]]
+  echo "M5_WEB_BATCH_PASS $batch_run"
   echo "M3_WEB_READY state=$HARNESS_STATE"
   for ((n=0; n<900; n++)); do
     [[ ! -f "$HARNESS_STATE/web-done" ]] || break
