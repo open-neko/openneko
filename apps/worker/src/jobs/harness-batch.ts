@@ -62,9 +62,16 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
       [payload.orgId, payload.workflowRunId, payload.runId, payload.threadId]);
     const workflow = binding.rows[0];
     const executor = workflow?.output_contract?.harnessBatch as Record<string, unknown> | undefined;
+    const columns = executor?.columns;
+    const artifactName = executor?.artifactName;
     if (!workflow || !workflow.enabled || workflow.definition_status !== "active" ||
         workflow.workflow_name !== config.HARNESS_BATCH_WORKFLOW_NAME ||
         executor?.version !== 1 || executor?.executor !== "query-to-file" ||
+        !Array.isArray(columns) || columns.length === 0 || columns.length > 64 ||
+        columns.some((column) => typeof column !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(column)) ||
+        new Set(columns).size !== columns.length ||
+        typeof artifactName !== "string" || !artifactName.endsWith(".csv") ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.csv$/.test(artifactName) ||
         !["running", "completed"].includes(workflow.workflow_status) ||
         typeof workflow.trigger_payload?.targetDay !== "string" ||
         !/^\d{4}-\d{2}-\d{2}$/.test(workflow.trigger_payload.targetDay)) {
@@ -88,10 +95,10 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
       throw new Error("Harness batch workflow is not granted to this actor");
     }
     const workspace = await ensureWorkWorkspace(payload.orgId, payload.threadId, payload.runId);
-    const artifact = join(workspace.artifactRoot, "union_final.csv");
+    const artifact = join(workspace.artifactRoot, artifactName);
     const existing = await client.query(
       "SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact' AND payload->'artifact'->>'path'=$3 LIMIT 1",
-      [payload.orgId, payload.runId, join("runs", payload.runId, "artifacts", "union_final.csv")],
+      [payload.orgId, payload.runId, join("runs", payload.runId, "artifacts", artifactName)],
     );
     if (run.status === "completed") {
       if (!existing.rowCount || workflow.workflow_status !== "completed") throw new Error("Harness batch completed without workflow artifact");
@@ -136,6 +143,8 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
           PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "",
           ...(process.env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME } : {}),
           ...config, HARNESS_BATCH_RUN_ID: payload.runId,
+          HARNESS_BATCH_COLUMNS_JSON: JSON.stringify(columns),
+          HARNESS_BATCH_ARTIFACT_NAME: artifactName,
           HARNESS_BATCH_WORK_DIR: workDir, HARNESS_BATCH_ARTIFACT_DIR: workspace.artifactRoot,
           OPENNEKO_BROKER_URL: `http://127.0.0.1:${activeBroker.port}`,
           OPENNEKO_BROKER_TOKEN: token,
@@ -160,7 +169,7 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
     if (createHash("sha256").update(bytes).digest("hex") !== receipt.sha256) {
       throw new Error("Harness batch artifact digest mismatch");
     }
-    const relative = join("runs", payload.runId, "artifacts", "union_final.csv").replaceAll("\\", "/");
+    const relative = join("runs", payload.runId, "artifacts", artifactName).replaceAll("\\", "/");
     await client.query("BEGIN");
     try {
       const current = await client.query("SELECT status FROM work_run WHERE org_id=$1 AND id=$2 FOR UPDATE", [payload.orgId, payload.runId]);
@@ -173,13 +182,21 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
           SELECT 1 FROM work_run_event WHERE org_id=$1 AND run_id=$3 AND kind='artifact'
             AND payload->'artifact'->>'path'=$5)`,
       [payload.orgId, payload.threadId, payload.runId,
-        JSON.stringify({ type: "artifact", artifact: { path: relative, label: "union_final.csv", mimeType: "text/csv" } }), relative]);
+        JSON.stringify({ type: "artifact", artifact: { path: relative, label: artifactName, mimeType: "text/csv" } }), relative]);
+      const finalText = `Processed ${receipt.rows} records into a CSV artifact with ${receipt.queries} governed queries.`;
+      await client.query(`INSERT INTO work_run_event (org_id,thread_id,run_id,kind,payload)
+        VALUES ($1,$2,$3,'message',$4::jsonb),($1,$2,$3,'done',$5::jsonb)`, [
+        payload.orgId, payload.threadId, payload.runId,
+        JSON.stringify({ type: "message", role: "assistant", content: finalText }),
+        JSON.stringify({ type: "done", result: { status: "completed" } }),
+      ]);
       await client.query("UPDATE work_run SET status='completed',error=NULL,finished_at=now(),updated_at=now() WHERE org_id=$1 AND id=$2", [payload.orgId, payload.runId]);
       await client.query(`UPDATE workflow_run SET status='completed',error=NULL,
-        summary='CSV artifact completed',result_artifact_path=$3,
+        summary=$7,result_artifact_path=$3,terminal_result=$8::jsonb,
         progress=jsonb_build_object('stage','completed','rows',$4::integer,'queries',$5::integer,'artifactBytes',$6::integer),
         finished_at=now(),updated_at=now() WHERE org_id=$1 AND id=$2`,
-        [payload.orgId, payload.workflowRunId, relative, receipt.rows, receipt.queries, info.size]);
+        [payload.orgId, payload.workflowRunId, relative, receipt.rows, receipt.queries, info.size,
+          finalText, JSON.stringify({ kind: "csv", rows: receipt.rows, queries: receipt.queries, columns, sha256: receipt.sha256 })]);
       await client.query("COMMIT");
       console.log(`[harness-batch] completed workflowRun=${payload.workflowRunId} run=${payload.runId} rows=${receipt.rows} queries=${receipt.queries} bytes=${info.size}`);
     } catch (error) {

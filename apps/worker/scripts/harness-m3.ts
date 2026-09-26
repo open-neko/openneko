@@ -182,7 +182,7 @@ const fs=require('node:fs');const path=require('node:path');const crypto=require
 if(process.env.MODEL_API_KEY||!process.env.OPENNEKO_BROKER_TOKEN)process.exit(3);
 const count=path.join(process.env.HARNESS_BATCH_WORK_DIR,'invocations');
 fs.writeFileSync(count,String(Number(fs.existsSync(count)?fs.readFileSync(count,'utf8'):0)+1));
-const artifact=path.join(process.env.HARNESS_BATCH_ARTIFACT_DIR,'union_final.csv');
+const artifact=path.join(process.env.HARNESS_BATCH_ARTIFACT_DIR,process.env.HARNESS_BATCH_ARTIFACT_NAME);
 const bytes=Buffer.from('lead_id\\nLEAD-42\\n');fs.writeFileSync(artifact,bytes);
 process.stdout.write(JSON.stringify({artifact,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),rows:1,queries:1}));
 `);
@@ -198,7 +198,7 @@ try {
     const batchThread=await createWorkThread(orgId,'M5 host-owned batch','web',soloAdmin.id);
     const batchRun=await createWorkRun(orgId,batchThread.id,'harness',{userId:null,role:'service'});
     const [batchWorkflow]=await db().insert(workflow_definition).values({org_id:orgId,name:'Fixture batch workflow',
-      output_contract:{harnessBatch:{version:1,executor:'query-to-file'}}}).returning({id:workflow_definition.id});
+      output_contract:{harnessBatch:{version:1,executor:'query-to-file',artifactName:'leads.csv',columns:['lead_id']}}}).returning({id:workflow_definition.id});
     const [batchWorkflowRun]=await db().insert(workflow_run).values({org_id:orgId,workflow_id:batchWorkflow.id,
       thread_id:batchThread.id,work_run_id:batchRun.id,trigger_kind:'manual',trigger_payload:{targetDay:'2026-09-15'},status:'running'}).returning({id:workflow_run.id});
     const payload:HarnessBatchPayload={orgId,threadId:batchThread.id,runId:batchRun.id,workflowRunId:batchWorkflowRun.id};
@@ -217,13 +217,59 @@ try {
         await new Promise(r=>setTimeout(r,250));
     assert.equal((await queue.getJobById(QUEUE.HARNESS_BATCH,repeat))?.state,'completed');
     const batchWorkspace=await ensureWorkWorkspace(orgId,batchThread.id,batchRun.id);
-    assert.equal(await readFile(join(batchWorkspace.artifactRoot,'union_final.csv'),'utf8'),'lead_id\nLEAD-42\n');
+    assert.equal(await readFile(join(batchWorkspace.artifactRoot,'leads.csv'),'utf8'),'lead_id\nLEAD-42\n');
     assert.equal(await readFile(join(batchWorkspace.runRoot,'batch','invocations'),'utf8'),'1');
     const batchEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,batchRun.id])).rows;
-    assert.deepEqual(batchEvents.map(row=>row.payload.artifact.path),[`runs/${batchRun.id}/artifacts/union_final.csv`]);
+    assert.deepEqual(batchEvents.map(row=>row.payload.artifact.path),[`runs/${batchRun.id}/artifacts/leads.csv`]);
     console.log('M5_QUEUE_BATCH_PASS',batchRun.id);
 } finally {
     for(const name of batchEnv) {if(batchPrior[name]===undefined)delete process.env[name];else process.env[name]=batchPrior[name];}
+}
+// Drive the production queue and Go runner through a real OpenShell sandbox,
+// broker batchRead token, and seeded GraphJin data source. The script gets no
+// model credential or broker token; it receives only the response file.
+assert.ok(process.env.HARNESS_M3_BATCH_BIN && process.env.HARNESS_M3_BATCH_SCRIPT);
+const workflowScript=process.env.HARNESS_M3_BATCH_SCRIPT;
+const scriptBytes=await readFile(workflowScript);
+const scriptHash=createHash('sha256').update(scriptBytes).digest();
+const bundleHash=createHash('sha256').update('run.py\0').update(scriptHash).digest('hex');
+const realBatchPrior=Object.fromEntries(batchEnv.map(name=>[name,process.env[name]]));
+Object.assign(process.env,{OPENNEKO_HARNESS_BATCH_BIN:process.env.HARNESS_M3_BATCH_BIN,
+    HARNESS_OPENSHELL_BIN:process.env.HARNESS_OPENSHELL_BIN,OPENSHELL_GATEWAY:'harness-m2',
+    HARNESS_BATCH_IMAGE:'harness-openneko:m3',HARNESS_BATCH_SCRIPT:workflowScript,
+    HARNESS_BATCH_SCRIPT_SHA256:scriptHash.toString('hex'),HARNESS_BATCH_BUNDLE_DIR:join(process.env.HARNESS_STATE,'workflow-bundle'),
+    HARNESS_BATCH_BUNDLE_SHA256:bundleHash,HARNESS_BATCH_WORKFLOW_NAME:'Fixture GraphJin workflow',MODEL_API_KEY:'host-only-secret'});
+try {
+    const realThread=await createWorkThread(orgId,'M5 GraphJin batch','workflow');
+    const realRun=await createWorkRun(orgId,realThread.id,'harness',{userId:null,role:'service'});
+    const [realWorkflow]=await db().insert(workflow_definition).values({org_id:orgId,name:'Fixture GraphJin workflow',
+      output_contract:{harnessBatch:{version:1,executor:'query-to-file',artifactName:'references.csv',columns:['reference']}}}).returning({id:workflow_definition.id});
+    const [realWorkflowRun]=await db().insert(workflow_run).values({org_id:orgId,workflow_id:realWorkflow.id,
+      thread_id:realThread.id,work_run_id:realRun.id,trigger_kind:'manual',trigger_payload:{targetDay:'2026-09-15'},status:'running'}).returning({id:workflow_run.id});
+    const realJob=await enqueue(QUEUE.HARNESS_BATCH,{orgId,threadId:realThread.id,runId:realRun.id,
+      workflowRunId:realWorkflowRun.id},{retryLimit:1,retryDelay:1,expireInSeconds:1500});
+    assert.ok(realJob);
+    for(let n=0;n<240;n++) {
+        const current=await getWorkRun(orgId,realRun.id);
+        const job=await queue.getJobById(QUEUE.HARNESS_BATCH,realJob);
+        if(current?.status==='completed' && job?.state==='completed') break;
+        assert.notEqual(current?.status,'failed');assert.notEqual(current?.status,'cancelled');
+        assert.notEqual(job?.state,'failed');
+        await new Promise(r=>setTimeout(r,250));
+    }
+    assert.equal((await getWorkRun(orgId,realRun.id))?.status,'completed');
+    assert.equal((await queue.getJobById(QUEUE.HARNESS_BATCH,realJob))?.state,'completed');
+    const realWorkspace=await ensureWorkWorkspace(orgId,realThread.id,realRun.id);
+    assert.equal((await readFile(join(realWorkspace.artifactRoot,'references.csv'),'utf8')).replaceAll('\r\n','\n'),'reference\nREF-42\n');
+    const realStatus=(await db().select({status:workflow_run.status,progress:workflow_run.progress}).from(workflow_run)
+      .where(eq(workflow_run.id,realWorkflowRun.id)))[0];
+    assert.equal(realStatus?.status,'completed');
+    assert.deepEqual(realStatus?.progress,{stage:'completed',rows:1,queries:1,artifactBytes:19});
+    const realEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,realRun.id])).rows;
+    assert.deepEqual(realEvents.map(row=>row.payload.artifact.path),[`runs/${realRun.id}/artifacts/references.csv`]);
+    console.log('M5_QUEUE_BATCH_GRAPHJIN_PASS',realRun.id);
+} finally {
+    for(const name of batchEnv) {if(realBatchPrior[name]===undefined)delete process.env[name];else process.env[name]=realBatchPrior[name];}
 }
 if (process.env.HARNESS_M3_WEB === '1') {
     assert.ok(process.env.HARNESS_STATE);
