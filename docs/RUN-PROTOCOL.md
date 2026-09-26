@@ -120,5 +120,5 @@ missing/failed status never authorizes redispatch. Without a receipt the product
 records an explicit unknown outcome. Successful receipts and terminal action
 status commit together; repeated delivery returns the receipt without an effect.
 
-Apply OpenNeko migrations 0084–0088 before deploying matching worker and Harness
+Apply OpenNeko migrations 0084–0089 before deploying matching worker and Harness
 images. Drain old workers first. Hermes keeps its existing execution path.

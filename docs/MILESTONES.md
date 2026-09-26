@@ -13,8 +13,13 @@ M1–M4 have local acceptance at their implemented scope. M2 accepts delayed
 upstream cancellation as a nonblocking limitation; mandatory sandbox cleanup
 remains tested. This is not Hermes capability parity or production qualification.
 M5a has a local Go/Ax + official MCP SDK fixture acceptance. M5c has a narrowed
-pack-action proposal slice, with the other mutation families still open. No
-OpenNeko/GraphJin instance is currently connected for M5b or full M5c acceptance.
+pack-action proposal slice, with the other mutation families still open. A
+separate OpenNeko v3.5.6 demo instance was started and verified locally on the
+Mac, then stopped to respect the host's 4 GB Docker memory limit; its volumes
+remain. Onboarding was skipped, so no admin password or model key was configured.
+The released worker still uses Hermes and OpenShell 0.0.54.
+M5b and full M5c acceptance need the feature worker, harness image and matching
+OpenShell gateway; demo health alone does not qualify them.
 Hermes remains the default until rollout.
 
 ## Discovery that changes the plan
@@ -357,8 +362,10 @@ authorized actions.
 1. Finish M5a packaging and recovery checks for the local native/MCP catalog.
 2. Continue M5c handler inventory and isolated governed mutation fixtures;
    retain pack proposal as the only enabled product write path.
-3. When an instance is connected, M5b: real query-to-file batch, MCP reads,
-   clarification and UI through OpenNeko/GraphJin; then connected M5c writes.
+3. Use the isolated local demo as the connected M5b target: real query-to-file
+   batch, MCP reads, clarification and UI through OpenNeko/GraphJin; then
+   connected M5c writes. Keep the released demo and feature integration
+   evidence distinct until the worker and gateway versions match.
 4. M5d/M6: local file/process safety, bounded batch output, routing, context
    and pre-call budgets. M5e adds bounded delegation after shared budgets.
 5. M7/M8: parity evidence, staging and rollback.

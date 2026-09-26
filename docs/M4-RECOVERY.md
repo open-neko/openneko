@@ -6,7 +6,7 @@ thread, principal, tool policy, allowed skills, model route, image and environme
 Records live in `runs/.harness-launches/<run-hash>`, outside the uploaded workspace.
 Changed input or scope is rejected before inspecting or returning evidence.
 
-PostgreSQL is now authoritative for ownership and receipts. Migration 0084 adds
+PostgreSQL is now authoritative for ownership and receipts. Migration 0085 adds
 `harness_run_journal`, scoped by tenant/run. A dedicated PG session holds an
 advisory lock for the entire launch or recovery; another worker is refused until
 the owner exits. Connection loss aborts the owner. Receipt publication uses that
@@ -19,7 +19,7 @@ admission; a rejected import cannot authorize a later retry under changed scope.
 All participating hosts share PostgreSQL and the same gateway, not a filesystem.
 The accepted prompt is hashed after sandbox path remapping. Hosts must use the
 same sandbox workspace layout and unchanged user request/authorization to recover.
-Migration 0085 stores the bounded accepted prompt and a scope fingerprint. When a
+Migration 0086 stores the bounded accepted prompt and a scope fingerprint. When a
 separate user request is present, recovery restores that prompt instead of accepting
 newly generated context. The current principal, policy, request and execution
 configuration must still match, and the restored prompt must match the original
@@ -27,7 +27,7 @@ full fingerprint. Missing user requests and legacy records retain exact-prompt
 matching. Stored context contains application content, never a copy of environment
 credentials; it needs the same access and retention controls as result receipts.
 
-Apply migrations 0084–0087 before deploying these workers, and drain older workers first;
+Apply migrations 0084–0089 before deploying these workers, and drain older workers first;
 mixed versions do not share database ownership. Legacy conflicting records remain
 blocked for explicit reconciliation. No Hermes path reads the new table or acquires
 these locks. Harness remains opt-in.
@@ -60,7 +60,7 @@ result receipts contain application content and need host access/retention contr
 
 ## Broker operation records
 
-Migration 0086 adds `harness_operation`, keyed by tenant/run/runtime operation ID
+Migration 0087 adds `harness_operation`, keyed by tenant/run/runtime operation ID
 and linked to the admitted run. The Go runtime carries that ID through the callback
 context; the fixed adapter posts it to `/v1/harness/lookup`. The broker commits
 intent before calling the existing GraphJin control plane and records its bounded
@@ -399,7 +399,7 @@ commit: `45001af` on `feat/openneko-harness`.
 
 ## Durable proposal storage (host layer)
 
-OpenNeko migration 0087 extends its existing `action_request` records with a
+OpenNeko migration 0088 extends its existing `action_request` records with a
 Harness runtime operation ID, the original proposal and the prepared approval
 snapshot. A unique tenant/run/operation index admits one preparation. The store
 requires an admitted Harness run, derives the actor from that run, and binds the
@@ -472,7 +472,7 @@ installed, ready pack actions with a validated input schema and current entitlem
 can reach worker preflight. Original descriptor and arguments are bound to approval;
 actor, approver, policy and descriptor are rechecked before execution.
 
-Migration 0088 adds one partial unique index to the existing action execution table.
+Migration 0089 adds one partial unique index to the existing action execution table.
 Harness effects have a session owner lock plus a durable claim; Hermes execution
 is unchanged. Known results are persisted atomically with terminal action status.
 An abandoned claim either recovers through an adapter's read-only provider-status

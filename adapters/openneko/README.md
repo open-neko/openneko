@@ -44,7 +44,7 @@ export HARNESS_INSPECT_BIN=/absolute/path/to/bin/harness-inspect
 ```
 
 Both worker and web launchers require it when Harness is selected. The image build
-includes the Linux helper. Apply OpenNeko migrations 0084–0086 and drain older workers before rollout. Deploy the matching Harness image and broker together; the new lookup route deliberately has no unjournaled fallback. Hosts share
+includes the Linux helper. Apply OpenNeko migrations 0084–0089 and drain older workers before rollout. Deploy the matching Harness image and broker together; the new lookup route deliberately has no unjournaled fallback. Hosts share
 PostgreSQL and the gateway; their local filesystem admission caches may differ.
 Local helpers still require POSIX locking. See [recovery](../../docs/M4-RECOVERY.md) for adoption, ambiguity and
 remaining M4 gates. Hermes requires neither helper nor configuration change.
