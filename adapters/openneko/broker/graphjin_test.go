@@ -49,3 +49,28 @@ func TestBrokerRejectsRedirectAndMalformedResults(t *testing.T) {
 		})
 	}
 }
+
+func TestGraphQLBatchBinding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if r.URL.Path != "/v1/graphjin/query" || r.Header.Get("Authorization") != "Bearer scoped" || len(body) != 1 || body["query"] != "query { leads { id } }" {
+			t.Errorf("unexpected batch query: %+v", body)
+		}
+		_, _ = w.Write([]byte(`{"data":{"leads":[{"id":1}]}}`))
+	}))
+	defer server.Close()
+	query, err := GraphQLQuery(server.URL, "scoped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := query(context.Background(), "query { leads { id } }")
+	if err != nil || !strings.Contains(string(data), `"leads"`) {
+		t.Fatalf("query failed: %v %s", err, data)
+	}
+	if _, err := query(context.Background(), " "); err == nil {
+		t.Fatal("blank query accepted")
+	}
+}

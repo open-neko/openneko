@@ -42,7 +42,10 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
   product mutations, local file/process/artifact work and bounded delegation remain
   open. This is not Hermes parity.
 - M5b has one isolated OpenShell/worker/MCP memory-read acceptance with seeded
-  broker data. The Daily Lead Union batch artifact, library/records reads,
+  broker data. A local controlled query-to-file runner and narrow broker read
+  grant now pass fixture checks, but the Daily Lead Union batch artifact still
+  needs Ax/worker/OpenShell admission and connected GraphJin verification.
+  Library/records reads,
   clarification and rendering still need connected acceptance. Local M5c handler
   qualification, M5d foundations and M6 budget/context work can proceed with
   fixtures; they do not prove the real batch path.

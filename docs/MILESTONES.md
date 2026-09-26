@@ -159,6 +159,17 @@ searched a seeded result, recorded one finished Go operation and returned the
 answer. Hermes regression checks passed. The Daily Lead Union batch case still
 needs its connected source and artifact acceptance.
 
+The local controlled batch runner now consumes the ported skill's cache-miss
+requests, calls a trusted read callback, writes bounded response files and query
+receipts, reruns the script without model turns per query, and publishes only a
+CSV whose header and row count match the compact summary. The OpenNeko broker
+has a separately bound `batchRead` grant for its existing read-only GraphJin
+query route; a standalone adapter CLI can use it. This is **not yet** an Ax tool
+or a worker/web acceptance: do not mint that grant in normal runs until the
+trusted skill bundle, timeout, batch recovery and artifact projection are wired.
+The 20-minute pipeline should run as a host-owned operation with progress and
+durable continuation, rather than blocking the current two-minute Ax callback.
+
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal
 before admission. A working stdio connection alone does not authorize tools.

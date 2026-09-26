@@ -1,0 +1,54 @@
+// harness-batch runs the admitted Daily Lead Union script outside the model
+// transcript. The trusted launcher provides the pinned script and workspace.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/open-neko/harness/adapters/openneko/broker"
+	"github.com/open-neko/harness/internal/batch"
+)
+
+var columns = []string{
+	"email", "sierra_fems_id", "company", "leadstage", "resolved_country",
+	"final_score", "tier", "reason", "group_a", "group_b", "group_c",
+	"group_d", "group_e", "group_f", "group_g", "negative_total",
+	"tool_usage_source", "acceleration_flag", "qualified_via", "mid",
+	"categories", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8",
+	"c9", "c10", "c11", "match_status", "matched_via",
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: harness-batch YYYY-MM-DD")
+		os.Exit(2)
+	}
+	query, err := broker.GraphQLQuery(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid batch broker binding")
+		os.Exit(2)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 21*time.Minute)
+	defer cancel()
+	result, err := batch.Run(ctx, batch.Config{
+		Script: os.Getenv("HARNESS_BATCH_SCRIPT"), ScriptSHA256: os.Getenv("HARNESS_BATCH_SCRIPT_SHA256"),
+		WorkDir: os.Getenv("HARNESS_BATCH_WORK_DIR"), ArtifactDir: os.Getenv("HARNESS_BATCH_ARTIFACT_DIR"),
+		TargetDay: os.Args[1], Columns: columns, MaxQueries: 128,
+	}, query)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "batch failed:", err)
+		os.Exit(1)
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		fmt.Fprintln(os.Stderr, "batch result unavailable")
+		os.Exit(1)
+	}
+}

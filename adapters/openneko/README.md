@@ -7,6 +7,15 @@ default. See [M3 acceptance](../../integration/m3/README.md) for the concrete
 launcher, broker, queue and browser checks. Build the product image with
 `./adapters/openneko/build-image.sh /absolute/OpenNeko-checkout`.
 
+The M5b batch prototype is a separate `./adapters/openneko/cmd/batch` binary.
+It takes one UTC day argument and trusted `HARNESS_BATCH_SCRIPT`,
+`HARNESS_BATCH_SCRIPT_SHA256`, `HARNESS_BATCH_WORK_DIR`, and
+`HARNESS_BATCH_ARTIFACT_DIR` environment bindings. The broker supplies a separate
+`batchRead` grant for read-only GraphJin queries. It is not installed in the
+product image or exposed to the model yet; the host-owned job/continuation and
+connected artifact gate in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
+must be completed first.
+
 ## Implemented: OpenShell cold-launch compatibility
 
 From the repository root:

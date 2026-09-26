@@ -84,14 +84,40 @@ func Propose(base, token string) (func(context.Context, agent.Proposal) (agent.P
 	}, nil
 }
 
+// GraphQLQuery is for an admitted file-backed batch runner only. OpenNeko
+// rechecks the bound actor and enforces read-only GraphQL at the broker.
+func GraphQLQuery(base, token string) (func(context.Context, string) ([]byte, error), error) {
+	call, err := bindLimit(base, token, "/v1/graphjin/query", 16<<20)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, query string) ([]byte, error) {
+		if strings.TrimSpace(query) == "" || len(query) > 60000 {
+			return nil, fmt.Errorf("invalid batch query")
+		}
+		body, _ := json.Marshal(struct {
+			Query string `json:"query"`
+		}{query})
+		return call(ctx, body)
+	}, nil
+}
+
 func bind(base, token, path string) (func(context.Context, []byte) ([]byte, error), error) {
+	return bindLimit(base, token, path, 262144)
+}
+
+func bindLimit(base, token, path string, maxResponse int64) (func(context.Context, []byte) ([]byte, error), error) {
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || token == "" {
 		return nil, fmt.Errorf("invalid broker binding")
 	}
 	u.Path = path
 	u.RawPath = ""
-	client := &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	timeout := 45 * time.Second
+	if maxResponse > 262144 {
+		timeout = 65 * time.Second
+	}
+	client := &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return func(ctx context.Context, body []byte) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 		if err != nil {
@@ -110,8 +136,8 @@ func bind(base, token, path string) (func(context.Context, []byte) ([]byte, erro
 		if res.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("broker HTTP status %d", res.StatusCode)
 		}
-		data, err := io.ReadAll(io.LimitReader(res.Body, 262145))
-		if err != nil || len(data) > 262144 {
+		data, err := io.ReadAll(io.LimitReader(res.Body, maxResponse+1))
+		if err != nil || int64(len(data)) > maxResponse {
 			return nil, fmt.Errorf("broker result unreadable or too large")
 		}
 		return data, nil
