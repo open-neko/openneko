@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/open-neko/harness/adapters/openneko/broker"
 	"github.com/open-neko/harness/internal/agent"
@@ -15,13 +17,40 @@ func main() {
 		os.Exit(2)
 	}
 	tools := agent.Tools{Lookup: lookup}
-	// Only the trusted launcher enables this capability after installing its broker profile.
-	if os.Getenv("OPENNEKO_HARNESS_PROPOSALS") == "1" {
-		tools.Propose, err = broker.Propose(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+	if kinds := os.Getenv("OPENNEKO_HARNESS_ACTION_KINDS"); kinds != "" {
+		propose, bindErr := broker.Propose(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if bindErr != nil {
+			err = bindErr
+		} else {
+			tools.Propose, err = admitActions(kinds, propose)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "invalid proposal capability binding")
 			os.Exit(2)
 		}
+		tools.Scope = kinds
 	}
 	command.MainWithTools(tools)
+}
+
+// This narrows the model-visible proposal tool to the host's run-scoped
+// entitlements. The broker remains authoritative after roles or definitions change.
+func admitActions(raw string, propose func(context.Context, agent.Proposal) (agent.ProposalReceipt, error)) (func(context.Context, agent.Proposal) (agent.ProposalReceipt, error), error) {
+	var kinds []string
+	if len(raw) > 8192 || json.Unmarshal([]byte(raw), &kinds) != nil || len(kinds) == 0 || len(kinds) > 64 || propose == nil {
+		return nil, fmt.Errorf("invalid action admission")
+	}
+	allowed := make(map[string]bool, len(kinds))
+	for _, kind := range kinds {
+		if kind == "" || len(kind) > 128 || allowed[kind] {
+			return nil, fmt.Errorf("invalid action admission")
+		}
+		allowed[kind] = true
+	}
+	return func(ctx context.Context, proposal agent.Proposal) (agent.ProposalReceipt, error) {
+		if !allowed[proposal.Action] {
+			return agent.ProposalReceipt{Status: "denied", Reason: "Action was not admitted for this run"}, nil
+		}
+		return propose(ctx, proposal)
+	}, nil
 }
