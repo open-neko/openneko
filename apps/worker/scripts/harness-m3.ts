@@ -4,7 +4,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createAdminHandler } from "../src/admin-server";
 import { runActionExecute } from "../src/jobs/action-execute";
-import { registerActionAdapter, createActionRequest, enableWorkflowApiAccess, admitWorkflowApiRun } from "@neko/llm/workflows";
+import { registerActionAdapter, createActionRequest, enableWorkflowApiAccess, admitWorkflowApiRun, activeBatchExecutor } from "@neko/llm/workflows";
 // Acceptance driver: real queue and production handler, isolated synthetic stack only.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -193,23 +193,33 @@ const bytes=Buffer.from('lead_id\\nLEAD-42\\n');fs.writeFileSync(artifact,bytes)
 process.stdout.write(JSON.stringify({artifact,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),rows:1,queries:1}));
 `);
 await chmod(batchFixture,0o700);
-const batchEnv=['OPENNEKO_HARNESS_BATCH_BIN','HARNESS_OPENSHELL_BIN','OPENSHELL_GATEWAY','HARNESS_BATCH_IMAGE',
-    'HARNESS_BATCH_SCRIPT','HARNESS_BATCH_SCRIPT_SHA256','HARNESS_BATCH_BUNDLE_DIR','HARNESS_BATCH_BUNDLE_SHA256','HARNESS_BATCH_WORKFLOW_ID','MODEL_API_KEY'] as const;
+const batchEnv=['HARNESS_BATCH_EXECUTOR_REGISTRY','MODEL_API_KEY'] as const;
+async function pinBatch(workflowId:string,revision:string,file:string,config:{binary:string;openshellBin:string;
+    gateway:string;image:string;script:string;scriptSha256:string;bundleDir:string;bundleSha256:string}) {
+    const binarySha256=createHash('sha256').update(await readFile(config.binary)).digest('hex');
+    const openshellSha256=createHash('sha256').update(await readFile(config.openshellBin)).digest('hex');
+    await writeFile(file,JSON.stringify({version:1,executors:[{workflowId,revision,active:true,
+      ...config,binarySha256,openshellSha256}]}));
+    const selected=activeBatchExecutor(workflowId);
+    assert.ok(selected);
+    return {revision:selected.revision,fingerprint:selected.fingerprint};
+}
 const batchPrior=Object.fromEntries(batchEnv.map(name=>[name,process.env[name]]));
-Object.assign(process.env,{OPENNEKO_HARNESS_BATCH_BIN:batchFixture,HARNESS_OPENSHELL_BIN:batchFixture,
-    OPENSHELL_GATEWAY:'harness-m2',HARNESS_BATCH_IMAGE:'fixture',HARNESS_BATCH_SCRIPT:batchFixture,
-    HARNESS_BATCH_SCRIPT_SHA256:'fixture',HARNESS_BATCH_BUNDLE_DIR:process.env.HARNESS_STATE,
-    HARNESS_BATCH_BUNDLE_SHA256:'fixture',MODEL_API_KEY:'host-only-secret'});
+Object.assign(process.env,{HARNESS_BATCH_EXECUTOR_REGISTRY:join(process.env.HARNESS_STATE,'batch-fixture-registry.json'),
+    MODEL_API_KEY:'host-only-secret'});
 try {
     const batchThread=await createWorkThread(orgId,'M5 host-owned batch','web',soloAdmin.id);
     const batchRun=await createWorkRun(orgId,batchThread.id,'harness',{userId:null,role:'service'});
     const batchContract={version:1,executor:'query-to-file',artifactName:'leads.csv',columns:['lead_id']};
     const [batchWorkflow]=await db().insert(workflow_definition).values({org_id:orgId,name:'Fixture batch workflow',
       output_contract:{harnessBatch:batchContract}}).returning({id:workflow_definition.id});
-    process.env.HARNESS_BATCH_WORKFLOW_ID=batchWorkflow.id;
+    const batchBinding=await pinBatch(batchWorkflow.id,'fixture-v1',process.env.HARNESS_BATCH_EXECUTOR_REGISTRY!,{
+      binary:batchFixture,openshellBin:batchFixture,gateway:'harness-m2',image:'fixture',
+      script:batchFixture,scriptSha256:createHash('sha256').update(await readFile(batchFixture)).digest('hex'),
+      bundleDir:process.env.HARNESS_STATE!,bundleSha256:'0'.repeat(64)});
     const [batchWorkflowRun]=await db().insert(workflow_run).values({org_id:orgId,workflow_id:batchWorkflow.id,
       thread_id:batchThread.id,work_run_id:batchRun.id,trigger_kind:'manual',trigger_payload:{targetDay:'2026-09-15'},
-      executor_contract:batchContract,status:'running'}).returning({id:workflow_run.id});
+      executor_contract:{...batchContract,binding:batchBinding},status:'running'}).returning({id:workflow_run.id});
     const payload:HarnessBatchPayload={orgId,threadId:batchThread.id,runId:batchRun.id,workflowRunId:batchWorkflowRun.id};
     const batchJob=await enqueue(QUEUE.HARNESS_BATCH,payload,{retryLimit:0});
     assert.ok(batchJob);
@@ -243,11 +253,8 @@ const scriptBytes=await readFile(workflowScript);
 const scriptHash=createHash('sha256').update(scriptBytes).digest();
 const bundleHash=createHash('sha256').update('run.py\0').update(scriptHash).digest('hex');
 const realBatchPrior=Object.fromEntries(batchEnv.map(name=>[name,process.env[name]]));
-Object.assign(process.env,{OPENNEKO_HARNESS_BATCH_BIN:process.env.HARNESS_M3_BATCH_BIN,
-    HARNESS_OPENSHELL_BIN:process.env.HARNESS_OPENSHELL_BIN,OPENSHELL_GATEWAY:'harness-m2',
-    HARNESS_BATCH_IMAGE:'harness-openneko:m3',HARNESS_BATCH_SCRIPT:workflowScript,
-    HARNESS_BATCH_SCRIPT_SHA256:scriptHash.toString('hex'),HARNESS_BATCH_BUNDLE_DIR:join(process.env.HARNESS_STATE,'workflow-bundle'),
-    HARNESS_BATCH_BUNDLE_SHA256:bundleHash,MODEL_API_KEY:'host-only-secret'});
+Object.assign(process.env,{HARNESS_BATCH_EXECUTOR_REGISTRY:process.env.HARNESS_BATCH_EXECUTOR_REGISTRY ??
+    join(process.env.HARNESS_STATE,'real-batch-registry.json'),MODEL_API_KEY:'host-only-secret'});
 try {
     const realThread=await createWorkThread(orgId,'M5 GraphJin batch','workflow');
     const realRun=await createWorkRun(orgId,realThread.id,'harness',{userId:null,role:'service'});
@@ -256,10 +263,14 @@ try {
       ...(process.env.HARNESS_M3_WORKFLOW_ID ? {id:process.env.HARNESS_M3_WORKFLOW_ID} : {}),
       org_id:orgId,name:'Fixture GraphJin workflow',
       output_contract:{harnessBatch:realContract}}).returning({id:workflow_definition.id});
-    process.env.HARNESS_BATCH_WORKFLOW_ID=realWorkflow.id;
+    const realBinding=await pinBatch(realWorkflow.id,'graphjin-v1',process.env.HARNESS_BATCH_EXECUTOR_REGISTRY!,{
+      binary:process.env.HARNESS_M3_BATCH_BIN!,openshellBin:process.env.HARNESS_OPENSHELL_BIN!,
+      gateway:'harness-m2',image:'harness-openneko:m3',script:workflowScript,
+      scriptSha256:scriptHash.toString('hex'),bundleDir:join(process.env.HARNESS_STATE!,'workflow-bundle'),
+      bundleSha256:bundleHash});
     const [realWorkflowRun]=await db().insert(workflow_run).values({org_id:orgId,workflow_id:realWorkflow.id,
       thread_id:realThread.id,work_run_id:realRun.id,trigger_kind:'manual',trigger_payload:{targetDay:'2026-09-15'},
-      executor_contract:realContract,status:'running'}).returning({id:workflow_run.id});
+      executor_contract:{...realContract,binding:realBinding},status:'running'}).returning({id:workflow_run.id});
     const realJob=await enqueue(QUEUE.HARNESS_BATCH,{orgId,threadId:realThread.id,runId:realRun.id,
       workflowRunId:realWorkflowRun.id},{retryLimit:1,retryDelay:1,expireInSeconds:1500});
     assert.ok(realJob);

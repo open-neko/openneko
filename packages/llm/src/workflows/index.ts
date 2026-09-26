@@ -50,6 +50,7 @@ export {
 export * from "./watchers";
 export * from "./audit-chain";
 export * from "./api-contract";
+export * from "./batch-executor-registry";
 export * from "./api-access";
 export * from "./api-admission";
 export * from "./api-batch";
