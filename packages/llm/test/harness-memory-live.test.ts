@@ -1,12 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, organization, work_thread, work_run } from "@neko/db";
+import { db, library_concept, organization, sql, work_thread, work_run } from "@neko/db";
+import { deleteTestOrg } from "@neko/db/test-helpers";
 import { expect, it } from "vitest";
 import type { AgentControlPlane } from "../src/work/control-plane";
 import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import { makeAgentBackend } from "../src/agent-runtime";
 import { startAgentBroker } from "../src/work/broker";
+import { searchLibraryForRun } from "../src/work/library";
 import { makeSandboxRunCore } from "../src/work/sandbox-launcher";
 
 const live = process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
@@ -18,6 +20,8 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   const orgId = `harness-memory-${randomUUID()}`;
   const threadId = randomUUID();
   const runId = randomUUID();
+  const libraryRunId = randomUUID();
+  const priorEmbeddingURL = process.env.NEKO_EMBEDDING_URL;
   const orgRoot = join(process.env.HARNESS_STATE, "memory", runId);
   const workspace: AgentWorkspace = {
     orgRoot,
@@ -38,6 +42,11 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   await db().insert(organization).values({ id: orgId, name: "Harness memory acceptance" });
   await db().insert(work_thread).values({ id: threadId, org_id: orgId, title: "Memory" });
   await db().insert(work_run).values({ id: runId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
+  const vector = sql`${JSON.stringify([1, ...Array(383).fill(0)])}::vector`;
+  await db().insert(library_concept).values({
+    org_id: orgId, user_id: null, path: "contracts/example", type: "contract",
+    title: "Fixture contract", body: "TERMS-42", status: "stable", embedding: vector,
+  });
   let searches = 0;
   let librarySearches = 0;
   const controlPlane = {
@@ -47,9 +56,9 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
       return [{ id: "memory-1", text: "Fixture policy" }];
     },
     async searchLibraryForRun(args: { orgId: string; runId: string; query: string }) {
-      expect(args).toMatchObject({ orgId, query: "find contract" });
+      expect(args).toMatchObject({ orgId, runId: libraryRunId, query: "find contract" });
       librarySearches++;
-      return [{ concept: { path: "contracts/example", type: "contract", title: "Fixture contract", description: "Fixture", status: "stable", sources: [], body: "TERMS-42" }, layer: "team", score: 1 }];
+      return searchLibraryForRun(args);
     },
   } as unknown as AgentControlPlane;
   const broker = await startAgentBroker({ port: 0, hostAlias: "host.docker.internal", controlPlane });
@@ -77,7 +86,6 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     expect(snapshot.operations[0].binding).toMatch(/^[a-f0-9]{64}$/);
     expect(snapshot.events).toContainEqual(expect.objectContaining({ type: "tool.finished", name: "mcp_memory_search", effect: "read" }));
 
-    const libraryRunId = randomUUID();
     const libraryWorkspace: AgentWorkspace = {
       ...workspace,
       runRoot: join(workspace.runsRoot, libraryRunId),
@@ -86,6 +94,7 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     };
     for (const dir of [libraryWorkspace.runRoot, libraryWorkspace.artifactRoot, libraryWorkspace.binRoot]) await mkdir(dir, { recursive: true });
     await db().insert(work_run).values({ id: libraryRunId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
+    process.env.NEKO_EMBEDDING_URL = "http://127.0.0.1:18118";
     await writeFile(join(hermesHome, "config.yaml"), "model:\n  provider: custom\n  default: harness-library-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
     const libraryEvents: AgentEvent[] = [];
     const libraryResult = await runCore({
@@ -102,6 +111,9 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     expect(librarySnapshot.operations[0]).toMatchObject({ tool: "mcp_library_search", finished: true });
     expect(librarySnapshot.events).toContainEqual(expect.objectContaining({ type: "tool.finished", name: "mcp_library_search", effect: "read" }));
   } finally {
-    await broker.close();
+    if (priorEmbeddingURL === undefined) delete process.env.NEKO_EMBEDDING_URL;
+    else process.env.NEKO_EMBEDDING_URL = priorEmbeddingURL;
+    try { await broker.close(); }
+    finally { await deleteTestOrg(orgId); }
   }
 });
