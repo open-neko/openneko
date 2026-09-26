@@ -18,9 +18,9 @@ separate OpenNeko v3.5.6 demo instance was started and verified locally on the
 Mac, then stopped to respect the host's 4 GB Docker memory limit; its volumes
 remain. Onboarding was skipped, so no admin password or model key was configured.
 The released worker still uses Hermes and OpenShell 0.0.54.
-The first M5b memory-read slice passed through the feature worker, Harness
-image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
-The broker result was seeded; the batch task and broader MCP/interaction surface
+The first M5b memory and library search slices passed through the feature worker,
+Harness image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
+The broker results were seeded; the batch task and broader MCP/interaction surface
 still need connected acceptance. Full M5c remains open. Demo health alone does
 not qualify either milestone.
 Hermes remains the default until rollout.
@@ -151,13 +151,13 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 
 ## M5b — File-backed batch path and MCP read/interaction slice
 
-**Partial status (2026-09-26):** one customer-surface memory read is admitted
-through the actual OpenNeko stdio bridge with a pinned schema. The broker binds
-org/run identity and grants the route only to customer Harness tokens; records
-runs and writes remain denied. An isolated OpenShell + worker + broker + Ax run
-searched a seeded result, recorded one finished Go operation and returned the
-answer. Hermes regression checks passed. The Daily Lead Union batch case still
-needs its connected source and artifact acceptance.
+**Partial status (2026-09-26):** customer-surface memory and library search are
+admitted through the actual OpenNeko stdio bridge with pinned schemas. The broker
+binds org/run identity and grants each route only to customer Harness tokens;
+records runs and writes remain denied. Isolated OpenShell + worker + broker + Ax
+runs each searched a seeded result, recorded one finished Go operation and
+returned the answer. Hermes regression checks passed. Real library data and the
+Daily Lead Union batch still need connected acceptance.
 
 The local controlled batch runner now consumes the ported skill's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query
@@ -169,6 +169,8 @@ or a worker/web acceptance: do not mint that grant in normal runs until the
 trusted skill bundle, timeout, batch recovery and artifact projection are wired.
 The 20-minute pipeline should run as a host-owned operation with progress and
 durable continuation, rather than blocking the current two-minute Ax callback.
+The Python script must run in a separate credential-isolated compartment: clearing
+its child environment alone does not protect the broker token held by the Go host.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal
@@ -176,9 +178,9 @@ before admission. A working stdio connection alone does not authorize tools.
 
 The Go MCP SDK now has an opt-in integration check against the real OpenNeko
 multiplexed stdio bridge (`OPENNEKO_TEST_SOURCE=... go test ./integration/m5b`).
-With a synthetic broker and a read-only memory server, it verifies discovery,
-one scoped search call, and child-process exit on close. The separate isolated
-OpenShell check qualifies the product's first read admission, not general MCP.
+With a synthetic broker and read-only memory and library servers, it verifies
+discovery, scoped search calls, and child-process exit on close. The separate
+isolated OpenShell check qualifies those two read admissions, not general MCP.
 
 **Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
 its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or
@@ -384,7 +386,9 @@ decision client. At admission, classify an approved bounded task summary plus
 trusted signals (requested artifact, admitted tool families and input size) into
 short-answer, multi-step, artifact/data-pipeline or uncertain work. Map that
 result to a versioned initial budget profile inside the host's fixed hard cap.
-Record model/version, class, confidence, profile and classifier latency/cost; do
+Use the native choice probabilities rather than a single score: a split between
+short and complex work must not average into an artificially cheap profile.
+Record model/version, full class distribution, selected profile and classifier latency/cost; do
 not record task content in ordinary telemetry. The classification call has a
 short deadline and counts against the run's total cost ceiling. An unavailable
 or uncertain classifier uses the current fixed default. Reassess only at durable

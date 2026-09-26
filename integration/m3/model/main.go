@@ -117,6 +117,10 @@ func main() {
 			http.Error(w, "missing memory evidence", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-library-fixture" && !strings.Contains(string(req.Messages), "TERMS-42") {
+			http.Error(w, "missing library evidence", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-fixture" && readUpload && !strings.Contains(string(req.Messages), "LEAD-42") {
 			http.Error(w, "missing uploaded file evidence", 422)
 			return
@@ -126,7 +130,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && !readUpload && !writeArtifact && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-library-fixture" && !readUpload && !writeArtifact && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -139,6 +143,8 @@ func main() {
 			}
 		} else if req.Model == "harness-memory-fixture" {
 			responses = []string{`{"javascriptCode":"final('Search saved memory', {})"}`, `{"javascriptCode":"const memory=mcp_memory_search({query:'find policy'}); final('Report memory',{memory});"}`, `{"answer":"Saved policy found in memory-1."}`}
+		} else if req.Model == "harness-library-fixture" {
+			responses = []string{`{"javascriptCode":"final('Search the library', {})"}`, `{"javascriptCode":"const library=mcp_library_search({query:'find contract'}); final('Report library',{library});"}`, `{"answer":"Fixture contract contains TERMS-42."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
 			if readUpload {

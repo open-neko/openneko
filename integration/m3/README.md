@@ -102,6 +102,11 @@ same link returned the exact `lead_id\nLEAD-42\n` bytes as a CSV attachment.
 Use `localhost` for the Next dev origin; `127.0.0.1` blocks its dev resources.
 The large validated Daily Lead Union batch artifact remains an M5b gate.
 
+An additional isolated rerun passed `mcp_library_search` through the real
+OpenNeko bridge, scoped broker, OpenShell worker and Go/Ax checkpoint. The broker
+returned a synthetic `TERMS-42` document concept; this does not yet qualify a
+connected document-library search or uploaded-document workflow.
+
 Automated verification includes Go race tests/vet, interrupted-read evidence
 retention, completed-input replay, typed remote statuses, protocol bounds,
 real HTTP cancellation, and 96 product backend/telemetry/launcher regressions

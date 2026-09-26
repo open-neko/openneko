@@ -15,24 +15,36 @@ import (
 	"github.com/open-neko/harness/internal/agent"
 )
 
-// MemoryConfig is trusted launch context, never a model-selected tool argument.
-type MemoryConfig struct {
+// ReadConfig is trusted launch context, never a model-selected tool argument.
+type ReadConfig struct {
 	BridgePath, BrokerURL, BrokerToken, OrgID, ThreadID, RunID, SkillsRoot string
 }
 
-const memorySearchSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":800,"minLength":2,"type":"string"}},"required":["query"],"type":"object"}`
+const searchSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":800,"minLength":2,"type":"string"}},"required":["query"],"type":"object"}`
 
-// ConnectMemory admits one search-only tool from OpenNeko's stdio bridge.
-// Discovery must match the pinned schema; bridge content cannot grant tools.
-func ConnectMemory(ctx context.Context, cfg MemoryConfig) ([]agent.Capability, func() error, error) {
+// ConnectReads admits pinned read-only tools from OpenNeko's stdio bridge.
+// Discovery must match the pinned schemas; bridge content cannot grant tools.
+func ConnectReads(ctx context.Context, cfg ReadConfig, library bool) ([]agent.Capability, func() error, error) {
 	u, err := url.Parse(cfg.BrokerURL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) {
-		return nil, nil, fmt.Errorf("invalid OpenNeko memory bridge binding")
+		return nil, nil, fmt.Errorf("invalid OpenNeko read bridge binding")
 	}
 	if info, err := os.Stat(cfg.BridgePath); err != nil || !info.Mode().IsRegular() {
-		return nil, nil, fmt.Errorf("OpenNeko memory bridge unavailable")
+		return nil, nil, fmt.Errorf("OpenNeko read bridge unavailable")
 	}
-	args := []string{cfg.BridgePath, "neko_memory"}
+	servers := "neko_memory"
+	allowed := []shared.Admission{{
+		Name: "memory_search", Alias: "mcp_memory_search", Version: "1", Origin: "openneko",
+		Effect: "read", Description: "Search the current run's saved memories.", Schema: json.RawMessage(searchSchema),
+	}}
+	if library {
+		servers += ",neko_library"
+		allowed = append(allowed, shared.Admission{
+			Name: "library_search", Alias: "mcp_library_search", Version: "1", Origin: "openneko",
+			Effect: "read", Description: "Search authorized document-library concepts.", Schema: json.RawMessage(searchSchema),
+		})
+	}
+	args := []string{cfg.BridgePath, servers}
 	if strings.HasSuffix(cfg.BridgePath, ".ts") {
 		args = append([]string{"--import", "tsx"}, args...)
 	}
@@ -60,15 +72,12 @@ func ConnectMemory(ctx context.Context, cfg MemoryConfig) ([]agent.Capability, f
 	client := protocol.NewClient(&protocol.Implementation{Name: "openneko-harness", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &protocol.CommandTransport{Command: cmd}, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("OpenNeko memory bridge connection failed: %w", err)
+		return nil, nil, fmt.Errorf("OpenNeko read bridge connection failed: %w", err)
 	}
-	capabilities, err := shared.Admit(ctx, session, []shared.Admission{{
-		Name: "memory_search", Alias: "mcp_memory_search", Version: "1", Origin: "openneko",
-		Effect: "read", Description: "Search the current run's saved memories.", Schema: json.RawMessage(memorySearchSchema),
-	}})
+	capabilities, err := shared.Admit(ctx, session, allowed)
 	if err != nil {
 		_ = session.Close()
-		return nil, nil, fmt.Errorf("OpenNeko memory admission failed: %w", err)
+		return nil, nil, fmt.Errorf("OpenNeko read admission failed: %w", err)
 	}
 	return capabilities, session.Close, nil
 }

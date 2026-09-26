@@ -34,19 +34,21 @@ func main() {
 		tools.Scope = kinds
 	}
 	var closeTools []func() error
-	if flag := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ"); flag != "" {
-		if flag != "1" {
-			fmt.Fprintln(os.Stderr, "invalid memory capability binding")
-			os.Exit(2)
-		}
-		capabilities, closeSession, connectErr := productmcp.ConnectMemory(context.Background(), productmcp.MemoryConfig{
+	memoryRead := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ")
+	libraryRead := os.Getenv("OPENNEKO_HARNESS_MCP_LIBRARY_READ")
+	if (memoryRead != "" && memoryRead != "1") || (libraryRead != "" && libraryRead != "1") || (libraryRead == "1" && memoryRead != "1") {
+		fmt.Fprintln(os.Stderr, "invalid read capability binding")
+		os.Exit(2)
+	}
+	if memoryRead == "1" {
+		capabilities, closeSession, connectErr := productmcp.ConnectReads(context.Background(), productmcp.ReadConfig{
 			BridgePath: os.Getenv("OPENNEKO_MCP_BRIDGE"),
 			BrokerURL:  os.Getenv("OPENNEKO_BROKER_URL"), BrokerToken: os.Getenv("OPENNEKO_BROKER_TOKEN"),
 			OrgID: os.Getenv("OPENNEKO_MCP_ORG_ID"), ThreadID: os.Getenv("OPENNEKO_MCP_THREAD_ID"),
 			RunID: os.Getenv("OPENNEKO_MCP_RUN_ID"), SkillsRoot: os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"),
-		})
+		}, libraryRead == "1")
 		if connectErr != nil {
-			fmt.Fprintln(os.Stderr, "memory capability unavailable:", connectErr)
+			fmt.Fprintln(os.Stderr, "read capabilities unavailable:", connectErr)
 			os.Exit(2)
 		}
 		tools.Capabilities = append(tools.Capabilities, capabilities...)

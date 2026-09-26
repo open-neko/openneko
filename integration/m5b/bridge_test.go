@@ -31,8 +31,9 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	}
 	const token = "fixture-broker-token"
 	var requests atomic.Int32
+	var libraryRequests atomic.Int32
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/memory/search" || r.Method != http.MethodPost {
+		if (r.URL.Path != "/v1/memory/search" && r.URL.Path != "/v1/library/search") || r.Method != http.MethodPost {
 			http.Error(w, "unexpected route", http.StatusNotFound)
 			return
 		}
@@ -41,8 +42,14 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 			return
 		}
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["orgId"] != "org-fixture" || body["runId"] != "run-fixture" || body["query"] != "find policy" {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["orgId"] != "org-fixture" || body["runId"] != "run-fixture" || (r.URL.Path == "/v1/memory/search" && body["query"] != "find policy") || (r.URL.Path == "/v1/library/search" && body["query"] != "find contract") {
 			http.Error(w, "wrong scope or query", http.StatusBadRequest)
+			return
+		}
+		if r.URL.Path == "/v1/library/search" {
+			libraryRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"concept":{"path":"contracts/example","type":"contract","title":"Fixture contract","description":"Fixture","status":"stable","sources":[],"body":"TERMS-42"},"layer":"team","score":1}]`))
 			return
 		}
 		requests.Add(1)
@@ -96,10 +103,10 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	if err := session.Close(); err != nil || cmd.ProcessState == nil {
 		t.Fatalf("stdio bridge did not exit on close: err=%v state=%v", err, cmd.ProcessState)
 	}
-	productCaps, closeProduct, err := product.ConnectMemory(ctx, product.MemoryConfig{
+	productCaps, closeProduct, err := product.ConnectReads(ctx, product.ReadConfig{
 		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,
 		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(),
-	})
+	}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,5 +114,12 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	result, err = productCaps[0].Call(ctx, json.RawMessage(`{"query":"find policy"}`))
 	if err != nil || !strings.Contains(string(result), "memory-1") || requests.Load() != 2 {
 		t.Fatalf("product MCP read failed: result=%s err=%v requests=%d", result, err, requests.Load())
+	}
+	if len(productCaps) != 2 || productCaps[1].Name != "mcp_library_search" {
+		t.Fatalf("library read was not admitted: %+v", productCaps)
+	}
+	result, err = productCaps[1].Call(ctx, json.RawMessage(`{"query":"find contract"}`))
+	if err != nil || !strings.Contains(string(result), "TERMS-42") || libraryRequests.Load() != 1 {
+		t.Fatalf("product library read failed: result=%s err=%v requests=%d", result, err, libraryRequests.Load())
 	}
 }

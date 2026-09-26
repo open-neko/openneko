@@ -175,7 +175,7 @@ Hermes-specific names and native delegation instructions with available bindings
 Do not copy the Hermes prompt wholesale. Tool descriptions and installed skills
 remain contextual instructions, not policy. The current read-only Harness prompt
 and `mcpTools: false` represent the remaining implementation gap beyond the
-qualified search-only memory read, not the target architecture.
+qualified search-only memory and library reads, not the target architecture.
 
 ### MCP integration and credential boundary
 
@@ -308,6 +308,8 @@ tokens/cost and wall time. The pinned Ax Go package already exposes
 typed choices and probabilities; no generative planning pass is needed for this
 decision. The trusted host sets the run-wide ceiling and eligibility first.
 Classification may allocate within that ceiling, never raise it or grant tools.
+Use the class distribution to avoid under-budgeting ambiguous tasks; do not
+reduce a bimodal result to its average class.
 Low confidence, missing classifier service or disallowed data transfer uses the
 existing fixed host default. At durable checkpoints, the host may extend the
 initial allocation within the same ceiling using observed progress; it records
@@ -393,7 +395,7 @@ The [Inside Claude Code](https://y-agent.github.io/inside-claude-code/) series i
 | Complete tool calls and terminal results survive denial, failure and cancellation; safe reads overlap while writes form barriers ([agent loop](https://y-agent.github.io/inside-claude-code/02-agent-loop-query-engine.html), [tools](https://y-agent.github.io/inside-claude-code/05-tool-system.html)) | M1/M4 cover the first paths; invariant 1 and the conservative scheduler are already specified | Extend pairing and concurrency tests to every newly admitted MCP/native tool. Streaming may overlap execution only after that individual call is fully parsed and admitted. |
 | A small core tool set plus deferred schema discovery keeps large catalogs out of every prompt ([tools](https://y-agent.github.io/inside-claude-code/05-tool-system.html)) | M5a pins a run-scoped catalog; most OpenNeko capabilities remain unadmitted | In M5b/M6 measure per-turn schema tokens and discovery misses. If material, expose a search/describe projection **of the already admitted catalog**; loading a schema never grants authority. Keep frequent tools eager. |
 | Stable prompt prefix, volatile MCP/runtime details late, and staged output eviction preserve cache use and context ([prompt](https://y-agent.github.io/inside-claude-code/03-prompt-assembly.html), [compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)) | M6 specifies bounded references, budgets and intent-preserving compaction; M5b batch files are planned | Prioritize M5b query-to-file before elaborate summarization. Then measure actual prompt/cache tokens, offload stale observations before summarizing, and verify original request, constraints, pending effects and artifact handles survive compaction/restart. Use provider-specific cache features only when Ax exposes them reliably. |
-| MCP connection and tool metadata are dynamic; the permission pipeline must also cover remote tools ([MCP](https://y-agent.github.io/inside-claude-code/10-model-context-protocol.html), [hooks](https://y-agent.github.io/inside-claude-code/11-hooks-lifecycle.html)) | M5a pins schemas and admission; M5b has one real bridge read; M4 journals external effects | Test bridge death/reconnect and catalog drift without blindly replaying effects. MCP annotations and server instructions remain untrusted hints. Add lifecycle state-update hooks at owned boundaries; add user-programmable hooks only for a demonstrated integration need. |
+| MCP connection and tool metadata are dynamic; the permission pipeline must also cover remote tools ([MCP](https://y-agent.github.io/inside-claude-code/10-model-context-protocol.html), [hooks](https://y-agent.github.io/inside-claude-code/11-hooks-lifecycle.html)) | M5a pins schemas and admission; M5b has two read routes on the real bridge; M4 journals external effects | Test bridge death/reconnect and catalog drift without blindly replaying effects. MCP annotations and server instructions remain untrusted hints. Add lifecycle state-update hooks at owned boundaries; add user-programmable hooks only for a demonstrated integration need. |
 | Permission policy and process containment are separate; telemetry and compaction must be inspectable ([safety](https://y-agent.github.io/inside-claude-code/06-safety-sandbox.html), [transparency](https://y-agent.github.io/inside-claude-code/14-hidden-costs-context-manipulation.html)) | OpenShell/broker qualification, durable journal, usage coverage and content-free telemetry already lead here | Report actual route, context size, compaction events, tool outcomes and usage coverage per run; validate broker grants and OpenShell restrictions for each new tool. Do not copy a shell classifier, hidden feature-flag matrix or a content-heavy telemetry feed. |
 
 The largest remaining performance gap is not a missing Claude Code mechanism: it is M5b's governed file-backed batch path. The 2026-09-15 lead-union comparison showed the script's per-query agent mediation consuming far more turns than Reckon's batch run. Success here is a validated CSV with bounded model context and a trace showing query receipts, not merely fewer tokens in a synthetic conversation. After that, M6 prompt/schema budgeting and compaction can be evaluated on the same task cohort.
@@ -440,7 +442,7 @@ Required proof before treating AxAgent as the production foundation:
 - M5a: the local Ax catalog now pins schemas and a run catalog hash, preserves
   operation identity and old four-operation checkpoints, and admits local MCP
   read fixtures through the official SDK. M5b has connected the actual OpenNeko
-  bridge for one search-only memory read; the broader transport and product
+  bridge for search-only memory and library reads; the broader transport and product
   surface remain open.
 - M5b/d: qualify the existing MCP bridge transport and trusted process placement
   before exposing shell access; prove broker credentials are inaccessible to children.
