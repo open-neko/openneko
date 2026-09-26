@@ -261,6 +261,9 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 		if event.Type == "model.request.started" {
 			prior.ModelCalls++
 		}
+		if event.Type == "model.request.finished" && event.Usage != nil {
+			prior.Usage.AddReported(*event.Usage)
+		}
 		if event.Type == "run.resumed" {
 			prior.Attempt++
 		}
@@ -274,6 +277,7 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 			prior.SpanID = event.SpanID
 		}
 	}
+	prior.Usage.Requests = prior.ModelCalls
 	if prior.Attempt > 3 {
 		return agent.Continuation{}, fmt.Errorf("continuation attempt limit exceeded")
 	}

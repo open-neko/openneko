@@ -109,6 +109,44 @@ func TestResumeKeepsPersistedToolFailureIncomplete(t *testing.T) {
 	}
 }
 
+func TestModelUsageSurvivesResume(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "usage-resume", InputID: "input", Prompt: "Answer"}
+	answers := []string{
+		`{"javascriptCode":"final('Continue',{})"}`,
+		`{"javascriptCode":"final('Finish',{})"}`,
+		`{"javascriptCode":"final('Answer',{})"}`,
+		`{"answer":"Done"}`,
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 10, "completion_tokens", 2, "total_tokens", 12)))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	_, err := RunWithTools(context.Background(), root, spec, client, agent.Tools{}, func(e agent.Event) error {
+		if e.Type == "model.request.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || calls.Load() != 1 {
+		t.Fatalf("first attempt err=%v calls=%d", err, calls.Load())
+	}
+	result, err := ResumeWithTools(context.Background(), root, spec, client, agent.Tools{}, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || result.Usage == nil || result.Usage.Requests != 4 || result.Usage.Reported != 4 ||
+		result.Usage.InputTokens != 40 || result.Usage.OutputTokens != 8 || result.Usage.TotalTokens != 48 || result.Usage.Coverage != "complete" || calls.Load() != 4 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+}
+
 func TestResumeRefusesUnknownAndPersistsAttemptBudgetBeforeModel(t *testing.T) {
 	s := prefix()
 	root, _ := fixture(t, s)

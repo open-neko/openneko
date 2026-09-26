@@ -42,6 +42,7 @@ type Result struct {
 	Proposals   []ProposalReceipt `json:"proposals,omitempty"`
 	Kind        string            `json:"kind,omitempty"`
 	Delegations []json.RawMessage `json:"delegations,omitempty"`
+	Usage       *ModelUsage       `json:"usage,omitempty"`
 	Status      string            `json:"status"`
 	Answer      string            `json:"answer,omitempty"`
 	Code        string            `json:"code,omitempty"`
@@ -63,6 +64,7 @@ type Continuation struct {
 	Sequence   uint64
 	SpanID     uint64
 	ModelCalls int
+	Usage      ModelUsage
 	Operations []SavedOperation
 }
 
@@ -78,10 +80,12 @@ type Event struct {
 	SpanID      uint64          `json:"span_id,omitempty"`
 	ParentID    uint64          `json:"parent_id,omitempty"`
 	OperationID uint64          `json:"operation_id,omitempty"`
+	CallID      uint64          `json:"call_id,omitempty"`
 	Name        string          `json:"name,omitempty"`
 	Origin      string          `json:"origin,omitempty"`
 	Effect      string          `json:"effect,omitempty"`
 	DurationMS  int64           `json:"duration_ms,omitempty"`
+	Usage       *ModelUsage     `json:"usage,omitempty"`
 	Result      *Result         `json:"result,omitempty"`
 }
 
@@ -122,6 +126,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		available[capability.Name] = capability
 	}
 	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > spec.OperationLimit() || prior.ModelCalls < 0 || prior.ModelCalls > spec.ModelCallLimit() ||
+		(prior.Usage.Requests != 0 && prior.Usage.Requests != prior.ModelCalls) || prior.Usage.Reported < 0 || prior.Usage.Reported > prior.ModelCalls ||
 		(prior.Attempt == 1 && (prior.Sequence != 0 || len(prior.Operations) != 0 || prior.ModelCalls != 0)) || (prior.Attempt > 1 && prior.Sequence == 0) {
 		return Result{}, fmt.Errorf("invalid attempt budget")
 	}
@@ -153,7 +158,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls}
+	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage}
+	events.usage.Requests = prior.ModelCalls
 	if prior.Attempt == 1 {
 		events.send(Event{Type: "run.started"})
 	} else {
@@ -349,6 +355,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		result.Code = "incomplete_result"
 		result.Answer = "The run did not complete; a tool returned an incomplete or failed result."
 	}
+	usage := events.usageSnapshot()
+	result.Usage = &usage
 	events.send(Event{Type: "run.finished", Result: &result})
 	events.mu.Lock()
 	defer events.mu.Unlock()
@@ -369,6 +377,7 @@ type recorder struct {
 	cancel      context.CancelFunc
 	seq, spans  uint64
 	modelCalls  int
+	usage       ModelUsage
 	modelDenied bool
 	err         error
 }
@@ -386,8 +395,10 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 		return nil, fmt.Errorf("model request budget exhausted")
 	}
 	r.modelCalls++
+	r.usage.Requests++
+	id := uint64(r.modelCalls)
 	r.seq++
-	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", Name: info.Model, Origin: info.Provider}
+	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: info.Model, Origin: info.Provider}
 	if err := r.emit(e); err != nil {
 		r.err = err
 		r.cancel()
@@ -395,7 +406,30 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 		return nil, err
 	}
 	r.mu.Unlock()
-	return next()
+	started := time.Now()
+	response, err := next()
+	finished := Event{Type: "model.request.finished", CallID: id, Name: info.Model, Origin: info.Provider, DurationMS: time.Since(started).Milliseconds()}
+	if err != nil {
+		finished.Error = "model_request_failed"
+	}
+	if tokens, ok := modelTokens(response); ok {
+		finished.Usage = &tokens
+	}
+	r.send(finished)
+	if finished.Usage != nil {
+		r.mu.Lock()
+		r.usage.AddReported(*finished.Usage)
+		r.mu.Unlock()
+	}
+	return response, err
+}
+
+func (r *recorder) usageSnapshot() ModelUsage {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	usage := r.usage
+	usage.setCoverage()
+	return usage
 }
 
 func (r *recorder) modelBudgetExceeded() bool {
@@ -440,8 +474,8 @@ type span struct {
 	once  sync.Once
 }
 
-// Raw Ax attributes/events/errors can contain content or credentials. This initial
-// projection deliberately exports lifecycle only; collector/usage coverage is pending.
+// Raw Ax attributes/events/errors can contain content or credentials. This
+// projection exports span lifecycle only; usage comes from model request receipts.
 func (*span) SetAttributes(map[string]ax.Value)    {}
 func (*span) AddEvent(string, map[string]ax.Value) {}
 func (*span) RecordException(error)                {}

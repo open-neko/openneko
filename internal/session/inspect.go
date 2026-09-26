@@ -208,6 +208,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	}
 	attempt := uint64(1)
 	modelCalls := 0
+	modelFinished := map[uint64]bool{}
+	observedUsage := agent.ModelUsage{}
 	started := map[uint64]string{}
 	ended := map[uint64]bool{}
 	for i, e := range s.Events {
@@ -220,15 +222,29 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		if e.Type == "run.started" && i != 0 {
 			return invalid()
 		}
-		if e.Result != nil && e.Type != "run.finished" {
+		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" {
 			return invalid()
 		}
 		switch e.Type {
 		case "run.started", "span.started", "span.finished":
 		case "model.request.started":
 			modelCalls++
-			if modelCalls > spec.ModelCallLimit() {
+			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) {
 				return invalid()
+			}
+		case "model.request.finished":
+			if e.CallID == 0 || e.CallID > uint64(modelCalls) || modelFinished[e.CallID] {
+				return invalid()
+			}
+			modelFinished[e.CallID] = true
+			if u := e.Usage; u != nil && (u.Requests != 0 || u.Reported != 1 || u.Coverage != "" ||
+				u.InputTokens < 0 || u.OutputTokens < 0 || u.TotalTokens < 0 || u.CacheReadTokens < 0 || u.CacheWriteTokens < 0 || u.ReasoningTokens < 0 ||
+				u.InputTokens > 1_000_000_000_000 || u.OutputTokens > 1_000_000_000_000 || u.TotalTokens > 1_000_000_000_000 ||
+				u.CacheReadTokens > 1_000_000_000_000 || u.CacheWriteTokens > 1_000_000_000_000 || u.ReasoningTokens > 1_000_000_000_000) {
+				return invalid()
+			}
+			if e.Usage != nil {
+				observedUsage.AddReported(*e.Usage)
 			}
 		case "run.resumed":
 			attempt++
@@ -277,6 +293,21 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 		if len(s.Result.Answer) > 65536 || (s.Result.Status == "completed" && s.Result.Answer == "") {
 			return invalid()
+		}
+		if u := s.Result.Usage; u != nil {
+			observedUsage.Requests = modelCalls
+			actual := *u
+			actual.Coverage = ""
+			coverage := "unavailable"
+			if u.Reported > 0 {
+				coverage = "partial"
+			}
+			if u.Requests > 0 && u.Reported == u.Requests {
+				coverage = "complete"
+			}
+			if actual != observedUsage || u.Coverage != coverage {
+				return invalid()
+			}
 		}
 		var expectedProposals []agent.ProposalReceipt
 		for _, op := range s.Operations {

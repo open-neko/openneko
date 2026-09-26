@@ -156,6 +156,30 @@ its server agent into low-level tools, or treat its in-process Goja session as a
 durable checkpoint or sandbox. Stage routing must use explicit Ax metadata or a
 single approved profile, not GraphJin's prompt-text stage detector.
 
+The **Ax executor stage** writes JavaScript to compose admitted capabilities;
+the **host executor** authorizes and dispatches each callable. GraphJin keeps
+these separate in `agent/agent.go` (Ax setup and callable registration),
+`agent/runtime_handoff.go` (run-local distilled evidence), and
+`agent/protocol.go` (operation guards and final result checks). Follow that
+separation in the general harness:
+
+| Boundary | Harness executor contract |
+| --- | --- |
+| Before Ax | Freeze the accepted task, caller scope, capability bindings and hard budget. A catalog seed or prior answer may guide selection but grants no authority. |
+| Distiller to actor | Expose bounded, run-local references and original constraints in Goja. Keep bulk observations in scoped storage, and do not serialize VM globals as a recovery checkpoint. |
+| Each host callable | Validate the admitted schema and current policy; persist intent before external dispatch; execute through the appropriate native, MCP or direct adapter; save a typed receipt or explicit unknown outcome. Tell the actor whether a declined call executed. |
+| After a callable | Feed bounded result/error and repair guidance back into Ax's next step. A successful prior receipt may be reused on resume; neither a model retry nor an API redelivery may repeat an ambiguous effect. |
+| Terminal | Check task-specific success criteria against receipts and artifacts. A model's `final` or responder text alone cannot certify an effect or artifact. A tool-less rescue is allowed only with sufficient saved evidence and remaining budget, and re-enters the same gate. |
+
+GraphJin's same-run catalog-detail guard is a good **domain verifier**, not a
+universal prerequisite for unrelated tools. Its model-visible repair errors
+show how to recover while the actor still has steps, but generic validation
+should reject impossible inputs before dispatch instead of creating a retry
+loop. The queued API run specification stays immutable after admission; work
+needing fresh authorization pauses for an external decision or ends with a typed
+`requires_action`/blocked result. It cannot silently edit the caller's queued
+request to make an effect acceptable.
+
 The current `internal/agent/run.go` already owns one bounded Ax run, pins a
 trusted tool catalog and reuses durable operation receipts on continuation.
 Its run-local Goja wrapper now carries JSON-bounded distilled evidence into
@@ -413,6 +437,10 @@ Do not assume every tool path emits a span because one path does. Instrument the
 ### Usage and cost
 
 - Record every model attempt, even when provider usage is missing.
+- The Go limiter now journals a content-free start and finish for each admitted
+  model request. A finish carries only Ax-normalized token counters; the terminal
+  aggregate counts missing reports and survives bounded resume. OpenNeko projects
+  that aggregate as outer-model usage, separate from GraphJin's remote usage.
 - Ax's completed-call observer may emit nothing for missing usage or an incompletely consumed stream. Preserve `complete`, `partial` and `unavailable` coverage.
 - Keep provider observations distinct from estimates. Calculate estimated cost with a versioned pricing table; billed cost is separate when available.
 - Count each model attempt once. Stage, agent and parent totals are rollups, not additional billable events.

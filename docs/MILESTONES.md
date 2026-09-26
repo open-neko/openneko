@@ -429,9 +429,16 @@ recorded. A trusted `max_model_calls` limit (16 by default, at most 64) is
 enforced across Ax attempts; resume reconstructs spent calls from the checkpoint.
 A two-call fixture proved that interruption and resume do not authorize a third
 request. This limits calls even when provider usage is missing, but does not yet
-measure tokens, cost, multi-provider routing or child/remote work. A run-local
-Goja handoff now preserves bounded distilled evidence for executor code. A local
-Ax fixture verified that an 85 KB observation stayed out of the executor model
+enforce a token or cost ceiling or cover multi-provider/child work. The same
+limiter now journals content-free model finish receipts with Ax-normalized token
+counts and terminal `complete`/`partial`/`unavailable` coverage. Go fixtures
+verify three-call totals, an omitted provider report and exact aggregation
+through checkpoint resume. OpenNeko's Harness adapter projects the outer-model
+aggregate into its existing usage event. The connected worker/OpenShell run
+recorded 30 input, 30 output and 60 total fixture tokens with complete coverage;
+queue redelivery kept exactly one outer usage event. No real provider key was used.
+A run-local Goja handoff now preserves bounded distilled evidence for executor
+code. A local Ax fixture verified that an 85 KB observation stayed out of the executor model
 request while its narrowed reference supported a second tool call; the connected
 worker/OpenShell/GraphJin regression passed after this change. Failed or partial
 tool outcomes no longer return `status: completed` with the responder's
@@ -481,6 +488,11 @@ validation/fallback. No autonomous production harness evolution.
 **Verify:** real multi-route requests under rate limits and transient failures,
 with no fallback around policy denial. Long mixed-tool conversations retain pending
 approvals, user constraints, tool-result pairing and evidence after compaction.
+For the GraphJin-inspired executor contract, deny one invocation before any
+effect, return one typed receipt from a successful capability, and exhaust actor
+steps both with and without sufficient saved evidence. Only the evidenced case
+may use a budgeted tool-less finalizer; both outcomes must pass the same terminal
+gate after crash/replay and API queue redelivery.
 References survive restart and reject another tenant. Retry/compaction loops hit
 ceilings; unavailable usage cannot authorize unlimited work. Measure cost per
 successful task, cache traffic, repeated-output bytes and retrieval/compaction cost.
