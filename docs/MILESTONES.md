@@ -282,6 +282,20 @@ slice; the remaining MCP-backed product writes depend on M5b bridge qualificatio
 
 ## M5d — Local tools, skills and artifacts
 
+**Local status (2026-09-26):** an opt-in Go file capability now reads bounded
+UTF-8 files from a host-selected workspace and atomically replaces an existing
+file only after a same-run read at the matching content version. Go's `os.Root`
+contains paths; regular-file checks reject final symlinks, oversized files and
+cross-run traversal. A per-workspace read/write gate allows concurrent reads and
+serializes harness edits. Saved read/edit receipts restore the freshness state
+for a new Ax attempt. A synthetic Ax run exercised Read → Edit through the
+durable operation journal, and the full race suite passes. The OpenNeko worker
+does not yet supply `OPENNEKO_HARNESS_WORKSPACE_DIR`, so these tools are not
+advertised to product runs. Shell, uploaded-file mounting, artifact publication
+and connected worker/web acceptance remain open. External writers do not share
+the Go gate; the second version check narrows but cannot eliminate their
+check-to-rename race, so strict cross-process coordination needs a host lock.
+
 **Deliver:** Read, Edit and shell/process tools under OpenShell, file read-version
 checks, read-parallel/write-exclusive scheduling, output/process limits and scoped
 artifact publication. Use OpenNeko's existing skill catalog, upload workspace and
@@ -313,6 +327,10 @@ whether delegation is enabled. No named-agent framework, swarm scheduler or new
 background-work system. Children cannot expand authority, bypass approval or
 retain execution after parent cancellation.
 
+Start with Ax Go's `AddChildAgent` for owned, serialized delegation. Qualify
+`AxFlow` only for fixed independent work that needs parallel fan-out. A child is
+a fresh scoped conversation, not a cloned parent stack or an OS process fork.
+
 **Verify:** a real parent task delegates two bounded investigations, combines
 verified results and exposes correlated progress. Exercise child failure, parent
 cancellation, capability escalation attempts, spawn/depth limits, crash recovery
@@ -329,6 +347,12 @@ excluded from the rollout cohort. Do not claim full Hermes parity while they are
 stages, tools, retries and child/remote work; context compaction preserving original
 intent and unresolved operations. Qualify two approved OpenShell-bound routes first.
 Keep durable state authoritative; prompt compaction is only a model-context projection.
+For complex tasks, retain a compact plan with evidence and success criteria;
+verify receipts and artifacts before reporting completion. Do not add another
+planning loop around AxAgent.
+Qualify one lifecycle state update after a tool result and one after resume:
+the next model turn must see the updated evidence once, without changing
+authorization or repeating a completed effect.
 Reserve budget before each new model or remote call. Check observed usage on every
 event, but do not rely on a provider's final cumulative snapshot to halt a run;
 missing usage requires a conservative admission limit.

@@ -137,6 +137,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
 	}
+	if prior.Attempt > 1 && tools.OnResume != nil {
+		if err := tools.OnResume(ctx, prior.Operations); err != nil {
+			return Result{}, fmt.Errorf("tool state restoration failed: %w", err)
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID}

@@ -20,6 +20,7 @@ import (
 type Tools struct {
 	Lookup       func(context.Context, string) (json.RawMessage, error)
 	Propose      func(context.Context, Proposal) (ProposalReceipt, error)
+	OnResume     func(context.Context, []SavedOperation) error
 	Capabilities []Capability
 	Scope        string // Trusted run-scoped admission context, never model input.
 }

@@ -7,6 +7,10 @@ at their implemented scope; broad tool support and Hermes parity remain planned.
 
 This document records the current design direction, source findings, implementation notes, and questions to resolve. Proposed behavior is not a claim that Ax or OpenNeko already implements it. HTTP/Goja checks and isolated OpenShell/worker/web evidence now exist; see [milestone status](MILESTONES.md) for the qualified paths, accepted upstream cancellation limitation and later milestones.
 
+The [building-block catalog](BUILDING-BLOCKS.md) inventories the general-purpose
+runtime before any further feature selection. It distinguishes Ax primitives,
+harness responsibilities, consumer adapters and currently qualified slices.
+
 Detailed integration research: [OpenShell, broker and Ax compatibility](OPENSHELL.md). This covers the checked-in OpenShell version, credential replacement, transport requirements, multi-provider routing, broker recovery, sandbox lifecycle and required integration tests.
 
 OpenShell **v0.0.116** has local qualification against the checked-in **0.0.54** baseline, with delayed upstream cancellation accepted as nonblocking. Released endpoint binding, managed-refresh handles and Docker OTLP tracing better support this design. Retain the existing host launcher initially: the new Go SDK has useful control/streaming APIs, but its tagged default file-transfer transport is unimplemented. See the companion document for release evidence, static-versus-managed rotation limits and rollout gates. No runtime upgrade has been performed.
@@ -55,6 +59,14 @@ flowchart TD
 | Sandbox boundary | Filesystem, process and network containment; resource limits and process termination |
 
 Preserve a trusted host/sandbox split. The optional OpenNeko adapter uses its existing host and broker. Production credentials and authoritative policy do not become model context or general-purpose runtime globals.
+
+The **control plane** is the trusted consumer plus harness supervisor: identity,
+capability admission, approval, budgets, scheduling, cancellation and durable
+operation records. The **execution/data plane** is Ax's model/tool work, the
+OpenShell-contained process and scoped files/artifacts. The broker supplies
+short-lived access across that boundary. Bulk records and intermediate files stay
+in the data plane; the model receives bounded references and evidence. This is a
+trust and responsibility split, not a requirement for two Go services.
 
 Fallback design: a custom Go model/tool loop using Ax's lower-level model APIs, only if AxAgent cannot expose the execution boundaries needed for recovery and governance. Prefer a focused upstream Ax extension over maintaining two competing engines.
 
@@ -111,6 +123,27 @@ Important limits found during source review:
 | Embedded execution cannot guarantee termination of arbitrary noncooperative host callbacks | Use cancellation-aware tools and an outer process/sandbox termination boundary |
 
 Never poll mutable Ax state concurrently to manufacture live telemetry. If a required callback is absent, use an owner-controlled boundary or add a supported hook upstream.
+
+### Delegation, planning and verification
+
+Ax Go already has `AxAgent.AddChildAgent` for owned child conversations and
+`AxFlow` for application-owned typed graphs. Use the former for bounded specialist
+delegation; child calls are serialized within the parent run. Use `AxFlow` only
+when a task has a fixed dependency graph or genuinely independent work that
+benefits from parallel execution. Parallel flows require owned client/program
+workers and a concurrency check. Neither API is an OS process fork or a durable
+copy of the parent's live stack. Each child receives explicit task context,
+narrowed capabilities, a parent ID, shared budget and cancellation scope. A
+transcript fork is not a prerequisite for delegation.
+
+For complex tasks, the agent may produce a small, inspectable plan of outcomes,
+dependencies and evidence needed. AxAgent retains the adaptive reasoning loop;
+the supervisor records the plan as derived task state and orchestrates governed
+operations. Simple requests can execute directly. Completion has a separate
+verification gate: check required tool receipts, artifact existence/schema and
+task-specific invariants against actual outputs before declaring success. A model
+review can help assess ambiguous quality, but cannot substitute for these checks.
+This makes plan → execute → verify visible without adding a second planner loop.
 
 ## 4. Tool capability and transport contracts
 
@@ -225,6 +258,30 @@ Define journal/checkpoint semantics in the harness, with persistence supplied at
 
 The focused Go compatibility evaluation found that Ax snapshots do not preserve a `Forward` execution cursor. The implemented [recovery contract](M4-RECOVERY.md#ax-continuation-boundary) therefore uses host-owned operation evidence and explicit bounded new Ax attempts. It does not restore an old JavaScript stack.
 
+Lifecycle hooks also change working state. At owned boundaries such as input
+acceptance, after a tool result, child join, compaction and before the next model
+turn, a hook may update the plan, evidence references, context or next-turn
+guidance. Ax Go's `AxRunControl.Steer` queues scoped guidance and reports when it
+is applied; AxAgent also exposes state/session export and restore. Apply state
+changes through the run owner at a documented safe boundary, never by concurrently
+mutating a running AxAgent. Persist any change needed after recovery before the
+next dependent model request, and test that a resumed run sees it exactly once.
+
+There are separate hook effects: **state transitions** may change agent working
+context, **policy gates** may deny a proposed operation, and **observers** emit
+progress or telemetry. Ax's invocation-scoped rate-limiter, tracer, meter and
+usage observer cover model execution; the observer hooks are best-effort. The
+trusted harness still owns authorization, required checkpoints and the durable
+effect journal. A failed required state update stops the dependent transition;
+an observer failure records telemetry loss. A state hook cannot expand the
+admitted tool set or rewrite a completed effect. Add user-configurable hooks
+when a concrete integration needs them, under these same rules.
+
+Ax's event runtime may later adapt authenticated wakes and continuations, but
+must not create a second authoritative inbox or operation journal alongside the
+consumer scheduler and harness recovery ledger. Qualify that integration against
+the pinned or upgraded Go release before using it.
+
 Recovery must distinguish:
 
 - No external dispatch: safe to retry within budget.
@@ -321,7 +378,7 @@ The [Inside Claude Code](https://y-agent.github.io/inside-claude-code/) series i
 | Complete tool calls and terminal results survive denial, failure and cancellation; safe reads overlap while writes form barriers ([agent loop](https://y-agent.github.io/inside-claude-code/02-agent-loop-query-engine.html), [tools](https://y-agent.github.io/inside-claude-code/05-tool-system.html)) | M1/M4 cover the first paths; invariant 1 and the conservative scheduler are already specified | Extend pairing and concurrency tests to every newly admitted MCP/native tool. Streaming may overlap execution only after that individual call is fully parsed and admitted. |
 | A small core tool set plus deferred schema discovery keeps large catalogs out of every prompt ([tools](https://y-agent.github.io/inside-claude-code/05-tool-system.html)) | M5a pins a run-scoped catalog; most OpenNeko capabilities remain unadmitted | In M5b/M6 measure per-turn schema tokens and discovery misses. If material, expose a search/describe projection **of the already admitted catalog**; loading a schema never grants authority. Keep frequent tools eager. |
 | Stable prompt prefix, volatile MCP/runtime details late, and staged output eviction preserve cache use and context ([prompt](https://y-agent.github.io/inside-claude-code/03-prompt-assembly.html), [compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)) | M6 specifies bounded references, budgets and intent-preserving compaction; M5b batch files are planned | Prioritize M5b query-to-file before elaborate summarization. Then measure actual prompt/cache tokens, offload stale observations before summarizing, and verify original request, constraints, pending effects and artifact handles survive compaction/restart. Use provider-specific cache features only when Ax exposes them reliably. |
-| MCP connection and tool metadata are dynamic; the permission pipeline must also cover remote tools ([MCP](https://y-agent.github.io/inside-claude-code/10-model-context-protocol.html), [hooks](https://y-agent.github.io/inside-claude-code/11-hooks-lifecycle.html)) | M5a pins schemas and admission; M5b has one real bridge read; M4 journals external effects | Test bridge death/reconnect and catalog drift without blindly replaying effects. MCP annotations and server instructions remain untrusted hints. The existing governed boundary supplies lifecycle observation; add user-programmable hooks only for a demonstrated need. |
+| MCP connection and tool metadata are dynamic; the permission pipeline must also cover remote tools ([MCP](https://y-agent.github.io/inside-claude-code/10-model-context-protocol.html), [hooks](https://y-agent.github.io/inside-claude-code/11-hooks-lifecycle.html)) | M5a pins schemas and admission; M5b has one real bridge read; M4 journals external effects | Test bridge death/reconnect and catalog drift without blindly replaying effects. MCP annotations and server instructions remain untrusted hints. Add lifecycle state-update hooks at owned boundaries; add user-programmable hooks only for a demonstrated integration need. |
 | Permission policy and process containment are separate; telemetry and compaction must be inspectable ([safety](https://y-agent.github.io/inside-claude-code/06-safety-sandbox.html), [transparency](https://y-agent.github.io/inside-claude-code/14-hidden-costs-context-manipulation.html)) | OpenShell/broker qualification, durable journal, usage coverage and content-free telemetry already lead here | Report actual route, context size, compaction events, tool outcomes and usage coverage per run; validate broker grants and OpenShell restrictions for each new tool. Do not copy a shell classifier, hidden feature-flag matrix or a content-heavy telemetry feed. |
 
 The largest remaining performance gap is not a missing Claude Code mechanism: it is M5b's governed file-backed batch path. The 2026-09-15 lead-union comparison showed the script's per-query agent mediation consuming far more turns than Reckon's batch run. Success here is a validated CSV with bounded model context and a trace showing query receipts, not merely fewer tokens in a synthetic conversation. After that, M6 prompt/schema budgeting and compaction can be evaluated on the same task cohort.

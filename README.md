@@ -47,7 +47,7 @@ See [the OpenNeko adapter](adapters/openneko/README.md) for its build and test c
 The earlier M1 copy was committed to OpenNeko main as `643b4a8`; that historical
 commit remains. The runtime lives here; the opt-in product adapter is a small separate OpenNeko change.
 
-See [design](docs/DESIGN.md), [milestones](docs/MILESTONES.md), [OpenShell findings](docs/OPENSHELL.md)
+See [building blocks](docs/BUILDING-BLOCKS.md), [design](docs/DESIGN.md), [milestones](docs/MILESTONES.md), [OpenShell findings](docs/OPENSHELL.md)
 and [live integration evidence](integration/README.md). The `claude_code` reference
 dump and generated binaries are excluded from version control.
 

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+
 	"github.com/open-neko/harness/adapters/openneko/broker"
 	productmcp "github.com/open-neko/harness/adapters/openneko/mcp"
 	"github.com/open-neko/harness/internal/agent"
 	"github.com/open-neko/harness/internal/command"
-	"os"
+	"github.com/open-neko/harness/internal/localtool"
 )
 
 func main() {
@@ -31,7 +33,7 @@ func main() {
 		}
 		tools.Scope = kinds
 	}
-	var cleanup func() error
+	var closeTools []func() error
 	if flag := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ"); flag != "" {
 		if flag != "1" {
 			fmt.Fprintln(os.Stderr, "invalid memory capability binding")
@@ -48,7 +50,27 @@ func main() {
 			os.Exit(2)
 		}
 		tools.Capabilities = append(tools.Capabilities, capabilities...)
-		cleanup = closeSession
+		closeTools = append(closeTools, closeSession)
+	}
+	if dir := os.Getenv("OPENNEKO_HARNESS_WORKSPACE_DIR"); dir != "" {
+		files, openErr := localtool.OpenFiles(dir)
+		if openErr != nil {
+			fmt.Fprintln(os.Stderr, "file workspace unavailable:", openErr)
+			os.Exit(2)
+		}
+		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
+		tools.OnResume = files.Restore
+		tools.Scope += "\nworkspace:" + dir
+		closeTools = append(closeTools, files.Close)
+	}
+	cleanup := func() error {
+		var first error
+		for _, closeTool := range closeTools {
+			if err := closeTool(); err != nil && first == nil {
+				first = err
+			}
+		}
+		return first
 	}
 	command.MainWithToolsAndCleanup(tools, cleanup)
 }
