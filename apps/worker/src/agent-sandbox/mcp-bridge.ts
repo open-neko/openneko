@@ -332,15 +332,10 @@ async function warmUpBroker(baseUrl: string, name: string): Promise<void> {
   // Startup diagnostics, readable mid-run via `sandbox exec` — bridge stderr
   // is swallowed by hermes, so a file is the only visible channel.
   try {
-    const envPick = Object.fromEntries(
-      Object.entries(process.env).filter(([k]) =>
-        /OPENNEKO_|PROXY|proxy|NODE_USE/.test(k),
-      ),
-    );
     const { writeFileSync } = await import("node:fs");
     writeFileSync(
       `/tmp/bridge-${name}.log`,
-      JSON.stringify({ baseUrl, trail, env: envPick }, null, 1),
+      JSON.stringify({ baseUrl, trail }, null, 1),
     );
   } catch {
     /* diagnostics only */
