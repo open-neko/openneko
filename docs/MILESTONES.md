@@ -208,16 +208,27 @@ Batch contracts belong to workflow definitions, never skill entitlements. A
 workflow may use zero or more skills. Skill files and scripts must not call
 LLMs directly. Harness/Ax alone owns model routing, budgets and telemetry;
 scripts exchange governed data requests and files.
-The prototype pins one workflow name and script in trusted worker config.
-Before general admission, replace that binding with a versioned workflow
-executor registry and snapshot the selected contract in the API admission
-transaction. The caller submits immutable input and receives `202 Accepted`
+The prototype pins one workflow ID and script in trusted worker config, and
+snapshots the selected contract in the API admission transaction. Before
+general admission, replace that binding with a versioned workflow executor
+registry. The caller submits immutable input and receives `202 Accepted`
 with a run ID; it cannot edit or approve the run while queued. A later operator
-edit to the workflow definition affects only later admissions, not the
-accepted run. The caller polls for completed, failed, or cancelled status and
-downloads an artifact only after successful validation and publication.
+edit to the workflow's name or output contract affects only later admissions;
+disabling the workflow may revoke a queued run. The caller polls for completed,
+failed, or cancelled status and downloads an artifact only after successful
+validation and publication.
 The dispatch outbox, pg-boss expiry for long executions, cancellation, and
 browser-visible workflow result remain part of that admission path.
+
+The isolated API acceptance now covers `POST` through the real web server,
+transactional admission, a worker claim, file-backed execution with no provider
+key in the child, `GET` status and exact CSV download. A definition edit after
+admission did not change the accepted artifact. A stale query-to-file lease
+returns to the queue with a new attempt, while an old attempt cannot claim or
+finalize it. The public HTTP worker test uses a deterministic local executor.
+A connected API admission through the production queue, Go, OpenShell and a
+seeded GraphJin broker also passed. One public HTTP-to-Go check and real data
+remain open.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal

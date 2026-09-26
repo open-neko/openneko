@@ -24,12 +24,20 @@ validation. This executor must be bound to a workflow definition and
 and scripts must never call a model provider directly:
 model routing, budgets and telemetry belong to Harness/Ax. The isolated fixture
 passes with OpenShell 0.0.116. An opt-in OpenNeko worker job is configured with
-`OPENNEKO_HARNESS_BATCH_BIN` and `HARNESS_BATCH_WORKFLOW_NAME`; it verifies the
-linked workflow definition, `workflow_run`, actor and pinned script before
-publishing the artifact. This binary is not installed in the product image or
-exposed to the model yet; general workflow admission and connected artifact
-acceptance in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
-remain open.
+`OPENNEKO_HARNESS_BATCH_BIN` and `HARNESS_BATCH_WORKFLOW_ID`; it verifies the
+linked workflow definition, admitted contract, actor and pinned script before
+publishing the artifact. The same workflow ID must be configured in the web
+process for public API admission. `POST /api/v1/workflows/{id}/runs` in the
+default `single` mode accepts `{"targetDay":"YYYY-MM-DD"}` and an idempotency key,
+returns `202` with a run URL, and exposes the validated CSV through the
+authenticated artifact URL after completion. The caller cannot edit or approve
+the queued run. An isolated Postgres + worker + web test passed admission,
+definition edits after admission, duplicate delivery, status and exact-byte
+download with a no-provider fixture. A connected API admission also passed
+through the production queue, Go, OpenShell and a seeded GraphJin broker,
+publishing one validated CSV. A single public-HTTP-to-Go/OpenShell check,
+general executor registry and real-data Daily Lead run remain in
+[M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice).
 
 The Harness MCP adapter admits pinned memory/library reads and the records
 catalog/find/get subset through OpenNeko's trusted stdio bridge. Records-only
