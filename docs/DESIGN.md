@@ -124,6 +124,53 @@ Important limits found during source review:
 
 Never poll mutable Ax state concurrently to manufacture live telemetry. If a required callback is absent, use an owner-controlled boundary or add a supported hook upstream.
 
+### GraphJin's server agent as an executor reference
+
+The inspected GraphJin checkout (`a325face`) is a working Ax Go example, not
+another harness dependency. Its `agent.Run` bounds the request and actor steps,
+seeds catalog discovery before `AxAgent.Forward`, registers a small set of Go
+callables, disables direct response for this data task, and keeps a per-run
+protocol state. Its Goja wrapper carries narrowed
+distiller evidence and the last authorized result into the executor without
+copying large rows into prompts. The service derives caller capabilities from
+identity, then enforces catalog visibility, mutation settings and core role/RLS
+again where operations execute. A model-visible refusal cannot grant access.
+
+Its final gate is as important as its tool gate: a failed mutation cannot become
+an answered success, an answer needs observed evidence, and a tool-less finalizer
+is attempted after step exhaustion only when the evidence is already sufficient.
+The extra model call is included in usage. SSE action events are redacted progress;
+the terminal response carries typed `answered`, `needs_clarification`, `blocked`
+or `error` status, evidence, refusal, usage and trace identity.
+
+For Harness, keep Ax's distiller/executor/responder in one run-owned actor and
+place a generic governed invocation boundary under every callable. That boundary
+owns admission, schema, policy, durable intent, execution receipt and bounded
+model-visible result. Store large results behind scoped handles; hand the actor
+only compact evidence and the original task constraints. A tool-less finalizer,
+when justified, must reserve from the same run budget. A declined invocation
+must say whether anything executed and give a bounded next step, while policy
+denial remains final. Verify the actual receipts and artifacts before declaring
+success. Do not copy GraphJin's catalog/query repair rules into Harness, unwrap
+its server agent into low-level tools, or treat its in-process Goja session as a
+durable checkpoint or sandbox. Stage routing must use explicit Ax metadata or a
+single approved profile, not GraphJin's prompt-text stage detector.
+
+The current `internal/agent/run.go` already owns one bounded Ax run, pins a
+trusted tool catalog and reuses durable operation receipts on continuation.
+It still accepts any nonempty answer as `completed`, then labels some failed
+tool outcomes `partial`; it has no general evidence-qualified terminal gate or
+explicit distiller-to-executor evidence handoff. Add those narrow checks where
+the real tool/result contract needs them, without importing GraphJin's large
+domain protocol into the core.
+
+Before broadening the executor, test a large-result distiller-to-executor handoff,
+a denied operation that produces no effect, a completed operation whose final
+answer must cite its receipt, and step exhaustion with sufficient versus
+insufficient evidence. Record per-stage model calls, usage coverage, actor steps,
+tool outcomes and finalization cost. GraphJin remains one admitted remote
+capability with its own internal executor and authorization.
+
 ### Delegation, planning and verification
 
 Ax Go already has `AxAgent.AddChildAgent` for owned child conversations and
@@ -465,6 +512,12 @@ OpenShell cancellation is accepted as nonblocking; adopt its eventual upstream f
 ## 12. Source notes
 
 Research was performed on 2026-09-19. Ax main was observed at `5c43344f9ef3016db576fa2c3b59d48ef21b4d71`; individual reads used main URLs, so pin and recheck the selected implementation revision before coding. Local OpenNeko and GraphJin findings describe the inspected checkout, not necessarily a deployed release.
+
+The GraphJin executor reference was rechecked on 2026-09-27 at local commit
+`a325face`: `agent/agent.go` (Ax construction and finalization),
+`agent/protocol.go` (evidence and execution guards), `agent/runtime_handoff.go`
+(run-local stage handoff), `serv/agent_runtime.go` (service authorization), and
+`serv/agent_http.go` (identity and streamed result).
 
 External references:
 
