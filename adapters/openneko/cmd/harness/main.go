@@ -14,14 +14,31 @@ import (
 )
 
 func main() {
-	lookup, err := broker.GraphJin(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"), os.Getenv("OPENNEKO_DATA_SOURCE_ID"))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "invalid GraphJin capability binding")
+	recordsOnly := os.Getenv("OPENNEKO_HARNESS_RECORDS_ONLY")
+	if recordsOnly != "" && recordsOnly != "1" {
+		fmt.Fprintln(os.Stderr, "invalid records-only binding")
 		os.Exit(2)
 	}
+	var lookup func(context.Context, string) (json.RawMessage, error)
+	if recordsOnly != "1" {
+		var err error
+		lookup, err = broker.GraphJin(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"), os.Getenv("OPENNEKO_DATA_SOURCE_ID"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid GraphJin capability binding")
+			os.Exit(2)
+		}
+	}
 	tools := agent.Tools{Lookup: lookup}
+	if recordsOnly == "1" {
+		tools.Scope = "records-only"
+	}
 	if kinds := os.Getenv("OPENNEKO_HARNESS_ACTION_KINDS"); kinds != "" {
+		if recordsOnly == "1" {
+			fmt.Fprintln(os.Stderr, "records-only run cannot admit pack actions")
+			os.Exit(2)
+		}
 		propose, bindErr := broker.Propose(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		var err error
 		if bindErr != nil {
 			err = bindErr
 		} else {
@@ -36,17 +53,18 @@ func main() {
 	var closeTools []func() error
 	memoryRead := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ")
 	libraryRead := os.Getenv("OPENNEKO_HARNESS_MCP_LIBRARY_READ")
-	if (memoryRead != "" && memoryRead != "1") || (libraryRead != "" && libraryRead != "1") || (libraryRead == "1" && memoryRead != "1") {
+	recordsRead := os.Getenv("OPENNEKO_HARNESS_MCP_RECORDS_READ")
+	if (memoryRead != "" && memoryRead != "1") || (libraryRead != "" && libraryRead != "1") || (recordsRead != "" && recordsRead != "1") || (libraryRead == "1" && memoryRead != "1") || (recordsOnly == "1" && (memoryRead != "" || libraryRead != "" || recordsRead != "1")) {
 		fmt.Fprintln(os.Stderr, "invalid read capability binding")
 		os.Exit(2)
 	}
-	if memoryRead == "1" {
+	if memoryRead == "1" || recordsRead == "1" {
 		capabilities, closeSession, connectErr := productmcp.ConnectReads(context.Background(), productmcp.ReadConfig{
 			BridgePath: os.Getenv("OPENNEKO_MCP_BRIDGE"),
 			BrokerURL:  os.Getenv("OPENNEKO_BROKER_URL"), BrokerToken: os.Getenv("OPENNEKO_BROKER_TOKEN"),
 			OrgID: os.Getenv("OPENNEKO_MCP_ORG_ID"), ThreadID: os.Getenv("OPENNEKO_MCP_THREAD_ID"),
 			RunID: os.Getenv("OPENNEKO_MCP_RUN_ID"), SkillsRoot: os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"),
-		}, libraryRead == "1")
+		}, memoryRead == "1", libraryRead == "1", recordsRead == "1")
 		if connectErr != nil {
 			fmt.Fprintln(os.Stderr, "read capabilities unavailable:", connectErr)
 			os.Exit(2)

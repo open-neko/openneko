@@ -20,6 +20,8 @@ remain. Onboarding was skipped, so no admin password or model key was configured
 The released worker still uses Hermes and OpenShell 0.0.54.
 The first M5b memory and library search slices passed through the feature worker,
 Harness image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
+The records-only catalog turn passed the same path with GraphJin lookup and customer
+memory denied; find/get are qualified against the real bridge with a synthetic broker.
 The memory result and library database row were seeded; the batch task and broader MCP/interaction surface
 still need connected acceptance. Full M5c remains open. Demo health alone does
 not qualify either milestone.
@@ -151,14 +153,17 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 
 ## M5b — File-backed batch path and MCP read/interaction slice
 
-**Partial status (2026-09-26):** customer-surface memory and library search are
-admitted through the actual OpenNeko stdio bridge with pinned schemas. The broker
-binds org/run identity and grants each route only to customer Harness tokens;
-records runs and writes remain denied. Isolated OpenShell + worker + broker + Ax
-runs each recorded one finished Go operation and returned the answer. The library
+**Partial status (2026-09-26):** customer-surface memory and library search, plus
+actor-scoped records catalog/find/get, are admitted through the actual OpenNeko
+stdio bridge with pinned schemas. The broker binds org/run identity; records-only
+Harness turns cannot use GraphJin lookup or customer memory. Isolated OpenShell +
+worker + broker + Ax catalog and search turns each recorded one finished Go
+operation and returned the answer. The library
 run now uses the real entitlement lookup and pgvector search against an isolated
 Postgres row, with a deterministic embedding fixture. Hermes regression checks
-passed. Uploaded-document and browser search tasks, and the Daily Lead Union
+passed. Records catalog was tested end to end with an empty registry; find/get
+used a synthetic broker behind the real bridge and still need data-backed
+acceptance. Uploaded-document and browser search tasks, and the Daily Lead Union
 batch, still need connected acceptance.
 
 The controlled batch runner now consumes the ported skill's cache-miss
@@ -185,9 +190,10 @@ before admission. A working stdio connection alone does not authorize tools.
 
 The Go MCP SDK now has an opt-in integration check against the real OpenNeko
 multiplexed stdio bridge (`OPENNEKO_TEST_SOURCE=... go test ./integration/m5b`).
-With a synthetic broker and read-only memory and library servers, it verifies
-discovery, scoped search calls, and child-process exit on close. The separate
-isolated OpenShell check qualifies those two read admissions, not general MCP.
+With a synthetic broker and read-only memory, library and records servers, it
+verifies discovery, scoped calls, and child-process exit on close. The separate
+isolated OpenShell check qualifies memory/library search and records catalog,
+not general MCP.
 
 **Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
 its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or

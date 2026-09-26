@@ -41,7 +41,7 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | --- | --- | --- |
 | M1–M4 | Locally qualified at their bounded scope; recovery and real OpenShell/consumer checks recorded above | Preserve regression coverage as capabilities expand; accepted idle-proxy cancellation remains observable |
 | M5a catalog | Native/direct/MCP fixture calls share Ax, schema admission, operation journal and catalog binding | Package and compare the full consumer capability inventory and recovery behavior on connected runs |
-| M5b reads/batch | Seeded memory search and a real pgvector/entitlement library search passed the worker/OpenShell/broker/MCP bridge with deterministic embeddings; controlled query-to-file runner and scoped batch-read broker grant pass local fixtures; a separate no-provider/no-network OpenShell sandbox completed a synthetic batch CSV with host-owned query handoff and mandatory deletion | Admit host-owned batch work, connect GraphJin data, publish/download the CSV, then qualify uploaded-document/browser search, records reads and clarification/UI paths |
+| M5b reads/batch | Seeded memory search, real pgvector/entitlement library search, and an empty-registry records-only catalog turn passed worker/OpenShell/broker/MCP/Ax; records find/get passed the real bridge with a synthetic broker; controlled query-to-file runner and scoped batch-read grant pass local fixtures; a separate no-provider/no-network OpenShell sandbox completed a synthetic CSV with host-owned query handoff and mandatory deletion | Admit host-owned batch work, connect GraphJin data, publish/download the CSV, then qualify data-backed records find/get, uploaded-document/browser search and clarification/UI paths |
 | M5c mutations | Pack-action proposal is narrowed to host-admitted action kinds and governed effects | Qualify remaining product writes at their actual effect boundaries, including crash and duplicate delivery |
 | M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; an artifact-only root produced a CSV and one Work artifact event; the Work browser rendered and requested its link, and the live route returned exact bytes | Add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
 | M5e delegation | Ax API and ownership design researched | Implement narrowed child execution with shared budgets and cancellation, then connected verification |
@@ -92,3 +92,8 @@ pgvector row and server-side run entitlement, using a deterministic embedding
 response. The fixture organization is deleted before queued acceptance so it
 cannot be selected as the queue's default org. This is not yet a browser task
 against an uploaded customer document.
+The isolated records-only turn reached the live records catalog through the
+worker, OpenShell, MCP bridge and actor-scoped broker, with no generated apps in
+the fixture registry. GraphJin lookup, general GraphJin agent and customer memory
+were denied for that run. Find/get passed the real bridge with a synthetic broker;
+data-backed records and browser acceptance remain open.

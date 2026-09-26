@@ -21,30 +21,45 @@ type ReadConfig struct {
 }
 
 const searchSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":800,"minLength":2,"type":"string"}},"required":["query"],"type":"object"}`
+const recordsCatalogSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"app":{"maxLength":63,"minLength":1,"type":"string"}},"type":"object"}`
+const recordsFindSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"after":{"maxLength":4096,"minLength":1,"type":"string"},"app":{"maxLength":63,"minLength":1,"type":"string"},"filters":{"items":{"properties":{"field":{"maxLength":63,"minLength":1,"type":"string"},"operator":{"enum":["eq","neq","in","contains","starts_with","is_null"],"type":"string"},"value":{}},"required":["field","operator"],"type":"object"},"maxItems":20,"type":"array"},"first":{"maximum":50,"minimum":1,"type":"integer"},"myRecords":{"type":"boolean"},"object":{"maxLength":63,"minLength":1,"type":"string"},"search":{"maxLength":200,"minLength":1,"type":"string"},"sort":{"properties":{"direction":{"enum":["asc","desc"],"type":"string"},"field":{"maxLength":63,"minLength":1,"type":"string"}},"required":["field","direction"],"type":"object"}},"required":["app","object"],"type":"object"}`
+const recordsGetSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"allFields":{"type":"boolean"},"app":{"maxLength":63,"minLength":1,"type":"string"},"id":{"maxLength":512,"minLength":1,"type":"string"},"object":{"maxLength":63,"minLength":1,"type":"string"}},"required":["app","object","id"],"type":"object"}`
 
 // ConnectReads admits pinned read-only tools from OpenNeko's stdio bridge.
 // Discovery must match the pinned schemas; bridge content cannot grant tools.
-func ConnectReads(ctx context.Context, cfg ReadConfig, library bool) ([]agent.Capability, func() error, error) {
+func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records bool) ([]agent.Capability, func() error, error) {
 	u, err := url.Parse(cfg.BrokerURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) {
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records) || (library && !memory) {
 		return nil, nil, fmt.Errorf("invalid OpenNeko read bridge binding")
 	}
 	if info, err := os.Stat(cfg.BridgePath); err != nil || !info.Mode().IsRegular() {
 		return nil, nil, fmt.Errorf("OpenNeko read bridge unavailable")
 	}
-	servers := "neko_memory"
-	allowed := []shared.Admission{{
-		Name: "memory_search", Alias: "mcp_memory_search", Version: "1", Origin: "openneko",
-		Effect: "read", Description: "Search the current run's saved memories.", Schema: json.RawMessage(searchSchema),
-	}}
+	var servers []string
+	var allowed []shared.Admission
+	if memory {
+		servers = append(servers, "neko_memory")
+		allowed = append(allowed, shared.Admission{
+			Name: "memory_search", Alias: "mcp_memory_search", Version: "1", Origin: "openneko",
+			Effect: "read", Description: "Search the current run's saved memories.", Schema: json.RawMessage(searchSchema),
+		})
+	}
 	if library {
-		servers += ",neko_library"
+		servers = append(servers, "neko_library")
 		allowed = append(allowed, shared.Admission{
 			Name: "library_search", Alias: "mcp_library_search", Version: "1", Origin: "openneko",
 			Effect: "read", Description: "Search authorized document-library concepts.", Schema: json.RawMessage(searchSchema),
 		})
 	}
-	args := []string{cfg.BridgePath, servers}
+	if records {
+		servers = append(servers, "neko_records")
+		allowed = append(allowed,
+			shared.Admission{Name: "records_browse_catalog", Alias: "mcp_neko_records_browse_catalog", Version: "1", Origin: "openneko", Effect: "read", Description: "Browse the actor's readable records apps, objects, fields and grants.", Schema: json.RawMessage(recordsCatalogSchema)},
+			shared.Admission{Name: "records_find_records", Alias: "mcp_neko_records_find_records", Version: "1", Origin: "openneko", Effect: "read", Description: "Find records through the registry under the current actor's permissions.", Schema: json.RawMessage(recordsFindSchema)},
+			shared.Admission{Name: "records_get_record", Alias: "mcp_neko_records_get_record", Version: "1", Origin: "openneko", Effect: "read", Description: "Read one record by an exact id returned by find_records.", Schema: json.RawMessage(recordsGetSchema)},
+		)
+	}
+	args := []string{cfg.BridgePath, strings.Join(servers, ",")}
 	if strings.HasSuffix(cfg.BridgePath, ".ts") {
 		args = append([]string{"--import", "tsx"}, args...)
 	}

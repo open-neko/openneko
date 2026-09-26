@@ -16,6 +16,7 @@ import (
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
 	adapter "github.com/open-neko/harness/adapters/mcp"
 	product "github.com/open-neko/harness/adapters/openneko/mcp"
+	"github.com/open-neko/harness/internal/agent"
 )
 
 // Runs the actual OpenNeko stdio multiplexer through the Go MCP SDK. The
@@ -32,8 +33,9 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	const token = "fixture-broker-token"
 	var requests atomic.Int32
 	var libraryRequests atomic.Int32
+	var recordsRequests atomic.Int32
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.URL.Path != "/v1/memory/search" && r.URL.Path != "/v1/library/search") || r.Method != http.MethodPost {
+		if r.Method != http.MethodPost {
 			http.Error(w, "unexpected route", http.StatusNotFound)
 			return
 		}
@@ -50,6 +52,25 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 			libraryRequests.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[{"concept":{"path":"contracts/example","type":"contract","title":"Fixture contract","description":"Fixture","status":"stable","sources":[],"body":"TERMS-42"},"layer":"team","score":1}]`))
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/records/") {
+			recordsRequests.Add(1)
+			if body["appId"] != "crm" && r.URL.Path != "/v1/records/catalog" {
+				http.Error(w, "wrong records app", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/v1/records/catalog":
+				_, _ = w.Write([]byte(`{"apps":[{"appId":"crm","objects":[{"apiName":"lead"}]}]}`))
+			case "/v1/records/find":
+				_, _ = w.Write([]byte(`{"records":[{"id":"lead-42"}]}`))
+			case "/v1/records/get":
+				_, _ = w.Write([]byte(`{"id":"lead-42","name":"Fixture lead"}`))
+			default:
+				http.Error(w, "unexpected records route", http.StatusNotFound)
+			}
 			return
 		}
 		requests.Add(1)
@@ -106,7 +127,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	productCaps, closeProduct, err := product.ConnectReads(ctx, product.ReadConfig{
 		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,
 		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(),
-	}, true)
+	}, true, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +136,45 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	if err != nil || !strings.Contains(string(result), "memory-1") || requests.Load() != 2 {
 		t.Fatalf("product MCP read failed: result=%s err=%v requests=%d", result, err, requests.Load())
 	}
-	if len(productCaps) != 2 || productCaps[1].Name != "mcp_library_search" {
+	if len(productCaps) != 5 || productCaps[1].Name != "mcp_library_search" {
 		t.Fatalf("library read was not admitted: %+v", productCaps)
 	}
 	result, err = productCaps[1].Call(ctx, json.RawMessage(`{"query":"find contract"}`))
 	if err != nil || !strings.Contains(string(result), "TERMS-42") || libraryRequests.Load() != 1 {
 		t.Fatalf("product library read failed: result=%s err=%v requests=%d", result, err, libraryRequests.Load())
+	}
+	for _, call := range []struct {
+		index           int
+		input, expected string
+	}{
+		{2, `{"app":"crm"}`, `crm`},
+		{3, `{"app":"crm","object":"lead","first":5}`, `lead-42`},
+		{4, `{"app":"crm","object":"lead","id":"lead-42"}`, `Fixture lead`},
+	} {
+		result, err := productCaps[call.index].Call(ctx, json.RawMessage(call.input))
+		if err != nil || !strings.Contains(string(result), call.expected) {
+			t.Fatalf("records read %d failed: %s %v", call.index, result, err)
+		}
+	}
+	if recordsRequests.Load() != 3 {
+		t.Fatalf("records route count %d", recordsRequests.Load())
+	}
+	recordsOnly, closeRecords, err := product.ConnectReads(ctx, product.ReadConfig{
+		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,
+		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(),
+	}, false, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeRecords()
+	if len(recordsOnly) != 3 || recordsOnly[0].Name != "mcp_neko_records_browse_catalog" {
+		t.Fatalf("records-only catalog invalid: %+v", recordsOnly)
+	}
+	bound := agent.Tools{Capabilities: recordsOnly}
+	if _, err := bound.Binding("mcp_neko_records_find_records"); err != nil {
+		t.Fatalf("records schema not admitted by engine: %v", err)
+	}
+	if _, err := bound.Binding("records_browse_blueprints"); err == nil {
+		t.Fatal("unadmitted records blueprint tool became visible")
 	}
 }

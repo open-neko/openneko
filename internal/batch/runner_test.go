@@ -148,8 +148,8 @@ func TestCancellationLetsPipelineCleanUpChildren(t *testing.T) {
 	cfg := setup(t)
 	script := `import os, pathlib, subprocess, time
 p = subprocess.Popen(['sleep', '30'], start_new_session=True)
-pathlib.Path(os.environ['OPENNEKO_QUERY_CACHE_DIR']).parent.joinpath('ready').write_text('1')
 try:
+    pathlib.Path(os.environ['OPENNEKO_QUERY_CACHE_DIR']).parent.joinpath('ready').write_text('1')
     while True: time.sleep(1)
 finally:
     p.terminate(); p.wait(timeout=5)

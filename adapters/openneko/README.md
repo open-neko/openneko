@@ -23,6 +23,12 @@ or exposed to the model yet; the host-owned job/continuation and connected
 artifact gate in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
 must be completed first.
 
+The Harness MCP adapter admits pinned memory/library reads and the records
+catalog/find/get subset through OpenNeko's trusted stdio bridge. Records-only
+turns omit GraphJin lookup and customer memory. The isolated M3 run exercises a
+real empty-registry records catalog; find/get currently have synthetic-broker
+bridge coverage and await data-backed acceptance.
+
 ## Implemented: OpenShell cold-launch compatibility
 
 From the repository root:
