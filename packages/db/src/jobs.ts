@@ -18,6 +18,7 @@ export const QUEUE = {
   METRIC_REFRESH: "metric_refresh",
   METRIC_REFRESH_SCHEDULED_SWEEP: "metric_refresh_scheduled_sweep",
   WORK_RUN: "work_run",
+  HARNESS_BATCH: "harness_batch",
   WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
@@ -72,6 +73,14 @@ export type WorkRunPayload = ProcessingJobPayload & {
    *  (Telegram from.id, Slack event.user+team). K1 resolves
    *  it to an actor; CH3 links it to an app_user. */
   sender?: { id: string; displayName?: string; workspaceId?: string };
+};
+
+/** Host-owned query-to-file workflow execution. Inputs live on workflow_run. */
+export type HarnessBatchPayload = {
+  orgId: string;
+  threadId: string;
+  runId: string;
+  workflowRunId: string;
 };
 
 /**

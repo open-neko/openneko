@@ -31,6 +31,7 @@ import {
   type RecordsSalesforceSyncPayload,
   type WorkflowRunFirePayload,
   type WorkRunPayload,
+  type HarnessBatchPayload,
 } from "@neko/db/jobs";
 import { buildRecordsPoolConfig } from "@neko/db/records-migrate";
 import {
@@ -127,6 +128,7 @@ import { runBootstrapMetricsBuild } from "./jobs/bootstrap-metrics-build.js";
 import { runMetricRefresh } from "./jobs/metric-refresh.js";
 import { metricRefreshIsDue } from "./jobs/metric-schedule.js";
 import { runWorkRun } from "./jobs/work-run.js";
+import { runHarnessBatch } from "./jobs/harness-batch.js";
 import { runWorkflowRunFire } from "./jobs/workflow-run-fire.js";
 import { runWorkflowOutputTtlSweep } from "./jobs/workflow-output-ttl-sweep.js";
 import { runActionExecute } from "./jobs/action-execute.js";
@@ -1112,6 +1114,16 @@ for (let i = 0; i < concurrency.globalCap; i++) {
     QUEUE.WORK_RUN,
     { batchSize: 1, pollingIntervalSeconds: 0.5 },
     workRunHandler,
+  );
+}
+
+if (process.env.OPENNEKO_HARNESS_BATCH_BIN) {
+  await b.work(
+    QUEUE.HARNESS_BATCH,
+    { batchSize: 1, pollingIntervalSeconds: 0.5 },
+    async (jobs: PgBossLib.Job<HarnessBatchPayload>[]) => {
+      for (const job of jobs) await runHarnessBatch(job.data);
+    },
   );
 }
 
