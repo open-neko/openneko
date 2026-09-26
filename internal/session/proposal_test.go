@@ -149,6 +149,54 @@ func TestProposalCheckpointReuseAndTerminalReplay(t *testing.T) {
 	}
 }
 
+func TestCapabilityBindingChangeRejectsInterruptedResume(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "binding", InputID: "input", Prompt: "Read status"}
+	called := 0
+	capability := agent.Capability{Name: "native_status", Version: "1", Origin: "fixture", Effect: "read", Description: "Read status.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		called++
+		return json.RawMessage(`{"status":"ok"}`), nil
+	}}
+	client, _ := proposalModel(t, `const status=native_status({}); final('Done',{status});`)
+	_, err := RunWithTools(context.Background(), root, spec, client, agent.Tools{Capabilities: []agent.Capability{capability}}, func(event agent.Event) error {
+		if event.Type == "tool.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || called != 1 {
+		t.Fatalf("err=%v called=%d", err, called)
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume || len(report.Operations) != 1 || report.Operations[0].Binding == "" {
+		t.Fatalf("report=%+v err=%v", report, err)
+	}
+	capability.InputSchema = json.RawMessage(`{"type":"object","properties":{"scope":{"type":"string"}}}`)
+	_, err = ResumeWithTools(context.Background(), root, spec, nil, agent.Tools{Capabilities: []agent.Capability{capability}}, func(agent.Event) error { return nil })
+	if err == nil || called != 1 {
+		t.Fatalf("changed capability resumed: err=%v called=%d", err, called)
+	}
+}
+
+func TestTrustedOperationBudgetAboveLegacyFour(t *testing.T) {
+	spec := agent.Spec{Version: 1, RunID: "five", InputID: "input", Prompt: "Read five items", MaxOperations: 5}
+	called := 0
+	capability := agent.Capability{Name: "native_read", Version: "1", Origin: "fixture", Effect: "read", Description: "Read item.", InputSchema: json.RawMessage(`{"type":"object","required":["item"],"properties":{"item":{"type":"integer"}},"additionalProperties":false}`), Call: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		called++
+		return json.RawMessage(`{"ok":true}`), nil
+	}}
+	client, _ := proposalModel(t, `for(let item=1;item<=5;item++) native_read({item}); final('Done',{});`)
+	root := t.TempDir()
+	result, err := RunWithTools(context.Background(), root, spec, client, agent.Tools{Capabilities: []agent.Capability{capability}}, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || called != 5 {
+		t.Fatalf("result=%+v err=%v called=%d", result, err, called)
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || len(report.Operations) != 5 {
+		t.Fatalf("report=%+v err=%v", report, err)
+	}
+}
+
 func TestProposalReceiptReconciliationRequiresMatchingTool(t *testing.T) {
 	input := `{"action":"reference.update","arguments":{},"summary":"Update the reference"}`
 	spec := agent.Spec{Version: 1, RunID: "proposal", InputID: "input", Prompt: "Prepare"}

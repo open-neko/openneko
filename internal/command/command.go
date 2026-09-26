@@ -77,6 +77,9 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 		if resume != "" {
 			return 2, fmt.Errorf("continuation requires HARNESS_STATE_DIR")
 		}
+		if tools.Lookup != nil || tools.Propose != nil || len(tools.Capabilities) != 0 {
+			return 2, fmt.Errorf("tool execution requires HARNESS_STATE_DIR")
+		}
 		result, err = agent.RunWithTools(ctx, spec, client, tools, emit)
 	}
 	if err != nil {

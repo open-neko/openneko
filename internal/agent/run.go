@@ -16,10 +16,18 @@ import (
 
 // Spec is trusted host input. It cannot select credentials, endpoints or capabilities.
 type Spec struct {
-	Version int    `json:"version"`
-	RunID   string `json:"run_id"`
-	InputID string `json:"input_id"`
-	Prompt  string `json:"prompt"`
+	Version       int    `json:"version"`
+	RunID         string `json:"run_id"`
+	InputID       string `json:"input_id"`
+	Prompt        string `json:"prompt"`
+	MaxOperations int    `json:"max_operations,omitempty"`
+}
+
+func (s Spec) OperationLimit() int {
+	if s.MaxOperations == 0 {
+		return 4
+	} // Legacy run contract.
+	return s.MaxOperations
 }
 
 type Result struct {
@@ -33,6 +41,7 @@ type Result struct {
 
 type SavedOperation struct {
 	Tool        string          `json:"tool,omitempty"`
+	Binding     string          `json:"binding,omitempty"`
 	ID          int             `json:"id"`
 	Instruction string          `json:"instruction"`
 	Result      json.RawMessage `json:"result,omitempty"`
@@ -61,6 +70,8 @@ type Event struct {
 	ParentID    uint64          `json:"parent_id,omitempty"`
 	OperationID uint64          `json:"operation_id,omitempty"`
 	Name        string          `json:"name,omitempty"`
+	Origin      string          `json:"origin,omitempty"`
+	Effect      string          `json:"effect,omitempty"`
 	DurationMS  int64           `json:"duration_ms,omitempty"`
 	Result      *Result         `json:"result,omitempty"`
 }
@@ -93,7 +104,15 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 }
 
 func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tools, emit func(Event) error, prior Continuation) (Result, error) {
-	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > 4 ||
+	admitted, err := tools.admitted()
+	if err != nil {
+		return Result{}, err
+	}
+	available := make(map[string]admittedTool, len(admitted))
+	for _, capability := range admitted {
+		available[capability.Name] = capability
+	}
+	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > spec.OperationLimit() ||
 		(prior.Attempt == 1 && (prior.Sequence != 0 || len(prior.Operations) != 0)) || (prior.Attempt > 1 && prior.Sequence == 0) {
 		return Result{}, fmt.Errorf("invalid attempt budget")
 	}
@@ -107,8 +126,15 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				return Result{}, err
 			}
 		}
+		if op.Name() != "lookup" && op.Name() != "propose" {
+			capability, ok := available[op.Name()]
+			var decoded any
+			if json.Unmarshal([]byte(op.Instruction), &decoded) != nil || !ok || op.Binding != capability.binding || capability.schema.Validate(decoded) != nil {
+				return Result{}, fmt.Errorf("saved capability changed or unavailable")
+			}
+		}
 	}
-	if spec.Version != 1 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || client == nil || emit == nil {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -128,7 +154,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		if len(op.Result) > 0 {
 			if op.Name() == "lookup" {
 				delegations = append(delegations, op.Result)
-			} else {
+			} else if op.Name() == "propose" {
 				var receipt ProposalReceipt
 				if json.Unmarshal(op.Result, &receipt) != nil || receipt.Validate() != nil {
 					return Result{}, fmt.Errorf("invalid saved proposal receipt")
@@ -141,37 +167,20 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	if events.err == nil && ctx.Err() == nil {
 		runtime := axgoja.NewRuntime()
-		if tools.Lookup != nil || tools.Propose != nil {
+		if len(admitted) > 0 {
 			// Goja counts host-call wait time in its deadline. Allow the broker
 			// its 45-second budget plus JS overhead, within the two-minute run cap.
 			runtime = axgoja.NewRuntime(axgoja.WithRuntimePolicy(ax.Object("timeoutMs", 60_000)))
 		}
-		register := func(name string, call func(context.Context, string) (json.RawMessage, error)) {
+		register := func(capability admittedTool) {
+			name := capability.Name
 			runtime.RegisterCallable(name, func(value ax.Value) (ax.Value, error) {
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
-				var instruction string
-				if name == "lookup" {
-					var ok bool
-					instruction, ok = value.(string)
-					if !ok || strings.TrimSpace(instruction) == "" || len(instruction) > 8000 {
-						return nil, fmt.Errorf("lookup requires a bounded instruction string")
-					}
-				} else {
-					raw, err := json.Marshal(value)
-					if err != nil {
-						return nil, err
-					}
-					proposal, err := ParseProposal(raw)
-					if err != nil {
-						return nil, err
-					}
-					raw, err = json.Marshal(proposal)
-					if err != nil {
-						return nil, err
-					}
-					instruction = string(raw)
+				instruction, err := capability.input(value)
+				if err != nil {
+					return nil, err
 				}
 				for _, saved := range prior.Operations {
 					if saved.Name() == name && saved.Instruction == instruction {
@@ -189,18 +198,19 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 						return result, nil
 					}
 				}
-				if operationID >= 4 {
+				if operationID >= uint64(spec.OperationLimit()) {
 					toolFailed = true
 					return ax.Object("error", name+"_limit_exceeded"), nil
 				}
 				operationID++
-				events.send(Event{Type: "tool.started", Name: name, OperationID: operationID})
-				finished := Event{Type: "tool.finished", Name: name, OperationID: operationID}
-				defer func() { events.send(finished) }()
+				events.send(Event{Type: "tool.started", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: operationID})
+				startedAt := time.Now()
+				finished := Event{Type: "tool.finished", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: operationID}
+				defer func() { finished.DurationMS = time.Since(startedAt).Milliseconds(); events.send(finished) }()
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
-				raw, err := call(WithOperationID(ctx, operationID), instruction)
+				raw, err := capability.invoke(WithOperationID(ctx, operationID), instruction)
 				if err != nil || ctx.Err() != nil {
 					finished.Error = name + "_failed"
 				}
@@ -218,9 +228,17 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					return ax.Object("error", "invalid_"+name+"_result"), nil
 				}
 				finished.Data = append(json.RawMessage(nil), raw...)
+				if name != "lookup" && name != "propose" {
+					var status struct {
+						IsError bool `json:"is_error"`
+					}
+					if json.Unmarshal(raw, &status) == nil && status.IsError {
+						toolFailed = true
+					}
+				}
 				if name == "lookup" {
 					delegations = append(delegations, append(json.RawMessage(nil), raw...))
-				} else {
+				} else if name == "propose" {
 					var receipt ProposalReceipt
 					if json.Unmarshal(raw, &receipt) != nil || receipt.Validate() != nil {
 						finished.Error = "invalid_proposal_receipt"
@@ -233,31 +251,12 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				return result, nil
 			})
 		}
-		if tools.Lookup != nil {
-			register("lookup", tools.Lookup)
-		}
-		if tools.Propose != nil {
-			register("propose", func(ctx context.Context, input string) (json.RawMessage, error) {
-				proposal, err := ParseProposal([]byte(input))
-				if err != nil {
-					return nil, err
-				}
-				receipt, err := tools.Propose(ctx, proposal)
-				if err != nil {
-					return nil, err
-				}
-				if err = receipt.Validate(); err != nil {
-					return nil, err
-				}
-				return json.Marshal(receipt)
-			})
+		for _, capability := range admitted {
+			register(capability)
 		}
 		instruction := "Answer using the supplied context. Do not invent tool access."
-		if tools.Lookup != nil {
-			instruction = "For questions needing live data, call lookup(instruction) in JavaScript. This delegates read-only investigation to the server-side data agent. Preserve its evidence, refusal, clarification, partial status and errors; never claim a lookup succeeded when it did not."
-		}
-		if tools.Propose != nil {
-			instruction += " To request an action, call propose({action,arguments,summary}). This only creates a proposal requiring human approval. It never executes an effect. Preserve the returned ID and decision; never claim the action executed."
+		for _, capability := range admitted {
+			instruction += " Available JavaScript function " + capability.Name + "(input): " + capability.Description + " Input JSON schema: " + string(capability.InputSchema) + ". Effect: " + capability.Effect + "."
 		}
 		signature := "question:string -> answer:string"
 		values := ax.Object("question", spec.Prompt)

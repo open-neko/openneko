@@ -38,6 +38,7 @@ func Inspect(root string, spec agent.Spec) (Recovery, error) {
 // Receipt is trusted host evidence for one previously admitted operation.
 type Receipt struct {
 	Tool        string          `json:"tool,omitempty"`
+	Binding     string          `json:"binding,omitempty"`
 	ID          int             `json:"id"`
 	Instruction string          `json:"instruction"`
 	Result      json.RawMessage `json:"result"`
@@ -46,7 +47,7 @@ type Receipt struct {
 // Reconcile repairs missing operation results under the execution lock. It never
 // executes a model/tool, changes a terminal answer, or claims VM continuation.
 func Reconcile(root string, spec agent.Spec, receipts []Receipt) (Recovery, error) {
-	if len(receipts) == 0 || len(receipts) > 4 {
+	if len(receipts) == 0 || len(receipts) > spec.OperationLimit() || spec.OperationLimit() > 32 {
 		return Recovery{}, fmt.Errorf("invalid recovery receipts")
 	}
 	return inspect(root, spec, receipts)
@@ -93,7 +94,7 @@ func inspect(root string, spec agent.Spec, receipts []Receipt) (Recovery, error)
 			}
 			seen[receipt.ID] = true
 			op := &state.Operations[receipt.ID-1]
-			if op.Name() != (agent.SavedOperation{Tool: receipt.Tool}).Name() || op.Instruction != receipt.Instruction || (op.Finished && (op.Error != "" || !sameJSON(op.Result, receipt.Result))) {
+			if op.Name() != (agent.SavedOperation{Tool: receipt.Tool}).Name() || op.Binding != receipt.Binding || op.Instruction != receipt.Instruction || (op.Finished && (op.Error != "" || !sameJSON(op.Result, receipt.Result))) {
 				return Recovery{}, fmt.Errorf("recovery receipt conflicts with operation")
 			}
 			op.Result, op.Finished = receipt.Result, true
@@ -172,10 +173,18 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	if s.Spec != spec {
 		return checkpoint{}, fmt.Errorf("run input conflicts with accepted input")
 	}
-	if spec.Version != 1 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" {
+	if s.Catalog != "" {
+		if len(s.Catalog) != 64 {
+			return invalid()
+		}
+		if _, err := hex.DecodeString(s.Catalog); err != nil {
+			return invalid()
+		}
+	}
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" {
 		return invalid()
 	}
-	if len(s.Operations) > 4 {
+	if len(s.Operations) > spec.OperationLimit() {
 		return invalid()
 	}
 	for i, op := range s.Operations {
@@ -225,7 +234,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 		case "tool.started":
-			if e.OperationID != uint64(len(started)+1) || e.OperationID > 4 || (e.Name != "lookup" && e.Name != "propose") {
+			if e.OperationID != uint64(len(started)+1) || e.OperationID > uint64(spec.OperationLimit()) || !agent.ValidToolName(e.Name) {
 				return invalid()
 			}
 			started[e.OperationID] = e.Name

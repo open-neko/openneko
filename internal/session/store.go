@@ -21,6 +21,7 @@ type operation = agent.SavedOperation
 
 type checkpoint struct {
 	Version    int           `json:"version"`
+	Catalog    string        `json:"catalog,omitempty"`
 	Spec       agent.Spec    `json:"spec"`
 	Events     []agent.Event `json:"events"`
 	Operations []operation   `json:"operations"`
@@ -49,8 +50,12 @@ func ResumeWithTools(ctx context.Context, root string, spec agent.Spec, client a
 }
 
 func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, tools agent.Tools, emit func(agent.Event) error, resume bool) (agent.Result, error) {
-	if root == "" || spec.Version != 1 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
+	if root == "" || spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
 		return agent.Result{}, fmt.Errorf("invalid persistent run")
+	}
+	catalog, err := tools.CatalogHash()
+	if err != nil {
+		return agent.Result{}, err
 	}
 	if !resume {
 		if err := os.MkdirAll(root, 0700); err != nil {
@@ -72,7 +77,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		return agent.Result{}, fmt.Errorf("run already executing")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	state := checkpoint{Version: 1, Spec: spec}
+	state := checkpoint{Version: 1, Catalog: catalog, Spec: spec}
 	file, err := os.Open(path + ".json")
 	var data []byte
 	if err == nil {
@@ -86,6 +91,9 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 			return agent.Result{}, err
 		}
 		if state.Result == nil {
+			if state.Catalog != "" && state.Catalog != catalog {
+				return agent.Result{}, fmt.Errorf("admitted capability catalog changed; new run required")
+			}
 			if !resume {
 				return agent.Result{}, fmt.Errorf("interrupted run requires reconciliation; stored operations retained")
 			}
@@ -114,7 +122,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		return agent.Result{}, err
 	}
 	var persistenceErr error
-	record := func(ctx context.Context, name, instruction string, call func() (json.RawMessage, error)) (json.RawMessage, error) {
+	record := func(ctx context.Context, name, binding, instruction string, call func() (json.RawMessage, error)) (json.RawMessage, error) {
 		if persistenceErr != nil {
 			return nil, persistenceErr
 		}
@@ -123,7 +131,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		if agent.OperationID(ctx) != uint64(n+1) {
 			return nil, fmt.Errorf("tool operation identity mismatch")
 		}
-		op := operation{ID: n + 1, Instruction: instruction}
+		op := operation{ID: n + 1, Binding: binding, Instruction: instruction}
 		if name != "lookup" {
 			op.Tool = name
 		}
@@ -149,10 +157,10 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		}
 		return raw, err
 	}
-	durable := agent.Tools{}
+	durable := agent.Tools{Scope: tools.Scope}
 	if tools.Lookup != nil {
 		durable.Lookup = func(ctx context.Context, instruction string) (json.RawMessage, error) {
-			return record(ctx, "lookup", instruction, func() (json.RawMessage, error) { return tools.Lookup(ctx, instruction) })
+			return record(ctx, "lookup", "", instruction, func() (json.RawMessage, error) { return tools.Lookup(ctx, instruction) })
 		}
 	}
 	if tools.Propose != nil {
@@ -161,7 +169,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 			if err != nil {
 				return agent.ProposalReceipt{}, err
 			}
-			raw, err := record(ctx, "propose", string(input), func() (json.RawMessage, error) {
+			raw, err := record(ctx, "propose", "", string(input), func() (json.RawMessage, error) {
 				receipt, err := tools.Propose(ctx, proposal)
 				if err != nil {
 					return nil, err
@@ -178,6 +186,17 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 			err = json.Unmarshal(raw, &receipt)
 			return receipt, err
 		}
+	}
+	for _, capability := range tools.Capabilities {
+		binding, err := tools.Binding(capability.Name)
+		if err != nil {
+			return agent.Result{}, err
+		}
+		original := capability
+		original.Call = func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+			return record(ctx, original.Name, binding, string(input), func() (json.RawMessage, error) { return capability.Call(ctx, input) })
+		}
+		durable.Capabilities = append(durable.Capabilities, original)
 	}
 	return agent.RunAttemptWithTools(ctx, spec, client, durable, func(e agent.Event) error {
 		if persistenceErr != nil {

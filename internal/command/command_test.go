@@ -95,6 +95,19 @@ func TestRunHTTP(t *testing.T) {
 		t.Fatal("missing Ax lifecycle spans")
 	}
 }
+
+func TestToolRunRequiresDurableState(t *testing.T) {
+	configure(t, "http://127.0.0.1:1/v1")
+	t.Setenv("HARNESS_STATE_DIR", "")
+	var out bytes.Buffer
+	code, err := executeWithTools(context.Background(), strings.NewReader(request), &out, agent.Tools{Lookup: func(context.Context, string) (json.RawMessage, error) {
+		t.Fatal("tool dispatched without journal")
+		return nil, nil
+	}})
+	if code != 2 || err == nil || out.Len() != 0 {
+		t.Fatalf("code=%d err=%v output=%q", code, err, out.String())
+	}
+}
 func TestRunCancellationHTTP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
