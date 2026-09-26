@@ -181,7 +181,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" {
 		return invalid()
 	}
 	if len(s.Operations) > spec.OperationLimit() {
@@ -207,6 +207,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 	}
 	attempt := uint64(1)
+	modelCalls := 0
 	started := map[uint64]string{}
 	ended := map[uint64]bool{}
 	for i, e := range s.Events {
@@ -224,6 +225,11 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 		switch e.Type {
 		case "run.started", "span.started", "span.finished":
+		case "model.request.started":
+			modelCalls++
+			if modelCalls > spec.ModelCallLimit() {
+				return invalid()
+			}
 		case "run.resumed":
 			attempt++
 			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {

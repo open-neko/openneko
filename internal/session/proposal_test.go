@@ -197,6 +197,33 @@ func TestTrustedOperationBudgetAboveLegacyFour(t *testing.T) {
 	}
 }
 
+func TestModelRequestBudgetSurvivesResume(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "model-budget", InputID: "input", Prompt: "Read status", MaxModelCalls: 2}
+	client, calls := proposalModel(t, `const status=native_status({}); final('Done',{status});`)
+	capability := agent.Capability{Name: "native_status", Version: "1", Origin: "fixture", Effect: "read", Description: "Read status.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"status":"ok"}`), nil
+	}}
+	tools := agent.Tools{Capabilities: []agent.Capability{capability}}
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || calls.Load() != 2 {
+		t.Fatalf("first attempt err=%v model calls=%d", err, calls.Load())
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume {
+		t.Fatalf("recovery=%+v err=%v", report, err)
+	}
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "model_budget_exceeded" || calls.Load() != 2 {
+		t.Fatalf("result=%+v err=%v model calls=%d", result, err, calls.Load())
+	}
+}
+
 func TestProposalReceiptReconciliationRequiresMatchingTool(t *testing.T) {
 	input := `{"action":"reference.update","arguments":{},"summary":"Update the reference"}`
 	spec := agent.Spec{Version: 1, RunID: "proposal", InputID: "input", Prompt: "Prepare"}

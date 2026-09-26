@@ -13,6 +13,8 @@ or run the standalone checks.
 - `compat`: actual HTTP/Goja checks for tool pairing, cancellation and snapshots.
 - `integration`: isolated real OpenShell transport and credential-policy checks.
 - `internal/session`: bounded durable acceptance, typed operation receipts and recovery.
+- `internal/localtool`: opt-in run-scoped file Read/Edit with freshness and resume checks.
+- `internal/batch`: controlled file-backed script and brokered query-cache runner.
 - `adapters/openneko`: optional GraphJin lookup, governed proposals and product launch adapter.
 
 The [headless run protocol](docs/RUN-PROTOCOL.md), M3 product path and

@@ -3,7 +3,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+
+	ax "github.com/ax-llm/ax/packages/go"
 )
 
 func TestCapabilityOrderIsStable(t *testing.T) {
@@ -25,6 +31,26 @@ func TestCapabilityOrderIsStable(t *testing.T) {
 		if a[i].Name != want || b[i].Name != want {
 			t.Fatalf("tool order changed: %q, %q", a[i].Name, b[i].Name)
 		}
+	}
+}
+
+func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
+	var calls atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "must not dispatch", 500)
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	spec := Spec{Version: 1, RunID: "model-admission", InputID: "input", Prompt: "Answer"}
+	_, err := RunWithTools(context.Background(), spec, client, Tools{}, func(e Event) error {
+		if e.Type == "model.request.started" {
+			return errors.New("journal unavailable")
+		}
+		return nil
+	})
+	if err == nil || calls.Load() != 0 {
+		t.Fatalf("dispatch after failed event: err=%v calls=%d", err, calls.Load())
 	}
 }
 
