@@ -176,11 +176,18 @@ runs in a separate OpenShell 0.0.116 sandbox with no provider, network grant or
 broker token. An isolated live fixture verifies a cache miss, host-owned query,
 response upload, validated CSV, HTTP 403 on model egress, and sandbox deletion.
 Artifact publication is blocked if sandbox deletion fails.
+Query responses now persist before their receipts; if a host dies in that gap,
+resume validates the saved response and repairs its receipt without dispatching
+the read again. A receipt without response still fails closed.
 This is **not yet** an Ax tool
 or a worker/web acceptance: do not mint that grant in normal runs until the
 host-owned job, batch recovery and artifact projection are wired.
 The 20-minute pipeline should run as a host-owned operation with progress and
 durable continuation, rather than blocking the current two-minute Ax callback.
+Reuse OpenNeko's pg-boss processing-job queue and Work artifact event contract;
+bind a dedicated batch run and its actor before minting `batchRead`. The worker
+restart reconciler must preserve a batch run with a retryable queue owner, while
+the host verifies sandbox teardown and CSV bytes before publishing the event.
 Skill files and scripts must not call LLMs directly. Harness/Ax alone owns model
 routing, budgets and telemetry; scripts exchange governed data requests and files.
 

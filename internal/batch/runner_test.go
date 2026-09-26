@@ -94,10 +94,20 @@ func TestRunMaterializesQueriesAndPublishesValidatedCSV(t *testing.T) {
 			t.Fatalf("missing query receipt: %v", err)
 		}
 	}
+	// A crash after the response was persisted but before its receipt must
+	// recover from the saved bytes without dispatching the read again.
+	firstID := sha256.Sum256([]byte(calls[0]))
+	firstReceipt := filepath.Join(cfg.WorkDir, "graphjin-cache", "receipts", hex.EncodeToString(firstID[:])+".json")
+	if err := os.Remove(firstReceipt); err != nil {
+		t.Fatal(err)
+	}
 	replayed, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
 		t.Fatal("cached query was dispatched again")
 		return nil, nil
 	}, localStep, nil)
+	if _, err := os.Stat(firstReceipt); err != nil {
+		t.Fatalf("missing repaired query receipt: %v", err)
+	}
 	if err != nil || replayed.Queries != 2 || replayed.SHA256 != result.SHA256 {
 		t.Fatalf("cached run was not stable: %+v %v", replayed, err)
 	}
@@ -111,6 +121,18 @@ func TestRunMaterializesQueriesAndPublishesValidatedCSV(t *testing.T) {
 		return nil, nil
 	}, localStep, nil); err == nil {
 		t.Fatal("tampered response was accepted")
+	}
+	if err := os.Remove(firstReceipt); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(response, []byte(`{"errors":[{"message":"denied"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
+		t.Fatal("invalid response triggered an ungoverned retry")
+		return nil, nil
+	}, localStep, nil); err == nil {
+		t.Fatal("invalid response without receipt was repaired")
 	}
 }
 

@@ -158,11 +158,11 @@ func Run(ctx context.Context, cfg Config, query Query, step Step, cleanup func()
 			}
 			receiptHash := sha256.Sum256(data)
 			receipt, _ := json.Marshal(queryReceipt{request.ID, hex.EncodeToString(receiptHash[:]), len(data)})
-			if err := atomicFileOrSame(filepath.Join(cache, "receipts", request.ID+".json"), receipt); err != nil {
-				return result, err
-			}
 			responsePath := filepath.Join(cache, "responses", request.ID+".json")
 			if err := atomicFile(responsePath, data); err != nil {
+				return result, err
+			}
+			if err := atomicFileOrSame(filepath.Join(cache, "receipts", request.ID+".json"), receipt); err != nil {
 				return result, err
 			}
 			result.Queries++
@@ -232,6 +232,21 @@ func pending(cache, scriptCache string) ([]cacheRequest, int, error) {
 			}
 			receiptPath := filepath.Join(cache, "receipts", id+".json")
 			receiptInfo, err := os.Lstat(receiptPath)
+			if os.IsNotExist(err) {
+				var payload struct {
+					Data   json.RawMessage `json:"data"`
+					Errors []any           `json:"errors"`
+				}
+				if json.Unmarshal(data, &payload) != nil || len(payload.Data) == 0 || string(payload.Data) == "null" || len(payload.Errors) != 0 {
+					return nil, 0, fmt.Errorf("batch response without receipt invalid")
+				}
+				digest := sha256.Sum256(data)
+				encoded, _ := json.Marshal(queryReceipt{id, hex.EncodeToString(digest[:]), len(data)})
+				if err := atomicFile(receiptPath, encoded); err != nil {
+					return nil, 0, err
+				}
+				receiptInfo, err = os.Lstat(receiptPath)
+			}
 			if err != nil || !receiptInfo.Mode().IsRegular() || receiptInfo.Size() > 1024 {
 				return nil, 0, fmt.Errorf("batch query receipt missing or invalid")
 			}
