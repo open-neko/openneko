@@ -124,6 +124,36 @@ describe("startAgentBroker token registry", () => {
     } finally { await handle.close(); }
   });
 
+  it("admits registry-backed records catalog/find/get only for the bound work run", async () => {
+    const cp = stubControlPlane();
+    cp.listRecordCatalog = vi.fn(async () => ({ apps: [] })) as AgentControlPlane["listRecordCatalog"];
+    cp.findRecords = vi.fn(async () => ({ records: [] })) as AgentControlPlane["findRecords"];
+    cp.getRecord = vi.fn(async () => null) as AgentControlPlane["getRecord"];
+    const handle = await startAgentBroker({ controlPlane: cp, port: 0 });
+    const request = (token: string, path: string, body: object) => fetch(`http://127.0.0.1:${handle.port}${path}`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    try {
+      const denied = handle.tokenFor({ runId: "no-records", orgId: "org", kind: "work", profile: "harness-read-only" });
+      expect((await request(denied, "/v1/records/catalog", {})).status).toBe(403);
+      const binding: RunBinding = { runId: "records", orgId: "org", kind: "work", profile: "harness-read-only", recordsRead: true, lookupRead: false };
+      const token = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({ ...binding, recordsRead: false })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, lookupRead: true })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, kind: "workflow" })).toThrow("Invalid broker lookup grant");
+      expect(() => handle.tokenFor({ ...binding, kind: "workflow", lookupRead: undefined })).toThrow("Invalid broker records grant");
+      expect((await request(token, "/v1/records/catalog", { appId: "crm", orgId: "forged", runId: "forged" })).status).toBe(200);
+      expect((await request(token, "/v1/records/find", { appId: "crm", objectApiName: "lead", first: 5, orgId: "forged", runId: "forged" })).status).toBe(200);
+      expect((await request(token, "/v1/records/get", { appId: "crm", objectApiName: "lead", recordId: "lead-42", orgId: "forged", runId: "forged" })).status).toBe(200);
+      expect(cp.listRecordCatalog).toHaveBeenCalledWith({ orgId: "org", runId: "records", appId: "crm" });
+      expect(cp.findRecords).toHaveBeenCalledWith({ orgId: "org", runId: "records", appId: "crm", objectApiName: "lead", first: 5 });
+      expect(cp.getRecord).toHaveBeenCalledWith({ orgId: "org", runId: "records", appId: "crm", objectApiName: "lead", recordId: "lead-42" });
+      for (const path of ["/v1/harness/lookup", "/v1/memory/search", "/v1/records/recycle/find", "/v1/records/recycle/get", "/v1/records/blueprints", "/v1/action/request"]) {
+        expect((await request(token, path, {})).status).toBe(403);
+      }
+    } finally { await handle.close(); }
+  });
+
   it("bounds Harness tokens to journaled lookup without widening on reuse", async () => {
     const cp=stubControlPlane();
     cp.createActionRequest=vi.fn(async()=>({id:"unexpected",status:"approved"}));

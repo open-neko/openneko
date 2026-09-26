@@ -891,7 +891,7 @@ describe("makeSandboxRunCore", () => {
       const tokenFor=vi.fn(()=>"restricted-token");
       const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{},brokerUrl:"http://broker",brokerTokenFor:tokenFor});
       await expect(core(input)).rejects.toThrow(mode === "collision" ? "outcome unknown" : "without a result");
-      if(mode === "lost-result") expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-read-only",memoryRead:true,libraryRead:true}));
+      if(mode === "lost-result") expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-read-only",memoryRead:true,libraryRead:true,recordsRead:true}));
       expect(h.calls.some(c=>c.args.includes("delete"))).toBe(false);
       expect(h.calls.find(c=>c.args.includes("create"))?.args).toContain("openneko.recovery=retain");
       const before=h.calls.length;
@@ -909,8 +909,22 @@ describe("makeSandboxRunCore", () => {
       const input = {...fakeInput(async()=>{}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]),workspace:fullWorkspace(root)};
       input.packActions = [{kind:"fixture.update",description:"Update fixture",scope:"external",default_mode:"ask"}];
       await expect(core(input)).rejects.toThrow("without a result");
-      expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-governed",memoryRead:true,libraryRead:true}));
+      expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-governed",memoryRead:true,libraryRead:true,recordsRead:true}));
     } finally { await rm(root,{recursive:true,force:true}); }
+  });
+
+  it("withholds GraphJin and customer memory grants from Harness records-only turns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "harness-records-test-"));
+    try {
+      h.state.execLines = [];
+      const tokenFor = vi.fn(() => "records-token");
+      const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 0, onLog: () => {}, brokerUrl: "http://broker", brokerTokenFor: tokenFor });
+      const input = { ...fakeInput(async () => {}, { id: "harness", capabilities: { mcpTools: false, sessionResume: false } } as RunAgentBackendInput["backend"]), workspace: fullWorkspace(root), dataSurface: "records" as const };
+      await expect(core(input)).rejects.toThrow("without a result");
+      expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({ profile: "harness-read-only", recordsRead: true, lookupRead: false }));
+      expect(tokenFor.mock.calls[0]?.[0]).not.toHaveProperty("memoryRead");
+      expect(tokenFor.mock.calls[0]?.[0]).not.toHaveProperty("libraryRead");
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it.each(["ready", "busy", "unknown", "exhausted", "broker-unknown", "stale-active", "inventory-full", "inventory-invalid", "transfer-mismatch", "absent"])("handles interrupted Harness continuation: %s", async mode => {

@@ -116,4 +116,4 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     try { await broker.close(); }
     finally { await deleteTestOrg(orgId); }
   }
-});
+}, 120_000);

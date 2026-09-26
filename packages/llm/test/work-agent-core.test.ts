@@ -28,7 +28,7 @@ const workspace: AgentWorkspace = {
 const controlPlane = {} as AgentControlPlane;
 
 describe("runAgentBackend", () => {
-  it("passes only run-scoped memory and library reads to Harness customer turns", async () => {
+  it("separates Harness customer and records-only read admissions", async () => {
     const seen: AgentRunOptions[] = [];
     const backend: AgentBackend = {
       id: "harness",
@@ -42,13 +42,22 @@ describe("runAgentBackend", () => {
     expect(seen[0]?.mcpBridgeEnv).toEqual({
       OPENNEKO_HARNESS_MCP_MEMORY_READ: "1",
       OPENNEKO_HARNESS_MCP_LIBRARY_READ: "1",
+      OPENNEKO_HARNESS_MCP_RECORDS_READ: "1",
       OPENNEKO_MCP_MODE: "work",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_MCP_THREAD_ID: "thread-1",
       OPENNEKO_MCP_RUN_ID: "run-1",
       OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
     });
-    expect(seen[1]?.mcpBridgeEnv).toBeUndefined();
+    expect(seen[1]?.mcpBridgeEnv).toEqual({
+      OPENNEKO_HARNESS_RECORDS_ONLY: "1",
+      OPENNEKO_HARNESS_MCP_RECORDS_READ: "1",
+      OPENNEKO_MCP_MODE: "work",
+      OPENNEKO_MCP_ORG_ID: "org-1",
+      OPENNEKO_MCP_THREAD_ID: "thread-1",
+      OPENNEKO_MCP_RUN_ID: "run-1",
+      OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
+    });
   });
 
   it("mounts actor-scoped native records tools for MCP-capable chat agents", async () => {

@@ -27,10 +27,14 @@ import {
 export interface RunBinding {
   /** Trusted launcher capability profile; never read from request JSON. */
   profile?: "harness-read-only" | "harness-governed";
+  /** Records-only turns cannot delegate customer-source GraphJin lookups. */
+  lookupRead?: boolean;
   /** Explicit customer-surface read grant; records-only runs omit it. */
   memoryRead?: boolean;
   /** Explicit customer-surface library search grant. */
   libraryRead?: boolean;
+  /** Registry-backed catalog/find/get only; actor grants remain authoritative. */
+  recordsRead?: boolean;
   /** Controlled file-backed batch reads; never grants general GraphJin MCP. */
   batchRead?: boolean;
   runId: string;
@@ -44,6 +48,11 @@ export interface RunBinding {
 export type AgentBrokerEventSink = (event: AgentEvent) => Promise<void>;
 
 const runEventSinks = new Map<string, AgentBrokerEventSink>();
+const harnessRecordsReadPaths = new Set([
+  "/v1/records/catalog",
+  "/v1/records/find",
+  "/v1/records/get",
+]);
 
 /**
  * Attach the host run's normal event sink to MCP bridge emissions. This keeps
@@ -108,7 +117,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -756,11 +765,17 @@ export async function startAgentBroker(
       if (binding.profile !== undefined && binding.profile !== "harness-read-only" && binding.profile !== "harness-governed") {
         throw new Error("Unknown broker capability profile");
       }
+      if (binding.lookupRead === false && (!binding.profile || binding.kind !== "work")) {
+        throw new Error("Invalid broker lookup grant");
+      }
       if (binding.memoryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker memory grant");
       }
       if (binding.libraryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker library grant");
+      }
+      if (binding.recordsRead && (!binding.profile || binding.kind !== "work")) {
+        throw new Error("Invalid broker records grant");
       }
       if (binding.batchRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker batch grant");
@@ -770,7 +785,7 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.batchRead !== binding.batchRead)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }
