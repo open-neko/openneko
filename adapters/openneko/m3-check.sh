@@ -53,6 +53,18 @@ if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   web_pid=$!
   set +m
   trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+  artifact_run=$(cat "$HARNESS_STATE/m5-artifact-run")
+  artifact_url="http://localhost:18121/api/work/files/runs/$artifact_run/artifacts/result.csv"
+  for ((n=0; n<60; n++)); do
+    if curl -fsS --max-time 5 -D "$HARNESS_STATE/artifact.headers" -o "$HARNESS_STATE/artifact.csv" "$artifact_url" 2>/dev/null; then break; fi
+    kill -0 "$web_pid" || exit 1
+    sleep 1
+  done
+  printf 'lead_id\nLEAD-42\n' | cmp -s - "$HARNESS_STATE/artifact.csv"
+  rg -qi '^content-disposition: attachment; filename="result.csv"' "$HARNESS_STATE/artifact.headers"
+  rg -qi '^content-type: text/csv' "$HARNESS_STATE/artifact.headers"
+  [[ $(curl -sS -o /dev/null -w '%{http_code}' "${artifact_url%result.csv}hidden.txt") == 404 ]]
+  echo "M5_WEB_ARTIFACT_PASS $artifact_run"
   echo "M3_WEB_READY state=$HARNESS_STATE"
   for ((n=0; n<900; n++)); do
     [[ ! -f "$HARNESS_STATE/web-done" ]] || break

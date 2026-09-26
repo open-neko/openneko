@@ -85,3 +85,5 @@ The earlier loading screen was caused by opening the Next dev server via
 `127.0.0.1`, whose dev resources it rejected as a cross-origin request. This
 qualifies the small solo-owner artifact path; multi-user authorization and the
 full batch artifact still need connected verification.
+The optional M3 web run now repeats the exact-byte/attachment/404 route checks
+against each newly created queue artifact and reports `M5_WEB_ARTIFACT_PASS`.
