@@ -1,7 +1,7 @@
 # M3 acceptance — 2026-09-19
 
 The Go runtime remains independent. Optional product integration was tested in
-`OpenNeko-harness-m3` on `feat/harness-m3`: product commit **`c17c9ec`**, based on
+`OpenNeko-harness-m3` on `feat/openneko-harness`: initial product commit **`c17c9ec`**, based on
 OpenNeko `643b4a8`.
 Hermes remains the default; `OPENNEKO_AGENT_BACKEND=harness` explicitly selects
 this read-only prototype. No changes or upgrade were applied to the user's main
@@ -25,9 +25,9 @@ OPENSHELL_TEST_CLI=/absolute/openshell-0.0.116 \
 This builds the Go/Node integration image, starts isolated metadata Postgres,
 seeded business Postgres, real GraphJin and a deterministic external model service,
 then exercises the real product launcher/broker and pg-boss production work handler.
-The outer M2 suite still exits nonzero at its **known upstream idle-stream
-cancellation failure** after M3 checks pass. Do not treat that exit as a green
-transport qualification. No real model keys or paid inference are used.
+The outer M2 suite reports the accepted idle-stream cancellation defect as a
+warning, and still requires sandbox deletion to close upstream work. No real
+model keys or paid inference are used.
 
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.
@@ -76,6 +76,15 @@ quality test or a production endpoint.
 A clean-stack rerun also passed launcher/authorization/replay and queued run
 `7f190d89-5c79-403e-af78-07d2da7bae15`, then failed only the documented M2
 upstream-cancellation check. Owned test containers were removed.
+
+On 2026-09-26, the cumulative suite exited 0 with `M5_QUEUE_UPLOAD_PASS`.
+The production queue handler staged a synthetic `lead.csv` in the current
+thread's upload root. Go/Ax called `upload_search` and `upload_read` inside the
+OpenShell sandbox, recovered `LEAD-42`, found no path for a sibling thread's
+`OTHER-SECRET` file, and made no GraphJin operation for that run. Existing Hermes,
+approval, worker-death and sandbox-teardown checks passed. The idle-proxy
+cancellation warning remained visible. The test projects, networks and volumes
+were removed; no demo stack or installed OpenShell CLI was changed.
 
 Automated verification includes Go race tests/vet, interrupted-read evidence
 retention, completed-input replay, typed remote statuses, protocol bounds,

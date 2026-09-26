@@ -294,10 +294,11 @@ serializes harness edits/writes. Saved read/edit receipts restore the freshness 
 for a new Ax attempt. A synthetic Ax run exercised Read → Edit → Write through the
 durable operation journal, and the full race suite passes. The OpenNeko worker
 does not yet supply `OPENNEKO_HARNESS_WORKSPACE_DIR`, so mutable workspace tools
-are not advertised to product runs. The feature OpenNeko backend now supplies
+are not advertised to product runs. The feature OpenNeko backend supplies
 its staged thread-upload root to a separate read-only `upload_read`/`upload_search`
-catalog; local tests pass, but worker/OpenShell acceptance is still pending.
-Shell, artifact publication
+catalog. A 2026-09-26 production queue run passed these calls through OpenShell,
+found the current thread's CSV, excluded a sibling thread's upload and recorded
+no GraphJin operation. Shell, artifact publication
 and connected worker/web acceptance remain open. External writers do not share
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.
