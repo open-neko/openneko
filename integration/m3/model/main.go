@@ -2,6 +2,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +19,7 @@ func main() {
 	effectFences := false
 	proposal := false
 	upload := false
+	artifact := false
 	continuation := false
 	pauseResponder := false
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +38,7 @@ func main() {
 			EffectFences   bool `json:"effect_fences"`
 			Proposal       bool `json:"proposal"`
 			Upload         bool `json:"upload"`
+			Artifact       bool `json:"artifact"`
 			Continue       bool `json:"continue"`
 			PauseResponder bool `json:"pause_responder"`
 		}
@@ -52,6 +56,7 @@ func main() {
 		effectFences = c.EffectFences
 		proposal = c.Proposal
 		upload = c.Upload
+		artifact = c.Artifact
 		mu.Unlock()
 		w.WriteHeader(204)
 	})
@@ -70,6 +75,7 @@ func main() {
 		effects := effectFences
 		propose := proposal
 		readUpload := upload
+		writeArtifact := artifact
 		resume := continuation
 		n := counts[req.Model]
 		if pauseResponder && req.Model == "harness-fixture" && n == 2 {
@@ -115,7 +121,12 @@ func main() {
 			http.Error(w, "missing uploaded file evidence", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && !readUpload && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		artifactHash := sha256.Sum256([]byte("lead_id\nLEAD-42\n"))
+		if n == 2 && req.Model == "harness-fixture" && writeArtifact && !strings.Contains(string(req.Messages), hex.EncodeToString(artifactHash[:])) {
+			http.Error(w, "missing created artifact receipt", 422)
+			return
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && !readUpload && !writeArtifact && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -132,6 +143,9 @@ func main() {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
 			if readUpload {
 				responses = []string{`{"javascriptCode":"final('Read the uploaded lead file', {})"}`, `{"javascriptCode":"const hidden=upload_search({query:'OTHER-SECRET'}); const matches=upload_search({query:'lead.csv'}); const file=upload_read({path:matches.paths[0]}); final('Report the uploaded lead',{hidden,matches,file});"}`, `{"answer":"The uploaded lead is LEAD-42."}`}
+			}
+			if writeArtifact {
+				responses = []string{`{"javascriptCode":"final('Create a CSV artifact', {})"}`, `{"javascriptCode":"const hidden=file_search({query:'OTHER-RUN-SECRET'}); const written=file_write({path:'result.csv',content:'lead_id\\nLEAD-42\\n'}); final('Report the CSV artifact',{hidden,written});"}`, `{"answer":"Created result.csv."}`}
 			}
 			if propose {
 				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}

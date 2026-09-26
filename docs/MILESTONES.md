@@ -292,14 +292,17 @@ contains paths; regular-file checks reject final symlinks, oversized files and
 cross-run traversal. A per-workspace read/write gate allows concurrent reads and
 serializes harness edits/writes. Saved read/edit receipts restore the freshness state
 for a new Ax attempt. A synthetic Ax run exercised Read → Edit → Write through the
-durable operation journal, and the full race suite passes. The OpenNeko worker
-does not yet supply `OPENNEKO_HARNESS_WORKSPACE_DIR`, so mutable workspace tools
-are not advertised to product runs. The feature OpenNeko backend supplies
+durable operation journal, and the full race suite passes. The feature OpenNeko
+backend binds the writable Go file tools only to this run's artifact directory;
+it does not expose the checkpoint directory or a general shell. It supplies
 its staged thread-upload root to a separate read-only `upload_read`/`upload_search`
 catalog. A 2026-09-26 production queue run passed these calls through OpenShell,
 found the current thread's CSV, excluded a sibling thread's upload and recorded
-no GraphJin operation. Shell, artifact publication
-and connected worker/web acceptance remain open. External writers do not share
+no GraphJin operation. A second queued run created a small CSV with `file_write`,
+pulled it back from OpenShell, emitted one Work artifact event and excluded a
+sibling run's file. The existing web download-route authorization suite passes,
+but this exact CSV has not yet been downloaded through a live browser. The
+validated large batch artifact and general shell path remain open. External writers do not share
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.
 

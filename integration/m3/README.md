@@ -86,6 +86,14 @@ approval, worker-death and sandbox-teardown checks passed. The idle-proxy
 cancellation warning remained visible. The test projects, networks and volumes
 were removed; no demo stack or installed OpenShell CLI was changed.
 
+A second 2026-09-26 rerun exited 0 with `M5_QUEUE_ARTIFACT_PASS`. The Go file
+tools used only the run's artifact directory, wrote `result.csv` inside OpenShell,
+and the production queue handler recovered its exact bytes and emitted one Work
+artifact event. A sibling run's marker was absent from file search. The existing
+web download-route tests passed separately (20 assertions across authorization
+and file handling), but a browser download of this specific run was not exercised.
+The large validated Daily Lead Union batch artifact remains an M5b gate.
+
 Automated verification includes Go race tests/vet, interrupted-read evidence
 retention, completed-input replay, typed remote statuses, protocol bounds,
 real HTTP cancellation, and 96 product backend/telemetry/launcher regressions
