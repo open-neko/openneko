@@ -9,11 +9,18 @@ launcher, broker, queue and browser checks. Build the product image with
 
 The M5b batch prototype is a separate `./adapters/openneko/cmd/batch` binary.
 It takes one UTC day argument and trusted `HARNESS_BATCH_SCRIPT`,
-`HARNESS_BATCH_SCRIPT_SHA256`, `HARNESS_BATCH_WORK_DIR`, and
-`HARNESS_BATCH_ARTIFACT_DIR` environment bindings. The broker supplies a separate
-`batchRead` grant for read-only GraphJin queries. It is not installed in the
-product image or exposed to the model yet; the host-owned job/continuation and
-connected artifact gate in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
+`HARNESS_BATCH_SCRIPT_SHA256`, `HARNESS_BATCH_BUNDLE_DIR`,
+`HARNESS_BATCH_BUNDLE_SHA256`, `HARNESS_BATCH_WORK_DIR`,
+`HARNESS_BATCH_ARTIFACT_DIR`, `HARNESS_BATCH_IMAGE`, `HARNESS_OPENSHELL_BIN`,
+and `OPENSHELL_GATEWAY` bindings. The whole skill bundle, including imports, is
+pinned. The script runs in a separate OpenShell sandbox without a provider,
+broker token, or network grant. Its only data channel is the query-cache file
+handoff; the host owns `batchRead` GraphJin calls, receipts and artifact
+validation. Skill files and scripts must never call a model provider directly:
+model routing, budgets and telemetry belong to Harness/Ax. The isolated fixture
+passes with OpenShell 0.0.116. This binary is not installed in the product image
+or exposed to the model yet; the host-owned job/continuation and connected
+artifact gate in [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice)
 must be completed first.
 
 ## Implemented: OpenShell cold-launch compatibility

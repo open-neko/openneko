@@ -161,18 +161,23 @@ Postgres row, with a deterministic embedding fixture. Hermes regression checks
 passed. Uploaded-document and browser search tasks, and the Daily Lead Union
 batch, still need connected acceptance.
 
-The local controlled batch runner now consumes the ported skill's cache-miss
+The controlled batch runner now consumes the ported skill's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query
 receipts, reruns the script without model turns per query, and publishes only a
 CSV whose header and row count match the compact summary. The OpenNeko broker
 has a separately bound `batchRead` grant for its existing read-only GraphJin
-query route; a standalone adapter CLI can use it. This is **not yet** an Ax tool
+query route; a standalone adapter CLI can use it. A pinned whole-bundle snapshot
+runs in a separate OpenShell 0.0.116 sandbox with no provider, network grant or
+broker token. An isolated live fixture verifies a cache miss, host-owned query,
+response upload, validated CSV, HTTP 403 on model egress, and sandbox deletion.
+Artifact publication is blocked if sandbox deletion fails.
+This is **not yet** an Ax tool
 or a worker/web acceptance: do not mint that grant in normal runs until the
-trusted skill bundle, timeout, batch recovery and artifact projection are wired.
+host-owned job, batch recovery and artifact projection are wired.
 The 20-minute pipeline should run as a host-owned operation with progress and
 durable continuation, rather than blocking the current two-minute Ax callback.
-The Python script must run in a separate credential-isolated compartment: clearing
-its child environment alone does not protect the broker token held by the Go host.
+Skill files and scripts must not call LLMs directly. Harness/Ax alone owns model
+routing, budgets and telemetry; scripts exchange governed data requests and files.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/open-neko/harness/adapters/openneko/batchshell"
 	"github.com/open-neko/harness/adapters/openneko/broker"
 	"github.com/open-neko/harness/internal/batch"
 )
@@ -38,11 +39,22 @@ func main() {
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 21*time.Minute)
 	defer cancel()
-	result, err := batch.Run(ctx, batch.Config{
+	cfg := batch.Config{
 		Script: os.Getenv("HARNESS_BATCH_SCRIPT"), ScriptSHA256: os.Getenv("HARNESS_BATCH_SCRIPT_SHA256"),
 		WorkDir: os.Getenv("HARNESS_BATCH_WORK_DIR"), ArtifactDir: os.Getenv("HARNESS_BATCH_ARTIFACT_DIR"),
-		TargetDay: os.Args[1], Columns: columns, MaxQueries: 128,
-	}, query)
+		ScriptCacheDir: batchshell.RemoteCacheDir,
+		TargetDay:      os.Args[1], Columns: columns, MaxQueries: 128,
+	}
+	runner, err := batchshell.New(cfg, batchshell.Options{
+		CLI: os.Getenv("HARNESS_OPENSHELL_BIN"), Gateway: os.Getenv("OPENSHELL_GATEWAY"),
+		Image: os.Getenv("HARNESS_BATCH_IMAGE"), BundleRoot: os.Getenv("HARNESS_BATCH_BUNDLE_DIR"),
+		BundleSHA256: os.Getenv("HARNESS_BATCH_BUNDLE_SHA256"),
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid batch compartment:", err)
+		os.Exit(2)
+	}
+	result, err := batch.Run(ctx, cfg, query, runner.Step, runner.Close)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "batch failed:", err)
 		os.Exit(1)

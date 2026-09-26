@@ -4,9 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -48,13 +52,31 @@ func setup(t *testing.T) Config {
 	return Config{Script: script, ScriptSHA256: hex.EncodeToString(hash[:]), WorkDir: work, ArtifactDir: artifacts, TargetDay: "2026-09-15", Columns: []string{"email", "score"}, MaxQueries: 4}
 }
 
+func localStep(ctx context.Context, cfg Config, output io.Writer) error {
+	cache := cfg.ScriptCacheDir
+	if cache == "" {
+		cache = filepath.Join(cfg.WorkDir, "graphjin-cache")
+	}
+	cmd := exec.CommandContext(ctx, "python3", cfg.Script,
+		"--target-day", cfg.TargetDay, "--work-dir", cfg.WorkDir,
+		"--output", filepath.Join(cfg.WorkDir, "union_final.csv"),
+		"--summary", filepath.Join(cfg.WorkDir, "summary.json"), "--max-runtime", "1200")
+	cmd.Dir = filepath.Dir(cfg.Script)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "PYTHONDONTWRITEBYTECODE=1", "OPENNEKO_QUERY_CACHE_DIR=" + cache}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 5 * time.Second
+	cmd.Stdout, cmd.Stderr = output, output
+	return cmd.Run()
+}
+
 func TestRunMaterializesQueriesAndPublishesValidatedCSV(t *testing.T) {
 	cfg := setup(t)
 	var calls []string
 	result, err := Run(context.Background(), cfg, func(_ context.Context, query string) ([]byte, error) {
 		calls = append(calls, query)
 		return []byte(`{"data":{"ok":true}}`), nil
-	})
+	}, localStep, nil)
 	if err != nil {
 		log, _ := os.ReadFile(filepath.Join(cfg.WorkDir, "pipeline_stdout.log"))
 		t.Fatalf("%v: %s", err, log)
@@ -75,7 +97,7 @@ func TestRunMaterializesQueriesAndPublishesValidatedCSV(t *testing.T) {
 	replayed, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
 		t.Fatal("cached query was dispatched again")
 		return nil, nil
-	})
+	}, localStep, nil)
 	if err != nil || replayed.Queries != 2 || replayed.SHA256 != result.SHA256 {
 		t.Fatalf("cached run was not stable: %+v %v", replayed, err)
 	}
@@ -87,7 +109,7 @@ func TestRunMaterializesQueriesAndPublishesValidatedCSV(t *testing.T) {
 	if _, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
 		t.Fatal("tampered response triggered an ungoverned retry")
 		return nil, nil
-	}); err == nil {
+	}, localStep, nil); err == nil {
 		t.Fatal("tampered response was accepted")
 	}
 }
@@ -96,12 +118,29 @@ func TestDeniedQueryNeverPublishesArtifact(t *testing.T) {
 	cfg := setup(t)
 	_, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
 		return nil, context.Canceled
-	})
+	}, localStep, nil)
 	if err == nil {
 		t.Fatal("denied query unexpectedly succeeded")
 	}
 	if _, err := os.Stat(filepath.Join(cfg.ArtifactDir, "union_final.csv")); !os.IsNotExist(err) {
 		t.Fatalf("denied query published artifact: %v", err)
+	}
+}
+
+func TestCleanupFailurePreventsArtifactPublication(t *testing.T) {
+	cfg := setup(t)
+	closed := 0
+	_, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
+		return []byte(`{"data":{"ok":true}}`), nil
+	}, localStep, func() error {
+		closed++
+		return errors.New("sandbox deletion failed")
+	})
+	if err == nil || !strings.Contains(err.Error(), "sandbox deletion failed") || closed != 1 {
+		t.Fatalf("cleanup failure was not fatal: %v, calls=%d", err, closed)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.ArtifactDir, "union_final.csv")); !os.IsNotExist(err) {
+		t.Fatalf("artifact published before cleanup: %v", err)
 	}
 }
 
@@ -127,7 +166,7 @@ finally:
 	go func() {
 		_, err := Run(ctx, cfg, func(context.Context, string) ([]byte, error) {
 			return nil, nil
-		})
+		}, localStep, nil)
 		done <- err
 	}()
 	ready := filepath.Join(cfg.WorkDir, "ready")
@@ -167,7 +206,7 @@ func TestConcurrentBatchRunIsRejected(t *testing.T) {
 			}
 			<-release
 			return []byte(`{"data":{"ok":true}}`), nil
-		})
+		}, localStep, nil)
 		done <- err
 	}()
 	select {
@@ -178,7 +217,7 @@ func TestConcurrentBatchRunIsRejected(t *testing.T) {
 	if _, err := Run(context.Background(), cfg, func(context.Context, string) ([]byte, error) {
 		t.Fatal("concurrent run dispatched a query")
 		return nil, nil
-	}); err == nil || !strings.Contains(err.Error(), "already running") {
+	}, localStep, nil); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("concurrent run was not rejected: %v", err)
 	}
 	close(release)

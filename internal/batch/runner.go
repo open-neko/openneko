@@ -9,10 +9,10 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -22,8 +22,11 @@ import (
 
 type Config struct {
 	Script, ScriptSHA256, WorkDir, ArtifactDir, TargetDay string
-	Columns                                               []string
-	MaxQueries                                            int
+	// ScriptCacheDir is the cache path seen inside the isolated script process.
+	// Empty means WorkDir/graphjin-cache, used by local tests only.
+	ScriptCacheDir string
+	Columns        []string
+	MaxQueries     int
 }
 
 type Result struct {
@@ -37,13 +40,22 @@ type Result struct {
 // return a plain GraphQL response; the script receives only a scoped cache file.
 type Query func(context.Context, string) ([]byte, error)
 
+// Step runs one script attempt in a separate credential-free compartment and
+// materializes its request/output files under the host WorkDir before returning.
+type Step func(context.Context, Config, io.Writer) error
+
 // Run accepts only a pinned script, a fixed UTC date and host-owned paths.
 // Queries are reads: an interrupted query may be repeated, while a persisted
 // response is reused by the script on the next attempt.
-func Run(ctx context.Context, cfg Config, query Query) (Result, error) {
-	var result Result
+func Run(ctx context.Context, cfg Config, query Query, step Step, cleanup func() error) (result Result, runErr error) {
+	closed := false
+	defer func() {
+		if !closed && cleanup != nil {
+			runErr = errors.Join(runErr, cleanup())
+		}
+	}()
 	day, err := time.Parse("2006-01-02", cfg.TargetDay)
-	if err != nil || day.Format("2006-01-02") != cfg.TargetDay || !filepath.IsAbs(cfg.Script) || !filepath.IsAbs(cfg.WorkDir) || !filepath.IsAbs(cfg.ArtifactDir) || cfg.MaxQueries < 1 || cfg.MaxQueries > 256 || len(cfg.Columns) == 0 || query == nil {
+	if err != nil || day.Format("2006-01-02") != cfg.TargetDay || !filepath.IsAbs(cfg.Script) || !filepath.IsAbs(cfg.WorkDir) || !filepath.IsAbs(cfg.ArtifactDir) || cfg.MaxQueries < 1 || cfg.MaxQueries > 256 || len(cfg.Columns) == 0 || query == nil || step == nil {
 		return result, fmt.Errorf("invalid batch admission")
 	}
 	stat, err := os.Lstat(cfg.Script)
@@ -73,6 +85,13 @@ func Run(ctx context.Context, cfg Config, query Query) (Result, error) {
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	cache := filepath.Join(cfg.WorkDir, "graphjin-cache")
+	scriptCache := cfg.ScriptCacheDir
+	if scriptCache == "" {
+		scriptCache = cache
+	}
+	if !filepath.IsAbs(scriptCache) || filepath.Clean(scriptCache) != scriptCache {
+		return result, fmt.Errorf("invalid script cache path")
+	}
 	for _, dir := range []string{cache, filepath.Join(cache, "requests"), filepath.Join(cache, "responses"), filepath.Join(cache, "receipts")} {
 		if err := os.Mkdir(dir, 0700); err != nil && !os.IsExist(err) {
 			return result, fmt.Errorf("batch cache unavailable: %w", err)
@@ -83,7 +102,7 @@ func Run(ctx context.Context, cfg Config, query Query) (Result, error) {
 	}
 	output := filepath.Join(cfg.WorkDir, "union_final.csv")
 	summary := filepath.Join(cfg.WorkDir, "summary.json")
-	if _, count, err := pending(cache); err != nil {
+	if _, count, err := pending(cache, scriptCache); err != nil {
 		return result, err
 	} else {
 		result.Queries = count
@@ -92,26 +111,12 @@ func Run(ctx context.Context, cfg Config, query Query) (Result, error) {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		// The admitted script is the only child. No broker/model credential is
-		// passed to it; future general shell tools need a separate boundary.
-		cmd := exec.CommandContext(ctx, "python3", cfg.Script,
-			"--target-day", cfg.TargetDay, "--work-dir", cfg.WorkDir,
-			"--output", output, "--summary", summary, "--max-runtime", "1200")
-		cmd.Dir = filepath.Dir(cfg.Script)
-		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "PYTHONDONTWRITEBYTECODE=1", "OPENNEKO_QUERY_CACHE_DIR=" + cache}
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		// The pipeline starts source children in new sessions. SIGINT lets its
-		// finally block terminate those children; OpenShell teardown remains
-		// responsible for noncooperative descendants.
-		cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
-		cmd.WaitDelay = 5 * time.Second
 		log, err := os.OpenFile(filepath.Join(cfg.WorkDir, "pipeline_stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 		if err != nil {
 			return result, err
 		}
 		writer := &boundedWriter{out: log, remaining: 1 << 20}
-		cmd.Stdout, cmd.Stderr = writer, writer
-		runErr := cmd.Run()
+		runErr := step(ctx, cfg, writer)
 		closeErr := log.Close()
 		if closeErr != nil {
 			return result, closeErr
@@ -120,12 +125,19 @@ func Run(ctx context.Context, cfg Config, query Query) (Result, error) {
 			return result, err
 		}
 		if runErr == nil {
-			if requests, _, err := pending(cache); err != nil || len(requests) != 0 {
+			if requests, _, err := pending(cache, scriptCache); err != nil || len(requests) != 0 {
 				return result, fmt.Errorf("batch completed with invalid or unresolved query cache")
+			}
+			if cleanup != nil {
+				err := cleanup()
+				closed = true
+				if err != nil {
+					return result, fmt.Errorf("batch compartment cleanup failed: %w", err)
+				}
 			}
 			return publish(cfg, output, summary, result)
 		}
-		requests, _, err := pending(cache)
+		requests, _, err := pending(cache, scriptCache)
 		if err != nil || len(requests) == 0 || result.Queries+len(requests) > cfg.MaxQueries {
 			return result, fmt.Errorf("batch script failed without admissible query requests")
 		}
@@ -176,7 +188,7 @@ type queryReceipt struct {
 	Bytes          int    `json:"bytes"`
 }
 
-func pending(cache string) ([]cacheRequest, int, error) {
+func pending(cache, scriptCache string) ([]cacheRequest, int, error) {
 	entries, err := os.ReadDir(filepath.Join(cache, "requests"))
 	if err != nil {
 		return nil, 0, err
@@ -205,7 +217,8 @@ func pending(cache string) ([]cacheRequest, int, error) {
 		hash := sha256.Sum256([]byte(request.Arguments.Query))
 		id := hex.EncodeToString(hash[:])
 		response := filepath.Join(cache, "responses", id+".json")
-		if request.ID != id || entry.Name() != id+".json" || request.ResponsePath != response {
+		scriptResponse := filepath.Join(scriptCache, "responses", id+".json")
+		if request.ID != id || entry.Name() != id+".json" || request.ResponsePath != scriptResponse {
 			return nil, 0, fmt.Errorf("batch query request identity mismatch")
 		}
 		seen[id] = true
