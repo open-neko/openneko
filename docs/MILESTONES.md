@@ -1,179 +1,367 @@
-# Go harness implementation milestones
+# Go harness delivery plan
 
-Status: M1 execution-contract and M3 read-only consumer gates have local evidence.
-M2 credential lifecycle, gateway restart and OTLP delivery now pass, but upstream
-idle-stream cancellation remains open. M4 terminal recovery is implemented;
-distributed PostgreSQL ownership/receipts have live crash evidence; operation
-recovery and governed pack actions now have live crash, queue and browser evidence.
-M2 is locally qualified with the accepted raw idle-proxy cancellation limitation
-(2026-09-20 decision). M5–M8 are not qualified.
-Implementation is on `feat/openneko-harness` in Harness and the optional OpenNeko
-integration worktree; no further changes are being made on main.
+Revised 2026-09-26 after inspecting OpenNeko's Hermes prompt assembly, capability
+registration and MCP bridge. This supersedes the GraphJin-centric future roadmap;
+M1–M4 numbering and their historical acceptance evidence remain unchanged.
 
-Companions: [design](DESIGN.md) and [OpenShell qualification](OPENSHELL.md).
+**Target:** an independent Go/Ax agent runtime that can use native tools, MCP tools
+and direct service adapters through one governed execution boundary. OpenNeko
+supplies its product capabilities, identity and policy. GraphJin's server-side
+agent is one tool, not the organizing principle of the harness.
 
-Each milestone ends with a runnable acceptance check and retained evidence: exact dependency/image revisions, command, result and a redacted trace or journal where relevant. Commands and test locations become concrete when the Go module is created; this plan does not claim those commands exist today. Use deterministic model fixtures and synthetic credentials for correctness tests, and separately label live-model evaluations.
+M1–M4 have local acceptance at their implemented scope. M2 accepts delayed
+upstream cancellation as a nonblocking limitation; mandatory sandbox cleanup
+remains tested. This is not Hermes capability parity or production qualification.
+M5a has a local Go/Ax + official MCP SDK fixture acceptance. M5c has a narrowed
+pack-action proposal slice, with the other mutation families still open. No
+OpenNeko/GraphJin instance is currently connected for M5b or full M5c acceptance.
+Hermes remains the default until rollout.
 
-Telemetry is part of every milestone. Add observations with the behavior they describe, export neutral telemetry and map it to OpenNeko through its adapter, and never put credentials or raw customer content into default traces. No new UI or independent orchestration framework is required.
+## Discovery that changes the plan
 
-The standalone suite must build and run without an OpenNeko checkout. Consumer
-worker/web checks qualify the optional adapter and remain required for OpenNeko
-acceptance; they are not prerequisites for building the core. Prefer existing product contracts; propose a small product integration change when
-it is demonstrably simpler than retaining an adapter workaround.
+OpenNeko does not supply one fixed Hermes prompt. `buildWorkPrompt` assembles
+sections from run capabilities, data surface, channel, installed skills, operator
+context and conversation. Tool schemas/descriptions supply additional instructions.
+`agent-core.ts` selects logical MCP servers; the Hermes adapter mounts a trusted
+multiplexed stdio bridge. Workflow/agent-job modes have additional or narrower
+surfaces. Native file/terminal/delegation capabilities are separate from MCP.
 
-## Progressive integration gates
+The current Harness backend still advertises `mcpTools: false` because the local
+Go MCP adapter is not yet connected to OpenNeko's bridge. The product prompt now
+defers tool contracts to the run's admitted Go catalog and lists only held pack
+action candidates. It does not claim that all Hermes MCP capabilities are present.
 
-Unit tests alone cannot complete a milestone. Grow one executable integration suite with the product, retaining earlier scenarios as regression checks. Use an isolated OpenNeko test deployment with real database/queue, worker, broker, OpenShell gateway and sandbox processes. From M3 onward, drive the existing web app in a real browser through its normal authenticated APIs and event transport; do not substitute direct harness calls for browser acceptance.
+Sources in the isolated OpenNeko integration checkout:
 
-Deterministic provider endpoints may replace the external model for repeatable failure injection, but requests must traverse Ax and actual OpenShell credential/policy enforcement. Use a real GraphJin server and seeded database for delegation checks. Clearly distinguish these runs from small, budgeted live-provider smoke tests. A mocked broker, worker or sandbox is useful for unit tests but does not satisfy the corresponding integration gate.
+- `packages/llm/src/work/prompt.ts` and `packages/llm/src/prompts/sections.ts`
+- `packages/llm/src/work/agent-core.ts` and `work/run-chat-turn.ts`
+- `packages/llm/src/agent-backends/hermes.ts` and `agent-backends/harness.ts`
+- `apps/worker/src/agent-sandbox/mcp-bridge.ts` and `entry.ts`
 
-| Milestone | Required integrated path | Observable acceptance |
+## Capability coverage to deliver
+
+This is an acceptance inventory, not a promise that every tool is mounted for every
+user. M5a records exact tool names, schemas, eligibility and backing routes from the
+running catalog. Include enabled native Hermes toolsets (such as web research when configured),
+not only named MCP servers. Freeze that inventory for the parity test; review catalog changes
+explicitly rather than automatically granting newly discovered capabilities.
+
+| Family | Existing OpenNeko surface | Planned delivery / proof |
 | --- | --- | --- |
-| M1 | Go/Ax → controlled HTTP model endpoint → governed callbacks | Actual streaming transport and callback execution agree with recorded lifecycle events; cancellation closes the request |
-| M2 | Real worker job → existing launcher → OpenShell → Go/Ax → controlled provider; sandbox → broker | Queue job launches the correct image, credentials resolve only at allowed destinations, events return to the worker, and cancellation/cleanup leave no running child job |
-| M3 | Browser → web/API → queue → worker → OpenShell harness → broker → GraphJin → seeded database → browser | User submits a question, sees progress and a verified answer; reload/reconnect preserves one run and its result; browser cancellation reaches execution |
-| M4 | Same browser path with real worker/broker/sandbox failures and controlled external effects | Approval survives reload and worker restart; repeated delivery does not duplicate the effect; ambiguous outcomes appear honestly in the UI |
-| M5 | Browser task → sandbox filesystem/processes → artifact storage → browser download | Downloaded artifact matches validated bytes; cancel stops its process tree; another user cannot access the artifact |
-| M6 | Browser conversation → worker → Ax → two OpenShell-bound provider routes | Injected failure switches to an approved route, context survives a long conversation, limits stop work, and the displayed terminal state matches persisted state |
-| M7 | Concurrent browser sessions across test tenants and the complete deployed stack | Isolation, reconnect, overload and telemetry-outage scenarios pass alongside measured task quality |
-| M8 | Packaged staging deployment → browser workflows → rollback → same workflows | Install/upgrade, restart and rollback preserve the verified product path in both supported deployment topologies |
+| Business data | GraphJin server-agent delegation; catalog/filter validation needed by workflow tools | Retain delegated lookups; M5b adds only required supporting tools without a raw-query bypass for denied lookups |
+| App records | `neko_records`, governed records actions | M5b scoped reads; M5c writes, exact record identity and current actor grants |
+| Knowledge | `neko_memory`, `neko_library`, installed skill files, `neko_skills` | M5b search; M5c saves/creation; M5d file-backed skill use and uploaded documents |
+| Conversation and UI | `neko_interaction`, `neko_ui`, closing metadata and channel-specific rendering | M5b clarification/resume, validated cards, reload, channel fallback and no duplicate output |
+| Automation | `neko_workflow_builder`, `neko_rule_builder`, `neko_action`, `neko_workflow_output` | M5c creation/update/delete and workflow-only calls with trusted workflow identity |
+| Integration actions | `neko_plugin_actions`, `neko_pack_actions` | M5c reuse existing descriptors, preflight, approval and execution contracts |
+| Administration | Plugin, user, channel, data-source and source-config managers; `neko_audit` | M5b authorized reads; M5c governed changes, installer approvals and role revocation |
+| Local work | File/terminal tools, skill instructions, uploads, run artifacts | M5d isolation, file freshness, process termination and browser downloads |
+| Delegation | Hermes `delegate_task` when enabled | M5e equivalent bounded child work; no Hermes-specific API in core |
 
-For every integrated scenario, check three things together: what the browser/API reports, what the durable run/operation records contain, and what the worker/sandbox or controlled upstream actually executed. Retain correlated run/attempt/operation/sandbox IDs, redacted logs/traces and browser evidence for failures. A green UI with a failed or still-running process is a failed test; a successful backend with a broken user flow also fails.
+No automatic parity claim extends to arbitrary future MCP servers, native Hermes
+extensions or provider-specific recovery. Explicitly list unsupported tools and
+protocol features. Preserve equivalent user outcomes, not Hermes' internal tool
+implementation or its model name prefixes inside the core.
 
-Run focused deterministic checks on each change and the cumulative integration suite before closing each milestone. Run live-provider smoke tests when provider/transport contracts change and before release; do not make nondeterministic model wording an exact-match assertion. Reuse existing test runners and deployment scripts where possible. Test setup owns only its isolated services and data; it must not restart the user's active development stack.
+## Verification rules for every milestone
 
-## M1 — Prove Ax's execution contract
+- Keep the standalone Go suite independent of OpenNeko. Test adapters separately.
+- Progressively extend the existing isolated OpenShell + worker + broker + database
+  + queue + web deployment. Deterministic model endpoints still traverse real Ax
+  and OpenShell. Use the real MCP bridge/server and GraphJin where relevant.
+- Verify browser/API output, durable records and actual execution together. Every
+  scenario records run/attempt/operation IDs and a versioned dependency manifest.
+- Exercise both browser in-process execution and production queue/channel paths;
+  they are distinct. Preserve records-only, customer and workflow/agent-job scopes.
+- Include denial, malformed arguments, cancellation, timeout, restart, duplicate
+  delivery and changed authorization. A discovered tool is not authorization.
+- Correlate model, tool, broker and remote spans. Report missing usage, telemetry
+  loss and unknown effects explicitly. Default traces exclude customer content.
+- Keep Hermes regression checks throughout. No active user stack is restarted.
+- Live-provider quality checks are separate from deterministic acceptance and use
+  an explicit budget. Run hosted CI/PR checks before merge, not as claimed local evidence.
 
-**Implementation evidence:** [module and findings](../README.md). Ax is pinned to `5c43344f9ef3`. Real HTTP and Goja tests cover native AxGen tool pairing, actual AxAgent actor callbacks, cancellation, incomplete streamed calls, run-scoped spans, missing usage, CPU timeouts and Agent-level JSON snapshot restoration. The checks exposed loss of run context in Ax's synchronous `ContextHandler` path; a small run-bound adapter preserves cancellation and native-tool spans. The verified snapshot boundary is completed-step JSON data, not arbitrary crash recovery. Standalone CI wiring and a core-to-adapter dependency check are present; a hosted CI run has not occurred.
+## M1–M4 — Retained foundation
 
-**Deliver:** a small Go compatibility program against a pinned Ax revision. Exercise AxAgent's stages, streaming, native tools and actor callbacks. Establish which hooks permit authorization before dispatch and durable recording around each operation. Record the supported checkpoint boundary and gaps requiring an upstream change.
+| Milestone | Completed local scope | Authoritative evidence |
+| --- | --- | --- |
+| M1: Ax execution | HTTP/Goja execution, callbacks, pairing, cancellation and snapshot boundary | `compat/`, Go race suite, [design findings](DESIGN.md#3-axagent-findings-and-implications) |
+| M2: OpenShell | Pinned 0.0.116 transport, credential lifecycle, policy enforcement, gateway restart, OTLP and teardown | [Live transport record](../integration/README.md) |
+| M3: First consumer slice | Browser/queue → Harness → broker → GraphJin; scoped evidence, accepted-input identity and output | [Consumer acceptance](../integration/m3/README.md) |
+| M4: Durable governed operations | Receipt recovery, ownership, approval continuity, claimed effects, crash reconciliation and honest unknown outcomes | [Recovery and crash matrix](M4-RECOVERY.md) |
 
-**Verify:** deterministic model fixtures produce a normal answer, two external calls inside one actor step, a denied call, a malformed call, an interrupted stream and cancellation during a callback. Assert every external invocation reaches our boundary; denied work never executes; committed calls receive terminal results; partial calls never dispatch. Inspect state export/restore, including omitted functions or truncated runtime values. Correlate model/stage/tool events and mark absent usage explicitly.
+M4 covers the implemented lookup/proposal/effect paths, not every tool in the
+inventory. New tools inherit its rules and need their own acceptance evidence.
+Durable receipts do not imply exactly-once external effects. Ax resume remains a
+bounded new attempt from evidence, not restoration of a JavaScript execution stack.
 
-**Exit gate:** a repeatable test demonstrates governed execution on both call paths. If Ax cannot expose the required boundary, resolve the integration or upstream change before expanding the harness. Record actual supported resume semantics instead of promising arbitrary VM recovery.
+## M5a — Shared capability catalog and invocation boundary
 
-## M2 — Qualify OpenShell 0.0.116 with Go/Ax
+**Local status (2026-09-26):** the Go catalog now validates names, JSON schemas,
+origin/effect metadata, results and collisions; dispatches native, direct and local
+MCP tools through the same Ax callback and durable operation journal; pins a
+catalog hash on new checkpoints; retains old lookup/proposal checkpoint decoding;
+and emits tool origin, effect and duration. The official Go MCP SDK is pinned at
+v1.8.0 with Go 1.25. An Ax run exercised native + MCP fixture calls and terminal
+replay. Only read-classified MCP tools are admitted until remote effect handlers
+are qualified. The OpenNeko bridge remains unwired, so this is local M5a evidence,
+not connected product acceptance.
 
-**Latest gate:** HTTPS/Go CA trust and local Ax cancellation pass. Upstream idle
-stream cancellation through 0.0.116 fails the ten-second observation limit while
-the direct HTTPS control passes. Per the 2026-09-20 user decision, this is a
-nonblocking upstream limitation: retain its observation, require successful sandbox
-teardown, and adopt an upstream fix when available. See [the integration record](../integration/README.md).
+**Deliver:** a run-scoped catalog and dispatch path for native Go, MCP and direct
+service tools. Reuse the existing operation journal, Ax callback bridge, policy and
+result validation. Each admitted entry binds a stable identity, schema/version,
+trusted origin, eligibility, limits, effect classification and recovery policy.
+MCP annotations and descriptions are untrusted hints, not permission decisions.
+Unknown tools are not presumed read-only, concurrent-safe or retryable.
 
-**Local implementation evidence:** [isolated OpenShell suite](../integration/README.md) passes mTLS lifecycle, actual Ax HTTP streaming through the proxy, synthetic credential replacement, destination-path rejection and unauthorized-binary rejection. It reproduces `MainProcessExited` for the existing cold-create `/bin/sh -lc true` command; the standalone adapter translates that lifecycle without modifying the launcher. HTTPS, static rotation/detach, two bindings, managed OAuth refresh, gateway restart and actual OTLP delivery now pass. The M3 suite provides real worker/queue/broker evidence; real Hermes cold/warm/reuse regressions pass; hosted CI remains open. The test stack cleans up without changing the active gateway.
+The OpenNeko adapter derives prompt sections and tool bindings from the same
+admitted catalog. Retain consumer-neutral core types and static adapters; no
+plugin-loading framework. Preserve old lookup/proposal checkpoint decoding and
+explicitly version the wider operation contract. Replace the initial four-call
+ceiling only with explicit trusted run-wide budgets, never unlimited execution.
 
-**Deliver:** an isolated gateway and minimal Go agent image with standalone lifecycle checks plus optional existing-host-launcher adapter checks. Pin the CLI/gateway/image tuple. Configure exact executable egress rules, endpoint-bound synthetic credentials and two distinct provider slots.
+**Verify:** the same real Ax run invokes one native callback and one local MCP
+fixture tool with
+consistent validation, operation IDs, outcomes and telemetry. Fixture checks cover
+name collisions, schema changes, unauthorized discovery, forged scope, unknown
+calls, oversized results, multiple calls per actor step and old checkpoint replay.
+Compare prompt claims to admitted tools for customer, records and workflow modes.
 
-**Verify:** Go/Ax sends header and query authentication through the proxy to controlled endpoints, trusts the sandbox CA, streams responses and cancels bounded work. The upstream receives the expected synthetic secret while workload output and telemetry do not. Wrong destinations and unauthorized binaries are denied. Exercise managed token expiry/refresh, static-key rotation and provider detach separately. Check SSE idle periods, gateway restart, broker reachability, Docker OTLP export and the existing Hermes launch path.
+**Exit:** no dispatch path bypasses the journal/governance boundary; no prompt
+advertises unavailable capabilities. Existing M1–M4 tests still pass.
 
-**Exit gate:** transport and credential tests pass on the pinned tuple, with measured cancellation and explicit revocation behavior. Record actual deployment versions and migration requirements. This qualifies a target; it does not upgrade the user's running stack. Do not depend on the SDK's unimplemented default file-transfer transport.
+**Dependency:** M4. This is the next implementation milestone.
 
-**Dependency:** M1 is required for full Ax integration; gateway and synthetic transport setup can proceed independently.
+## M5b — File-backed batch path and MCP read/interaction slice
 
-## M3 — First usable GraphJin run
+**Schedule:** parked until an OpenNeko/GraphJin instance is connected. The batch
+design and deterministic fixture work can be prepared without one, but the real
+script → authorized GraphJin → file → browser acceptance below cannot be claimed
+from a simulated endpoint.
 
-**M3 acceptance implemented and exercised (2026-09-19):** see the
-[run protocol](RUN-PROTOCOL.md) and [acceptance record](../integration/m3/README.md).
-OpenNeko's actual browser path is in-process; its channel path uses the queue
-worker. Both existing paths are tested separately. M2 accepts delayed upstream
-cancellation; M3 completion does not qualify production rollout or instantaneous
-remote cancellation.
+**Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
+its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or
+a maintained Go MCP implementation; do not invent JSON-RPC framing. Qualify the
+actual bridge's stdio lifecycle first; support remote MCP transport only when an
+installed capability needs it. Launch commands/endpoints come from trusted host
+configuration, never model arguments.
 
-**Deliver:** one headless Go/Ax runtime launched by OpenNeko and usable through the existing web app, one approved model route, and read-only delegation through the existing `/v1/graphjin/agent` broker route. Keep the harness run/event/result contract neutral. Translate the existing product launch and event contracts in the optional adapter. Justify any required product integration change separately. Add stable run/attempt/operation IDs, durable input acceptance and operation records, bounded outputs/deadlines, and a typed answer/clarification/partial/failure envelope.
+Support discovery (including pagination), schema mapping, bounded structured/text
+results, tool errors, deadlines, progress and cancellation for the exercised
+servers. Explicitly reject unsupported content/protocol features. Keep raw results
+and typed status available to recovery; do not flatten everything into prose.
+The first integrated path is a governed batch run: an admitted, versioned script
+requests authorized GraphJin reads through the trusted host and receives results
+as scoped files, without a model turn per query. The host records each query,
+identity, policy decision and file receipt. The sandbox gets no GraphJin credential
+or unrestricted broker token. Row data and command stdout stay out of model
+context; the agent receives bounded counts, errors and file handles. Validate
+the final CSV against its declared schema before publishing it. This controlled
+runner precedes general model-generated shell access in M5d.
+Expose authorized record, memory, library and administrative reads plus clarification
+and rendering. UI effects need deduplication even when they do not change business
+records. Persist clarification as a waiting continuation, not an open model call.
 
-**Verify:** on a seeded GraphJin test dataset, a question with a known answer returns correct evidence and preserves remote refusal/error types. An unauthorized source request fails even when model arguments forge identity. Duplicate delivery of an input creates one accepted input. Cancellation closes the run and ignores late results; report whether remote work has actually stopped. Trace the run through Ax, broker and GraphJin, linking remote trace IDs and counting remote usage once. Restart after a completed read and show its stored result is retained.
+**Verify:** first port the 2026-09-15 Daily Lead Union case to the controlled
+batch path. Drive its real script and GraphJin against seeded data; inspect output
+CSV bytes, counts and schema, broker authorization, durable query receipts, model
+turns, tool calls, tokens, time and artifact visibility. Inject a denied query,
+missing source, partial file, process crash, cancellation and duplicate delivery.
+No query miss may require the model to copy results into a cache file. Then real
+browser tasks search the document library, read authorized app
+records, ask a clarification and continue, and render a validated card. Reload and
+worker restart preserve one question/answer/card. Exercise org/user isolation,
+records-only restrictions, channel rendering fallback, bridge death, tool error,
+malformed result, stalled server, cancellation and changed tool catalog on resume.
+GraphJin investigation still uses its server agent; supporting catalog/filter
+calls do not create an alternative route around a refusal.
 
-**Exit gate:** the known-answer scenario and authorization/error cases pass through the real browser, web, worker, OpenShell and GraphJin path. Verify progress rendering, disconnect/reconnect, page reload, cancellation and terminal error rendering against durable state. A live-model smoke test is reported separately from deterministic correctness tests. This is the first usable internal demo; mutations and arbitrary crash resume remain disabled.
+**Exit:** the batch task produces one validated downloadable CSV with bounded
+model context and no per-query model mediation. A non-GraphJin business task also
+works end to end through real MCP. Every
+inventory read/interaction entry has an acceptance case or explicit unsupported
+status; no hidden mock adapter. Real Hermes cold/warm/reuse checks remain green.
 
-**Dependency:** M1 and M2.
+**Dependency:** M5a.
 
-## M4 — Durable recovery and governed effects
+## M5c — Governed product mutations and workflow execution
 
-**Locally qualified governed-action path (2026-09-19):** automatic terminal reconciliation now adopts validated
-Go checkpoints from the host or retained OpenShell sandbox without model/tool replay.
-A PostgreSQL session lock fences concurrent launch/recovery across hosts; a
-local file lock protects legacy admissions. Broker lookup operations now persist
-intent/results before dispatch/delivery and reject duplicate execution after crashes.
-Broker disconnects cancel the real GraphJin model request; ambiguous operation
-records remain unknown without a receipt. Saved broker receipts can repair missing
-checkpoint tool results without execution. The launcher now starts a bounded new
-Ax attempt from repaired evidence; the live gate verifies saved lookup reuse.
-A separate live host-launcher SIGKILL gate proves overlap refusal while the remote
-Go process remains active and terminal adoption after it finishes, without new
-model or lookup calls. A production queue-handler process is also killed after
-a saved lookup: pg-boss expires and redelivers the same job, and a replacement
-worker adopts the answer without duplicate messages or calls. The governed effect tests now kill execution before dispatch, after external
-commit and after receipt persistence. Read-only provider status can reconcile a
-committed effect; unsupported or failed status leaves an explicit unknown result.
-Accepted context survives changed
-prompts on real queue redelivery without new model/tool calls. Legacy mutation
-fences and legacy broker routes are disabled for Harness: its host-bound token
-permits only the journaled lookup route. Hermes behavior has regression coverage.
-Receipts are durable
-before cleanup; unknown operations and changed input/scope fail closed. Hermes
-retains its existing lifecycle. Host-side proposal storage now also preserves one prepared approval per runtime
-operation, freezes its arguments and refuses replay after interrupted preparation.
-The Go proposal tool, scoped broker route and governed dispatcher are now wired.
-Production queue restart preserves one pending approval without model replay.
-Browser acceptance proves pending approval reload, approval through the action
-queue to a controlled HTTP effect, completed reload and an honest unknown-outcome
-card after receipt loss. A browser-discovered duplicate answer on recovery was
-fixed and verified through the real queue and browser. See [M4 evidence](M4-RECOVERY.md)
-for the bounded scope, provider reconciliation and retention limits.
+**Partial status (2026-09-26):** the existing M4 pack-action proposal/effect path
+is narrowed to the host-filtered action kinds for each Work run. No eligible pack
+actions means no proposal tool and a read-only broker token. The Go callback
+rejects an unlisted action before broker dispatch; the broker still rechecks
+readiness, actor entitlement, exact schema and policy, and approved effects use
+the existing claim/reconciliation path. Prompt claims match this admitted slice.
+Workflow, rule, records, memory, skill, plugin and admin writes are not enabled.
+Local Go and OpenNeko checks pass; connected browser/queue acceptance must be
+repeated against the updated image when an instance is available.
 
-**Deliver:** host-owned journal/checkpoint recovery using existing database/queue facilities; input deduplication; operation intent/result records; durable approval continuations; broker idempotency/status contracts where supported; cancellation propagation and reconciliation. Use controlled mutation fixtures before real application actions.
+Source inventory for the next M5c slice:
 
-**Verify:** kill the worker before dispatch, after dispatch, after the external service commits but before the result is saved, and after the result is saved. Resume without duplicate accepted inputs or duplicate effects on an idempotent test service. For a service without reconciliation, surface `outcome unknown` and do not replay automatically. Restart while awaiting approval; reject changed arguments, wrong caller scope and revoked permissions. Reject incompatible/incomplete snapshots. Denial and cancellation still yield valid terminal tool results; late work cannot reopen the run. Journal failure prevents new effects.
+| Handler | Current effect boundary | Required harness qualification |
+| --- | --- | --- |
+| `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
+| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Journal at the host write, bind exact workflow identity and confirmation, reconcile partial trigger wiring and lost card delivery |
+| `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Bind policy revision and actor; prove retry cannot silently overwrite a changed rule |
+| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Add host idempotency or exact file-version guard, then prove crash and duplicate-delivery behavior |
+| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
+| `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 
-**Exit gate:** the crash matrix passes with journal evidence of each transition. Document which operations support reconciliation and which intentionally stop on ambiguity. Transcript pairing must not be described as an exactly-once effect guarantee.
+These are source-level contracts, not acceptance claims. A successful MCP reply
+alone cannot establish whether a host write or queued effect happened once.
 
-**Dependency:** M3.
+**Deliver:** enable the existing action, workflow, rule, memory, skill and admin
+write contracts through the shared boundary. Inventory which handlers already
+create approvals, which mutate synchronously and which enqueue effects. Attach
+journal/claim/recovery at the actual effect boundary; wrapping an MCP response
+alone does not protect a handler that already committed a write.
 
-## M5 — Safe local tools and verified artifacts
+Reuse OpenNeko's existing authorization, preflight, approval UI and queue executors.
+Do not blanket auto-approve MCP calls, create duplicate approval systems, or grant
+all broker routes to enable one tool. Bind approvals to exact arguments, schema,
+actor and target; recheck policy at execution. Preserve documented auto/ask/deny
+semantics only where execution is qualified; the existing conservative proposal
+path remains human-approved until then. Workflow-only tools require host-supplied
+workflow/run identity. Legacy fenced output must not accidentally execute alongside
+a tool call; normalize any necessary compatibility behavior inside the adapter.
 
-**Deliver:** Read, Edit and Bash through the same governed boundary; read-parallel/write-exclusive scheduling; read-version checks; bounded process/output handling; scoped artifact publication. Treat arbitrary shell commands as unsafe operations. Enforce the tested process boundary around broker capabilities before allowing model-generated subprocesses.
+**Verify:** through the real browser, create/edit a workflow and rule, propose an
+integration action, save a memory, and perform allowed records/admin changes on
+synthetic data. Confirm unauthorized variants never execute. Run workflow jobs
+through the actual queue and verify outputs. Test approval reload/restart, changed
+arguments, revoked roles and destructive-action confirmation. Kill execution before
+dispatch, after commit and before receipt, and after receipt. Reconcile only with a
+qualified status/idempotency contract; otherwise report unknown without redispatch.
 
-**Verify:** synchronized tests prove two safe reads overlap and mutations do not overlap other scheduled tool work. Change a file between read and edit: the edit is rejected and external changes survive. Exercise concurrent harness writers and an external editor; document any remaining atomicity limits. Terminate a process tree on cancellation/timeout, cap large output, reject path escapes and verify artifact size/type/content before completion. Attempt broker-token access from generated child code and test cross-run filesystem/capability isolation.
+**Exit:** every enabled mutating tool has a documented effect/recovery contract and
+real persistence/queue acceptance; approval cards and receipts match actual effects.
 
-**Exit gate:** contention, containment and cleanup tests pass. If broker capabilities cannot be isolated from arbitrary generated code, keep that execution path disabled until the boundary is fixed. No success event precedes required artifact validation.
+**Dependency:** M5a and existing M4 effect infrastructure for the pack proposal
+slice; the remaining MCP-backed product writes depend on M5b bridge qualification.
 
-**Dependency:** M4; tool unit tests can begin earlier.
+## M5d — Local tools, skills and artifacts
 
-## M6 — Routing, context and budget controls
+**Deliver:** Read, Edit and shell/process tools under OpenShell, file read-version
+checks, read-parallel/write-exclusive scheduling, output/process limits and scoped
+artifact publication. Use OpenNeko's existing skill catalog, upload workspace and
+artifact pipeline. Broker credentials and privileged MCP bridge state must remain
+in a trusted execution compartment inaccessible to model-generated subprocesses;
+merely clearing inherited environment variables is insufficient.
 
-**Deliver:** Ax-backed approved model profiles and fallback, per-run limits across model corrections/retries/tools/GraphJin, bounded context compaction, and explicit usage coverage. Start with two qualified routes; do not add every provider at once.
+**Verify:** browser task reads an upload, follows an installed skill, generates a
+spreadsheet/document and downloads bytes verified against the produced artifact.
+Test two overlapping reads, mutation exclusion, changed-file rejection, symlink/path
+escapes, cross-run access, hostile child attempts to read broker secrets, process
+tree cancellation and resource ceilings. Cancelled/failed tasks do not publish
+unvalidated artifacts. Reuse existing document processing tools; do not rebuild them.
 
-**Verify:** inject rate limits, transient failures and invalid structured responses. Fallback chooses only authorized, capable routes with the correct credentials. Policy denial does not trigger a less-restricted route. Unresolved tool calls retain a valid transcript across permitted fallback or fail explicitly. Retry/correction/compaction loops hit configured ceilings. Compaction preserves instructions, active constraints, unresolved operations and required evidence references. Missing provider usage remains unknown; it cannot permit unlimited calls. Check GraphJin aggregate versus child usage for double counting.
+**Exit:** full upload → execution → artifact → authorized download path passes with
+actual sandbox processes. Keep arbitrary subprocess execution disabled until the
+credential boundary passes adversarial checks.
 
-**Exit gate:** routing/failure fixtures and context-preservation cases pass, including multi-provider OpenShell tests. Retry ownership and conservative behavior when exact usage is unavailable are explicit.
+**Dependency:** M5a. Build local tool execution and file safety against fixtures
+now; connected artifact publication follows M5b/c. A controlled batch runner may
+be implemented locally, but its GraphJin authorization/file path remains unqualified
+until M5b.
 
-**Dependency:** M4 and the M2 multi-provider qualification; can proceed alongside M5.
+## M5e — Bounded delegation parity
 
-## M7 — Evaluation and operational readiness
+**Deliver:** child agents using the same Go/Ax engine with narrowed capabilities,
+explicit context, child ownership and shared parent budgets. OpenNeko decides
+whether delegation is enabled. No named-agent framework, swarm scheduler or new
+background-work system. Children cannot expand authority, bypass approval or
+retain execution after parent cancellation.
 
-**Deliver:** a versioned task suite covering GraphJin answers/refusals, local artifacts, clarification, cancellation and recovery; comparison against the current backend; latency/cost/quality reports; telemetry health checks. Select release thresholds before running the comparison.
+**Verify:** a real parent task delegates two bounded investigations, combines
+verified results and exposes correlated progress. Exercise child failure, parent
+cancellation, capability escalation attempts, spawn/depth limits, crash recovery
+and usage rollups without double counting. Test the disabled-delegation mode too.
 
-**Verify:** run both backends on the same seeded tasks and held-out cases. Separate deterministic checks, user/evaluator judgments and model variability. Report task success, evidence correctness, policy violations, cost per successful task, usage coverage, first useful output and completion latency. Exercise simultaneous tenants, slow consumers, collector outage and queue saturation. Trace loss is visible and bounded; mandatory persistence failure stops effects. Inspect retained observations for credential/content leakage and enforce deployment retention settings.
+**Exit:** existing delegation use cases have verified equivalents or are explicitly
+excluded from the rollout cohort. Do not claim full Hermes parity while they are excluded.
 
-**Exit gate:** all security/recovery invariants pass and pre-agreed quality/latency/cost thresholds are met. Retain the exact run manifest and comparison report. Insufficient sample size or missing usage is disclosed, not presented as a proven improvement.
+**Dependency:** M5a–d and M6 shared budget enforcement.
 
-**Dependency:** M5 and M6. Build evaluation fixtures throughout earlier milestones.
+## M6 — Ax routing, context and efficiency
 
-## M8 — Staged rollout and rollback proof
+**Deliver:** approved Ax model profiles and fallback; aggregate limits across model
+stages, tools, retries and child/remote work; context compaction preserving original
+intent and unresolved operations. Qualify two approved OpenShell-bound routes first.
+Keep durable state authoritative; prompt compaction is only a model-context projection.
+Reserve budget before each new model or remote call. Check observed usage on every
+event, but do not rely on a provider's final cumulative snapshot to halt a run;
+missing usage requires a conservative admission limit.
 
-**Deliver:** harness-owned image and deployment configuration with matching OpenShell version pins, deployment migration notes, separate warm-pool identities, and a reversible backend rollout using existing selection controls. Qualify backup/restore before changing a live gateway.
+Persist large observations with scoped retrievable references and bounded excerpts.
+Evaluate the [SoL-Pi ideas](https://arxiv.org/html/2609.20519v1) individually: observation references first; cache-aware
+compaction next; edit-and-verify and cheaper-model log reduction only when measured
+benefit justifies them. Include summarization/retrieval costs and deterministic
+validation/fallback. No autonomous production harness evolution.
 
-**Verify:** in staging, restore the old gateway state with its matching binaries, switch back to the previous backend and prove accepted runs/effects are neither lost nor duplicated. Drain old sandboxes, verify current provider/policy revisions before new runs, and test both host-development and Compose topology. Canary the new backend against M7 thresholds, then increase traffic only while gates hold. Avoid shadow execution of real mutations.
+**Verify:** real multi-route requests under rate limits and transient failures,
+with no fallback around policy denial. Long mixed-tool conversations retain pending
+approvals, user constraints, tool-result pairing and evidence after compaction.
+References survive restart and reject another tenant. Retry/compaction loops hit
+ceilings; unavailable usage cannot authorize unlimited work. Measure cost per
+successful task, cache traffic, repeated-output bytes and retrieval/compaction cost.
 
-**Exit gate:** rollback rehearsal and canary evidence pass; operators can locate a failed run across application, broker and sandbox observations. Production rollout is a separate authorized implementation action, not part of this design-only work.
+**Exit:** routing, budgets and context preservation pass; optimizations require
+held-out quality evidence, not token savings alone.
+
+**Dependency:** M2 and M5a. May proceed alongside M5b–d; required before M5e closes.
+
+## M7 — Capability parity and operational qualification
+
+**Deliver:** a versioned comparison against Hermes covering the complete capability
+inventory, not just GraphJin questions. Freeze capability eligibility, schemas,
+fixtures, model settings and acceptance thresholds before evaluation. Track every
+entry as supported, denied by design, or deferred with a rollout exclusion.
+
+**Verify:** run equivalent task outcomes across both backends for data, records,
+documents, memory/skills, UI/clarification, workflows, integration actions, admin,
+artifacts and enabled delegation. Use real browser and queue paths and separate
+workflow/agent-job modes. Exercise concurrent tenants, stale permissions, reconnect,
+worker/server failure, collector outage and queue saturation. Include the M4 crash
+matrix for every effect class. Use held-out tasks for quality/cost comparison;
+keep deterministic integration evidence separate from live-model scores.
+
+**Exit:** all supported capability and recovery gates pass, no silent loss of
+existing functionality, and agreed quality/latency/cost thresholds are met. Hosted
+CI and branch PR checks are required before merge. Full parity requires all
+inventory families; a narrower canary must explicitly state its exclusions.
+
+**Dependency:** M5a–e and M6, subject to explicit canary exclusions.
+
+## M8 — Staging, upgrade and rollback
+
+**Deliver:** harness-owned images, deployment manifests, version pins, migrations,
+separate warm-pool identities and reversible backend selection. Preserve Hermes
+as a functioning fallback. OpenNeko changes stay on `feat/openneko-harness` until
+review; no main changes or implicit rollout authorization.
+
+**Verify:** staging install/upgrade, backup/restore, worker drain and rollback in
+host-development and Compose topologies. Confirm approved/pending actions and
+accepted inputs survive backend switching without replay. Run representative
+browser and scheduled/channel tasks before and after rollback. Canary only the
+qualified capability cohort; never shadow real mutations.
+
+**Exit:** installation and rollback evidence plus successful canary thresholds.
+Adopt an upstream OpenShell cancellation fix when available; that defect remains
+observable and nonblocking. Publishing, merging and production rollout are separate
+authorized actions.
 
 **Dependency:** M7.
 
-## Delivery boundaries
+## Immediate order
 
-- **After M2:** the technology and sandbox integration are proven enough to build upon.
-- **After M3:** a usable internal GraphJin assistant path exists.
-- **After M4–M6:** recovery, local work and routing have executable correctness gates.
-- **After M8:** the qualified path is ready for operational use at the tested scope.
+1. Finish M5a packaging and recovery checks for the local native/MCP catalog.
+2. Continue M5c handler inventory and isolated governed mutation fixtures;
+   retain pack proposal as the only enabled product write path.
+3. When an instance is connected, M5b: real query-to-file batch, MCP reads,
+   clarification and UI through OpenNeko/GraphJin; then connected M5c writes.
+4. M5d/M6: local file/process safety, bounded batch output, routing, context
+   and pre-call budgets. M5e adds bounded delegation after shared budgets.
+5. M7/M8: parity evidence, staging and rollback.
 
-Defer subagents, general background work, a new TUI, additional provider protocols and automatic prompt/playbook evolution. Add them as separate milestones only when a concrete product task needs them, preserving the same recovery and telemetry gates.
+No new TUI, generic plugin framework, speculative swarm, or wholesale rewrite of
+OpenNeko's tools is required. Reuse existing capabilities and qualify their contracts.

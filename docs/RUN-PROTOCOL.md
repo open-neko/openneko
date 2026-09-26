@@ -90,8 +90,11 @@ step limit, not separate CPU accounting for JavaScript.
 ## Optional approval capability
 
 `command.MainWithTools` installs typed callbacks without an OpenNeko dependency.
-The OpenNeko launcher binds a `harness-governed` broker token and enables
-`OPENNEKO_HARNESS_PROPOSALS=1`. Older `harness-read-only` tokens still deny proposals.
+The OpenNeko launcher binds a `harness-governed` broker token only for a Work run
+with held pack actions. It passes their exact kinds in
+`OPENNEKO_HARNESS_ACTION_KINDS`; otherwise it uses `harness-read-only` and the Go
+runtime does not install `propose`. A forged or unlisted kind is denied before
+broker dispatch, and the broker independently rechecks current authorization.
 Model input cannot select this profile, credentials, identity or an approval state.
 
 A proposal contains an action name (128 bytes), object arguments and a summary

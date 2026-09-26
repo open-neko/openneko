@@ -1,23 +1,25 @@
 # Go Harness
 
-Status: working design; M1 compatibility implementation started. Updated: 2026-09-19.
+Status: revised architecture and roadmap, 2026-09-20. M1–M4 are locally qualified
+at their implemented scope; broad tool support and Hermes parity remain planned.
 
-**Integration boundary:** build and package the harness independently. OpenNeko is the first consumer. Prefer its existing launch, policy, event and result contracts; keep compatibility in the adapter. A small, justified product integration change may be preferable to a permanent workaround and should be reviewed explicitly. Seamless worker/web operation is an acceptance gate, not yet a verified property.
+**Integration boundary:** build and package the harness independently. OpenNeko is the first consumer. Prefer its existing launch, policy, event and result contracts; keep compatibility in the adapter. A small, justified product integration change may be preferable to a permanent workaround and should be reviewed explicitly. Worker/web operation has evidence for the implemented slice; each additional capability needs its own acceptance gate.
 
 This document records the current design direction, source findings, implementation notes, and questions to resolve. Proposed behavior is not a claim that Ax or OpenNeko already implements it. HTTP/Goja checks and isolated OpenShell/worker/web evidence now exist; see [milestone status](MILESTONES.md) for the qualified paths, accepted upstream cancellation limitation and later milestones.
 
 Detailed integration research: [OpenShell, broker and Ax compatibility](OPENSHELL.md). This covers the checked-in OpenShell version, credential replacement, transport requirements, multi-provider routing, broker recovery, sandbox lifecycle and required integration tests.
 
-OpenShell upgrade target: qualify **v0.0.116** against the checked-in **0.0.54** baseline. Released endpoint binding, managed-refresh handles and Docker OTLP tracing better support this design. Retain the existing host launcher initially: the new Go SDK has useful control/streaming APIs, but its tagged default file-transfer transport is unimplemented. See the companion document for release evidence, static-versus-managed rotation limits and rollout gates. No runtime upgrade has been performed.
+OpenShell **v0.0.116** has local qualification against the checked-in **0.0.54** baseline, with delayed upstream cancellation accepted as nonblocking. Released endpoint binding, managed-refresh handles and Docker OTLP tracing better support this design. Retain the existing host launcher initially: the new Go SDK has useful control/streaming APIs, but its tagged default file-transfer transport is unimplemented. See the companion document for release evidence, static-versus-managed rotation limits and rollout gates. No runtime upgrade has been performed.
 
 ## 1. Scope and agreed direction
 
 - Build an independent Go harness; OpenNeko is the first consumer.
 - Use Ax extensively for model access, routing, structured generation, context handling, and agent execution where its Go contracts fit.
-- Delegate GraphJin lookups to its server-side agent. Keep data discovery and query investigation there.
+- Support native Go tools, MCP tools and direct service adapters through one governed boundary. OpenNeko supplies its existing capabilities through the optional adapter.
+- Delegate GraphJin lookups to its server-side agent as one capability; keep its investigation logic out of the core.
 - Learn from Claude Code's execution invariants and Aithy's Ax integration.
 - Make telemetry and evaluation part of every runtime capability from the beginning.
-- Implementation was authorized after milestone planning; begin with the M1 compatibility gates.
+- Preserve the qualified M1–M4 foundation; next deliver the shared capability catalog and MCP integration before claiming Hermes parity.
 
 The intended improvement is measurable reliability and task quality: recover safely, preserve intent, use evidence, expose progress, and spend model budget effectively. Feature count is not an acceptance criterion.
 
@@ -31,9 +33,12 @@ flowchart TD
     Harness --> Ax[AxAgent / AxGen]
     Ax --> Models[Ax model profiles, routing and fallback]
     Ax --> Tools[Governed tool boundary]
-    Tools --> GraphJin[Injected server-side GraphJin capability]
-    Tools --> Sandbox[Sandbox: files, code, artifacts]
-    Tools --> Actions[Consumer capabilities and authorization]
+    Tools --> Native[Native Go tools: files, processes, child agents]
+    Tools --> MCP[MCP transport: admitted consumer tools]
+    Tools --> Direct[Direct service adapters]
+    Native --> Sandbox[OpenShell containment]
+    MCP --> Consumer[OpenNeko capabilities: records, knowledge, UI, workflows, actions, admin]
+    Direct --> GraphJin[GraphJin server-side agent capability]
     Harness --> Journal[Durable execution journal]
     Harness --> Observations[Observations and evaluation records]
     Observations --> UI[OpenTelemetry / consumer event projection]
@@ -43,7 +48,9 @@ flowchart TD
 | --- | --- |
 | Go harness | Run ownership, accepted inputs, operation records, authorization context, budgets, cancellation, durable checkpoints, recovery, neutral events |
 | Ax | Provider normalization, model routing, typed generation, reasoning stages, runtime context management, supported model/tool telemetry |
-| GraphJin agent | Catalog-first discovery, governed lookups, evidence and typed investigation results |
+| Tool transports | Adapt native callbacks, MCP and direct services without owning product policy |
+| OpenNeko capability servers | Existing records, knowledge, interaction/UI, workflows, administration and integration contracts |
+| GraphJin agent tool | Catalog-first discovery, governed lookups, evidence and typed investigation results |
 | Consumer control plane | Identity, credential brokering, action requests, approval decisions, workflow scheduling, existing product persistence |
 | Sandbox boundary | Filesystem, process and network containment; resource limits and process termination |
 
@@ -105,7 +112,68 @@ Important limits found during source review:
 
 Never poll mutable Ax state concurrently to manufacture live telemetry. If a required callback is absent, use an owner-controlled boundary or add a supported hook upstream.
 
-## 4. GraphJin delegation contract
+## 4. Tool capability and transport contracts
+
+GraphJin is one admitted tool family. The harness runs the same validation,
+authorization, operation recording, execution, result and telemetry pipeline for
+native Go callbacks, MCP calls and direct service adapters. MCP standardizes the
+wire interface; it does not establish authorization or safe retry semantics.
+
+### Catalog and prompt consistency
+
+The trusted consumer supplies the eligible capability set for a particular actor,
+run kind, channel and data surface. Bind each admitted tool to stable identity,
+schema/version, origin, limits, effect classification and recovery behavior.
+Descriptions, MCP annotations and model arguments cannot expand that set. Unknown
+classification is conservative: no assumed read-only concurrency or effect retry.
+Pin the admitted catalog for the attempt; changed schemas or permissions require
+revalidation before dispatch or recovery. Handle name collisions explicitly.
+
+OpenNeko's actual surface includes records, memory/library, skills, clarification,
+UI rendering, workflows/rules, plugin/pack actions and administrative tools, in
+addition to GraphJin. Workflow-specific output/action tools require a trusted
+workflow identity. File/terminal execution and native child agents are not MCP
+requirements. The [milestone capability inventory](MILESTONES.md#capability-coverage-to-deliver)
+is the scope of product qualification.
+
+Assemble instructions from the same admitted catalog used for execution. Reuse
+OpenNeko's conversation, evidence, workspace and channel contracts, but replace
+Hermes-specific names and native delegation instructions with available bindings.
+Do not copy the Hermes prompt wholesale. Tool descriptions and installed skills
+remain contextual instructions, not policy. The current read-only Harness prompt
+and `mcpTools: false` represent an implementation gap, not the target architecture.
+
+### MCP integration and credential boundary
+
+Reuse the existing OpenNeko logical servers and multiplexed bridge, not their
+business logic. Qualify Go/Ax discovery and calls against the real bridge, including
+pagination, schemas, structured/text results, tool errors, progress, deadlines,
+cancellation and lifecycle. Use existing supported protocol code; implement only
+transports/features required by admitted tools, explicitly rejecting unsupported
+ones. Trusted host configuration owns bridge executables, arguments and endpoints.
+
+The bridge and broker credentials must be inaccessible to arbitrary model-generated
+subprocesses. An environment variable whitelist alone is not isolation. Before
+shipping shell tools, prove a trusted host/isolated bridge path with the same actor
+scope and existing OpenShell network restrictions. A tool result containing a URL
+or server instruction cannot authorize a new connection or process.
+
+### Effects and continuation
+
+Classify behavior per operation, not transport: reads, local mutations, durable
+product/external effects, interaction waits and UI projections need different
+recovery policies. Preserve M4's intent/result records, claims, exact-argument
+approvals and unknown-outcome handling. A remote MCP handler may commit before its
+reply; place durable protection at that real effect boundary. Do not infer
+idempotency from `tools/call`, annotations, or an HTTP success code.
+
+Reuse the consumer's approval system. Persist clarification/approval references;
+resume without repeating user questions, cards or committed effects. Keep legacy
+fence compatibility inside the adapter and prevent duplicate fence/tool execution.
+Do not enable capabilities by broadening a restricted broker token to all routes.
+
+### GraphJin delegation contract
+
 
 Use the existing server-side GraphJin agent capability through OpenNeko's broker. OpenNeko already has `/v1/graphjin/agent`, which calls the server's HTTP agent API after readiness and read-only checks. GraphJin also exposes `ask_graphjin_agent` through MCP with history, optional retained task IDs and progress notifications; those broader capabilities are not all forwarded by the current broker route. Caller identity remains server-derived; model credentials remain GraphJin-owned.
 
@@ -196,7 +264,7 @@ Operational telemetry is content-free by default. Do not export prompts, raw rea
 | Model attempts | Stage, logical profile, actual model/provider, first chunk, duration, usage, validation/correction count | Which models and prompts work best? |
 | Routing | Candidate/selected routes, fallback category, cost/deadline scores | Does routing improve outcomes under constraints? |
 | Actor runtime | Step count, duration, errors, repeated operations, snapshot completeness | Is the agent looping or losing working state? |
-| Tools | Validation, policy decision, approval wait, dispatch, outcome, payload sizes | Are tools understandable and reliable? |
+| Tools | Stable identity/schema, native/MCP/direct transport, validation, policy, approval wait, dispatch, outcome, payload sizes | Are tools understandable and reliable? |
 | GraphJin | Remote status, latency, trace link, usage coverage, clarification/refusal category | Is data delegation effective? |
 | Memory/skills | Retrieval latency, selected version IDs, load/use counts | Does retrieved guidance help? |
 | Recovery | Checkpoint age, recovery reason, unresolved effects, cancellation-to-quiescence time | Can work resume safely? |
@@ -248,13 +316,17 @@ The actionable delivery plan is [MILESTONES.md](MILESTONES.md), with deliverable
 
 Verification progressively includes actual services: HTTP transport in M1, worker/queue plus OpenShell in M2, and the existing browser/web flow through worker, sandbox, broker and real GraphJin in M3. Every later milestone extends that end-to-end suite with its failure and recovery cases. Unit tests alone do not satisfy milestone acceptance; browser-visible outcomes, durable records and actual execution must agree.
 
-1. **Ax Go compatibility spike:** pin a revision; verify actual runtime hooks, tool callbacks, streaming, context events, cancellation and state export. Use deterministic no-key clients first.
-2. **Headless supervised run:** one AxAgent, a governed tool boundary, durable operation IDs and neutral observations. No new UI framework.
-3. **GraphJin delegation:** authenticated server call, typed result handling, cancellation behavior, progress and trace/usage correlation.
-4. **Durability and governance:** approval continuations, input deduplication, checkpoints and ambiguous-effect recovery.
-5. **Sandbox tools and artifacts:** freshness checks, process lifecycle, bounded outputs and verified artifact publication.
-6. **Quality loop:** regression fixtures, representative task suite and model/context experiments.
-7. **Broader capability:** additional providers, discovery, child agents and background work after the single-agent path meets its gates.
+1. **Retained foundation (M1–M4):** Ax contracts, OpenShell, the first GraphJin slice and durable governed operations.
+2. **Shared capabilities (M5a):** common catalog/dispatch, prompt consistency and versioned recovery across tool types.
+3. **Local foundation (M5d/M6):** file/process containment, bounded output,
+   model routing and pre-call budgets against isolated fixtures. Connected artifact
+   publication is verified later.
+4. **MCP and product tools (M5b/c):** once an OpenNeko/GraphJin instance is
+   connected, qualify real batch reads/UI/clarification, then each workflow/action/admin
+   effect family using existing OpenNeko handlers.
+5. **Routing and context (M6):** Ax profiles, bounded retries, observation references, compaction and total usage accounting.
+6. **Delegation (M5e):** bounded child instances with narrowed capabilities and shared budgets.
+7. **Parity and rollout (M7/M8):** full capability inventory, held-out quality checks, staging and rollback.
 
 Required proof before treating AxAgent as the production foundation:
 
@@ -271,15 +343,24 @@ Required proof before treating AxAgent as the production foundation:
 - Read concurrency, mutation exclusion and file freshness are demonstrated under contention.
 - Final output and artifacts satisfy deterministic checks where possible.
 
-## 11. Open decisions
+## 11. Implementation decisions to close at their milestone
 
-- Can Ax expose owner-thread hooks before and after every external invocation and at safe checkpoint boundaries, including multiple calls in one actor step?
-- Which Ax Go revision meets the required behavior, and which missing hooks should be contributed upstream?
-- What exact state can be restored after clarification versus an arbitrary process crash?
-- Should Ax's event runtime integrate with existing persistence, or should OpenNeko retain continuation ownership?
-- How should OpenNeko and GraphJin coordinate budgets and trace propagation across services?
-- Which output signature best supports answers, artifacts, clarification and partial completion without erasing remote typed outcomes?
-- What operational trace retention and evaluation-data retention should each deployment use?
+- M5a: the local Ax catalog now pins schemas and a run catalog hash, preserves
+  operation identity and old four-operation checkpoints, and admits local MCP
+  read fixtures through the official SDK. Connecting the actual OpenNeko bridge
+  and qualifying its transport belongs to M5b.
+- M5b/d: qualify the existing MCP bridge transport and trusted process placement
+  before exposing shell access; prove broker credentials are inaccessible to children.
+- M5c: inventory each actual mutation handler's approval, persistence and recovery
+  semantics. Existing M4 qualification does not automatically cover every MCP tool.
+- M6: coordinate budgets and trace propagation across all remote/child tools;
+  preserve unavailable usage and prevent aggregate double counting.
+- M7: freeze the parity inventory, quality thresholds, deployment retention and
+  any explicit canary exclusions before evaluation.
+
+Ax is already pinned and bounded continuation is established by M1/M4 evidence.
+Do not reopen those choices without a concrete missing contract. Delayed upstream
+OpenShell cancellation is accepted as nonblocking; adopt its eventual upstream fix.
 
 ## 12. Source notes
 

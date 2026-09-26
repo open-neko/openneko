@@ -37,9 +37,16 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 
 ## Deferred work
 
-- M5: local file/process tools, freshness checks and artifact delivery.
+- M5a has local native/MCP catalog acceptance. M5c currently narrows only the
+  existing pack-action proposal path. Existing OpenNeko MCP tools, other governed
+  product mutations, local file/process/artifact work and bounded delegation remain
+  open. This is not Hermes parity.
+- M5b connected acceptance is parked while no OpenNeko/GraphJin instance is
+  available. Local M5c handler qualification, M5d foundations and M6 budget/context
+  work can proceed with fixtures; they do not prove the real batch path.
 - M6: approved model routing/fallback, context compaction and aggregate budgets.
-- M7: task-quality evaluation, concurrent tenant/load checks and operational limits.
+- M7: full capability parity against Hermes, task-quality evaluation, concurrent
+  tenant/load checks and operational limits.
 - M8: deployment upgrade, canary and rollback qualification.
 - Hosted PR/CI checks and a separately budgeted live-provider smoke test. Current
   model/effect fixtures are deterministic; they establish correctness, not quality.
@@ -54,12 +61,11 @@ overlap refusal is separately tested at the live launcher boundary.
 ## Repository and delivery state
 
 Both repositories use `feat/openneko-harness`. OpenNeko integration changes are in
-`../Open-Neko/OpenNeko-harness-m3`, committed through `88992f7`. The original
-OpenNeko checkout was not changed by this delivery. Harness implementation and
-acceptance records are committed through `2fd91e0`, followed by this inventory
-update. Nothing has been pushed; Harness has no configured remote. No PR or main
-merge has been made. Earlier main commits documented in README are historical.
+`../Open-Neko/OpenNeko-harness-m3`; the original OpenNeko checkout was not changed.
+Nothing has been pushed; Harness has no configured remote. No PR or main merge has
+been made. Earlier main commits documented in README are historical.
 
-All owned M2/M3 test services and volumes were cleaned up. No additional cumulative
-run is needed for this documentation-only update; the final retained acceptance
-commands, logs and correlated run/request IDs are in the linked records.
+All owned M2/M3 test services and volumes were cleaned up. M5a's local Ax/MCP
+fixture and M5c's narrowed proposal checks are new local evidence. They do not
+replace the connected OpenShell/worker/browser acceptance still required for M5b
+and the remaining M5c tool families.
