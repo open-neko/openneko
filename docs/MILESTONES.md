@@ -208,10 +208,11 @@ Batch contracts belong to workflow definitions, never skill entitlements. A
 workflow may use zero or more skills. Skill files and scripts must not call
 LLMs directly. Harness/Ax alone owns model routing, budgets and telemetry;
 scripts exchange governed data requests and files.
-The prototype pins one workflow ID and script in trusted worker config, and
-snapshots the selected contract in the API admission transaction. Before
-general admission, replace that binding with a versioned workflow executor
-registry. The caller submits immutable input and receives `202 Accepted`
+Web and worker now share a trusted versioned executor registry. Admission
+snapshots the active revision and configuration fingerprint with the selected
+contract; the worker can execute that pinned revision after a later active
+switch, but refuses a changed or removed entry. The caller submits immutable
+input and receives `202 Accepted`
 with a run ID; it cannot edit or approve the run while queued. A later operator
 edit to the workflow's name or output contract affects only later admissions;
 disabling the workflow may revoke a queued run. The caller polls for completed,
@@ -228,7 +229,9 @@ returns to the queue with a new attempt, while an old attempt cannot claim or
 finalize it. The public HTTP worker test uses a deterministic local executor.
 A connected public HTTP admission through the production queue, Go, OpenShell
 and a seeded GraphJin broker also passed, including status polling and exact
-CSV download. Real data and a versioned executor registry remain open.
+CSV download. The isolated worker also ran a queued v1 revision after v2 became
+active, and a focused Postgres admission test retained the v1 binding through
+definition edits, replay and stale-attempt fencing. Real data remains open.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal

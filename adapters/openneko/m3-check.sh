@@ -9,6 +9,7 @@ export HARNESS_INSPECT_BIN="$HARNESS_STATE/harness-inspect"
 mkdir -p "$HARNESS_STATE/workflow-bundle"
 cp integration/m5b/workflow-fixture.py "$HARNESS_STATE/workflow-bundle/run.py"
 export HARNESS_M3_BATCH_BIN="$HARNESS_STATE/harness-batch" HARNESS_M3_BATCH_SCRIPT="$HARNESS_STATE/workflow-bundle/run.py"
+export HARNESS_BATCH_EXECUTOR_REGISTRY="$HARNESS_STATE/batch-registry.json"
 export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$HARNESS_STATE/openshell-compat"
 cat > "$HARNESS_STATE/m3-provider.yaml" <<'YAML'
 id: harness-m3
@@ -55,7 +56,6 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   docker compose -p harness-m3 -f integration/m3/compose.yml restart model
   if [[ ${HARNESS_M3_API_HTTP:-0} == 1 ]]; then
     export HARNESS_M3_WORKFLOW_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
-    export HARNESS_BATCH_WORKFLOW_ID="$HARNESS_M3_WORKFLOW_ID"
     [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
     set -m
     (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &

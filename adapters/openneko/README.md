@@ -23,11 +23,19 @@ validation. This executor must be bound to a workflow definition and
 `workflow_run`; its eligibility does not depend on skill grants. Skill files
 and scripts must never call a model provider directly:
 model routing, budgets and telemetry belong to Harness/Ax. The isolated fixture
-passes with OpenShell 0.0.116. An opt-in OpenNeko worker job is configured with
-`OPENNEKO_HARNESS_BATCH_BIN` and `HARNESS_BATCH_WORKFLOW_ID`; it verifies the
-linked workflow definition, admitted contract, actor and pinned script before
-publishing the artifact. The same workflow ID must be configured in the web
-process for public API admission. `POST /api/v1/workflows/{id}/runs` in the
+passes with OpenShell 0.0.116. Web and worker read the same trusted,
+read-only `HARNESS_BATCH_EXECUTOR_REGISTRY` JSON file. Its `version: 1`
+document has an `executors` array; each entry binds a `workflowId`, `revision`,
+and `active` flag to `binary`, `binarySha256`, `openshellBin`,
+`openshellSha256`, `gateway`, `image`, `script`, `scriptSha256`, `bundleDir`,
+and `bundleSha256`. Paths are absolute and hashes are lowercase SHA-256 hex.
+At most one revision may be active for a workflow. Admission snapshots the
+active revision and its configuration fingerprint; the worker resolves that
+exact revision, checks binary hashes, and the Go runner verifies the script
+and entire bundle. Keep retired entries until their accepted runs drain; use
+immutable image references in production. The worker also verifies the
+workflow definition, admitted contract and actor before publishing the artifact.
+`POST /api/v1/workflows/{id}/runs` in the
 default `single` mode accepts `{"targetDay":"YYYY-MM-DD"}` and an idempotency key,
 returns `202` with a run URL, and exposes the validated CSV through the
 authenticated artifact URL after completion. The caller cannot edit or approve
@@ -36,8 +44,8 @@ definition edits after admission, duplicate delivery, status and exact-byte
 download with a no-provider fixture. A connected API admission also passed
 through the production queue, Go, OpenShell and a seeded GraphJin broker,
 publishing one validated CSV. The same path now passes public HTTP submission,
-status polling and exact-byte artifact download. A general executor registry
-and real-data Daily Lead run remain in
+status polling and exact-byte artifact download with the versioned registry.
+A real-data Daily Lead run remains in
 [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice).
 
 The Harness MCP adapter admits pinned memory/library reads and the records
@@ -83,7 +91,7 @@ export HARNESS_INSPECT_BIN=/absolute/path/to/bin/harness-inspect
 ```
 
 Both worker and web launchers require it when Harness is selected. The image build
-includes the Linux helper. Apply OpenNeko migrations 0084–0089 and drain older workers before rollout. Deploy the matching Harness image and broker together; the new lookup route deliberately has no unjournaled fallback. Hosts share
+includes the Linux helper. Apply OpenNeko migrations 0084–0090 and drain older workers before rollout. Deploy the matching Harness image and broker together; the new lookup route deliberately has no unjournaled fallback. Hosts share
 PostgreSQL and the gateway; their local filesystem admission caches may differ.
 Local helpers still require POSIX locking. See [recovery](../../docs/M4-RECOVERY.md) for adoption, ambiguity and
 remaining M4 gates. Hermes requires neither helper nor configuration change.

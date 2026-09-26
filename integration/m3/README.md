@@ -113,6 +113,8 @@ the pg-boss worker ran the Go query-to-file executor through OpenShell and a
 seeded GraphJin broker, and authenticated status and artifact `GET` returned a
 completed run and the exact 19-byte CSV. The API download filename is
 `workflow-<runId>.csv`; the internal artifact remains `references.csv`.
+The web process and worker read the same versioned executor registry, and a
+separate live worker check retains a queued v1 revision after v2 becomes active.
 This fixture uses synthetic GraphJin data and no live model key.
 
 An additional isolated rerun passed `mcp_library_search` through the real
