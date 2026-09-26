@@ -273,10 +273,15 @@ export async function runAgentBackend(
             ? { OPENNEKO_MCP_RECORD_SCOPE: JSON.stringify(recordScope) }
             : {}),
         }
-      : backend.id === "harness" && !recordsOnly
+      : backend.id === "harness"
         ? {
-            OPENNEKO_HARNESS_MCP_MEMORY_READ: "1",
-            OPENNEKO_HARNESS_MCP_LIBRARY_READ: "1",
+            ...(recordsOnly
+              ? { OPENNEKO_HARNESS_RECORDS_ONLY: "1" }
+              : {
+                  OPENNEKO_HARNESS_MCP_MEMORY_READ: "1",
+                  OPENNEKO_HARNESS_MCP_LIBRARY_READ: "1",
+                }),
+            OPENNEKO_HARNESS_MCP_RECORDS_READ: "1",
             OPENNEKO_MCP_MODE: "work",
             OPENNEKO_MCP_ORG_ID: orgId,
             OPENNEKO_MCP_THREAD_ID: threadId,
