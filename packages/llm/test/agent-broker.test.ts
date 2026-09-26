@@ -24,6 +24,7 @@ function stubControlPlane(): AgentControlPlane {
     rememberWorkMemory: unused as AgentControlPlane["rememberWorkMemory"],
     searchWorkMemoryByContext:
       unused as AgentControlPlane["searchWorkMemoryByContext"],
+    searchLibraryForRun: unused as AgentControlPlane["searchLibraryForRun"],
     queryGraphjinRead: unused as AgentControlPlane["queryGraphjinRead"],
     listGraphjinTools: unused as AgentControlPlane["listGraphjinTools"],
     callGraphjinTool: unused as AgentControlPlane["callGraphjinTool"],
@@ -75,6 +76,28 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("admits only bound Harness library search and strips caller identity", async () => {
+    const cp = stubControlPlane();
+    cp.searchLibraryForRun = vi.fn(async () => []);
+    const handle = await startAgentBroker({ controlPlane: cp, port: 0 });
+    const request = (token: string, body: object, path = "/v1/library/search") => fetch(`http://127.0.0.1:${handle.port}${path}`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    try {
+      const denied = handle.tokenFor({ runId: "no-library", orgId: "org", kind: "work", profile: "harness-read-only" });
+      expect((await request(denied, { query: "find contract" })).status).toBe(403);
+      const binding: RunBinding = { runId: "library", orgId: "org", kind: "work", profile: "harness-read-only", libraryRead: true };
+      const allowed = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({ ...binding, libraryRead: false })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, kind: "workflow" })).toThrow("Invalid broker library grant");
+      expect((await request(allowed, { query: "x" })).status).toBe(400);
+      expect((await request(allowed, { query: "find contract", limit: 21 })).status).toBe(400);
+      expect((await request(allowed, { query: "find contract", userId: "forged", orgId: "forged", runId: "forged", limit: 2 })).status).toBe(200);
+      expect(cp.searchLibraryForRun).toHaveBeenCalledWith({ query: "find contract", limit: 2, orgId: "org", runId: "library" });
+      expect((await request(allowed, { query: "find contract" }, "/v1/memory/search")).status).toBe(403);
+    } finally { await handle.close(); }
+  });
+
   it("admits only an explicitly bound Harness batch read to GraphJin", async () => {
     const cp = stubControlPlane();
     cp.queryGraphjinRead = vi.fn(async () => ({ data: { rows: [{ id: 1 }] } }));

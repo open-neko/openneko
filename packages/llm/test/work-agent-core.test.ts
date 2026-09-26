@@ -28,7 +28,7 @@ const workspace: AgentWorkspace = {
 const controlPlane = {} as AgentControlPlane;
 
 describe("runAgentBackend", () => {
-  it("passes only the run-scoped memory read binding to Harness customer turns", async () => {
+  it("passes only run-scoped memory and library reads to Harness customer turns", async () => {
     const seen: AgentRunOptions[] = [];
     const backend: AgentBackend = {
       id: "harness",
@@ -41,6 +41,7 @@ describe("runAgentBackend", () => {
     expect(seen[0]?.mcpServers).toBeUndefined();
     expect(seen[0]?.mcpBridgeEnv).toEqual({
       OPENNEKO_HARNESS_MCP_MEMORY_READ: "1",
+      OPENNEKO_HARNESS_MCP_LIBRARY_READ: "1",
       OPENNEKO_MCP_MODE: "work",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_MCP_THREAD_ID: "thread-1",

@@ -29,6 +29,8 @@ export interface RunBinding {
   profile?: "harness-read-only" | "harness-governed";
   /** Explicit customer-surface read grant; records-only runs omit it. */
   memoryRead?: boolean;
+  /** Explicit customer-surface library search grant. */
+  libraryRead?: boolean;
   /** Controlled file-backed batch reads; never grants general GraphJin MCP. */
   batchRead?: boolean;
   runId: string;
@@ -106,7 +108,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query")) {
+  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -205,6 +207,9 @@ async function handle(
     case "/v1/library/search": {
       // Same rule as memory: the personal layer comes from the bound
       // run's owner, never from agent-supplied identity.
+      if (binding.libraryRead && (typeof body.query !== "string" || body.query.length < 2 || body.query.length > 800 || (body.limit !== undefined && (typeof body.limit !== "number" || !Number.isInteger(body.limit) || body.limit < 1 || body.limit > 20)))) {
+        return send(res, 400, { error: "Invalid Harness library search" });
+      }
       delete body.userId;
       const query = String(body.query ?? "");
       const limit = typeof body.limit === "number" ? body.limit : undefined;
@@ -754,6 +759,9 @@ export async function startAgentBroker(
       if (binding.memoryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker memory grant");
       }
+      if (binding.libraryRead && (!binding.profile || binding.kind !== "work")) {
+        throw new Error("Invalid broker library grant");
+      }
       if (binding.batchRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker batch grant");
       }
@@ -762,7 +770,7 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.memoryRead !== binding.memoryRead || saved.batchRead !== binding.batchRead)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.batchRead !== binding.batchRead)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }
