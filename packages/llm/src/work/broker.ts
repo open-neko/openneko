@@ -27,6 +27,8 @@ import {
 export interface RunBinding {
   /** Trusted launcher capability profile; never read from request JSON. */
   profile?: "harness-read-only" | "harness-governed";
+  /** Explicit customer-surface read grant; records-only runs omit it. */
+  memoryRead?: boolean;
   runId: string;
   orgId: string;
   /** Agent jobs have no work_run actor and intentionally use service reads. */
@@ -102,7 +104,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose")) {
+  if (binding.profile && path !== "/v1/harness/lookup" && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -183,20 +185,18 @@ async function handle(
       delete body.userId;
       const query = String(body.query ?? "");
       const limit = typeof body.limit === "number" ? body.limit : undefined;
+      if (binding.profile && (typeof body.query !== "string" || query.trim().length < 2 || query.length > 800 || (body.limit !== undefined && (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 20)))) {
+        return send(res, 400, { error: "Invalid Harness memory search" });
+      }
       return send(
         res,
         200,
         await traceMemorySearch({
           binding,
           request: { query, ...(limit !== undefined ? { limit } : {}) },
-          execute: () =>
-            cp.searchWorkMemoryByContext({
-              ...body,
-              orgId: binding.orgId,
-              runId: binding.runId,
-            } as Parameters<
-              AgentControlPlane["searchWorkMemoryByContext"]
-            >[0]),
+          execute: () => cp.searchWorkMemoryByContext(binding.profile
+            ? { orgId: binding.orgId, runId: binding.runId, query, ...(limit !== undefined ? { limit } : {}) }
+            : { ...body, orgId: binding.orgId, runId: binding.runId } as Parameters<AgentControlPlane["searchWorkMemoryByContext"]>[0]),
         }),
       );
     }
@@ -746,12 +746,15 @@ export async function startAgentBroker(
       if (binding.profile !== undefined && binding.profile !== "harness-read-only" && binding.profile !== "harness-governed") {
         throw new Error("Unknown broker capability profile");
       }
+      if (binding.memoryRead && (!binding.profile || binding.kind !== "work")) {
+        throw new Error("Invalid broker memory grant");
+      }
       if (existing) {
         const saved = tokens.get(existing)!;
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.memoryRead !== binding.memoryRead)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }

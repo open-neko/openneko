@@ -31,7 +31,7 @@ export class HarnessBackend implements AgentBackend {
         if (!runId || !opts.workspace)
             throw new Error("Harness M3 requires host run identity and workspace");
         const child = spawn(VENDORED_HARNESS_MODEL_BINARY, [], {
-            env: { ...env, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
+            env: { ...env, ...opts.mcpBridgeEnv, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
                 HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_ACTION_KINDS: env.OPENNEKO_HARNESS_ACTION_KINDS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness") },
             stdio: ["pipe", "pipe", "ignore"],
         });
@@ -62,7 +62,7 @@ export class HarnessBackend implements AgentBackend {
                     result = harnessResult(event.result);
                 }
                 else if (event.type === "tool.started") {
-                    await opts.onEvent?.({ type: "tool_start", id: `harness-operation-${event.operation_id}`, name: event.name === "propose" ? "neko_action_proposal" : "neko_graphjin_agent" });
+                    await opts.onEvent?.({ type: "tool_start", id: `harness-operation-${event.operation_id}`, name: event.name === "propose" ? "neko_action_proposal" : event.name === "mcp_memory_search" ? "mcp_neko_memory_search" : "neko_graphjin_agent" });
                 }
                 else if (event.type === "tool.finished") {
                     await opts.onEvent?.({ type: "tool_end", id: `harness-operation-${event.operation_id}`, result: event.data, ...(event.error ? { error: String(event.error) } : {}) });

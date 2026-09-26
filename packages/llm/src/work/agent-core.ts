@@ -273,7 +273,16 @@ export async function runAgentBackend(
             ? { OPENNEKO_MCP_RECORD_SCOPE: JSON.stringify(recordScope) }
             : {}),
         }
-      : undefined,
+      : backend.id === "harness" && !recordsOnly
+        ? {
+            OPENNEKO_HARNESS_MCP_MEMORY_READ: "1",
+            OPENNEKO_MCP_MODE: "work",
+            OPENNEKO_MCP_ORG_ID: orgId,
+            OPENNEKO_MCP_THREAD_ID: threadId,
+            OPENNEKO_MCP_RUN_ID: runId,
+            OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
+          }
+        : undefined,
     ...(nativeDelegation ? { nativeDelegation } : {}),
     wantsCards,
     tag: `work ${runId}`,

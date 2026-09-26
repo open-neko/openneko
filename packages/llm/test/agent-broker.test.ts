@@ -79,14 +79,18 @@ describe("startAgentBroker token registry", () => {
     const cp=stubControlPlane();
     cp.createActionRequest=vi.fn(async()=>({id:"unexpected",status:"approved"}));
     cp.enqueueActionExecute=vi.fn(async()=>{});
+    cp.searchWorkMemoryByContext=vi.fn(async()=>[]);
     const onEvents=vi.fn(async()=>{});
     const handle=await startAgentBroker({controlPlane:cp,onEvents,port:0});
     try {
-      const binding:RunBinding={runId:"restricted",orgId:"org",kind:"work",profile:"harness-read-only"};
+      const binding:RunBinding={runId:"restricted",orgId:"org",kind:"work",profile:"harness-read-only",memoryRead:true};
       const token=handle.tokenFor(binding);
       expect(handle.tokenFor({...binding})).toBe(token);
-      for(const change of [{profile:undefined},{orgId:"other"},{kind:"workflow" as const},{threadId:"other"}]) {
+      for(const change of [{orgId:"other"},{threadId:"other"},{memoryRead:false}]) {
         expect(()=>handle.tokenFor({...binding,...change})).toThrow("conflicts");
+      }
+      for(const change of [{profile:undefined},{kind:"workflow" as const}]) {
+        expect(()=>handle.tokenFor({...binding,...change})).toThrow("Invalid broker memory grant");
       }
       // Mutating the caller's object cannot alter the saved capability.
       binding.profile=undefined;
@@ -98,6 +102,15 @@ describe("startAgentBroker token registry", () => {
       expect(cp.createActionRequest).not.toHaveBeenCalled();
       expect(cp.enqueueActionExecute).not.toHaveBeenCalled();
       expect(onEvents).not.toHaveBeenCalled();
+      const memory=await fetch(`http://127.0.0.1:${handle.port}/v1/memory/search`,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({query:"test policy",limit:2,orgId:"forged",runId:"forged",userId:"forged"})});
+      expect(memory.status).toBe(200);
+      expect(await memory.json()).toEqual([]);
+      expect(cp.searchWorkMemoryByContext).toHaveBeenCalledWith({orgId:"org",runId:"restricted",query:"test policy",limit:2});
+      const invalidMemory=await fetch(`http://127.0.0.1:${handle.port}/v1/memory/search`,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({query:"x"})});
+      expect(invalidMemory.status).toBe(400);
+      const recordsToken=handle.tokenFor({runId:"records",orgId:"org",kind:"work",profile:"harness-read-only"});
+      const recordsMemory=await fetch(`http://127.0.0.1:${handle.port}/v1/memory/search`,{method:"POST",headers:{authorization:`Bearer ${recordsToken}`,"content-type":"application/json"},body:JSON.stringify({query:"test policy"})});
+      expect(recordsMemory.status).toBe(403);
       // The permitted route reaches its own validation, with no database needed.
       const allowed=await fetch(`http://127.0.0.1:${handle.port}/v1/harness/lookup`,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:"{}"});
       expect(allowed.status).toBe(200);
