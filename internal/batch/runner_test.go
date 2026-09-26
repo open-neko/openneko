@@ -49,7 +49,18 @@ func setup(t *testing.T) Config {
 		}
 	}
 	hash := sha256.Sum256([]byte(fixture))
-	return Config{Script: script, ScriptSHA256: hex.EncodeToString(hash[:]), WorkDir: work, ArtifactDir: artifacts, TargetDay: "2026-09-15", Columns: []string{"email", "score"}, MaxQueries: 4}
+	return Config{Script: script, ScriptSHA256: hex.EncodeToString(hash[:]), WorkDir: work, ArtifactDir: artifacts, ArtifactName: "contacts.csv", TargetDay: "2026-09-15", Columns: []string{"email", "score"}, MaxQueries: 4}
+}
+
+func TestArtifactNameIsBoundedToOneCSVFile(t *testing.T) {
+	for _, name := range []string{"../escape.csv", "nested/file.csv", "result.csv\n", ".hidden.csv", "result.json"} {
+		if ValidArtifactName(name) {
+			t.Fatalf("accepted unsafe artifact name %q", name)
+		}
+	}
+	if !ValidArtifactName("references.csv") {
+		t.Fatal("rejected workflow CSV artifact name")
+	}
 }
 
 func localStep(ctx context.Context, cfg Config, output io.Writer) error {
@@ -59,7 +70,7 @@ func localStep(ctx context.Context, cfg Config, output io.Writer) error {
 	}
 	cmd := exec.CommandContext(ctx, "python3", cfg.Script,
 		"--target-day", cfg.TargetDay, "--work-dir", cfg.WorkDir,
-		"--output", filepath.Join(cfg.WorkDir, "union_final.csv"),
+		"--output", filepath.Join(cfg.WorkDir, cfg.ArtifactName),
 		"--summary", filepath.Join(cfg.WorkDir, "summary.json"), "--max-runtime", "1200")
 	cmd.Dir = filepath.Dir(cfg.Script)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "PYTHONDONTWRITEBYTECODE=1", "OPENNEKO_QUERY_CACHE_DIR=" + cache}
@@ -144,7 +155,7 @@ func TestDeniedQueryNeverPublishesArtifact(t *testing.T) {
 	if err == nil {
 		t.Fatal("denied query unexpectedly succeeded")
 	}
-	if _, err := os.Stat(filepath.Join(cfg.ArtifactDir, "union_final.csv")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(cfg.ArtifactDir, cfg.ArtifactName)); !os.IsNotExist(err) {
 		t.Fatalf("denied query published artifact: %v", err)
 	}
 }
@@ -161,7 +172,7 @@ func TestCleanupFailurePreventsArtifactPublication(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "sandbox deletion failed") || closed != 1 {
 		t.Fatalf("cleanup failure was not fatal: %v, calls=%d", err, closed)
 	}
-	if _, err := os.Stat(filepath.Join(cfg.ArtifactDir, "union_final.csv")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(cfg.ArtifactDir, cfg.ArtifactName)); !os.IsNotExist(err) {
 		t.Fatalf("artifact published before cleanup: %v", err)
 	}
 }

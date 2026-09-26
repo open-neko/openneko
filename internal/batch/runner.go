@@ -15,13 +15,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
 )
 
 type Config struct {
-	Script, ScriptSHA256, WorkDir, ArtifactDir, TargetDay string
+	Script, ScriptSHA256, WorkDir, ArtifactDir, ArtifactName, TargetDay string
 	// ScriptCacheDir is the cache path seen inside the isolated script process.
 	// Empty means WorkDir/graphjin-cache, used by local tests only.
 	ScriptCacheDir string
@@ -44,6 +45,10 @@ type Query func(context.Context, string) ([]byte, error)
 // materializes its request/output files under the host WorkDir before returning.
 type Step func(context.Context, Config, io.Writer) error
 
+var artifactNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.csv$`)
+
+func ValidArtifactName(name string) bool { return artifactNamePattern.MatchString(name) }
+
 // Run accepts only a pinned script, a fixed UTC date and host-owned paths.
 // Queries are reads: an interrupted query may be repeated, while a persisted
 // response is reused by the script on the next attempt.
@@ -55,7 +60,7 @@ func Run(ctx context.Context, cfg Config, query Query, step Step, cleanup func()
 		}
 	}()
 	day, err := time.Parse("2006-01-02", cfg.TargetDay)
-	if err != nil || day.Format("2006-01-02") != cfg.TargetDay || !filepath.IsAbs(cfg.Script) || !filepath.IsAbs(cfg.WorkDir) || !filepath.IsAbs(cfg.ArtifactDir) || cfg.MaxQueries < 1 || cfg.MaxQueries > 256 || len(cfg.Columns) == 0 || query == nil || step == nil {
+	if err != nil || day.Format("2006-01-02") != cfg.TargetDay || !filepath.IsAbs(cfg.Script) || !filepath.IsAbs(cfg.WorkDir) || !filepath.IsAbs(cfg.ArtifactDir) || !ValidArtifactName(cfg.ArtifactName) || cfg.MaxQueries < 1 || cfg.MaxQueries > 256 || len(cfg.Columns) == 0 || query == nil || step == nil {
 		return result, fmt.Errorf("invalid batch admission")
 	}
 	stat, err := os.Lstat(cfg.Script)
@@ -100,7 +105,7 @@ func Run(ctx context.Context, cfg Config, query Query, step Step, cleanup func()
 			return result, fmt.Errorf("batch cache directory invalid")
 		}
 	}
-	output := filepath.Join(cfg.WorkDir, "union_final.csv")
+	output := filepath.Join(cfg.WorkDir, cfg.ArtifactName)
 	summary := filepath.Join(cfg.WorkDir, "summary.json")
 	if _, count, err := pending(cache, scriptCache); err != nil {
 		return result, err
@@ -328,7 +333,7 @@ func publish(cfg Config, output, summary string, result Result) (Result, error) 
 	if err != nil {
 		return result, err
 	}
-	artifact := filepath.Join(cfg.ArtifactDir, "union_final.csv")
+	artifact := filepath.Join(cfg.ArtifactDir, cfg.ArtifactName)
 	if err := atomicFileOrSame(artifact, data); err != nil {
 		return result, err
 	}

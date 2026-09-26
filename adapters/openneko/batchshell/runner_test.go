@@ -37,7 +37,7 @@ func TestBundlePinIncludesImportsAndRejectsLinks(t *testing.T) {
 	if err := os.WriteFile(cli, []byte("binary"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := batch.Config{Script: script, ScriptSHA256: hex.EncodeToString(scriptHash[:]), WorkDir: root, ScriptCacheDir: RemoteCacheDir}
+	cfg := batch.Config{Script: script, ScriptSHA256: hex.EncodeToString(scriptHash[:]), WorkDir: root, ScriptCacheDir: RemoteCacheDir, ArtifactName: "contacts.csv"}
 	opts := Options{CLI: cli, Gateway: "fixture", Image: "fixture", BundleRoot: root, BundleSHA256: initial}
 	if _, err := New(cfg, opts); err == nil {
 		t.Fatal("stale bundle pin accepted")

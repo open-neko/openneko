@@ -16,15 +16,6 @@ import (
 	"github.com/open-neko/harness/internal/batch"
 )
 
-var columns = []string{
-	"email", "sierra_fems_id", "company", "leadstage", "resolved_country",
-	"final_score", "tier", "reason", "group_a", "group_b", "group_c",
-	"group_d", "group_e", "group_f", "group_g", "negative_total",
-	"tool_usage_source", "acceleration_flag", "qualified_via", "mid",
-	"categories", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8",
-	"c9", "c10", "c11", "match_status", "matched_via",
-}
-
 func main() {
 	if len(os.Args) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: harness-batch YYYY-MM-DD")
@@ -39,9 +30,15 @@ func main() {
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 21*time.Minute)
 	defer cancel()
+	var columns []string
+	if err := json.Unmarshal([]byte(os.Getenv("HARNESS_BATCH_COLUMNS_JSON")), &columns); err != nil || len(columns) == 0 || len(columns) > 64 {
+		fmt.Fprintln(os.Stderr, "invalid workflow batch columns")
+		os.Exit(2)
+	}
 	cfg := batch.Config{
 		Script: os.Getenv("HARNESS_BATCH_SCRIPT"), ScriptSHA256: os.Getenv("HARNESS_BATCH_SCRIPT_SHA256"),
 		WorkDir: os.Getenv("HARNESS_BATCH_WORK_DIR"), ArtifactDir: os.Getenv("HARNESS_BATCH_ARTIFACT_DIR"),
+		ArtifactName:   os.Getenv("HARNESS_BATCH_ARTIFACT_NAME"),
 		ScriptCacheDir: batchshell.RemoteCacheDir,
 		TargetDay:      os.Args[1], Columns: columns, MaxQueries: 128,
 	}

@@ -59,7 +59,7 @@ func TestOpenShellBatchCompartment(t *testing.T) {
 		t.Fatal(err)
 	}
 	scriptHash := sha256.Sum256([]byte(batchScript))
-	cfg := batch.Config{Script: script, ScriptSHA256: hex.EncodeToString(scriptHash[:]), WorkDir: work, ArtifactDir: artifacts, ScriptCacheDir: batchshell.RemoteCacheDir, TargetDay: "2026-09-15", Columns: []string{"email", "score"}, MaxQueries: 2}
+	cfg := batch.Config{Script: script, ScriptSHA256: hex.EncodeToString(scriptHash[:]), WorkDir: work, ArtifactDir: artifacts, ArtifactName: "contacts.csv", ScriptCacheDir: batchshell.RemoteCacheDir, TargetDay: "2026-09-15", Columns: []string{"email", "score"}, MaxQueries: 2}
 	image := os.Getenv("HARNESS_BATCH_TEST_IMAGE")
 	if image == "" {
 		image = "harness-openneko:m3"

@@ -29,9 +29,9 @@ type Options struct {
 }
 
 type Runner struct {
-	opts                                 Options
-	workDir, script, name, stage, policy string
-	created                              bool
+	opts                                               Options
+	workDir, artifactName, script, name, stage, policy string
+	created                                            bool
 }
 
 var sha256Hex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
@@ -41,7 +41,7 @@ var runIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,128}$`)
 // top-level script hash alone cannot protect imported vendor code.
 func New(cfg batch.Config, opts Options) (*Runner, error) {
 	if !filepath.IsAbs(opts.CLI) || !filepath.IsAbs(opts.BundleRoot) || !filepath.IsAbs(cfg.Script) || !sha256Hex.MatchString(opts.BundleSHA256) ||
-		!filepath.IsAbs(cfg.WorkDir) || opts.Gateway == "" || opts.Image == "" || cfg.ScriptCacheDir != RemoteCacheDir || (opts.RunID != "" && !runIDPattern.MatchString(opts.RunID)) {
+		!filepath.IsAbs(cfg.WorkDir) || !batch.ValidArtifactName(cfg.ArtifactName) || opts.Gateway == "" || opts.Image == "" || cfg.ScriptCacheDir != RemoteCacheDir || (opts.RunID != "" && !runIDPattern.MatchString(opts.RunID)) {
 		return nil, fmt.Errorf("invalid isolated batch binding")
 	}
 	if info, err := os.Stat(opts.CLI); err != nil || !info.Mode().IsRegular() {
@@ -97,7 +97,7 @@ func New(cfg batch.Config, opts Options) (*Runner, error) {
 		sum := sha256.Sum256([]byte(opts.RunID))
 		name = "hb-" + hex.EncodeToString(sum[:8])
 	}
-	return &Runner{opts: opts, workDir: cfg.WorkDir,
+	return &Runner{opts: opts, workDir: cfg.WorkDir, artifactName: cfg.ArtifactName,
 		script: "/sandbox/batch/bundle/" + filepath.ToSlash(rel),
 		name:   name, stage: stage, policy: policy}, nil
 }
@@ -105,7 +105,7 @@ func New(cfg batch.Config, opts Options) (*Runner, error) {
 // Step mirrors only trusted response files into the sandbox and only request
 // files plus final outputs back. Receipts remain host-owned.
 func (r *Runner) Step(ctx context.Context, cfg batch.Config, output io.Writer) error {
-	if cfg.WorkDir != r.workDir || cfg.ScriptCacheDir != RemoteCacheDir {
+	if cfg.WorkDir != r.workDir || cfg.ArtifactName != r.artifactName || cfg.ScriptCacheDir != RemoteCacheDir {
 		return fmt.Errorf("batch compartment changed")
 	}
 	if !r.created {
@@ -146,13 +146,13 @@ func (r *Runner) Step(ctx context.Context, cfg batch.Config, output io.Writer) e
 	runErr := r.call(ctx, output, "sandbox", "exec", "-n", r.name, "--no-tty", "--timeout", "1200", "--",
 		"env", "OPENNEKO_QUERY_CACHE_DIR="+RemoteCacheDir, "PYTHONDONTWRITEBYTECODE=1",
 		"python3", r.script, "--target-day", cfg.TargetDay, "--work-dir", RemoteWorkDir,
-		"--output", RemoteWorkDir+"/union_final.csv", "--summary", RemoteWorkDir+"/summary.json", "--max-runtime", "1200")
+		"--output", RemoteWorkDir+"/"+cfg.ArtifactName, "--summary", RemoteWorkDir+"/summary.json", "--max-runtime", "1200")
 	if err := r.call(ctx, nil, "sandbox", "download", r.name, RemoteCacheDir+"/requests",
 		filepath.Join(cfg.WorkDir, "graphjin-cache", "requests")); err != nil {
 		return err
 	}
 	if runErr == nil {
-		for _, file := range []string{"union_final.csv", "summary.json"} {
+		for _, file := range []string{cfg.ArtifactName, "summary.json"} {
 			if err := r.call(ctx, nil, "sandbox", "download", r.name, RemoteWorkDir+"/"+file,
 				filepath.Join(cfg.WorkDir, file)); err != nil {
 				return err

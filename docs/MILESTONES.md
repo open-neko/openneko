@@ -153,7 +153,7 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 
 ## M5b — File-backed batch path and MCP read/interaction slice
 
-**Partial status (2026-09-26):** customer-surface memory and library search, plus
+**Partial status (2026-09-27):** customer-surface memory and library search, plus
 actor-scoped records catalog/find/get, are admitted through the actual OpenNeko
 stdio bridge with pinned schemas. The broker binds org/run identity; records-only
 Harness turns cannot use GraphJin lookup or customer memory. Isolated OpenShell +
@@ -163,8 +163,8 @@ run now uses the real entitlement lookup and pgvector search against an isolated
 Postgres row, with a deterministic embedding fixture. Hermes regression checks
 passed. Records catalog was tested end to end with an empty registry; find/get
 used a synthetic broker behind the real bridge and still need data-backed
-acceptance. Uploaded-document and browser search tasks, and the Daily Lead Union
-batch, still need connected acceptance.
+acceptance. Uploaded-document and browser search tasks, and the real Daily Lead
+Union batch, still need connected acceptance.
 
 The controlled query-to-file runner now consumes the pinned script's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query
@@ -186,10 +186,13 @@ the read again. A receipt without response still fails closed.
 With a trusted run ID, the runner also names and labels its OpenShell sandbox
 deterministically; a retry can remove an exact-match orphan but refuses to
 delete a mismatched owner. The host must hold database ownership before using
-this retry path. The opt-in worker queue now binds a `workflow_run` and locks
-the database owner before execution; the isolated handler and real pg-boss
-queue fixtures use a fake runner and prove one artifact on duplicate delivery.
-A connected GraphJin/script run remains open.
+this retry path. The opt-in worker queue binds a `workflow_run` and locks
+the database owner before execution. An isolated production-queue run now uses
+the Go runner and OpenShell, obtains the seeded `REF-42` row through the host-only
+GraphJin broker, and publishes a validated CSV with one query. The duplicate
+delivery fixture proves one artifact event. The workflow contract supplies the
+CSV columns and artifact filename; neither is fixed to Daily Lead Union.
+A real-data Daily Lead Union run remains open.
 This is **not yet** an Ax tool
 or browser acceptance: do not mint that grant in normal runs until workflow
 admission, batch recovery and artifact projection are fully qualified.
