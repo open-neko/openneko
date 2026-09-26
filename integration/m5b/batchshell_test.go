@@ -64,7 +64,7 @@ func TestOpenShellBatchCompartment(t *testing.T) {
 	if image == "" {
 		image = "harness-openneko:m3"
 	}
-	runner, err := batchshell.New(cfg, batchshell.Options{CLI: cli, Gateway: os.Getenv("HARNESS_BATCH_TEST_GATEWAY"), Image: image, BundleRoot: bundle, BundleSHA256: bundleHash})
+	runner, err := batchshell.New(cfg, batchshell.Options{CLI: cli, Gateway: os.Getenv("HARNESS_BATCH_TEST_GATEWAY"), Image: image, BundleRoot: bundle, BundleSHA256: bundleHash, RunID: "fixture-batch-run"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -179,6 +179,10 @@ Artifact publication is blocked if sandbox deletion fails.
 Query responses now persist before their receipts; if a host dies in that gap,
 resume validates the saved response and repairs its receipt without dispatching
 the read again. A receipt without response still fails closed.
+With a trusted run ID, the runner also names and labels its OpenShell sandbox
+deterministically; a retry can remove an exact-match orphan but refuses to
+delete a mismatched owner. The host must hold database ownership before using
+this retry path. The worker queue and that owner lock are not wired yet.
 This is **not yet** an Ax tool
 or a worker/web acceptance: do not mint that grant in normal runs until the
 host-owned job, batch recovery and artifact projection are wired.

@@ -25,7 +25,7 @@ const RemoteWorkDir = "/sandbox/batch/work"
 const RemoteCacheDir = RemoteWorkDir + "/graphjin-cache"
 
 type Options struct {
-	CLI, Gateway, Image, BundleRoot, BundleSHA256, CPU, Memory string
+	CLI, Gateway, Image, BundleRoot, BundleSHA256, CPU, Memory, RunID string
 }
 
 type Runner struct {
@@ -35,12 +35,13 @@ type Runner struct {
 }
 
 var sha256Hex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+var runIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,128}$`)
 
 // New snapshots the entire trusted skill bundle before uploading it. A pinned
 // top-level script hash alone cannot protect imported vendor code.
 func New(cfg batch.Config, opts Options) (*Runner, error) {
 	if !filepath.IsAbs(opts.CLI) || !filepath.IsAbs(opts.BundleRoot) || !filepath.IsAbs(cfg.Script) || !sha256Hex.MatchString(opts.BundleSHA256) ||
-		!filepath.IsAbs(cfg.WorkDir) || opts.Gateway == "" || opts.Image == "" || cfg.ScriptCacheDir != RemoteCacheDir {
+		!filepath.IsAbs(cfg.WorkDir) || opts.Gateway == "" || opts.Image == "" || cfg.ScriptCacheDir != RemoteCacheDir || (opts.RunID != "" && !runIDPattern.MatchString(opts.RunID)) {
 		return nil, fmt.Errorf("invalid isolated batch binding")
 	}
 	if info, err := os.Stat(opts.CLI); err != nil || !info.Mode().IsRegular() {
@@ -91,9 +92,14 @@ func New(cfg batch.Config, opts Options) (*Runner, error) {
 		os.RemoveAll(stage)
 		return nil, err
 	}
+	name := "hb-" + hex.EncodeToString(id)
+	if opts.RunID != "" {
+		sum := sha256.Sum256([]byte(opts.RunID))
+		name = "hb-" + hex.EncodeToString(sum[:8])
+	}
 	return &Runner{opts: opts, workDir: cfg.WorkDir,
 		script: "/sandbox/batch/skill/" + filepath.ToSlash(rel),
-		name:   "hb-" + hex.EncodeToString(id), stage: stage, policy: policy}, nil
+		name:   name, stage: stage, policy: policy}, nil
 }
 
 // Step mirrors only trusted response files into the sandbox and only request
@@ -103,10 +109,20 @@ func (r *Runner) Step(ctx context.Context, cfg batch.Config, output io.Writer) e
 		return fmt.Errorf("batch compartment changed")
 	}
 	if !r.created {
+		if r.opts.RunID != "" {
+			if err := r.reap(ctx); err != nil {
+				return err
+			}
+		}
 		r.created = true // On ambiguous create failure Close still attempts deletion.
-		if err := r.call(ctx, nil, "sandbox", "create", "--name", r.name, "--from", r.opts.Image,
-			"--cpu", r.opts.CPU, "--memory", r.opts.Memory, "--no-tty", "--no-auto-providers",
-			"--policy", r.policy, "--detach", "--", "/bin/sleep", "infinity"); err != nil {
+		create := []string{"sandbox", "create", "--name", r.name, "--from", r.opts.Image,
+			"--cpu", r.opts.CPU, "--memory", r.opts.Memory, "--no-tty", "--no-auto-providers"}
+		if r.opts.RunID != "" {
+			create = append(create, "--label", "openneko.batch_run="+r.opts.RunID)
+		}
+		create = append(create,
+			"--policy", r.policy, "--detach", "--", "/bin/sleep", "infinity")
+		if err := r.call(ctx, nil, create...); err != nil {
 			return err
 		}
 		if err := r.call(ctx, nil, "sandbox", "upload", r.name, filepath.Join(r.stage, "skill"), "/sandbox/batch", "--no-git-ignore"); err != nil {
@@ -144,6 +160,35 @@ func (r *Runner) Step(ctx context.Context, cfg batch.Config, output io.Writer) e
 		}
 	}
 	return runErr
+}
+
+// A restarted host owner removes only its own named sandbox before replaying
+// saved query responses. The caller must hold the run's database ownership.
+func (r *Runner) reap(ctx context.Context) error {
+	var raw bytes.Buffer
+	if err := r.call(ctx, &raw, "sandbox", "list", "-o", "json", "--limit", "500"); err != nil {
+		return err
+	}
+	var boxes []struct {
+		Name   string            `json:"name"`
+		Labels map[string]string `json:"labels"`
+	}
+	if json.Unmarshal(raw.Bytes(), &boxes) != nil {
+		return fmt.Errorf("invalid batch sandbox inventory")
+	}
+	for _, box := range boxes {
+		if box.Name != r.name {
+			continue
+		}
+		if box.Labels["openneko.batch_run"] != r.opts.RunID {
+			return fmt.Errorf("batch sandbox ownership mismatch")
+		}
+		return r.call(ctx, nil, "sandbox", "delete", r.name)
+	}
+	if len(boxes) >= 500 {
+		return fmt.Errorf("batch sandbox inventory incomplete")
+	}
+	return nil
 }
 
 // Close is mandatory even after cancellation or an ambiguous create result.

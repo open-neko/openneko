@@ -48,7 +48,7 @@ func main() {
 	runner, err := batchshell.New(cfg, batchshell.Options{
 		CLI: os.Getenv("HARNESS_OPENSHELL_BIN"), Gateway: os.Getenv("OPENSHELL_GATEWAY"),
 		Image: os.Getenv("HARNESS_BATCH_IMAGE"), BundleRoot: os.Getenv("HARNESS_BATCH_BUNDLE_DIR"),
-		BundleSHA256: os.Getenv("HARNESS_BATCH_BUNDLE_SHA256"),
+		BundleSHA256: os.Getenv("HARNESS_BATCH_BUNDLE_SHA256"), RunID: os.Getenv("HARNESS_BATCH_RUN_ID"),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "invalid batch compartment:", err)

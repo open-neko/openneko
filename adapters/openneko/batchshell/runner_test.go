@@ -1,8 +1,10 @@
 package batchshell
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,5 +47,46 @@ func TestBundlePinIncludesImportsAndRejectsLinks(t *testing.T) {
 	}
 	if _, err := BundleSHA256(root); err == nil {
 		t.Fatal("symlink accepted in uploaded bundle")
+	}
+}
+
+func TestReapOnlyMatchingOwnedSandbox(t *testing.T) {
+	root := t.TempDir()
+	cli, marker := filepath.Join(root, "openshell"), filepath.Join(root, "deleted")
+	script := fmt.Sprintf(`#!/bin/sh
+case "$*" in
+  *"sandbox list"*) printf '%%s\n' '[{"name":"hb-fixture","labels":{"openneko.batch_run":"run-1"}}]' ;;
+  *"sandbox delete hb-fixture"*) touch '%s' ;;
+  *) exit 1 ;;
+esac
+`, marker)
+	if err := os.WriteFile(cli, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{opts: Options{CLI: cli, Gateway: "fixture", RunID: "run-1"}, name: "hb-fixture"}
+	if err := runner.reap(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("owned sandbox was not deleted: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	script = fmt.Sprintf(`#!/bin/sh
+case "$*" in
+  *"sandbox list"*) printf '%%s\n' '[{"name":"hb-fixture","labels":{"openneko.batch_run":"another-run"}}]' ;;
+  *"sandbox delete hb-fixture"*) touch '%s' ;;
+  *) exit 1 ;;
+esac
+`, marker)
+	if err := os.WriteFile(cli, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.reap(context.Background()); err == nil {
+		t.Fatal("foreign sandbox was deleted")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("foreign sandbox delete marker: %v", err)
 	}
 }

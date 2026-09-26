@@ -12,7 +12,10 @@ It takes one UTC day argument and trusted `HARNESS_BATCH_SCRIPT`,
 `HARNESS_BATCH_SCRIPT_SHA256`, `HARNESS_BATCH_BUNDLE_DIR`,
 `HARNESS_BATCH_BUNDLE_SHA256`, `HARNESS_BATCH_WORK_DIR`,
 `HARNESS_BATCH_ARTIFACT_DIR`, `HARNESS_BATCH_IMAGE`, `HARNESS_OPENSHELL_BIN`,
-and `OPENSHELL_GATEWAY` bindings. The whole skill bundle, including imports, is
+and `OPENSHELL_GATEWAY` bindings. A trusted worker may also set
+`HARNESS_BATCH_RUN_ID` after acquiring database ownership for that Work run;
+this gives its sandbox a stable name and lets a retry remove only a stranded
+sandbox carrying the same run label. The whole skill bundle, including imports, is
 pinned. The script runs in a separate OpenShell sandbox without a provider,
 broker token, or network grant. Its only data channel is the query-cache file
 handoff; the host owns `batchRead` GraphJin calls, receipts and artifact
