@@ -210,10 +210,14 @@ LLMs directly. Harness/Ax alone owns model routing, budgets and telemetry;
 scripts exchange governed data requests and files.
 The prototype pins one workflow name and script in trusted worker config.
 Before general admission, replace that binding with a versioned workflow
-executor registry and snapshot the selected contract at admission so edits
-cannot silently change a queued run. The dispatch outbox, pg-boss expiry for
-long executions, cancellation, and browser-visible workflow result remain
-part of that admission path.
+executor registry and snapshot the selected contract in the API admission
+transaction. The caller submits immutable input and receives `202 Accepted`
+with a run ID; it cannot edit or approve the run while queued. A later operator
+edit to the workflow definition affects only later admissions, not the
+accepted run. The caller polls for completed, failed, or cancelled status and
+downloads an artifact only after successful validation and publication.
+The dispatch outbox, pg-boss expiry for long executions, cancellation, and
+browser-visible workflow result remain part of that admission path.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal
