@@ -43,14 +43,14 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | M5a catalog | Native/direct/MCP fixture calls share Ax, schema admission, operation journal and catalog binding | Package and compare the full consumer capability inventory and recovery behavior on connected runs |
 | M5b reads/batch | One seeded memory read passed the worker/OpenShell/broker/MCP bridge; controlled query-to-file runner and scoped batch-read broker grant pass local fixtures | Admit the batch as host-owned work, connect GraphJin data, publish/download the CSV, then qualify records/library reads and clarification/UI paths |
 | M5c mutations | Pack-action proposal is narrowed to host-admitted action kinds and governed effects | Qualify remaining product writes at their actual effect boundaries, including crash and duplicate delivery |
-| M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; a separate artifact-only writable root produced a CSV and one Work artifact event; live solo-owner HTTP download returned exact bytes | Qualify the browser link, add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
+| M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; an artifact-only root produced a CSV and one Work artifact event; the Work browser rendered and requested its link, and the live route returned exact bytes | Add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
 | M5e delegation | Ax API and ownership design researched | Implement narrowed child execution with shared budgets and cancellation, then connected verification |
 | M6 efficiency | Durable pre-call model request limit survives resume; two-call regression passes; Jev budget triage is specified for shadow evaluation | Token/cost accounting, approved routing/fallback, class-calibrated dynamic budgets, context references/compaction and connected multi-route tests |
 | M7 parity | Capability inventory and evaluation rules documented | Full Hermes outcome comparison, tenant/load checks and task-quality evidence |
 | M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
 
 Local tests do not close M5b–M8. The Daily Lead Union case still lacks a connected
-GraphJin source and the worker/web artifact path. No live Gemini key was used.
+GraphJin source and a validated batch-to-Work artifact path. No live Gemini key was used.
 
 Recovery is bounded to persisted evidence and new Ax attempts, not arbitrary VM
 resumption. Production adapters need explicit read-only status implementations
@@ -77,5 +77,11 @@ The subsequent rerun also passed `M5_QUEUE_ARTIFACT_PASS`: OpenShell returned th
 exact small CSV, Work emitted its artifact event and another run's file was not
 searchable. The isolated live Work HTTP route returned the exact `lead_id\nLEAD-42\n`
 bytes as a CSV attachment for the solo owner and rejected an unissued filename
-with 404. The Work page remained in its loading state, so browser-link acceptance
-and multi-user authorization still require connected verification.
+with 404. A fresh isolated run opened the owned Work thread at the documented
+`localhost:18121` origin, rendered the `result.csv` link, and requested it through
+the browser with HTTP 200. A direct fetch of that same link matched the sandbox
+bytes (SHA-256 `5ef30c71075a31302e3aa6f04ef043686bcf04ccf1eae271f487b43d0db3970b`).
+The earlier loading screen was caused by opening the Next dev server via
+`127.0.0.1`, whose dev resources it rejected as a cross-origin request. This
+qualifies the small solo-owner artifact path; multi-user authorization and the
+full batch artifact still need connected verification.

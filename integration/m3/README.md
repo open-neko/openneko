@@ -91,7 +91,11 @@ tools used only the run's artifact directory, wrote `result.csv` inside OpenShel
 and the production queue handler recovered its exact bytes and emitted one Work
 artifact event. A sibling run's marker was absent from file search. The existing
 web download-route tests passed separately (20 assertions across authorization
-and file handling), but a browser download of this specific run was not exercised.
+and file handling). A later isolated rerun opened the artifact thread at
+`http://localhost:18121/work/6f3dd1d7-5e79-43ce-a8ac-279ec3b57145`,
+rendered and clicked its `result.csv` link, and observed HTTP 200. Fetching that
+same link returned the exact `lead_id\nLEAD-42\n` bytes as a CSV attachment.
+Use `localhost` for the Next dev origin; `127.0.0.1` blocks its dev resources.
 The large validated Daily Lead Union batch artifact remains an M5b gate.
 
 Automated verification includes Go race tests/vet, interrupted-read evidence

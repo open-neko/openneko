@@ -301,8 +301,11 @@ found the current thread's CSV, excluded a sibling thread's upload and recorded
 no GraphJin operation. A second queued run created a small CSV with `file_write`,
 pulled it back from OpenShell, emitted one Work artifact event and excluded a
 sibling run's file. The existing web download-route authorization suite passes,
-but this exact CSV has not yet been downloaded through a live browser. The
-validated large batch artifact and general shell path remain open. External writers do not share
+and the 2026-09-26 isolated Work page rendered `result.csv` as an artifact link.
+Clicking it returned HTTP 200; fetching the same URL returned the exact
+`lead_id\nLEAD-42\n` CSV bytes with attachment headers. This qualifies a small
+artifact through the browser, not the Daily Lead Union batch. The validated
+large batch artifact and general shell path remain open. External writers do not share
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.
 
