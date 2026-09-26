@@ -28,6 +28,28 @@ const workspace: AgentWorkspace = {
 const controlPlane = {} as AgentControlPlane;
 
 describe("runAgentBackend", () => {
+  it("passes only the run-scoped memory read binding to Harness customer turns", async () => {
+    const seen: AgentRunOptions[] = [];
+    const backend: AgentBackend = {
+      id: "harness",
+      capabilities: { mcpTools: false, brokerLookup: true, sessionResume: false },
+      async run(opts) { seen.push(opts); return { status: "completed", finalText: "done" }; },
+    };
+    for (const dataSurface of ["customer", "records"] as const) {
+      await runAgentBackend({ backend, prompt: "prompt", userMessage: "search memory", orgId: "org-1", threadId: "thread-1", runId: "run-1", workspace, controlPlane, dataSurface, emit: async () => {} });
+    }
+    expect(seen[0]?.mcpServers).toBeUndefined();
+    expect(seen[0]?.mcpBridgeEnv).toEqual({
+      OPENNEKO_HARNESS_MCP_MEMORY_READ: "1",
+      OPENNEKO_MCP_MODE: "work",
+      OPENNEKO_MCP_ORG_ID: "org-1",
+      OPENNEKO_MCP_THREAD_ID: "thread-1",
+      OPENNEKO_MCP_RUN_ID: "run-1",
+      OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
+    });
+    expect(seen[1]?.mcpBridgeEnv).toBeUndefined();
+  });
+
   it("mounts actor-scoped native records tools for MCP-capable chat agents", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {

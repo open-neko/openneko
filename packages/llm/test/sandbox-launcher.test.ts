@@ -892,7 +892,7 @@ describe("makeSandboxRunCore", () => {
       const tokenFor=vi.fn(()=>"restricted-token");
       const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{},brokerUrl:"http://broker",brokerTokenFor:tokenFor});
       await expect(core(input)).rejects.toThrow(mode === "collision" ? "outcome unknown" : "without a result");
-      if(mode === "lost-result") expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-read-only"}));
+      if(mode === "lost-result") expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-read-only",memoryRead:true}));
       expect(h.calls.some(c=>c.args.includes("delete"))).toBe(false);
       expect(h.calls.find(c=>c.args.includes("create"))?.args).toContain("openneko.recovery=retain");
       const before=h.calls.length;
@@ -910,7 +910,7 @@ describe("makeSandboxRunCore", () => {
       const input = {...fakeInput(async()=>{}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]),workspace:fullWorkspace(root)};
       input.packActions = [{kind:"fixture.update",description:"Update fixture",scope:"external",default_mode:"ask"}];
       await expect(core(input)).rejects.toThrow("without a result");
-      expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-governed"}));
+      expect(tokenFor).toHaveBeenCalledWith(expect.objectContaining({profile:"harness-governed",memoryRead:true}));
     } finally { await rm(root,{recursive:true,force:true}); }
   });
 

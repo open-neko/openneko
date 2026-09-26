@@ -1080,6 +1080,7 @@ function makeSandboxCore(
                   threadId,
                   kind,
                   ...(input.backend.id === "harness" ? { profile: kind === "work" && (input as RunAgentBackendInput).packActions?.length ? "harness-governed" as const : "harness-read-only" as const } : {}),
+                  ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { memoryRead: true } : {}),
                 }),
                 }
               : {}),
