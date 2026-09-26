@@ -252,7 +252,9 @@ try {
     const realThread=await createWorkThread(orgId,'M5 GraphJin batch','workflow');
     const realRun=await createWorkRun(orgId,realThread.id,'harness',{userId:null,role:'service'});
     const realContract={version:1,executor:'query-to-file',artifactName:'references.csv',columns:['reference']};
-    const [realWorkflow]=await db().insert(workflow_definition).values({org_id:orgId,name:'Fixture GraphJin workflow',
+    const [realWorkflow]=await db().insert(workflow_definition).values({
+      ...(process.env.HARNESS_M3_WORKFLOW_ID ? {id:process.env.HARNESS_M3_WORKFLOW_ID} : {}),
+      org_id:orgId,name:'Fixture GraphJin workflow',
       output_contract:{harnessBatch:realContract}}).returning({id:workflow_definition.id});
     process.env.HARNESS_BATCH_WORKFLOW_ID=realWorkflow.id;
     const [realWorkflowRun]=await db().insert(workflow_run).values({org_id:orgId,workflow_id:realWorkflow.id,
@@ -281,8 +283,18 @@ try {
     assert.deepEqual(realEvents.map(row=>row.payload.artifact.path),[`runs/${realRun.id}/artifacts/references.csv`]);
     console.log('M5_QUEUE_BATCH_GRAPHJIN_PASS',realRun.id);
     const {token}=await enableWorkflowApiAccess({orgId,workflowId:realWorkflow.id,actor:{userId:soloAdmin.id,role:'admin'}});
-    const admitted=await admitWorkflowApiRun({workflowId:realWorkflow.id,token,idempotencyKey:'m5-graphjin-api-batch',
-      mode:'single',value:{targetDay:'2026-09-15'},clientFingerprint:`m5-${orgId}`});
+    const httpApi=process.env.HARNESS_M3_API_HTTP==='1';
+    const apiBase='http://localhost:18121';
+    const admitted=httpApi
+      ? await (async()=>{
+          const response=await fetch(`${apiBase}/api/v1/workflows/${realWorkflow.id}/runs`,{
+            method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`,
+              'idempotency-key':'m5-graphjin-api-batch'},body:JSON.stringify({targetDay:'2026-09-15'})});
+          if(response.status!==202) throw new Error(`Workflow HTTP admission returned ${response.status}: ${await response.text()}`);
+          return response.json() as Promise<{runId:string;statusUrl:string}>;
+        })()
+      : await admitWorkflowApiRun({workflowId:realWorkflow.id,token,idempotencyKey:'m5-graphjin-api-batch',
+          mode:'single',value:{targetDay:'2026-09-15'},clientFingerprint:`m5-${orgId}`});
     await db().update(workflow_definition).set({name:'Renamed after API admission',
       output_contract:{harnessBatch:{...realContract,artifactName:'later.csv',columns:['later']}}})
       .where(eq(workflow_definition.id,realWorkflow.id));
@@ -302,6 +314,20 @@ try {
     const apiEvents=(await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,apiRow.work_run_id])).rows[0].n;
     assert.equal(apiEvents,1);
     console.log('M5_API_BATCH_GRAPHJIN_PASS',admitted.runId);
+    if(httpApi){
+      const headers={authorization:`Bearer ${token}`};
+      const status=await fetch(new URL(admitted.statusUrl,apiBase),{headers});
+      assert.equal(status.status,200);
+      const outcome=await status.json() as {status:string;artifact:{url:string}|null};
+      assert.equal(outcome.status,'completed');
+      assert.ok(outcome.artifact?.url);
+      const download=await fetch(new URL(outcome.artifact.url,apiBase),{headers});
+      assert.equal(download.status,200);
+      assert.match(download.headers.get('content-type')??'',/text\/csv/);
+      assert.equal(download.headers.get('content-disposition'),`attachment; filename="workflow-${admitted.runId}.csv"`);
+      assert.equal((await download.text()).replaceAll('\r\n','\n'),'reference\nREF-42\n');
+      console.log('M5_HTTP_API_BATCH_GRAPHJIN_PASS',admitted.runId);
+    }
     if (process.env.HARNESS_M3_WEB === '1')
         await writeFile(join(process.env.HARNESS_STATE!,'m5-batch-workflow-run'),realWorkflowRun.id);
 } finally {
