@@ -423,13 +423,17 @@ excluded from the rollout cohort. Do not claim full Hermes parity while they are
 
 ## M6 — Ax routing, context and efficiency
 
-**Local status (2026-09-26):** Ax's invocation-scoped rate limiter now admits a
+**Local status (2026-09-27):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably
 recorded. A trusted `max_model_calls` limit (16 by default, at most 64) is
 enforced across Ax attempts; resume reconstructs spent calls from the checkpoint.
 A two-call fixture proved that interruption and resume do not authorize a third
 request. This limits calls even when provider usage is missing, but does not yet
-measure tokens, cost, multi-provider routing or child/remote work.
+measure tokens, cost, multi-provider routing or child/remote work. A run-local
+Goja handoff now preserves bounded distilled evidence for executor code. A local
+Ax fixture verified that an 85 KB observation stayed out of the executor model
+request while its narrowed reference supported a second tool call; the connected
+worker/OpenShell/GraphJin regression passed after this change.
 
 **Deliver:** approved Ax model profiles and fallback; aggregate limits across model
 stages, tools, retries and child/remote work; context compaction preserving original

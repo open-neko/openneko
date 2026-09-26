@@ -180,12 +180,13 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		}
 	}
 	if events.err == nil && ctx.Err() == nil {
-		runtime := axgoja.NewRuntime()
+		baseRuntime := axgoja.NewRuntime()
 		if len(admitted) > 0 {
 			// Goja counts host-call wait time in its deadline. Allow the broker
 			// its 45-second budget plus JS overhead, within the two-minute run cap.
-			runtime = axgoja.NewRuntime(axgoja.WithRuntimePolicy(ax.Object("timeoutMs", 60_000)))
+			baseRuntime = axgoja.NewRuntime(axgoja.WithRuntimePolicy(ax.Object("timeoutMs", 60_000)))
 		}
+		runtime := &handoffRuntime{Runtime: baseRuntime}
 		register := func(capability admittedTool) {
 			name := capability.Name
 			runtime.RegisterCallable(name, func(value ax.Value) (ax.Value, error) {
@@ -268,7 +269,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		for _, capability := range admitted {
 			register(capability)
 		}
-		instruction := "Answer using the supplied context. Do not invent tool access."
+		instruction := "Answer using the supplied context. Do not invent tool access. Distilled evidence is available to executor code as globalThis.harnessEvidence."
 		for _, capability := range admitted {
 			instruction += " Available JavaScript function " + capability.Name + "(input): " + capability.Description + " Input JSON schema: " + string(capability.InputSchema) + ". Effect: " + capability.Effect + "."
 		}

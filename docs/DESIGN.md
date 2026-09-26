@@ -158,18 +158,23 @@ single approved profile, not GraphJin's prompt-text stage detector.
 
 The current `internal/agent/run.go` already owns one bounded Ax run, pins a
 trusted tool catalog and reuses durable operation receipts on continuation.
-It still accepts any nonempty answer as `completed`, then labels some failed
-tool outcomes `partial`; it has no general evidence-qualified terminal gate or
-explicit distiller-to-executor evidence handoff. Add those narrow checks where
-the real tool/result contract needs them, without importing GraphJin's large
-domain protocol into the core.
+Its run-local Goja wrapper now carries JSON-bounded distilled evidence into
+executor code as `harnessEvidence` across Ax's stage patch. The integration
+fixture passes a large read result through the distiller, verifies the executor
+uses its narrow reference without another read, and checks that the bulk value
+does not enter the executor model request. The binding is redacted from runtime
+inspection and snapshots; it is not a durable checkpoint. The runner still
+accepts any nonempty answer as `completed`, then labels some failed tool
+outcomes `partial`; it has no general evidence-qualified terminal gate. Add
+that narrow check where the real tool/result contract needs it, without
+importing GraphJin's large domain protocol into the core.
 
-Before broadening the executor, test a large-result distiller-to-executor handoff,
-a denied operation that produces no effect, a completed operation whose final
-answer must cite its receipt, and step exhaustion with sufficient versus
-insufficient evidence. Record per-stage model calls, usage coverage, actor steps,
-tool outcomes and finalization cost. GraphJin remains one admitted remote
-capability with its own internal executor and authorization.
+Before broadening the executor, test a denied operation that produces no effect,
+a completed operation whose final answer must cite its receipt, and step
+exhaustion with sufficient versus insufficient evidence. Record per-stage model
+calls, usage coverage, actor steps, tool outcomes and finalization cost. GraphJin
+remains one admitted remote capability with its own internal executor and
+authorization.
 
 ### Delegation, planning and verification
 
