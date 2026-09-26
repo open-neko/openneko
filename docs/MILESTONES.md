@@ -20,7 +20,7 @@ remain. Onboarding was skipped, so no admin password or model key was configured
 The released worker still uses Hermes and OpenShell 0.0.54.
 The first M5b memory and library search slices passed through the feature worker,
 Harness image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
-The broker results were seeded; the batch task and broader MCP/interaction surface
+The memory result and library database row were seeded; the batch task and broader MCP/interaction surface
 still need connected acceptance. Full M5c remains open. Demo health alone does
 not qualify either milestone.
 Hermes remains the default until rollout.
@@ -155,9 +155,11 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 admitted through the actual OpenNeko stdio bridge with pinned schemas. The broker
 binds org/run identity and grants each route only to customer Harness tokens;
 records runs and writes remain denied. Isolated OpenShell + worker + broker + Ax
-runs each searched a seeded result, recorded one finished Go operation and
-returned the answer. Hermes regression checks passed. Real library data and the
-Daily Lead Union batch still need connected acceptance.
+runs each recorded one finished Go operation and returned the answer. The library
+run now uses the real entitlement lookup and pgvector search against an isolated
+Postgres row, with a deterministic embedding fixture. Hermes regression checks
+passed. Uploaded-document and browser search tasks, and the Daily Lead Union
+batch, still need connected acceptance.
 
 The local controlled batch runner now consumes the ported skill's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query

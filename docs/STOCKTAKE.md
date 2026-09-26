@@ -41,7 +41,7 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | --- | --- | --- |
 | M1–M4 | Locally qualified at their bounded scope; recovery and real OpenShell/consumer checks recorded above | Preserve regression coverage as capabilities expand; accepted idle-proxy cancellation remains observable |
 | M5a catalog | Native/direct/MCP fixture calls share Ax, schema admission, operation journal and catalog binding | Package and compare the full consumer capability inventory and recovery behavior on connected runs |
-| M5b reads/batch | Seeded memory and library searches passed the worker/OpenShell/broker/MCP bridge; controlled query-to-file runner and scoped batch-read broker grant pass local fixtures | Isolate batch-script credentials, admit host-owned batch work, connect GraphJin data, publish/download the CSV, then qualify real library data, records reads and clarification/UI paths |
+| M5b reads/batch | Seeded memory search and a real pgvector/entitlement library search passed the worker/OpenShell/broker/MCP bridge with deterministic embeddings; controlled query-to-file runner and scoped batch-read broker grant pass local fixtures | Isolate batch-script credentials, admit host-owned batch work, connect GraphJin data, publish/download the CSV, then qualify uploaded-document/browser search, records reads and clarification/UI paths |
 | M5c mutations | Pack-action proposal is narrowed to host-admitted action kinds and governed effects | Qualify remaining product writes at their actual effect boundaries, including crash and duplicate delivery |
 | M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; an artifact-only root produced a CSV and one Work artifact event; the Work browser rendered and requested its link, and the live route returned exact bytes | Add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
 | M5e delegation | Ax API and ownership design researched | Implement narrowed child execution with shared budgets and cancellation, then connected verification |
@@ -87,3 +87,8 @@ qualifies the small solo-owner artifact path; multi-user authorization and the
 full batch artifact still need connected verification.
 The optional M3 web run now repeats the exact-byte/attachment/404 route checks
 against each newly created queue artifact and reports `M5_WEB_ARTIFACT_PASS`.
+The isolated M3 suite also passed a library search against its actual Postgres
+pgvector row and server-side run entitlement, using a deterministic embedding
+response. The fixture organization is deleted before queued acceptance so it
+cannot be selected as the queue's default org. This is not yet a browser task
+against an uploaded customer document.

@@ -103,9 +103,11 @@ Use `localhost` for the Next dev origin; `127.0.0.1` blocks its dev resources.
 The large validated Daily Lead Union batch artifact remains an M5b gate.
 
 An additional isolated rerun passed `mcp_library_search` through the real
-OpenNeko bridge, scoped broker, OpenShell worker and Go/Ax checkpoint. The broker
-returned a synthetic `TERMS-42` document concept; this does not yet qualify a
-connected document-library search or uploaded-document workflow.
+OpenNeko bridge, scoped broker, OpenShell worker and Go/Ax checkpoint. A later
+rerun resolved `TERMS-42` from a seeded pgvector row through the real library
+search and run-entitlement code, using a deterministic embedding response. Its
+temporary organization is removed before the queued Work probe. Uploaded-document
+and browser search workflows still need acceptance.
 
 Automated verification includes Go race tests/vet, interrupted-read evidence
 retention, completed-input replay, typed remote statuses, protocol bounds,

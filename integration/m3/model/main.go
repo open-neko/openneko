@@ -60,6 +60,16 @@ func main() {
 		mu.Unlock()
 		w.WriteHeader(204)
 	})
+	http.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		vector := make([]float64, 384)
+		vector[0] = 1
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "Xenova/all-MiniLM-L6-v2", "dimensions": 384, "vector": vector})
+	})
 	http.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Model    string          `json:"model"`
