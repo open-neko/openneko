@@ -11,7 +11,7 @@ import { makeSandboxRunCore } from "../src/work/sandbox-launcher";
 
 const live = process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
 
-live("runs a journaled Harness memory read through OpenShell, MCP and the broker", async () => {
+live("runs journaled Harness memory and library reads through OpenShell, MCP and the broker", async () => {
   if (process.env.NEKO_PG_PORT !== "18119" || !process.env.HARNESS_STATE) {
     throw new Error("isolated M3 environment required");
   }
@@ -39,11 +39,17 @@ live("runs a journaled Harness memory read through OpenShell, MCP and the broker
   await db().insert(work_thread).values({ id: threadId, org_id: orgId, title: "Memory" });
   await db().insert(work_run).values({ id: runId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
   let searches = 0;
+  let librarySearches = 0;
   const controlPlane = {
     async searchWorkMemoryByContext(args: { orgId: string; runId: string; query: string }) {
       expect(args).toMatchObject({ orgId, runId, query: "find policy" });
       searches++;
       return [{ id: "memory-1", text: "Fixture policy" }];
+    },
+    async searchLibraryForRun(args: { orgId: string; runId: string; query: string }) {
+      expect(args).toMatchObject({ orgId, query: "find contract" });
+      librarySearches++;
+      return [{ concept: { path: "contracts/example", type: "contract", title: "Fixture contract", description: "Fixture", status: "stable", sources: [], body: "TERMS-42" }, layer: "team", score: 1 }];
     },
   } as unknown as AgentControlPlane;
   const broker = await startAgentBroker({ port: 0, hostAlias: "host.docker.internal", controlPlane });
@@ -70,6 +76,31 @@ live("runs a journaled Harness memory read through OpenShell, MCP and the broker
     expect(snapshot.operations[0]).toMatchObject({ tool: "mcp_memory_search", finished: true });
     expect(snapshot.operations[0].binding).toMatch(/^[a-f0-9]{64}$/);
     expect(snapshot.events).toContainEqual(expect.objectContaining({ type: "tool.finished", name: "mcp_memory_search", effect: "read" }));
+
+    const libraryRunId = randomUUID();
+    const libraryWorkspace: AgentWorkspace = {
+      ...workspace,
+      runRoot: join(workspace.runsRoot, libraryRunId),
+      artifactRoot: join(workspace.runsRoot, libraryRunId, "artifacts"),
+      binRoot: join(workspace.runsRoot, libraryRunId, "bin"),
+    };
+    for (const dir of [libraryWorkspace.runRoot, libraryWorkspace.artifactRoot, libraryWorkspace.binRoot]) await mkdir(dir, { recursive: true });
+    await db().insert(work_run).values({ id: libraryRunId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
+    await writeFile(join(hermesHome, "config.yaml"), "model:\n  provider: custom\n  default: harness-library-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const libraryEvents: AgentEvent[] = [];
+    const libraryResult = await runCore({
+      backend: makeAgentBackend({ id: "harness" }), orgId, threadId, runId: libraryRunId, workspace: libraryWorkspace,
+      prompt: "Search the document library for the contract and report it.", userMessage: "Find the contract.",
+      dataSurface: "customer", pluginActions: [], emit: async (event) => { libraryEvents.push(event); },
+    });
+    expect(libraryResult.status).toBe("completed");
+    expect(libraryResult.finalText).toContain("TERMS-42");
+    expect(librarySearches).toBe(1);
+    expect(libraryEvents).toContainEqual(expect.objectContaining({ type: "tool_start", name: "mcp_library_search" }));
+    const librarySnapshot = JSON.parse(await readFile(join(libraryWorkspace.runRoot, ".harness", `${createHash("sha256").update(libraryRunId).digest("hex")}.json`), "utf8"));
+    expect(librarySnapshot.operations).toHaveLength(1);
+    expect(librarySnapshot.operations[0]).toMatchObject({ tool: "mcp_library_search", finished: true });
+    expect(librarySnapshot.events).toContainEqual(expect.objectContaining({ type: "tool.finished", name: "mcp_library_search", effect: "read" }));
   } finally {
     await broker.close();
   }
