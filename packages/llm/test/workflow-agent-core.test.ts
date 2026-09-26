@@ -48,6 +48,7 @@ describe("runWorkflowAgentBackend", () => {
       workspace,
       controlPlane,
       emit: async () => {},
+      timeoutMs: 1_800_000,
     });
 
     expect(captured?.mcpBridgeEnv).toMatchObject({
@@ -59,6 +60,7 @@ describe("runWorkflowAgentBackend", () => {
       OPENNEKO_MCP_WORKFLOW_RUN_ID: "workflow-run-1",
       OPENNEKO_MCP_TRIGGERED_BY_OBSERVATION_ID: "obs-1",
     });
+    expect(captured?.timeoutMs).toBe(1_800_000);
     expect(captured?.mcpServers).toEqual(
       expect.objectContaining({
         neko_action: expect.anything(),

@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, app_user, db, eq, sql, organization, isUnclaimedSoloEmail, setLocalAdministrator } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
-import { getAuthProvider } from "@/lib/auth";
+import { getAuthGateStatus } from "@/lib/auth";
 import { noSignInResponse } from "@/lib/user-admin-gate";
 import { requestWorker } from "@/lib/groups-admin";
 
@@ -25,7 +25,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export async function POST(request: NextRequest) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
-  if (!(await getAuthProvider())) return noSignInResponse();
+  const gate = await getAuthGateStatus();
+  if (!gate.provider && !gate.pending) return noSignInResponse();
 
   let body: { email?: unknown; name?: unknown; role?: unknown; updateSoloAccount?: unknown; addToDirectory?: unknown };
   try {

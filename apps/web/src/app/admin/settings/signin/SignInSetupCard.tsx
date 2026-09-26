@@ -32,6 +32,7 @@ interface Status {
     | null;
   users: { total: number; activeAdmins: number };
   selfEmail: string | null;
+  selfNeedsEmail: boolean;
 }
 
 /**
@@ -342,7 +343,11 @@ function UsersSection({
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, role }),
+        body: JSON.stringify({
+          email,
+          role: status.selfNeedsEmail ? "admin" : role,
+          ...(status.selfNeedsEmail ? { updateSoloAccount: true } : {}),
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as {
@@ -388,6 +393,11 @@ function UsersSection({
           off until an admin exists, so you cannot lock yourself out.
         </div>
       ) : null}
+      {status.selfNeedsEmail ? (
+        <p className="mb-3 text-sm text-text2">
+          Add your email to the existing admin account before inviting anyone else.
+        </p>
+      ) : null}
       {error ? (
         <div className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
           {error}
@@ -407,24 +417,26 @@ function UsersSection({
             autoComplete="email"
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-text2">
-          Role
-          <NativeSelect
-            value={role}
-            onChange={(event) =>
-              setRole(event.target.value === "admin" ? "admin" : "member")
-            }
-          >
-            <option value="admin">admin</option>
-            <option value="member">member</option>
-          </NativeSelect>
-        </label>
+        {!status.selfNeedsEmail && (
+          <label className="flex flex-col gap-1 text-xs font-semibold text-text2">
+            Role
+            <NativeSelect
+              value={role}
+              onChange={(event) =>
+                setRole(event.target.value === "admin" ? "admin" : "member")
+              }
+            >
+              <option value="admin">admin</option>
+              <option value="member">member</option>
+            </NativeSelect>
+          </label>
+        )}
         <Button
           type="submit"
           variant="primary"
           disabled={busy}
         >
-          {busy ? "Adding…" : "Add user"}
+          {busy ? "Saving…" : status.selfNeedsEmail ? "Save my email" : "Add user"}
         </Button>
       </form>
     </section>

@@ -40,6 +40,7 @@ openneko status
 openneko logs [service…] [-f]
 openneko migrate
 openneko seed adventureworks
+openneko [--instance name] graphjin import <customer-config.yml|->
 openneko backup {status,now,verify}
 openneko backup key {export,adopt}
 openneko reset [--all]
@@ -58,6 +59,11 @@ installation uses
 it can be managed consistently from any working directory. Its host config and
 override live under `~/.config/openneko/instances/<name>/`. The CLI appends the
 matching `compose.override.yml` automatically when present.
+
+`graphjin import` accepts a YAML fragment containing `sources`, `tables`,
+and/or `relationships`. Use `-` to read it from standard input. It requires a
+running production installation and applies the update through GraphJin's
+preview/apply path while preserving managed authentication and keystore settings.
 
 Named instances allow multiple production stacks on one Docker host. Setup
 persists the web/OpenShell ports and assigns an isolated Docker subnet; Compose

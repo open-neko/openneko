@@ -409,6 +409,43 @@ describe("HermesBackend ACP behavior", () => {
     });
   });
 
+  it("retries a truncated turn after discovery calls, but never after a side-effecting tool", async () => {
+    for (const [toolTitle, expectedCalls] of [["tool_describe", 2], ["write: /tmp/file", 1]] as const) {
+      let promptCalls = 0;
+      controller.setScript({
+        responders: {
+          "session/new": () => ({ sessionId: `sess-discovery-${promptCalls}` }),
+          "session/prompt": (_p, ctx) => {
+            promptCalls += 1;
+            const sessionId = `sess-discovery-${promptCalls - 1}`;
+            if (promptCalls === 1) {
+              ctx.emitNotification(toolCallNotification(sessionId, "tc-search", { kind: "search", title: "search: *" }));
+              ctx.emitNotification(toolCallUpdateNotification(sessionId, "tc-search", { rawOutput: "files" }));
+              ctx.emitNotification(toolCallNotification(sessionId, "tc-1", { title: toolTitle }));
+              ctx.emitNotification(toolCallUpdateNotification(sessionId, "tc-1", { rawOutput: "ok" }));
+              ctx.emitNotification(chunkNotification(sessionId, "Response truncated due to output length limit"));
+            } else {
+              ctx.emitNotification(chunkNotification(sessionId, "Answer"));
+            }
+            return { stopReason: "end_turn" };
+          },
+        },
+      });
+      const messages: string[] = [];
+      const result = await new HermesBackend().run({
+        prompt: "p",
+        retries: 1,
+        workspace: FAKE_WORKSPACE,
+        onEvent: (event) => {
+          if (event.type === "message") messages.push(event.content);
+        },
+      });
+      expect(promptCalls).toBe(expectedCalls);
+      expect(result.status).toBe(expectedCalls === 2 ? "completed" : "failed");
+      expect(messages).toEqual(expectedCalls === 2 ? ["Answer"] : []);
+    }
+  });
+
   it("keeps Hermes interim commentary separate from the final answer", async () => {
     const sessionId = "sess-interim";
     controller.setScript({

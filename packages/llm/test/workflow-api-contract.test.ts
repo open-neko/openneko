@@ -192,6 +192,8 @@ describe("workflow API contract", () => {
 
   it("validates every configurable limit and cross-field batch bounds", () => {
     expect(workflowApiLimitPatch({ queueCap: 7 })).toEqual({ queueCap: 7 });
+    expect(workflowApiLimitPatch({ maxToolCalls: 1_024, maxModelCalls: 1_024 })).toEqual({ maxToolCalls: 1_024, maxModelCalls: 1_024 });
+    expect(() => workflowApiLimitPatch({ maxToolCalls: 1_025 })).toThrowError(expect.objectContaining({ code: "limit_out_of_range" }));
     expect(() => workflowApiLimitPatch({ mystery: 1 })).toThrowError(
       expect.objectContaining({ code: "unknown_limit" }),
     );

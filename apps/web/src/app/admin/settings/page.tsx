@@ -168,6 +168,11 @@ export default async function SettingsPage() {
         : "success",
   });
   cards.push({
+    href: "/admin/settings/workflows",
+    title: "Workflow API limits",
+    copy: "Organization budgets and per-workflow runtime, call, token, and artifact limits.",
+  });
+  cards.push({
     href: "/admin/settings/security",
     title: "Security",
     copy: "Trust floor for plugin and skill installs: which marketplaces are allowed, and whether unverified or community installs are permitted.",

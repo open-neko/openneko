@@ -160,6 +160,7 @@ export type RunWorkflowTurnOptions = {
   mode: "live" | "headless";
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
+  timeoutMs?: number;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
   /**
@@ -312,6 +313,7 @@ async function runWorkflowTurnTraced(
       emit: wrappedEmit,
       tag: `workflow ${workflow.name} ${workflowRun.id}`,
       signal,
+      timeoutMs: opts.timeoutMs,
     });
     const spendStop = spendCapFromSignal(signal);
     const result = spendStop

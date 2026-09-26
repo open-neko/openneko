@@ -152,6 +152,7 @@ openneko logs [service…] [-f]
 openneko stop [--volumes]          # --volumes wipes data
 openneko migrate                   # apply pending migrations against running neko-db
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
+openneko [--instance name] graphjin import <customer-config.yml|->
 openneko reset [--all]             # tear down + clear local config (--all also wipes secrets/marketplaces)
 openneko doctor                    # host check, docker daemon, manifest state
 openneko version
@@ -166,6 +167,11 @@ Modes:
 - **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
 
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
+
+`graphjin import` accepts a YAML fragment with `sources`, `tables`, and/or
+`relationships`. Use `-` to read it from standard input. It requires a running
+production installation, validates the change through GraphJin, seals source
+credentials, and preserves OpenNeko-managed authentication and keystore settings.
 
 ### Audit logging failure alerts
 

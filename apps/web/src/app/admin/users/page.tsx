@@ -14,7 +14,7 @@ import {
 } from "@neko/db";
 import { getCurrentActor } from "@/lib/actor";
 import { getOrgId } from "@/lib/db";
-import { getPluginStatus } from "@/lib/auth";
+import { getAuthGateStatus, getPluginStatus } from "@/lib/auth";
 import { requestWorker } from "@/lib/groups-admin";
 import { AdminDenied, AdminShell } from "../AdminShell";
 import { UsersAdminTabs, type UsersAdminTab } from "./UsersAdminTabs";
@@ -28,7 +28,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   if (actor.role !== "admin") return <AdminDenied />;
 
   const orgId = await getOrgId();
-  const [users, memberships, administrators, groups, idpGroups, rules, pluginStatus, query] = await Promise.all([
+  const [users, memberships, administrators, groups, idpGroups, rules, pluginStatus, authGate, query] = await Promise.all([
     db()
       .select({
         id: app_user.id,
@@ -53,6 +53,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
     listIdpGroups(orgId),
     listIdpGroupRules(orgId),
     getPluginStatus(),
+    getAuthGateStatus(),
     searchParams,
   ]);
 
@@ -76,7 +77,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   // in, so the prompt waits for a sign-in plugin. Without one it would ask
   // whoever opens the page, which on a public installation is a stranger.
   const identitySetup =
-    Boolean(pluginStatus.authProvider) &&
+    Boolean(authGate.provider ?? authGate.pending) &&
     users.some((user) => user.id === actor.userId && isUnclaimedSoloEmail(user.email));
   const rows: AdminUserRow[] = users.map((user) => ({
     id: user.id,
@@ -110,7 +111,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         groups={groups}
         idpGroups={idpGroups.map((g) => ({ ...g }))}
         rules={rules.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }))}
-        signInProvider={pluginStatus.authProvider ?? null}
+        signInProvider={pluginStatus.authProvider ?? authGate.pending?.providerLabel ?? null}
         directoryProvider={pluginStatus.directoryProvider ?? null}
         directoryCreateLabel={directoryCreateLabel}
       />

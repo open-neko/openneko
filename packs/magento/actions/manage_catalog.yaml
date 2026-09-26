@@ -1,7 +1,9 @@
 key: action.manage_catalog
 targetRef: magento.manage_catalog
 kind: magento.manage_catalog
-description: Create and edit Magento products, categories, assignments, and prices through governed change-sets.
+description: >-
+  Create and edit Magento products, categories, assignments, and prices through governed change-sets.
+  Use a named scope such as {store: default}; update existing product text in body.product.custom_attributes.
 domain: catalog
 readiness:
   capability: operator

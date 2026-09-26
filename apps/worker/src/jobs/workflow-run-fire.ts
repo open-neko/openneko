@@ -453,6 +453,7 @@ async function runWorkflowRunFireTraced(
             mode: "headless",
             emit: guardedEmit,
             signal: spendGuard.signal,
+            timeoutMs: apiClaim ? apiClaim.limits.maxRuntimeSeconds * 1_000 : undefined,
             pluginActions,
             observer: telemetry.observer,
           },

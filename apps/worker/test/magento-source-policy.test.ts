@@ -64,4 +64,17 @@ describe("Magento GraphJin source policy", () => {
       read_only: true,
     });
   });
+
+  it("allows read-only product text attributes such as descriptions and dimensions", () => {
+    expect(table("eav_attribute")).toMatchObject({
+      table: "m2_eav_attribute",
+      source: "magento_analytics",
+      read_only: true,
+    });
+    expect(table("catalog_product_entity_text")).toMatchObject({
+      table: "m2_catalog_product_entity_text",
+      source: "magento_analytics",
+      read_only: true,
+    });
+  });
 });

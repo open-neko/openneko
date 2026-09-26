@@ -376,6 +376,15 @@ async function checkQueueAndBudgets(
   },
 ): Promise<{ reservedTokens: number; reservedCostMicros: number }> {
   const deployment = deploymentLimits();
+  const orgLimits = await client.query<{
+    rolling_token_budget: number;
+    rolling_cost_micros_budget: string;
+  }>(
+    "select rolling_token_budget, rolling_cost_micros_budget from workflow_api_org_limits where org_id = $1",
+    [input.access.org_id],
+  );
+  const orgTokenBudget = orgLimits.rows[0]?.rolling_token_budget ?? deployment.orgRollingTokenBudget;
+  const orgCostBudget = Number(orgLimits.rows[0]?.rolling_cost_micros_budget ?? deployment.orgRollingCostMicrosBudget);
   const counts = await client.query<{
     global_count: string;
     org_count: string;
@@ -467,9 +476,9 @@ async function checkQueueAndBudgets(
     Number(totals?.workflow_cost ?? 0) + reservedCostMicros >
       input.limits.rollingCostMicrosBudget ||
     Number(totals?.org_tokens ?? 0) + reservedTokens >
-      deployment.orgRollingTokenBudget ||
+      orgTokenBudget ||
     Number(totals?.org_cost ?? 0) + reservedCostMicros >
-      deployment.orgRollingCostMicrosBudget
+      orgCostBudget
   ) {
     throw new WorkflowApiError(
       "rolling_budget_exhausted",

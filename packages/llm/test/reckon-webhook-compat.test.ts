@@ -137,7 +137,7 @@ describeIfDb("reckon webhook admission", () => {
         enabled: true,
         max_tokens_per_run: 3_000_000,
         max_runtime_seconds: 1_800,
-        max_tool_calls: 128,
+        max_tool_calls: 1_024,
       });
       expect(await removeCompatWebhook({ orgId, actorUserId: null, reckonWorkflowId: reckonId })).toBe(true);
       expect(await getCompatWebhook(reckonId)).toBeNull();

@@ -492,6 +492,7 @@ export class PackService {
             targetRef: artifact.target_ref,
             metadata,
             graphjinConfigFile: configFile,
+            lastAppliedHash: artifact.last_applied_hash,
             ...(desired ? { fallbackArtifact: desired } : {}),
           })
         : null;
@@ -1681,7 +1682,6 @@ export class PackService {
                   : String(value.mode),
             allowed_targets: value.allowedTargets as Record<string, unknown>,
             limits: value.limits as Record<string, unknown>,
-            approver_role: value.approverRole ? String(value.approverRole) : null,
             priority: Number(value.priority),
             enabled: installedPackPolicyEnabled({
               declared: Boolean(value.enabled),

@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { activeAdministratorIds, and, app_user, db, eq, isNull, sql } from "@neko/db";
+import { activeAdministratorIds, and, app_user, db, eq, isNull, isUnclaimedSoloEmail, sql } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getAuthGateStatus, _resetAuthProviderCache } from "@/lib/auth";
 import { getOrgId } from "@/lib/db";
@@ -40,5 +40,6 @@ export async function GET() {
     },
     /** The signed-in admin's own provisioned email, for test prefill. */
     selfEmail: self?.email ?? null,
+    selfNeedsEmail: Boolean(self && isUnclaimedSoloEmail(self.email)),
   });
 }

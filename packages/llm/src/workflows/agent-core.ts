@@ -36,6 +36,7 @@ export interface RunWorkflowAgentBackendInput {
   controlPlane: AgentControlPlane;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
+  timeoutMs?: number;
   tag?: string;
 }
 
@@ -62,6 +63,7 @@ export async function runWorkflowAgentBackend(
     controlPlane,
     emit,
     signal,
+    timeoutMs,
     tag,
   } = input;
 
@@ -129,5 +131,6 @@ export async function runWorkflowAgentBackend(
       : undefined,
     tag,
     signal,
+    timeoutMs,
   });
 }

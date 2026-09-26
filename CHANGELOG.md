@@ -1,5 +1,58 @@
 # Changelog
 
+## [3.5.6](https://github.com/open-neko/openneko/compare/v3.5.5...v3.5.6) (2026-09-24)
+
+
+### Bug Fixes
+
+* **agent:** preserve Hermes MCP tool output in ACP ([23ac3bd](https://github.com/open-neko/openneko/commit/23ac3bd610dea7b90492bbed84af629a6768d39e))
+* **agent:** show MCP results and GraphJin API sources ([4855bef](https://github.com/open-neko/openneko/commit/4855bef9a0b674ce622624f032a1682f0527510f))
+* **llm:** include GraphJin API operations in knowledge pack ([46c7f54](https://github.com/open-neko/openneko/commit/46c7f549c7722a5ea1d7c2a076324c67099b7175))
+* **llm:** retry Hermes truncation after discovery tools ([bea979f](https://github.com/open-neko/openneko/commit/bea979fa5255df9f3d1533d7426b667117a0dd27))
+
+## [3.5.5](https://github.com/open-neko/openneko/compare/v3.5.4...v3.5.5) (2026-09-24)
+
+
+### Bug Fixes
+
+* bootstrap admin email with pending sign-in provider ([#356](https://github.com/open-neko/openneko/issues/356)) ([3607a55](https://github.com/open-neko/openneko/commit/3607a55c152e4a34bba8c978eb99b509f40deaa5))
+
+## [3.5.4](https://github.com/open-neko/openneko/compare/v3.5.3...v3.5.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **magento:** make catalog action guidance explicit ([#354](https://github.com/open-neko/openneko/issues/354)) ([9317d4c](https://github.com/open-neko/openneko/commit/9317d4ceee6e2cf7a120ce71543bc47955b53923))
+
+## [3.5.3](https://github.com/open-neko/openneko/compare/v3.5.2...v3.5.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* **magento:** expose product text attributes to analytics ([#352](https://github.com/open-neko/openneko/issues/352)) ([4b6ba85](https://github.com/open-neko/openneko/commit/4b6ba851053f695ed0bcf833c9fc14e1a179de19))
+
+## [3.5.2](https://github.com/open-neko/openneko/compare/v3.5.1...v3.5.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* clarify Work replies and unblock Magento pack review ([7821513](https://github.com/open-neko/openneko/commit/78215135eeed6304e8643495e146593973286cc9))
+
+## [3.5.1](https://github.com/open-neko/openneko/compare/v3.5.0...v3.5.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **workflows:** carry API timeout into sandbox ([8d3e44a](https://github.com/open-neko/openneko/commit/8d3e44ada34a1dd46bd478bbe1efab040c14449c))
+* **workflows:** carry API timeout into sandbox ([f6229b2](https://github.com/open-neko/openneko/commit/f6229b2c227c7b4d14785be1494fc0d6a0b76b23))
+
+## [3.5.0](https://github.com/open-neko/openneko/compare/v3.4.0...v3.5.0) (2026-09-23)
+
+
+### Features
+
+* **workflows:** configure API limits for Reckon parity ([#346](https://github.com/open-neko/openneko/issues/346)) ([3a9ea74](https://github.com/open-neko/openneko/commit/3a9ea7426c0f4da3a5788219a35eb2f58a7a774f))
+
 ## [3.4.0](https://github.com/open-neko/openneko/compare/v3.3.0...v3.4.0) (2026-09-18)
 
 

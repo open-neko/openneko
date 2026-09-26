@@ -250,6 +250,7 @@ describe("workflow API execution consumer", () => {
         prepared: apiPrepared,
         mode: "headless",
         userMessage: expect.stringContaining('"orderId":"1042"'),
+        timeoutMs: apiLimits.maxRuntimeSeconds * 1_000,
       }),
       expect.any(Object),
     );

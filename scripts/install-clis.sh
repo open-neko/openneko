@@ -90,7 +90,7 @@ if ! $SKIP_HERMES && ! hermes_matches_version; then
 
   hermes_tools_dir="$(uv tool dir)"
   hermes_tool_root="$hermes_tools_dir/hermes-agent"
-  hermes_source_root="$hermes_tools_dir/hermes-agent-openneko-${HERMES_AGENT_VERSION}-${HERMES_AGENT_REF:0:12}-patchset3"
+  hermes_source_root="$hermes_tools_dir/hermes-agent-openneko-${HERMES_AGENT_VERSION}-${HERMES_AGENT_REF:0:12}-patchset4"
   hermes_bin_dir="$(uv tool dir --bin)"
   case "$hermes_tools_dir" in
     ""|"/") echo "refusing unsafe uv tool directory: $hermes_tools_dir" >&2; exit 1 ;;
@@ -129,6 +129,10 @@ if ! $SKIP_HERMES && ! hermes_matches_version; then
   if ! grep -q 'usage_getter' "$hermes_source_root/acp_adapter/events.py"; then
     patch --batch --forward --fuzz=0 -d "$hermes_source_root" -p1 \
       < "$REPO_ROOT/scripts/patches/hermes-acp-tool-usage.patch"
+  fi
+  if ! grep -q 'MCP completions are absent' "$hermes_source_root/acp_adapter/events.py"; then
+    patch --batch --forward --fuzz=0 -d "$hermes_source_root" -p1 \
+      < "$REPO_ROOT/scripts/patches/hermes-acp-mcp-output.patch"
   fi
   if ! grep -q '_DATED_OFFICIAL_DOCS_PRICING' "$hermes_source_root/agent/usage_pricing.py"; then
     patch --batch --forward --fuzz=0 -d "$hermes_source_root" -p1 \
@@ -178,6 +182,10 @@ if ! $SKIP_HERMES; then
   if ! grep -q 'usage_getter' "$hermes_events"; then
     patch --batch --forward --fuzz=0 -d "$hermes_site" -p1 \
       < "$REPO_ROOT/scripts/patches/hermes-acp-tool-usage.patch"
+  fi
+  if ! grep -q 'MCP completions are absent' "$hermes_events"; then
+    patch --batch --forward --fuzz=0 -d "$hermes_site" -p1 \
+      < "$REPO_ROOT/scripts/patches/hermes-acp-mcp-output.patch"
   fi
   if ! grep -q '_DATED_OFFICIAL_DOCS_PRICING' "$hermes_site/agent/usage_pricing.py"; then
     patch --batch --forward --fuzz=0 -d "$hermes_site" -p1 \
