@@ -293,8 +293,11 @@ cross-run traversal. A per-workspace read/write gate allows concurrent reads and
 serializes harness edits/writes. Saved read/edit receipts restore the freshness state
 for a new Ax attempt. A synthetic Ax run exercised Read → Edit → Write through the
 durable operation journal, and the full race suite passes. The OpenNeko worker
-does not yet supply `OPENNEKO_HARNESS_WORKSPACE_DIR`, so these tools are not
-advertised to product runs. Shell, uploaded-file mounting, artifact publication
+does not yet supply `OPENNEKO_HARNESS_WORKSPACE_DIR`, so mutable workspace tools
+are not advertised to product runs. The feature OpenNeko backend now supplies
+its staged thread-upload root to a separate read-only `upload_read`/`upload_search`
+catalog; local tests pass, but worker/OpenShell acceptance is still pending.
+Shell, artifact publication
 and connected worker/web acceptance remain open. External writers do not share
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.

@@ -189,6 +189,31 @@ func TestFileSearchStaysInsideWorkspace(t *testing.T) {
 	}
 }
 
+func TestUploadCapabilitiesAreReadOnly(t *testing.T) {
+	uploads := t.TempDir()
+	if err := os.WriteFile(filepath.Join(uploads, "invoice.txt"), []byte("approved"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(uploads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	capabilities := f.UploadCapabilities()
+	if len(capabilities) != 2 || capabilities[0].Name != "upload_read" || capabilities[1].Name != "upload_search" {
+		t.Fatalf("unexpected upload tool catalog: %+v", capabilities)
+	}
+	for _, capability := range capabilities {
+		if capability.Effect != "read" || capability.Origin != "uploads" {
+			t.Fatalf("upload mutation admitted: %+v", capability)
+		}
+	}
+	result, err := capabilities[0].Call(context.Background(), json.RawMessage(`{"path":"invoice.txt"}`))
+	if err != nil || !strings.Contains(string(result), "approved") {
+		t.Fatalf("upload read failed: %s %v", result, err)
+	}
+}
+
 func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {

@@ -98,6 +98,18 @@ func (f *Files) Capabilities() []agent.Capability {
 	}
 }
 
+// UploadCapabilities expose a separate staged upload root without granting
+// mutations to the original files.
+func (f *Files) UploadCapabilities() []agent.Capability {
+	all := f.Capabilities()
+	read, search := all[0], all[3]
+	read.Name, read.Origin = "upload_read", "uploads"
+	read.Description = "Read a small text file by path relative to this run's staged uploads directory."
+	search.Name, search.Origin = "upload_search", "uploads"
+	search.Description = "Search staged uploads by literal path or text content; returns bounded relative paths only."
+	return []agent.Capability{read, search}
+}
+
 func validPath(path string) bool {
 	return len(path) <= 1024 && filepath.IsLocal(path) && filepath.Clean(path) == path && path != "."
 }

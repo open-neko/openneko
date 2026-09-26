@@ -63,6 +63,16 @@ func main() {
 		tools.Scope += "\nworkspace:" + dir
 		closeTools = append(closeTools, files.Close)
 	}
+	if dir := os.Getenv("OPENNEKO_HARNESS_UPLOADS_DIR"); dir != "" {
+		uploads, openErr := localtool.OpenFiles(dir)
+		if openErr != nil {
+			fmt.Fprintln(os.Stderr, "upload workspace unavailable:", openErr)
+			os.Exit(2)
+		}
+		tools.Capabilities = append(tools.Capabilities, uploads.UploadCapabilities()...)
+		tools.Scope += "\nuploads:" + dir
+		closeTools = append(closeTools, uploads.Close)
+	}
 	cleanup := func() error {
 		var first error
 		for _, closeTool := range closeTools {
