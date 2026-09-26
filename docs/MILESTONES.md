@@ -409,6 +409,10 @@ First run budget triage in shadow mode on held-out short, investigation and
 Daily Lead-style artifact tasks. Compare premature budget failures, verified
 completion, tokens/cost and latency against the fixed default; include misleading
 short prompts, classifier failure, low confidence and restart/extension cases.
+Label complexity from the work actually required to reach a verified outcome,
+not from prompt length or the agent's self-assessment. Report false-low decisions
+by task class and the classifier's own cost and latency. Canary the chosen profiles
+after shadow evaluation, with a switch back to fixed budgets.
 Enable dynamic allocation only if it improves cost per verified success without
 materially increasing false-low failures; retain a fixed-budget fallback.
 

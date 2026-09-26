@@ -43,9 +43,9 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | M5a catalog | Native/direct/MCP fixture calls share Ax, schema admission, operation journal and catalog binding | Package and compare the full consumer capability inventory and recovery behavior on connected runs |
 | M5b reads/batch | One seeded memory read passed the worker/OpenShell/broker/MCP bridge; controlled query-to-file runner and scoped batch-read broker grant pass local fixtures | Admit the batch as host-owned work, connect GraphJin data, publish/download the CSV, then qualify records/library reads and clarification/UI paths |
 | M5c mutations | Pack-action proposal is narrowed to host-admitted action kinds and governed effects | Qualify remaining product writes at their actual effect boundaries, including crash and duplicate delivery |
-| M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; a separate artifact-only writable root produced a CSV and one Work artifact event | Qualify the live browser download, add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
+| M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; staged uploads passed queue/OpenShell isolation; a separate artifact-only writable root produced a CSV and one Work artifact event; live solo-owner HTTP download returned exact bytes | Qualify the browser link, add process/skill paths with credential isolation, validate larger artifacts and exercise hostile-secret checks |
 | M5e delegation | Ax API and ownership design researched | Implement narrowed child execution with shared budgets and cancellation, then connected verification |
-| M6 efficiency | Durable pre-call model request limit survives resume; two-call regression passes | Token/cost accounting, approved routing/fallback, context references/compaction and connected multi-route tests |
+| M6 efficiency | Durable pre-call model request limit survives resume; two-call regression passes; Jev budget triage is specified for shadow evaluation | Token/cost accounting, approved routing/fallback, class-calibrated dynamic budgets, context references/compaction and connected multi-route tests |
 | M7 parity | Capability inventory and evaluation rules documented | Full Hermes outcome comparison, tenant/load checks and task-quality evidence |
 | M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
 
@@ -75,5 +75,7 @@ Hermes, approval and worker-death gates; the accepted upstream idle-cancellation
 warning remained visible, while sandbox-delete closure passed. No real key was used.
 The subsequent rerun also passed `M5_QUEUE_ARTIFACT_PASS`: OpenShell returned the
 exact small CSV, Work emitted its artifact event and another run's file was not
-searchable. The Work download-route authorization tests passed separately; an
-authenticated browser download of this CSV remains to be verified.
+searchable. The isolated live Work HTTP route returned the exact `lead_id\nLEAD-42\n`
+bytes as a CSV attachment for the solo owner and rejected an unissued filename
+with 404. The Work page remained in its loading state, so browser-link acceptance
+and multi-user authorization still require connected verification.
