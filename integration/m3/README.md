@@ -29,6 +29,10 @@ The outer M2 suite reports the accepted idle-stream cancellation defect as a
 warning, and still requires sandbox deletion to close upstream work. No real
 model keys or paid inference are used.
 
+Set `HARNESS_M3_API_HTTP=1` on the command above to add the public HTTP
+submission, status-poll and download check through the Go/OpenShell/GraphJin
+batch worker. It starts one temporary Next dev process and cleans it up.
+
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.
 Before printing `M3_WEB_READY`, it requires `M5_WEB_ARTIFACT_PASS`: the live
@@ -101,6 +105,15 @@ rendered and clicked its `result.csv` link, and observed HTTP 200. Fetching that
 same link returned the exact `lead_id\nLEAD-42\n` bytes as a CSV attachment.
 Use `localhost` for the Next dev origin; `127.0.0.1` blocks its dev resources.
 The large validated Daily Lead Union batch artifact remains an M5b gate.
+
+With `HARNESS_M3_API_HTTP=1`, the isolated suite starts the real Next API
+alongside the worker. On 2026-09-27 it passed
+`M5_HTTP_API_BATCH_GRAPHJIN_PASS`: bearer-authenticated `POST` returned `202`,
+the pg-boss worker ran the Go query-to-file executor through OpenShell and a
+seeded GraphJin broker, and authenticated status and artifact `GET` returned a
+completed run and the exact 19-byte CSV. The API download filename is
+`workflow-<runId>.csv`; the internal artifact remains `references.csv`.
+This fixture uses synthetic GraphJin data and no live model key.
 
 An additional isolated rerun passed `mcp_library_search` through the real
 OpenNeko bridge, scoped broker, OpenShell worker and Go/Ax checkpoint. A later

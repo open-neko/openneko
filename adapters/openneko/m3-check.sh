@@ -53,16 +53,35 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18119 RECORDS_PG_USER=neko RECORDS_PG_PASSWORD=synthetic-m3 RECORDS_PG_DATABASE=neko
   export OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development OPENNEKO_AGENT_HOME="$HARNESS_STATE/user" WORKER_ADMIN_URL=http://127.0.0.1:18122 OPENNEKO_BROKER_PORT=18123
   docker compose -p harness-m3 -f integration/m3/compose.yml restart model
+  if [[ ${HARNESS_M3_API_HTTP:-0} == 1 ]]; then
+    export HARNESS_M3_WORKFLOW_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
+    export HARNESS_BATCH_WORKFLOW_ID="$HARNESS_M3_WORKFLOW_ID"
+    [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
+    set -m
+    (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &
+    web_pid=$!
+    set +m
+    trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+    ready=0
+    for ((n=0; n<90; n++)); do
+      if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+      kill -0 "$web_pid" || exit 1
+      sleep 1
+    done
+    [[ "$ready" == 1 ]] || { echo 'Isolated workflow API web server did not start' >&2; exit 1; }
+  fi
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
 if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   docker compose -p harness-m3 -f integration/m3/compose.yml restart model
-  [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
-  # Own the whole process group: terminating pnpm alone leaves Next listening.
-  set -m
-  (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &
-  web_pid=$!
-  set +m
-  trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+  if [[ ${HARNESS_M3_API_HTTP:-0} != 1 ]]; then
+    [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
+    # Own the whole process group: terminating pnpm alone leaves Next listening.
+    set -m
+    (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m3-web.log 2>&1 &
+    web_pid=$!
+    set +m
+    trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+  fi
   artifact_run=$(cat "$HARNESS_STATE/m5-artifact-run")
   artifact_url="http://localhost:18121/api/work/files/runs/$artifact_run/artifacts/result.csv"
   for ((n=0; n<60; n++)); do

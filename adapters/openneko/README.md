@@ -35,8 +35,9 @@ the queued run. An isolated Postgres + worker + web test passed admission,
 definition edits after admission, duplicate delivery, status and exact-byte
 download with a no-provider fixture. A connected API admission also passed
 through the production queue, Go, OpenShell and a seeded GraphJin broker,
-publishing one validated CSV. A single public-HTTP-to-Go/OpenShell check,
-general executor registry and real-data Daily Lead run remain in
+publishing one validated CSV. The same path now passes public HTTP submission,
+status polling and exact-byte artifact download. A general executor registry
+and real-data Daily Lead run remain in
 [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice).
 
 The Harness MCP adapter admits pinned memory/library reads and the records

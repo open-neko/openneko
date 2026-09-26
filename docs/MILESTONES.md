@@ -226,9 +226,9 @@ key in the child, `GET` status and exact CSV download. A definition edit after
 admission did not change the accepted artifact. A stale query-to-file lease
 returns to the queue with a new attempt, while an old attempt cannot claim or
 finalize it. The public HTTP worker test uses a deterministic local executor.
-A connected API admission through the production queue, Go, OpenShell and a
-seeded GraphJin broker also passed. One public HTTP-to-Go check and real data
-remain open.
+A connected public HTTP admission through the production queue, Go, OpenShell
+and a seeded GraphJin broker also passed, including status polling and exact
+CSV download. Real data and a versioned executor registry remain open.
 
 The remaining Harness MCP routes are denied by the broker profiles. Qualify
 each route with bound actor/run identity and the existing operation journal
