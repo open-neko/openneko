@@ -107,6 +107,11 @@ process.stdout.write(JSON.stringify({artifact,sha256:crypto.createHash('sha256')
       token, clientFingerprint: `fixture-${orgId}` });
     expect(status).toMatchObject({ status: "completed", artifact: { url: expect.stringContaining("/artifact") },
       result: { kind: "csv", rows: 1, columns: ["lead_id"] } });
+    const [finishedApiRun] = await db().select({ attempts: workflow_run.queue_attempts,
+      telemetry: workflow_run.telemetry_summary }).from(workflow_run).where(eq(workflow_run.id, admitted.runId));
+    expect(finishedApiRun.attempts).toBe(leased.attempts);
+    expect(finishedApiRun.telemetry).toMatchObject({ counts: { inference: 0 },
+      usage: { totalTokens: 0, billedCostUsd: 0, coverage: "complete" }, telemetryComplete: true });
     const apiWorkspace = await ensureWorkWorkspace(orgId, leased.threadId, leased.workRunId);
     expect(await readFile(join(apiWorkspace.artifactRoot, "leads.csv"), "utf8")).toBe("lead_id\nLEAD-42\n");
     const apiArtifacts = await db().select({ kind: work_run_event.kind }).from(work_run_event).where(eq(work_run_event.run_id, leased.workRunId));
