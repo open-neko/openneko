@@ -188,8 +188,9 @@ installed capability needs it. Launch commands/endpoints come from trusted host
 configuration, never model arguments.
 
 Support discovery (including pagination), schema mapping, bounded structured/text
-results, tool errors, deadlines, progress and cancellation for the exercised
-servers. Explicitly reject unsupported content/protocol features. Keep raw results
+results, resource links where supplied, tool errors, deadlines, progress and
+cancellation for the exercised servers. Explicitly reject unsupported
+content/protocol features. Keep raw results
 and typed status available to recovery; do not flatten everything into prose.
 The first integrated path is a governed batch run: an admitted, versioned script
 requests authorized GraphJin reads through the trusted host and receives results
@@ -296,8 +297,9 @@ and connected worker/web acceptance remain open. External writers do not share
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.
 
-**Deliver:** Read, Edit and shell/process tools under OpenShell, file read-version
-checks, read-parallel/write-exclusive scheduling, output/process limits and scoped
+**Deliver:** Read, Edit, Write, file search and shell/process tools under
+OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,
+output/process limits and scoped
 artifact publication. Use OpenNeko's existing skill catalog, upload workspace and
 artifact pipeline. Broker credentials and privileged MCP bridge state must remain
 in a trusted execution compartment inaccessible to model-generated subprocesses;
@@ -366,6 +368,10 @@ event, but do not rely on a provider's final cumulative snapshot to halt a run;
 missing usage requires a conservative admission limit.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
+Measure admitted-tool schema cost and selection errors. If they are material,
+add search/describe over the pinned run catalog while keeping frequent tools
+eager; discovery must not grant a new capability. Verify a previously discovered
+tool after compaction and catalog-version change on resume.
 Evaluate the [SoL-Pi ideas](https://arxiv.org/html/2609.20519v1) individually: observation references first; cache-aware
 compaction next; edit-and-verify and cheaper-model log reduction only when measured
 benefit justifies them. Include summarization/retrieval costs and deterministic

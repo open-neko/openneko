@@ -383,6 +383,10 @@ The [Inside Claude Code](https://y-agent.github.io/inside-claude-code/) series i
 
 The largest remaining performance gap is not a missing Claude Code mechanism: it is M5b's governed file-backed batch path. The 2026-09-15 lead-union comparison showed the script's per-query agent mediation consuming far more turns than Reckon's batch run. Success here is a validated CSV with bounded model context and a trace showing query receipts, not merely fewer tokens in a synthetic conversation. After that, M6 prompt/schema budgeting and compaction can be evaluated on the same task cohort.
 
+### Toolkit inventory from current Claude Code (2026-09-26)
+
+Use the current [Claude Code tool reference](https://code.claude.com/docs/en/tools-reference) as a checklist of *task capabilities*, not an SDK integration or a set of APIs to call. Its exact tools vary by session. Our own Go toolkit inventory, priorities and verification targets are in [BUILDING-BLOCKS.md](BUILDING-BLOCKS.md#toolkit-inventory). The most valuable gaps for us remain file-backed batch execution, an isolated process/workspace, artifact delivery and selective discovery of the run's already admitted OpenNeko tools. Claude's [lazy tool search](https://code.claude.com/docs/en/agent-sdk/tool-search) and [bounded background work](https://code.claude.com/docs/en/tools-reference) are useful design evidence; our host owns those lifecycles and policy regardless of model/provider.
+
 ## 10. Implementation sequence and acceptance gates
 
 The actionable delivery plan is [MILESTONES.md](MILESTONES.md), with deliverables, verification scenarios, dependencies and exit gates for each milestone. The sequence below summarizes the capability areas; OpenShell qualification now precedes the first integrated run in that plan.

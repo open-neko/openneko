@@ -72,6 +72,36 @@ more than one status. The [stocktake](STOCKTAKE.md) and
 | 37 | Multimodal perception and action | Admit text, files, images, audio or UI observations and expose computer/browser actions only as governed capabilities. | Ax/provider and tool adapters; general path `Open` |
 | 38 | Notifications and wakeups | Deliver progress, attention requests and terminal outcomes; accept authenticated external events without starting duplicate work. | Consumer channels + event adapter; narrow web/queue `Slice`, general subscriptions `Open` |
 
+## Toolkit inventory
+
+This is a checklist for **our own Go tools**, derived from the current
+[Claude Code tool reference](https://code.claude.com/docs/en/tools-reference)
+and [Agent SDK tool-search guide](https://code.claude.com/docs/en/agent-sdk/tool-search)
+on 2026-09-26 ([TypeScript SDK 0.3.283 / Claude Code 2.1.283](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md)).
+The source names below are examples only. Do not call Anthropic tools or
+reproduce product-only features for parity. A tool is
+offered only when the trusted host admits it for that run.
+
+| Our capability family | Source examples | Priority and concrete check |
+| --- | --- | --- |
+| Workspace read and search | `Read`, `Glob`, `Grep`, optional `LSP` | M5d: read a mounted upload and locate evidence with bounded output; reject out-of-scope paths. Add code intelligence only for a coding workload that needs it. |
+| Workspace mutation | `Write`, `Edit`, `NotebookEdit`, `EnterWorktree` | M5d: create/edit within an isolated workspace, reject stale edits and publish no unvalidated file. Notebook/worktree adapters are workload-specific. |
+| Process and batch execution | `Bash`, background commands, `TaskStop`, `Monitor` | M5b/M5d: run the trusted Daily Lead script with brokered reads, output files, bounded progress, process-tree cancellation and restart recovery. General shell comes after credential isolation; event watches follow a real use case. |
+| Web retrieval | `WebSearch`, `WebFetch` | Admit only when the consumer provides governed network access; preserve source URLs, content limits and fetch errors. These are research tools, separate from product record lookup. |
+| External capabilities | MCP tools, `ListMcpResourcesTool`, `ReadMcpResourceTool` | M5b/c: discover and call only the pinned, identity-bound catalog; preserve structured/text/resource-link and exercised multimodal results. MCP is a transport, not a grant. |
+| Capability discovery | `ToolSearch`, `WaitForMcpServers` | M6: keep a few frequent schemas eager; if measured schema cost warrants it, search/describe the already admitted catalog and distinguish connecting, unavailable and unauthorized tools. |
+| Task state and planning | `TaskCreate`, `TaskGet`, `TaskList`, `TaskUpdate`, plan mode | M6: project the supervisor's durable plan/task state to the model and UI; resume with dependencies and status intact. An optional read-only planning phase does not authorize effects. |
+| Delegation and orchestration | `Agent`, `SendMessage`, `ListAgents`, `Workflow` | M5e: scoped children with shared budgets, explicit join/cancel and concise verified handback. A dynamic workflow is optional after the simpler child path proves insufficient. |
+| Human control | `AskUserQuestion`, plan approval | M5b/c: persist one clarification or approval request, resume on a correlated answer and recheck authority before any effect. |
+| Artifacts and presentation | `SendUserFile`, `Artifact`, `ReportFindings` | M5b/M5d: publish validated, authorized downloadable bytes and render typed findings where the consumer supports them; avoid a Claude-specific artifact service. |
+| Skills, schedules and notifications | `Skill`, `CronCreate`, `CronList`, `CronDelete`, `ScheduleWakeup`, `PushNotification` | Load versioned skills as instructions, not grants. Add durable wakeups and notification delivery when scheduled/long-running user tasks require them. |
+
+Lifecycle hooks are not model tools. They belong at the supervisor's safe state
+boundaries so they can update context and runtime state, gate an invocation, or
+observe it. The [SDK hook guide](https://code.claude.com/docs/en/agent-sdk/hooks)
+shows that post-tool output may be transformed; our raw result receipt and effect
+status must remain durable when a model-visible projection changes.
+
 ## Task path
 
 ```text
