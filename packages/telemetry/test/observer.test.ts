@@ -109,6 +109,14 @@ describe("harness observations", () => {
     });
   });
 
+  it("retains query-to-file counts without recording query contents", async () => {
+    const summary = new HarnessRunSummaryAccumulator("batch-run");
+    const observer = createHarnessObserver({ runId: "batch-run", sinks: [summary] });
+    await observer.observe({ kind: "stage.end", operationId: "batch", status: "ok",
+      measurements: { finalRows: 1, queryCount: 2, artifactBytes: 16, coverage: "complete" } });
+    expect(summary.snapshot().batch).toEqual({ finalRows: 1, queryCount: 2, artifactBytes: 16 });
+  });
+
   it("reports partial usage when some model usage is present and some is missing", async () => {
     const summary = new HarnessRunSummaryAccumulator("run-2");
     summary.emit({

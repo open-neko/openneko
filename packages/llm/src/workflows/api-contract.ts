@@ -15,6 +15,40 @@ export const WORKFLOW_API_DEFAULT_RETENTION_HOURS = 168;
 
 export type WorkflowApiExecutionMode = "single" | "batch";
 
+export type QueryToFileContract = {
+  version: 1;
+  executor: "query-to-file";
+  artifactName: string;
+  columns: string[];
+};
+
+/** A workflow-owned executor contract. Never accept this from API input. */
+export function parseQueryToFileContract(value: unknown): QueryToFileContract | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const contract = value as Record<string, unknown>;
+  const columns = contract.columns;
+  if (contract.version !== 1 || contract.executor !== "query-to-file" ||
+      typeof contract.artifactName !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.csv$/.test(contract.artifactName) ||
+      !Array.isArray(columns) || columns.length === 0 || columns.length > 64 ||
+      columns.some((column) => typeof column !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(column)) ||
+      new Set(columns).size !== columns.length) return null;
+  return { version: 1, executor: "query-to-file", artifactName: contract.artifactName, columns: [...columns] };
+}
+
+export function validateQueryToFileInput(value: Record<string, unknown>): string {
+  const day = value.targetDay;
+  if (Object.keys(value).length !== 1 || typeof day !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    throw new WorkflowApiError("invalid_query_to_file_input", "Input must contain one targetDay in YYYY-MM-DD format.", 400);
+  }
+  const date = new Date(`${day}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== day) {
+    throw new WorkflowApiError("invalid_query_to_file_input", "targetDay is not a calendar date.", 400);
+  }
+  return day;
+}
+
 export type WorkflowApiLimits = {
   requestLimitPerMinute: number;
   pollLimitPerMinute: number;

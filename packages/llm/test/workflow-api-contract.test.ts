@@ -7,8 +7,10 @@ import {
   hashWorkflowApiIdempotencyKey,
   issueWorkflowApiToken,
   parseCompiledWorkflowBatchContract,
+  parseQueryToFileContract,
   parseWorkflowApiBearer,
   validateWorkflowApiInput,
+  validateQueryToFileInput,
   verifyWorkflowApiTokenDigest,
   workflowApiLimitPatch,
 } from "../src/workflows/api-contract";
@@ -25,6 +27,15 @@ const compiledBatch = {
 };
 
 describe("workflow API contract", () => {
+  it("accepts only a bounded workflow-owned query-to-file contract and date", () => {
+    const contract = { version: 1, executor: "query-to-file", artifactName: "leads.csv", columns: ["lead_id"] };
+    expect(parseQueryToFileContract({ ...contract, untrusted: "discard" })).toEqual(contract);
+    expect(parseQueryToFileContract({ ...contract, columns: ["lead_id", "lead_id"] })).toBeNull();
+    expect(parseQueryToFileContract({ ...contract, artifactName: "../leads.csv" })).toBeNull();
+    expect(validateQueryToFileInput({ targetDay: "2026-09-15" })).toBe("2026-09-15");
+    expect(() => validateQueryToFileInput({ targetDay: "2026-02-30" })).toThrowError(expect.objectContaining({ code: "invalid_query_to_file_input" }));
+    expect(() => validateQueryToFileInput({ targetDay: "2026-09-15", columns: ["evil"] })).toThrowError(expect.objectContaining({ code: "invalid_query_to_file_input" }));
+  });
   it("issues a one-time high-entropy token and verifies only its digest", () => {
     const issued = issueWorkflowApiToken();
 

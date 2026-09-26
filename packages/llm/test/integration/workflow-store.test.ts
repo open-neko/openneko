@@ -16,7 +16,8 @@ import {
   createWorkThread,
 } from "../../src/work/store";
 import { enableWorkflowApiAccess, updateWorkflowApiLimits } from "../../src/workflows/api-access";
-import { admitWorkflowApiRun } from "../../src/workflows/api-admission";
+import { admitWorkflowApiRun, claimWorkflowApiAdmission, finishWorkflowApiAdmission,
+  leasePendingWorkflowApiAdmissions, recoverStaleWorkflowApiAdmissions } from "../../src/workflows/api-admission";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -153,6 +154,52 @@ describeIfDb("workflow store", () => {
         status: "queued",
       });
       expect(admitted.statusUrl).toContain(admitted.runId);
+    });
+  });
+
+  it("pins a query-to-file contract and input when accepting an API run", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId, name: "API query-to-file snapshot", steps: [{ id: "write", description: "Write a governed CSV" }],
+      });
+      const contract = { version: 1, executor: "query-to-file", artifactName: "leads.csv", columns: ["lead_id"] };
+      await pool().query("update workflow_definition set output_contract=$2::jsonb where id=$1", [workflow.id, JSON.stringify({ harnessBatch: contract })]);
+      const priorExecutor = process.env.HARNESS_BATCH_WORKFLOW_ID;
+      process.env.HARNESS_BATCH_WORKFLOW_ID = workflow.id;
+      try {
+        const { token } = await enableWorkflowApiAccess({ orgId, workflowId: workflow.id, actor: { userId: null, role: "admin" } });
+        const input = { workflowId: workflow.id, token, idempotencyKey: "query-to-file-snapshot", mode: "single" as const,
+          value: { targetDay: "2026-09-15" }, clientFingerprint: `integration-${orgId}` };
+        const admitted = await admitWorkflowApiRun(input);
+        const linked = await pool().query(`select work.backend, run.executor_contract, run.trigger_payload,
+          admission.reserved_tokens, admission.request_payload
+          from workflow_run run join work_run work on work.id=run.work_run_id
+          join workflow_api_admission admission on admission.workflow_run_id=run.id where run.id=$1`, [admitted.runId]);
+        expect(linked.rows[0]).toMatchObject({ backend: "harness", executor_contract: contract,
+          trigger_payload: { targetDay: "2026-09-15" }, reserved_tokens: 0,
+          request_payload: { targetDay: "2026-09-15" } });
+        await pool().query("update workflow_definition set output_contract=$2::jsonb where id=$1", [workflow.id,
+          JSON.stringify({ harnessBatch: { ...contract, artifactName: "later.csv" } })]);
+        expect(await admitWorkflowApiRun(input)).toMatchObject({ runId: admitted.runId, replay: true });
+        const after = await pool().query("select executor_contract from workflow_run where id=$1", [admitted.runId]);
+        expect(after.rows[0].executor_contract).toEqual(contract);
+        const [firstLease] = await leasePendingWorkflowApiAdmissions();
+        await pool().query("update workflow_api_admission set status='running',lease_until=now()-interval '1 second' where id=$1", [firstLease.id]);
+        await pool().query("update workflow_run set status='running' where id=$1", [admitted.runId]);
+        await pool().query("update work_run set status='running' where id=$1", [firstLease.workRunId]);
+        expect(await recoverStaleWorkflowApiAdmissions()).toBe(1);
+        await expect(finishWorkflowApiAdmission({ admissionId: firstLease.id, workflowRunId: admitted.runId,
+          workRunId: firstLease.workRunId, attempt: firstLease.attempts, status: "failed" })).rejects.toThrow("superseded");
+        const [secondLease] = await leasePendingWorkflowApiAdmissions();
+        expect(secondLease.attempts).toBe(firstLease.attempts + 1);
+        const claimInput = { admissionId: firstLease.id, workflowRunId: admitted.runId,
+          orgId, workflowId: workflow.id };
+        expect(await claimWorkflowApiAdmission({ ...claimInput, attempt: firstLease.attempts })).toEqual({ action: "duplicate" });
+        expect(await claimWorkflowApiAdmission({ ...claimInput, attempt: secondLease.attempts })).toMatchObject({ action: "claimed", attempt: secondLease.attempts });
+      } finally {
+        if (priorExecutor === undefined) delete process.env.HARNESS_BATCH_WORKFLOW_ID;
+        else process.env.HARNESS_BATCH_WORKFLOW_ID = priorExecutor;
+      }
     });
   });
 

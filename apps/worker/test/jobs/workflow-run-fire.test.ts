@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   persistApiTelemetry: vi.fn(async () => undefined),
   persistRunTelemetry: vi.fn(async () => undefined),
   runBatch: vi.fn(),
+  runHarnessBatch: vi.fn(async () => ({ rows: 1, queries: 1, artifactBytes: 16 })),
   updateProgress: vi.fn(async () => undefined),
   boundedResult: vi.fn((text: string) => ({ text, truncated: false })),
 }));
@@ -74,6 +75,7 @@ vi.mock("../../src/telemetry.js", async () => {
     persistWorkflowRunTelemetry: mocks.persistRunTelemetry,
   };
 });
+vi.mock("../../src/jobs/harness-batch.js", () => ({ runHarnessBatch: mocks.runHarnessBatch }));
 
 import {
   runWorkflowRunFire,
@@ -170,6 +172,7 @@ const apiPayload = {
   workflowRunId: "workflow-run-api-1",
   workRunId: "work-run-api-1",
   executionMode: "single" as const,
+  queueAttempt: 1,
 };
 
 const apiPrepared = {
@@ -340,5 +343,18 @@ describe("workflow API execution consumer", () => {
         artifactPath: "runs/work-run-api-1/artifacts/api-result.csv",
       }),
     );
+  });
+
+  it("runs a snapshotted query-to-file workflow through the API claim", async () => {
+    const contract = { version: 1, executor: "query-to-file", artifactName: "leads.csv", columns: ["lead_id"] };
+    mocks.loadPrepared.mockResolvedValueOnce({ ...apiPrepared, workflowRun: { ...apiPrepared.workflowRun, executorContract: contract } });
+    await runWorkflowRunFire(apiPayload);
+    expect(mocks.runHarnessBatch).toHaveBeenCalledWith({
+      orgId: apiPayload.orgId, threadId: apiPrepared.threadId, runId: apiPayload.workRunId,
+      workflowRunId: apiPayload.workflowRunId, apiAttempt: 1,
+      maxRuntimeSeconds: apiLimits.maxRuntimeSeconds, maxArtifactBytes: apiLimits.maxArtifactBytes,
+    });
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.finishApi).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), workflow: vi.fn(), createRun: vi.fn() }));
-vi.mock("@neko/db", async original => ({ ...await original<typeof import("@neko/db")>(), pool: () => ({ query: mocks.query }) }));
+vi.mock("@neko/db", async original => ({ ...await original<typeof import("@neko/db")>(), pool: () => ({ query: mocks.query }), resolveUserGroups: async () => ({ administrator: false }) }));
 vi.mock("../src/workflows/store", async original => ({ ...await original<typeof import("../src/workflows/store")>(), getWorkflow: mocks.workflow, createWorkflowRun: vi.fn(async () => ({ id: "workflow-run" })) }));
 vi.mock("../src/work/store", async original => ({ ...await original<typeof import("../src/work/store")>(), createWorkThread: vi.fn(async () => ({ id: "thread" })), createWorkRun: mocks.createRun }));
 import { prepareWorkflowRun } from "../src/workflows/run-workflow-turn";

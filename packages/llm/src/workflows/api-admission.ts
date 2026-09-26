@@ -18,8 +18,10 @@ import {
   WorkflowApiError,
   hashWorkflowApiIdempotencyKey,
   parseCompiledWorkflowBatchContract,
+  parseQueryToFileContract,
   validateWorkflowApiIdempotencyKey,
   validateWorkflowApiInput,
+  validateQueryToFileInput,
   verifyWorkflowApiTokenDigest,
   type CompiledWorkflowBatchContract,
   type WorkflowApiExecutionMode,
@@ -140,6 +142,7 @@ type LockedAccessRow = {
   rolling_cost_micros_budget: number;
   retention_hours: number;
   workflow_name: string;
+  owner_user_id: string | null;
   workflow_enabled: boolean;
   daily_run_budget: number | null;
   output_contract: Record<string, unknown> | null;
@@ -175,6 +178,7 @@ async function lockWorkflowApiAccess(
   const result = await client.query<LockedAccessRow>(
     `select access.*,
             workflow.name as workflow_name,
+            workflow.owner_user_id,
             workflow.enabled as workflow_enabled,
             workflow.daily_run_budget,
             workflow.output_contract
@@ -371,7 +375,7 @@ async function checkQueueAndBudgets(
   input: {
     access: LockedAccessRow;
     limits: WorkflowApiLimits;
-    mode: WorkflowApiExecutionMode;
+    usesModel: boolean;
     now: Date;
   },
 ): Promise<{ reservedTokens: number; reservedCostMicros: number }> {
@@ -429,10 +433,8 @@ async function checkQueueAndBudgets(
     }
   }
 
-  const reservedTokens =
-    input.mode === "batch" ? 0 : input.limits.maxTokensPerRun;
-  const reservedCostMicros =
-    input.mode === "batch" ? 0 : input.limits.maxCostMicrosPerRun;
+  const reservedTokens = input.usesModel ? input.limits.maxTokensPerRun : 0;
+  const reservedCostMicros = input.usesModel ? input.limits.maxCostMicrosPerRun : 0;
   const usage = await client.query<{
     workflow_tokens: string;
     workflow_cost: string;
@@ -626,10 +628,25 @@ export async function admitWorkflowApiRun(input: {
         };
       }
 
+      const rawExecutorContract = input.mode === "single" ? access.output_contract?.harnessBatch : undefined;
+      const executorContract = parseQueryToFileContract(rawExecutorContract);
+      if (rawExecutorContract !== undefined && !executorContract) {
+        throw new WorkflowApiError("invalid_executor_contract", "The workflow query-to-file contract is invalid.", 422);
+      }
+      if (executorContract && process.env.HARNESS_BATCH_WORKFLOW_ID !== access.workflow_id) {
+        throw new WorkflowApiError("executor_unavailable", "The workflow query-to-file executor is not configured.", 422);
+      }
+      const targetDay = executorContract ? validateQueryToFileInput(validation.input) : null;
+      const executorOwnerId = executorContract ? access.owner_user_id || null : null;
+      if (executorOwnerId) {
+        const owner = await client.query("select 1 from app_user where org_id=$1 and id=$2 and disabled_at is null", [access.org_id, access.owner_user_id]);
+        if (!owner.rowCount) throw new WorkflowApiError("workflow_owner_unavailable", "The workflow owner is inactive.", 409);
+      }
+
       const reservation = await checkQueueAndBudgets(client, {
         access,
         limits,
-        mode: input.mode,
+        usesModel: input.mode === "single" && !executorContract,
         now,
       });
       const expiresAt = new Date(
@@ -659,8 +676,9 @@ export async function admitWorkflowApiRun(input: {
         `insert into work_run (
            id, org_id, thread_id, backend, status, actor_user_id, actor_role,
            created_at, updated_at
-         ) values ($1, $2, $3, 'hermes', 'queued', null, 'service', $4, $4)`,
-        [workRunId, access.org_id, threadId, now],
+         ) values ($1, $2, $3, $4, 'queued', $5, $6, $7, $7)`,
+        [workRunId, access.org_id, threadId, executorContract ? "harness" : "hermes",
+          executorOwnerId, executorOwnerId ? "member" : "service", now],
       );
       try {
         await admitRunSpend(client, {
@@ -680,12 +698,12 @@ export async function admitWorkflowApiRun(input: {
       await client.query(
         `insert into workflow_run (
            id, org_id, workflow_id, thread_id, work_run_id,
-           trigger_kind, trigger_payload, execution_mode,
+           trigger_kind, trigger_payload, execution_mode, executor_contract,
            trigger_input_preview, status, progress, admitted_at,
            result_expires_at, created_at, updated_at
          ) values (
            $1, $2, $3, $4, $5,
-           'api', $6::jsonb, $7, $8::jsonb, 'queued', $9::jsonb, $10,
+           'api', $6::jsonb, $7, $12::jsonb, $8::jsonb, 'queued', $9::jsonb, $10,
            $11, $10, $10
          )`,
         [
@@ -697,12 +715,14 @@ export async function admitWorkflowApiRun(input: {
           JSON.stringify({
             source: "external_api",
             requestBytes: validation.bytes,
+            ...(targetDay ? { targetDay } : {}),
           }),
           input.mode,
           JSON.stringify(validation.preview),
           JSON.stringify(progress),
           now,
           expiresAt,
+          executorContract ? JSON.stringify(executorContract) : null,
         ],
       );
       await client.query(
@@ -922,6 +942,7 @@ export async function claimWorkflowApiAdmission(input: {
   workflowRunId: string;
   orgId: string;
   workflowId: string;
+  attempt: number;
   now?: Date;
 }): Promise<WorkflowApiAdmissionClaim> {
   const now = input.now ?? new Date();
@@ -959,6 +980,7 @@ export async function claimWorkflowApiAdmission(input: {
     );
     const row = result.rows[0];
     if (!row) return { action: "duplicate" };
+    if (row.attempts !== input.attempt) return { action: "duplicate" };
     if (
       API_TERMINAL_RUN_STATUSES.has(row.run_status) ||
       ["completed", "failed", "cancelled", "expired"].includes(
@@ -1081,11 +1103,17 @@ function telemetryActuals(summary: HarnessRunSummary | null | undefined): {
 export async function persistWorkflowApiTelemetry(input: {
   admissionId: string;
   workflowRunId: string;
+  attempt: number;
   summary: HarnessRunSummary;
 }): Promise<void> {
   const actual = telemetryActuals(input.summary);
   try {
     await withSerializableTransaction(async (client) => {
+      const current = await client.query(
+        "select 1 from workflow_api_admission where id=$1 and attempts=$2 for update",
+        [input.admissionId, input.attempt],
+      );
+      if (!current.rowCount) return;
       await client.query(
         `update workflow_run
          set telemetry_summary = $2::jsonb, updated_at = now()
@@ -1122,6 +1150,7 @@ export async function finishWorkflowApiAdmission(input: {
   admissionId: string;
   workflowRunId: string;
   workRunId: string;
+  attempt: number;
   status: "completed" | "failed" | "cancelled" | "needs_input";
   terminalResult?: Record<string, unknown> | null;
   summary?: string | null;
@@ -1138,18 +1167,20 @@ export async function finishWorkflowApiAdmission(input: {
       ? "completed"
       : input.status;
   await withSerializableTransaction(async (client) => {
-    await client.query(
+    const updated = await client.query(
       `update workflow_api_admission
        set status = $2, completed_at = $3, lease_until = null,
            last_error_code = $4, updated_at = $3
-       where id = $1`,
+       where id = $1 and attempts = $5 and status = 'running'`,
       [
         input.admissionId,
         admissionStatus,
         now,
         input.errorCode?.slice(0, 80) ?? null,
+        input.attempt,
       ],
     );
+    if (updated.rowCount !== 1) throw new Error("Workflow API attempt was superseded before finalization.");
     await client.query(
       `update workflow_run
        set status = $2,
@@ -1547,20 +1578,42 @@ export async function expireWorkflowApiResults(now = new Date()): Promise<number
   return expired.rows.length;
 }
 
-/**
- * A worker crash after claiming a run must never start a second paid attempt.
- * Once its execution lease expires, close the canonical run with an explicit
- * interruption instead of replaying the model call and double-counting spend.
- */
+/** Retry only the read-only, file-backed executor. Paid model attempts still
+ * close as interrupted rather than silently starting a second call. */
 export async function recoverStaleWorkflowApiAdmissions(
   now = new Date(),
 ): Promise<number> {
+  const retryable = await pool().query(
+    `with stale as (
+       update workflow_api_admission admission
+       set status = 'pending', available_at = $1, lease_until = null,
+           queue_job_id = null, last_error_code = 'worker_interrupted_retry', updated_at = $1
+       from workflow_run run
+       where admission.workflow_run_id = run.id
+         and admission.status = 'running' and admission.lease_until <= $1
+         and run.executor_contract->>'executor' = 'query-to-file'
+       returning run.id as workflow_run_id, run.work_run_id
+     ), queued_runs as (
+       update workflow_run run
+       set status = 'queued', progress = '{"stage":"retrying"}'::jsonb,
+           updated_at = $1
+       from stale where run.id = stale.workflow_run_id
+       returning run.work_run_id
+     )
+     update work_run work set status = 'queued', updated_at = $1
+     from queued_runs where work.id = queued_runs.work_run_id
+     returning work.id`,
+    [now],
+  );
   const recovered = await pool().query(
     `with stale as (
        update workflow_api_admission
        set status = 'failed', completed_at = $1, lease_until = null,
            last_error_code = 'worker_interrupted', updated_at = $1
        where status = 'running' and lease_until <= $1
+         and not exists (select 1 from workflow_run run
+           where run.id = workflow_api_admission.workflow_run_id
+             and run.executor_contract->>'executor' = 'query-to-file')
        returning workflow_run_id
      ), closed_runs as (
        update workflow_run run
@@ -1576,7 +1629,7 @@ export async function recoverStaleWorkflowApiAdmissions(
      returning work.id`,
     [now],
   );
-  return recovered.rowCount ?? 0;
+  return (retryable.rowCount ?? 0) + (recovered.rowCount ?? 0);
 }
 
 export function workflowApiRelativeArtifactPath(

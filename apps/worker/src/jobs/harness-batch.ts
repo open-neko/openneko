@@ -6,21 +6,24 @@ import { promisify } from "node:util";
 import { pool } from "@neko/db";
 import type { HarnessBatchPayload } from "@neko/db/jobs";
 import { ensureAgentBroker, ensureWorkWorkspace, getWorkRun, runEntitlementActor, runHeldItemIds } from "@neko/llm/work";
+import { parseQueryToFileContract } from "@neko/llm/workflows";
 
 const execFileAsync = promisify(execFile);
 
 type BatchReceipt = { artifact: string; sha256: string; rows: number; queries: number };
+type BatchResult = { rows: number; queries: number; artifactBytes: number };
 
 function batchConfig() {
   const vars = [
     "OPENNEKO_HARNESS_BATCH_BIN", "HARNESS_OPENSHELL_BIN", "OPENSHELL_GATEWAY",
     "HARNESS_BATCH_IMAGE", "HARNESS_BATCH_SCRIPT", "HARNESS_BATCH_SCRIPT_SHA256",
-    "HARNESS_BATCH_BUNDLE_DIR", "HARNESS_BATCH_BUNDLE_SHA256", "HARNESS_BATCH_WORKFLOW_NAME",
+    "HARNESS_BATCH_BUNDLE_DIR", "HARNESS_BATCH_BUNDLE_SHA256", "HARNESS_BATCH_WORKFLOW_ID",
   ] as const;
   const values = Object.fromEntries(vars.map((name) => [name, process.env[name] ?? ""]));
   if (vars.some((name) => !values[name]) || !isAbsolute(values.OPENNEKO_HARNESS_BATCH_BIN) ||
       !isAbsolute(values.HARNESS_OPENSHELL_BIN) || !isAbsolute(values.HARNESS_BATCH_SCRIPT) ||
-      !isAbsolute(values.HARNESS_BATCH_BUNDLE_DIR) || values.HARNESS_BATCH_WORKFLOW_NAME.length > 128) {
+      !isAbsolute(values.HARNESS_BATCH_BUNDLE_DIR) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.HARNESS_BATCH_WORKFLOW_ID)) {
     throw new Error("Harness batch worker is not configured");
   }
   return values;
@@ -28,7 +31,7 @@ function batchConfig() {
 
 /** A pg-boss retry may enter here after SIGKILL. The database lock fences hosts;
  * the Go runner then removes only a sandbox carrying this exact run label. */
-export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<void> {
+export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<BatchResult | null> {
   if (!/^[0-9a-f-]{36}$/i.test(payload.runId) ||
       !/^[0-9a-f-]{36}$/i.test(payload.threadId) ||
       !/^[0-9a-f-]{36}$/i.test(payload.workflowRunId)) {
@@ -52,26 +55,27 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
         !["queued", "running", "completed"].includes(run.status)) {
       throw new Error("Harness batch run binding is invalid");
     }
-    const binding = await client.query<{ workflow_id: string; workflow_name: string; enabled: boolean;
+    const binding = await client.query<{ workflow_id: string; enabled: boolean;
       definition_status: string; owner_user_id: string; workflow_status: string;
-      trigger_payload: { targetDay?: unknown }; output_contract: { harnessBatch?: unknown } | null }>(`
-      SELECT wr.workflow_id, wd.name AS workflow_name, wd.enabled, wd.status AS definition_status,
-        wd.owner_user_id, wr.status AS workflow_status, wr.trigger_payload, wd.output_contract
+      trigger_kind: string; trigger_payload: { targetDay?: unknown };
+      executor_contract: Record<string, unknown> | null;
+      api_status: string | null; api_attempt: number | null }>(`
+      SELECT wr.workflow_id, wd.enabled, wd.status AS definition_status,
+        wd.owner_user_id, wr.status AS workflow_status, wr.trigger_kind, wr.trigger_payload,
+        wr.executor_contract, admission.status AS api_status, admission.attempts AS api_attempt
       FROM workflow_run wr JOIN workflow_definition wd ON wd.id=wr.workflow_id AND wd.org_id=wr.org_id
+      LEFT JOIN workflow_api_admission admission ON admission.workflow_run_id=wr.id
       WHERE wr.org_id=$1 AND wr.id=$2 AND wr.work_run_id=$3 AND wr.thread_id=$4`,
       [payload.orgId, payload.workflowRunId, payload.runId, payload.threadId]);
     const workflow = binding.rows[0];
-    const executor = workflow?.output_contract?.harnessBatch as Record<string, unknown> | undefined;
+    const executor = parseQueryToFileContract(workflow?.executor_contract);
     const columns = executor?.columns;
     const artifactName = executor?.artifactName;
     if (!workflow || !workflow.enabled || workflow.definition_status !== "active" ||
-        workflow.workflow_name !== config.HARNESS_BATCH_WORKFLOW_NAME ||
-        executor?.version !== 1 || executor?.executor !== "query-to-file" ||
-        !Array.isArray(columns) || columns.length === 0 || columns.length > 64 ||
-        columns.some((column) => typeof column !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(column)) ||
-        new Set(columns).size !== columns.length ||
-        typeof artifactName !== "string" || !artifactName.endsWith(".csv") ||
-        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.csv$/.test(artifactName) ||
+        workflow.workflow_id !== config.HARNESS_BATCH_WORKFLOW_ID ||
+        !executor || !columns || !artifactName ||
+        (workflow.trigger_kind === "api" &&
+          (workflow.api_status !== "running" || workflow.api_attempt !== payload.apiAttempt)) ||
         !["running", "completed"].includes(workflow.workflow_status) ||
         typeof workflow.trigger_payload?.targetDay !== "string" ||
         !/^\d{4}-\d{2}-\d{2}$/.test(workflow.trigger_payload.targetDay)) {
@@ -96,6 +100,8 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
     }
     const workspace = await ensureWorkWorkspace(payload.orgId, payload.threadId, payload.runId);
     const artifact = join(workspace.artifactRoot, artifactName);
+    const artifactLimit = Number.isInteger(payload.maxArtifactBytes) && payload.maxArtifactBytes! > 0
+      ? Math.min(64 * 1024 * 1024, payload.maxArtifactBytes!) : 64 * 1024 * 1024;
     const existing = await client.query(
       "SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact' AND payload->'artifact'->>'path'=$3 LIMIT 1",
       [payload.orgId, payload.runId, join("runs", payload.runId, "artifacts", artifactName)],
@@ -103,8 +109,8 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
     if (run.status === "completed") {
       if (!existing.rowCount || workflow.workflow_status !== "completed") throw new Error("Harness batch completed without workflow artifact");
       const info = await lstat(artifact);
-      if (!info.isFile() || info.size > 64 * 1024 * 1024) throw new Error("Harness batch completed artifact is invalid");
-      return;
+      if (!info.isFile() || info.size > artifactLimit) throw new Error("Harness batch completed artifact is invalid");
+      return null;
     }
     await client.query(
       "UPDATE work_run SET status='running', updated_at=now() WHERE org_id=$1 AND id=$2 AND status IN ('queued','running')",
@@ -127,18 +133,22 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
       if (checking || abort.signal.aborted) return;
       checking = true;
       try {
-        const state = await client.query(`SELECT wr.status AS work_status, wfr.status AS workflow_status
+        const state = await client.query(`SELECT wr.status AS work_status, wfr.status AS workflow_status,
+          admission.status AS api_status, admission.attempts AS api_attempt
           FROM work_run wr JOIN workflow_run wfr ON wfr.org_id=wr.org_id AND wfr.work_run_id=wr.id
+          LEFT JOIN workflow_api_admission admission ON admission.workflow_run_id=wfr.id
           WHERE wr.org_id=$1 AND wr.id=$2 AND wfr.id=$3`,
           [payload.orgId, payload.runId, payload.workflowRunId]);
-        if (state.rows[0]?.work_status !== "running" || state.rows[0]?.workflow_status !== "running") abort.abort();
+        if (state.rows[0]?.work_status !== "running" || state.rows[0]?.workflow_status !== "running" ||
+            (payload.apiAttempt !== undefined && (state.rows[0]?.api_status !== "running" ||
+              state.rows[0]?.api_attempt !== payload.apiAttempt))) abort.abort();
       } catch { abort.abort(); }
       finally { checking = false; }
     }, 2_000);
     poll.unref();
     try {
       const { stdout } = await execFileAsync(config.OPENNEKO_HARNESS_BATCH_BIN, [workflow.trigger_payload.targetDay], {
-        timeout: 22 * 60_000, maxBuffer: 16 * 1024, signal: abort.signal,
+        timeout: Math.min(22 * 60_000, (payload.maxRuntimeSeconds ?? 22 * 60) * 1_000), maxBuffer: 16 * 1024, signal: abort.signal,
         env: {
           PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "",
           ...(process.env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME } : {}),
@@ -164,7 +174,7 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
       throw new Error("Harness batch result is invalid");
     }
     const info = await lstat(artifact);
-    if (!info.isFile() || info.size > 64 * 1024 * 1024) throw new Error("Harness batch artifact is invalid");
+    if (!info.isFile() || info.size > artifactLimit) throw new Error("Harness batch artifact is invalid");
     const bytes = await readFile(artifact);
     if (createHash("sha256").update(bytes).digest("hex") !== receipt.sha256) {
       throw new Error("Harness batch artifact digest mismatch");
@@ -197,8 +207,16 @@ export async function runHarnessBatch(payload: HarnessBatchPayload): Promise<voi
         finished_at=now(),updated_at=now() WHERE org_id=$1 AND id=$2`,
         [payload.orgId, payload.workflowRunId, relative, receipt.rows, receipt.queries, info.size,
           finalText, JSON.stringify({ kind: "csv", rows: receipt.rows, queries: receipt.queries, columns, sha256: receipt.sha256 })]);
+      if (workflow.trigger_kind === "api") {
+        const finished = await client.query(`UPDATE workflow_api_admission SET status='completed',
+          completed_at=now(),lease_until=NULL,last_error_code=NULL,updated_at=now()
+          WHERE workflow_run_id=$1 AND status='running' AND attempts=$2 RETURNING id`,
+          [payload.workflowRunId, payload.apiAttempt]);
+        if (finished.rowCount !== 1) throw new Error("Harness batch API admission is not running");
+      }
       await client.query("COMMIT");
       console.log(`[harness-batch] completed workflowRun=${payload.workflowRunId} run=${payload.runId} rows=${receipt.rows} queries=${receipt.queries} bytes=${info.size}`);
+      return { rows: receipt.rows, queries: receipt.queries, artifactBytes: info.size };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
