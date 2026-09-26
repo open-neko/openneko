@@ -26,7 +26,7 @@ const knowledge: KnowledgePackContents = {
 };
 
 function build(
-  backend: "hermes",
+  backend: "hermes" | "harness",
   overrides: {
     wantsCards?: boolean;
     includeUxMetadata?: boolean;
@@ -47,6 +47,7 @@ function build(
       scope?: "external" | "internal";
       default_mode?: "auto" | "ask" | "deny";
     }>;
+    packActions?: Array<{ kind: string; description: string }>;
     dataSurface?: "customer" | "records";
   } = {},
 ): string {
@@ -70,6 +71,7 @@ function build(
     pluginCatalog: overrides.pluginCatalog,
     installedSkills: overrides.installedSkills,
     pluginActions: overrides.pluginActions,
+    packActions: overrides.packActions,
     dataSurface: overrides.dataSurface,
     ...(overrides.dataSurface === "records"
       ? {
@@ -89,6 +91,15 @@ function build(
     inlineTranscript: false,
   });
 }
+
+it("lets the harness runtime describe its admitted tools without a conflicting role claim", () => {
+  const prompt = build("harness", { packActions: [{ kind: "fixture.update", description: "Update fixture" }] });
+  expect(prompt).toContain("runtime supplies the tools admitted for this run");
+  expect(prompt).toContain("action proposal requires human approval");
+  expect(prompt).not.toContain("read-only business-data assistant");
+  expect(prompt).not.toContain("Use lookup(instruction)");
+  expect(prompt).toContain('"kind":"fixture.update"');
+});
 
 describe("buildWorkPrompt UX metadata", () => {
   it("omits only the UX closing instructions for efficacy evals", () => {

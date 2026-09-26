@@ -31,7 +31,7 @@ live("OpenShell Go/Ax proposal returns a durable approval and terminal recovery 
   await fetch("http://127.0.0.1:18118/control",{method:"POST",body:JSON.stringify({proposal:true})});
   const core=makeSandboxRunCore({cli:process.env.HARNESS_M3_CLI!,gatewayName:"harness-m2",agentImage:"harness-openneko:m3",modelProvider:"harness-m3",modelHosts:[{host:"host.docker.internal",port:18118}],hermesHomeHostPath:hermesHome,warmPoolSize:0,brokerUrl:broker.url,brokerTokenFor:broker.tokenFor,brokerRelease:broker.release,onLog:()=>{}});
   const events:AgentEvent[]=[];
-  const input={backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId,workspace,prompt:"Request approval to set the fixture value to 42. Do not execute it.",userMessage:"Prepare the change",pluginActions:[],emit:async(event:AgentEvent)=>{events.push(event);}};
+  const input={backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId,workspace,prompt:"Request approval to set the fixture value to 42. Do not execute it.",userMessage:"Prepare the change",pluginActions:[],packActions:[{kind,description:"Set the fixture value",scope:"external" as const,default_mode:"ask" as const}],emit:async(event:AgentEvent)=>{events.push(event);}};
   const result=await core(input);expect(result.status,JSON.stringify(result)).toBe("completed");
   expect(JSON.stringify(result.backendState)).toContain('"kind":"approval"');
   const card=events.find(event=>event.type==="action_request_emit");expect(card).toBeDefined();

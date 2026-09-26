@@ -32,7 +32,7 @@ export class HarnessBackend implements AgentBackend {
             throw new Error("Harness M3 requires host run identity and workspace");
         const child = spawn(VENDORED_HARNESS_MODEL_BINARY, [], {
             env: { ...env, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
-                HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_PROPOSALS: env.OPENNEKO_HARNESS_PROPOSALS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness") },
+                HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_ACTION_KINDS: env.OPENNEKO_HARNESS_ACTION_KINDS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness") },
             stdio: ["pipe", "pipe", "ignore"],
         });
         let killTimer: ReturnType<typeof setTimeout> | undefined;
