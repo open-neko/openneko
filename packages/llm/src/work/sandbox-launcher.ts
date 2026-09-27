@@ -50,6 +50,8 @@ const SANDBOX_RUNTIME_DIR = ".openneko";
 const SANDBOX_OWNER_LABEL = "openneko.owner";
 const SANDBOX_BOOT_LABEL = "openneko.boot";
 const SANDBOX_BOOT_ID = randomUUID();
+const HARNESS_OPERATION_LIMIT = 12;
+const HARNESS_MODEL_CALL_LIMIT = 24;
 
 /** web or worker; each host deletes only boxes it owns. */
 function sandboxOwner(): string {
@@ -652,6 +654,7 @@ function makeSandboxCore(
       const userMessage = jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : undefined);
       const prompt = acceptedPrompt;
       const spec = JSON.stringify({version: 1, run_id: input.runId, input_id: input.runId,
+        max_operations: HARNESS_OPERATION_LIMIT, max_model_calls: HARNESS_MODEL_CALL_LIMIT,
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
       const snapshot = path.join(state, `${createHash("sha256").update(input.runId).digest("hex")}.json`);
@@ -738,6 +741,7 @@ function makeSandboxCore(
       ? await timed("harness_admission", () => journal(
           path.join(input.workspace.runsRoot, ".harness-launches", createHash("sha256").update(input.runId).digest("hex")),
           { version: 1, runId: input.runId, orgId: input.orgId, kind,
+            ...(input.backend.id === "harness" ? {maxOperations: HARNESS_OPERATION_LIMIT, maxModelCalls: HARNESS_MODEL_CALL_LIMIT} : {}),
             threadId: !isJob ? (input as RunAgentBackendInput).threadId : null,
             userMessage: jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : null),
             prompt: toBox(inputPrompt), backend: input.backend.id, model: input.backend.configuredIdentity,
@@ -1066,6 +1070,7 @@ function makeSandboxCore(
                   threadId,
                   kind,
                   ...(input.backend.id === "harness" ? { profile: kind === "work" && (input as RunAgentBackendInput).packActions?.length ? "harness-governed" as const : "harness-read-only" as const } : {}),
+                  ...(input.backend.id === "harness" ? { operationLimit: HARNESS_OPERATION_LIMIT } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface === "records" ? { lookupRead: false } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { memoryRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { libraryRead: true } : {}),
@@ -1076,6 +1081,7 @@ function makeSandboxCore(
               : {}),
             ...(opts.env ?? {}),
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: kind === "work" && (input as RunAgentBackendInput).packActions?.length ? JSON.stringify((input as RunAgentBackendInput).packActions!.map(action => action.kind)) : "" } : {}),
+            ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(HARNESS_MODEL_CALL_LIMIT) } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },

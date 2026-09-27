@@ -83,7 +83,7 @@ export const harness_operation = pgTable("harness_operation", {
 }, t => ({
   pk: primaryKey({columns:[t.org_id,t.run_id,t.operation_id]}),
   run: foreignKey({columns:[t.org_id,t.run_id],foreignColumns:[harness_run_journal.org_id,harness_run_journal.run_id]}).onDelete("cascade"),
-  id_bound: check("harness_operation_operation_id_check",sql`${t.operation_id} BETWEEN 1 AND 4`),
+  id_bound: check("harness_operation_operation_id_check",sql`${t.operation_id} BETWEEN 1 AND 32`),
   request_bound: check("harness_operation_request_check",sql`octet_length(${t.request}::text) <= 65536`),
   result_bound: check("harness_operation_result_check",sql`${t.result} IS NULL OR octet_length(${t.result}::text) <= 262144`),
   terminal: check("harness_operation_check",sql`(${t.result} IS NULL) = (${t.finished_at} IS NULL)`),
@@ -2465,7 +2465,7 @@ export const action_request = pgTable(
   (t) => ({
     harness_operation_unique: uniqueIndex("action_request_harness_operation_unique")
       .on(t.org_id,t.work_run_id,t.harness_operation_id).where(sql`${t.harness_operation_id} IS NOT NULL`),
-    harness_operation_valid: check("action_request_harness_operation_valid",sql`${t.harness_operation_id} IS NULL OR (${t.harness_operation_id} BETWEEN 1 AND 4 AND ${t.work_run_id} IS NOT NULL AND ${t.actor_backend} IS NOT DISTINCT FROM 'harness' AND ${t.harness_proposal} IS NOT NULL)`),
+    harness_operation_valid: check("action_request_harness_operation_valid",sql`${t.harness_operation_id} IS NULL OR (${t.harness_operation_id} BETWEEN 1 AND 32 AND ${t.work_run_id} IS NOT NULL AND ${t.actor_backend} IS NOT DISTINCT FROM 'harness' AND ${t.harness_proposal} IS NOT NULL)`),
     harness_proposal_bound: check("action_request_harness_proposal_bound",sql`${t.harness_proposal} IS NULL OR octet_length(${t.harness_proposal}::text) <= 65536`),
     harness_prepared_bound: check("action_request_harness_prepared_bound",sql`${t.harness_prepared} IS NULL OR octet_length(${t.harness_prepared}::text) <= 65536`),
     org_status_idx: index("action_request_org_status_idx").on(

@@ -28,6 +28,8 @@ import {
 export interface RunBinding {
   /** Trusted launcher capability profile; never read from request JSON. */
   profile?: "harness-read-only" | "harness-governed";
+  /** Host-selected run-wide operation limit; omitted bindings retain four. */
+  operationLimit?: number;
   /** Records-only turns cannot delegate customer-source GraphJin lookups. */
   lookupRead?: boolean;
   /** Explicit customer-surface read grant; records-only runs omit it. */
@@ -797,6 +799,9 @@ export async function startAgentBroker(
       if (binding.profile !== undefined && binding.profile !== "harness-read-only" && binding.profile !== "harness-governed") {
         throw new Error("Unknown broker capability profile");
       }
+      if (binding.operationLimit !== undefined && (!binding.profile || !Number.isInteger(binding.operationLimit) || binding.operationLimit < 1 || binding.operationLimit > 32)) {
+        throw new Error("Invalid broker operation limit");
+      }
       if (binding.lookupRead === false && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker lookup grant");
       }
@@ -820,7 +825,7 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }

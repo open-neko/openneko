@@ -30,6 +30,11 @@ export class HarnessBackend implements AgentBackend {
         const runId = opts.runId;
         if (!runId || !opts.workspace)
             throw new Error("Harness M3 requires host run identity and workspace");
+        const maxOperations = env.OPENNEKO_HARNESS_MAX_OPERATIONS ? Number(env.OPENNEKO_HARNESS_MAX_OPERATIONS) : 4;
+        const maxModelCalls = env.OPENNEKO_HARNESS_MAX_MODEL_CALLS ? Number(env.OPENNEKO_HARNESS_MAX_MODEL_CALLS) : 16;
+        if (!Number.isInteger(maxOperations) || maxOperations < 1 || maxOperations > 32 ||
+            !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64)
+            throw new Error("Invalid trusted Harness run budget");
         const child = spawn(VENDORED_HARNESS_MODEL_BINARY, [], {
             env: { ...env, ...opts.mcpBridgeEnv, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
                 HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_ACTION_KINDS: env.OPENNEKO_HARNESS_ACTION_KINDS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness"),
@@ -50,7 +55,9 @@ export class HarnessBackend implements AgentBackend {
         // Attach immediately so process-start failures cannot become unhandled rejections.
         void exit.catch(() => undefined);
         child.stdin.on("error", () => undefined);
-        child.stdin.end(JSON.stringify({ version: 1, run_id: runId, input_id: runId, prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
+        child.stdin.end(JSON.stringify({ version: 1, run_id: runId, input_id: runId,
+            max_operations: maxOperations, max_model_calls: maxModelCalls,
+            prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
         try {
             for await (const line of createInterface({ input: child.stdout })) {
                 if (line.length > 3 * 1024 * 1024)
