@@ -59,6 +59,13 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/work-run-memory-fence.test.ts)
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/reconciler.test.ts)
 fi
+if [[ ${HARNESS_M5_APPROVAL:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-approval-sandbox-live.test.ts)
+  if [[ ${HARNESS_M5_APPROVAL_ONLY:-0} == 1 ]]; then
+    echo M5_APPROVAL_ONLY_PASS
+    exit 0
+  fi
+fi
 
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"

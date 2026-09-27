@@ -42,10 +42,6 @@ func main() {
 		tools.Scope = "records-only"
 	}
 	if kinds := os.Getenv("OPENNEKO_HARNESS_ACTION_KINDS"); kinds != "" {
-		if recordsOnly == "1" {
-			fmt.Fprintln(os.Stderr, "records-only run cannot admit pack actions")
-			os.Exit(2)
-		}
 		propose, bindErr := broker.Propose(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
 		var err error
 		if bindErr != nil {
@@ -57,7 +53,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "invalid proposal capability binding")
 			os.Exit(2)
 		}
-		tools.Scope = kinds
+		tools.Scope += "\nactions:" + kinds
 	}
 	if enabled := os.Getenv("OPENNEKO_HARNESS_MEMORY_SAVE"); enabled != "" {
 		if enabled != "1" || recordsOnly == "1" {

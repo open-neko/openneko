@@ -334,12 +334,16 @@ status; no hidden mock adapter. Real Hermes cold/warm/reuse checks remain green.
 
 ## M5c — Governed product mutations and workflow execution
 
-**Partial status (2026-09-26):** the existing M4 pack-action proposal/effect path
-is narrowed to the host-filtered action kinds for each Work run. No eligible pack
-actions means no proposal tool and a read-only broker token. The Go callback
-rejects an unlisted action before broker dispatch; the broker still rechecks
-readiness, actor entitlement, exact schema and policy, and approved effects use
-the existing claim/reconciliation path. Prompt claims match this admitted slice.
+**Partial status (2026-09-28):** the existing M4 proposal/effect path now binds
+eligible pack and plugin action kinds, source, scope and installed-plugin name
+to the exact Work run. With no eligible action, there is no proposal tool or
+proposal broker route. The Go callback rejects an unlisted action
+before broker dispatch; the broker rechecks pack readiness/schema or plugin
+entitlement and current policy. Approved effects use the existing one-claim,
+reconciliation-or-unknown boundary. A connected OpenShell run passed both a
+pack action and a synthetic internal-scope plugin action on a Records-only turn,
+each with pending human approval and one approved effect. Actual Records and
+installed-plugin adapters still need product-level preflight/effect fixtures.
 The direct `memory_save` capability now binds an explicit customer Work-run grant,
 validates the model's bounded text/kind/scope, and persists host operation intent
 before calling OpenNeko's existing memory service. A successful connected
@@ -347,9 +351,8 @@ OpenShell/Ax turn stored one real memory row and matching host/Go receipts.
 If the host commits the memory but loses its receipt, the outcome stays unknown
 and later effects are fenced; no automatic redispatch is permitted. Workflow
 definition and rule writes are limited to the separately qualified paths below;
-records, skill, plugin and admin writes are not enabled.
-Local Go and OpenNeko checks pass; connected browser/queue acceptance must be
-repeated against the updated image when an instance is available.
+skill and most admin writes remain unqualified. The full connected queue and
+browser gates remain required before claiming M5c complete.
 
 **Queued workflow slice (2026-09-27):** Harness now receives the owning
 `work_run` and trusted `workflow_run` identity. Its parent Ax agent may run
@@ -763,16 +766,15 @@ authorized actions.
 
 ## Immediate order
 
-1. Finish M5a packaging and recovery checks for the local native/MCP catalog.
-2. Continue M5c handler inventory and isolated governed mutation fixtures;
-   retain pack proposal as the only enabled product write path.
-3. Use the isolated local demo as the connected M5b target: real query-to-file
-   batch, MCP reads, clarification and UI through OpenNeko/GraphJin; then
-   connected M5c writes. Keep the released demo and feature integration
-   evidence distinct until the worker and gateway versions match.
-4. M5d/M6: local file/process safety, bounded batch output, routing, context
-   and pre-call budgets. M5e adds bounded delegation after shared budgets.
-5. M7/M8: parity evidence, staging and rollback.
+1. Qualify actual Records and installed-plugin action preflight, approval,
+   effect and duplicate-delivery behavior through a queued Work run.
+2. Qualify remaining skill/admin writes and trigger redelivery at their host
+   effect boundaries; retain the accepted idle cancellation warning separately.
+3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
+   product boundary. Use focused connected gates during iteration.
+4. Complete M6 routing, budget and context evidence, then M7 parity and M8
+   staging/rollback. Run Daily Lead Union against real GraphJin separately
+   when that source is connected.
 
 No new TUI, generic plugin framework, speculative swarm, or wholesale rewrite of
 OpenNeko's tools is required. Reuse existing capabilities and qualify their contracts.

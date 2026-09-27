@@ -159,6 +159,11 @@ GraphJin fixture and queued OpenShell worker, but skips the unchanged M2
 transport probes, separate process suite, database Vitest groups and Hermes
 regression suite. The connected queue fixture still runs. Use the default
 mode as the combined acceptance gate before claiming a milestone complete.
+For a focused connected proposal/approval/effect check, add
+`HARNESS_M5_APPROVAL=1 HARNESS_M5_APPROVAL_ONLY=1` to the fast invocation.
+It still starts a fresh gateway and OpenShell sandbox, then exits before the
+long queue fixture. It checks pack and Records-only plugin proposal paths.
+The isolated test stack is removed on exit.
 
 ## Original integration contract (M3 implementation described above)
 
