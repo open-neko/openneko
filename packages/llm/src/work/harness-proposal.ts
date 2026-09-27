@@ -66,7 +66,7 @@ export async function emitHarnessApprovals(result:AgentRunResult,scope:{orgId:st
 
 /** Harness emits one final assistant message; recovery must not append it again. */
 export async function emitHarnessRestoredAnswer(result:AgentRunResult,scope:{orgId:string;runId:string},emit:(event:AgentEvent)=>Promise<void>) {
-    if (!result.finalText) return;
+    if (!result.finalText || (result.backendState?.harness as {kind?:string}|undefined)?.kind === "clarification") return;
     const {pool}=await import("@neko/db");
     const existing=await pool().query(`SELECT 1 FROM work_run_event WHERE org_id=$1 AND run_id=$2
       AND kind='message' AND payload->>'role'='assistant' LIMIT 1`,[scope.orgId,scope.runId]);

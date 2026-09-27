@@ -89,11 +89,11 @@ const thread = await createWorkThread(orgId, 'M3 queued lookup');
 const run = await createWorkRun(orgId, thread.id, 'harness', { userId: null, role: 'service' });
 const [job] = await db().insert(processing_job).values({ org_id: orgId, kind: QUEUE.WORK_RUN, trigger: 'test' }).returning();
 await enqueue(QUEUE.WORK_RUN, { processingJobId: job.id, orgId, runId: run.id, threadId: thread.id, message: 'Find the seeded reference using lookup.' }, { retryLimit: 0 });
-async function waitForJob(jobId:string, runId=run.id) {
+async function waitForJob(jobId:string, runId=run.id, expected='completed') {
 for (let n = 0; n < 120; n++) {
     const current = await getWorkRun(orgId, runId);
-    if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
-        assert.equal(current.status, 'completed', JSON.stringify(current));
+    if (current && ['completed', 'failed', 'cancelled', 'needs_input'].includes(current.status)) {
+        assert.equal(current.status, expected, JSON.stringify(current));
         const [finished] = await db().select().from(processing_job).where(eq(processing_job.id, jobId));
         if (finished.status !== 'succeeded') {
             await new Promise(r => setTimeout(r, 100));
@@ -141,6 +141,30 @@ assert.deepEqual((await pool().query('SELECT operation_id,request,result,finishe
 assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role='assistant'",[orgId,run.id])).rows[0].n,1);
 assert.deepEqual(await outerUsageEvents(),initialUsage,'redelivery must not record model usage twice');
 console.log('M4_QUEUE_REDELIVERY_PASS',run.id);
+// A clarification is a terminal handoff. Queue redelivery must recover the
+// durable question instead of turning it into an assistant completion.
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clarification:true})})).status,204);
+const questionThread=await createWorkThread(orgId,'M5 clarification');
+const questionRun=await createWorkRun(orgId,questionThread.id,'harness',{userId:null,role:'service'});
+const [questionJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-clarification'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:questionJob.id,orgId,runId:questionRun.id,threadId:questionThread.id,message:'Ask me which day.'},{retryLimit:0});
+await waitForJob(questionJob.id,questionRun.id,'needs_input');
+const questionEvents=async () => (await pool().query("SELECT kind,payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind IN ('surface','needs_input') ORDER BY id",[orgId,questionRun.id])).rows;
+const initialQuestions=await questionEvents();
+assert.deepEqual(initialQuestions.map(row=>row.kind),['surface','needs_input']);
+assert.match(initialQuestions[1].payload.question,/Which day/);
+const assistantQuestionEvents=async () => (await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='message' AND payload->>'role'='assistant'",[orgId,questionRun.id])).rows;
+assert.deepEqual(await assistantQuestionEvents(),[],'clarification must not include an assistant answer');
+const questionCalls=await (await fetch('http://127.0.0.1:18118/control')).json();
+assert.equal(questionCalls['harness-fixture'],2,'clarification must stop the Ax loop');
+const [questionRetry]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-clarification-redelivery'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:questionRetry.id,orgId,runId:questionRun.id,threadId:questionThread.id,message:'Ask me which day.'},{retryLimit:0});
+await waitForJob(questionRetry.id,questionRun.id,'needs_input');
+assert.deepEqual(await questionEvents(),initialQuestions,'redelivery must not duplicate clarification events');
+assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='done'",[orgId,questionRun.id])).rows[0].n,1);
+assert.deepEqual(await assistantQuestionEvents(),[],'redelivery must not append an assistant answer');
+assert.deepEqual(await (await fetch('http://127.0.0.1:18118/control')).json(),questionCalls,'redelivery must not call model');
+console.log('M5_QUEUE_CLARIFICATION_PASS',questionRun.id);
 // A staged upload must reach the Go harness through the production queue and
 // OpenShell sandbox, while another thread's upload remains invisible.
 const uploadThread=await createWorkThread(orgId,'M5 staged upload');

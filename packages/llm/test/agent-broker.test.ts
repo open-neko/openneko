@@ -3,6 +3,7 @@ import type { AgentControlPlane } from "../src/work/control-plane";
 import {
   ensureAgentBroker,
   registerAgentBrokerEventSink,
+  routeBrokerEvents,
   shutdownAgentBroker,
   startAgentBroker,
   type RunBinding,
@@ -76,6 +77,50 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("routes run events through the active reducer and restores the worker sink", async () => {
+    const outer = vi.fn(async () => {});
+    const inner = vi.fn(async () => {});
+    const handle = await startAgentBroker({ controlPlane: stubControlPlane(), onEvents: routeBrokerEvents, port: 0 });
+    const token = handle.tokenFor({ runId: "nested-sink", orgId: "org", kind: "work", profile: "harness-read-only", interactionEvents: true });
+    const question = { type: "needs_input", question: "Which day?", questions: [{ id: "q1", question: "Which day?" }] };
+    const unregisterOuter = registerAgentBrokerEventSink("nested-sink", outer);
+    const unregisterInner = registerAgentBrokerEventSink("nested-sink", inner);
+    try {
+      expect((await postEvents(handle.port, token, [question])).status).toBe(200);
+      expect(inner).toHaveBeenCalledOnce();
+      expect(outer).not.toHaveBeenCalled();
+      unregisterInner();
+      expect((await postEvents(handle.port, token, [question])).status).toBe(200);
+      expect(outer).toHaveBeenCalledOnce();
+    } finally {
+      unregisterInner();
+      unregisterOuter();
+      await handle.close();
+    }
+  });
+
+  it("limits Harness interaction events to the bound question and card surface", async () => {
+    const onEvents = vi.fn(async () => {});
+    const handle = await startAgentBroker({ controlPlane: stubControlPlane(), onEvents, port: 0 });
+    try {
+      const denied = handle.tokenFor({ runId: "no-interaction", orgId: "org", kind: "work", profile: "harness-read-only" });
+      expect((await postEvents(handle.port, denied, [{ type: "needs_input", question: "Which day?", questions: [{ id: "q1", question: "Which day?" }] }])).status).toBe(403);
+      const binding: RunBinding = { runId: "ask", orgId: "org", kind: "work", profile: "harness-read-only", interactionEvents: true, cardEvents: true };
+      const token = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({ ...binding, cardEvents: false })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, kind: "workflow" })).toThrow("Invalid broker interaction grant");
+      const question = { type: "needs_input", question: "Which day?", questions: [{ id: "q1", question: "Which day?" }] };
+      const surface = { type: "surface", messages: [{ version: "v1.0", createSurface: { surfaceId: "clarification-ask", catalogId: "urn:openneko:catalog:work:v2", components: [{ id: "root", component: "Text" }] } }] };
+      expect((await postEvents(handle.port, token, [question])).status).toBe(200);
+      expect((await postEvents(handle.port, token, [surface])).status).toBe(200);
+      for (const events of [[{ type: "done", result: { status: "completed" } }], [{ ...question, questions: [{ id: "q2", question: "Which day?" }] }], [{ type: "surface", messages: [{ version: "v1.0", createSurface: { surfaceId: "x", catalogId: "wrong" } }] }], [question, question]]) {
+        expect((await postEvents(handle.port, token, events)).status).toBe(403);
+      }
+      expect(onEvents).toHaveBeenCalledTimes(2);
+      expect(onEvents).toHaveBeenCalledWith(expect.objectContaining({ runId: "ask", orgId: "org" }), [question]);
+    } finally { await handle.close(); }
+  });
+
   it("admits only bound Harness library search and strips caller identity", async () => {
     const cp = stubControlPlane();
     cp.searchLibraryForRun = vi.fn(async () => []);

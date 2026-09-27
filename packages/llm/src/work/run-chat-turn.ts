@@ -49,6 +49,8 @@ import { compactIfNeeded, type ThreadCompaction } from "./compact-transcript";
 import { discoverRunArtifacts } from "./artifacts";
 import {
   finishWorkRun,
+  getWorkRunClarification,
+  hasWorkRunEvent,
   getWorkThreadBundle,
   markWorkRunRunning,
   saveAssistantWorkMessage,
@@ -60,6 +62,7 @@ import type { PluginActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
 import { createAgentEventTelemetry } from "./agent-event-telemetry";
+import { registerAgentBrokerEventSink } from "./broker";
 import {
   parseAppWorkContext,
   parseRecordWorkContext,
@@ -361,7 +364,9 @@ async function runChatTurnTraced(
         content: finalText,
       });
       await finishWorkRun(runId, "needs_input", null);
-      await emit({ type: "done", result: { status: "needs_input" } });
+      if (!await hasWorkRunEvent(orgId, runId, "done")) {
+        await emit({ type: "done", result: { status: "needs_input" } });
+      }
     }
     return { status: "needs_input", finalText };
   };
@@ -370,6 +375,9 @@ async function runChatTurnTraced(
   // memory layer (CV2). GraphJin credentials never enter the agent sandbox.
   const actor = await startupPhase("identity.resolve", () => getWorkRunActor(runId));
 
+  const unregisterHarnessEvents = backend.id === "harness"
+    ? registerAgentBrokerEventSink(runId, wrappedEmit)
+    : () => {};
   try {
     if (dataSurface === "customer" && !backend.capabilities.mcpTools && !backend.capabilities.brokerLookup) {
       throw new Error(
@@ -611,6 +619,11 @@ async function runChatTurnTraced(
     // a new run in the same thread, with the persisted question + submitted
     // answer in its transcript. Do not parse or emit answer fences after the
     // model has handed control back to the operator.
+    if (!needsInputEvent && backend.id === "harness" &&
+        (result.backendState?.harness as { kind?: string } | undefined)?.kind === "clarification") {
+      needsInputEvent = await getWorkRunClarification(orgId, runId);
+      if (!needsInputEvent) throw new Error("Harness clarification has no durable question event");
+    }
     if (needsInputEvent) {
       return await finishNeedsInput();
     }
@@ -895,5 +908,7 @@ async function runChatTurnTraced(
     await wrappedEmit({ type: "done", result: { status } });
     if (!aborted && !spendStop) throw error;
     return { status, finalText: assistantText, ...(spendStop ? { error: errMsg } : {}) };
+  } finally {
+    unregisterHarnessEvents();
   }
 }
