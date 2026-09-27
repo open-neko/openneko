@@ -1,6 +1,6 @@
 # Harness stocktake
 
-Reviewed 2026-09-27 against the current Harness worktree and milestone plan.
+Reviewed 2026-09-28 against the current Harness worktree and milestone plan.
 
 ## Implemented and verified locally
 
@@ -52,8 +52,10 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 Cron redelivery has a narrower Postgres-backed qualification: a stale firing
 cannot be claimed after the definition changes or is disabled; linking must
 affect the claimed firing; a linked failed run settles without a second
-dispatch. The full queued OpenShell cron path and source-change stream replay
-remain open.
+dispatch. Source-change delivery now commits the observation, audit and durable
+identity together; an isolated Postgres and pg-boss test passes replay dedupe,
+stranded dispatch, stale subscription rejection and linked failure recovery.
+Full queued OpenShell turns for cron and source-change triggers remain open.
 
 Local tests do not close M5b–M8. The Daily Lead Union case still lacks its
 real GraphJin source and a validated real-data workflow artifact path. The

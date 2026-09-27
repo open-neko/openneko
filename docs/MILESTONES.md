@@ -447,6 +447,16 @@ failure and restart-recovery cases; the worker scheduler unit suite passed.
 The full queued OpenShell cron path and source-change stream replay still need
 connected qualification.
 
+**Source-change replay hardening (2026-09-28):** stream matching now commits a
+durable delivery identity, observation and source audit in one transaction before
+queue dispatch. A worker sweep dispatches stranded records, fences stale
+subscription revisions, and settles terminal linked runs without replaying a
+possible effect. An isolated Postgres and pg-boss test passed duplicate event
+delivery, duplicate consumer claims, pre-dispatch crash recovery, subscription
+edit rejection, and failed linked work-run reconciliation. This test exercises
+the delivery ledger and queue, not a full Ax/OpenShell workflow turn; that
+connected gate remains open.
+
 **Workflow deletion slice (2026-09-27):** the direct `workflow_delete` tool
 requires the listed workflow ID, name and exact `versionToken`. Before a hard
 cascade, the host reads the current run's persisted user message and requires
