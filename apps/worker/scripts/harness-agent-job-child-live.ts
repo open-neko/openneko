@@ -1,5 +1,6 @@
 // Isolated acceptance: an agent job grants its child only the server-side GraphJin agent.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,6 +18,7 @@ const configPath = join(process.env.OPENNEKO_AGENT_HERMES_HOME ?? "", "config.ya
 const priorConfig = await readFile(configPath, "utf8");
 const isolated = await ensureIsolatedJobWorkspace("harness-child-check");
 let disabled: Awaited<ReturnType<typeof ensureIsolatedJobWorkspace>> | undefined;
+let interrupted: Awaited<ReturnType<typeof ensureIsolatedJobWorkspace>> | undefined;
 let modelOnly: Awaited<ReturnType<typeof ensureIsolatedJobWorkspace>> | undefined;
 const runId = randomUUID();
 try {
@@ -49,6 +51,48 @@ try {
     [orgId, disabledRunId])).rows[0].n, 0);
   console.log("M5_AGENT_JOB_CHILD_DISABLED_PASS", disabledRunId);
 
+  await db().update(llm_provider_config).set({ model: "harness-job-child-crash-fixture" }).where(eq(llm_provider_config.id, prior.id));
+  await writeFile(configPath, "model:\n  provider: custom\n  default: harness-job-child-crash-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: JSON.stringify({ pause_responder: true }) });
+  interrupted = await ensureIsolatedJobWorkspace("harness-child-recovery-check");
+  const interruptedRunId = randomUUID();
+  const interruptedBackend = await sandboxAgentBackendForJob({ backend: makeAgentBackend({ id: "harness" }), orgId,
+    runId: interruptedRunId, workspace: interrupted.workspace, access: { graphjinAgent: true } });
+  const firstAttempt = interruptedBackend.run({ prompt: "Use one read-only child to verify the seeded reference." }).then(
+    value => value, error => error);
+  let paused = false;
+  for (let n = 0; n < 80; n++) {
+    const count = (await (await fetch("http://127.0.0.1:18118/control")).json())["harness-job-child-crash-fixture"] ?? 0;
+    if (count === 5) { paused = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert.ok(paused, "child responder did not pause after its read");
+  const firstOperations = (await pool().query("SELECT operation_id,request,result FROM harness_operation WHERE org_id=$1 AND run_id=$2",
+    [orgId, interruptedRunId])).rows;
+  assert.equal(firstOperations.length, 1);
+  assert.ok(firstOperations[0].result);
+  const graphjinBefore = (await (await fetch("http://127.0.0.1:18118/control")).json())["graphjin-fixture"];
+  const sandboxName = `h-${createHash("sha256").update(interruptedRunId).digest("hex").slice(0, 16)}`;
+  const containers = execFileSync("docker", ["ps", "--filter", `label=openshell.ai/sandbox-name=${sandboxName}`,
+    "--filter", "network=harness-m2", "--format", "{{.ID}}"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+  assert.equal(containers.length, 1);
+  execFileSync("docker", ["exec", "--user", "0", containers[0], "/bin/sh", "-c",
+    'killed=0; for comm in /proc/[0-9]*/comm; do read -r name < "$comm" || continue; case "$name" in harness-opennek|harness-openneko) pid=${comm#/proc/}; pid=${pid%/comm}; kill -KILL "$pid" || exit 1; killed=1;; esac; done; test "$killed" = 1'], { timeout: 15_000 });
+  assert.ok((await firstAttempt) instanceof Error, "child process survived the injected crash");
+  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: JSON.stringify({ continue: true }) });
+  const recovered = await interruptedBackend.run({ prompt: "Use one read-only child to verify the seeded reference." });
+  assert.equal(recovered.status, "completed", JSON.stringify(recovered));
+  assert.match(recovered.finalText, /REF-42/);
+  assert.deepEqual((await pool().query("SELECT operation_id,request,result FROM harness_operation WHERE org_id=$1 AND run_id=$2",
+    [orgId, interruptedRunId])).rows, firstOperations);
+  const afterRecovery = await (await fetch("http://127.0.0.1:18118/control")).json();
+  assert.equal(afterRecovery["graphjin-fixture"], graphjinBefore);
+  const recoveredSnapshot = JSON.parse(await readFile(join(interrupted.workspace.runRoot, ".harness",
+    `${createHash("sha256").update(interruptedRunId).digest("hex")}.json`), "utf8"));
+  assert.equal(recoveredSnapshot.events.filter((event: { type: string }) => event.type === "run.resumed").length, 1);
+  assert.equal(recoveredSnapshot.events.filter((event: { type: string; name?: string }) => event.type === "tool.reused" && event.name === "lookup").length, 1);
+  console.log("M5_AGENT_JOB_CHILD_RECOVERY_PASS", interruptedRunId);
+
   await db().update(llm_provider_config).set({ model: "harness-job-model-only-fixture" }).where(eq(llm_provider_config.id, prior.id));
   await writeFile(configPath, "model:\n  provider: custom\n  default: harness-job-model-only-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
   await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
@@ -65,6 +109,7 @@ try {
   await shutdownAgentBroker();
   await isolated.cleanup();
   await disabled?.cleanup();
+  await interrupted?.cleanup();
   await modelOnly?.cleanup();
   await writeFile(configPath, priorConfig);
   await db().update(llm_provider_config).set({ model: prior.model }).where(eq(llm_provider_config.id, prior.id));
