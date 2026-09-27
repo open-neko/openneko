@@ -2132,7 +2132,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     const [run] = await db()
       .select({ role: work_run.actor_role })
       .from(work_run)
-      .where(eq(work_run.id, input.runId))
+      .where(and(eq(work_run.id, input.runId), eq(work_run.org_id, input.orgId)))
       .limit(1);
     if (run?.role !== "admin") return { denied: true };
 
