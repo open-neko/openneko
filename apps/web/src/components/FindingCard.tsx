@@ -4,6 +4,7 @@
 // Distinct from the existing BriefingCard which is heavy/KPI-shaped.
 
 import { useRouter } from "next/navigation";
+import type { KeyboardEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Card } from "@/components/ui/card";
@@ -137,7 +138,7 @@ export default function FindingCard({
           onClick={onDrillIn}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => {
+          onKeyDown={(e: KeyboardEvent<HTMLElement>) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               onDrillIn();

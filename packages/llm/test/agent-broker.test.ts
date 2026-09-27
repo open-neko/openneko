@@ -77,6 +77,30 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("admits an isolated process only for its exact Work-run grant", async () => {
+    const handle = await startAgentBroker({controlPlane: stubControlPlane(), port: 0});
+    try {
+      const processRun = {binary: "/tmp/harness-process", binarySha256: "a".repeat(64),
+        openshell: "/tmp/openshell", gateway: "fixture", image: "fixture:local",
+        orgRoot: "/tmp/org", runRoot: "/tmp/org/runs/work-1",
+        artifactRoot: "/tmp/org/runs/work-1/artifacts", uploadsRoot: "/tmp/org/uploads/thread-1"};
+      const binding: RunBinding = {runId: "work-1", orgId: "org", threadId: "thread-1",
+        kind: "work", profile: "harness-read-only", processRun};
+      const allowed = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({...binding, processRun: {...processRun, image: "changed"}})).toThrow("conflicts");
+      expect(() => handle.tokenFor({...binding, runId: "work-2", kind: "workflow"})).toThrow("Invalid broker isolated process grant");
+      expect(() => handle.tokenFor({...binding, runId: "work-3", processRun: {...processRun, artifactRoot: "/tmp/foreign"}})).toThrow("Invalid broker isolated process grant");
+      const denied = handle.tokenFor({runId: "work-4", orgId: "org", threadId: "thread-1",
+        kind: "work", profile: "harness-read-only"});
+      const post = (token: string) => fetch(`http://127.0.0.1:${handle.port}/v1/harness/process/run`, {
+        method: "POST", headers: {authorization: `Bearer ${token}`, "content-type": "application/json"},
+        body: JSON.stringify({operationId: 1, binding: "b".repeat(64), instruction: '{}'}),
+      });
+      expect((await post(denied)).status).toBe(403);
+      expect((await post(allowed)).status).toBe(400);
+    } finally { await handle.close(); }
+  });
+
   it("denies Harness lookup to agent jobs without the server-agent grant", async () => {
     const handle = await startAgentBroker({ controlPlane: stubControlPlane(), port: 0 });
     try {

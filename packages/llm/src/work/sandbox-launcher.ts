@@ -597,6 +597,24 @@ function makeSandboxCore(
     const pool = kind === "work" && input.backend.id === "hermes" ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
+    const processEligible = input.backend.id === "harness" && kind === "work" &&
+      (input as RunAgentBackendInput).dataSurface !== "records";
+    const processBinary = process.env.HARNESS_PROCESS_BIN?.trim();
+    const processHash = process.env.HARNESS_PROCESS_BIN_SHA256?.trim();
+    const processCLI = process.env.HARNESS_OPENSHELL_BIN?.trim();
+    const processImage = process.env.HARNESS_PROCESS_IMAGE?.trim();
+    if (processEligible && [processBinary, processHash, processImage].some(Boolean) &&
+        (![processBinary, processHash, processCLI, processImage].every(Boolean) ||
+          !path.isAbsolute(processBinary!) || !path.isAbsolute(processCLI!) ||
+          !/^[a-f0-9]{64}$/.test(processHash!) || !opts.gatewayName)) {
+      throw new Error("Invalid trusted isolated process configuration");
+    }
+    const processBinding = processEligible && processBinary && processHash && processCLI && processImage
+      ? {binary: processBinary, binarySha256: processHash, openshell: processCLI,
+          gateway: opts.gatewayName!, image: processImage,
+          orgRoot: input.workspace.orgRoot, runRoot: input.workspace.runRoot,
+          artifactRoot: input.workspace.artifactRoot, uploadsRoot: input.workspace.threadUploadsRoot}
+      : undefined;
     const callerSignal = isJob
       ? undefined
       : (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).signal;
@@ -753,6 +771,9 @@ function makeSandboxCore(
             allowedSkills: input.allowedSkills ?? null,
             dataSurface: !isJob ? (input as RunAgentBackendInput).dataSurface ?? null : null,
             graphjinToolPolicy: !isJob ? (input as RunAgentBackendInput).graphjinToolPolicy ?? null : null,
+            processExecutor: processBinding ? {binarySha256: processBinding.binarySha256,
+              image: processBinding.image, openshell: processBinding.openshell,
+              gateway: processBinding.gateway} : null,
             principal: !isJob ? (input as RunAgentBackendInput).sandboxUser ?? null : null,
             environment: opts.env, gateway: opts.gatewayName ?? opts.gatewayEndpoint ?? null, image: opts.agentImage, provider: opts.modelProvider, endpoints: opts.modelHosts },
           reconcile,
@@ -1085,12 +1106,14 @@ function makeSandboxCore(
                   ...(input.backend.id === "harness" && kind === "workflow" ? { workflowRunId: (input as RunWorkflowAgentBackendInput).workflowRunId, workflowOutput: true, workflowAction: !!(input as RunWorkflowAgentBackendInput).packActions?.length } : {}),
                   ...(input.backend.id === "harness" && kind === "work" ? { recordsRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" ? { interactionEvents: true, cardEvents: (input as RunAgentBackendInput).wantsCards ?? true } : {}),
+                  ...(processBinding ? {processRun: processBinding} : {}),
                 }),
                 }
               : {}),
             ...(opts.env ?? {}),
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: kind === "work" && (input as RunAgentBackendInput).packActions?.length ? JSON.stringify((input as RunAgentBackendInput).packActions!.map(action => action.kind)) : kind === "workflow" && (input as RunWorkflowAgentBackendInput).packActions?.length ? JSON.stringify((input as RunWorkflowAgentBackendInput).packActions!.map(action => action.kind)) : "" } : {}),
-            ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit) } : {}),
+            ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit),
+              OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
