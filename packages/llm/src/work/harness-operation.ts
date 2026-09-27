@@ -26,12 +26,14 @@ export async function recordHarnessOperation(
   const args=[scope.orgId,scope.runId,operationId,JSON.stringify(request)];
   const admitted=await pool().query(`INSERT INTO harness_operation (org_id,run_id,operation_id,request)
     SELECT org_id,run_id,$3,$4::jsonb FROM harness_run_journal
-    WHERE org_id=$1 AND run_id=$2 AND result IS NULL
+    WHERE org_id=$1 AND run_id=$2 AND result IS NULL AND operation_limit >= $3
     ON CONFLICT DO NOTHING RETURNING operation_id`,args);
   if (!admitted.rowCount) {
     const row=(await pool().query(`SELECT request=$4::jsonb AS matches, result IS NOT NULL AS finished
       FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND operation_id=$3`,args)).rows[0];
-    const outcome=!row ? "run_not_admitted" : !row.matches ? "conflict" : row.finished ? "recorded" : "outcome_unknown";
+    const pending=!row && (await pool().query(`SELECT 1 FROM harness_operation
+      WHERE org_id=$1 AND run_id=$2 AND result IS NULL LIMIT 1`,[scope.orgId,scope.runId])).rowCount;
+    const outcome=!row ? pending ? "outcome_unknown" : "run_not_admitted" : !row.matches ? "conflict" : row.finished ? "recorded" : "outcome_unknown";
     startupEvent("harness.operation",{runId:scope.runId,operationId:Number(operationId),outcome});
     // Receipt recovery is host-authorized. A repeated bearer request gets no saved data.
     return {error:`Harness operation ${outcome}; automatic dispatch disabled`};

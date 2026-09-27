@@ -51,20 +51,27 @@ live.each([false,true])("operation dispatch is not repeated after SIGKILL (resul
     // Missing admission and invalid IDs cannot reach the external callback.
     expect(await recordHarnessLookup({...scope,runId:randomUUID()},1,request,async()=>{calls++;})).toEqual({error:"Harness operation run_not_admitted; automatic dispatch disabled"});
     expect(await recordHarnessLookup(scope,5,request,async()=>{calls++;})).toEqual({error:"Invalid Harness lookup operation"});
+    if (!saved) expect(await recordHarnessLookup(scope,2,request,async()=>{calls++;})).toEqual({error:"Harness operation outcome_unknown; automatic dispatch disabled"});
     expect(calls).toBe(1);
-    expect(await recordHarnessLookup(scope,3,request,async()=>{calls++;},AbortSignal.abort())).toEqual({error:"Harness lookup cancelled before dispatch"});
+    const admit=async(limit=4)=>{const runId=randomUUID();await pool().query("INSERT INTO harness_run_journal (org_id,run_id,fingerprint,operation_limit) VALUES ($1,$2,$3,$4)",[scope.orgId,runId,"0".repeat(64),limit]);return {...scope,runId};};
+    const cancellationScope=await admit();
+    expect(await recordHarnessLookup(cancellationScope,3,request,async()=>{calls++;},AbortSignal.abort())).toEqual({error:"Harness lookup cancelled before dispatch"});
     expect(calls).toBe(1);
     const cancelled=new AbortController();
-    expect(await recordHarnessLookup(scope,3,request,async()=>{
+    expect(await recordHarnessLookup(cancellationScope,3,request,async()=>{
       cancelled.abort();return {response:{answer:"late result"}};
     },cancelled.signal)).toEqual({error:"Harness operation outcome unknown; automatic dispatch disabled"});
-    expect((await pool().query("SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND operation_id=3",[scope.orgId,scope.runId])).rows[0].result).toBeNull();
+    expect((await pool().query("SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND operation_id=3",[scope.orgId,cancellationScope.runId])).rows[0].result).toBeNull();
+    expect(await recordHarnessLookup(cancellationScope,4,request,async()=>{calls++;})).toEqual({error:"Harness operation outcome_unknown; automatic dispatch disabled"});
+    expect(calls).toBe(1);
     // A lost journal after execution must never be acknowledged as durable success.
-    expect(await recordHarnessLookup(scope,2,request,async()=>{
-      await pool().query("DELETE FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND operation_id=2",[scope.orgId,scope.runId]);
+    const lostScope=await admit();
+    expect(await recordHarnessLookup(lostScope,2,request,async()=>{
+      await pool().query("DELETE FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND operation_id=2",[scope.orgId,lostScope.runId]);
       return {response:{answer:"unrecorded"}};
     })).toEqual({error:"Harness operation outcome unknown; automatic dispatch disabled"});
-    const budgeted={...scope,operationLimit:8};
+    expect(await recordHarnessLookup({...lostScope,operationLimit:8},5,request,async()=>{calls++;})).toEqual({error:"Harness operation run_not_admitted; automatic dispatch disabled"});
+    const budgeted={...await admit(8),operationLimit:8};
     expect(await recordHarnessLookup(budgeted,5,request,async()=>{calls++;return {response:{answer:"fifth"}};})).toEqual({response:{answer:"fifth"}});
     expect(await recordHarnessLookup(budgeted,5,request,async()=>{calls++;})).toEqual({error:"Harness operation recorded; automatic dispatch disabled"});
     expect(await recordHarnessLookup(budgeted,9,request,async()=>{calls++;})).toEqual({error:"Invalid Harness lookup operation"});

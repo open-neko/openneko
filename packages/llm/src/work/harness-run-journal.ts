@@ -24,12 +24,16 @@ export async function withHarnessRunJournal<T>(
     const journal: HarnessRunJournal = async (root, identity, reconcile, restorePrompt) => {
       const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
       const candidate = identity as Record<string, unknown> | null;
+      const operationLimit = candidate?.maxOperations ?? 4;
+      if (!Number.isInteger(operationLimit) || Number(operationLimit) < 1 || Number(operationLimit) > 32) {
+        throw new Error("Invalid trusted Harness operation limit");
+      }
       // Only a separately bound user request lets regenerated context differ.
       const context = restorePrompt && candidate && typeof candidate.prompt === "string" &&
         typeof candidate.userMessage === "string" && candidate.userMessage.trim()
         ? {prompt: candidate.prompt, scopeFingerprint: hash({...candidate, prompt: null})} : null;
       const existing = (await client.query(
-        "SELECT fingerprint, result, accepted_context FROM harness_run_journal WHERE org_id=$1 AND run_id=$2",
+        "SELECT fingerprint, result, accepted_context, operation_limit FROM harness_run_journal WHERE org_id=$1 AND run_id=$2",
         [scope.orgId, scope.runId],
       )).rows[0];
       if (existing?.accepted_context != null) {
@@ -40,7 +44,7 @@ export async function withHarnessRunJournal<T>(
         identity = {...candidate, prompt: saved.prompt};
       }
       const fingerprint = hash(identity);
-      if (existing && existing.fingerprint !== fingerprint) {
+      if (existing && (existing.fingerprint !== fingerprint || existing.operation_limit !== operationLimit)) {
         throw new Error("Harness launch conflicts with accepted input or authorization scope");
       }
       await checkHarnessAdmission(root, fingerprint);
@@ -49,8 +53,8 @@ export async function withHarnessRunJournal<T>(
         startupEvent("sandbox.harness_context", {outcome:"restored"});
       }
       const inserted = await client.query(
-        "INSERT INTO harness_run_journal (org_id, run_id, fingerprint, accepted_context) VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING run_id",
-        [scope.orgId, scope.runId, fingerprint, context ? JSON.stringify(context) : null],
+        "INSERT INTO harness_run_journal (org_id, run_id, fingerprint, accepted_context, operation_limit) VALUES ($1,$2,$3,$4::jsonb,$5) ON CONFLICT DO NOTHING RETURNING run_id",
+        [scope.orgId, scope.runId, fingerprint, context ? JSON.stringify(context) : null, operationLimit],
       );
       const save = async (result: AgentRunResult) => {
         const encoded = JSON.stringify(result);
@@ -68,9 +72,9 @@ export async function withHarnessRunJournal<T>(
           await local.complete!(result);
         }};
       }
-      const row = (await client.query("SELECT fingerprint, result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2",
+      const row = (await client.query("SELECT fingerprint, result, operation_limit FROM harness_run_journal WHERE org_id=$1 AND run_id=$2",
         [scope.orgId, scope.runId])).rows[0];
-      if (!row || row.fingerprint !== fingerprint) throw new Error("Harness launch conflicts with accepted input or authorization scope");
+      if (!row || row.fingerprint !== fingerprint || row.operation_limit !== operationLimit) throw new Error("Harness launch conflicts with accepted input or authorization scope");
       if (row.result !== null) {
         if (!["completed", "failed", "cancelled"].includes(row.result?.status) || typeof row.result?.finalText !== "string") {
           throw new Error("Harness launch outcome unknown: invalid database receipt");

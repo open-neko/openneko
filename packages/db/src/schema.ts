@@ -60,12 +60,14 @@ export const harness_run_journal = pgTable("harness_run_journal", {
   org_id: text("org_id").notNull().references(() => organization.id, {onDelete: "cascade"}),
   run_id: text("run_id").notNull(),
   fingerprint: text("fingerprint").notNull(),
+  operation_limit: integer("operation_limit").notNull().default(4),
   accepted_context: jsonb("accepted_context"),
   result: jsonb("result"),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
 }, t => ({
   pk: primaryKey({columns: [t.org_id, t.run_id]}),
+  operation_limit_bound: check("harness_run_journal_operation_limit_check", sql`${t.operation_limit} BETWEEN 1 AND 32`),
   context_bounded: check("harness_run_journal_context_bounded", sql`${t.accepted_context} IS NULL OR octet_length(${t.accepted_context}::text) <= 8388608`),
   fingerprint_valid: check("harness_run_journal_fingerprint_check", sql`${t.fingerprint} ~ '^[0-9a-f]{64}$'`),
   result_bounded: check("harness_run_journal_result_check", sql`${t.result} IS NULL OR octet_length(${t.result}::text) <= 8388608`),
@@ -83,6 +85,7 @@ export const harness_operation = pgTable("harness_operation", {
 }, t => ({
   pk: primaryKey({columns:[t.org_id,t.run_id,t.operation_id]}),
   run: foreignKey({columns:[t.org_id,t.run_id],foreignColumns:[harness_run_journal.org_id,harness_run_journal.run_id]}).onDelete("cascade"),
+  one_pending: uniqueIndex("harness_operation_one_pending").on(t.org_id,t.run_id).where(sql`${t.result} IS NULL`),
   id_bound: check("harness_operation_operation_id_check",sql`${t.operation_id} BETWEEN 1 AND 32`),
   request_bound: check("harness_operation_request_check",sql`octet_length(${t.request}::text) <= 65536`),
   result_bound: check("harness_operation_result_check",sql`${t.result} IS NULL OR octet_length(${t.result}::text) <= 262144`),

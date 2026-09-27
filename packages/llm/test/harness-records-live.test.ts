@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, organization, work_thread, work_run } from "@neko/db";
+import { db, pool, organization, work_thread, work_run } from "@neko/db";
 import { deleteTestOrg } from "@neko/db/test-helpers";
 import { runRecordsMigrations } from "@neko/db/records-migrate";
 import { expect, it } from "vitest";
@@ -70,6 +70,7 @@ live("runs a records-only Harness turn through OpenShell and the actor-scoped br
     expect(result.finalText).toContain("crm blueprint");
     const snapshot = JSON.parse(await readFile(join(workspace.runRoot, ".harness", `${createHash("sha256").update(runId).digest("hex")}.json`), "utf8"));
     expect(snapshot.spec).toMatchObject({ max_operations: 12, max_model_calls: 24 });
+    expect((await pool().query("SELECT operation_limit FROM harness_run_journal WHERE org_id=$1 AND run_id=$2", [orgId, runId])).rows[0].operation_limit).toBe(12);
     expect(snapshot.operations).toMatchObject([{ tool: "mcp_neko_records_browse_catalog", finished: true }, { tool: "mcp_neko_records_browse_blueprints", finished: true }]);
     expect(snapshot.operations[1].result.content.join(" ")).toContain("crm");
     expect(snapshot.operations).toHaveLength(2);

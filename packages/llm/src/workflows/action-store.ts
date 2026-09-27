@@ -451,13 +451,14 @@ export async function createActionRequest(
   }
   let harnessProposal: Record<string, unknown> | null = null;
   if (input.harnessOperationId !== undefined) {
-    if (!Number.isInteger(input.harnessOperationId) || input.harnessOperationId < 1 || input.harnessOperationId > 4 || !input.workRunId) {
+    if (!Number.isInteger(input.harnessOperationId) || input.harnessOperationId < 1 || input.harnessOperationId > 32 || !input.workRunId) {
       throw new Error("Invalid Harness proposal operation");
     }
-    const admitted = (await pool().query(`SELECT r.actor_user_id,r.actor_role,j.fingerprint
+    const admitted = (await pool().query(`SELECT r.actor_user_id,r.actor_role,j.fingerprint,j.operation_limit
       FROM work_run r JOIN harness_run_journal j ON j.org_id=r.org_id AND j.run_id=r.id::text
       WHERE r.org_id=$1 AND r.id=$2 AND r.backend='harness' AND j.result IS NULL`,[input.orgId,input.workRunId])).rows[0];
     if (!admitted) throw new Error("Harness proposal requires an admitted run");
+    if (input.harnessOperationId > admitted.operation_limit) throw new Error("Invalid Harness proposal operation");
     actor = {userId:admitted.actor_user_id,role:admitted.actor_role,backend:"harness"};
     harnessProposal = {
       fingerprint:admitted.fingerprint, actor, scope:input.scope, kind:input.kind,
