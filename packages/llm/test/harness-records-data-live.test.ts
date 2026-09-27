@@ -179,13 +179,27 @@ live("reads and mutates populated Records through OpenShell, approval and real G
       leaseOwner:`harness-records-${actionRunId}`,recordSourceWrite:async()=>{}});
     const adapter=createRecordActionAdapter("record_update",executor);
     let effectCause:unknown;
-    registerActionAdapter("record_update",async input=>{
-      try {return await adapter(input);} catch(error) {effectCause=error;throw error;}
-    });
-    const effectResult=await executeApprovedActionRequest(orgId,requestId);
+    let loseHostReceipt=true;
+    registerActionAdapter("record_update",Object.assign(async (input:Parameters<typeof adapter>[0])=>{
+      try {
+        const outcome=await adapter(input);
+        if(loseHostReceipt) {
+          loseHostReceipt=false;
+          throw Error("Fixture lost the host receipt after Records committed");
+        }
+        return outcome;
+      } catch(error) {effectCause=error;throw error;}
+    },{reconcile:adapter.reconcile}));
+    const interrupted=await executeApprovedActionRequest(orgId,requestId);
     const effectDetail=effectCause instanceof RecordsGraphjinRequestError
       ? JSON.stringify({status:effectCause.status,errors:effectCause.graphjinErrors}) : String(effectCause);
+    expect(interrupted.ok,effectDetail).toBe(false);
+    expect(interrupted.error).toContain("outcome unknown");
+    expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-42'`)).rows[0].name).toBe("Updated fixture loan");
+    expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requestId])).rows[0].n).toBe(1);
+    const effectResult=await executeApprovedActionRequest(orgId,requestId);
     expect(effectResult.ok,effectDetail).toBe(true);
+    expect((effectResult.outcome?.result as {recovered?:boolean})?.recovered).toBe(true);
     expect((await executeApprovedActionRequest(orgId,requestId)).ok).toBe(true);
     expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-42'`)).rows[0].name).toBe("Updated fixture loan");
     expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requestId])).rows[0].n).toBe(1);
@@ -262,7 +276,15 @@ live("reads and mutates populated Records through OpenShell, approval and real G
       {kind:"record_restore",model:"harness-records-restore-fixture",message:"Restore loan-43."},
     ] as const) {
       const stepAdapter=createRecordActionAdapter(step.kind,executor);
-      registerActionAdapter(step.kind,stepAdapter);
+      let loseStepReceipt=true;
+      registerActionAdapter(step.kind,Object.assign(async (input:Parameters<typeof stepAdapter>[0])=>{
+        const outcome=await stepAdapter(input);
+        if(loseStepReceipt) {
+          loseStepReceipt=false;
+          throw Error("Fixture lost the host receipt after Records committed");
+        }
+        return outcome;
+      },{reconcile:stepAdapter.reconcile}));
       await db().update(llm_provider_config).set({model:step.model}).where(eq(llm_provider_config.org_id,orgId));
       await writeFile(join(process.env.OPENNEKO_AGENT_HERMES_HOME!,"config.yaml"),
         `model:\n  provider: custom\n  default: ${step.model}\n  base_url: http://host.docker.internal:18118/v1\n`);
@@ -285,10 +307,29 @@ live("reads and mutates populated Records through OpenShell, approval and real G
       const requests=(await pool().query("SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2",[orgId,stepRun.id])).rows;
       expect(requests).toHaveLength(1);
       expect(requests[0].status).toBe("pending_approval");
+      const callsBeforeRedelivery=(await (await fetch("http://127.0.0.1:18118/control")).json())[step.model];
+      const [replayJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:`${step.kind}-redelivery`}).returning();
+      await enqueue(QUEUE.WORK_RUN,{processingJobId:replayJob.id,orgId,runId:stepRun.id,
+        threadId:stepThread.id,message:step.message},{retryLimit:0});
+      let replayDone=false;
+      for(let attempt=0;attempt<90;attempt++) {
+        const [processing]=await db().select().from(processing_job).where(eq(processing_job.id,replayJob.id));
+        if(processing?.status==="succeeded") {replayDone=true;break;}
+        if(processing?.status==="failed") throw Error(`${step.kind} redelivery failed`);
+        await new Promise(resolve=>setTimeout(resolve,500));
+      }
+      expect(replayDone,`${step.kind} redelivery timeout`).toBe(true);
+      expect((await (await fetch("http://127.0.0.1:18118/control")).json())[step.model]).toBe(callsBeforeRedelivery);
+      expect((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1 AND work_run_id=$2",[orgId,stepRun.id])).rows[0].n).toBe(1);
       expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(0);
       await approveActionRequest({orgId,id:requests[0].id,approverUserId:null,approver:{userId:null,role:"admin"}});
+      const interrupted=await executeApprovedActionRequest(orgId,requests[0].id);
+      expect(interrupted.ok,`${step.kind}: ${JSON.stringify(interrupted)}`).toBe(false);
+      expect(interrupted.error).toContain("outcome unknown");
+      expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(1);
       const outcome=await executeApprovedActionRequest(orgId,requests[0].id);
       expect(outcome.ok,`${step.kind}: ${JSON.stringify(outcome)}`).toBe(true);
+      expect((outcome.outcome?.result as {recovered?:boolean})?.recovered).toBe(true);
       expect((await executeApprovedActionRequest(orgId,requests[0].id)).ok).toBe(true);
       expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(1);
       if(step.kind==="record_create") {

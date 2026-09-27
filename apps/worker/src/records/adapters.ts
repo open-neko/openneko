@@ -165,6 +165,7 @@ export class RecordActionPayloadError extends Error {
 
 export type RecordActionExecutor = {
   execute(request: RecordWriteRequest): Promise<RecordWriteResult>;
+  reconcile?(request: RecordWriteRequest): Promise<RecordWriteResult | null>;
 };
 
 export type RecordActionActorResolver = (
@@ -394,7 +395,7 @@ export function createRecordActionAdapter(
   executor: RecordActionExecutor,
   resolveActor: RecordActionActorResolver = actorForRequest,
 ): ActionAdapter {
-  return async ({ request }) => {
+  const adapter: ActionAdapter = async ({ request }) => {
     if (request.kind !== kind) {
       throw new RecordActionPayloadError(
         `adapter ${kind} cannot execute action kind ${request.kind}`,
@@ -420,6 +421,18 @@ export function createRecordActionAdapter(
       result: { ...result },
     };
   };
+  if (executor.reconcile) {
+    adapter.reconcile = async ({ request }) => {
+      if (request.kind !== kind) throw new RecordActionPayloadError(`adapter ${kind} cannot reconcile ${request.kind}`);
+      const result = await executor.reconcile!(await writeRequest(kind, request, resolveActor));
+      return result ? {
+        commandOrOperation: kind,
+        externalRef: `${result.tableName}:${result.id}`,
+        result: { ...result },
+      } : null;
+    };
+  }
+  return adapter;
 }
 
 /** Reject malformed Harness CRUD proposals before they can be approved. */
