@@ -440,7 +440,7 @@ In the connected queue fixture, creation and edit retained one subscription,
 a saved watcher fired on the seeded GraphJin result, and a detected mutation
 loop, invalid table, invalid watcher path and disabled author left no new
 definition. This establishes trigger wiring and one sweep on synthetic data;
-GraphJin websocket replay and trigger crash-edge qualification remain open.
+Trigger crash-edge qualification remains open; the websocket replay gate is below.
 
 **Cron redelivery hardening (2026-09-28):** a queued firing now rechecks the
 current enabled cron definition and persisted schedule version at claim time,
@@ -460,19 +460,21 @@ subscription revisions, and settles terminal linked runs without replaying a
 possible effect. An isolated Postgres and pg-boss test passed duplicate event
 delivery, duplicate consumer claims, pre-dispatch crash recovery, subscription
 edit rejection, and failed linked work-run reconciliation. This test exercises
-the delivery ledger and queue; the connected gate below covers the workflow
-turn but not a GraphJin websocket reconnect.
+the delivery ledger and queue; the connected gate below covers the GraphJin
+websocket, workflow turn and reconnect replay.
 
 **Connected trigger replay gate (2026-09-28):** the isolated acceptance stack
 used the production pg-boss `workflow_run_fire` handler, Ax, the host GraphJin
-broker, seeded GraphJin, and real OpenShell 0.0.116. A source-change match
-produced one completed workflow and observation; replay of the match and the
-same payload at the production handler created no second workflow or model
-call. A due cron firing completed through the same path; a second handler
-invocation likewise created no second run or model call. Both workflows recorded
-the required output. The fixture invokes the
-source-change match handler directly; GraphJin websocket reconnect/replay
-remains unqualified. It uses synthetic model and GraphJin data.
+broker, seeded GraphJin, and real OpenShell 0.0.116. A real GraphJin
+source-change websocket match produced one completed workflow and observation.
+The fixture restarted GraphJin; the subscription manager reconnected, the
+same snapshot arrived again, and the durable delivery ledger dropped it
+without another workflow or model call. A second handler invocation likewise
+created no second run. A due cron firing completed through the same path;
+its repeated handler invocation also created no second run or model call.
+Both workflows recorded the required output. It uses synthetic model and
+GraphJin data. A separate real websocket test checks reconnect and changed
+snapshot delivery without the workflow queue.
 
 **Workflow deletion slice (2026-09-27):** the direct `workflow_delete` tool
 requires the listed workflow ID, name and exact `versionToken`. Before a hard
@@ -507,7 +509,7 @@ Source inventory for the next M5c slice:
 | Handler | Current effect boundary | Required harness qualification |
 | --- | --- | --- |
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
-| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. Qualify GraphJin websocket replay and trigger crash-edge recovery separately. |
+| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. The real GraphJin websocket reconnect/replay gate passed; qualify trigger crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save and skill creation remain excluded. Add idempotency before any automatic retry of a lost save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
@@ -854,7 +856,7 @@ authorized actions.
 1. Qualify a real installed-plugin provider effect when one is available;
    cover Records CRUD crash and queue-redelivery edges beyond the connected
    approved-effect fixtures.
-2. Qualify remaining skill/admin writes and GraphJin websocket replay at their host
+2. Qualify remaining skill/admin writes and trigger crash edges at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
    product boundary. Use focused connected gates during iteration.

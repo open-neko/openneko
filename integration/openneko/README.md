@@ -63,8 +63,16 @@ OPENSHELL_TEST_CLI=/absolute/openshell-0.0.116 \
 This starts one isolated stack, queues real workflow jobs, and exercises Ax,
 the host GraphJin broker, and OpenShell with synthetic source data. It expects
 `M5_CONNECTED_TRIGGER_REPLAY_PASS` and removes its containers and volumes on
-exit. The source-change event enters at the match handler, so this check does
-not cover a GraphJin websocket reconnect.
+exit. The source-change event enters through a real GraphJin websocket;
+after a GraphJin restart, the manager reconnects and the delivery ledger
+drops the repeated snapshot without a second workflow or model call.
+
+For a narrower websocket transport check, use the same command with
+`HARNESS_M5_WS_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`. It verifies
+changed source snapshots arrive before and after a real GraphJin restart and
+reports `M5_CONNECTED_GRAPHJIN_WEBSOCKET_PASS`.
+The isolated Compose fixture mounts a writable query-cache volume beneath
+GraphJin's read-only configuration directory so subscriptions can compile.
 
 For the focused queued Work process-cancellation gate, use the same command
 with `HARNESS_M5_PROCESS_CANCEL_ONLY=1` in place of

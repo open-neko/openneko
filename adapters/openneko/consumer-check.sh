@@ -42,6 +42,12 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
   bash ./integration/batch/batch-check.sh
 fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+if [[ ${HARNESS_M5_WS_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  export RECORDS_PG_PORT=18120
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/source-change-websocket-live.test.ts)
+  echo M5_CONNECTED_GRAPHJIN_WEBSOCKET_PASS
+  exit 0
+fi
 if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts test/integration/audit-viewer.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture

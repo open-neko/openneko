@@ -38,8 +38,10 @@ services:
     volumes:
       - ./config:/config:ro
       - graphjin-state:/config/.graphjin
+      - graphjin-queries:/config/queries
     depends_on:
       postgres: {condition: service_healthy}
 
 volumes:
   graphjin-state:
+  graphjin-queries:
