@@ -220,6 +220,14 @@ func (r *Runner) Run(ctx context.Context, req Request) (result Result, err error
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	// The files are still hidden in the temporary publication directory.
+	// A failed teardown must not expose an artifact to Work's file route.
+	if err := r.Close(); err != nil {
+		return Result{}, fmt.Errorf("process sandbox teardown failed: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	if _, statErr := os.Lstat(r.opts.OutputRoot); !errors.Is(statErr, os.ErrNotExist) {
 		return Result{}, fmt.Errorf("process output root changed before publication")
 	}

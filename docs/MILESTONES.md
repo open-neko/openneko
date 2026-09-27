@@ -443,8 +443,9 @@ operation. The trusted host stages only selected current-thread uploads and
 invokes the pinned `processshell` executable. It starts a separate OpenShell
 sandbox without provider credentials or network grants, captures bounded output,
 and publishes only declared regular files into a fresh run-owned directory
-after success. It rejects symlinked inputs and outputs, limits individual and
-aggregate output size, and treats sandbox deletion failure as fatal. Its
+after successful execution and sandbox deletion. It rejects symlinked inputs
+and outputs, limits individual and aggregate output size, and treats sandbox
+deletion failure as fatal before making a file visible. Its
 admission and result are journaled as one durable operation. A connected
 production queue run read a synthetic upload, wrote a CSV, emitted one artifact
 event and persisted one operation receipt. With the real web API enabled,

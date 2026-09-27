@@ -74,3 +74,35 @@ func TestOutputCaptureBounded(t *testing.T) {
 		t.Fatalf("unexpected bounded output: %q truncated=%v", buffer.String(), buffer.truncated)
 	}
 }
+
+func TestTeardownFailureDoesNotPublishDownloadedOutput(t *testing.T) {
+	opts, _ := fixture(t)
+	cli := `#!/bin/sh
+case " $* " in
+  *" sandbox list "*) printf '[]' ;;
+  *" sandbox exec "*)
+    case " $* " in *"stat -c%s"*) printf '16' ;; esac ;;
+  *" sandbox download "*)
+    for destination do :; done
+    printf 'lead_id\nLEAD-42\n' > "$destination" ;;
+  *" sandbox delete "*) exit 42 ;;
+esac
+`
+	if err := os.WriteFile(opts.CLI, []byte(cli), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runner.Run(context.Background(), Request{Argv: []string{"python3", "script.py"}, Outputs: []string{"result.csv"}})
+	if err == nil || !strings.Contains(err.Error(), "teardown") {
+		t.Fatalf("expected mandatory teardown failure, got %v", err)
+	}
+	if _, err := os.Stat(opts.OutputRoot); !os.IsNotExist(err) {
+		t.Fatalf("failed teardown exposed output: %v", err)
+	}
+	if staged, err := filepath.Glob(filepath.Join(filepath.Dir(opts.OutputRoot), ".harness-process-*")); err != nil || len(staged) != 0 {
+		t.Fatalf("failed teardown retained publication staging: %v, %v", staged, err)
+	}
+}
