@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.6.0](https://github.com/open-neko/openneko/compare/v3.5.6...v3.6.0) (2026-09-27)
+
+
+### Features
+
+* **web:** import multi-file skills from archives ([5eaa68e](https://github.com/open-neko/openneko/commit/5eaa68ea7d639dfc609e3847fc4def58d721fce4))
+
+
+### Bug Fixes
+
+* **work:** reject malformed table surfaces with repair guidance ([f034896](https://github.com/open-neko/openneko/commit/f03489646147cf12897afe83e38e8fe40124669d))
+
 ## [3.5.6](https://github.com/open-neko/openneko/compare/v3.5.5...v3.5.6) (2026-09-24)
 
 
