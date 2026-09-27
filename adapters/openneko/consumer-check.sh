@@ -74,7 +74,10 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
     done
     [[ "$ready" == 1 ]] || { echo 'Isolated workflow API web server did not start' >&2; exit 1; }
   fi
-  (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
+  if ! (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts); then
+    docker compose -p harness-m3 -f integration/openneko/compose.yml logs --tail=80 model >&2 || true
+    exit 1
+  fi
   if [[ ${HARNESS_M3_API_HTTP:-0} == 1 ]]; then
     process_run=$(cat "$HARNESS_STATE/m5-process-run")
     process_url="http://localhost:18121/api/work/files/runs/$process_run/artifacts/process-1/result.csv"
@@ -122,6 +125,7 @@ if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-process-artifact.mjs "$(cat "$HARNESS_STATE/m5-process-thread")")
   fi
   (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-card-reload.mjs "$(cat "$HARNESS_STATE/m5-card-thread")")
+  (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-workflow-card-reload.mjs "$(cat "$HARNESS_STATE/m5-workflow-thread")")
   batch_run=$(cat "$HARNESS_STATE/m5-batch-workflow-run")
   batch_url="http://localhost:18121/api/workflow-runs/$batch_run/artifact"
   curl -fsS --max-time 10 -D "$HARNESS_STATE/batch.headers" -o "$HARNESS_STATE/batch.csv" "$batch_url"

@@ -84,6 +84,31 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_WORKFLOW_SAVE"); enabled != "" {
+		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {
+			fmt.Fprintln(os.Stderr, "invalid workflow save binding")
+			os.Exit(2)
+		}
+		save, err := broker.WorkflowSave(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "workflow save broker unavailable:", err)
+			os.Exit(2)
+		}
+		var binding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "workflow_save", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Create or update an OpenNeko workflow only when the operator asks. For a new name use expectedVersion='absent'; for an edit first list workflows and use its exact versionToken. A changed definition is rejected. Supports steps, batch output and cron triggers. The host persists the confirmation card with the save receipt.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name","steps","expectedVersion"],"properties":{"name":{"type":"string","minLength":1,"maxLength":120},"description":{"type":"string","maxLength":2000},"goal":{"type":"string","maxLength":2000},"systemPromptOverlay":{"type":"string","maxLength":16000},"steps":{"type":"array","minItems":1,"maxItems":40,"items":{"type":"object","required":["id","description"],"properties":{"id":{"type":"string","minLength":1,"maxLength":60},"description":{"type":"string","minLength":1,"maxLength":2000}},"additionalProperties":false}},"batch":{"type":["object","null"],"properties":{"recordsField":{"type":"string"},"columns":{"type":"array","minItems":1,"maxItems":64,"items":{"type":"object","required":["name","path"],"properties":{"name":{"type":"string","minLength":1,"maxLength":80},"path":{"type":"string","minLength":1,"maxLength":256},"default":{"type":["string","number","boolean","null"]}},"additionalProperties":false}}},"required":["columns"],"additionalProperties":false},"triggers":{"type":"object","properties":{"cron":{"type":"string","minLength":1,"maxLength":120},"timezone":{"type":"string","minLength":1,"maxLength":80},"enabled":{"type":"boolean"}},"additionalProperties":false},"expectedVersion":{"type":"string","pattern":"^(absent|[0-9]{1,12})$"}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return save(ctx, raw, binding)
+			},
+		})
+		binding, err = tools.Binding("workflow_save")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid workflow save capability:", err)
+			os.Exit(2)
+		}
+	}
 	if workflowRunID := os.Getenv("OPENNEKO_HARNESS_WORKFLOW_RUN_ID"); workflowRunID != "" {
 		if recordsOnly == "1" {
 			fmt.Fprintln(os.Stderr, "records-only run cannot emit workflow output")

@@ -346,7 +346,8 @@ before calling OpenNeko's existing memory service. A successful connected
 OpenShell/Ax turn stored one real memory row and matching host/Go receipts.
 If the host commits the memory but loses its receipt, the outcome stays unknown
 and later effects are fenced; no automatic redispatch is permitted. Workflow
-definition, rule, records, skill, plugin and admin writes are not enabled.
+definition writes are limited to the separately qualified create/edit path below;
+rule, records, skill, plugin and admin writes are not enabled.
 Local Go and OpenNeko checks pass; connected browser/queue acceptance must be
 repeated against the updated image when an instance is available.
 
@@ -381,12 +382,28 @@ delivery, then executed the synthetic effect once after approval. Other
 product mutation families and auto-execution semantics remain open. The full
 isolated connected suite and unchanged Hermes checks passed.
 
+**Workflow definition slice (2026-09-27):** customer Work runs expose a direct
+`workflow_save` tool only with a run-bound broker grant. The host validates the
+full definition and current actor, records the operation before calling the
+existing workflow store, and persists the workflow and subscription confirmation
+cards before acknowledging success. A new name requires `expectedVersion=absent`;
+an edit must use the exact version token returned by the actor-filtered workflow
+list. The store rejects a changed row, preventing a stale edit from overwriting
+another actor's change. A connected queued Work fixture created a cron-triggered
+workflow with a batch contract, listed it through MCP, edited it, checked the
+database and confirmation events, and rejected the old version token. Chromium
+found the edited confirmation exactly once before and after a Work-thread reload.
+The image builder now includes the local MCP bridge so the list result retains
+its version token. This grant admits cron triggers; data-change subscriptions
+and watchers need a separate recovery contract because their wiring can fail after the
+definition commits. Deletion and rule writes remain unqualified.
+
 Source inventory for the next M5c slice:
 
 | Handler | Current effect boundary | Required harness qualification |
 | --- | --- | --- |
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
-| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Journal at the host write, bind exact workflow identity and confirmation, reconcile partial trigger wiring and lost card delivery |
+| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch create/edit uses a direct journaled broker call with a version precondition and host-persisted card. Qualify deletion, data-change/watch trigger wiring and lost-card recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Bind policy revision and actor; prove retry cannot silently overwrite a changed rule |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save and skill creation remain excluded. Add idempotency before any automatic retry of a lost save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |

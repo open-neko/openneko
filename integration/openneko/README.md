@@ -4,7 +4,7 @@ The Go runtime remains independent. Optional product integration was tested in
 `OpenNeko-harness-m3` on `feat/openneko-harness`: initial product commit **`c17c9ec`**, based on
 OpenNeko `643b4a8`.
 Hermes remains the default; `OPENNEKO_AGENT_BACKEND=harness` explicitly selects
-this read-only prototype. No changes or upgrade were applied to the user's main
+the qualified Harness backend. No changes or upgrade were applied to the user's main
 OpenNeko checkout, installed CLI, or active gateway.
 
 ## Reproduce
@@ -29,6 +29,15 @@ then exercises the real product launcher/broker and pg-boss production work hand
 The outer M2 suite reports the accepted idle-stream cancellation defect as a
 warning, and still requires sandbox deletion to close upstream work. No real
 model keys or paid inference are used.
+
+The connected queue fixture also exercises the opt-in customer Work
+`workflow_save` tool. It creates a cron-triggered workflow with a batch output
+contract, obtains its version from the MCP workflow list, edits the definition,
+and verifies the stored row, confirmation events, operation journal and stale
+version rejection. Chromium verifies the edited confirmation card once before
+and after Work-thread reload. The tool is distinct from queued workflow execution: a
+queued API caller accepts the workflow version and executor pinned at admission
+and cannot edit that accepted run.
 
 Set `HARNESS_M3_API_HTTP=1` on the command above to add the public HTTP
 submission, status-poll and download check through the Go/OpenShell/GraphJin

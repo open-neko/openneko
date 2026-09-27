@@ -72,6 +72,17 @@ separate Work turn retrieves its sourced concept with `mcp_library_search`.
 The separate `memory_save` capability uses a Work-run-only broker grant and
 host operation receipt. A lost receipt leaves the save outcome unknown and
 prevents later writes; the agent never retries the save automatically.
+Customer Work runs can also use the direct `workflow_save` capability. New
+definitions require `expectedVersion=absent`; edits require the exact
+`versionToken` from the actor-filtered MCP workflow list. The host binds the
+actor, journals the effect, applies the version check in the workflow store,
+and persists workflow and subscription confirmation cards before returning a
+receipt. A connected queued run created and edited a cron/batch workflow and
+proved a stale version cannot overwrite it. Chromium found the edited Work card
+once before and after reload. Delete and rule writes are still
+outside the grant; data-change subscriptions and watchers also await a separate
+partial-failure recovery contract. The image builder bundles the checkout's MCP bridge alongside
+the Go runner so the listed version token reaches Ax unchanged.
 Customer Work runs can admit Ax's owned `team.researcher` child with only
 GraphJin lookup and memory search. Its model calls and read operations share
 the parent run's limits and journal. A connected two-investigation fixture
