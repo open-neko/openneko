@@ -5,7 +5,7 @@ import { recordHarnessLookup } from "./harness-operation";
 import { recordHarnessOperation } from "./harness-operation";
 import { WORK_MEMORY_KINDS } from "./memory-types";
 import { POLICY_SAVE_SCHEMA, WORKFLOW_OUTPUT_SCHEMA, WORKFLOW_SAVE_SCHEMA } from "../workflows/fence-schemas";
-import { policySavedCard, workflowSavedCard, subscriptionSavedCard } from "../workflows/builder-cards";
+import { policySavedCard, workflowDeletedCard, workflowSavedCard, subscriptionSavedCard } from "../workflows/builder-cards";
 import { z } from "zod";
 import { parseHarnessProcessInput, runHarnessProcess, validHarnessProcessBinding, type HarnessProcessBinding } from "./harness-process";
 import {
@@ -181,7 +181,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && path === "/v1/harness/workflow/save") && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -636,6 +636,33 @@ async function handle(
           ...(saved.subscription?{triggerId:saved.subscription.id}:{}),
           ...(saved.triggerError?{triggerError:saved.triggerError}:{}),
         };
+      }));
+    }
+    case "/v1/harness/workflow/delete": {
+      if (!binding.profile || !binding.workflowWrite || binding.kind !== "work" || !binding.threadId ||
+          typeof body.instruction !== "string" || typeof body.binding !== "string" ||
+          !/^[a-f0-9]{64}$/.test(body.binding)) {
+        return send(res, 403, {error: "Harness workflow delete denied"});
+      }
+      let input: {workflowId:string; name:string; expectedVersion:string};
+      try {
+        input = z.object({
+          workflowId:z.string().uuid(),
+          name:z.string().trim().min(1).max(120),
+          expectedVersion:z.string().regex(/^[0-9]{1,12}$/),
+        }).strict().parse(JSON.parse(body.instruction));
+      } catch {
+        return send(res, 400, {error: "Invalid Harness workflow delete"});
+      }
+      const request = {tool:"workflow_delete" as const,binding:body.binding,instruction:body.instruction};
+      return send(res,200,await recordHarnessOperation(binding,body.operationId,request,async()=>{
+        const deleted=await cp.deleteWorkflowForHarness({
+          orgId:binding.orgId,runId:binding.runId,...input,
+        });
+        if (deleted.ok && deleted.workflowId && deleted.name && binding.cardEvents) {
+          await deps.onEvents(binding,[{type:"surface",messages:workflowDeletedCard({id:deleted.workflowId,name:deleted.name})}]);
+        }
+        return deleted;
       }));
     }
     case "/v1/harness/rule/save": {

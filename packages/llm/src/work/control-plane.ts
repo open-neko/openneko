@@ -1,5 +1,5 @@
 import { enqueue, QUEUE } from "@neko/db/jobs";
-import { holds } from "@neko/db";
+import { and, app_user, db, eq, holds, work_message, work_run } from "@neko/db";
 import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
 import {
   createActionRequest,
@@ -21,6 +21,7 @@ import {
 } from "../workflows/save-workflow-with-trigger";
 import {
   deleteWorkflow,
+  deleteWorkflowVersioned,
   emitWorkflowOutput,
   listSubscriptionsByWorkflow,
   getWorkflow,
@@ -640,6 +641,13 @@ export interface AgentControlPlane {
     workflowId: string;
     runId?: string | null;
   }): Promise<{ found: boolean; name: string | null }>;
+  deleteWorkflowForHarness(input: {
+    orgId: string;
+    runId: string;
+    workflowId: string;
+    name: string;
+    expectedVersion: string;
+  }): Promise<{ ok: boolean; workflowId?: string; name?: string; error?: string; requiredConfirmation?: string }>;
   upsertActionPolicyByName(
     input: CreateActionPolicyInput,
   ): Promise<Wire<UpsertActionPolicyResult>>;
@@ -1342,6 +1350,48 @@ export class InProcessControlPlane implements AgentControlPlane {
     }
     const deleted = await deleteWorkflow(input.orgId, input.workflowId);
     return { found: deleted !== null, name: deleted?.name ?? null };
+  }
+
+  async deleteWorkflowForHarness(input: {
+    orgId: string;
+    runId: string;
+    workflowId: string;
+    name: string;
+    expectedVersion: string;
+  }): Promise<{ ok: boolean; workflowId?: string; name?: string; error?: string; requiredConfirmation?: string }> {
+    const confirmation = `DELETE WORKFLOW ${JSON.stringify(input.name)} PERMANENTLY`;
+    const [run] = await db()
+      .select({ actorUserId: work_run.actor_user_id, threadId: work_run.thread_id })
+      .from(work_run)
+      .where(and(eq(work_run.org_id, input.orgId), eq(work_run.id, input.runId)))
+      .limit(1);
+    if (!run?.actorUserId) return { ok: false, error: "actor_denied" };
+    const [actor] = await db()
+      .select({ disabledAt: app_user.disabled_at })
+      .from(app_user)
+      .where(and(eq(app_user.org_id, input.orgId), eq(app_user.id, run.actorUserId)))
+      .limit(1);
+    if (!actor || actor.disabledAt) return { ok: false, error: "actor_denied" };
+    const [message] = await db()
+      .select({ content: work_message.content })
+      .from(work_message)
+      .where(and(
+        eq(work_message.org_id, input.orgId),
+        eq(work_message.thread_id, run.threadId),
+        eq(work_message.run_id, input.runId),
+        eq(work_message.role, "user"),
+      ))
+      .limit(1);
+    if (message?.content.trim() !== confirmation) {
+      return { ok: false, error: "confirmation_required", requiredConfirmation: confirmation };
+    }
+    const target = await getWorkflow(input.orgId, input.workflowId);
+    if (!target || !(await runWorkflowFilter(input.orgId, input.runId))(target)) {
+      return { ok: false, error: "not_found_or_denied" };
+    }
+    const deleted = await deleteWorkflowVersioned(input);
+    if (!deleted) return { ok: false, error: "workflow_changed" };
+    return { ok: true, workflowId: deleted.id, name: deleted.name };
   }
 
   async upsertActionPolicyByName(
