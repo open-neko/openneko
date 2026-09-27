@@ -130,9 +130,9 @@ the host journal accepts a fifth operation when explicitly bound, while legacy
 callers retain four. Postgres stores the admitted limit for each run and allows
 at most one unfinished host operation, so an unknown effect prevents later
 dispatch. Its hard ceiling of 32 matches Go.
-Durable MCP product writes
-remain excluded until their effect boundaries are qualified. The full consumer
-capability inventory and general recovery matrix remain open.
+Durable MCP product writes remain excluded until their effect boundaries are
+qualified. The [consumer tool inventory](TOOL-INVENTORY.md) records admitted
+and excluded surfaces; a recovery matrix for each remaining write is open.
 
 **Deliver:** a run-scoped catalog and dispatch path for native Go, MCP and direct
 service tools. Reuse the existing operation journal, Ax callback bridge, policy and
