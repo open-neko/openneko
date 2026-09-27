@@ -1,14 +1,16 @@
 // Isolated acceptance: a queued workflow owns two Ax child investigations and one durable output.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, pool, getOrgId, llm_provider_config, workflow_definition, workflow_run, eq } from "@neko/db";
+import { action_policy, db, pool, getOrgId, llm_provider_config, pack_action_definition, workflow_definition, workflow_run, eq } from "@neko/db";
 import { boss, enqueue, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { shutdownAgentBroker } from "@neko/llm/work";
-import { admitWorkflowApiRun, enableWorkflowApiAccess, getWorkflowApiRunStatus, updateWorkflowApiLimits } from "@neko/llm/workflows";
+import { admitWorkflowApiRun, approveActionRequest, createActionRequest, enableWorkflowApiAccess, executeApprovedActionRequest, getWorkflowApiRunStatus, registerActionAdapter, updateWorkflowApiLimits } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runWorkflowApiDispatcherTick } from "../src/workflow-api-dispatcher.js";
+import { createAdminHandler } from "../src/admin-server.js";
 
 if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119") {
   throw Error("isolated M3 environment required");
@@ -25,6 +27,8 @@ const [workflow] = await db().insert(workflow_definition).values({
   steps: [{ id: "read", description: "Run two independent read-only investigations" },
     { id: "output", description: "Emit one finding from the evidence" }],
 }).returning({ id: workflow_definition.id });
+const actionKind = "harness_workflow_effect_fixture";
+let admin: ReturnType<typeof createServer> | undefined;
 try {
   await db().update(llm_provider_config).set({ model: "harness-workflow-child-fixture" }).where(eq(llm_provider_config.id, prior.id));
   await writeFile(configPath, "model:\n  provider: custom\n  default: harness-workflow-child-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
@@ -70,7 +74,8 @@ try {
   const adminId = (await pool().query("SELECT solo_admin_user_id FROM organization WHERE id=$1", [orgId])).rows[0].solo_admin_user_id;
   const actor = { userId: adminId, role: "admin" as const };
   const { token } = await enableWorkflowApiAccess({ orgId, workflowId: workflow.id, actor });
-  await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor, limits: { maxModelCalls: 12 } });
+  await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor,
+    limits: { maxModelCalls: 12, maxTokensPerRun: 10_000, maxCostMicrosPerRun: 1_000_000 } });
   const clientFingerprint = `harness-workflow-${orgId}`;
   const admitted = await admitWorkflowApiRun({ workflowId: workflow.id, token,
     idempotencyKey: "child-output-fixture", mode: "single", value: { reference: "REF-42" }, clientFingerprint });
@@ -111,8 +116,67 @@ try {
   assert.equal((await (await fetch("http://127.0.0.1:18118/control")).json())["harness-workflow-child-fixture"], 4);
   assert.equal((await pool().query("SELECT count(*)::int AS n FROM workflow_output WHERE workflow_run_id=$1", [capped.runId])).rows[0].n, 0);
   console.log("M5_API_WORKFLOW_MODEL_CAP_PASS", capped.runId);
+
+  await db().insert(pack_action_definition).values({ org_id: orgId, kind: actionKind,
+    readiness: "ready", definition_hash: "fixture", definition: { kind: actionKind,
+      description: "Update the synthetic reference", inputSchema: { type: "object",
+        properties: { value: { type: "integer" } }, required: ["value"], additionalProperties: false } } });
+  const [policy] = await db().insert(action_policy).values({ org_id: orgId, name: "Harness workflow action fixture",
+    mode: "approval_required", applies_to_kinds: [actionKind], applies_to_scopes: ["external"] }).returning({ id: action_policy.id });
+  admin = createServer(createAdminHandler({ actionRequests: { create: async input => {
+    const request = await createActionRequest(input as Parameters<typeof createActionRequest>[0]);
+    return { id: request.id, status: request.status };
+  } } }));
+  await new Promise<void>(resolve => admin!.listen(18122, "127.0.0.1", resolve));
+  await db().update(llm_provider_config).set({ model: "harness-workflow-action-fixture" }).where(eq(llm_provider_config.id, prior.id));
+  await writeFile(configPath, "model:\n  provider: custom\n  default: harness-workflow-action-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
+  await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor, limits: { maxModelCalls: 12 } });
+  const actionRun = await admitWorkflowApiRun({ workflowId: workflow.id, token,
+    idempotencyKey: "workflow-pack-action-fixture", mode: "single", value: { reference: "REF-42" }, clientFingerprint });
+  assert.equal((await runWorkflowApiDispatcherTick()).dispatched, 1);
+  let actionStatus: Awaited<ReturnType<typeof getWorkflowApiRunStatus>> | undefined;
+  for (let n = 0; n < 180; n++) {
+    actionStatus = await getWorkflowApiRunStatus({ workflowId: workflow.id, runId: actionRun.runId, token, clientFingerprint });
+    if (["completed", "failed", "cancelled"].includes(actionStatus.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  assert.equal(actionStatus?.status, "completed", JSON.stringify(actionStatus));
+  const [actionRow] = (await pool().query("SELECT work_run_id FROM workflow_run WHERE id=$1", [actionRun.runId])).rows;
+  const [request] = (await pool().query("SELECT id,status,workflow_run_id,work_run_id,requested_by_run_id,harness_operation_id,harness_prepared,actor_backend FROM action_request WHERE org_id=$1 AND workflow_run_id=$2", [orgId,actionRun.runId])).rows;
+  assert.ok(request);
+  assert.equal(request.status, "pending_approval");
+  assert.equal(request.workflow_run_id, actionRun.runId);
+  assert.equal(request.work_run_id, actionRow.work_run_id);
+  assert.equal(request.requested_by_run_id, actionRun.runId);
+  assert.equal(request.actor_backend, "harness");
+  assert.ok(request.harness_operation_id > 0 && request.harness_prepared);
+  const [actionOutput] = (await pool().query("SELECT id,kind FROM workflow_output WHERE workflow_run_id=$1", [actionRun.runId])).rows;
+  assert.equal(actionOutput?.kind, "finding");
+  const actionOps = (await pool().query("SELECT request,result FROM harness_operation WHERE run_id=$1 ORDER BY operation_id", [actionRow.work_run_id])).rows;
+  assert.deepEqual(actionOps.map(op => op.request.tool), ["propose", "workflow_output"]);
+  assert.equal(actionOps[0].result.id, request.id);
+  assert.equal(actionOps[1].result.outputId, actionOutput.id);
+  assert.equal((await pool().query("SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1 AND action_request_id=$2", [orgId,request.id])).rows[0].n, 0);
+  const actionAdmission = (await pool().query("SELECT id,attempts FROM workflow_api_admission WHERE workflow_run_id=$1", [actionRun.runId])).rows[0];
+  await runWorkflowRunFire({ orgId, workflowId: workflow.id, triggerKind: "api", apiAdmissionId: actionAdmission.id,
+    workflowRunId: actionRun.runId, workRunId: actionRow.work_run_id, queueAttempt: actionAdmission.attempts });
+  assert.equal((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1 AND workflow_run_id=$2", [orgId,actionRun.runId])).rows[0].n, 1);
+  let effects = 0;
+  registerActionAdapter(actionKind, async ({ idempotencyKey }) => { effects++; return { result: { value: 42 }, externalRef: idempotencyKey }; });
+  await approveActionRequest({ orgId, id: request.id, approverUserId: null, approver: { userId: null, role: "admin" } });
+  const executed = await executeApprovedActionRequest(orgId, request.id);
+  assert.equal(executed.ok, true);
+  assert.equal(effects, 1);
+  const repeated = await executeApprovedActionRequest(orgId, request.id);
+  assert.equal(repeated.ok, true);
+  assert.equal(effects, 1);
+  console.log("M5_API_WORKFLOW_ACTION_PASS", actionRun.runId);
+  await db().delete(action_policy).where(eq(action_policy.id, policy.id));
+  await db().delete(pack_action_definition).where(eq(pack_action_definition.kind, actionKind));
 } finally {
   await queue.stop({ graceful: true, timeout: 5_000 });
+  if (admin) await new Promise<void>(resolve => admin!.close(() => resolve()));
   await shutdownAgentBroker();
   await writeFile(configPath, priorConfig);
   await db().update(llm_provider_config).set({ model: prior.model }).where(eq(llm_provider_config.id, prior.id));

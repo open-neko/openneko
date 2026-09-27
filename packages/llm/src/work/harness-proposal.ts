@@ -1,5 +1,5 @@
 import type {AgentEvent,AgentRunResult} from "../agent-backend";
-import { and, db, eq, holds, pack_action_definition } from "@neko/db";
+import { and, db, eq, holds, pack_action_definition, pool } from "@neko/db";
 import { z } from "zod";
 import type { AgentControlPlane } from "./control-plane";
 import { entitlementActorForRun } from "./entitlement-scope";
@@ -29,7 +29,7 @@ export async function validateHarnessAction(scope:{orgId:string;runId:string},ki
 }
 
 export async function proposeHarnessAction(
-  scope:{orgId:string;runId:string;operationLimit?:number},body:Record<string,unknown>,cp:AgentControlPlane,
+  scope:{orgId:string;runId:string;operationLimit?:number;workflowRunId?:string},body:Record<string,unknown>,cp:AgentControlPlane,
 ):Promise<unknown> {
   const instruction=typeof body.instruction === "string" ? body.instruction : "";
   if (Buffer.byteLength(instruction)>65536) return {error:"Proposal exceeds limit"};
@@ -37,12 +37,18 @@ export async function proposeHarnessAction(
   try {proposal=proposalSchema.parse(JSON.parse(instruction));}
   catch {return {error:"Invalid proposal"};}
   return recordHarnessOperation(scope,body.operationId,{tool:"propose",instruction},async()=>{
+    if (scope.workflowRunId) {
+      const owned=await pool().query("SELECT 1 FROM workflow_run WHERE org_id=$1 AND id=$2 AND work_run_id=$3 AND status='running'",
+        [scope.orgId,scope.workflowRunId,scope.runId]);
+      if (!owned.rowCount) throw Error("Workflow action run binding changed");
+    }
     let definition:unknown;
     try {definition=await validateHarnessAction(scope,proposal.action,proposal.arguments);}
     catch {return {status:"denied",reason:"Action unavailable or arguments invalid"};}
     const decision=await cp.evaluateActionPolicy({orgId:scope.orgId,scope:"external",kind:proposal.action,riskLevel:"critical"});
     if (decision.decision === "deny" || decision.decision === "no_policy") return {status:"denied",reason:"Action policy does not permit this proposal"};
     const request=await cp.createActionRequest({orgId:scope.orgId,workRunId:scope.runId,
+      ...(scope.workflowRunId ? {workflowRunId:scope.workflowRunId,requestedByRunId:scope.workflowRunId} : {}),
       harnessOperationId:Number(body.operationId),harnessDefinition:definition as Record<string,unknown>,scope:"external",kind:proposal.action,
       payload:proposal.arguments,status:"pending_approval",policyId:decision.policy.id,
       riskLevel:"critical",summary:proposal.summary,intent:proposal.summary});

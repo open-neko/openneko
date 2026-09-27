@@ -1,6 +1,7 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { heldItems, pool, resolveUserGroups } from "@neko/db";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
+import { listPackActionDescriptors } from "../work/pack-action-descriptors";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
 import type { HarnessObserver } from "@neko/telemetry";
@@ -234,6 +235,15 @@ async function runWorkflowTurnTraced(
   const runCore = deps.runCore ?? defaultRunWorkflowAgentBackend;
 
   const backend = await startupPhase("config.backend", async () => resolveAgentBackend(orgId));
+  await startupPhase("run.bind_backend", async () => {
+    const bound = await pool().query("UPDATE work_run SET backend=$3,updated_at=now() WHERE org_id=$1 AND id=$2 AND status='queued' RETURNING id",
+      [orgId,workRunId,backend.id]);
+    if (bound.rowCount) return;
+    const current = await pool().query("SELECT backend,status FROM work_run WHERE org_id=$1 AND id=$2",[orgId,workRunId]);
+    if (current.rows[0]?.status !== "running" || current.rows[0]?.backend !== backend.id) {
+      throw new Error("Workflow backend binding changed");
+    }
+  });
   await startupPhase("run.mark_running", async () => markWorkRunRunning(workRunId));
 
   let assistantText = "";
@@ -273,6 +283,10 @@ async function runWorkflowTurnTraced(
     const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
       knowledgePackPaths(workspace.knowledgeRoot),
     ));
+    const packActions = backend.id === "harness"
+      ? (await filterHeldActions(runActor, await listPackActionDescriptors(orgId)))
+          .sort((a, b) => a.kind.localeCompare(b.kind)).slice(0, 64)
+      : [];
 
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
@@ -284,6 +298,7 @@ async function runWorkflowTurnTraced(
       workspace,
       knowledge,
       pluginActions: await filterHeldActions(runActor, opts.pluginActions ?? []),
+      packActions,
     });
 
     const seedMessage = synthesizeSeedMessage(
@@ -310,6 +325,7 @@ async function runWorkflowTurnTraced(
       threadId,
       runId: workRunId,
       workflowRunId: workflowRun.id,
+      packActions,
       mode,
       networkHosts: workflow.networkHosts,
       triggeredByObservationId:

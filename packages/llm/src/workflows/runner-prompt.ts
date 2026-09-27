@@ -26,6 +26,7 @@ export type BuildWorkflowRunnerPromptInput = {
   knowledge: KnowledgePackContents;
   /** Installed plugin action kinds, so the runner uses real kinds (e.g. send_slack_dm) not generic ones. */
   pluginActions?: readonly PluginActionPromptDescriptor[];
+  packActions?: readonly PluginActionPromptDescriptor[];
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -168,7 +169,7 @@ ${workflow.systemPromptOverlay.trim() ? `Author instructions (subject to policy)
 ${memoryContext ? `Relevant existing memory:\n${memoryContext}\n` : ""}
 ${GRAPHJIN_DATE_RULE}
 
-Use lookup for server-side GraphJin investigation. You may delegate independent read-only questions to team.researcher; the child shares this run's budget and cannot emit outputs or actions. Verify the returned evidence before using it. For each result this workflow produces, call workflow_output_emit and check its receipt; a final message alone is not an output. This run has no action-request tool: if a required step needs an action, explain that it cannot be completed and do not claim that it executed. Finish with a short account of the outputs actually recorded. Mode: ${mode}.`;
+Use lookup for server-side GraphJin investigation. You may delegate independent read-only questions to team.researcher; the child shares this run's budget and cannot emit outputs or actions. Verify the returned evidence before using it. For each result this workflow produces, call workflow_output_emit and check its receipt; a final answer alone is not an output. ${input.packActions?.length ? `Installed pack action kinds eligible for a governed, human-approved proposal: ${input.packActions.map(action => action.kind).join(", ")}. Use propose only for these kinds and report pending approval honestly; it does not execute the effect.` : "This run has no action-request tool: if a required step needs an action, explain that it cannot be completed and do not claim that it executed."} Finish with a short account of the outputs and action requests actually recorded. Mode: ${mode}.`;
   }
   if (!mcpTools) {
     throw new Error("Workflow runs require the native GraphJin broker tool");
