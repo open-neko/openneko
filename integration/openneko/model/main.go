@@ -29,6 +29,8 @@ func main() {
 	sourceConfig := false
 	workflowSave := false
 	workflowEdit := false
+	ruleSave := false
+	ruleEdit := false
 	clarification := false
 	card := false
 	skill := false
@@ -61,6 +63,8 @@ func main() {
 			SourceConfig        bool `json:"source_config"`
 			WorkflowSave        bool `json:"workflow_save"`
 			WorkflowEdit        bool `json:"workflow_edit"`
+			RuleSave            bool `json:"rule_save"`
+			RuleEdit            bool `json:"rule_edit"`
 			Clarification       bool `json:"clarification"`
 			Card                bool `json:"card"`
 			Skill               bool `json:"skill"`
@@ -92,6 +96,8 @@ func main() {
 		sourceConfig = c.SourceConfig
 		workflowSave = c.WorkflowSave
 		workflowEdit = c.WorkflowEdit
+		ruleSave = c.RuleSave
+		ruleEdit = c.RuleEdit
 		clarification = c.Clarification
 		card = c.Card
 		skill = c.Skill
@@ -133,6 +139,8 @@ func main() {
 		readSourceConfig := sourceConfig
 		createWorkflow := workflowSave
 		editWorkflow := workflowEdit
+		createRule := ruleSave
+		editRule := ruleEdit
 		expectAuditDenial := auditDenied
 		askClarification := clarification
 		renderCard := card
@@ -280,7 +288,11 @@ func main() {
 			http.Error(w, "missing workflow save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model == "harness-fixture" && (createRule || editRule) && !strings.Contains(string(req.Messages), "ruleId") {
+			http.Error(w, "missing rule save receipt", 422)
+			return
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -397,6 +409,12 @@ func main() {
 			}
 			if editWorkflow {
 				responses = []string{`{"javascriptCode":"final('List and revise the fixture workflow', {})"}`, `{"javascriptCode":"const listed=mcp_neko_workflow_builder_list_workflows({limit:20}); function unwrap(v){if(typeof v==='string')return unwrap(JSON.parse(v)); if(v&&v.content&&v.content[0])return unwrap(v.content[0]); if(v&&v.text)return unwrap(v.text); return v;} const item=(unwrap(listed).workflows||[]).find(w=>w.name==='Harness review workflow'); if(!item||!item.versionToken) throw Error('workflow version missing'); const receipt=workflow_save({name:item.name,description:'Reviewed synthetic leads',goal:'Review the synthetic lead',steps:[{id:'review',description:'Check the lead owner and status'}],triggers:{cron:'0 9 * * *',timezone:'UTC',enabled:false},expectedVersion:item.versionToken}); final('Report the updated workflow',{receipt});"}`, `{"answer":"Updated the Harness review workflow."}`}
+			}
+			if createRule {
+				responses = []string{`{"javascriptCode":"final('Create the fixture rule', {})"}`, `{"javascriptCode":"const receipt=rule_save({name:'Harness governed rule',description:'Require review for synthetic changes',applies_to_kinds:['fixture_rule_action'],applies_to_scopes:['external'],mode:'approval_required',approver_role:'admin',expectedVersion:'absent'}); final('Report the saved rule',{receipt});"}`, `{"answer":"Created the Harness governed rule."}`}
+			}
+			if editRule {
+				responses = []string{`{"javascriptCode":"final('List and revise the fixture rule', {})"}`, `{"javascriptCode":"const listed=mcp_neko_rule_builder_list_rules({limit:20}); function unwrap(v){if(typeof v==='string')return unwrap(JSON.parse(v)); if(v&&v.content&&v.content[0])return unwrap(v.content[0]); if(v&&v.text)return unwrap(v.text); return v;} const item=(unwrap(listed).rules||[]).find(r=>r.name==='Harness governed rule'); if(!item||!item.versionToken) throw Error('rule version missing'); const receipt=rule_save({name:item.name,description:'Auto-approve synthetic low-risk changes',applies_to_kinds:['fixture_rule_action'],applies_to_scopes:['external'],mode:'auto_approve',risk_threshold_auto_approve:'low',limits:{daily_cap:2},approver_role:'admin',expectedVersion:item.versionToken}); final('Report the updated rule',{receipt});"}`, `{"answer":"Updated the Harness governed rule."}`}
 			}
 			if propose {
 				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}

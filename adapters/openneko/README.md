@@ -83,6 +83,14 @@ once before and after reload. Delete and rule writes are still
 outside the grant; data-change subscriptions and watchers also await a separate
 partial-failure recovery contract. The image builder bundles the checkout's MCP bridge alongside
 the Go runner so the listed version token reaches Ax unchanged.
+Admin customer Work runs can also use `rule_save`. A new name needs
+`expectedVersion=absent`; an edit must use the `versionToken` from the pinned
+MCP rule list. The host rechecks current admin authority, journals the effect,
+serializes same-name writes and persists a confirmation card before returning
+the receipt. A connected run covered approval-required and low-risk auto-approve
+definitions, stale/member/disabled-admin rejection, concurrent create-only
+collision, and a Chromium card reload. Harness proposals remain held for human
+approval regardless of the rule's auto-approve mode.
 Customer Work runs can admit Ax's owned `team.researcher` child with only
 GraphJin lookup and memory search. Its model calls and read operations share
 the parent run's limits and journal. A connected two-investigation fixture

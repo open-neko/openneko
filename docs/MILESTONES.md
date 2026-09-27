@@ -346,8 +346,8 @@ before calling OpenNeko's existing memory service. A successful connected
 OpenShell/Ax turn stored one real memory row and matching host/Go receipts.
 If the host commits the memory but loses its receipt, the outcome stays unknown
 and later effects are fenced; no automatic redispatch is permitted. Workflow
-definition writes are limited to the separately qualified create/edit path below;
-rule, records, skill, plugin and admin writes are not enabled.
+definition and rule writes are limited to the separately qualified paths below;
+records, skill, plugin and admin writes are not enabled.
 Local Go and OpenNeko checks pass; connected browser/queue acceptance must be
 repeated against the updated image when an instance is available.
 
@@ -396,7 +396,21 @@ found the edited confirmation exactly once before and after a Work-thread reload
 The image builder now includes the local MCP bridge so the list result retains
 its version token. This grant admits cron triggers; data-change subscriptions
 and watchers need a separate recovery contract because their wiring can fail after the
-definition commits. Deletion and rule writes remain unqualified.
+definition commits. Workflow deletion remains unqualified.
+
+**Approval-rule slice (2026-09-27):** admin customer Work runs expose a
+direct `rule_save` tool with a separate broker grant. The host rechecks the
+run actor's current admin membership or solo-admin status before writing,
+journals the exact request, and persists a confirmation card before returning
+the receipt. Create requires `expectedVersion=absent`; edit uses the exact
+version returned by the pinned MCP rule list. A short transaction serializes
+same-name policy writes and rejects ambiguous duplicates or stale revisions.
+The queued OpenShell/Ax fixture created an approval-required synthetic rule,
+listed and changed it to a narrowly scoped low-risk auto-approval rule,
+rejected a stale edit, a member edit and a disabled-admin edit, and proved two
+concurrent create-only attempts yield one row. Chromium found the edited rule
+card once before and after reload. Harness action proposals still force
+human approval until auto-execution is separately qualified.
 
 Source inventory for the next M5c slice:
 
@@ -404,7 +418,7 @@ Source inventory for the next M5c slice:
 | --- | --- | --- |
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch create/edit uses a direct journaled broker call with a version precondition and host-persisted card. Qualify deletion, data-change/watch trigger wiring and lost-card recovery separately. |
-| `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Bind policy revision and actor; prove retry cannot silently overwrite a changed rule |
+| `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save and skill creation remain excluded. Add idempotency before any automatic retry of a lost save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |

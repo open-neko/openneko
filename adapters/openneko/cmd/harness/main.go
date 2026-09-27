@@ -109,6 +109,31 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_RULE_SAVE"); enabled != "" {
+		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {
+			fmt.Fprintln(os.Stderr, "invalid rule save binding")
+			os.Exit(2)
+		}
+		save, err := broker.RuleSave(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "rule save broker unavailable:", err)
+			os.Exit(2)
+		}
+		var binding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "rule_save", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Create or update an approval rule only when the admin operator asks. Use expectedVersion='absent' for a new name; to edit, list rules first and use its exact versionToken. Rules can change action approval behavior, including auto-approval. The host checks current admin authority, journals the write and persists a confirmation card.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name","applies_to_kinds","mode","expectedVersion"],"properties":{"name":{"type":"string","minLength":1,"maxLength":120},"description":{"type":"string","maxLength":2000},"applies_to_kinds":{"type":"array","maxItems":40,"items":{"type":"string","minLength":1,"maxLength":120}},"applies_to_scopes":{"type":"array","maxItems":8,"items":{"type":"string","enum":["internal","external"]}},"mode":{"type":"string","enum":["observe_only","draft_only","auto_approve","approval_required","never"]},"risk_threshold_auto_approve":{"type":"string","enum":["low","medium","high","critical"]},"allowed_targets":{"type":"object"},"denied_targets":{"type":"object"},"limits":{"type":"object"},"approver_role":{"type":"string","enum":["admin"]},"priority":{"type":"integer","minimum":0,"maximum":10000},"enabled":{"type":"boolean"},"expectedVersion":{"type":"string","pattern":"^(absent|[0-9]{1,12})$"}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return save(ctx, raw, binding)
+			},
+		})
+		binding, err = tools.Binding("rule_save")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid rule save capability:", err)
+			os.Exit(2)
+		}
+	}
 	if workflowRunID := os.Getenv("OPENNEKO_HARNESS_WORKFLOW_RUN_ID"); workflowRunID != "" {
 		if recordsOnly == "1" {
 			fmt.Fprintln(os.Stderr, "records-only run cannot emit workflow output")

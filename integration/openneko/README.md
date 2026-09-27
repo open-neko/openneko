@@ -38,6 +38,12 @@ version rejection. Chromium verifies the edited confirmation card once before
 and after Work-thread reload. The tool is distinct from queued workflow execution: a
 queued API caller accepts the workflow version and executor pinned at admission
 and cannot edit that accepted run.
+The same suite creates and edits a synthetic approval rule through the
+current-admin `rule_save` grant, verifies its stored mode, scope and limit,
+rejects a stale version, member and disabled-admin writes, and serializes two
+create-only attempts to one row. Chromium checks the edited rule card before
+and after reload. The synthetic rule kind is not used by the other action
+fixtures.
 
 Set `HARNESS_M3_API_HTTP=1` on the command above to add the public HTTP
 submission, status-poll and download check through the Go/OpenShell/GraphJin
