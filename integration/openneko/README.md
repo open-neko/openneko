@@ -80,6 +80,10 @@ Set `HARNESS_M5_PROCESS_TIMEOUT=1` instead to inspect the live compartment's
 CPU/memory limits and verify a two-second exec deadline, sandbox teardown and
 absence of any published partial artifact. This reports
 `M5_CONNECTED_PROCESS_TIMEOUT_PASS`.
+Set `HARNESS_M5_PROCESS_OUTPUT_LIMITS_ONLY=1` for a separate focused gate:
+a queued 17 MiB declared output must fail without publication, and a noisy
+script must publish its valid CSV with a bounded, truncated model receipt.
+It reports `M5_CONNECTED_PROCESS_OUTPUT_LIMITS_PASS`.
 
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.

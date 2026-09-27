@@ -132,6 +132,12 @@ fi
     echo M5_CONNECTED_PROCESS_CANCEL_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M5_PROCESS_OUTPUT_LIMITS_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-process-output-limits-live.ts)
+    echo M5_CONNECTED_PROCESS_OUTPUT_LIMITS_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M5_TRIGGER_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-trigger-replay-live.ts)

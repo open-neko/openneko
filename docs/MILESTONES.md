@@ -615,8 +615,11 @@ inspection of its active OpenShell compartment verified a one-core CPU limit
 and 512 MiB memory limit. OpenShell ended the exec at the deadline; the worker
 marked the Work run failed, removed both sandboxes, and published neither an
 artifact event nor a file or successful operation receipt. The separate
-OpenShell suite covers oversized declared outputs; queued oversized-output
-and log-flood rejection are the remaining full-path limits checks.
+OpenShell suite covers oversized declared outputs. A further queued Work gate
+rejected a 17 MiB declared file without publishing an artifact or recording a
+successful receipt. It also ran a script that printed 96 KiB: the process
+receipt flagged truncation and kept the model-visible output within 8 KiB,
+while publishing the valid CSV exactly once. Both process sandboxes were deleted.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

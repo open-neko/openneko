@@ -24,6 +24,8 @@ func main() {
 	processFail := false
 	processLarge := false
 	processCancel := false
+	processOversize := false
+	processFlood := false
 	management := false
 	audit := false
 	auditDenied := false
@@ -66,6 +68,8 @@ func main() {
 			ProcessFail          bool `json:"process_fail"`
 			ProcessLarge         bool `json:"process_large"`
 			ProcessCancel        bool `json:"process_cancel"`
+			ProcessOversize      bool `json:"process_oversize"`
+			ProcessFlood         bool `json:"process_flood"`
 			Management           bool `json:"management"`
 			Audit                bool `json:"audit"`
 			AuditDenied          bool `json:"audit_denied"`
@@ -107,6 +111,8 @@ func main() {
 		processFail = c.ProcessFail
 		processLarge = c.ProcessLarge
 		processCancel = c.ProcessCancel
+		processOversize = c.ProcessOversize
+		processFlood = c.ProcessFlood
 		management = c.Management
 		audit = c.Audit
 		auditDenied = c.AuditDenied
@@ -159,6 +165,8 @@ func main() {
 		failProcess := processFail
 		runLargeProcess := processLarge
 		runCancelProcess := processCancel
+		runOversizeProcess := processOversize
+		runFloodProcess := processFlood
 		readManagement := management
 		readAudit := audit
 		readUploadedLibrary := uploadedLibrary
@@ -352,7 +360,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -475,6 +483,18 @@ func main() {
 				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['result.csv']}); final('Report cancelled process',{result});", script)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Run the cancellable isolated process fixture', {})"}`, string(encoded), `{"answer":"The isolated process was cancelled."}`}
+			}
+			if runOversizeProcess {
+				script := "from pathlib import Path\nPath('oversize.bin').write_bytes(b'X' * (17 << 20))\n"
+				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['oversize.bin']}); final('Report oversized process result',{result});", script)
+				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+				responses = []string{`{"javascriptCode":"final('Run the oversized output fixture', {})"}`, string(encoded), `{"answer":"The oversized output was rejected."}`}
+			}
+			if runFloodProcess {
+				script := "from pathlib import Path\nimport sys\nPath('result.csv').write_text('lead_id\\nLEAD-42\\n')\nsys.stdout.write('L' * (96 << 10))\n"
+				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['result.csv']}); final('Report bounded process output',{result});", script)
+				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+				responses = []string{`{"javascriptCode":"final('Run the bounded stdout fixture', {})"}`, string(encoded), `{"answer":"The log was bounded and the CSV was published."}`}
 			}
 			if runLargeProcess {
 				script := "from pathlib import Path\nPath('large.bin').write_bytes(b'A' * (2 << 20))\n"
