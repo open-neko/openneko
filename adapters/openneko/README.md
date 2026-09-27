@@ -79,8 +79,11 @@ actor, journals the effect, applies the version check in the workflow store,
 and persists workflow and subscription confirmation cards before returning a
 receipt. A connected queued run created and edited a cron/batch workflow and
 proved a stale version cannot overwrite it. Chromium found the edited Work card
-once before and after reload. Delete and rule writes are still
-outside the grant; data-change subscriptions and watchers also await a separate
+once before and after reload. The same Work grant offers `workflow_delete`:
+the host requires the exact current-run user confirmation, a current enabled
+actor and the listed ID/name/version before a hard cascade. Connected tests
+covered unconfirmed and confirmed queue turns, stale and disabled actors,
+dependent-row deletion and a card reload. Data-change subscriptions and watchers await a separate
 partial-failure recovery contract. The image builder bundles the checkout's MCP bridge alongside
 the Go runner so the listed version token reaches Ax unchanged.
 Admin customer Work runs can also use `rule_save`. A new name needs

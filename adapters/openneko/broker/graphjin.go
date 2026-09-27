@@ -149,6 +149,38 @@ func WorkflowSave(base, token string) (func(context.Context, json.RawMessage, st
 	}, nil
 }
 
+// WorkflowDelete sends a revision-bound deletion request. The host verifies a
+// matching confirmation in the current user message before any hard cascade.
+func WorkflowDelete(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {
+	call, err := bind(base, token, "/v1/harness/workflow/delete")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, input json.RawMessage, binding string) (json.RawMessage, error) {
+		id := agent.OperationID(ctx)
+		if id < 1 || id > 32 || len(binding) != 64 || len(input) == 0 || len(input) > 4096 || !json.Valid(input) {
+			return nil, fmt.Errorf("invalid workflow delete operation")
+		}
+		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
+			Instruction string `json:"instruction"`
+			Binding     string `json:"binding"`
+		}{id, string(input), binding})
+		data, err := call(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(data, &receipt) != nil || (!receipt.OK && receipt.Error == "") {
+			return nil, fmt.Errorf("workflow delete was not confirmed by broker")
+		}
+		return data, nil
+	}, nil
+}
+
 // RuleSave submits a version-guarded policy change to the host, where current
 // admin authority and the durable operation are checked before persistence.
 func RuleSave(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {

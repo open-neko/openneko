@@ -29,6 +29,8 @@ func main() {
 	sourceConfig := false
 	workflowSave := false
 	workflowEdit := false
+	workflowDelete := false
+	workflowDeleteDenied := false
 	ruleSave := false
 	ruleEdit := false
 	clarification := false
@@ -49,28 +51,30 @@ func main() {
 			return
 		}
 		var c struct {
-			Delay               int  `json:"delay"`
-			EffectFences        bool `json:"effect_fences"`
-			Proposal            bool `json:"proposal"`
-			Upload              bool `json:"upload"`
-			Artifact            bool `json:"artifact"`
-			Process             bool `json:"process"`
-			ProcessFail         bool `json:"process_fail"`
-			Management          bool `json:"management"`
-			Audit               bool `json:"audit"`
-			AuditDenied         bool `json:"audit_denied"`
-			UploadedLibrary     bool `json:"uploaded_library"`
-			SourceConfig        bool `json:"source_config"`
-			WorkflowSave        bool `json:"workflow_save"`
-			WorkflowEdit        bool `json:"workflow_edit"`
-			RuleSave            bool `json:"rule_save"`
-			RuleEdit            bool `json:"rule_edit"`
-			Clarification       bool `json:"clarification"`
-			Card                bool `json:"card"`
-			Skill               bool `json:"skill"`
-			AnswerClarification bool `json:"answer_clarification"`
-			Continue            bool `json:"continue"`
-			PauseResponder      bool `json:"pause_responder"`
+			Delay                int  `json:"delay"`
+			EffectFences         bool `json:"effect_fences"`
+			Proposal             bool `json:"proposal"`
+			Upload               bool `json:"upload"`
+			Artifact             bool `json:"artifact"`
+			Process              bool `json:"process"`
+			ProcessFail          bool `json:"process_fail"`
+			Management           bool `json:"management"`
+			Audit                bool `json:"audit"`
+			AuditDenied          bool `json:"audit_denied"`
+			UploadedLibrary      bool `json:"uploaded_library"`
+			SourceConfig         bool `json:"source_config"`
+			WorkflowSave         bool `json:"workflow_save"`
+			WorkflowEdit         bool `json:"workflow_edit"`
+			WorkflowDelete       bool `json:"workflow_delete"`
+			WorkflowDeleteDenied bool `json:"workflow_delete_denied"`
+			RuleSave             bool `json:"rule_save"`
+			RuleEdit             bool `json:"rule_edit"`
+			Clarification        bool `json:"clarification"`
+			Card                 bool `json:"card"`
+			Skill                bool `json:"skill"`
+			AnswerClarification  bool `json:"answer_clarification"`
+			Continue             bool `json:"continue"`
+			PauseResponder       bool `json:"pause_responder"`
 		}
 		if json.NewDecoder(r.Body).Decode(&c) != nil || c.Delay < 0 || c.Delay > 30 {
 			http.Error(w, "invalid", 400)
@@ -96,6 +100,8 @@ func main() {
 		sourceConfig = c.SourceConfig
 		workflowSave = c.WorkflowSave
 		workflowEdit = c.WorkflowEdit
+		workflowDelete = c.WorkflowDelete
+		workflowDeleteDenied = c.WorkflowDeleteDenied
 		ruleSave = c.RuleSave
 		ruleEdit = c.RuleEdit
 		clarification = c.Clarification
@@ -139,6 +145,8 @@ func main() {
 		readSourceConfig := sourceConfig
 		createWorkflow := workflowSave
 		editWorkflow := workflowEdit
+		deleteWorkflow := workflowDelete
+		denyWorkflowDelete := workflowDeleteDenied
 		createRule := ruleSave
 		editRule := ruleEdit
 		expectAuditDenial := auditDenied
@@ -284,15 +292,19 @@ func main() {
 			http.Error(w, "missing source configuration read evidence", 422)
 			return
 		}
-		if n == 2 && req.Model == "harness-fixture" && (createWorkflow || editWorkflow) && !strings.Contains(string(req.Messages), "workflowId") {
+		if n == 2 && req.Model == "harness-fixture" && (createWorkflow || editWorkflow || deleteWorkflow) && !strings.Contains(string(req.Messages), "workflowId") {
 			http.Error(w, "missing workflow save receipt", 422)
+			return
+		}
+		if n == 2 && req.Model == "harness-fixture" && denyWorkflowDelete && !strings.Contains(string(req.Messages), "confirmation_required") {
+			http.Error(w, "missing workflow delete confirmation denial", 422)
 			return
 		}
 		if n == 2 && req.Model == "harness-fixture" && (createRule || editRule) && !strings.Contains(string(req.Messages), "ruleId") {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -409,6 +421,9 @@ func main() {
 			}
 			if editWorkflow {
 				responses = []string{`{"javascriptCode":"final('List and revise the fixture workflow', {})"}`, `{"javascriptCode":"const listed=mcp_neko_workflow_builder_list_workflows({limit:20}); function unwrap(v){if(typeof v==='string')return unwrap(JSON.parse(v)); if(v&&v.content&&v.content[0])return unwrap(v.content[0]); if(v&&v.text)return unwrap(v.text); return v;} const item=(unwrap(listed).workflows||[]).find(w=>w.name==='Harness review workflow'); if(!item||!item.versionToken) throw Error('workflow version missing'); const receipt=workflow_save({name:item.name,description:'Reviewed synthetic leads',goal:'Review the synthetic lead',steps:[{id:'review',description:'Check the lead owner and status'}],triggers:{cron:'0 9 * * *',timezone:'UTC',enabled:false},expectedVersion:item.versionToken}); final('Report the updated workflow',{receipt});"}`, `{"answer":"Updated the Harness review workflow."}`}
+			}
+			if deleteWorkflow || denyWorkflowDelete {
+				responses = []string{`{"javascriptCode":"final('List the workflow before deletion', {})"}`, `{"javascriptCode":"const listed=mcp_neko_workflow_builder_list_workflows({limit:20}); function unwrap(v){if(typeof v==='string')return unwrap(JSON.parse(v)); if(v&&v.content&&v.content[0])return unwrap(v.content[0]); if(v&&v.text)return unwrap(v.text); return v;} const item=(unwrap(listed).workflows||[]).find(w=>w.name==='Harness review workflow'); if(!item||!item.versionToken) throw Error('workflow version missing'); const receipt=workflow_delete({workflowId:item.id,name:item.name,expectedVersion:item.versionToken}); final('Report the workflow deletion decision',{receipt});"}`, `{"answer":"The workflow deletion request was checked by the host."}`}
 			}
 			if createRule {
 				responses = []string{`{"javascriptCode":"final('Create the fixture rule', {})"}`, `{"javascriptCode":"const receipt=rule_save({name:'Harness governed rule',description:'Require review for synthetic changes',applies_to_kinds:['fixture_rule_action'],applies_to_scopes:['external'],mode:'approval_required',approver_role:'admin',expectedVersion:'absent'}); final('Report the saved rule',{receipt});"}`, `{"answer":"Created the Harness governed rule."}`}

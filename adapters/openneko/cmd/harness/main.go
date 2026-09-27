@@ -108,6 +108,25 @@ func main() {
 			fmt.Fprintln(os.Stderr, "invalid workflow save capability:", err)
 			os.Exit(2)
 		}
+		deleteWorkflow, err := broker.WorkflowDelete(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "workflow delete broker unavailable:", err)
+			os.Exit(2)
+		}
+		var deleteBinding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "workflow_delete", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Permanently delete a workflow and its dependent triggers, runs, outputs and actions only after the operator sends the exact current-run message DELETE WORKFLOW <JSON-quoted workflow name> PERMANENTLY. First list workflows; pass its id, exact name and versionToken. If confirmation is missing, tell the operator the required phrase and stop. A changed workflow is rejected. The host independently verifies confirmation and persists a deletion card.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["workflowId","name","expectedVersion"],"properties":{"workflowId":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":120},"expectedVersion":{"type":"string","pattern":"^[0-9]{1,12}$"}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return deleteWorkflow(ctx, raw, deleteBinding)
+			},
+		})
+		deleteBinding, err = tools.Binding("workflow_delete")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid workflow delete capability:", err)
+			os.Exit(2)
+		}
 	}
 	if enabled := os.Getenv("OPENNEKO_HARNESS_RULE_SAVE"); enabled != "" {
 		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {

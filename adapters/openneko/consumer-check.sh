@@ -126,6 +126,7 @@ if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   fi
   (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-card-reload.mjs "$(cat "$HARNESS_STATE/m5-card-thread")")
   (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-workflow-card-reload.mjs "$(cat "$HARNESS_STATE/m5-workflow-thread")")
+  (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-workflow-delete-card-reload.mjs "$(cat "$HARNESS_STATE/m5-workflow-delete-thread")")
   (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-rule-card-reload.mjs "$(cat "$HARNESS_STATE/m5-rule-thread")")
   batch_run=$(cat "$HARNESS_STATE/m5-batch-workflow-run")
   batch_url="http://localhost:18121/api/workflow-runs/$batch_run/artifact"
