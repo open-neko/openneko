@@ -349,7 +349,13 @@ through its worker adapter and GraphJin, then restored the execution receipt
 on a duplicate call; the row and audit log each reflected one mutation.
 Worker preflight now checks Harness CRUD payload shape and actor availability
 before the approval is issued; legacy Hermes requests retain their existing path.
-Queued Work redelivery and the other Records CRUD actions remain unqualified.
+A production pg-boss Work run now proposes `record_update` for a second seeded
+row, awaits approval, applies the real GraphJin effect once, and restores the
+completed result on duplicate delivery without another model call or action
+request. Other Records CRUD actions remain unqualified. A restored terminal run
+currently logs an unsuccessful cleanup attempt when its sandbox was already
+deleted; the saved result and effect are unchanged, but cleanup telemetry needs
+to distinguish an absent sandbox from a failed deletion.
 The direct `memory_save` capability now binds an explicit customer Work-run grant,
 validates the model's bounded text/kind/scope, and persists host operation intent
 before calling OpenNeko's existing memory service. A successful connected
@@ -772,8 +778,9 @@ authorized actions.
 
 ## Immediate order
 
-1. Qualify actual Records and installed-plugin action preflight, approval,
-   effect and duplicate-delivery behavior through a queued Work run.
+1. Qualify installed-plugin action preflight, approval, effect and
+   duplicate-delivery behavior through a queued Work run; extend Records from
+   the qualified `record_update` path to the remaining CRUD actions.
 2. Qualify remaining skill/admin writes and trigger redelivery at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
