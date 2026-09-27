@@ -22,7 +22,8 @@ type Tools struct {
 	Propose      func(context.Context, Proposal) (ProposalReceipt, error)
 	OnResume     func(context.Context, []SavedOperation) error
 	Capabilities []Capability
-	Scope        string // Trusted run-scoped admission context, never model input.
+	ChildReads   []string // Exact host-admitted read tools for one owned child agent.
+	Scope        string   // Trusted run-scoped admission context, never model input.
 }
 
 // Capability is installed by trusted host code for this run. Description is
@@ -125,9 +126,45 @@ func (t Tools) CatalogHash() (string, error) {
 		bindings = append(bindings, capability.Name+":"+capability.binding)
 	}
 	sort.Strings(bindings)
-	raw, _ := json.Marshal([]any{t.Scope, bindings})
+	child, err := t.childReads(admitted)
+	if err != nil {
+		return "", err
+	}
+	childNames := make([]string, len(child))
+	for i, capability := range child {
+		childNames[i] = capability.Name
+	}
+	raw, _ := json.Marshal([]any{t.Scope, bindings, childNames})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func (t Tools) childReads(admitted []admittedTool) ([]admittedTool, error) {
+	if len(t.ChildReads) > 8 {
+		return nil, fmt.Errorf("too many child capabilities")
+	}
+	wanted := make(map[string]bool, len(t.ChildReads))
+	for _, name := range t.ChildReads {
+		if !ValidToolName(name) || wanted[name] {
+			return nil, fmt.Errorf("invalid child capability")
+		}
+		wanted[name] = true
+	}
+	child := make([]admittedTool, 0, len(wanted))
+	for _, capability := range admitted {
+		if !wanted[capability.Name] {
+			continue
+		}
+		if capability.Effect != "read" {
+			return nil, fmt.Errorf("child capability must be read-only")
+		}
+		child = append(child, capability)
+		delete(wanted, capability.Name)
+	}
+	if len(wanted) != 0 {
+		return nil, fmt.Errorf("child capability unavailable")
+	}
+	return child, nil
 }
 
 func (c admittedTool) input(value any) (string, error) {

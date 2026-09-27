@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/open-neko/harness/adapters/openneko/broker"
 	productmcp "github.com/open-neko/harness/adapters/openneko/mcp"
@@ -29,6 +30,9 @@ func main() {
 		}
 	}
 	tools := agent.Tools{Lookup: lookup}
+	if child := os.Getenv("OPENNEKO_HARNESS_CHILD_READS"); child != "" {
+		tools.ChildReads = strings.Split(child, ",")
+	}
 	if recordsOnly == "1" {
 		tools.Scope = "records-only"
 	}

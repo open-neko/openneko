@@ -57,6 +57,11 @@ the actor-bound broker, OpenShell, MCP and Ax.
 The separate `memory_save` capability uses a Work-run-only broker grant and
 host operation receipt. A lost receipt leaves the save outcome unknown and
 prevents later writes; the agent never retries the save automatically.
+Customer Work runs can admit Ax's owned `team.researcher` child with only
+GraphJin lookup and memory search. Its model calls and read operations share
+the parent run's limits and journal. A connected two-investigation fixture
+passed through OpenShell, MCP and the actor-bound broker. Workflow-bound
+delegation needs the separate workflow admission path.
 
 ## Implemented: OpenShell cold-launch compatibility
 

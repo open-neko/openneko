@@ -34,6 +34,37 @@ func TestCapabilityOrderIsStable(t *testing.T) {
 	}
 }
 
+func TestChildReadsRejectEffectsAndMissingTools(t *testing.T) {
+	read := Capability{Name: "catalog", Version: "1", Origin: "host", Effect: "read", Description: "Read catalog.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
+	write := read
+	write.Name, write.Effect = "write", "durable"
+	for _, names := range [][]string{{"write"}, {"missing"}, {"catalog", "catalog"}} {
+		tools := Tools{Capabilities: []Capability{read, write}, ChildReads: names}
+		admitted, err := tools.admitted()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tools.childReads(admitted); err == nil {
+			t.Fatalf("accepted child authority %v", names)
+		}
+	}
+	tools := Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"catalog"}}
+	admitted, err := tools.admitted()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := tools.childReads(admitted)
+	if err != nil || len(child) != 1 || child[0].Name != "catalog" {
+		t.Fatalf("child=%v err=%v", child, err)
+	}
+	withChild, _ := tools.CatalogHash()
+	tools.ChildReads = nil
+	withoutChild, _ := tools.CatalogHash()
+	if withChild == withoutChild {
+		t.Fatal("delegation grant did not affect catalog binding")
+	}
+}
+
 func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
 	var calls atomic.Int32
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

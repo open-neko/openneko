@@ -1,0 +1,88 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+
+	ax "github.com/ax-llm/ax/packages/go"
+)
+
+func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Find two references',{})"}`,
+		`{"javascriptCode":"const one=team.researcher({question:'Find first reference'}); const two=team.researcher({question:'Find second reference'}); final('Two references',{one,two});"}`,
+		`{"javascriptCode":"final('Find first reference',{})"}`,
+		`{"javascriptCode":"const found=catalog({key:'first'}); final('Found',{found});"}`,
+		`{"answer":"REF-1"}`,
+		`{"javascriptCode":"final('Find second reference',{})"}`,
+		`{"javascriptCode":"const found=catalog({key:'second'}); final('Found',{found});"}`,
+		`{"answer":"REF-2"}`,
+		`{"answer":"REF-1 and REF-2"}`,
+	}
+	var modelCalls, reads, writes atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(modelCalls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	read := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a fixture.", InputSchema: json.RawMessage(`{"type":"object","required":["key"],"properties":{"key":{"type":"string"}},"additionalProperties":false}`), Call: func(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
+		reads.Add(1)
+		return json.Marshal(map[string]json.RawMessage{"reference": raw})
+	}}
+	write := Capability{Name: "write", Version: "1", Origin: "fixture", Effect: "durable", Description: "Write a fixture.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		writes.Add(1)
+		return json.RawMessage(`{}`), nil
+	}}
+	var events []Event
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "child", InputID: "input", Prompt: "Find two references", MaxOperations: 4, MaxModelCalls: 16}, client, Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"catalog"}}, func(e Event) error { events = append(events, e); return nil })
+	if err != nil || result.Status != "completed" || result.Answer != "REF-1 and REF-2" || reads.Load() != 2 || writes.Load() != 0 || result.Usage == nil || result.Usage.Requests != int(modelCalls.Load()) {
+		t.Fatalf("result=%+v err=%v calls=%d reads=%d writes=%d events=%d", result, err, modelCalls.Load(), reads.Load(), writes.Load(), len(events))
+	}
+	started, finished := 0, 0
+	for _, event := range events {
+		if event.Type == "child.started" {
+			started++
+		}
+		if event.Type == "child.finished" {
+			finished++
+		}
+	}
+	if started != 2 || finished != 2 {
+		t.Fatalf("child lifecycle events started=%d finished=%d", started, finished)
+	}
+	modelCalls.Store(0)
+	reads.Store(0)
+	events = nil
+	result, err = RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-budget", InputID: "input", Prompt: "Find two references", MaxOperations: 4, MaxModelCalls: 4}, client, Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"catalog"}}, func(e Event) error { events = append(events, e); return nil })
+	if err != nil || result.Status != "failed" || result.Code != "model_budget_exceeded" || modelCalls.Load() != 4 || writes.Load() != 0 {
+		t.Fatalf("child escaped shared budget: result=%+v err=%v calls=%d writes=%d", result, err, modelCalls.Load(), writes.Load())
+	}
+	modelCalls.Store(0)
+	reads.Store(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result, err = RunWithTools(ctx, Spec{Version: 1, RunID: "child-cancel", InputID: "input", Prompt: "Find two references", MaxOperations: 4, MaxModelCalls: 16}, client, Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"catalog"}}, func(e Event) error {
+		if e.Type == "model.request.started" && e.CallID == 3 {
+			cancel()
+		}
+		return nil
+	})
+	if err != nil || result.Status != "cancelled" || reads.Load() != 0 || writes.Load() != 0 {
+		t.Fatalf("child survived parent cancellation: result=%+v err=%v reads=%d writes=%d", result, err, reads.Load(), writes.Load())
+	}
+	modelCalls.Store(0)
+	result, err = RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-disabled", InputID: "input", Prompt: "Find two references", MaxOperations: 4, MaxModelCalls: 16}, client, Tools{Capabilities: []Capability{read, write}}, func(Event) error { return nil })
+	if err != nil || result.Status != "failed" || reads.Load() != 0 || writes.Load() != 0 {
+		t.Fatalf("disabled child was callable: result=%+v err=%v reads=%d writes=%d", result, err, reads.Load(), writes.Load())
+	}
+}

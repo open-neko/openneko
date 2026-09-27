@@ -212,6 +212,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	observedUsage := agent.ModelUsage{}
 	started := map[uint64]string{}
 	ended := map[uint64]bool{}
+	children := map[uint64]bool{}
+	finishedChildren := map[uint64]bool{}
 	for i, e := range s.Events {
 		if e.Version != 1 || e.RunID != spec.RunID || e.InputID != spec.InputID || e.Sequence != uint64(i+1) {
 			return invalid()
@@ -227,6 +229,20 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 		switch e.Type {
 		case "run.started", "span.started", "span.finished":
+		case "child.admitted":
+			if e.Name != "team.researcher" || e.SpanID != 0 {
+				return invalid()
+			}
+		case "child.started":
+			if e.Name != "team.researcher" || e.SpanID == 0 || e.ParentID == 0 || children[e.SpanID] {
+				return invalid()
+			}
+			children[e.SpanID] = true
+		case "child.finished":
+			if e.Name != "team.researcher" || !children[e.SpanID] || finishedChildren[e.SpanID] {
+				return invalid()
+			}
+			finishedChildren[e.SpanID] = true
 		case "model.request.started":
 			modelCalls++
 			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) {

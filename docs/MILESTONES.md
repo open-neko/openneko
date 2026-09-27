@@ -433,6 +433,25 @@ until M5b.
 
 ## M5e — Bounded delegation parity
 
+**Partial status (2026-09-27):** Ax Go now owns one opt-in `team.researcher`
+child with a separate runtime and only exact host-admitted read tools. Child
+calls share the parent's durable operation journal, model-call limit, usage
+receipts and cancellation. Admission rejects missing, duplicate or effectful
+child tools and changes the catalog binding on scope changes. A deterministic
+parent delegated two investigations; a lower shared model limit and parent
+cancellation both stopped the child. A connected OpenShell/OpenNeko run sent
+two child memory searches through the real MCP bridge and actor-bound broker,
+then recovered two operation receipts and nine model-call receipts from the
+checkpoint. The isolated full suite passed and removed its containers.
+OpenNeko's Work backend advertises this child only when delegation is enabled;
+the current child receives GraphJin lookup and memory search. Child lifecycle
+events project into delegation telemetry without a second inner-model usage
+entry. Workflow runs are not yet admitted to the Harness backend: the workflow
+core still lacks the Harness run identity and capability binding. They should
+receive a workflow-bound child grant when M5c workflow admission is built.
+Crash-resume of an in-flight child, disabled-mode connected acceptance and
+workflow/agent-job modes remain open.
+
 **Deliver:** child agents using the same Go/Ax engine with narrowed capabilities,
 explicit context, child ownership and shared parent budgets. OpenNeko decides
 whether delegation is enabled. No named-agent framework, swarm scheduler or new

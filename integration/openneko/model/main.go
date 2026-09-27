@@ -143,6 +143,14 @@ func main() {
 			http.Error(w, "missing memory evidence", 422)
 			return
 		}
+		if n == 4 && req.Model == "harness-child-fixture" && !strings.Contains(string(req.Messages), "memory-1") {
+			http.Error(w, "missing first child evidence", 422)
+			return
+		}
+		if n == 7 && req.Model == "harness-child-fixture" && !strings.Contains(string(req.Messages), "memory-2") {
+			http.Error(w, "missing second child evidence", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-memory-save-fixture" && !strings.Contains(string(req.Messages), "memoryId") {
 			http.Error(w, "missing saved memory receipt", 422)
 			return
@@ -172,7 +180,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -185,6 +193,18 @@ func main() {
 			}
 		} else if req.Model == "harness-memory-fixture" {
 			responses = []string{`{"javascriptCode":"final('Search saved memory', {})"}`, `{"javascriptCode":"const memory=mcp_memory_search({query:'find policy'}); final('Report memory',{memory});"}`, `{"answer":"Saved policy found in memory-1."}`}
+		} else if req.Model == "harness-child-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Investigate both memory topics',{})"}`,
+				`{"javascriptCode":"const one=team.researcher({question:'Find the policy memory'}); const two=team.researcher({question:'Find the exception memory'}); final('Report both investigations',{one,two});"}`,
+				`{"javascriptCode":"final('Find the policy memory',{})"}`,
+				`{"javascriptCode":"const memory=mcp_memory_search({query:'find policy'}); final('Report policy',{memory});"}`,
+				`{"answer":"Policy evidence memory-1."}`,
+				`{"javascriptCode":"final('Find the exception memory',{})"}`,
+				`{"javascriptCode":"const memory=mcp_memory_search({query:'find exception'}); final('Report exception',{memory});"}`,
+				`{"answer":"Exception evidence memory-2."}`,
+				`{"answer":"The policy is memory-1 and the exception is memory-2."}`,
+			}
 		} else if req.Model == "harness-memory-save-fixture" {
 			responses = []string{`{"javascriptCode":"final('Save the operator rule', {})"}`, `{"javascriptCode":"const receipt=memory_save({text:'Never close a lead without a verified owner',kind:'business_rule',scope:'thread'}); final('Report saved memory',{receipt});"}`, `{"answer":"Saved the operator rule."}`}
 		} else if req.Model == "harness-workflow-list-fixture" {
