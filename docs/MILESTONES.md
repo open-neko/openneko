@@ -410,7 +410,7 @@ slice; the remaining MCP-backed product writes depend on M5b bridge qualificatio
 
 ## M5d — Local tools, skills and artifacts
 
-**Local status (2026-09-26):** an opt-in Go file capability now reads bounded
+**Partial status (2026-09-27):** an opt-in Go file capability now reads bounded
 UTF-8 files from a host-selected workspace, atomically replaces an existing
 file only after a same-run read at the matching content version, creates new
 files without replacement and searches small text files by literal path/content.
@@ -438,16 +438,21 @@ large batch artifact and general shell path remain open. External writers do not
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.
 
-An opt-in host-side `processshell` runner now snapshots a bounded input tree,
-starts a separate OpenShell sandbox without provider or network grants, executes
-an argv with an empty environment, captures bounded output, and publishes only
-declared regular files into a fresh run-owned directory after success. It
-rejects symlinked inputs and outputs, limits individual and aggregate output
-size, and treats sandbox deletion failure as fatal. The caller must own the
-durable run lease and output parent. This executor has a connected synthetic
-CSV and adversarial isolation test; it is not yet a model-visible tool or
-wired to the run-scoped broker and artifact route. Those bindings, and a
-browser upload → process → authorized download acceptance, remain M5d work.
+An opt-in model-visible `process_run` tool now reaches a run-bound Work broker
+operation. The trusted host stages only selected current-thread uploads and
+invokes the pinned `processshell` executable. It starts a separate OpenShell
+sandbox without provider credentials or network grants, captures bounded output,
+and publishes only declared regular files into a fresh run-owned directory
+after success. It rejects symlinked inputs and outputs, limits individual and
+aggregate output size, and treats sandbox deletion failure as fatal. Its
+admission and result are journaled as one durable operation. A connected
+production queue run read a synthetic upload, wrote a CSV, emitted one artifact
+event and persisted one operation receipt. With the real web API enabled,
+authenticated download returned the exact CSV and attachment headers, rejected
+an unissued filename, and Chromium found the artifact link exactly once before
+and after reload. The fixture also verified absent broker/provider credentials
+and denied direct network access inside the process compartment. Larger files,
+cancelled/failed artifact behavior and broader process limits remain to qualify.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

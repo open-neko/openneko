@@ -29,7 +29,7 @@ services:
     volumes:
       - ./model-bin:/fixture-model:ro
   graphjin:
-    image: ${GRAPHJIN_TEST_IMAGE:-ongroups-graphjin:latest}
+    image: ${GRAPHJIN_TEST_IMAGE:-ghcr.io/open-neko/neko-graphjin:v3.5.6}
     entrypoint: [/usr/local/bin/graphjin]
     command: [serve, --path, /config]
     environment:

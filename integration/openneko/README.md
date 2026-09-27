@@ -13,8 +13,9 @@ Requires Docker, Go, the pinned OpenShell **0.0.116** CLI, an OpenNeko checkout 
 this adapter and installed worker/web dependencies, a built OpenNeko agent base
 image, and a GraphJin image supporting the server agent. The checked local GraphJin
 image was `sha256:ec6ca55bee6ced8e4c5f75ec0183a337ead74d0317cbc5b29d4afadeac5e3f64`.
-Set `GRAPHJIN_TEST_IMAGE` to an available pinned build; the default local tag is
-`ongroups-graphjin:latest`. This fixture does not build GraphJin itself.
+The default is `ghcr.io/open-neko/neko-graphjin:v3.5.6`; set
+`GRAPHJIN_TEST_IMAGE` to another available build if needed. This fixture does
+not build GraphJin itself.
 
 ```sh
 OPENNEKO_TEST_SOURCE=/absolute/OpenNeko-integration-checkout \
@@ -106,6 +107,19 @@ rendered and clicked its `result.csv` link, and observed HTTP 200. Fetching that
 same link returned the exact `lead_id\nLEAD-42\n` bytes as a CSV attachment.
 Use `localhost` for the Next dev origin; `127.0.0.1` blocks its dev resources.
 The large validated Daily Lead Union batch artifact remains an M5b gate.
+
+On 2026-09-27, the connected suite with `HARNESS_M3_API_HTTP=1` also passed
+`M5_QUEUE_PROCESS_PASS`, `M5_WEB_PROCESS_PASS`, and
+`M5_BROWSER_PROCESS_ARTIFACT_PASS`. A production Work queue run admitted the
+opt-in `process_run` tool through the run-bound broker, staged its synthetic
+thread upload, executed a bounded script in a separate OpenShell sandbox with
+no broker/provider credentials or network access, and published one validated
+CSV and one durable operation receipt. The Work download route returned its
+exact bytes with attachment headers and rejected an unissued filename.
+Chromium found the artifact link exactly once before and after reload and
+downloaded the same bytes. The isolated suite removed its containers and web
+process afterward. This is synthetic acceptance, not a real GraphJin database
+or Daily Lead Union execution.
 
 With `HARNESS_M3_API_HTTP=1`, the isolated suite starts the real Next API
 alongside the worker. On 2026-09-27 it passed

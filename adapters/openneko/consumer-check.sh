@@ -5,6 +5,7 @@ cli=${OPENSHELL_TEST_CLI:?}
 go build -o "$HARNESS_STATE/openshell-compat" ./adapters/openneko/cmd/openshell-compat
 go build -o "$HARNESS_STATE/harness-inspect" ./cmd/harness-inspect
 go build -o "$HARNESS_STATE/harness-batch" ./adapters/openneko/cmd/batch
+go build -o "$HARNESS_STATE/harness-process" ./adapters/openneko/cmd/process
 export HARNESS_INSPECT_BIN="$HARNESS_STATE/harness-inspect"
 mkdir -p "$HARNESS_STATE/workflow-bundle"
 cp integration/batch/workflow-fixture.py "$HARNESS_STATE/workflow-bundle/run.py"
@@ -51,6 +52,8 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
   export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
+  export HARNESS_PROCESS_BIN="$HARNESS_STATE/harness-process" HARNESS_PROCESS_IMAGE=harness-openneko:m3
+  export HARNESS_PROCESS_BIN_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$HARNESS_PROCESS_BIN")
   export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18119 RECORDS_PG_USER=neko RECORDS_PG_PASSWORD=synthetic-m3 RECORDS_PG_DATABASE=neko
   export OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development OPENNEKO_AGENT_HOME="$HARNESS_STATE/user" WORKER_ADMIN_URL=http://127.0.0.1:18122 OPENNEKO_BROKER_PORT=18123
@@ -72,6 +75,16 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
     [[ "$ready" == 1 ]] || { echo 'Isolated workflow API web server did not start' >&2; exit 1; }
   fi
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
+  if [[ ${HARNESS_M3_API_HTTP:-0} == 1 ]]; then
+    process_run=$(cat "$HARNESS_STATE/m5-process-run")
+    process_url="http://localhost:18121/api/work/files/runs/$process_run/artifacts/process-1/result.csv"
+    curl -fsS --max-time 10 -D "$HARNESS_STATE/process.headers" -o "$HARNESS_STATE/process.csv" "$process_url"
+    printf 'lead_id\nLEAD-42\n' | cmp -s - "$HARNESS_STATE/process.csv"
+    rg -qi '^content-disposition: attachment; filename="result.csv"' "$HARNESS_STATE/process.headers"
+    [[ $(curl -sS -o /dev/null -w '%{http_code}' "${process_url%result.csv}unissued.csv") == 404 ]]
+    echo "M5_WEB_PROCESS_PASS $process_run"
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-process-artifact.mjs "$(cat "$HARNESS_STATE/m5-process-thread")")
+  fi
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-child-live.ts)
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
@@ -99,6 +112,15 @@ if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   rg -qi '^content-type: text/csv' "$HARNESS_STATE/artifact.headers"
   [[ $(curl -sS -o /dev/null -w '%{http_code}' "${artifact_url%result.csv}hidden.txt") == 404 ]]
   echo "M5_WEB_ARTIFACT_PASS $artifact_run"
+  if [[ ${HARNESS_M3_API_HTTP:-0} != 1 ]]; then
+    process_run=$(cat "$HARNESS_STATE/m5-process-run")
+    process_url="http://localhost:18121/api/work/files/runs/$process_run/artifacts/process-1/result.csv"
+    curl -fsS --max-time 10 -D "$HARNESS_STATE/process.headers" -o "$HARNESS_STATE/process.csv" "$process_url"
+    printf 'lead_id\nLEAD-42\n' | cmp -s - "$HARNESS_STATE/process.csv"
+    rg -qi '^content-disposition: attachment; filename="result.csv"' "$HARNESS_STATE/process.headers"
+    echo "M5_WEB_PROCESS_PASS $process_run"
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-process-artifact.mjs "$(cat "$HARNESS_STATE/m5-process-thread")")
+  fi
   (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-card-reload.mjs "$(cat "$HARNESS_STATE/m5-card-thread")")
   batch_run=$(cat "$HARNESS_STATE/m5-batch-workflow-run")
   batch_url="http://localhost:18121/api/workflow-runs/$batch_run/artifact"

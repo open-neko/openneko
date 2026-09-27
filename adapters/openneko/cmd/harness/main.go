@@ -171,6 +171,33 @@ func main() {
 		tools.Scope += "\nskills:" + os.Getenv("OPENNEKO_MCP_SKILLS_ROOT")
 		closeTools = append(closeTools, skills.Close)
 	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_PROCESS_RUN"); enabled != "" {
+		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {
+			fmt.Fprintln(os.Stderr, "invalid isolated process capability binding")
+			os.Exit(2)
+		}
+		run, bindErr := broker.ProcessRun(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if bindErr != nil {
+			fmt.Fprintln(os.Stderr, "isolated process broker unavailable")
+			os.Exit(2)
+		}
+		var binding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "process_run", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Run a bounded Python or shell script in a separate credential-free OpenShell sandbox. Select only named uploads as inputs and declare output files before execution. Successful files become Work artifacts after the run completes.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["language","script","outputs"],"properties":{"language":{"type":"string","enum":["python","shell"]},"script":{"type":"string","minLength":1,"maxLength":65536},"uploads":{"type":"array","maxItems":16,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":128}},"outputs":{"type":"array","minItems":1,"maxItems":16,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":128}}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return run(ctx, raw, binding)
+			},
+		})
+		var err error
+		binding, err = tools.Binding("process_run")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid isolated process capability:", err)
+			os.Exit(2)
+		}
+		tools.Scope += "\nprocess:isolated-v1"
+	}
 	cleanup := func() error {
 		var first error
 		for _, closeTool := range closeTools {

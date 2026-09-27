@@ -66,15 +66,20 @@ emits one finding through a journaled, workflow-bound broker tool. API-admitted
 workflow runs and one governed pack-action proposal passed connected checks;
 other product action families remain open.
 
-`processshell` is an opt-in host-side executor for model-generated process
-work. The host supplies a run-owned input directory, a fresh output path,
-approved argv and declared output names after acquiring the durable run lease.
-It snapshots and bounds the inputs, starts a separate no-provider/no-network
-OpenShell sandbox, limits output and execution time, then publishes only
-validated files after successful completion. The worker has not yet bound this
-executor to the run-scoped broker or the Work artifact route, so it is not
-model-visible today. The connected fixture verifies a CSV, credential and
-network isolation, symlink rejection, cancellation and mandatory teardown.
+`process_run` is an opt-in, model-visible Work tool backed by the run-bound
+broker and a separate host-side `processshell` executable. The host accepts
+selected current-thread upload basenames, stages bounded regular files in a
+run-owned input directory, and supplies approved argv and declared output
+names after acquiring the durable run lease. The executor snapshots those
+inputs, starts a separate no-provider/no-network OpenShell sandbox, limits
+output and execution time, then publishes only validated files after successful
+completion and mandatory sandbox deletion. The broker journals the durable
+operation, and the worker emits the validated result through its existing Work
+artifact route. The connected queue and browser fixtures verify an exact CSV,
+one artifact event, one operation receipt, credential and network isolation,
+symlink rejection, cancellation and teardown. This is a bounded process
+capability; larger and failed/cancelled artifact cases still need product-level
+qualification.
 The `./adapters/openneko/cmd/process` host executable accepts only a bounded
 `{"Argv":[...],"Outputs":[...]}` request on stdin. The trusted launcher
 must supply `HARNESS_PROCESS_RUN_ID`, `HARNESS_PROCESS_OPERATION_ID`,

@@ -20,6 +20,7 @@ func main() {
 	proposal := false
 	upload := false
 	artifact := false
+	processTask := false
 	clarification := false
 	card := false
 	skill := false
@@ -43,6 +44,7 @@ func main() {
 			Proposal            bool `json:"proposal"`
 			Upload              bool `json:"upload"`
 			Artifact            bool `json:"artifact"`
+			Process             bool `json:"process"`
 			Clarification       bool `json:"clarification"`
 			Card                bool `json:"card"`
 			Skill               bool `json:"skill"`
@@ -65,6 +67,7 @@ func main() {
 		proposal = c.Proposal
 		upload = c.Upload
 		artifact = c.Artifact
+		processTask = c.Process
 		clarification = c.Clarification
 		card = c.Card
 		skill = c.Skill
@@ -98,6 +101,7 @@ func main() {
 		propose := proposal
 		readUpload := upload
 		writeArtifact := artifact
+		runProcess := processTask
 		askClarification := clarification
 		renderCard := card
 		followSkill := skill
@@ -206,7 +210,12 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model == "harness-fixture" && runProcess &&
+			(!strings.Contains(string(req.Messages), "process-1/result.csv") || !strings.Contains(string(req.Messages), hex.EncodeToString(artifactHash[:]))) {
+			http.Error(w, "missing isolated process artifact receipt", 422)
+			return
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -293,6 +302,12 @@ func main() {
 			}
 			if writeArtifact {
 				responses = []string{`{"javascriptCode":"final('Create a CSV artifact', {})"}`, `{"javascriptCode":"const hidden=file_search({query:'OTHER-RUN-SECRET'}); const written=file_write({path:'result.csv',content:'lead_id\\nLEAD-42\\n'}); final('Report the CSV artifact',{hidden,written});"}`, `{"answer":"Created result.csv."}`}
+			}
+			if runProcess {
+				script := "import os,pathlib,socket\nassert not os.environ.get('OPENNEKO_BROKER_TOKEN')\nassert not os.environ.get('MODEL_API_KEY')\ntry:\n socket.create_connection(('1.1.1.1',80),timeout=2)\n raise AssertionError('ungranted network')\nexcept OSError:\n pass\nsource=pathlib.Path('lead.csv').read_text()\nassert 'LEAD-42' in source\npathlib.Path('result.csv').write_text(source)\n"
+				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:['lead.csv'],outputs:['result.csv']}); final('Report isolated process artifact',{result});", script)
+				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+				responses = []string{`{"javascriptCode":"final('Process the uploaded lead without model data transfer', {})"}`, string(encoded), `{"answer":"Processed the uploaded lead into result.csv."}`}
 			}
 			if propose {
 				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}

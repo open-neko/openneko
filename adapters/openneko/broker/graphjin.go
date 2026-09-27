@@ -149,6 +149,47 @@ func WorkflowOutput(base, token string) (func(context.Context, json.RawMessage, 
 	}, nil
 }
 
+// ProcessRun requests a host-owned isolated process. The broker supplies the
+// run workspace and executable; model input can contain only a bounded script,
+// selected upload basenames and declared output basenames.
+func ProcessRun(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {
+	call, err := bindTimeout(base, token, "/v1/harness/process/run", 262144, 5*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, input json.RawMessage, binding string) (json.RawMessage, error) {
+		id := agent.OperationID(ctx)
+		if id < 1 || id > 32 || len(binding) != 64 || len(input) == 0 || len(input) > 131072 || !json.Valid(input) {
+			return nil, fmt.Errorf("invalid isolated process operation")
+		}
+		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
+			Instruction string `json:"instruction"`
+			Binding     string `json:"binding"`
+		}{id, string(input), binding})
+		data, err := call(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			OK    bool `json:"ok"`
+			Files []struct {
+				Path   string `json:"path"`
+				SHA256 string `json:"sha256"`
+			} `json:"files"`
+		}
+		if json.Unmarshal(data, &receipt) != nil || !receipt.OK || len(receipt.Files) == 0 || len(receipt.Files) > 16 {
+			return nil, fmt.Errorf("isolated process was not confirmed by broker")
+		}
+		for _, file := range receipt.Files {
+			if file.Path == "" || len(file.SHA256) != 64 {
+				return nil, fmt.Errorf("invalid isolated process artifact receipt")
+			}
+		}
+		return data, nil
+	}, nil
+}
+
 // GraphQLQuery is for an admitted file-backed batch runner only. OpenNeko
 // rechecks the bound actor and enforces read-only GraphQL at the broker.
 func GraphQLQuery(base, token string) (func(context.Context, string) ([]byte, error), error) {
@@ -172,16 +213,20 @@ func bind(base, token, path string) (func(context.Context, []byte) ([]byte, erro
 }
 
 func bindLimit(base, token, path string, maxResponse int64) (func(context.Context, []byte) ([]byte, error), error) {
+	timeout := 45 * time.Second
+	if maxResponse > 262144 {
+		timeout = 65 * time.Second
+	}
+	return bindTimeout(base, token, path, maxResponse, timeout)
+}
+
+func bindTimeout(base, token, path string, maxResponse int64, timeout time.Duration) (func(context.Context, []byte) ([]byte, error), error) {
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || token == "" {
 		return nil, fmt.Errorf("invalid broker binding")
 	}
 	u.Path = path
 	u.RawPath = ""
-	timeout := 45 * time.Second
-	if maxResponse > 262144 {
-		timeout = 65 * time.Second
-	}
 	client := &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return func(ctx context.Context, body []byte) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
