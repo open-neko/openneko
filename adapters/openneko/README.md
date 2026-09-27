@@ -60,8 +60,10 @@ prevents later writes; the agent never retries the save automatically.
 Customer Work runs can admit Ax's owned `team.researcher` child with only
 GraphJin lookup and memory search. Its model calls and read operations share
 the parent run's limits and journal. A connected two-investigation fixture
-passed through OpenShell, MCP and the actor-bound broker. Workflow-bound
-delegation needs the separate workflow admission path.
+passed through OpenShell, MCP and the actor-bound broker. A queued workflow
+now binds two read-only GraphJin children to its owning `work_run`; the parent
+emits one finding through a journaled, workflow-bound broker tool. API-admitted
+workflow runs and action requests remain to be qualified.
 
 ## Implemented: OpenShell cold-launch compatibility
 

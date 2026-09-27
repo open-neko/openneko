@@ -74,3 +74,28 @@ func TestGraphQLBatchBinding(t *testing.T) {
 		t.Fatal("blank query accepted")
 	}
 }
+
+func TestWorkflowOutputBinding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if r.URL.Path != "/v1/harness/workflow-output/emit" || r.Header.Get("Authorization") != "Bearer scoped" || len(body) != 3 || body["operationId"] != float64(2) || body["binding"] != strings.Repeat("a", 64) || body["instruction"] != `{"kind":"finding","body":"REF-42"}` {
+			t.Errorf("unexpected workflow output: %+v", body)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"outputId":"output-1","kind":"finding"}`))
+	}))
+	defer server.Close()
+	emit, err := WorkflowOutput(server.URL, "scoped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := emit(agent.WithOperationID(context.Background(), 2), json.RawMessage(`{"kind":"finding","body":"REF-42"}`), strings.Repeat("a", 64))
+	if err != nil || !strings.Contains(string(result), `"outputId":"output-1"`) {
+		t.Fatalf("result=%s err=%v", result, err)
+	}
+	if _, err := emit(context.Background(), json.RawMessage(`{"kind":"finding"}`), strings.Repeat("a", 64)); err == nil {
+		t.Fatal("missing operation ID accepted")
+	}
+}

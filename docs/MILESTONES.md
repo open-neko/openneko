@@ -329,10 +329,22 @@ validates the model's bounded text/kind/scope, and persists host operation inten
 before calling OpenNeko's existing memory service. A successful connected
 OpenShell/Ax turn stored one real memory row and matching host/Go receipts.
 If the host commits the memory but loses its receipt, the outcome stays unknown
-and later effects are fenced; no automatic redispatch is permitted. Workflow,
-rule, records, skill, plugin and admin writes are not enabled.
+and later effects are fenced; no automatic redispatch is permitted. Workflow
+definition, rule, records, skill, plugin and admin writes are not enabled.
 Local Go and OpenNeko checks pass; connected browser/queue acceptance must be
 repeated against the updated image when an instance is available.
+
+**Queued workflow slice (2026-09-27):** Harness now receives the owning
+`work_run` and trusted `workflow_run` identity. Its parent Ax agent may run
+bounded read-only children and emit typed workflow outputs through a dedicated
+host-journaled broker operation. The broker verifies that both run IDs belong
+to the same org and workflow execution, records intent before persistence,
+and refuses an ambiguous retry. A completed Harness workflow must have an
+output receipt; the host restores a missing output event from that receipt.
+An isolated pg-boss workflow executed two child GraphJin investigations,
+recorded one finding, and completed under OpenShell. The full connected suite
+and unchanged Hermes checks passed. API-admitted workflow budget/polling,
+workflow action requests, and broader mutation families remain open.
 
 Source inventory for the next M5c slice:
 
@@ -446,11 +458,9 @@ checkpoint. The isolated full suite passed and removed its containers.
 OpenNeko's Work backend advertises this child only when delegation is enabled;
 the current child receives GraphJin lookup and memory search. Child lifecycle
 events project into delegation telemetry without a second inner-model usage
-entry. Workflow runs are not yet admitted to the Harness backend: the workflow
-core still lacks the Harness run identity and capability binding. They should
-receive a workflow-bound child grant when M5c workflow admission is built.
-Crash-resume of an in-flight child, disabled-mode connected acceptance and
-workflow/agent-job modes remain open.
+entry. One queued workflow now owns two read-only child GraphJin investigations
+and one parent-emitted finding. API-admitted runs, crash-resume of an in-flight
+child, disabled-mode connected acceptance and agent-job mode remain open.
 
 For queued workflows, the `workflow_run` remains the product outcome, the
 owning `work_run` remains the execution/journal parent, and child IDs are

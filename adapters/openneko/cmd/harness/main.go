@@ -79,6 +79,32 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	if workflowRunID := os.Getenv("OPENNEKO_HARNESS_WORKFLOW_RUN_ID"); workflowRunID != "" {
+		if recordsOnly == "1" {
+			fmt.Fprintln(os.Stderr, "records-only run cannot emit workflow output")
+			os.Exit(2)
+		}
+		emit, err := broker.WorkflowOutput(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "workflow output broker unavailable:", err)
+			os.Exit(2)
+		}
+		var binding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "workflow_output_emit", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Persist an output for this queued workflow run. Give the evidence, type, title, and honest mood; a final answer alone does not create an output.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["report","summary","briefing_card_proposal","chart","table","file","message_draft","finding","observation","recommendation"]},"title":{"type":"string","maxLength":240},"body":{"type":"string","maxLength":64000},"payload":{"type":"object"},"artifactPath":{"type":"string","maxLength":1024},"scope":{"type":"string","maxLength":120},"topic":{"type":"string","maxLength":120},"mood":{"type":"string","enum":["good","watch","act"]},"timeWindowStart":{"type":"string","format":"date-time"},"timeWindowEnd":{"type":"string","format":"date-time"},"freshnessTtlSeconds":{"type":"integer","minimum":1,"maximum":31536000}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return emit(ctx, raw, binding)
+			},
+		})
+		binding, err = tools.Binding("workflow_output_emit")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid workflow output capability:", err)
+			os.Exit(2)
+		}
+		tools.Scope += "\nworkflow:" + workflowRunID
+	}
 	var closeTools []func() error
 	memoryRead := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ")
 	libraryRead := os.Getenv("OPENNEKO_HARNESS_MCP_LIBRARY_READ")

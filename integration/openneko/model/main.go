@@ -138,6 +138,9 @@ func main() {
 			}
 			n -= 3
 		}
+		if req.Model == "graphjin-fixture" {
+			n %= 3 // Each server-side lookup is an independent three-step agent run.
+		}
 		refused := strings.Contains(string(req.Messages), "not configured read-only") && !strings.Contains(string(req.Messages), "trace_id")
 		if n == 2 && req.Model == "harness-memory-fixture" && !strings.Contains(string(req.Messages), "memory-1") {
 			http.Error(w, "missing memory evidence", 422)
@@ -149,6 +152,18 @@ func main() {
 		}
 		if n == 7 && req.Model == "harness-child-fixture" && !strings.Contains(string(req.Messages), "memory-2") {
 			http.Error(w, "missing second child evidence", 422)
+			return
+		}
+		if n == 4 && req.Model == "harness-workflow-child-fixture" && !strings.Contains(string(req.Messages), "REF-42") {
+			http.Error(w, "missing first workflow child evidence", 422)
+			return
+		}
+		if n == 7 && req.Model == "harness-workflow-child-fixture" && !strings.Contains(string(req.Messages), "REF-42") {
+			http.Error(w, "missing second workflow child evidence", 422)
+			return
+		}
+		if n == 8 && req.Model == "harness-workflow-child-fixture" && !strings.Contains(string(req.Messages), "outputId") {
+			http.Error(w, "missing workflow output receipt", 422)
 			return
 		}
 		if n == 2 && req.Model == "harness-memory-save-fixture" && !strings.Contains(string(req.Messages), "memoryId") {
@@ -180,7 +195,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -204,6 +219,18 @@ func main() {
 				`{"javascriptCode":"const memory=mcp_memory_search({query:'find exception'}); final('Report exception',{memory});"}`,
 				`{"answer":"Exception evidence memory-2."}`,
 				`{"answer":"The policy is memory-1 and the exception is memory-2."}`,
+			}
+		} else if req.Model == "harness-workflow-child-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Check two references and emit the finding',{})"}`,
+				`{"javascriptCode":"const one=team.researcher({question:'Find the first seeded reference'}); const two=team.researcher({question:'Independently verify the seeded reference'}); if(!JSON.stringify(one).includes('REF-42')||!JSON.stringify(two).includes('REF-42')) throw Error('child evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Two reference checks',body:'Both independent checks found REF-42.',payload:{reference:'REF-42'}}); final('Report recorded workflow finding',{receipt});"}`,
+				`{"javascriptCode":"final('Find the first reference',{})"}`,
+				`{"javascriptCode":"const evidence=lookup('Find the first seeded reference'); final('Report first reference',{evidence});"}`,
+				`{"answer":"First reference REF-42."}`,
+				`{"javascriptCode":"final('Verify the second reference',{})"}`,
+				`{"javascriptCode":"const evidence=lookup('Independently verify the seeded reference'); final('Report second reference',{evidence});"}`,
+				`{"answer":"Second reference REF-42."}`,
+				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
 			}
 		} else if req.Model == "harness-memory-save-fixture" {
 			responses = []string{`{"javascriptCode":"final('Save the operator rule', {})"}`, `{"javascriptCode":"const receipt=memory_save({text:'Never close a lead without a verified owner',kind:'business_rule',scope:'thread'}); final('Report saved memory',{receipt});"}`, `{"answer":"Saved the operator rule."}`}
