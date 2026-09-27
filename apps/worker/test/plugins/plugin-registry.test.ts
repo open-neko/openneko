@@ -12,7 +12,7 @@ import {
   type ActionAdapter,
   type ActionRequestRecord,
 } from "@neko/llm/workflows";
-import { PluginRegistry } from "../../src/plugins/plugin-registry";
+import { PluginRegistry, pluginIdFromName } from "../../src/plugins/plugin-registry";
 import type {
   PluginRuntime,
   PluginVmSpec,
@@ -311,7 +311,9 @@ describe("PluginRegistry", () => {
       "utf8",
     );
     await reg.refresh();
-    expect(runtime.stopped).toContain("open-neko-plugin-slack");
+    expect(runtime.starts[0].id).toBe(pluginIdFromName("@open-neko/plugin-slack"));
+    expect(runtime.starts[0].id.length).toBeLessThanOrEqual(19);
+    expect(runtime.stopped).toContain(runtime.starts[0].id);
     expect(reg.status().kinds).toEqual([]);
     await reg.stop();
   });
@@ -2143,4 +2145,3 @@ describe("PluginRegistry — install-policy flagging", () => {
     await reg.stop();
   });
 });
-

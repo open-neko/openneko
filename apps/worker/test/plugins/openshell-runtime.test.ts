@@ -111,8 +111,8 @@ describe("OpenShellRuntime", () => {
       "--no-tty",
       "--no-auto-providers",
       "--",
-      "node",
-      "--version",
+      "sleep",
+      "infinity",
     ]);
     expect(h.calls[1]?.args).toEqual([
       "sandbox",

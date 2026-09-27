@@ -55,7 +55,9 @@ async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<Acti
   if (!actor || !isDeepStrictEqual(proposal.actor,{userId:actor.actor_user_id,role:actor.actor_role,backend:actor.backend})) throw Error("Requesting actor changed; request approval again");
   const definition=proposal.definition.harnessSource === "plugin"
     ? await validateHarnessPluginAction(scope,{kind:request.kind,source:"plugin",scope:request.scope,
-        ...(typeof proposal.definition.pluginName === "string" ? {pluginName:proposal.definition.pluginName} : {})})
+        ...(typeof proposal.definition.pluginName === "string" ? {pluginName:proposal.definition.pluginName} : {}),
+        ...(typeof proposal.definition.pluginVersion === "string" ? {pluginVersion:proposal.definition.pluginVersion} : {}),
+        ...(typeof proposal.definition.pluginIntegrity === "string" ? {pluginIntegrity:proposal.definition.pluginIntegrity} : {})})
     : proposal.definition.harnessSource === "pack"
       ? {harnessSource:"pack",snapshot:await validateHarnessAction(scope,request.kind,proposal.payload)}
       : await validateHarnessAction(scope,request.kind,proposal.payload);

@@ -1664,6 +1664,9 @@ interface GovernedActionDescriptor {
   example?: Record<string, unknown>;
   /** Installed plugin that handles the kind; the integration item gates it. */
   pluginName?: string;
+  /** Exact installed manifest pin bound into Harness approval and execution. */
+  pluginVersion?: string;
+  pluginIntegrity?: string;
 }
 
 export interface PluginActionDescriptor extends GovernedActionDescriptor {}

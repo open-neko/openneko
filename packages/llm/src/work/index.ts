@@ -1,6 +1,7 @@
 export * from "./workspace";
 export * from "./artifacts";
 export { runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
+export { registerHarnessInstalledPluginAvailability } from "./harness-proposal";
 export * from "./sandbox-net";
 export * from "./behavior-monitor";
 export * from "./deployment-profile";

@@ -63,7 +63,9 @@ function harnessActionGrants(
   }));
   const plugins = kind === "work" ? ((input as RunAgentBackendInput).pluginActions ?? []).map(action => ({
     kind: action.kind, source: "plugin" as const, scope: action.scope ?? "external" as const,
-    ...(action.pluginName ? {pluginName: action.pluginName} : {}),
+    ...(action.pluginName ? {pluginName: action.pluginName,
+      ...(action.pluginVersion ? {pluginVersion: action.pluginVersion} : {}),
+      ...(action.pluginIntegrity ? {pluginIntegrity: action.pluginIntegrity} : {})} : {}),
   })) : [];
   return [...packs, ...plugins].sort((a,b) => a.kind.localeCompare(b.kind));
 }

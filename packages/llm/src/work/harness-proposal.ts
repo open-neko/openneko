@@ -18,7 +18,20 @@ export type HarnessActionGrant = {
   scope: "external" | "internal";
   /** Installed plugin entitlement, when the descriptor belongs to one. */
   pluginName?: string;
+  pluginVersion?: string;
+  pluginIntegrity?: string;
 };
+
+type InstalledPluginAvailability = (grant: HarnessActionGrant) => boolean | Promise<boolean>;
+let installedPluginAvailability: InstalledPluginAvailability | null = null;
+
+/** Worker-owned registry lookup; the runtime cannot infer installation from a stale run grant. */
+export function registerHarnessInstalledPluginAvailability(check: InstalledPluginAvailability): () => void {
+  installedPluginAvailability = check;
+  return () => {
+    if (installedPluginAvailability === check) installedPluginAvailability = null;
+  };
+}
 
 /** Resolve the installed contract and current actor on the trusted side. */
 export async function validateHarnessAction(scope:{orgId:string;runId:string},kind:string,payload:Record<string,unknown>) {
@@ -39,13 +52,20 @@ export async function validateHarnessAction(scope:{orgId:string;runId:string},ki
 
 export async function validateHarnessPluginAction(scope:{orgId:string;runId:string},grant:HarnessActionGrant) {
   if (grant.source !== "plugin") throw Error("Expected a plugin action grant");
+  if (grant.pluginName && (!grant.pluginVersion || !grant.pluginIntegrity)) {
+    throw Error("Installed plugin action has no manifest pin");
+  }
+  if (grant.pluginName && !(await installedPluginAvailability?.(grant))) {
+    throw Error("Installed plugin action is no longer available");
+  }
   const actor=await entitlementActorForRun(scope.orgId,scope.runId);
   if (!actor || !(await holds(actor,"action",grant.kind)).allowed ||
       (grant.pluginName && !(await holds(actor,"integration",grant.pluginName)).allowed)) {
     throw Error("Action is no longer available to this actor");
   }
   return {harnessSource:"plugin",kind:grant.kind,scope:grant.scope,
-    ...(grant.pluginName ? {pluginName:grant.pluginName} : {})};
+    ...(grant.pluginName ? {pluginName:grant.pluginName,pluginVersion:grant.pluginVersion,
+      pluginIntegrity:grant.pluginIntegrity} : {})};
 }
 
 export async function proposeHarnessAction(
