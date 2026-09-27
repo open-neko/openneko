@@ -5,6 +5,7 @@ import type {
   AgentWorkspace,
 } from "../agent-backend";
 import type { AllowedLibrary } from "../library/staging";
+import type { PackActionDescriptor } from "../work/tools";
 import type { AgentControlPlane } from "../work/control-plane";
 import {
   buildGraphjinMcpServer,
@@ -24,6 +25,7 @@ export interface RunWorkflowAgentBackendInput {
   /** The underlying work_run id that owns the sandbox and broker token. */
   runId: string;
   workflowRunId: string;
+  packActions?: readonly PackActionDescriptor[];
   mode: "live" | "headless";
   networkHosts: string[];
   triggeredByObservationId?: string | null;
