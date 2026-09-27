@@ -58,6 +58,9 @@ Customer Work turns also admit six read-only management lists (plugins, users,
 groups, channels, data sources and action rules) through pinned schemas; their
 adjacent request/save/delete routes remain broker-denied. A queued Work run
 read all six and recovered the seeded rule without a mutation operation.
+The audit trail is a separate pinned read. It uses the run's actor and
+organization at the host; a queued admin received a seeded action request,
+while a queued member received only the admin-only denial.
 The separate `memory_save` capability uses a Work-run-only broker grant and
 host operation receipt. A lost receipt leaves the save outcome unknown and
 prevents later writes; the agent never retries the save automatically.

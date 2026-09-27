@@ -183,8 +183,11 @@ Six additional read-only management catalogs (plugins, users, groups, channels,
 data sources and action rules) now pass the pinned MCP bridge. A queued Work
 turn called all six through the actor-bound broker, received a seeded rule, and
 recorded no GraphJin or mutation operation. Adjacent request/save/delete routes
-remain denied; source configuration, audit and other management reads still
-need separate actor-specific qualification.
+remain denied. The separate audit-trail read passed queued admin and member
+Work turns: the admin received a seeded action request; the member received
+only the denial. An admin run from another org is rejected by the host gate.
+Source configuration and other management reads still need separate
+actor-specific qualification.
 The queued
 clarification reached `needs_input` after two outer model
 calls; broker events entered the turn reducer, and queue redelivery preserved one

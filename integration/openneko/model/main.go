@@ -22,6 +22,8 @@ func main() {
 	artifact := false
 	processTask := false
 	management := false
+	audit := false
+	auditDenied := false
 	clarification := false
 	card := false
 	skill := false
@@ -47,6 +49,8 @@ func main() {
 			Artifact            bool `json:"artifact"`
 			Process             bool `json:"process"`
 			Management          bool `json:"management"`
+			Audit               bool `json:"audit"`
+			AuditDenied         bool `json:"audit_denied"`
 			Clarification       bool `json:"clarification"`
 			Card                bool `json:"card"`
 			Skill               bool `json:"skill"`
@@ -71,6 +75,8 @@ func main() {
 		artifact = c.Artifact
 		processTask = c.Process
 		management = c.Management
+		audit = c.Audit
+		auditDenied = c.AuditDenied
 		clarification = c.Clarification
 		card = c.Card
 		skill = c.Skill
@@ -106,6 +112,8 @@ func main() {
 		writeArtifact := artifact
 		runProcess := processTask
 		readManagement := management
+		readAudit := audit
+		expectAuditDenial := auditDenied
 		askClarification := clarification
 		renderCard := card
 		followSkill := skill
@@ -224,7 +232,19 @@ func main() {
 			http.Error(w, "missing management catalog evidence", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !readManagement && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model == "harness-fixture" && readAudit {
+			messages := string(req.Messages)
+			if expectAuditDenial {
+				if !strings.Contains(messages, "audit trail is admin-only") || strings.Contains(messages, "harness-audit-marker") {
+					http.Error(w, "missing audit denial or leaked audit trail", 422)
+					return
+				}
+			} else if !strings.Contains(messages, "harness-audit-marker") {
+				http.Error(w, "missing admin audit evidence", 422)
+				return
+			}
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !readManagement && !readAudit && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -320,6 +340,9 @@ func main() {
 			}
 			if readManagement {
 				responses = []string{`{"javascriptCode":"final('Inspect management catalogs', {})"}`, `{"javascriptCode":"const users=mcp_neko_user_manager_list_users({}); const groups=mcp_neko_user_manager_list_groups({}); const sources=mcp_neko_data_source_manager_list_data_sources({}); const rules=mcp_neko_rule_builder_list_rules({}); const plugins=mcp_neko_plugin_manager_list_plugins({}); const channels=mcp_neko_channel_manager_list_channels({}); final('Report management catalogs',{users,groups,sources,rules,plugins,channels});"}`, `{"answer":"The management catalogs include the seeded rule and organization data source."}`}
+			}
+			if readAudit {
+				responses = []string{`{"javascriptCode":"final('Inspect audit trail', {})"}`, `{"javascriptCode":"const trail=mcp_neko_audit_audit_trail({limit:20}); final('Report the bound actor audit result',{trail});"}`, `{"answer":"The audit request was checked for this actor."}`}
 			}
 			if propose {
 				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}

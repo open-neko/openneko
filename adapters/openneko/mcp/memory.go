@@ -20,7 +20,7 @@ import (
 type ReadConfig struct {
 	BridgePath, BrokerURL, BrokerToken, OrgID, ThreadID, RunID, SkillsRoot string
 	Interaction, Cards, Workflow                                           bool
-	Management                                                             bool
+	Management, Audit                                                      bool
 }
 
 //go:embed interaction_schemas.json
@@ -40,7 +40,7 @@ const recordsRecycleGetSchema = `{"$schema":"http://json-schema.org/draft-07/sch
 // Discovery must match the pinned schemas; bridge content cannot grant tools.
 func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records bool) ([]agent.Capability, func() error, error) {
 	u, err := url.Parse(cfg.BrokerURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards && !cfg.Workflow && !cfg.Management) || (library && !memory) {
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards && !cfg.Workflow && !cfg.Management && !cfg.Audit) || (library && !memory) {
 		return nil, nil, fmt.Errorf("invalid OpenNeko read bridge binding")
 	}
 	if info, err := os.Stat(cfg.BridgePath); err != nil || !info.Mode().IsRegular() {
@@ -87,6 +87,10 @@ func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records 
 			shared.Admission{Name: "data_source_manager_list_data_sources", Alias: "mcp_neko_data_source_manager_list_data_sources", Version: "1", Origin: "openneko", Effect: "read", Description: "List registered data sources without credentials.", Schema: json.RawMessage(emptySchema)},
 			shared.Admission{Name: "rule_builder_list_rules", Alias: "mcp_neko_rule_builder_list_rules", Version: "1", Origin: "openneko", Effect: "read", Description: "List organization action rules without changing them.", Schema: json.RawMessage(workflowListSchema)},
 		)
+	}
+	if cfg.Audit {
+		servers = append(servers, "neko_audit")
+		allowed = append(allowed, shared.Admission{Name: "audit_audit_trail", Alias: "mcp_neko_audit_audit_trail", Version: "1", Origin: "openneko", Effect: "read", Description: "Read the bound Work actor's organization audit trail; the host denies non-admin actors.", Schema: json.RawMessage(workflowListSchema)})
 	}
 	if cfg.Interaction || cfg.Cards {
 		var schemas map[string]json.RawMessage

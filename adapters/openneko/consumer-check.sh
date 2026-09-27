@@ -33,7 +33,7 @@ YAML
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
 bash ./integration/batch/batch-check.sh
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
-(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts)
+(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts test/integration/audit-viewer.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-live.test.ts)
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts)
