@@ -27,7 +27,7 @@ import { createRecordActionAdapter, registerHarnessRecordActionPreflight } from 
 
 const live = process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
 
-live("reads and updates populated Records through OpenShell, approval and real GraphJin", async () => {
+live("reads and mutates populated Records through OpenShell, approval and real GraphJin", async () => {
   if (process.env.NEKO_PG_PORT !== "18119" || process.env.RECORDS_PG_PORT !== "18120" || !process.env.HARNESS_STATE) {
     throw Error("isolated M3 records environment required");
   }
@@ -77,8 +77,8 @@ live("reads and updates populated Records through OpenShell, approval and real G
       (org_id, object_id, api_name, label, kind, column_name, required)
       VALUES ($1, $2, 'name', 'Name', 'text', 'name', true)`, [orgId, objectId]);
     await recordsPool.query(`INSERT INTO engine.record_permission
-      (org_id, app_id, role, object_api_name, can_read, can_update)
-      VALUES ($1, 'equipment', 'admin', 'loan', true, true)`, [orgId]);
+      (org_id, app_id, role, object_api_name, can_read, can_create, can_update, can_delete)
+      VALUES ($1, 'equipment', 'admin', 'loan', true, true, true, true)`, [orgId]);
     await recordsPool.query("INSERT INTO engine.actor (org_id,user_id,role) VALUES ($1,'records-service','service')",[orgId]);
     await recordsPool.query(`INSERT INTO public.${tableName} (id, org_id, name) VALUES ('loan-42', $1, 'Fixture loan'),('loan-43',$1,'Queued fixture loan')`, [orgId]);
     await ensureRecordsAuditTrigger(recordsPool,{tableSchema:"public",tableName,appId:"equipment",objectApiName:"loan"});
@@ -155,7 +155,7 @@ live("reads and updates populated Records through OpenShell, approval and real G
     // after a human approval, and duplicate execution restores its receipt.
     const actionRunId=randomUUID();
     await db().insert(work_run).values({id:actionRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"admin"});
-    await db().insert(action_policy).values({org_id:orgId,name:"Fixture record update approval",mode:"approval_required",applies_to_kinds:["record_update"],applies_to_scopes:["internal"]});
+    await db().insert(action_policy).values({org_id:orgId,name:"Fixture record mutation approval",mode:"approval_required",applies_to_kinds:["record_create","record_update","record_delete","record_restore"],applies_to_scopes:["internal"]});
     const actionWorkspace=Object.fromEntries(Object.entries(workspace).map(([key,value])=>[key,value.replaceAll(runId,actionRunId)])) as AgentWorkspace;
     for(const dir of Object.values(actionWorkspace)) await mkdir(dir,{recursive:true});
     await mkdir(join(actionWorkspace.skillsRoot,"records"),{recursive:true});
@@ -252,6 +252,52 @@ live("reads and updates populated Records through OpenShell, approval and real G
     expect((await executeApprovedActionRequest(orgId,queuedRequest.id)).ok).toBe(true);
     expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-43'`)).rows[0].name).toBe("Queued fixture loan updated");
     expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,queuedRequest.id])).rows[0].n).toBe(1);
+
+    // Reuse the same real queue, GraphJin and worker executor for the three
+    // remaining CRUD actions. Each action has a distinct model key so the
+    // deterministic model validates its own approval receipt on turn two.
+    for (const step of [
+      {kind:"record_create",model:"harness-records-create-fixture",message:"Create a fixture equipment loan."},
+      {kind:"record_delete",model:"harness-records-delete-fixture",message:"Recycle loan-43."},
+      {kind:"record_restore",model:"harness-records-restore-fixture",message:"Restore loan-43."},
+    ] as const) {
+      const stepAdapter=createRecordActionAdapter(step.kind,executor);
+      registerActionAdapter(step.kind,stepAdapter);
+      await db().update(llm_provider_config).set({model:step.model}).where(eq(llm_provider_config.org_id,orgId));
+      await writeFile(join(process.env.OPENNEKO_AGENT_HERMES_HOME!,"config.yaml"),
+        `model:\n  provider: custom\n  default: ${step.model}\n  base_url: http://host.docker.internal:18118/v1\n`);
+      const stepThread=await createWorkThread(orgId,`Queued ${step.kind}`,"web",null,{recordContext:{
+        appId:"equipment",appLabel:"Equipment",objectApiName:"loan",objectLabel:"Loan",surface:"detail",recordId:"loan-43"}});
+      const stepRun=await createWorkRun(orgId,stepThread.id,"harness",{userId:null,role:"admin"});
+      const [stepJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:`${step.kind}-fixture`}).returning();
+      await enqueue(QUEUE.WORK_RUN,{processingJobId:stepJob.id,orgId,runId:stepRun.id,threadId:stepThread.id,message:step.message},{retryLimit:0});
+      let done=false;
+      for(let attempt=0;attempt<90;attempt++) {
+        const current=await getWorkRun(orgId,stepRun.id);
+        const [processing]=await db().select().from(processing_job).where(eq(processing_job.id,stepJob.id));
+        if(current?.status==="completed" && processing?.status==="succeeded") {done=true;break;}
+        if(current?.status==="failed" || processing?.status==="failed") {
+          throw Error(`${step.kind} queue failed: ${current?.error ?? "worker error"}`);
+        }
+        await new Promise(resolve=>setTimeout(resolve,500));
+      }
+      expect(done,`${step.kind} queue timeout`).toBe(true);
+      const requests=(await pool().query("SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2",[orgId,stepRun.id])).rows;
+      expect(requests).toHaveLength(1);
+      expect(requests[0].status).toBe("pending_approval");
+      expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(0);
+      await approveActionRequest({orgId,id:requests[0].id,approverUserId:null,approver:{userId:null,role:"admin"}});
+      const outcome=await executeApprovedActionRequest(orgId,requests[0].id);
+      expect(outcome.ok,`${step.kind}: ${JSON.stringify(outcome)}`).toBe(true);
+      expect((await executeApprovedActionRequest(orgId,requests[0].id)).ok).toBe(true);
+      expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(1);
+      if(step.kind==="record_create") {
+        expect((await recordsPool.query(`SELECT count(*)::int AS n FROM public.${tableName} WHERE org_id=$1 AND name='Created fixture loan'`,[orgId])).rows[0].n).toBe(1);
+      } else {
+        const [row]=(await recordsPool.query(`SELECT nk_deleted_at FROM public.${tableName} WHERE id='loan-43'`)).rows;
+        expect(Boolean(row?.nk_deleted_at)).toBe(step.kind==="record_delete");
+      }
+    }
   } finally {
     unregisterPreflight();
     if(queue) await queue.offWork(QUEUE.WORK_RUN);
