@@ -469,7 +469,11 @@ authenticated download returned the exact CSV and attachment headers, rejected
 an unissued filename, and Chromium found the artifact link exactly once before
 and after reload. The fixture also verified absent broker/provider credentials
 and denied direct network access inside the process compartment. Larger files,
-cancelled/failed artifact behavior and broader process limits remain to qualify.
+cancelled/failed artifact behavior and broader process limits remain to qualify
+through the full product path. The separate real OpenShell process suite now
+also rejects publication after a script writes an output and exits nonzero,
+after a partial output is cancelled, and when a declared output exceeds the
+16 MiB per-file limit.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

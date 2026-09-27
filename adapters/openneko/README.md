@@ -93,8 +93,10 @@ operation, and the worker emits the validated result through its existing Work
 artifact route. The connected queue and browser fixtures verify an exact CSV,
 one artifact event, one operation receipt, credential and network isolation,
 symlink rejection, cancellation and teardown. This is a bounded process
-capability; larger and failed/cancelled artifact cases still need product-level
-qualification.
+capability; the separate real OpenShell suite also rejects publication after
+a script writes then fails, a partial-output cancellation, and an oversized
+declared output. Larger and failed/cancelled artifact cases still need
+product-level qualification.
 The `./adapters/openneko/cmd/process` host executable accepts only a bounded
 `{"Argv":[...],"Outputs":[...]}` request on stdin. The trusted launcher
 must supply `HARNESS_PROCESS_RUN_ID`, `HARNESS_PROCESS_OPERATION_ID`,

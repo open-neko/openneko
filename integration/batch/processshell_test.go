@@ -110,7 +110,9 @@ func TestOpenShellProcessFailureDoesNotPublish(t *testing.T) {
 		timeout      time.Duration
 	}{
 		{"symlink", "import pathlib\npathlib.Path('result.csv').symlink_to('/etc/passwd')\n", time.Minute},
-		{"cancel", "import subprocess, time\nsubprocess.Popen(['python3', '-c', 'import time; time.sleep(60)'])\ntime.sleep(60)\n", 2 * time.Second},
+		{"exit-nonzero", "import pathlib, sys\npathlib.Path('result.csv').write_text('partial')\nsys.exit(7)\n", time.Minute},
+		{"oversized", "import pathlib\npathlib.Path('result.csv').write_bytes(b'x' * (17 << 20))\n", time.Minute},
+		{"cancel", "import pathlib, subprocess, time\npathlib.Path('result.csv').write_text('partial')\nprint('partial ready', flush=True)\nsubprocess.Popen(['python3', '-c', 'import time; time.sleep(60)'])\ntime.sleep(60)\n", 2 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -129,12 +131,15 @@ func TestOpenShellProcessFailureDoesNotPublish(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
 			defer cancel()
-			_, err = runner.Run(ctx, processshell.Request{Argv: []string{"python3", "run.py"}, Outputs: []string{"result.csv"}})
+			result, err := runner.Run(ctx, processshell.Request{Argv: []string{"python3", "run.py"}, Outputs: []string{"result.csv"}})
 			if err == nil {
 				t.Fatal("failed or cancelled process published")
 			}
 			if tc.name == "cancel" && !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("expected deadline exceeded, got %v", err)
+			}
+			if tc.name == "cancel" && !strings.Contains(result.Output, "partial ready") {
+				t.Fatalf("cancellation did not reach a running script with a partial output: %+v", result)
 			}
 			if _, statErr := os.Lstat(output); !os.IsNotExist(statErr) {
 				t.Fatalf("failed or cancelled process exposed output: %v", statErr)
