@@ -438,6 +438,17 @@ large batch artifact and general shell path remain open. External writers do not
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.
 
+An opt-in host-side `processshell` runner now snapshots a bounded input tree,
+starts a separate OpenShell sandbox without provider or network grants, executes
+an argv with an empty environment, captures bounded output, and publishes only
+declared regular files into a fresh run-owned directory after success. It
+rejects symlinked inputs and outputs, limits individual and aggregate output
+size, and treats sandbox deletion failure as fatal. The caller must own the
+durable run lease and output parent. This executor has a connected synthetic
+CSV and adversarial isolation test; it is not yet a model-visible tool or
+wired to the run-scoped broker and artifact route. Those bindings, and a
+browser upload → process → authorized download acceptance, remain M5d work.
+
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,
 output/process limits and scoped

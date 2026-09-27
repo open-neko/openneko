@@ -63,7 +63,18 @@ the parent run's limits and journal. A connected two-investigation fixture
 passed through OpenShell, MCP and the actor-bound broker. A queued workflow
 now binds two read-only GraphJin children to its owning `work_run`; the parent
 emits one finding through a journaled, workflow-bound broker tool. API-admitted
-workflow runs and action requests remain to be qualified.
+workflow runs and one governed pack-action proposal passed connected checks;
+other product action families remain open.
+
+`processshell` is an opt-in host-side executor for model-generated process
+work. The host supplies a run-owned input directory, a fresh output path,
+approved argv and declared output names after acquiring the durable run lease.
+It snapshots and bounds the inputs, starts a separate no-provider/no-network
+OpenShell sandbox, limits output and execution time, then publishes only
+validated files after successful completion. The worker has not yet bound this
+executor to the run-scoped broker or the Work artifact route, so it is not
+model-visible today. The connected fixture verifies a CSV, credential and
+network isolation, symlink rejection, cancellation and mandatory teardown.
 
 ## Implemented: OpenShell cold-launch compatibility
 
