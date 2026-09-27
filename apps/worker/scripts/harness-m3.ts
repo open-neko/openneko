@@ -10,9 +10,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { db, pool, getOrgId, getOrCreateSoloAdmin, organization, customer_profile, data_source, llm_provider_config, processing_job, pack_action_definition, action_policy, workflow_definition, workflow_run, eq } from '@neko/db';
+import { db, pool, getOrgId, getOrCreateSoloAdmin, organization, customer_profile, data_source, data_source_secret, llm_provider_config, openapi_spec_asset, processing_job, pack_action_definition, action_policy, workflow_definition, workflow_run, eq } from '@neko/db';
 import { boss, enqueue, QUEUE, type HarnessBatchPayload, type LibraryDistillPayload, type LibraryExtractPayload, type WorkRunPayload, type WorkflowRunFirePayload } from '@neko/db/jobs';
-import { createWorkThread, createWorkRun, createWorkMessage, ensureWorkWorkspace, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
+import { createWorkThread, createWorkRun, createWorkMessage, ensureWorkWorkspace, getWorkRun, inProcessControlPlane, shutdownAgentBroker } from '@neko/llm/work';
 import { dispatchEmbeddingJobs, runEmbeddingIndexJob, runLibraryDistill, type EmbeddingIndexPayload } from '@neko/llm';
 import { runWorkRun } from '../src/jobs/work-run.js';
 import { runHarnessBatch } from '../src/jobs/harness-batch.js';
@@ -370,6 +370,30 @@ if (process.env.HARNESS_M3_API_HTTP === '1') {
   assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,uploadRun.id])).rows[0].n,0);
   console.log('M5_QUEUE_UPLOADED_LIBRARY_PASS',uploadRun.id);
 }
+// Source metadata is exposed only when the operator enables the feature and
+// the bound Work actor is a current admin. No import, config-agent or proposal
+// endpoint is part of this Harness read grant.
+await db().insert(llm_provider_config).values({org_id:orgId,scope:'graphjin-config',provider:'graphjin-config',enabled:true,config:{sourceConfigEnabled:true},secrets:{}});
+await db().insert(data_source_secret).values({org_id:orgId,name:'SYNTHETIC_DB',value_enc:'fixture-encrypted-value',description:'Synthetic source credential name'});
+const sourceSpec='openapi: 3.0.0\ninfo:\n  title: Fixture source API\n  version: 1.0.0\npaths: {}\n';
+await db().insert(openapi_spec_asset).values({org_id:orgId,source_type:'upload',original_name:'fixture-api.yaml',content:sourceSpec,checksum_sha256:createHash('sha256').update(sourceSpec).digest('hex'),title:'Fixture source API',base_url:'https://fixture.invalid'});
+const sourceThread=await createWorkThread(orgId,'M5 source configuration reads','web',soloAdmin.id);
+const sourceRun=await createWorkRun(orgId,sourceThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+const sourceMemberRun=await createWorkRun(orgId,sourceThread.id,'harness',{userId:null,role:'member'});
+assert.match(JSON.stringify(await inProcessControlPlane.listSourceSecretNames({orgId,runId:sourceMemberRun.id})),/denied/);
+const sourceWorkspace=await ensureWorkWorkspace(orgId,sourceThread.id,sourceRun.id);
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source_config:true})})).status,204);
+const [sourceJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-source-config-reads'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:sourceJob.id,orgId,runId:sourceRun.id,threadId:sourceThread.id,message:'Inspect source graph and registered source metadata without changing configuration.'},{retryLimit:0});
+await waitForJob(sourceJob.id,sourceRun.id);
+const sourceSnapshot=JSON.parse(await readFile(join(sourceWorkspace.runRoot,'.harness',`${createHash('sha256').update(sourceRun.id).digest('hex')}.json`),'utf8'));
+assert.deepEqual(sourceSnapshot.operations.map((op:{tool:string})=>op.tool),[
+  'mcp_neko_source_config_manager_describe_source_graph',
+  'mcp_neko_source_config_manager_list_source_secret_names',
+  'mcp_neko_source_config_manager_list_openapi_specs',
+]);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,sourceRun.id])).rows[0].n,0);
+console.log('M5_QUEUE_SOURCE_CONFIG_READ_PASS',sourceRun.id);
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
 // separately by the M5b fixture on the same isolated gateway.

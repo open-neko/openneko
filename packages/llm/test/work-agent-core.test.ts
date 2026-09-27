@@ -36,7 +36,7 @@ describe("runAgentBackend", () => {
       async run(opts) { seen.push(opts); return { status: "completed", finalText: "done" }; },
     };
     for (const dataSurface of ["customer", "records"] as const) {
-      await runAgentBackend({ backend, prompt: "prompt", userMessage: "search memory", orgId: "org-1", threadId: "thread-1", runId: "run-1", workspace, controlPlane, dataSurface, emit: async () => {} });
+      await runAgentBackend({ backend, prompt: "prompt", userMessage: "search memory", orgId: "org-1", threadId: "thread-1", runId: "run-1", workspace, controlPlane, dataSurface, sourceConfigEnabled: true, emit: async () => {} });
     }
     expect(seen[0]?.mcpServers).toBeUndefined();
     expect(seen[0]?.mcpBridgeEnv).toEqual({
@@ -46,6 +46,7 @@ describe("runAgentBackend", () => {
       OPENNEKO_HARNESS_MCP_WORKFLOW_READ: "1",
       OPENNEKO_HARNESS_MCP_MANAGEMENT_READ: "1",
       OPENNEKO_HARNESS_MCP_AUDIT_READ: "1",
+      OPENNEKO_HARNESS_MCP_SOURCE_CONFIG_READ: "1",
       OPENNEKO_HARNESS_MCP_RECORDS_READ: "1",
       OPENNEKO_HARNESS_MCP_INTERACTION: "1",
       OPENNEKO_HARNESS_MCP_CARDS: "1",

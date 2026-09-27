@@ -77,6 +77,32 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("limits source configuration to admin-read routes on one bound Work run", async () => {
+    const describeSourceGraph = vi.fn(async ({orgId, runId}: {orgId: string; runId: string}) => ({orgId, runId, reachable: true}));
+    const listSourceSecretNames = vi.fn(async () => ({names: [{name: "SYNTHETIC_DB"}]}));
+    const listOpenApiSpecs = vi.fn(async () => ({assets: []}));
+    const handle = await startAgentBroker({controlPlane: {...stubControlPlane(), describeSourceGraph,
+      listSourceSecretNames, listOpenApiSpecs} as AgentControlPlane, port: 0});
+    try {
+      const binding: RunBinding = {runId: "source", orgId: "bound-org", threadId: "thread",
+        kind: "work", profile: "harness-read-only", sourceConfigRead: true};
+      const token = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({...binding, sourceConfigRead: false})).toThrow("conflicts");
+      expect(() => handle.tokenFor({...binding, runId: "job", kind: "agent-job"})).toThrow("Invalid broker source config read grant");
+      const call = (path: string) => fetch(`http://127.0.0.1:${handle.port}${path}`, {
+        method: "POST", headers: {authorization: `Bearer ${token}`, "content-type": "application/json"},
+        body: JSON.stringify({orgId: "forged-org", runId: "forged-run"}),
+      });
+      expect(await (await call("/v1/source-graph/describe")).json()).toEqual({orgId: "bound-org", runId: "source", reachable: true});
+      expect(await (await call("/v1/source-secrets/names")).json()).toEqual({names: [{name: "SYNTHETIC_DB"}]});
+      expect(await (await call("/v1/openapi/list")).json()).toEqual({assets: []});
+      expect(describeSourceGraph).toHaveBeenCalledWith({orgId: "bound-org", runId: "source"});
+      for (const path of ["/v1/openapi/import", "/v1/source-config/agent", "/v1/source-config/preview"]) {
+        expect((await call(path)).status).toBe(403);
+      }
+    } finally { await handle.close(); }
+  });
+
   it("binds audit reads to one Work run and keeps the actor decision on the host", async () => {
     const listAuditTrail = vi.fn(async ({orgId, runId}: {orgId: string; runId: string}) =>
       ({requests: [{orgId, runId}]}));
