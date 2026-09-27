@@ -12,6 +12,7 @@ import {
   RecordActionPayloadError,
   createRecordActionAdapter,
   includeRecordActionDescriptors,
+  preflightHarnessRecordAction,
   registerRecordActionAdapters,
 } from "../../src/records/adapters.js";
 import { RECORD_SCHEMA_ACTION_KINDS } from "../../src/records/schema-adapters.js";
@@ -89,6 +90,15 @@ async function currentActor(request: ActionRequestRecord) {
 }
 
 describe("records worker action adapters", () => {
+  it("preflights Harness CRUD shape and actor before approval without changing legacy requests", async () => {
+    const invalid={...actionRequest("record_update",{app:"equipment",object:"loan",id:"loan-42",fields:"bad"}),harnessOperationId:1};
+    await expect(preflightHarnessRecordAction(invalid,currentActor)).rejects.toThrow("fields: an object is required");
+    const valid={...invalid,payload:{app:"equipment",object:"loan",id:"loan-42",fields:{name:"Updated"},expected:{name:"Old"}}};
+    await expect(preflightHarnessRecordAction(valid,currentActor)).resolves.toBeUndefined();
+    await expect(preflightHarnessRecordAction({...invalid,harnessOperationId:null},currentActor)).resolves.toBeUndefined();
+    await expect(preflightHarnessRecordAction({...invalid,kind:"other_action"},currentActor)).resolves.toBeUndefined();
+  });
+
   it("registers all four ask-mode kinds with concrete payload examples", () => {
     const registered = new Map<string, unknown>();
     registerRecordActionAdapters(

@@ -14,6 +14,7 @@ import {
   appendWorkflowRunSourceWrite,
   getActionRequest,
   registerActionAdapter,
+  registerActionRequestCreatedHook,
   RetryableActionAdapterError,
   type ActionAdapter,
   type ActionRequestRecord,
@@ -419,6 +420,23 @@ export function createRecordActionAdapter(
       result: { ...result },
     };
   };
+}
+
+/** Reject malformed Harness CRUD proposals before they can be approved. */
+export async function preflightHarnessRecordAction(
+  request: ActionRequestRecord,
+  resolveActor: RecordActionActorResolver = actorForRequest,
+): Promise<void> {
+  if (request.harnessOperationId == null ||
+      !RECORD_ACTION_KINDS.includes(request.kind as RecordActionKind)) return;
+  await writeRequest(request.kind as RecordActionKind,request,resolveActor);
+}
+
+export function registerHarnessRecordActionPreflight(
+  register: typeof registerActionRequestCreatedHook = registerActionRequestCreatedHook,
+  resolveActor: RecordActionActorResolver = actorForRequest,
+): () => void {
+  return register(request => preflightHarnessRecordAction(request,resolveActor));
 }
 
 export function registerRecordActionAdapters(
