@@ -272,10 +272,13 @@ const processThread=await createWorkThread(orgId,'M5 isolated process','web',sol
 const processRun=await createWorkRun(orgId,processThread.id,'harness',{userId:null,role:'service'});
 const processWorkspace=await ensureWorkWorkspace(orgId,processThread.id,processRun.id);
 await writeFile(join(processWorkspace.threadUploadsRoot,'lead.csv'),'lead_id\nLEAD-42\n');
+await writeFile(join(processWorkspace.threadUploadsRoot,'hidden.txt'),'UNSELECTED-UPLOAD-SECRET');
+process.env.OPENNEKO_PROCESS_CANARY='synthetic-host-only-canary';
 assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({process:true})})).status,204);
 const [processJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-isolated-process'}).returning();
 await enqueue(QUEUE.WORK_RUN,{processingJobId:processJob.id,orgId,runId:processRun.id,threadId:processThread.id,message:'Run a credential-isolated script on the uploaded lead file.'},{retryLimit:0});
 await waitForJob(processJob.id,processRun.id);
+delete process.env.OPENNEKO_PROCESS_CANARY;
 assert.equal(await readFile(join(processWorkspace.artifactRoot,'process-1','result.csv'),'utf8'),'lead_id\nLEAD-42\n');
 const processEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,processRun.id])).rows;
 assert.deepEqual(processEvents.map(row=>row.payload.artifact.path),[`runs/${processRun.id}/artifacts/process-1/result.csv`]);
@@ -289,6 +292,24 @@ if (process.env.HARNESS_M3_WEB === '1' || process.env.HARNESS_M3_API_HTTP === '1
   await writeFile(join(process.env.HARNESS_STATE!,'m5-process-run'),processRun.id);
   await writeFile(join(process.env.HARNESS_STATE!,'m5-process-thread'),processThread.id);
 }
+// Exercise bounded multi-megabyte publication through the same queued Work
+// path and later download the exact bytes over the public artifact route.
+const largeProcessThread=await createWorkThread(orgId,'M5 large isolated artifact','web',soloAdmin.id);
+const largeProcessRun=await createWorkRun(orgId,largeProcessThread.id,'harness',{userId:null,role:'service'});
+const largeProcessWorkspace=await ensureWorkWorkspace(orgId,largeProcessThread.id,largeProcessRun.id);
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({process_large:true})})).status,204);
+const [largeProcessJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-large-isolated-process'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:largeProcessJob.id,orgId,runId:largeProcessRun.id,threadId:largeProcessThread.id,message:'Create the large isolated CSV artifact.'},{retryLimit:0});
+await waitForJob(largeProcessJob.id,largeProcessRun.id);
+const largeBytes=await readFile(join(largeProcessWorkspace.artifactRoot,'process-1','large.bin'));
+assert.equal(largeBytes.length,2<<20);
+assert.ok(largeBytes.every(byte=>byte===65));
+const largeReceipt=(await pool().query('SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,largeProcessRun.id])).rows[0].result;
+assert.equal(largeReceipt.ok,true);
+assert.equal(largeReceipt.files[0].sha256,createHash('sha256').update(largeBytes).digest('hex'));
+assert.deepEqual((await pool().query("SELECT payload->'artifact'->>'path' AS path FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,largeProcessRun.id])).rows.map(row=>row.path),[`runs/${largeProcessRun.id}/artifacts/process-1/large.bin`]);
+if (process.env.HARNESS_M3_WEB === '1' || process.env.HARNESS_M3_API_HTTP === '1') await writeFile(join(process.env.HARNESS_STATE!,'m5-large-process-run'),largeProcessRun.id);
+console.log('M5_QUEUE_PROCESS_LARGE_PASS',largeProcessRun.id);
 // A subprocess may write bytes and then fail. Those bytes must never become a
 // Work artifact, and its ambiguous host operation must not be replayed.
 const failedProcessThread=await createWorkThread(orgId,'M5 failed isolated process','web',soloAdmin.id);
