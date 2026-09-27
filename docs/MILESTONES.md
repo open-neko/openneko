@@ -523,8 +523,12 @@ event and persisted one operation receipt. With the real web API enabled,
 authenticated download returned the exact CSV and attachment headers, rejected
 an unissued filename, and Chromium found the artifact link exactly once before
 and after reload. The fixture also verified absent broker/provider credentials
-and denied direct network access inside the process compartment. Larger files,
-cancelled/failed artifact behavior and broader process limits remain to qualify
+and denied direct network access inside the process compartment. A second
+queued run published a 2 MiB artifact with an exact host hash and one artifact
+event; the authenticated web route returned the exact bytes with attachment
+headers. The selected-upload fixture excluded an unselected sibling file and a
+host-only environment canary from the process compartment. Product-level
+cancellation and broader process limits remain to qualify
 through the full product path. The separate real OpenShell process suite now
 also rejects publication after a script writes an output and exits nonzero,
 after a partial output is cancelled, and when a declared output exceeds the
@@ -532,8 +536,8 @@ after a partial output is cancelled, and when a declared output exceeds the
 A separate production-queue Work fixture now runs a script that writes a
 partial CSV and exits nonzero. The Work run fails, emits no artifact event,
 leaves no published file, and retains one unresolved host operation rather
-than redispatching on retry. Product-level cancellation, larger artifact and
-process-tree cases remain open.
+than redispatching on retry. Product-level cancellation and process-tree cases
+remain open.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

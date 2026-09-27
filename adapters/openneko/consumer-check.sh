@@ -87,6 +87,12 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
     [[ $(curl -sS -o /dev/null -w '%{http_code}' "${process_url%result.csv}unissued.csv") == 404 ]]
     echo "M5_WEB_PROCESS_PASS $process_run"
     (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-process-artifact.mjs "$(cat "$HARNESS_STATE/m5-process-thread")")
+    large_run=$(cat "$HARNESS_STATE/m5-large-process-run")
+    large_url="http://localhost:18121/api/work/files/runs/$large_run/artifacts/process-1/large.bin"
+    curl -fsS --max-time 30 -D "$HARNESS_STATE/process-large.headers" -o "$HARNESS_STATE/process-large.bin" "$large_url"
+    python3 -c 'import pathlib,sys; data=pathlib.Path(sys.argv[1]).read_bytes(); assert len(data)==2<<20 and data==b"A"*(2<<20)' "$HARNESS_STATE/process-large.bin"
+    rg -qi '^content-disposition: attachment; filename="large.bin"' "$HARNESS_STATE/process-large.headers"
+    echo "M5_WEB_PROCESS_LARGE_PASS $large_run"
   fi
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-child-live.ts)

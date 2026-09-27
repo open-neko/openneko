@@ -22,6 +22,7 @@ func main() {
 	artifact := false
 	processTask := false
 	processFail := false
+	processLarge := false
 	management := false
 	audit := false
 	auditDenied := false
@@ -62,6 +63,7 @@ func main() {
 			Artifact             bool `json:"artifact"`
 			Process              bool `json:"process"`
 			ProcessFail          bool `json:"process_fail"`
+			ProcessLarge         bool `json:"process_large"`
 			Management           bool `json:"management"`
 			Audit                bool `json:"audit"`
 			AuditDenied          bool `json:"audit_denied"`
@@ -101,6 +103,7 @@ func main() {
 		artifact = c.Artifact
 		processTask = c.Process
 		processFail = c.ProcessFail
+		processLarge = c.ProcessLarge
 		management = c.Management
 		audit = c.Audit
 		auditDenied = c.AuditDenied
@@ -151,6 +154,7 @@ func main() {
 		writeArtifact := artifact
 		runProcess := processTask
 		failProcess := processFail
+		runLargeProcess := processLarge
 		readManagement := management
 		readAudit := audit
 		readUploadedLibrary := uploadedLibrary
@@ -283,6 +287,11 @@ func main() {
 			http.Error(w, "missing failed isolated process result", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-fixture" && runLargeProcess &&
+			(!strings.Contains(string(req.Messages), "process-1/large.bin") || !strings.Contains(string(req.Messages), "2097152")) {
+			http.Error(w, "missing large process artifact receipt", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-fixture" && readManagement &&
 			(!strings.Contains(string(req.Messages), "harness-management-rule") || !strings.Contains(string(req.Messages), "users") || !strings.Contains(string(req.Messages), "sources")) {
 			http.Error(w, "missing management catalog evidence", 422)
@@ -324,7 +333,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -413,7 +422,7 @@ func main() {
 				responses = []string{`{"javascriptCode":"final('Create a CSV artifact', {})"}`, `{"javascriptCode":"const hidden=file_search({query:'OTHER-RUN-SECRET'}); const written=file_write({path:'result.csv',content:'lead_id\\nLEAD-42\\n'}); final('Report the CSV artifact',{hidden,written});"}`, `{"answer":"Created result.csv."}`}
 			}
 			if runProcess {
-				script := "import os,pathlib,socket\nassert not os.environ.get('OPENNEKO_BROKER_TOKEN')\nassert not os.environ.get('MODEL_API_KEY')\ntry:\n socket.create_connection(('1.1.1.1',80),timeout=2)\n raise AssertionError('ungranted network')\nexcept OSError:\n pass\nsource=pathlib.Path('lead.csv').read_text()\nassert 'LEAD-42' in source\npathlib.Path('result.csv').write_text(source)\n"
+				script := "import os,pathlib,socket\nassert not os.environ.get('OPENNEKO_BROKER_TOKEN')\nassert not os.environ.get('MODEL_API_KEY')\nassert not os.environ.get('OPENNEKO_PROCESS_CANARY')\nassert not pathlib.Path('hidden.txt').exists()\ntry:\n socket.create_connection(('1.1.1.1',80),timeout=2)\n raise AssertionError('ungranted network')\nexcept OSError:\n pass\nsource=pathlib.Path('lead.csv').read_text()\nassert 'LEAD-42' in source\npathlib.Path('result.csv').write_text(source)\n"
 				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:['lead.csv'],outputs:['result.csv']}); final('Report isolated process artifact',{result});", script)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Process the uploaded lead without model data transfer', {})"}`, string(encoded), `{"answer":"Processed the uploaded lead into result.csv."}`}
@@ -423,6 +432,12 @@ func main() {
 				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['result.csv']}); final('Report failed process',{result});", script)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Run the failing process fixture', {})"}`, string(encoded), `{"answer":"The process failed after writing a partial output."}`}
+			}
+			if runLargeProcess {
+				script := "from pathlib import Path\nPath('large.bin').write_bytes(b'A' * (2 << 20))\n"
+				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['large.bin']}); final('Report the large process artifact',{result});", script)
+				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+				responses = []string{`{"javascriptCode":"final('Create a large isolated artifact', {})"}`, string(encoded), `{"answer":"Created large.bin."}`}
 			}
 			if readManagement {
 				responses = []string{`{"javascriptCode":"final('Inspect management catalogs', {})"}`, `{"javascriptCode":"const users=mcp_neko_user_manager_list_users({}); const groups=mcp_neko_user_manager_list_groups({}); const sources=mcp_neko_data_source_manager_list_data_sources({}); const rules=mcp_neko_rule_builder_list_rules({}); const plugins=mcp_neko_plugin_manager_list_plugins({}); const channels=mcp_neko_channel_manager_list_channels({}); final('Report management catalogs',{users,groups,sources,rules,plugins,channels});"}`, `{"answer":"The management catalogs include the seeded rule and organization data source."}`}
