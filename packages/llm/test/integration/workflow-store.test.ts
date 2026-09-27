@@ -19,7 +19,7 @@ import {
   createWorkThread,
 } from "../../src/work/store";
 import { enableWorkflowApiAccess, updateWorkflowApiLimits } from "../../src/workflows/api-access";
-import { admitWorkflowApiRun, claimWorkflowApiAdmission, finishWorkflowApiAdmission,
+import { admitWorkflowApiRun, claimWorkflowApiAdmission, finishWorkflowApiAdmission, getWorkflowApiRunStatus,
   leasePendingWorkflowApiAdmissions, recoverStaleWorkflowApiAdmissions } from "../../src/workflows/api-admission";
 
 const reachable = await dbReachable();
@@ -157,6 +157,62 @@ describeIfDb("workflow store", () => {
         status: "queued",
       });
       expect(admitted.statusUrl).toContain(admitted.runId);
+    });
+  });
+
+  it("keeps a completed workflow API run pollable until its result is committed", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId,
+        name: "API result publication boundary",
+        steps: [{ id: "inspect", description: "Inspect the supplied record" }],
+      });
+      const { token } = await enableWorkflowApiAccess({
+        orgId,
+        workflowId: workflow.id,
+        actor: { userId: null, role: "admin" },
+      });
+      const clientFingerprint = `integration-${orgId}`;
+      const admitted = await admitWorkflowApiRun({
+        workflowId: workflow.id,
+        token,
+        idempotencyKey: "result-publication-boundary",
+        mode: "single",
+        value: { orderId: "1042" },
+        clientFingerprint,
+      });
+      const admission = await pool().query<{ id: string; work_run_id: string }>(
+        `select admission.id, run.work_run_id
+         from workflow_api_admission admission
+         join workflow_run run on run.id = admission.workflow_run_id
+         where admission.workflow_run_id=$1`,
+        [admitted.runId],
+      );
+      await pool().query(
+        "update workflow_api_admission set status='running', attempts=1 where id=$1",
+        [admission.rows[0].id],
+      );
+      await pool().query(
+        "update workflow_run set status='completed', finished_at=now() where id=$1",
+        [admitted.runId],
+      );
+
+      const poll = { workflowId: workflow.id, runId: admitted.runId, token, clientFingerprint };
+      expect(await getWorkflowApiRunStatus(poll)).toMatchObject({
+        status: "running", result: null, finishedAt: null, retryAfterSeconds: 3,
+      });
+
+      await finishWorkflowApiAdmission({
+        admissionId: admission.rows[0].id,
+        workflowRunId: admitted.runId,
+        workRunId: admission.rows[0].work_run_id,
+        attempt: 1,
+        status: "completed",
+        terminalResult: { answer: "ready" },
+      });
+      expect(await getWorkflowApiRunStatus(poll)).toMatchObject({
+        status: "completed", result: { answer: "ready" }, retryAfterSeconds: null,
+      });
     });
   });
 

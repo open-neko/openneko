@@ -268,6 +268,24 @@ if (process.env.HARNESS_M3_WEB === '1' || process.env.HARNESS_M3_API_HTTP === '1
   await writeFile(join(process.env.HARNESS_STATE!,'m5-process-run'),processRun.id);
   await writeFile(join(process.env.HARNESS_STATE!,'m5-process-thread'),processThread.id);
 }
+// Read-only management MCP catalogs use the same Work actor and broker token;
+// none of these list tools grants its adjacent request/save/delete route.
+await db().insert(action_policy).values({org_id:orgId,name:'harness-management-rule',mode:'approval_required',applies_to_kinds:['harness_management_fixture'],applies_to_scopes:['external']});
+const managementThread=await createWorkThread(orgId,'M5 management catalogs','web',soloAdmin.id);
+const managementRun=await createWorkRun(orgId,managementThread.id,'harness',{userId:null,role:'service'});
+const managementWorkspace=await ensureWorkWorkspace(orgId,managementThread.id,managementRun.id);
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({management:true})})).status,204);
+const [managementJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-management-reads'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:managementJob.id,orgId,runId:managementRun.id,threadId:managementThread.id,message:'Inspect the organization management catalogs without changing anything.'},{retryLimit:0});
+await waitForJob(managementJob.id,managementRun.id);
+const managementSnapshot=JSON.parse(await readFile(join(managementWorkspace.runRoot,'.harness',`${createHash('sha256').update(managementRun.id).digest('hex')}.json`),'utf8'));
+assert.deepEqual(managementSnapshot.operations.map((op:{tool:string})=>op.tool),[
+  'mcp_neko_user_manager_list_users','mcp_neko_user_manager_list_groups',
+  'mcp_neko_data_source_manager_list_data_sources','mcp_neko_rule_builder_list_rules',
+  'mcp_neko_plugin_manager_list_plugins','mcp_neko_channel_manager_list_channels',
+]);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,managementRun.id])).rows[0].n,0);
+console.log('M5_QUEUE_MANAGEMENT_READ_PASS',managementRun.id);
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
 // separately by the M5b fixture on the same isolated gateway.
