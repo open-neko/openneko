@@ -358,10 +358,24 @@ export async function createWorkRun(
 }
 
 export async function markWorkRunRunning(runId: string) {
-  await db()
+  const rows = await db()
     .update(work_run)
     .set({ status: "running", updated_at: new Date() })
-    .where(eq(work_run.id, runId));
+    // A delayed queue delivery must not reopen a run stopped from the web
+    // process. Completed runs may still enter the journaled replay path.
+    .where(and(eq(work_run.id, runId), sql`${work_run.status} <> 'cancelled'`))
+    .returning({ id: work_run.id });
+  if (!rows[0]) {
+    const [current] = await db()
+      .select({ status: work_run.status })
+      .from(work_run)
+      .where(eq(work_run.id, runId));
+    if (current?.status === "cancelled") {
+      throw new Error("Work run was cancelled before execution");
+    }
+    // A deleted thread cascades its run. The caller's missing-thread path
+    // returns a failed result without invoking the backend.
+  }
 }
 
 export async function finishWorkRun(
