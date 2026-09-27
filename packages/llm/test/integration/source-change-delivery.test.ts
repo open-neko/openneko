@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { data_source, db, pool, subscription, workflow_definition } from "@neko/db";
-import { boss, QUEUE, stopBoss } from "@neko/db/jobs";
+import { boss, enqueue, QUEUE, stopBoss } from "@neko/db/jobs";
 import { createTestOrg, deleteTestOrg } from "@neko/db/test-helpers";
 import { handleSourceChangeMatch } from "../../src/workflows/match-handler";
 import {
   claimSourceChangeDelivery, dispatchPendingSourceChangeDeliveries,
+  dispatchSourceChangeDelivery,
   linkSourceChangeDeliveryRun, recordSourceChangeDelivery,
   settleSourceChangeDelivery,
 } from "../../src/workflows/source-change-delivery";
@@ -110,4 +111,24 @@ live("deduplicates stream replay before observation and fences duplicate consume
   expect(await dispatchPendingSourceChangeDeliveries()).toBe(0);
   expect((await pool().query("select status,workflow_run_id from source_change_delivery where id=$1",[linked.id])).rows[0])
     .toMatchObject({status:"cancelled",workflow_run_id:failedWorkflowRunId});
+
+  // The queue can accept a job just before the worker loses its acknowledgement.
+  // Its delivery identity must still let the original job claim once; recovery
+  // must not start a second workflow when the outbox row remains pending.
+  const lostAck=await recordSourceChangeDelivery({orgId,workflowId,subscriptionId,
+    subscriptionUpdatedAt:current,sourceId,
+    deliveryKey:`${subscriptionId}:lead-42:v4`,match:{...match,version_token:"v4"}});
+  let acceptedJobId:string|null=null;
+  await expect(dispatchSourceChangeDelivery({id:lostAck.id,enqueue:async(...args)=>{
+    acceptedJobId=await enqueue(...args);
+    throw Error("queue acknowledgement lost after accept");
+  }})).rejects.toThrow("queue acknowledgement lost after accept");
+  expect(acceptedJobId).toBeTruthy();
+  expect((await pool().query("select status from source_change_delivery where id=$1",[lostAck.id])).rows[0].status)
+    .toBe("pending");
+  expect(await claimSourceChangeDelivery({id:lostAck.id,orgId,workflowId})).toBe(true);
+  expect(await claimSourceChangeDelivery({id:lostAck.id,orgId,workflowId})).toBe(false);
+  expect(await dispatchPendingSourceChangeDeliveries()).toBe(0);
+  expect((await pool().query("select status from source_change_delivery where id=$1",[lostAck.id])).rows[0].status)
+    .toBe("running");
 },30_000);
