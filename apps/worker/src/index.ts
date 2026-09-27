@@ -159,6 +159,7 @@ import {
   includeRecordActionDescriptors,
   recordActionRequestSourceWrite,
   registerRecordActionAdapters,
+  registerHarnessRecordActionPreflight,
 } from "./records/adapters.js";
 import { registerRecordSchemaActions } from "./records/schema-adapters.js";
 import { registerRecordImportActions } from "./records/import-adapters.js";
@@ -756,6 +757,7 @@ await seedDefaultActionPolicies(ADMIN_ORG_ID);
 registerBuiltinAdapters();
 registerFallbackActionAdapterResolver(resolveDeclarativePackActionAdapter);
 registerRecordActionAdapters(recordsWriteExecutor);
+const unregisterHarnessRecordActionPreflight = registerHarnessRecordActionPreflight();
 registerRecordAccessActions(new RecordsAccessAdmin(recordsPool));
 registerRecordBackfillAction(recordsBackfillExecutor);
 registerRecordIdentityActions(recordsOwnerBackfillExecutor);
@@ -1740,6 +1742,7 @@ const shutdown = async (signal: string) => {
   workflowApiDispatcher.stop();
   channelInbound.stop();
   unregisterRecordSchemaPreflight();
+  unregisterHarnessRecordActionPreflight();
   unregisterRecordImportPreflight();
   unregisterRecordArtifactImportPreflight();
   unregisterRecordSalesforcePreflight();

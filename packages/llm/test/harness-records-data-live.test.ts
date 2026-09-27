@@ -20,7 +20,7 @@ import { inProcessControlPlane } from "../src/work/control-plane";
 import { makeSandboxRunCore } from "../src/work/sandbox-launcher";
 import { approveActionRequest, getActionRequest } from "../src/workflows/action-store";
 import { executeApprovedActionRequest, registerActionAdapter } from "../src/workflows/action-executor";
-import { createRecordActionAdapter } from "../../../apps/worker/src/records/adapters";
+import { createRecordActionAdapter, registerHarnessRecordActionPreflight } from "../../../apps/worker/src/records/adapters";
 
 const live = process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
 
@@ -43,6 +43,7 @@ live("reads and updates populated Records through OpenShell, approval and real G
   const recordsPool = new pg.Pool(buildRecordsPoolConfig());
   let child: ReturnType<typeof spawn> | undefined;
   let broker: Awaited<ReturnType<typeof startAgentBroker>> | undefined;
+  let unregisterPreflight=()=>{};
   const priorUrl = process.env.OPENNEKO_RECORDS_GRAPHJIN_URL;
   let logs = "";
   try {
@@ -156,6 +157,7 @@ live("reads and updates populated Records through OpenShell, approval and real G
     await mkdir(join(actionWorkspace.skillsRoot,"records"),{recursive:true});
     await writeFile(join(actionWorkspace.skillsRoot,"records","SKILL.md"),"# Records\nUse governed action proposals for updates.\n");
     await writeFile(join(hermesHome,"config.yaml"),"model:\n  provider: custom\n  default: harness-records-action-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    unregisterPreflight=registerHarnessRecordActionPreflight();
     const actionEvents: Array<{type:string;action_request_id?:string}>=[];
     const proposed=await runCore({backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId:actionRunId,workspace:actionWorkspace,
       prompt:"Propose the equipment loan update. Do not execute before human approval.",userMessage:"Rename loan-42 to Updated fixture loan",dataSurface:"records",
@@ -184,6 +186,7 @@ live("reads and updates populated Records through OpenShell, approval and real G
     expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-42'`)).rows[0].name).toBe("Updated fixture loan");
     expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requestId])).rows[0].n).toBe(1);
   } finally {
+    unregisterPreflight();
     if (broker) await broker.close();
     if (child && child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
