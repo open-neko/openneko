@@ -2,6 +2,8 @@ import { proposeHarnessAction } from "./harness-proposal";
 import { validateRenderCardsInput } from "./a2ui-contract";
 import { startupEvent } from "@neko/telemetry/startup";
 import { recordHarnessLookup } from "./harness-operation";
+import { recordHarnessOperation } from "./harness-operation";
+import { WORK_MEMORY_KINDS } from "./memory-types";
 import {
   createServer,
   type IncomingMessage,
@@ -34,6 +36,8 @@ export interface RunBinding {
   lookupRead?: boolean;
   /** Explicit customer-surface read grant; records-only runs omit it. */
   memoryRead?: boolean;
+  /** Explicit Work-run grant for a journaled memory save. */
+  memoryWrite?: boolean;
   /** Explicit customer-surface library search grant. */
   libraryRead?: boolean;
   /** Registry-backed reads and shipped blueprints; actor grants remain authoritative. */
@@ -148,7 +152,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && binding.kind === "work" && path === "/v1/harness/memory/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -337,6 +341,30 @@ async function handle(
     case "/v1/harness/propose": {
       if (binding.profile !== "harness-governed" || binding.kind !== "work") return send(res,403,{error:"Harness proposal capability denied"});
       return send(res,200,await proposeHarnessAction(binding,body,cp));
+    }
+    case "/v1/harness/memory/save": {
+      if (binding.profile === undefined || binding.memoryWrite !== true || binding.kind !== "work" || !binding.threadId ||
+          typeof body.instruction !== "string" || typeof body.binding !== "string" || !/^[a-f0-9]{64}$/.test(body.binding)) {
+        return send(res,403,{error:"Harness memory save denied"});
+      }
+      let input: Record<string, unknown>;
+      try { input = JSON.parse(body.instruction) as Record<string, unknown>; }
+      catch { return send(res,400,{error:"Invalid Harness memory save"}); }
+      if (!input || Array.isArray(input) || typeof input !== "object" ||
+          Object.keys(input).some(key=>!["text","kind","scope","pinned"].includes(key)) ||
+          typeof input.text !== "string" || input.text.trim().length < 5 || input.text.length > 2000 ||
+          (input.kind !== undefined && !WORK_MEMORY_KINDS.includes(input.kind as typeof WORK_MEMORY_KINDS[number])) ||
+          (input.scope !== undefined && input.scope !== "global" && input.scope !== "thread") ||
+          (input.pinned !== undefined && typeof input.pinned !== "boolean")) {
+        return send(res,400,{error:"Invalid Harness memory save"});
+      }
+      const request = {tool:"memory_save" as const,binding:body.binding,instruction:body.instruction};
+      return send(res,200,await recordHarnessOperation(binding,body.operationId,request,async()=>{
+        const memory=await cp.rememberWorkMemory({orgId:binding.orgId,runId:binding.runId,threadId:binding.threadId,
+          text:input.text as string,kind:(input.kind ?? "business_rule") as typeof WORK_MEMORY_KINDS[number],
+          scope:(input.scope ?? "global") as "global"|"thread",pinned:(input.pinned ?? true) as boolean});
+        return {ok:true,memoryId:memory.id};
+      }));
     }
     case "/v1/harness/lookup": {
       const request = {
@@ -808,6 +836,9 @@ export async function startAgentBroker(
       if (binding.memoryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker memory grant");
       }
+      if (binding.memoryWrite && (!binding.profile || binding.kind !== "work" || !binding.threadId)) {
+        throw new Error("Invalid broker memory write grant");
+      }
       if (binding.libraryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker library grant");
       }
@@ -825,7 +856,7 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }

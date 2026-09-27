@@ -13,13 +13,14 @@ export async function recordHarnessLookup(
 /** Tool identity lives in the same primary-key space; proposals cannot reset the budget. */
 export async function recordHarnessOperation(
   scope: {orgId:string; runId:string; operationLimit?:number}, operationId:unknown,
-  request: {instruction:string; tool?:"propose"; dataSourceId?:string; maxSteps?:number},
+  request: {instruction:string; tool?:"propose"|"memory_save"; binding?:string; dataSourceId?:string; maxSteps?:number},
   execute: () => Promise<unknown>, signal?: AbortSignal,
 ): Promise<unknown> {
   const limit=scope.operationLimit ?? 4;
   if (!Number.isInteger(limit) || limit<1 || limit>32 ||
       !Number.isInteger(operationId) || Number(operationId)<1 || Number(operationId)>limit ||
-      !request.instruction.trim() || Buffer.byteLength(request.instruction)>(request.tool === "propose" ? 65536 : 8000)) {
+      !request.instruction.trim() || Buffer.byteLength(request.instruction)>(request.tool === "propose" ? 65536 : request.tool === "memory_save" ? 4096 : 8000) ||
+      (request.tool === "memory_save" && !/^[a-f0-9]{64}$/.test(request.binding ?? ""))) {
     return {error:"Invalid Harness lookup operation"};
   }
   if (signal?.aborted) return {error:"Harness lookup cancelled before dispatch"};
@@ -60,5 +61,5 @@ export async function recordHarnessOperation(
 export async function loadHarnessOperations(scope:{orgId:string;runId:string}) {
   const rows=(await pool().query(`SELECT operation_id,request,result FROM harness_operation
     WHERE org_id=$1 AND run_id=$2 ORDER BY operation_id LIMIT 32`,[scope.orgId,scope.runId])).rows;
-  return rows.map(row=>({id:row.operation_id,...(row.request.tool ? {tool:row.request.tool} : {}),instruction:row.request.instruction,result:row.result}));
+  return rows.map(row=>({id:row.operation_id,...(row.request.tool ? {tool:row.request.tool} : {}),...(row.request.binding ? {binding:row.request.binding} : {}),instruction:row.request.instruction,result:row.result}));
 }
