@@ -352,7 +352,10 @@ before the approval is issued; legacy Hermes requests retain their existing path
 A production pg-boss Work run now proposes `record_update` for a second seeded
 row, awaits approval, applies the real GraphJin effect once, and restores the
 completed result on duplicate delivery without another model call or action
-request. Other Records CRUD actions remain unqualified. A restored terminal run
+request. The same isolated production queue and real Records GraphJin then
+qualified `record_create`, `record_delete` and `record_restore`: each waited
+for approval, changed the expected row state once, wrote one audit entry, and
+restored the effect receipt on duplicate execution. A restored terminal run
 currently logs an unsuccessful cleanup attempt when its sandbox was already
 deleted; the saved result and effect are unchanged, but cleanup telemetry needs
 to distinguish an absent sandbox from a failed deletion.
@@ -788,8 +791,9 @@ authorized actions.
 
 ## Immediate order
 
-1. Extend Records from the qualified `record_update` path to remaining CRUD;
-   qualify a real installed-plugin provider effect when one is available.
+1. Qualify a real installed-plugin provider effect when one is available;
+   cover Records CRUD crash and queue-redelivery edges beyond the connected
+   approved-effect fixtures.
 2. Qualify remaining skill/admin writes and trigger redelivery at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
