@@ -497,6 +497,11 @@ retain execution after parent cancellation.
 Start with Ax Go's `AddChildAgent` for owned, serialized delegation. Qualify
 `AxFlow` only for fixed independent work that needs parallel fan-out. A child is
 a fresh scoped conversation, not a cloned parent stack or an OS process fork.
+The current acceptance covers inline children within one `work_run`. When a
+workflow stage needs independent queuing or retry, admit a separate child
+`work_run` linked to the parent and `workflow_run` through the existing queue.
+Verify join, idempotent spawn, cancellation, revocation and shared budget
+accounting before calling that durable workflow-child mode complete.
 
 **Verify:** a real parent task delegates two bounded investigations, combines
 verified results and exposes correlated progress. Exercise child failure, parent
