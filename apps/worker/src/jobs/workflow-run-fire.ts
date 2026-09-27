@@ -23,6 +23,7 @@ import {
   persistWorkflowApiTelemetry,
   prepareWorkflowRun,
   releaseWorkflowScheduleFiringRun,
+  settleLinkedWorkflowScheduleFiring,
   cancelWorkflowScheduleFiring,
   runCompiledWorkflowApiBatch,
   runWorkflowTurn,
@@ -321,6 +322,7 @@ async function runWorkflowRunFireTraced(
   }
 
   let workflowFinished = false;
+  let scheduleLinked = false;
   let apiClaim: ClaimedWorkflowApiAdmission | null = null;
   let prepared: PreparedWorkflowRun | null = null;
   let telemetry: ReturnType<typeof createWorkerHarnessObserver> | null = null;
@@ -357,6 +359,7 @@ async function runWorkflowRunFireTraced(
         scheduleFiringId,
         prepared.workflowRun.id,
       );
+      scheduleLinked = true;
     }
 
     const scrubber = getCurrentScrubber();
@@ -610,13 +613,30 @@ async function runWorkflowRunFireTraced(
       return;
     }
     if (scheduleFiringId && !workflowFinished) {
-      await releaseWorkflowScheduleFiringRun(scheduleFiringId, error).catch(
-        (releaseError) => {
+      if (scheduleLinked && prepared) {
+        // After a run is linked, a retry could repeat model calls and effects.
+        // A terminal run settles the firing; a nonterminal run retains the
+        // link for restart reconciliation instead of starting another run.
+        const settled = await settleLinkedWorkflowScheduleFiring(
+          scheduleFiringId, prepared.workflowRun.id,
+        ).catch((settleError) => {
           console.error(
-            `[workflow-run-fire] could not release firing=${scheduleFiringId}: ${releaseError instanceof Error ? releaseError.message : releaseError}`,
+            `[workflow-run-fire] could not settle linked firing=${scheduleFiringId}: ${settleError instanceof Error ? settleError.message : settleError}`,
           );
-        },
-      );
+          return false;
+        });
+        if (!settled) console.warn(
+          `[workflow-run-fire] retained linked firing=${scheduleFiringId} for reconciliation`,
+        );
+      } else {
+        await releaseWorkflowScheduleFiringRun(scheduleFiringId, error).catch(
+          (releaseError) => {
+            console.error(
+              `[workflow-run-fire] could not release firing=${scheduleFiringId}: ${releaseError instanceof Error ? releaseError.message : releaseError}`,
+            );
+          },
+        );
+      }
     }
     throw error;
   }

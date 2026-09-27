@@ -543,6 +543,19 @@ export async function claimWorkflowScheduleFiring(input: {
      set status = 'running', lease_until = $4, updated_at = $3
      where id = $1 and org_id = $2 and workflow_id = $5
        and status in ('pending', 'dispatching', 'enqueued')
+       and exists (
+         select 1
+         from workflow_definition workflow
+         join workflow_schedule_state state on state.workflow_id = workflow.id
+         where workflow.id = workflow_schedule_firing.workflow_id
+           and workflow.org_id = workflow_schedule_firing.org_id
+           and workflow.enabled = true
+           and workflow.cron_enabled = true
+           and workflow.cron is not null
+           and workflow.cron = state.cron
+           and workflow.cron_timezone = state.cron_timezone
+           and workflow.updated_at = state.definition_updated_at
+       )
      returning id`,
     [input.firingId, input.orgId, now, leaseUntil, input.workflowId],
   );
@@ -554,12 +567,17 @@ export async function linkWorkflowScheduleFiringRun(
   workflowRunId: string,
   now = new Date(),
 ): Promise<void> {
-  await pool().query(
+  const linked = await pool().query(
     `update workflow_schedule_firing
      set workflow_run_id = $2, updated_at = $3
-     where id = $1 and status = 'running'`,
+     where id = $1 and status = 'running'
+       and (workflow_run_id is null or workflow_run_id = $2)
+     returning id`,
     [firingId, workflowRunId, now],
   );
+  if (linked.rowCount !== 1) {
+    throw new Error("Workflow schedule firing can no longer be linked to this run");
+  }
 }
 
 export async function completeWorkflowScheduleFiring(
@@ -588,6 +606,27 @@ export async function releaseWorkflowScheduleFiringRun(
      where id = $1 and status = 'running'`,
     [firingId, error instanceof Error ? error.message : String(error), now],
   );
+}
+
+/** A linked execution may already have performed effects. Never make its firing
+ * pending again merely because the worker lost its final acknowledgement. */
+export async function settleLinkedWorkflowScheduleFiring(
+  firingId: string,
+  workflowRunId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const settled = await pool().query(
+    `update workflow_schedule_firing firing
+     set status = case when run.status = 'cancelled' then 'cancelled' else 'completed' end,
+         lease_until = null, completed_at = $3, updated_at = $3
+     from workflow_run run
+     where firing.id = $1 and firing.workflow_run_id = $2
+       and firing.status = 'running' and run.id = $2
+       and run.status in ('completed', 'failed', 'needs_input', 'cancelled')
+     returning firing.id`,
+    [firingId, workflowRunId, now],
+  );
+  return settled.rowCount === 1;
 }
 
 export async function cancelWorkflowScheduleFiring(

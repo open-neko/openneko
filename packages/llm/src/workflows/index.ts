@@ -94,6 +94,7 @@ export {
   recoverStaleWorkflowScheduleFirings,
   releaseWorkflowFiringDispatch,
   releaseWorkflowScheduleFiringRun,
+  settleLinkedWorkflowScheduleFiring,
   cancelWorkflowScheduleFiring,
   type LeasedWorkflowFiring,
   type MaterializeScheduleResult,

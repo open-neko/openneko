@@ -10,8 +10,10 @@ import {
 import {
   claimWorkflowScheduleFiring,
   leasePendingWorkflowFirings,
+  linkWorkflowScheduleFiringRun,
   materializeDueWorkflowFirings,
   recoverStaleWorkflowScheduleFirings,
+  settleLinkedWorkflowScheduleFiring,
 } from "../../src/workflows/durable-scheduler";
 
 const reachable = await dbReachable();
@@ -224,6 +226,14 @@ describeIfDb("durable workflow scheduler persistence", () => {
        set cron_enabled = false, updated_at = $2 where id = $1`,
       [disabledWorkflowId, new Date("2030-08-26T08:01:31.000Z")],
     );
+    const pending = await pool().query<{ id: string }>(
+      "select id from workflow_schedule_firing where workflow_id = $1",
+      [disabledWorkflowId],
+    );
+    expect(await claimWorkflowScheduleFiring({
+      firingId: pending.rows[0]!.id, orgId,
+      workflowId: disabledWorkflowId,
+    })).toBe(false);
     await materializeDueWorkflowFirings(new Date("2030-08-26T08:01:32.000Z"), {
       orgId,
     });
@@ -260,6 +270,14 @@ describeIfDb("durable workflow scheduler persistence", () => {
        set cron = 'not-a-cron', updated_at = $2 where id = $1`,
       [invalidWorkflowId, new Date("2030-08-26T08:06:31.000Z")],
     );
+    const pending = await pool().query<{ id: string }>(
+      "select id from workflow_schedule_firing where workflow_id = $1",
+      [invalidWorkflowId],
+    );
+    expect(await claimWorkflowScheduleFiring({
+      firingId: pending.rows[0]!.id, orgId,
+      workflowId: invalidWorkflowId,
+    })).toBe(false);
     const sweep = await materializeDueWorkflowFirings(
       new Date("2030-08-26T08:06:32.000Z"),
       { orgId },
@@ -338,6 +356,55 @@ describeIfDb("durable workflow scheduler persistence", () => {
     expect(row.rows[0]?.completed_at.toISOString()).toBe(
       "2030-08-26T08:17:00.000Z",
     );
+    await expect(linkWorkflowScheduleFiringRun(firingId, workflowRunId)).rejects.toThrow(
+      "can no longer be linked",
+    );
+  });
+
+  it("settles a failed linked run without making its firing dispatchable again", async () => {
+    const threadId = randomUUID();
+    const workRunId = randomUUID();
+    const workflowRunId = randomUUID();
+    const firingId = randomUUID();
+    const workflowId = randomUUID();
+    await pool().query(
+      `insert into workflow_definition (id, org_id, name, steps)
+       values ($1, $2, 'Failed linked run', '[]'::jsonb)`, [workflowId, orgId],
+    );
+    await pool().query(
+      "insert into work_thread (id, org_id, title) values ($1, $2, 'Failed linked run')",
+      [threadId, orgId],
+    );
+    await pool().query(
+      `insert into work_run (id, org_id, thread_id, backend, status)
+       values ($1, $2, $3, 'harness', 'running')`, [workRunId, orgId, threadId],
+    );
+    await pool().query(
+      `insert into workflow_run
+         (id, org_id, workflow_id, thread_id, work_run_id, trigger_kind, status)
+       values ($1, $2, $3, $4, $5, 'cron', 'running')`,
+      [workflowRunId, orgId, workflowId, threadId, workRunId],
+    );
+    await pool().query(
+      `insert into workflow_schedule_firing
+         (id, org_id, workflow_id, scheduled_for, status, workflow_run_id, lease_until)
+       values ($1, $2, $3, $4, 'running', $5, $6)`,
+      [firingId, orgId, workflowId, new Date("2030-08-26T08:30:00.000Z"),
+        workflowRunId, new Date("2030-08-26T09:00:00.000Z")],
+    );
+    expect(await settleLinkedWorkflowScheduleFiring(firingId, workflowRunId)).toBe(false);
+    expect((await pool().query<{status:string;workflow_run_id:string}>(
+      "select status,workflow_run_id from workflow_schedule_firing where id=$1", [firingId],
+    )).rows[0]).toEqual({status:"running",workflow_run_id:workflowRunId});
+    await pool().query("update workflow_run set status='failed' where id=$1", [workflowRunId]);
+    expect(await settleLinkedWorkflowScheduleFiring(firingId, workflowRunId)).toBe(true);
+    expect(await settleLinkedWorkflowScheduleFiring(firingId, workflowRunId)).toBe(false);
+    const [row] = (await pool().query<{status:string;workflow_run_id:string}>(
+      "select status,workflow_run_id from workflow_schedule_firing where id=$1", [firingId],
+    )).rows;
+    expect(row).toEqual({status:"completed",workflow_run_id:workflowRunId});
+    const leased = await leasePendingWorkflowFirings({orgId,now:new Date("2030-08-26T09:01:00.000Z")});
+    expect(leased.some(item=>item.id===firingId)).toBe(false);
   });
 
   it("immediately retries a linked run that restart reconciliation cancelled", async () => {
