@@ -46,6 +46,29 @@ live("OpenShell Go/Ax proposal returns a durable approval and terminal recovery 
   let effects=0;registerActionAdapter(kind,async()=>{effects++;return {result:{value:42}};});
   expect((await executeApprovedActionRequest(orgId,card.action_request_id)).ok).toBe(true);
   expect((await executeApprovedActionRequest(orgId,card.action_request_id)).ok).toBe(true);expect(effects).toBe(1);
+  // The same Go/Ax/OpenShell proposal path must admit a host-bound plugin
+  // action at its internal policy scope, without a pack action descriptor.
+  const pluginRun=randomUUID();
+  await db().insert(work_run).values({id:pluginRun,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"service"});
+  await db().insert(action_policy).values({org_id:orgId,name:"Fixture internal approval",mode:"approval_required",applies_to_kinds:[kind],applies_to_scopes:["internal"]});
+  const pluginWorkspace=Object.fromEntries(Object.entries(workspace).map(([key,value])=>[key,value.replaceAll(runId,pluginRun)])) as AgentWorkspace;
+  for(const dir of Object.values(pluginWorkspace)) await mkdir(dir,{recursive:true});
+  await mkdir(join(pluginWorkspace.skillsRoot,"records"),{recursive:true});
+  await writeFile(join(pluginWorkspace.skillsRoot,"records","SKILL.md"),"# Records\nUse the admitted governed action for this synthetic record change.\n");
+  await fetch("http://127.0.0.1:18118/control",{method:"POST",body:JSON.stringify({proposal:true})});
+  const pluginEvents:AgentEvent[]=[];
+  const pluginResult=await core({...input,runId:pluginRun,workspace:pluginWorkspace,dataSurface:"records" as const,
+    pluginActions:[{kind,description:"Set the fixture value through a plugin",scope:"internal",default_mode:"ask"}],
+    packActions:[],emit:async(event:AgentEvent)=>{pluginEvents.push(event);}});
+  expect(pluginResult.status,JSON.stringify(pluginResult)).toBe("completed");
+  const pluginCard=pluginEvents.find(event=>event.type==="action_request_emit");
+  if(pluginCard?.type!=="action_request_emit") throw Error("missing plugin approval");
+  const pluginRequest=await getActionRequest(orgId,pluginCard.action_request_id);
+  expect(pluginRequest?.status).toBe("pending_approval");
+  expect(pluginRequest?.scope).toBe("internal");
+  await approveActionRequest({orgId,id:pluginCard.action_request_id,approverUserId:null,approver:{userId:null,role:"admin"}});
+  expect((await executeApprovedActionRequest(orgId,pluginCard.action_request_id)).ok).toBe(true);
+  expect(effects).toBe(2);
   // Cancellation must cross the sandbox boundary even when the proxy's idle
   // stream does not react to the Go client's socket close.
   const cancelledRun=randomUUID();
@@ -75,4 +98,4 @@ live("OpenShell Go/Ax proposal returns a durable approval and terminal recovery 
   await fetch("http://127.0.0.1:18118/control",{method:"POST",body:"{}"});
   await broker.close();await db().delete(organization).where(eq(organization.id,orgId));await pool().end();
  }
-},120000);
+},180000);

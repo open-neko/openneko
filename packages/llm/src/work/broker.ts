@@ -1,4 +1,4 @@
-import { proposeHarnessAction } from "./harness-proposal";
+import { proposeHarnessAction, type HarnessActionGrant } from "./harness-proposal";
 import { validateRenderCardsInput } from "./a2ui-contract";
 import { startupEvent } from "@neko/telemetry/startup";
 import { recordHarnessLookup } from "./harness-operation";
@@ -35,6 +35,8 @@ import {
 export interface RunBinding {
   /** Trusted launcher capability profile; never read from request JSON. */
   profile?: "harness-read-only" | "harness-governed";
+  /** Exact host-selected action kinds and scopes admitted to this run. */
+  actionGrants?: readonly HarnessActionGrant[];
   /** Host-selected run-wide operation limit; omitted bindings retain four. */
   operationLimit?: number;
   /** Records-only turns cannot delegate customer-source GraphJin lookups. */
@@ -182,7 +184,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && !!binding.actionGrants?.length && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -1032,6 +1034,13 @@ export async function startAgentBroker(
       if (binding.operationLimit !== undefined && (!binding.profile || !Number.isInteger(binding.operationLimit) || binding.operationLimit < 1 || binding.operationLimit > 32)) {
         throw new Error("Invalid broker operation limit");
       }
+      if (binding.actionGrants && (binding.profile !== "harness-governed" || (binding.kind !== "work" && binding.kind !== "workflow") || (binding.kind === "workflow" && !binding.workflowAction) || binding.actionGrants.length < 1 || binding.actionGrants.length > 64 ||
+          binding.actionGrants.some((grant,index) => !grant || typeof grant.kind !== "string" || !grant.kind || grant.kind.length > 128 ||
+            !["pack","plugin"].includes(grant.source) || !["external","internal"].includes(grant.scope) ||
+            (grant.pluginName !== undefined && (grant.source !== "plugin" || typeof grant.pluginName !== "string" || !grant.pluginName || grant.pluginName.length > 128)) ||
+            binding.actionGrants!.findIndex(item => item.kind === grant.kind) !== index))) {
+        throw new Error("Invalid broker action grants");
+      }
       if (binding.lookupRead === false && (!binding.profile || (binding.kind !== "work" && binding.kind !== "agent-job"))) {
         throw new Error("Invalid broker lookup grant");
       }
@@ -1089,14 +1098,17 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.libraryRead !== binding.libraryRead || saved.ruleWrite !== binding.ruleWrite || saved.workflowRead !== binding.workflowRead || saved.workflowWrite !== binding.workflowWrite || saved.managementRead !== binding.managementRead || saved.auditRead !== binding.auditRead || saved.sourceConfigRead !== binding.sourceConfigRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.workflowRunId !== binding.workflowRunId || saved.workflowOutput !== binding.workflowOutput || saved.workflowAction !== binding.workflowAction || JSON.stringify(saved.processRun) !== JSON.stringify(binding.processRun) || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || JSON.stringify(saved.actionGrants) !== JSON.stringify(binding.actionGrants) || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.libraryRead !== binding.libraryRead || saved.ruleWrite !== binding.ruleWrite || saved.workflowRead !== binding.workflowRead || saved.workflowWrite !== binding.workflowWrite || saved.managementRead !== binding.managementRead || saved.auditRead !== binding.auditRead || saved.sourceConfigRead !== binding.sourceConfigRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.workflowRunId !== binding.workflowRunId || saved.workflowOutput !== binding.workflowOutput || saved.workflowAction !== binding.workflowAction || JSON.stringify(saved.processRun) !== JSON.stringify(binding.processRun) || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }
         return existing;
       }
       const token = randomUUID();
-      tokens.set(token, { ...binding });
+      tokens.set(token, {
+        ...binding,
+        ...(binding.actionGrants ? {actionGrants: binding.actionGrants.map(grant => ({...grant}))} : {}),
+      });
       byRun.set(binding.runId, token);
       return token;
     },

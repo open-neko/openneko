@@ -37,7 +37,8 @@ live.each(["before_dispatch","after_commit","after_commit_reconcile","after_rece
  await new Promise<void>(resolve=>service.listen(0,"127.0.0.1",resolve));
  let child:ReturnType<typeof spawn>|undefined;
  try {
-  const token=broker.tokenFor({orgId,runId,threadId,kind:"work",profile:"harness-governed"});
+  const token=broker.tokenFor({orgId,runId,threadId,kind:"work",profile:"harness-governed",
+   actionGrants:[{kind,source:"pack",scope:"external"}]});
   const send=async(operationId:number,args:unknown)=>{
    const res=await fetch(`http://127.0.0.1:${broker.port}/v1/harness/propose`,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({operationId,instruction:JSON.stringify({action:kind,arguments:args,summary:"Update the synthetic value"})})});
    expect(res.status).toBe(200);return res.json();

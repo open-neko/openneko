@@ -1,7 +1,7 @@
 import { pool, resolveUserGroups } from "@neko/db";
 import { isDeepStrictEqual } from "node:util";
 import { startupEvent } from "@neko/telemetry/startup";
-import { validateHarnessAction } from "../work/harness-proposal";
+import { validateHarnessAction, validateHarnessPluginAction } from "../work/harness-proposal";
 import { resolveDeploymentProfile } from "../work/deployment-profile";
 import { assertMayDecide, hasHumanActionApproval, listEnabledPolicies, type ActionRequestRecord } from "./action-store";
 import { evaluateActionPolicy } from "./policy-engine";
@@ -53,7 +53,12 @@ async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<Acti
   if (!proposal?.definition) throw Error("Harness proposal has no bound action definition");
   const actor=(await pool().query("SELECT actor_user_id,actor_role,backend FROM work_run WHERE org_id=$1 AND id=$2",[request.orgId,request.workRunId])).rows[0];
   if (!actor || !isDeepStrictEqual(proposal.actor,{userId:actor.actor_user_id,role:actor.actor_role,backend:actor.backend})) throw Error("Requesting actor changed; request approval again");
-  const definition=await validateHarnessAction(scope,request.kind,proposal.payload);
+  const definition=proposal.definition.harnessSource === "plugin"
+    ? await validateHarnessPluginAction(scope,{kind:request.kind,source:"plugin",scope:request.scope,
+        ...(typeof proposal.definition.pluginName === "string" ? {pluginName:proposal.definition.pluginName} : {})})
+    : proposal.definition.harnessSource === "pack"
+      ? {harnessSource:"pack",snapshot:await validateHarnessAction(scope,request.kind,proposal.payload)}
+      : await validateHarnessAction(scope,request.kind,proposal.payload);
   if (!isDeepStrictEqual(definition,proposal.definition)) throw Error("Action definition changed; request approval again");
   if (request.approvedByUserId) {
     const groups=await resolveUserGroups(request.orgId,request.approvedByUserId);

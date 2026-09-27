@@ -1,4 +1,4 @@
-import { emitHarnessApprovals, emitHarnessRestoredAnswer } from "./harness-proposal";
+import { emitHarnessApprovals, emitHarnessRestoredAnswer, type HarnessActionGrant } from "./harness-proposal";
 import { loadHarnessOperations } from "./harness-operation";
 import { withHarnessRunJournal, type HarnessRunJournal } from "./harness-run-journal";
 import { harnessResult } from "../agent-backends/harness";
@@ -52,6 +52,21 @@ const SANDBOX_BOOT_LABEL = "openneko.boot";
 const SANDBOX_BOOT_ID = randomUUID();
 const HARNESS_OPERATION_LIMIT = 12;
 const HARNESS_MODEL_CALL_LIMIT = 24;
+
+function harnessActionGrants(
+  input: RunAgentBackendInput | RunWorkflowAgentBackendInput,
+  kind: "work" | "workflow" | "agent-job",
+): HarnessActionGrant[] {
+  if (kind === "agent-job") return [];
+  const packs = (input.packActions ?? []).map(action => ({
+    kind: action.kind, source: "pack" as const, scope: "external" as const,
+  }));
+  const plugins = kind === "work" ? ((input as RunAgentBackendInput).pluginActions ?? []).map(action => ({
+    kind: action.kind, source: "plugin" as const, scope: action.scope ?? "external" as const,
+    ...(action.pluginName ? {pluginName: action.pluginName} : {}),
+  })) : [];
+  return [...packs, ...plugins].sort((a,b) => a.kind.localeCompare(b.kind));
+}
 
 /** web or worker; each host deletes only boxes it owns. */
 function sandboxOwner(): string {
@@ -1095,6 +1110,9 @@ function makeSandboxCore(
         `agent sandbox ready: ${name} (backend=${input.backend.id}, kind=${kind}, ` +
           `graphjin=${opts.brokerUrl ? "brokered" : "none"}, skill_overrides=${staged.skillOverrides.length})`,
       );
+      const actionGrants = input.backend.id === "harness"
+        ? harnessActionGrants(input as RunAgentBackendInput | RunWorkflowAgentBackendInput, kind)
+        : [];
       await input.emit({ type: "status", message: "Agent is working…" });
       const result = await timed("exec", () => execAndStream(
         cli,
@@ -1111,7 +1129,8 @@ function makeSandboxCore(
                   orgId: input.orgId,
                   threadId,
                   kind,
-                  ...(input.backend.id === "harness" ? { profile: ((kind === "work" && (input as RunAgentBackendInput).packActions?.length) || (kind === "workflow" && (input as RunWorkflowAgentBackendInput).packActions?.length)) ? "harness-governed" as const : "harness-read-only" as const } : {}),
+                  ...(input.backend.id === "harness" ? { profile: actionGrants.length ? "harness-governed" as const : "harness-read-only" as const,
+                    ...(actionGrants.length ? { actionGrants } : {}) } : {}),
                   ...(input.backend.id === "harness" ? { operationLimit: HARNESS_OPERATION_LIMIT } : {}),
                   ...(input.backend.id === "harness" && kind === "agent-job" ? { lookupRead: jobInput?.access.graphjinAgent === true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface === "records" ? { lookupRead: false } : {}),
@@ -1132,7 +1151,7 @@ function makeSandboxCore(
                 }
               : {}),
             ...(opts.env ?? {}),
-            ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: kind === "work" && (input as RunAgentBackendInput).packActions?.length ? JSON.stringify((input as RunAgentBackendInput).packActions!.map(action => action.kind)) : kind === "workflow" && (input as RunWorkflowAgentBackendInput).packActions?.length ? JSON.stringify((input as RunWorkflowAgentBackendInput).packActions!.map(action => action.kind)) : "" } : {}),
+            ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: actionGrants.length ? JSON.stringify(actionGrants.map(action => action.kind)) : "" } : {}),
             ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit),
               OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),

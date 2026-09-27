@@ -77,6 +77,26 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("seals exact Harness action grants at token issuance", async () => {
+    const handle = await startAgentBroker({controlPlane:stubControlPlane(),port:0});
+    try {
+      const grants: RunBinding["actionGrants"] = [{kind:"record_update",source:"plugin",scope:"internal"}];
+      const binding:RunBinding={runId:"records-write",orgId:"org",threadId:"thread",kind:"work",
+        profile:"harness-governed",actionGrants:grants};
+      const token=handle.tokenFor(binding);
+      expect(handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"internal"}]})).toBe(token);
+      expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_delete",source:"plugin",scope:"internal"}]})).toThrow("conflicts");
+      expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"external"}]})).toThrow("conflicts");
+      expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"internal",pluginName:"crm"}]})).toThrow("conflicts");
+      expect(()=>handle.tokenFor({...binding,actionGrants:[...grants!,...grants!]})).toThrow("Invalid broker action grants");
+      expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"pack",scope:"internal",pluginName:"crm"}]})).toThrow("Invalid broker action grants");
+      expect(()=>handle.tokenFor({...binding,profile:"harness-read-only"})).toThrow("Invalid broker action grants");
+      (grants as {kind:string;source:"plugin";scope:"internal"}[])[0].kind="record_delete";
+      expect(()=>handle.tokenFor(binding)).toThrow("conflicts");
+      expect(handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"internal"}]})).toBe(token);
+    } finally {await handle.close();}
+  });
+
   it("binds workflow saves to a Work run without opening legacy save or delete routes", async () => {
     const handle = await startAgentBroker({controlPlane:stubControlPlane(),port:0});
     try {
