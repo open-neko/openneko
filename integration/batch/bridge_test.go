@@ -34,6 +34,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	var requests atomic.Int32
 	var libraryRequests atomic.Int32
 	var recordsRequests atomic.Int32
+	var workflowRequests atomic.Int32
 	var eventPosts atomic.Int32
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -66,6 +67,12 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 			libraryRequests.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[{"concept":{"path":"contracts/example","type":"contract","title":"Fixture contract","description":"Fixture","status":"stable","sources":[],"body":"TERMS-42"},"layer":"team","score":1}]`))
+			return
+		}
+		if r.URL.Path == "/v1/workflow/list" {
+			workflowRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"total":1,"workflows":[{"id":"workflow-1","name":"Fixture workflow","steps":[]}]}`))
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/records/") {
@@ -146,7 +153,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	}
 	productCaps, closeProduct, err := product.ConnectReads(ctx, product.ReadConfig{
 		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,
-		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(), Interaction: true, Cards: true,
+		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(), Interaction: true, Cards: true, Workflow: true,
 	}, true, true, true)
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +163,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	if err != nil || !strings.Contains(string(result), "memory-1") || requests.Load() != 2 {
 		t.Fatalf("product MCP read failed: result=%s err=%v requests=%d", result, err, requests.Load())
 	}
-	if len(productCaps) != 10 || productCaps[1].Name != "mcp_library_search" {
+	if len(productCaps) != 11 || productCaps[1].Name != "mcp_library_search" {
 		t.Fatalf("library read was not admitted: %+v", productCaps)
 	}
 	result, err = productCaps[1].Call(ctx, json.RawMessage(`{"query":"find contract"}`))
@@ -182,11 +189,15 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	if recordsRequests.Load() != 6 {
 		t.Fatalf("records route count %d", recordsRequests.Load())
 	}
-	result, err = productCaps[8].Call(ctx, json.RawMessage(`{"questions":[{"question":"Which day?"}]}`))
+	result, err = productCaps[8].Call(ctx, json.RawMessage(`{"limit":5}`))
+	if err != nil || !strings.Contains(string(result), "Fixture workflow") || workflowRequests.Load() != 1 {
+		t.Fatalf("workflow list did not reach the host: result=%s err=%v requests=%d", result, err, workflowRequests.Load())
+	}
+	result, err = productCaps[9].Call(ctx, json.RawMessage(`{"questions":[{"question":"Which day?"}]}`))
 	if err != nil || !strings.Contains(string(result), "needs_input") || eventPosts.Load() != 2 {
 		t.Fatalf("clarification did not reach the host: result=%s err=%v events=%d", result, err, eventPosts.Load())
 	}
-	result, err = productCaps[9].Call(ctx, json.RawMessage(`{"messages":[{"version":"v1.0","createSurface":{"surfaceId":"answer","catalogId":"urn:openneko:catalog:work:v2","components":[{"id":"root","component":"Text"}]}}]}`))
+	result, err = productCaps[10].Call(ctx, json.RawMessage(`{"messages":[{"version":"v1.0","createSurface":{"surfaceId":"answer","catalogId":"urn:openneko:catalog:work:v2","components":[{"id":"root","component":"Text"}]}}]}`))
 	if err != nil || !strings.Contains(string(result), "accepted") || eventPosts.Load() != 3 {
 		t.Fatalf("card did not reach the host: result=%s err=%v events=%d", result, err, eventPosts.Load())
 	}

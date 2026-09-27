@@ -163,7 +163,7 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 
 ## M5b — File-backed batch path and MCP read/interaction slice
 
-**Partial status (2026-09-27):** customer-surface memory and library search, plus
+**Partial status (2026-09-27):** customer-surface memory and library search, actor-filtered workflow list, plus
 actor-scoped records catalog/find/get, blueprint browse, and recycle-bin reads are admitted through the actual OpenNeko
 stdio bridge with pinned schemas. The broker binds org/run identity; records-only
 Harness turns cannot use GraphJin lookup or customer memory. Isolated OpenShell +
@@ -175,6 +175,11 @@ passed. Records catalog and shipped blueprint browse were tested end to end in a
 records-only OpenShell turn. A second isolated turn seeded an active app, row and
 recycle entry, then read all five through real Records Postgres, GraphJin,
 actor-bound broker, MCP bridge, OpenShell and Ax. The queued
+customer Work fixture also listed one entitled workflow through the same path;
+the broker denied an ungranted token and filtered an unknown run to no workflows.
+Workflow definitions are read-only here; execution remains a separately admitted
+workflow run.
+The queued
 clarification reached `needs_input` after two outer model
 calls; broker events entered the turn reducer, and queue redelivery preserved one
 question and surface without a model replay or assistant answer. A second queued

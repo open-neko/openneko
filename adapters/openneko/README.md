@@ -48,7 +48,8 @@ status polling and exact-byte artifact download with the versioned registry.
 A real-data Daily Lead run remains in
 [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice).
 
-The Harness MCP adapter admits pinned memory/library and Records catalog,
+The Harness MCP adapter admits pinned memory/library, actor-filtered workflow
+list, and Records catalog,
 find/get, blueprint and recycle-bin reads through OpenNeko's trusted stdio
 bridge. Records-only turns omit GraphJin lookup and customer memory. The
 isolated connected run now reads a populated Records app through real GraphJin,

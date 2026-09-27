@@ -19,13 +19,14 @@ import (
 // ReadConfig is trusted launch context, never a model-selected tool argument.
 type ReadConfig struct {
 	BridgePath, BrokerURL, BrokerToken, OrgID, ThreadID, RunID, SkillsRoot string
-	Interaction, Cards                                                     bool
+	Interaction, Cards, Workflow                                           bool
 }
 
 //go:embed interaction_schemas.json
 var interactionSchemas []byte
 
 const searchSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":800,"minLength":2,"type":"string"}},"required":["query"],"type":"object"}`
+const workflowListSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":200,"minimum":1,"type":"integer"}},"type":"object"}`
 const recordsCatalogSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"app":{"maxLength":63,"minLength":1,"type":"string"}},"type":"object"}`
 const recordsFindSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"after":{"maxLength":4096,"minLength":1,"type":"string"},"app":{"maxLength":63,"minLength":1,"type":"string"},"filters":{"items":{"properties":{"field":{"maxLength":63,"minLength":1,"type":"string"},"operator":{"enum":["eq","neq","in","contains","starts_with","is_null"],"type":"string"},"value":{}},"required":["field","operator"],"type":"object"},"maxItems":20,"type":"array"},"first":{"maximum":50,"minimum":1,"type":"integer"},"myRecords":{"type":"boolean"},"object":{"maxLength":63,"minLength":1,"type":"string"},"search":{"maxLength":200,"minLength":1,"type":"string"},"sort":{"properties":{"direction":{"enum":["asc","desc"],"type":"string"},"field":{"maxLength":63,"minLength":1,"type":"string"}},"required":["field","direction"],"type":"object"}},"required":["app","object"],"type":"object"}`
 const recordsGetSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"allFields":{"type":"boolean"},"app":{"maxLength":63,"minLength":1,"type":"string"},"id":{"maxLength":512,"minLength":1,"type":"string"},"object":{"maxLength":63,"minLength":1,"type":"string"}},"required":["app","object","id"],"type":"object"}`
@@ -37,7 +38,7 @@ const recordsRecycleGetSchema = `{"$schema":"http://json-schema.org/draft-07/sch
 // Discovery must match the pinned schemas; bridge content cannot grant tools.
 func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records bool) ([]agent.Capability, func() error, error) {
 	u, err := url.Parse(cfg.BrokerURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards) || (library && !memory) {
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards && !cfg.Workflow) || (library && !memory) {
 		return nil, nil, fmt.Errorf("invalid OpenNeko read bridge binding")
 	}
 	if info, err := os.Stat(cfg.BridgePath); err != nil || !info.Mode().IsRegular() {
@@ -69,6 +70,10 @@ func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records 
 			shared.Admission{Name: "records_find_recycled_records", Alias: "mcp_neko_records_find_recycled_records", Version: "1", Origin: "openneko", Effect: "read", Description: "Find soft-deleted record summaries under the current actor's permissions.", Schema: json.RawMessage(recordsRecycleFindSchema)},
 			shared.Admission{Name: "records_get_recycled_record", Alias: "mcp_neko_records_get_recycled_record", Version: "1", Origin: "openneko", Effect: "read", Description: "Read one soft-deleted record summary by an exact id returned by find_recycled_records.", Schema: json.RawMessage(recordsRecycleGetSchema)},
 		)
+	}
+	if cfg.Workflow {
+		servers = append(servers, "neko_workflow_builder")
+		allowed = append(allowed, shared.Admission{Name: "workflow_builder_list_workflows", Alias: "mcp_neko_workflow_builder_list_workflows", Version: "1", Origin: "openneko", Effect: "read", Description: "List workflows visible to the current Work-run actor, including their saved steps and triggers.", Schema: json.RawMessage(workflowListSchema)})
 	}
 	if cfg.Interaction || cfg.Cards {
 		var schemas map[string]json.RawMessage
