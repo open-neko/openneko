@@ -154,6 +154,7 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
                   cronTimezone: w.cronTimezone,
                   cronEnabled: w.cronEnabled,
                   when: w.when,
+                  watch: w.watch,
                   updatedAt: w.updatedAt,
                   versionToken: w.versionToken,
                   createdAt: w.createdAt,

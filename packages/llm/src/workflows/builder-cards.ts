@@ -2,6 +2,7 @@ import type { AgentSurfaceMessage } from "../agent-backend";
 import type { ActionPolicyRecord } from "./action-store";
 import type { SubscriptionRecord, WorkflowRecord } from "./store";
 import type { SourceChangeFilter } from "./subscription-query";
+import type { WatcherRecord } from "./watchers";
 
 function confirmationCard(args: {
   surfaceId: string;
@@ -74,6 +75,17 @@ export function workflowDeletedCard(args: {
       "",
       "[Open workflows](/workflows)",
     ].join("\n"),
+  });
+}
+
+export function watcherSavedCard(args: {
+  watcher: Pick<WatcherRecord, "id" | "name" | "op" | "valuePath" | "cadenceSeconds">;
+}): AgentSurfaceMessage[] {
+  return confirmationCard({
+    surfaceId: `watcher-save-${args.watcher.id}`,
+    label: "Condition watch saved",
+    title: args.watcher.name,
+    body: `Checks \`${args.watcher.valuePath}\` with \`${args.watcher.op}\` every ${args.watcher.cadenceSeconds} seconds.`,
   });
 }
 

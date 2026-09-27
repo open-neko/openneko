@@ -5,7 +5,8 @@ import { recordHarnessLookup } from "./harness-operation";
 import { recordHarnessOperation } from "./harness-operation";
 import { WORK_MEMORY_KINDS } from "./memory-types";
 import { POLICY_SAVE_SCHEMA, WORKFLOW_OUTPUT_SCHEMA, WORKFLOW_SAVE_SCHEMA } from "../workflows/fence-schemas";
-import { policySavedCard, workflowDeletedCard, workflowSavedCard, subscriptionSavedCard } from "../workflows/builder-cards";
+import { policySavedCard, workflowDeletedCard, workflowSavedCard, subscriptionSavedCard, watcherSavedCard } from "../workflows/builder-cards";
+import { HarnessWorkflowValidationError } from "../workflows/save-workflow-with-trigger";
 import { z } from "zod";
 import { parseHarnessProcessInput, runHarnessProcess, validHarnessProcessBinding, type HarnessProcessBinding } from "./harness-process";
 import {
@@ -616,24 +617,29 @@ async function handle(
       } catch {
         return send(res, 400, {error: "Invalid Harness workflow save"});
       }
-      // Data-change subscriptions and watchers can commit the definition before
-      // their own validation fails. Admit them only with a separate recovery contract.
-      if (input.triggers?.when || input.triggers?.watch) {
-        return send(res, 400, {error: "Harness workflow save supports cron triggers only"});
-      }
       const request = {tool:"workflow_save" as const,binding:body.binding,instruction:body.instruction};
       return send(res,200,await recordHarnessOperation(binding,body.operationId,request,async()=>{
         const {expectedVersion,...definition}=input;
-        const saved=await cp.saveWorkflowWithTrigger({
-          ...definition,expectedVersion,orgId:binding.orgId,
-          createdByThreadId:binding.threadId,createdByRunId:binding.runId,
-        });
+        let saved: Awaited<ReturnType<AgentControlPlane["saveWorkflowWithTrigger"]>>;
+        try {
+          saved=await cp.saveWorkflowWithTrigger({
+            ...definition,expectedVersion,orgId:binding.orgId,
+            createdByThreadId:binding.threadId,createdByRunId:binding.runId,
+          });
+        } catch (error) {
+          if (error instanceof HarnessWorkflowValidationError) {
+            return {ok:false,error:error.code,message:error.message};
+          }
+          throw error;
+        }
         if (binding.cardEvents) {
           await deps.onEvents(binding,[{type:"surface",messages:workflowSavedCard({workflow:saved.workflow,action:saved.action})}]);
           if (saved.subscription) await deps.onEvents(binding,[{type:"surface",messages:subscriptionSavedCard({subscription:saved.subscription,workflowName:saved.workflow.name})}]);
+          if (saved.watcher) await deps.onEvents(binding,[{type:"surface",messages:watcherSavedCard({watcher:saved.watcher})}]);
         }
         return {ok:!saved.triggerError,action:saved.action,workflowId:saved.workflow.id,name:saved.workflow.name,
           ...(saved.subscription?{triggerId:saved.subscription.id}:{}),
+          ...(saved.watcher?{watcherId:saved.watcher.id}:{}),
           ...(saved.triggerError?{triggerError:saved.triggerError}:{}),
         };
       }));
