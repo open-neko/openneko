@@ -462,10 +462,29 @@ async function runChatTurnTraced(
         filterHeldActions(runActor, opts.pluginActions ?? []),
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
+    // Ax and the broker must see the same bounded, unambiguous action set.
+    // A duplicate kind across an installed pack and plugin is withheld from
+    // both until the operator resolves the collision.
+    const harnessCandidates = [
+      ...(customerSurface ? heldPackActions.map(action => ({source:"pack" as const, action})) : []),
+      ...heldPluginActions.filter(action => {
+        const mode = typeof action.default_mode === "object"
+          ? action.default_mode[action.scope ?? "external"] : action.default_mode;
+        return mode !== "deny";
+      }).map(action => ({source:"plugin" as const, action})),
+    ].sort((a,b) => a.action.kind.localeCompare(b.action.kind));
+    const kindCounts = new Map<string,number>();
+    for (const item of harnessCandidates) kindCounts.set(item.action.kind,(kindCounts.get(item.action.kind) ?? 0)+1);
+    const admittedHarnessActions = harnessCandidates.filter(item => kindCounts.get(item.action.kind) === 1).slice(0,64);
     const admittedPackActions = customerSurface
       ? backend.id === "harness"
-        ? [...heldPackActions].sort((a, b) => a.kind.localeCompare(b.kind)).slice(0, 64)
+        ? admittedHarnessActions.filter(item => item.source === "pack").map(item => item.action as import("./tools").PackActionDescriptor)
         : heldPackActions
+      : [];
+    const admittedPluginActions = customerSurface || (backend.id === "harness" && dataSurface === "records")
+      ? backend.id === "harness"
+        ? admittedHarnessActions.filter(item => item.source === "plugin").map(item => item.action as PluginActionDescriptor)
+        : heldPluginActions
       : [];
     const [memoryContext, installedSkills, profile] = await Promise.all([
       customerSurface
@@ -535,7 +554,7 @@ async function runChatTurnTraced(
         opts.nativeDelegation !== "disabled",
       pluginCatalog,
       inlineTranscript,
-      pluginActions: customerSurface ? heldPluginActions : [],
+      pluginActions: admittedPluginActions,
       packActions: admittedPackActions,
       dataSurface,
       ...(appContext ? { appContext } : {}),
@@ -567,7 +586,7 @@ async function runChatTurnTraced(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
-      pluginActions: customerSurface ? heldPluginActions : [],
+      pluginActions: admittedPluginActions,
       packActions: admittedPackActions,
       sourceConfigEnabled: supportsSourceConfigTool || supportsSourceConfigReads,
       ruleWriteEnabled: backend.id === "harness" && customerSurface && actor.role === "admin",

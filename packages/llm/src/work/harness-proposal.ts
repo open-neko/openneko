@@ -11,6 +11,15 @@ const proposalSchema=z.object({
   summary:z.string().trim().min(1).max(1000),
 }).strict();
 
+/** Frozen by the host at run admission; never supplied by the model. */
+export type HarnessActionGrant = {
+  kind: string;
+  source: "pack" | "plugin";
+  scope: "external" | "internal";
+  /** Installed plugin entitlement, when the descriptor belongs to one. */
+  pluginName?: string;
+};
+
 /** Resolve the installed contract and current actor on the trusted side. */
 export async function validateHarnessAction(scope:{orgId:string;runId:string},kind:string,payload:Record<string,unknown>) {
   const [row]=await db().select().from(pack_action_definition).where(and(
@@ -28,8 +37,19 @@ export async function validateHarnessAction(scope:{orgId:string;runId:string},ki
   return row.definition;
 }
 
+export async function validateHarnessPluginAction(scope:{orgId:string;runId:string},grant:HarnessActionGrant) {
+  if (grant.source !== "plugin") throw Error("Expected a plugin action grant");
+  const actor=await entitlementActorForRun(scope.orgId,scope.runId);
+  if (!actor || !(await holds(actor,"action",grant.kind)).allowed ||
+      (grant.pluginName && !(await holds(actor,"integration",grant.pluginName)).allowed)) {
+    throw Error("Action is no longer available to this actor");
+  }
+  return {harnessSource:"plugin",kind:grant.kind,scope:grant.scope,
+    ...(grant.pluginName ? {pluginName:grant.pluginName} : {})};
+}
+
 export async function proposeHarnessAction(
-  scope:{orgId:string;runId:string;operationLimit?:number;workflowRunId?:string},body:Record<string,unknown>,cp:AgentControlPlane,
+  scope:{orgId:string;runId:string;operationLimit?:number;workflowRunId?:string;actionGrants?:readonly HarnessActionGrant[]},body:Record<string,unknown>,cp:AgentControlPlane,
 ):Promise<unknown> {
   const instruction=typeof body.instruction === "string" ? body.instruction : "";
   if (Buffer.byteLength(instruction)>65536) return {error:"Proposal exceeds limit"};
@@ -37,19 +57,26 @@ export async function proposeHarnessAction(
   try {proposal=proposalSchema.parse(JSON.parse(instruction));}
   catch {return {error:"Invalid proposal"};}
   return recordHarnessOperation(scope,body.operationId,{tool:"propose",instruction},async()=>{
+    const grant=scope.actionGrants?.find(item=>item.kind===proposal.action);
+    if (!grant) return {status:"denied",reason:"Action was not admitted for this run"};
     if (scope.workflowRunId) {
       const owned=await pool().query("SELECT 1 FROM workflow_run WHERE org_id=$1 AND id=$2 AND work_run_id=$3 AND status='running'",
         [scope.orgId,scope.workflowRunId,scope.runId]);
       if (!owned.rowCount) throw Error("Workflow action run binding changed");
     }
     let definition:unknown;
-    try {definition=await validateHarnessAction(scope,proposal.action,proposal.arguments);}
-    catch {return {status:"denied",reason:"Action unavailable or arguments invalid"};}
-    const decision=await cp.evaluateActionPolicy({orgId:scope.orgId,scope:"external",kind:proposal.action,riskLevel:"critical"});
+    if (grant.source === "pack") {
+      try {definition={harnessSource:"pack",snapshot:await validateHarnessAction(scope,proposal.action,proposal.arguments)};}
+      catch {return {status:"denied",reason:"Action unavailable or arguments invalid"};}
+    } else {
+      try {definition=await validateHarnessPluginAction(scope,grant);}
+      catch {return {status:"denied",reason:"Action is no longer available to this actor"};}
+    }
+    const decision=await cp.evaluateActionPolicy({orgId:scope.orgId,scope:grant.scope,kind:proposal.action,riskLevel:"critical"});
     if (decision.decision === "deny" || decision.decision === "no_policy") return {status:"denied",reason:"Action policy does not permit this proposal"};
     const request=await cp.createActionRequest({orgId:scope.orgId,workRunId:scope.runId,
       ...(scope.workflowRunId ? {workflowRunId:scope.workflowRunId,requestedByRunId:scope.workflowRunId} : {}),
-      harnessOperationId:Number(body.operationId),harnessDefinition:definition as Record<string,unknown>,scope:"external",kind:proposal.action,
+      harnessOperationId:Number(body.operationId),harnessDefinition:definition as Record<string,unknown>,scope:grant.scope,kind:proposal.action,
       payload:proposal.arguments,status:"pending_approval",policyId:decision.policy.id,
       riskLevel:"critical",summary:proposal.summary,intent:proposal.summary});
     if (request.status !== "pending_approval") throw Error("Proposal was not prepared for approval");
