@@ -61,6 +61,8 @@ export interface RunAgentBackendInput {
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
+  /** Advertise direct rule saves only to an admin Work actor. The host rechecks at dispatch. */
+  ruleWriteEnabled?: boolean;
   /** Selects the isolated data plane for this turn. */
   dataSurface?: WorkDataSurface;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */
@@ -100,6 +102,7 @@ export async function runAgentBackend(
     pluginActions,
     packActions = [],
     sourceConfigEnabled = false,
+    ruleWriteEnabled = false,
     dataSurface = "customer",
     graphjinToolPolicy,
     nativeDelegation,
@@ -283,6 +286,7 @@ export async function runAgentBackend(
                   OPENNEKO_HARNESS_MCP_LIBRARY_READ: "1",
                   OPENNEKO_HARNESS_MCP_WORKFLOW_READ: "1",
                   OPENNEKO_HARNESS_WORKFLOW_SAVE: "1",
+                  ...(ruleWriteEnabled ? { OPENNEKO_HARNESS_RULE_SAVE: "1" } : {}),
                   OPENNEKO_HARNESS_MCP_MANAGEMENT_READ: "1",
                   OPENNEKO_HARNESS_MCP_AUDIT_READ: "1",
                   ...(sourceConfigEnabled ? { OPENNEKO_HARNESS_MCP_SOURCE_CONFIG_READ: "1" } : {}),

@@ -832,6 +832,8 @@ function makeSandboxCore(
             packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
               (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
+            ruleWriteEnabled:
+              (input as RunAgentBackendInput).ruleWriteEnabled ?? false,
             dataSurface:
               (input as RunAgentBackendInput).dataSurface ?? "customer",
             ...((input as RunAgentBackendInput).graphjinToolPolicy
@@ -971,7 +973,7 @@ function makeSandboxCore(
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.ruleWriteEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
@@ -1118,6 +1120,7 @@ function makeSandboxCore(
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { libraryRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { workflowRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { workflowWrite: true } : {}),
+                  ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).ruleWriteEnabled ? { ruleWrite: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { managementRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { auditRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" && (input as RunAgentBackendInput).sourceConfigEnabled ? { sourceConfigRead: true } : {}),

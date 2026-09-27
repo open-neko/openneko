@@ -5,7 +5,7 @@ import {
   createActionRequest,
   getActionRequest,
   listActionExecutions,
-  listAllPolicies,
+  listAllPoliciesWithVersions,
   listEnabledPolicies,
   upsertActionPolicyByName,
   type ActionPolicyRecord,
@@ -646,7 +646,7 @@ export interface AgentControlPlane {
   listActionPolicies(input: {
     orgId: string;
     limit?: number;
-  }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord>> }>;
+  }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord> & { versionToken: string }> }>;
   /** ADM3: installed plugins (manifest) + marketplace catalog. */
   listPlugins(input: { orgId: string }): Promise<PluginCatalog>;
   /** ADM1: the org's users (id, email, role, disabled). */
@@ -1347,17 +1347,48 @@ export class InProcessControlPlane implements AgentControlPlane {
   async upsertActionPolicyByName(
     input: CreateActionPolicyInput,
   ): Promise<Wire<UpsertActionPolicyResult>> {
+    if (input.expectedVersion !== undefined) {
+      if (!input.createdByRunId) throw new Error("Harness rule save requires a Work run");
+      const { and, app_user, db, eq, resolveUserGroups, work_run } = await import("@neko/db");
+      const [run] = await db()
+        .select({ userId: work_run.actor_user_id, role: work_run.actor_role })
+        .from(work_run)
+        .where(and(eq(work_run.id, input.createdByRunId), eq(work_run.org_id, input.orgId)))
+        .limit(1);
+      if (!run) throw new Error("Harness rule save requires a current admin actor");
+      if (run.userId) {
+        const [user] = await db()
+          .select({ disabledAt: app_user.disabled_at })
+          .from(app_user)
+          .where(and(eq(app_user.id, run.userId), eq(app_user.org_id, input.orgId)))
+          .limit(1);
+        if (!user || user.disabledAt || !(await resolveUserGroups(input.orgId, run.userId)).administrator) {
+          throw new Error("Harness rule save requires a current admin actor");
+        }
+      } else {
+        const [anyUser] = await db()
+          .select({ id: app_user.id })
+          .from(app_user)
+          .where(eq(app_user.org_id, input.orgId))
+          .limit(1);
+        if (anyUser || run.role !== "admin") {
+          throw new Error("Harness rule save requires a current admin actor");
+        }
+      }
+    }
     return toWire(await upsertActionPolicyByName(input));
   }
 
   async listActionPolicies(input: {
     orgId: string;
     limit?: number;
-  }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord>> }> {
-    const all = await listAllPolicies(input.orgId);
+  }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord> & { versionToken: string }> }> {
+    const all = await listAllPoliciesWithVersions(input.orgId);
     return {
       total: all.length,
-      policies: all.slice(0, input.limit ?? 50).map((p) => toWire(p)),
+      policies: all.slice(0, input.limit ?? 50).map(({ policy, versionToken }) => ({
+        ...toWire(policy), versionToken,
+      })),
     };
   }
 

@@ -121,6 +121,20 @@ export async function listAllPolicies(
   return rows.map(toPolicyRecord);
 }
 
+/** Return policy bodies and revisions from the same database snapshot. */
+export async function listAllPoliciesWithVersions(
+  orgId: string,
+): Promise<Array<{ policy: ActionPolicyRecord; versionToken: string }>> {
+  const rows = await db()
+    .select({ policy: action_policy, versionToken: sql<string>`xmin::text` })
+    .from(action_policy)
+    .where(eq(action_policy.org_id, orgId))
+    .orderBy(asc(action_policy.priority), asc(action_policy.name));
+  return rows.map(({ policy, versionToken }) => ({
+    policy: toPolicyRecord(policy), versionToken,
+  }));
+}
+
 export type CreateActionPolicyInput = Omit<
   ActionPolicyRecord,
   "id" | "createdAt" | "updatedAt" | "createdByThreadId" | "createdByRunId" | "approverGroupId"
@@ -130,18 +144,24 @@ export type CreateActionPolicyInput = Omit<
   approverRole?: "admin" | null;
   createdByThreadId?: string | null;
   createdByRunId?: string | null;
+  /** Harness-only precondition: `absent` for create, listed row revision for edit. */
+  expectedVersion?: string;
 };
+
+type PolicyDb = ReturnType<typeof db>;
+type PolicyTx = Parameters<Parameters<PolicyDb["transaction"]>[0]>[0];
 
 export async function createActionPolicy(
   input: CreateActionPolicyInput,
+  runner: PolicyDb | PolicyTx = db(),
 ): Promise<ActionPolicyRecord> {
   const approverGroupId =
     input.approverGroupId !== undefined
       ? input.approverGroupId
       : input.approverRole === "admin"
-        ? await builtinGroupId(input.orgId, ADMINISTRATORS_GROUP_SLUG)
+        ? await builtinGroupId(input.orgId, ADMINISTRATORS_GROUP_SLUG, runner)
         : null;
-  const [row] = await db()
+  const [row] = await runner
     .insert(action_policy)
     .values({
       org_id: input.orgId,
@@ -196,6 +216,53 @@ export type UpsertActionPolicyResult = {
 export async function upsertActionPolicyByName(
   input: CreateActionPolicyInput,
 ): Promise<UpsertActionPolicyResult> {
+  if (input.expectedVersion !== undefined) {
+    if (input.expectedVersion !== "absent" && !/^\d{1,12}$/.test(input.expectedVersion)) {
+      throw new Error("Invalid rule version precondition");
+    }
+    return db().transaction(async (tx) => {
+      // The legacy upsert has no unique name constraint. Serialize this short
+      // guarded write with other policy writers before checking the name.
+      await tx.execute(sql`LOCK TABLE action_policy IN SHARE ROW EXCLUSIVE MODE`);
+      const rows = await tx
+        .select({ policy: action_policy, versionToken: sql<string>`xmin::text` })
+        .from(action_policy)
+        .where(and(eq(action_policy.org_id, input.orgId), eq(action_policy.name, input.name)))
+        .limit(2);
+      if (rows.length > 1) throw new Error("Multiple rules have this name; resolve the ambiguity before saving.");
+      const existing = rows[0];
+      if (input.expectedVersion === "absent") {
+        if (existing) throw new Error("Rule changed since it was listed; read it again before saving.");
+        return { action: "created" as const, policy: await createActionPolicy(input, tx) };
+      }
+      if (!existing || existing.versionToken !== input.expectedVersion) {
+        throw new Error("Rule changed since it was listed; read it again before saving.");
+      }
+      const [updated] = await tx
+        .update(action_policy)
+        .set({
+          description: input.description,
+          applies_to_kinds: input.appliesToKinds,
+          applies_to_scopes: input.appliesToScopes,
+          mode: input.mode,
+          risk_threshold_auto_approve: input.riskThresholdAutoApprove,
+          allowed_targets: input.allowedTargets,
+          denied_targets: input.deniedTargets,
+          limits: input.limits,
+          priority: input.priority,
+          enabled: input.enabled,
+          updated_at: new Date(),
+        })
+        .where(and(
+          eq(action_policy.org_id, input.orgId),
+          eq(action_policy.id, existing.policy.id),
+          sql`xmin::text = ${input.expectedVersion}`,
+        ))
+        .returning();
+      if (!updated) throw new Error("Rule changed since it was listed; read it again before saving.");
+      return { action: "updated" as const, policy: toPolicyRecord(updated) };
+    });
+  }
   const existing = await getActionPolicyByName(input.orgId, input.name);
   if (!existing) {
     const created = await createActionPolicy(input);

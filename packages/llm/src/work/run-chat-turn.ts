@@ -570,6 +570,7 @@ async function runChatTurnTraced(
       pluginActions: customerSurface ? heldPluginActions : [],
       packActions: admittedPackActions,
       sourceConfigEnabled: supportsSourceConfigTool || supportsSourceConfigReads,
+      ruleWriteEnabled: backend.id === "harness" && customerSurface && actor.role === "admin",
       dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }

@@ -120,6 +120,7 @@ export function buildRuleBuilderServer(ctx: RuleBuilderContext) {
                 approverGroupId: p.approverGroupId,
                 priority: p.priority,
                 enabled: p.enabled,
+                versionToken: p.versionToken,
                 updatedAt: p.updatedAt,
                 createdAt: p.createdAt,
               })),
