@@ -103,7 +103,25 @@ fi
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   if [[ ${HARNESS_M5_PROCESS_CANCEL_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    if [[ ${HARNESS_M5_PROCESS_CANCEL_HTTP:-0} == 1 ]]; then
+      [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
+      set -m
+      (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m5-stop-web.log 2>&1 &
+      web_pid=$!
+      set +m
+      trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+      ready=0
+      for ((n=0; n<90; n++)); do
+        if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+        kill -0 "$web_pid" || exit 1
+        sleep 1
+      done
+      [[ "$ready" == 1 ]] || { echo 'Isolated Work Stop web server did not start' >&2; exit 1; }
+    fi
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-process-cancel-live.ts)
+    if [[ ${HARNESS_M5_PROCESS_CANCEL_HTTP:-0} == 1 ]]; then
+      echo M5_WEB_PROCESS_CANCEL_PASS
+    fi
     echo M5_CONNECTED_PROCESS_CANCEL_PASS
     exit 0
   fi

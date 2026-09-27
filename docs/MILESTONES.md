@@ -605,9 +605,10 @@ spawned a child process. The fixture applied that same durable transition,
 then observed cancellation telemetry, deletion of the agent and process
 OpenShell sandboxes, no artifact event or published file, and no successful
 operation receipt. A late handler invocation and a late attempt to mark the
-run running could not reopen it or call the model. The fixture calls the
-durable transition directly, so the HTTP Stop route itself remains to be
-exercised; broader process resource ceilings remain open.
+run running could not reopen it or call the model. A second isolated run
+issued the authenticated HTTP Stop request while the process was active;
+the route returned `recovered: true`, and the same sandbox, artifact and
+late-delivery assertions passed. Broader process resource ceilings remain open.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

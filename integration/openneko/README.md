@@ -72,7 +72,10 @@ with `HARNESS_M5_PROCESS_CANCEL_ONLY=1` in place of
 partial output inside its OpenShell sandbox, applies the same durable Stop
 transition used by the web route, and requires the sandbox to disappear with
 no published artifact. The expected marker is
-`M5_CONNECTED_PROCESS_CANCEL_PASS`. It does not issue an HTTP Stop request.
+`M5_CONNECTED_PROCESS_CANCEL_PASS`. Add
+`HARNESS_M5_PROCESS_CANCEL_HTTP=1` to issue the authenticated Work Stop request
+through a temporary isolated Next server; this also reports
+`M5_WEB_PROCESS_CANCEL_PASS`.
 
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.
