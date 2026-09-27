@@ -66,6 +66,9 @@ describeIfDb("ADM4 audit viewer", () => {
     expect(await inProcessControlPlane.listAuditTrail({ orgId })).toEqual({
       denied: true,
     });
+    expect(await inProcessControlPlane.listAuditTrail({
+      orgId: uniqueOrgId("other"), runId: adminRunId,
+    })).toEqual({ denied: true });
   });
 
   it("an admin run sees the trail with dual identity + alerts", async () => {

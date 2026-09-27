@@ -286,6 +286,25 @@ assert.deepEqual(managementSnapshot.operations.map((op:{tool:string})=>op.tool),
 ]);
 assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,managementRun.id])).rows[0].n,0);
 console.log('M5_QUEUE_MANAGEMENT_READ_PASS',managementRun.id);
+// Audit is visible only to the bound admin actor. The same queued MCP call
+// from a member must receive a denial without the action-request content.
+const auditThread=await createWorkThread(orgId,'M5 audit trail','web',soloAdmin.id);
+const adminAuditRun=await createWorkRun(orgId,auditThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+await createActionRequest({orgId,scope:'internal',kind:'user_admin',target:'harness-audit-target',status:'pending_approval',summary:'harness-audit-marker',workRunId:adminAuditRun.id});
+for (const [role,run] of [
+  ['admin',adminAuditRun],
+  ['member',await createWorkRun(orgId,auditThread.id,'harness',{userId:null,role:'member'})],
+] as const) {
+  const workspace=await ensureWorkWorkspace(orgId,auditThread.id,run.id);
+  assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({audit:true,audit_denied:role==='member'})})).status,204);
+  const [job]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:`test-audit-${role}`}).returning();
+  await enqueue(QUEUE.WORK_RUN,{processingJobId:job.id,orgId,runId:run.id,threadId:auditThread.id,message:'Inspect the audit trail for the current actor.'},{retryLimit:0});
+  await waitForJob(job.id,run.id);
+  const snapshot=JSON.parse(await readFile(join(workspace.runRoot,'.harness',`${createHash('sha256').update(run.id).digest('hex')}.json`),'utf8'));
+  assert.deepEqual(snapshot.operations.map((op:{tool:string})=>op.tool),['mcp_neko_audit_audit_trail']);
+  assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows[0].n,0);
+  console.log(`M5_QUEUE_AUDIT_${role.toUpperCase()}_PASS`,run.id);
+}
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
 // separately by the M5b fixture on the same isolated gateway.

@@ -77,6 +77,29 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("binds audit reads to one Work run and keeps the actor decision on the host", async () => {
+    const listAuditTrail = vi.fn(async ({orgId, runId}: {orgId: string; runId: string}) =>
+      ({requests: [{orgId, runId}]}));
+    const handle = await startAgentBroker({
+      controlPlane: {...stubControlPlane(), listAuditTrail} as AgentControlPlane,
+      port: 0,
+    });
+    try {
+      const binding: RunBinding = {runId: "audit", orgId: "bound-org", threadId: "thread",
+        kind: "work", profile: "harness-read-only", auditRead: true};
+      const token = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({...binding, auditRead: false})).toThrow("conflicts");
+      expect(() => handle.tokenFor({...binding, runId: "job", kind: "agent-job"})).toThrow("Invalid broker audit read grant");
+      const call = (path: string) => fetch(`http://127.0.0.1:${handle.port}${path}`, {
+        method: "POST", headers: {authorization: `Bearer ${token}`, "content-type": "application/json"},
+        body: JSON.stringify({orgId: "forged-org", runId: "forged-run"}),
+      });
+      expect(await (await call("/v1/audit/list")).json()).toEqual({requests: [{orgId: "bound-org", runId: "audit"}]});
+      expect(listAuditTrail).toHaveBeenCalledWith({orgId: "bound-org", runId: "audit", limit: undefined});
+      expect((await call("/v1/source-config/preview")).status).toBe(403);
+    } finally { await handle.close(); }
+  });
+
   it("binds management catalogs to a Work read grant without opening writes", async () => {
     const listUsers = vi.fn(async ({orgId}: {orgId: string}) => ({users: [{id: orgId}], groups: []}));
     const controlPlane = {...stubControlPlane(), listUsers} as AgentControlPlane;
