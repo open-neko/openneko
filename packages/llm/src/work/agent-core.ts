@@ -282,6 +282,7 @@ export async function runAgentBackend(
                   OPENNEKO_HARNESS_MEMORY_SAVE: "1",
                   OPENNEKO_HARNESS_MCP_LIBRARY_READ: "1",
                   OPENNEKO_HARNESS_MCP_WORKFLOW_READ: "1",
+                  OPENNEKO_HARNESS_MCP_MANAGEMENT_READ: "1",
                 }),
             OPENNEKO_HARNESS_MCP_RECORDS_READ: "1",
             OPENNEKO_HARNESS_MCP_INTERACTION: "1",

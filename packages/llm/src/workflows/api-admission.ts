@@ -1300,6 +1300,7 @@ type ApiRunStatusRow = {
   terminal_result: Record<string, unknown> | null;
   result_artifact_path: string | null;
   error: string | null;
+  admission_status: string;
   last_error_code: string | null;
 };
 
@@ -1317,7 +1318,7 @@ export async function getWorkflowApiRunStatus(input: {
             run.created_at, run.admitted_at, run.started_at, run.finished_at,
             run.result_expires_at, run.progress, run.telemetry_summary,
             run.terminal_result, run.result_artifact_path, run.error,
-            admission.last_error_code
+            admission.status as admission_status, admission.last_error_code
      from workflow_run run
      join workflow_api_admission admission
        on admission.workflow_run_id = run.id
@@ -1335,16 +1336,22 @@ export async function getWorkflowApiRunStatus(input: {
       410,
     );
   }
-  const terminal = API_TERMINAL_RUN_STATUSES.has(row.status);
+  // The workflow runner can finish its own row before the API admission commits
+  // the result. The admission transaction is the public completion boundary.
+  const terminal = API_TERMINAL_RUN_STATUSES.has(row.status) &&
+    ["completed", "failed", "cancelled"].includes(row.admission_status);
+  const status = !terminal && API_TERMINAL_RUN_STATUSES.has(row.status)
+    ? row.admission_status === "running" ? "running" : "queued"
+    : row.status;
   return {
     runId: row.id,
     workflowId: row.workflow_id,
     mode: row.execution_mode,
-    status: row.status,
+    status,
     createdAt: row.created_at,
     admittedAt: row.admitted_at,
     startedAt: row.started_at,
-    finishedAt: row.finished_at,
+    finishedAt: terminal ? row.finished_at : null,
     expiresAt: row.result_expires_at,
     progress: row.progress ?? {},
     telemetry: row.telemetry_summary,

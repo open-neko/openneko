@@ -77,6 +77,29 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("binds management catalogs to a Work read grant without opening writes", async () => {
+    const listUsers = vi.fn(async ({orgId}: {orgId: string}) => ({users: [{id: orgId}], groups: []}));
+    const controlPlane = {...stubControlPlane(), listUsers} as AgentControlPlane;
+    const handle = await startAgentBroker({controlPlane, port: 0});
+    try {
+      const binding: RunBinding = {runId: "management", orgId: "bound-org", threadId: "thread",
+        kind: "work", profile: "harness-read-only", managementRead: true};
+      const allowed = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({...binding, managementRead: false})).toThrow("conflicts");
+      expect(() => handle.tokenFor({...binding, runId: "job", kind: "agent-job"})).toThrow("Invalid broker management read grant");
+      const denied = handle.tokenFor({runId: "other", orgId: "bound-org", threadId: "thread",
+        kind: "work", profile: "harness-read-only"});
+      const call = (token: string, path: string) => fetch(`http://127.0.0.1:${handle.port}${path}`, {
+        method: "POST", headers: {authorization: `Bearer ${token}`, "content-type": "application/json"},
+        body: JSON.stringify({orgId: "forged-org"}),
+      });
+      expect((await call(denied, "/v1/users/list")).status).toBe(403);
+      expect(await (await call(allowed, "/v1/users/list")).json()).toEqual({users: [{id: "bound-org"}], groups: []});
+      expect(listUsers).toHaveBeenCalledWith({orgId: "bound-org"});
+      expect((await call(allowed, "/v1/rule/save")).status).toBe(403);
+    } finally { await handle.close(); }
+  });
+
   it("admits an isolated process only for its exact Work-run grant", async () => {
     const handle = await startAgentBroker({controlPlane: stubControlPlane(), port: 0});
     try {
