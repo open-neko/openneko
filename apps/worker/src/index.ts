@@ -98,6 +98,7 @@ import {
   approveActionRequest,
   createActionRequest,
   dispatchExternalEvent,
+  dispatchPendingSourceChangeDeliveries,
   getActionRequest,
   handleSourceChangeMatch,
   handleSubscriptionMatch,
@@ -1643,6 +1644,20 @@ if (SCHEDULED_REFRESH_HOURS > 0) {
 // useful for auxiliary maintenance, but cannot be the source of truth for a
 // business schedule that must catch up after downtime.
 const workflowScheduler = await startDurableWorkflowScheduler();
+let sourceChangeDispatchRunning=false;
+const sourceChangeDispatch=async()=>{
+  if(sourceChangeDispatchRunning)return;
+  sourceChangeDispatchRunning=true;
+  try {
+    const dispatched=await dispatchPendingSourceChangeDeliveries();
+    if(dispatched>0)console.log(`[source-change-delivery] dispatched=${dispatched}`);
+  } catch(error) {
+    console.warn(`[source-change-delivery] recovery failed: ${error instanceof Error?error.message:String(error)}`);
+  } finally {sourceChangeDispatchRunning=false;}
+};
+void sourceChangeDispatch();
+const sourceChangeDispatchTimer=setInterval(()=>{void sourceChangeDispatch();},30_000);
+sourceChangeDispatchTimer.unref();
 const workflowApiDispatcher = await startWorkflowApiDispatcher();
 
 const reconcileTimer = setInterval(() => {
@@ -1734,6 +1749,7 @@ const channelInbound = startChannelInbound(ADMIN_ORG_ID);
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}; shutting down`);
   clearInterval(reconcileTimer);
+  clearInterval(sourceChangeDispatchTimer);
   clearInterval(libraryCleanupTimer);
   clearInterval(libraryRecoveryTimer);
   clearInterval(packOAuthRefreshTimer);

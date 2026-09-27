@@ -2083,6 +2083,38 @@ export const workflow_schedule_firing = pgTable(
   }),
 );
 
+/** Durable source-change delivery identity and queue/consumer fence. */
+export const source_change_delivery = pgTable(
+  "source_change_delivery",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    subscription_id: uuid("subscription_id").notNull().references(() => subscription.id, { onDelete: "cascade" }),
+    subscription_updated_at: ts("subscription_updated_at").notNull(),
+    workflow_id: uuid("workflow_id").notNull().references(() => workflow_definition.id, { onDelete: "cascade" }),
+    source_id: uuid("source_id").notNull().references(() => data_source.id, { onDelete: "cascade" }),
+    delivery_key: text("delivery_key").notNull(),
+    observation_id: uuid("observation_id").references(() => observation.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("pending"),
+    queue_job_id: text("queue_job_id"),
+    workflow_run_id: uuid("workflow_run_id").references(() => workflow_run.id, { onDelete: "set null" }),
+    trigger_payload: jsonb("trigger_payload").notNull(),
+    lease_until: ts("lease_until"),
+    available_at: ts("available_at").notNull().defaultNow(),
+    attempts: integer("attempts").notNull().default(0),
+    last_error: text("last_error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+    completed_at: ts("completed_at"),
+  },
+  (t) => ({
+    delivery_unique: uniqueIndex("source_change_delivery_unique").on(t.org_id, t.subscription_id, t.subscription_updated_at, t.delivery_key),
+    pending_idx: index("source_change_delivery_pending_idx").on(t.status, t.available_at),
+    workflow_run_unique: uniqueIndex("source_change_delivery_workflow_run_unique")
+      .on(t.workflow_run_id).where(sql`${t.workflow_run_id} is not null`),
+  }),
+);
+
 /** Persisted heartbeat lets health checks distinguish process liveness from a
  * scheduler that has stopped making progress. */
 export const workflow_scheduler_health = pgTable(
