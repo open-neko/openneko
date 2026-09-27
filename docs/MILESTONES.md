@@ -317,7 +317,13 @@ actions means no proposal tool and a read-only broker token. The Go callback
 rejects an unlisted action before broker dispatch; the broker still rechecks
 readiness, actor entitlement, exact schema and policy, and approved effects use
 the existing claim/reconciliation path. Prompt claims match this admitted slice.
-Workflow, rule, records, memory, skill, plugin and admin writes are not enabled.
+The direct `memory_save` capability now binds an explicit customer Work-run grant,
+validates the model's bounded text/kind/scope, and persists host operation intent
+before calling OpenNeko's existing memory service. A successful connected
+OpenShell/Ax turn stored one real memory row and matching host/Go receipts.
+If the host commits the memory but loses its receipt, the outcome stays unknown
+and later effects are fenced; no automatic redispatch is permitted. Workflow,
+rule, records, skill, plugin and admin writes are not enabled.
 Local Go and OpenNeko checks pass; connected browser/queue acceptance must be
 repeated against the updated image when an instance is available.
 
@@ -328,7 +334,7 @@ Source inventory for the next M5c slice:
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Journal at the host write, bind exact workflow identity and confirmation, reconcile partial trigger wiring and lost card delivery |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Bind policy revision and actor; prove retry cannot silently overwrite a changed rule |
-| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Add host idempotency or exact file-version guard, then prove crash and duplicate-delivery behavior |
+| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save and skill creation remain excluded. Add idempotency before any automatic retry of a lost save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 

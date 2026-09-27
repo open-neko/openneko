@@ -84,6 +84,38 @@ func Propose(base, token string) (func(context.Context, agent.Proposal) (agent.P
 	}, nil
 }
 
+// MemorySave sends only model-selected memory content. The broker supplies the
+// actor, run and thread, and journals the effect before it writes anything.
+func MemorySave(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {
+	call, err := bind(base, token, "/v1/harness/memory/save")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, input json.RawMessage, binding string) (json.RawMessage, error) {
+		id := agent.OperationID(ctx)
+		if id < 1 || id > 32 || len(binding) != 64 || len(input) == 0 || len(input) > 4096 || !json.Valid(input) {
+			return nil, fmt.Errorf("invalid memory save operation")
+		}
+		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
+			Instruction string `json:"instruction"`
+			Binding     string `json:"binding"`
+		}{id, string(input), binding})
+		data, err := call(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			OK       bool   `json:"ok"`
+			MemoryID string `json:"memoryId"`
+		}
+		if json.Unmarshal(data, &receipt) != nil || !receipt.OK || receipt.MemoryID == "" {
+			return nil, fmt.Errorf("memory save was not confirmed by broker")
+		}
+		return data, nil
+	}, nil
+}
+
 // GraphQLQuery is for an admitted file-backed batch runner only. OpenNeko
 // rechecks the bound actor and enforces read-only GraphQL at the broker.
 func GraphQLQuery(base, token string) (func(context.Context, string) ([]byte, error), error) {

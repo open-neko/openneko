@@ -50,6 +50,31 @@ func main() {
 		}
 		tools.Scope = kinds
 	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_MEMORY_SAVE"); enabled != "" {
+		if enabled != "1" || recordsOnly == "1" {
+			fmt.Fprintln(os.Stderr, "invalid memory save binding")
+			os.Exit(2)
+		}
+		save, err := broker.MemorySave(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "memory save broker unavailable:", err)
+			os.Exit(2)
+		}
+		var binding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "memory_save", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Save a durable memory only when the operator explicitly asks to remember something or states a stable correction or rule.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["text"],"properties":{"text":{"type":"string","minLength":5,"maxLength":2000},"kind":{"type":"string","enum":["preference","business_rule","metric_definition","thread_note","correction","company_context","other"]},"scope":{"type":"string","enum":["global","thread"]},"pinned":{"type":"boolean"}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return save(ctx, raw, binding)
+			},
+		})
+		binding, err = tools.Binding("memory_save")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid memory save capability:", err)
+			os.Exit(2)
+		}
+	}
 	var closeTools []func() error
 	memoryRead := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ")
 	libraryRead := os.Getenv("OPENNEKO_HARNESS_MCP_LIBRARY_READ")

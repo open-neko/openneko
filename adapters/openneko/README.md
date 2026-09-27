@@ -51,8 +51,11 @@ A real-data Daily Lead run remains in
 The Harness MCP adapter admits pinned memory/library and Records catalog,
 find/get, blueprint and recycle-bin reads through OpenNeko's trusted stdio
 bridge. Records-only turns omit GraphJin lookup and customer memory. The
-isolated M3 run now reads a populated Records app through real GraphJin,
+isolated connected run now reads a populated Records app through real GraphJin,
 the actor-bound broker, OpenShell, MCP and Ax.
+The separate `memory_save` capability uses a Work-run-only broker grant and
+host operation receipt. A lost receipt leaves the save outcome unknown and
+prevents later writes; the agent never retries the save automatically.
 
 ## Implemented: OpenShell cold-launch compatibility
 
