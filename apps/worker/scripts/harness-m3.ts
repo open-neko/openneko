@@ -11,11 +11,14 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { db, pool, getOrgId, getOrCreateSoloAdmin, organization, customer_profile, data_source, llm_provider_config, processing_job, pack_action_definition, action_policy, workflow_definition, workflow_run, eq } from '@neko/db';
-import { boss, enqueue, QUEUE, type HarnessBatchPayload, type WorkRunPayload, type WorkflowRunFirePayload } from '@neko/db/jobs';
+import { boss, enqueue, QUEUE, type HarnessBatchPayload, type LibraryDistillPayload, type LibraryExtractPayload, type WorkRunPayload, type WorkflowRunFirePayload } from '@neko/db/jobs';
 import { createWorkThread, createWorkRun, createWorkMessage, ensureWorkWorkspace, getWorkRun, shutdownAgentBroker } from '@neko/llm/work';
+import { dispatchEmbeddingJobs, runEmbeddingIndexJob, runLibraryDistill, type EmbeddingIndexPayload } from '@neko/llm';
 import { runWorkRun } from '../src/jobs/work-run.js';
 import { runHarnessBatch } from '../src/jobs/harness-batch.js';
 import { runWorkflowRunFire } from '../src/jobs/workflow-run-fire.js';
+import { runLibraryExtractJob } from '../src/jobs/library-extract.js';
+import { runLibraryDistillJob } from '../src/jobs/library-distill.js';
 import { runWorkflowApiDispatcherTick } from '../src/workflow-api-dispatcher.js';
 import { extractActionRequestFences, extractWorkflowSaveFence, extractRuleSaveFence } from '../../../packages/llm/src/workflows/fence-parsers';
 import { extractMemoryFences } from '../../../packages/llm/src/agent-backends/memory-fence';
@@ -54,11 +57,29 @@ if (process.argv.includes('--approval-worker-only')) {
 await queue.createQueue(QUEUE.WORK_RUN);
 await queue.createQueue(QUEUE.HARNESS_BATCH);
 await queue.createQueue(QUEUE.WORKFLOW_RUN_FIRE);
+await queue.createQueue(QUEUE.LIBRARY_EXTRACT);
+await queue.createQueue(QUEUE.LIBRARY_DISTILL);
+await queue.createQueue(QUEUE.EMBEDDING_INDEX);
 await queue.work<HarnessBatchPayload>(QUEUE.HARNESS_BATCH, async (jobs) => {
     for (const job of jobs) await runHarnessBatch(job.data);
 });
 await queue.work<WorkflowRunFirePayload>(QUEUE.WORKFLOW_RUN_FIRE, async (jobs) => {
     for (const job of jobs) await runWorkflowRunFire(job.data);
+});
+await queue.work<LibraryExtractPayload>(QUEUE.LIBRARY_EXTRACT, async jobs => {
+    for (const job of jobs) await runLibraryExtractJob(job.data);
+});
+await queue.work<LibraryDistillPayload>(QUEUE.LIBRARY_DISTILL, async jobs => {
+    for (const job of jobs) await runLibraryDistillJob(job.data,{run: input => runLibraryDistill({
+        ...input,
+        llm: async prompt => {
+            assert.match(prompt,/UPLOAD-LIBRARY-42/,'distiller must see uploaded file bytes');
+            return '```neko_library\n'+JSON.stringify([{op:'upsert',path:'fixture/uploaded-policy.md',type:'Policy',title:'Uploaded lead policy',body:'UPLOAD-LIBRARY-42 is the verified uploaded-document marker.'}])+'\n```';
+        },
+    })});
+});
+await queue.work<EmbeddingIndexPayload>(QUEUE.EMBEDDING_INDEX, async jobs => {
+    for (const job of jobs) await runEmbeddingIndexJob(job.data);
 });
 await queue.work<WorkRunPayload>(QUEUE.WORK_RUN, async (jobs) => {
     for (const job of jobs) {
@@ -304,6 +325,50 @@ for (const [role,run] of [
   assert.deepEqual(snapshot.operations.map((op:{tool:string})=>op.tool),['mcp_neko_audit_audit_trail']);
   assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,run.id])).rows[0].n,0);
   console.log(`M5_QUEUE_AUDIT_${role.toUpperCase()}_PASS`,run.id);
+}
+if (process.env.HARNESS_M3_API_HTTP === '1') {
+  // The real Work upload endpoint writes the file and admits extraction.
+  // The fixture worker performs the same extraction/distillation jobs with a
+  // deterministic librarian response, then a queued Ax turn searches it.
+  const uploadThread=await createWorkThread(orgId,'M5 uploaded library search','web',soloAdmin.id);
+  process.env.NEKO_EMBEDDING_URL='http://127.0.0.1:18118';
+  const uploadBody=new FormData();
+  uploadBody.append('threadId',uploadThread.id);
+  uploadBody.append('file',new File(['# Lead policy\n\nUPLOAD-LIBRARY-42 is the verified uploaded-document marker.\n'],'lead-policy.md',{type:'text/markdown'}));
+  const uploadResponse=await fetch('http://127.0.0.1:18121/api/work/upload',{method:'POST',body:uploadBody});
+  assert.equal(uploadResponse.status,200,await uploadResponse.text());
+  let uploadedDocument:{id:string;status:string;user_id:string|null;relative_path:string}|undefined;
+  for (let n=0;n<120;n++) {
+    uploadedDocument=(await pool().query('SELECT id,status,user_id,relative_path FROM library_document WHERE org_id=$1 AND source_thread_id=$2 ORDER BY created_at DESC LIMIT 1',[orgId,uploadThread.id])).rows[0];
+    if (uploadedDocument?.status==='cataloged') break;
+    if (uploadedDocument?.status==='failed') throw Error('uploaded library document failed');
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  assert.equal(uploadedDocument?.status,'cataloged','uploaded library document did not finish');
+  assert.ok(uploadedDocument);
+  assert.equal(uploadedDocument.user_id,soloAdmin.id);
+  assert.match(uploadedDocument.relative_path,/^uploads\//);
+  const concepts=(await pool().query('SELECT id,body,source_document_id FROM library_concept WHERE org_id=$1 AND source_document_id=$2',[orgId,uploadedDocument.id])).rows;
+  assert.equal(concepts.length,1);
+  assert.match(concepts[0].body,/UPLOAD-LIBRARY-42/);
+  await dispatchEmbeddingJobs();
+  let indexed=false;
+  for (let n=0;n<120;n++) {
+    indexed=(await pool().query('SELECT embedding IS NOT NULL AS indexed FROM library_concept WHERE id=$1',[concepts[0].id])).rows[0]?.indexed===true;
+    if (indexed) break;
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  assert.equal(indexed,true,'uploaded library concept was not indexed');
+  const uploadRun=await createWorkRun(orgId,uploadThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+  const uploadWorkspace=await ensureWorkWorkspace(orgId,uploadThread.id,uploadRun.id);
+  assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({uploaded_library:true})})).status,204);
+  const [uploadJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-uploaded-library-search'}).returning();
+  await enqueue(QUEUE.WORK_RUN,{processingJobId:uploadJob.id,orgId,runId:uploadRun.id,threadId:uploadThread.id,message:'Find UPLOAD-LIBRARY-42 in the uploaded policy through the library.'},{retryLimit:0});
+  await waitForJob(uploadJob.id,uploadRun.id);
+  const uploadSnapshot=JSON.parse(await readFile(join(uploadWorkspace.runRoot,'.harness',`${createHash('sha256').update(uploadRun.id).digest('hex')}.json`),'utf8'));
+  assert.deepEqual(uploadSnapshot.operations.map((op:{tool:string})=>op.tool),['mcp_library_search']);
+  assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,uploadRun.id])).rows[0].n,0);
+  console.log('M5_QUEUE_UPLOADED_LIBRARY_PASS',uploadRun.id);
 }
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
