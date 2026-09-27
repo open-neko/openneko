@@ -474,6 +474,11 @@ through the full product path. The separate real OpenShell process suite now
 also rejects publication after a script writes an output and exits nonzero,
 after a partial output is cancelled, and when a declared output exceeds the
 16 MiB per-file limit.
+A separate production-queue Work fixture now runs a script that writes a
+partial CSV and exits nonzero. The Work run fails, emits no artifact event,
+leaves no published file, and retains one unresolved host operation rather
+than redispatching on retry. Product-level cancellation, larger artifact and
+process-tree cases remain open.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

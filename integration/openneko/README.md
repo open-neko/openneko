@@ -146,6 +146,12 @@ broker. It must receive the seeded secret name and OpenAPI asset title; the
 member run is denied by the host, adjacent import/config-change routes are
 broker-denied, and the admin run records no mutation operation.
 
+`M5_QUEUE_PROCESS_FAILURE_PASS` exercises a second credential-free process
+sandbox through the real Work queue. Its script writes a partial CSV and exits
+nonzero. The run fails, no artifact event or published file exists, and the
+host retains one unresolved operation so the effect cannot be automatically
+replayed.
+
 With `HARNESS_M3_API_HTTP=1`, the isolated suite starts the real Next API
 alongside the worker. On 2026-09-27 it passed
 `M5_HTTP_API_BATCH_GRAPHJIN_PASS`: bearer-authenticated `POST` returned `202`,
