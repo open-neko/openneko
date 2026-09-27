@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { db, pool, getOrgId, llm_provider_config, workflow_definition, workflow_run, eq } from "@neko/db";
 import { boss, enqueue, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { shutdownAgentBroker } from "@neko/llm/work";
+import { admitWorkflowApiRun, enableWorkflowApiAccess, getWorkflowApiRunStatus, updateWorkflowApiLimits } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
+import { runWorkflowApiDispatcherTick } from "../src/workflow-api-dispatcher.js";
 
 if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119") {
   throw Error("isolated M3 environment required");
@@ -63,6 +65,52 @@ try {
     [orgId,run.work_run_id])).rows[0].n;
   assert.equal(children, 2);
   console.log("M5_QUEUE_WORKFLOW_CHILD_PASS", run.id);
+
+  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
+  const adminId = (await pool().query("SELECT solo_admin_user_id FROM organization WHERE id=$1", [orgId])).rows[0].solo_admin_user_id;
+  const actor = { userId: adminId, role: "admin" as const };
+  const { token } = await enableWorkflowApiAccess({ orgId, workflowId: workflow.id, actor });
+  await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor, limits: { maxModelCalls: 12 } });
+  const clientFingerprint = `harness-workflow-${orgId}`;
+  const admitted = await admitWorkflowApiRun({ workflowId: workflow.id, token,
+    idempotencyKey: "child-output-fixture", mode: "single", value: { reference: "REF-42" }, clientFingerprint });
+  assert.equal((await runWorkflowApiDispatcherTick()).dispatched, 1);
+  let apiStatus: Awaited<ReturnType<typeof getWorkflowApiRunStatus>> | undefined;
+  for (let n = 0; n < 180; n++) {
+    apiStatus = await getWorkflowApiRunStatus({ workflowId: workflow.id, runId: admitted.runId, token, clientFingerprint });
+    if (["completed", "failed", "cancelled"].includes(apiStatus.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  assert.equal(apiStatus?.status, "completed", JSON.stringify(apiStatus));
+  assert.ok(apiStatus.result);
+  const apiRun = (await pool().query("SELECT work_run_id FROM workflow_run WHERE id=$1", [admitted.runId])).rows[0];
+  const apiReceipt = (await pool().query("SELECT result FROM harness_operation WHERE run_id=$1 AND request->>'tool'='workflow_output'", [apiRun.work_run_id])).rows[0]?.result;
+  assert.equal(apiReceipt?.outputId, outputs[0].id); // Same finding is deliberately deduplicated across runs.
+  const seenBeforeReplay = (await pool().query("SELECT seen_count FROM workflow_output WHERE id=$1", [apiReceipt.outputId])).rows[0].seen_count;
+  assert.equal(seenBeforeReplay, 2);
+  assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE run_id=$1 AND kind='output_emit' AND payload->>'output_id'=$2", [apiRun.work_run_id,apiReceipt.outputId])).rows[0].n, 1);
+  assert.equal((await (await fetch("http://127.0.0.1:18118/control")).json())["harness-workflow-child-fixture"], 9);
+  const admission = (await pool().query("SELECT id,attempts FROM workflow_api_admission WHERE workflow_run_id=$1", [admitted.runId])).rows[0];
+  await runWorkflowRunFire({ orgId, workflowId: workflow.id, triggerKind: "api", apiAdmissionId: admission.id,
+    workflowRunId: admitted.runId, workRunId: apiRun.work_run_id, queueAttempt: admission.attempts });
+  assert.equal((await pool().query("SELECT seen_count FROM workflow_output WHERE id=$1", [apiReceipt.outputId])).rows[0].seen_count, seenBeforeReplay);
+  console.log("M5_API_WORKFLOW_CHILD_PASS", admitted.runId);
+
+  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
+  await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor, limits: { maxModelCalls: 4 } });
+  const capped = await admitWorkflowApiRun({ workflowId: workflow.id, token,
+    idempotencyKey: "child-output-model-cap", mode: "single", value: { reference: "REF-42" }, clientFingerprint });
+  assert.equal((await runWorkflowApiDispatcherTick()).dispatched, 1);
+  let cappedStatus: Awaited<ReturnType<typeof getWorkflowApiRunStatus>> | undefined;
+  for (let n = 0; n < 180; n++) {
+    cappedStatus = await getWorkflowApiRunStatus({ workflowId: workflow.id, runId: capped.runId, token, clientFingerprint });
+    if (["completed", "failed", "cancelled"].includes(cappedStatus.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  assert.equal(cappedStatus?.status, "failed", JSON.stringify(cappedStatus));
+  assert.equal((await (await fetch("http://127.0.0.1:18118/control")).json())["harness-workflow-child-fixture"], 4);
+  assert.equal((await pool().query("SELECT count(*)::int AS n FROM workflow_output WHERE workflow_run_id=$1", [capped.runId])).rows[0].n, 0);
+  console.log("M5_API_WORKFLOW_MODEL_CAP_PASS", capped.runId);
 } finally {
   await queue.stop({ graceful: true, timeout: 5_000 });
   await shutdownAgentBroker();

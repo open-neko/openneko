@@ -40,6 +40,7 @@ export interface RunWorkflowAgentBackendInput {
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  maxModelCalls?: number;
   tag?: string;
   /** Steps with a script run in order before the agent turn. */
   steps?: readonly WorkflowStep[];

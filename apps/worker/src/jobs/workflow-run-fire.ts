@@ -481,6 +481,7 @@ async function runWorkflowRunFireTraced(
             signal: spendGuard.signal,
             timeoutMs: apiClaim ? apiClaim.limits.maxRuntimeSeconds * 1_000 : undefined,
             maxToolIterations: apiClaim ? apiClaim.limits.maxToolCalls : undefined,
+            maxModelCalls: apiClaim?.limits.maxModelCalls,
             pluginActions,
             observer: telemetry.observer,
           },
