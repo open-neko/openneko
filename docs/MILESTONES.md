@@ -342,8 +342,8 @@ before broker dispatch; the broker rechecks pack readiness/schema or plugin
 entitlement and current policy. Approved effects use the existing one-claim,
 reconciliation-or-unknown boundary. A connected OpenShell run passed both a
 pack action and a synthetic internal-scope plugin action on a Records-only turn,
-each with pending human approval and one approved effect. Actual Records and
-installed-plugin adapters still need product-level preflight/effect fixtures.
+each with pending human approval and one approved effect. Product-level Records
+and installed-plugin fixtures now cover the narrower paths below.
 An additional populated Records fixture passed a real approved `record_update`
 through its worker adapter and GraphJin, then restored the execution receipt
 on a duplicate call; the row and audit log each reflected one mutation.
@@ -356,6 +356,16 @@ request. Other Records CRUD actions remain unqualified. A restored terminal run
 currently logs an unsuccessful cleanup attempt when its sandbox was already
 deleted; the saved result and effect are unchanged, but cleanup telemetry needs
 to distinguish an absent sandbox from a failed deletion.
+An installed-manifest `PluginRegistry` fixture now passes the production
+pg-boss Work queue, Harness OpenShell agent, actor-bound proposal, human
+approval and worker action executor. Duplicate delivery does not repeat the
+model call or action request; duplicate execution restores the one plugin
+effect. The worker rechecks current installed kind, owner, scope, version and
+integrity before execution claims the effect: removing or changing the plugin
+after approval leaves no claim or RPC, and restoring the identical manifest
+permits the same approved request to execute once. The fixture runs its
+synthetic effect in a separate real OpenShell plugin VM; an external provider
+effect remains separate qualification work.
 The direct `memory_save` capability now binds an explicit customer Work-run grant,
 validates the model's bounded text/kind/scope, and persists host operation intent
 before calling OpenNeko's existing memory service. A successful connected
@@ -778,9 +788,8 @@ authorized actions.
 
 ## Immediate order
 
-1. Qualify installed-plugin action preflight, approval, effect and
-   duplicate-delivery behavior through a queued Work run; extend Records from
-   the qualified `record_update` path to the remaining CRUD actions.
+1. Extend Records from the qualified `record_update` path to remaining CRUD;
+   qualify a real installed-plugin provider effect when one is available.
 2. Qualify remaining skill/admin writes and trigger redelivery at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped

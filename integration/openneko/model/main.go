@@ -280,6 +280,10 @@ func main() {
 			http.Error(w, "missing queued records approval receipt", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-installed-plugin-fixture" && !strings.Contains(string(req.Messages), "pending_approval") {
+			http.Error(w, "missing installed plugin approval receipt", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-fixture" && readUpload && !strings.Contains(string(req.Messages), "LEAD-42") {
 			http.Error(w, "missing uploaded file evidence", 422)
 			return
@@ -344,7 +348,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -416,6 +420,8 @@ func main() {
 			responses = []string{`{"javascriptCode":"final('Propose the loan update', {})"}`, `{"javascriptCode":"const receipt=propose({action:'record_update',arguments:{app:'equipment',object:'loan',id:'loan-42',fields:{name:'Updated fixture loan'},expected:{name:'Fixture loan'}},summary:'Rename the synthetic equipment loan'}); if(receipt.status!=='pending_approval') throw Error('approval missing'); final('Report the pending record update',{receipt});"}`, `{"answer":"The loan update is pending human approval."}`}
 		} else if req.Model == "harness-records-queue-fixture" {
 			responses = []string{`{"javascriptCode":"final('Propose the queued loan update', {})"}`, `{"javascriptCode":"const receipt=propose({action:'record_update',arguments:{app:'equipment',object:'loan',id:'loan-43',fields:{name:'Queued fixture loan updated'},expected:{name:'Queued fixture loan'}},summary:'Rename the queued equipment loan'}); if(receipt.status!=='pending_approval') throw Error('approval missing'); final('Report the queued record update',{receipt});"}`, `{"answer":"The queued loan update is pending human approval."}`}
+		} else if req.Model == "harness-installed-plugin-fixture" {
+			responses = []string{`{"javascriptCode":"final('Propose the installed plugin effect', {})"}`, `{"javascriptCode":"const receipt=propose({action:'fixture_plugin_effect',arguments:{value:42},summary:'Apply the installed plugin effect'}); if(receipt.status!=='pending_approval') throw Error('approval missing'); final('Report the pending plugin effect',{receipt});"}`, `{"answer":"The installed plugin effect is pending human approval."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
 			if answerQuestion {

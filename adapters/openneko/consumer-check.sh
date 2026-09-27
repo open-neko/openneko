@@ -79,6 +79,18 @@ if [[ ${HARNESS_M5_RECORDS:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
     exit 0
   fi
 fi
+if [[ ${HARNESS_M5_PLUGIN:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  mkdir -p "$HARNESS_STATE/bin"
+  ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+  export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
+  export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
+  export OPENNEKO_HOST_WEB_DEV=1 OPENNEKO_AGENT_HOME="$HARNESS_STATE/plugin-agent-home" OPENNEKO_BROKER_PORT=18123
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-installed-plugin-live.test.ts)
+  if [[ ${HARNESS_M5_PLUGIN_ONLY:-0} == 1 ]]; then
+    echo M5_PLUGIN_ONLY_PASS
+    exit 0
+  fi
+fi
 
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
