@@ -16,12 +16,17 @@ import (
 
 func main() {
 	recordsOnly := os.Getenv("OPENNEKO_HARNESS_RECORDS_ONLY")
+	lookupRead := os.Getenv("OPENNEKO_HARNESS_LOOKUP_READ")
 	if recordsOnly != "" && recordsOnly != "1" {
 		fmt.Fprintln(os.Stderr, "invalid records-only binding")
 		os.Exit(2)
 	}
+	if lookupRead != "" && lookupRead != "0" && lookupRead != "1" {
+		fmt.Fprintln(os.Stderr, "invalid lookup binding")
+		os.Exit(2)
+	}
 	var lookup func(context.Context, string) (json.RawMessage, error)
-	if recordsOnly != "1" {
+	if recordsOnly != "1" && lookupRead != "0" {
 		var err error
 		lookup, err = broker.GraphJin(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"), os.Getenv("OPENNEKO_DATA_SOURCE_ID"))
 		if err != nil {

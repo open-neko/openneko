@@ -74,6 +74,8 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-child-live.ts)
+  docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
+  (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-agent-job-child-live.ts)
 if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   if [[ ${HARNESS_M3_API_HTTP:-0} != 1 ]]; then

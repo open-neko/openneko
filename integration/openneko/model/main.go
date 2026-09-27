@@ -166,6 +166,10 @@ func main() {
 			http.Error(w, "missing workflow output receipt", 422)
 			return
 		}
+		if (n == 4 || n == 5) && req.Model == "harness-job-child-fixture" && !strings.Contains(string(req.Messages), "REF-42") {
+			http.Error(w, "missing agent-job child evidence", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-memory-save-fixture" && !strings.Contains(string(req.Messages), "memoryId") {
 			http.Error(w, "missing saved memory receipt", 422)
 			return
@@ -195,7 +199,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -231,6 +235,21 @@ func main() {
 				`{"javascriptCode":"const evidence=lookup('Independently verify the seeded reference'); final('Report second reference',{evidence});"}`,
 				`{"answer":"Second reference REF-42."}`,
 				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
+			}
+		} else if req.Model == "harness-job-child-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Delegate the seeded reference check',{})"}`,
+				`{"javascriptCode":"const child=team.researcher({question:'Find the seeded reference'}); if(!JSON.stringify(child).includes('REF-42')) throw Error('child evidence missing'); final('Report the reference',{child});"}`,
+				`{"javascriptCode":"final('Find the reference',{})"}`,
+				`{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference',{evidence});"}`,
+				`{"answer":"Child verified REF-42."}`,
+				`{"answer":"Verified REF-42 through the child investigation."}`,
+			}
+		} else if req.Model == "harness-job-model-only-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Answer without tools',{})"}`,
+				`{"javascriptCode":"final('No tools needed',{})"}`,
+				`{"answer":"No tools needed."}`,
 			}
 		} else if req.Model == "harness-memory-save-fixture" {
 			responses = []string{`{"javascriptCode":"final('Save the operator rule', {})"}`, `{"javascriptCode":"const receipt=memory_save({text:'Never close a lead without a verified owner',kind:'business_rule',scope:'thread'}); final('Report saved memory',{receipt});"}`, `{"answer":"Saved the operator rule."}`}

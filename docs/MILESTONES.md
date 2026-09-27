@@ -468,8 +468,11 @@ events project into delegation telemetry without a second inner-model usage
 entry. One queued workflow now owns two read-only child GraphJin investigations
 and one parent-emitted finding. The API-admitted variant has a pollable result,
 durable output receipt, duplicate-delivery check and shared Ax call ceiling.
-Crash-resume of an in-flight child, disabled-mode connected acceptance and
-agent-job mode remain open.
+An isolated agent job with an explicit server-side GraphJin grant also ran one
+child investigation through the host broker, with one lookup receipt and six
+model-call receipts. A model-only job completed without a broker or GraphJin
+operation; an ungranted job token was denied at the broker. Crash-resume of an
+in-flight child and disabled-delegation connected acceptance remain open.
 
 For queued workflows, the `workflow_run` remains the product outcome, the
 owning `work_run` remains the execution/journal parent, and child IDs are
