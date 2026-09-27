@@ -349,9 +349,21 @@ reuse a prior output row and increment its seen count, so the receipt and
 current run's output event are the evidence of emission. The API admission's
 model-call ceiling now reaches the shared Ax parent/child budget: a four-call
 run stopped at four model requests without an output. The full connected suite
-and unchanged Hermes checks passed. Workflow action requests and broader
-mutation families remain open. Server-side GraphJin agent calls remain under
+and unchanged Hermes checks passed. Broader mutation families remain open.
+Server-side GraphJin agent calls remain under
 their own service budget and the API guard's conservative estimate.
+
+**Workflow action slice (2026-09-27):** a queued Harness workflow now sees
+only ready, held pack action kinds and can submit a governed `propose` call.
+The broker binds the request to the exact running `workflow_run` and its
+`work_run`; the worker preflight freezes the action, actor, schema and policy
+before human approval. The API admission's initial backend label is replaced
+with the selected runtime backend before execution, and a running attempt
+cannot switch backend on retry. A pg-boss/OpenShell/API acceptance
+recorded one pending request and one typed finding, ignored duplicate queue
+delivery, then executed the synthetic effect once after approval. Other
+product mutation families and auto-execution semantics remain open. The full
+isolated connected suite and unchanged Hermes checks passed.
 
 Source inventory for the next M5c slice:
 
@@ -502,7 +514,8 @@ a fresh scoped conversation, not a cloned parent stack or an OS process fork.
 The current acceptance covers inline children within one queued `work_run`.
 Separately queued child runs are deferred until a workflow actually needs an
 independently scheduled, long-waiting or separately retryable stage; they are
-not an M5 exit gate.
+not an M5 exit gate. An API caller disconnecting does not create that need:
+the queued parent already owns the durable result and polling contract.
 
 **Verify:** a real parent task delegates two bounded investigations, combines
 verified results and exposes correlated progress. Exercise child failure, parent
