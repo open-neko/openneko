@@ -49,6 +49,12 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | M7 parity | Capability inventory and evaluation rules documented | Full Hermes outcome comparison, tenant/load checks and task-quality evidence |
 | M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
 
+Cron redelivery has a narrower Postgres-backed qualification: a stale firing
+cannot be claimed after the definition changes or is disabled; linking must
+affect the claimed firing; a linked failed run settles without a second
+dispatch. The full queued OpenShell cron path and source-change stream replay
+remain open.
+
 Local tests do not close M5b–M8. The Daily Lead Union case still lacks its
 real GraphJin source and a validated real-data workflow artifact path. The
 seeded `REF-42` GraphJin path used no live Gemini key.

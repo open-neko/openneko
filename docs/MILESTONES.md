@@ -436,6 +436,17 @@ loop, invalid table, invalid watcher path and disabled author left no new
 definition. This establishes trigger wiring and one sweep on synthetic data;
 broader scheduler/stream redelivery and crash-edge qualification remain open.
 
+**Cron redelivery hardening (2026-09-28):** a queued firing now rechecks the
+current enabled cron definition and persisted schedule version at claim time,
+so an edit or disable before the next sweep cannot start an obsolete firing.
+Linking the prepared run must affect exactly one running firing. If a linked
+run fails after the agent starts, the worker retains that link and settles a
+terminal run instead of releasing the firing for another model/effect pass.
+An isolated Postgres suite passed the stale-claim, duplicate-claim, terminal
+failure and restart-recovery cases; the worker scheduler unit suite passed.
+The full queued OpenShell cron path and source-change stream replay still need
+connected qualification.
+
 **Workflow deletion slice (2026-09-27):** the direct `workflow_delete` tool
 requires the listed workflow ID, name and exact `versionToken`. Before a hard
 cascade, the host reads the current run's persisted user message and requires
