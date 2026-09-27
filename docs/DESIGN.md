@@ -227,19 +227,15 @@ the existing asynchronous action-request lifecycle, not an interactive pause
 in the child. Resume joins recorded child results and does not repeat an
 ambiguous effect.
 
-There are two execution sizes. The currently qualified Ax child is an inline,
-bounded investigation inside one `work_run`: it has a separate conversation and
-capability set, but is recorded as a child span and cannot outlive that run. A
-workflow may also need a durable child **run** for a long or independently
-retryable stage. In that case the workflow owns a separate queued `work_run`
-linked to its parent and `workflow_run`, with its own checkpoint and terminal
-result. The existing worker queue should dispatch it; the parent waits for its
-recorded result rather than holding an Ax call open. Admission must pin the
-child task, actor, capability subset, model/cost budget and idempotency key.
-Cancellation and revocation flow down from the workflow, and a retry joins an
-existing child by that key instead of spawning another one. The workflow joins
-child results before publishing its output. This durable mode is a distinct
-future qualification, not a claim made by the current inline-child tests.
+The currently qualified Ax child is an inline, bounded investigation inside
+one queued `work_run`: it has a separate conversation and capability set, but
+is recorded as a child span and cannot outlive that run. This covers the
+current workflow use cases. A separately queued child `work_run` is warranted
+only when a concrete workflow needs a child to progress independently across a
+long wait, be scheduled in parallel with other work, or have its own retry and
+budget. If that need appears, use the existing queue and link the child to its
+parent and `workflow_run`; pin its task, actor, capabilities and idempotency key,
+then join its recorded result. Do not add this second scheduling path for M5.
 
 For complex tasks, the agent may produce a small, inspectable plan of outcomes,
 dependencies and evidence needed. AxAgent retains the adaptive reasoning loop;

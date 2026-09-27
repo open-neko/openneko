@@ -474,8 +474,10 @@ model-call receipts. A model-only job completed without a broker or GraphJin
 operation; an ungranted job token was denied at the broker. A local checkpoint
 test interrupts a child after its read receipt, then resumes without repeating
 the host read. A connected agent job with a GraphJin grant rejected a child call
-when delegation was disabled and made no GraphJin operation; the full isolated
-suite passed. Connected crash-resume remains open.
+when delegation was disabled and made no GraphJin operation. A second connected
+job killed the Go process after its child's GraphJin read, then resumed with
+one reused lookup and no second server-side GraphJin call. The full isolated
+suite passed, including Hermes and OpenShell teardown checks.
 
 For queued workflows, the `workflow_run` remains the product outcome, the
 owning `work_run` remains the execution/journal parent, and child IDs are
@@ -497,11 +499,10 @@ retain execution after parent cancellation.
 Start with Ax Go's `AddChildAgent` for owned, serialized delegation. Qualify
 `AxFlow` only for fixed independent work that needs parallel fan-out. A child is
 a fresh scoped conversation, not a cloned parent stack or an OS process fork.
-The current acceptance covers inline children within one `work_run`. When a
-workflow stage needs independent queuing or retry, admit a separate child
-`work_run` linked to the parent and `workflow_run` through the existing queue.
-Verify join, idempotent spawn, cancellation, revocation and shared budget
-accounting before calling that durable workflow-child mode complete.
+The current acceptance covers inline children within one queued `work_run`.
+Separately queued child runs are deferred until a workflow actually needs an
+independently scheduled, long-waiting or separately retryable stage; they are
+not an M5 exit gate.
 
 **Verify:** a real parent task delegates two bounded investigations, combines
 verified results and exposes correlated progress. Exercise child failure, parent

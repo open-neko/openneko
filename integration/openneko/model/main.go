@@ -104,7 +104,7 @@ func main() {
 		answerQuestion := answerClarification
 		resume := continuation
 		n := counts[req.Model]
-		if pauseResponder && req.Model == "harness-fixture" && n == 2 {
+		if pauseResponder && ((req.Model == "harness-fixture" && n == 2) || (req.Model == "harness-job-child-crash-fixture" && n == 4)) {
 			wait = 30
 		}
 		counts[req.Model]++
@@ -138,6 +138,9 @@ func main() {
 			}
 			n -= 3
 		}
+		if resume && req.Model == "harness-job-child-crash-fixture" && n >= 5 && n < 11 {
+			n -= 5 // New Ax attempt after the child read was journaled.
+		}
 		if req.Model == "graphjin-fixture" {
 			n %= 3 // Each server-side lookup is an independent three-step agent run.
 		}
@@ -166,7 +169,7 @@ func main() {
 			http.Error(w, "missing workflow output receipt", 422)
 			return
 		}
-		if (n == 4 || n == 5) && req.Model == "harness-job-child-fixture" && !strings.Contains(string(req.Messages), "REF-42") {
+		if (n == 4 || n == 5) && (req.Model == "harness-job-child-fixture" || req.Model == "harness-job-child-crash-fixture") && !strings.Contains(string(req.Messages), "REF-42") {
 			http.Error(w, "missing agent-job child evidence", 422)
 			return
 		}
@@ -199,7 +202,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -236,7 +239,7 @@ func main() {
 				`{"answer":"Second reference REF-42."}`,
 				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
 			}
-		} else if req.Model == "harness-job-child-fixture" {
+		} else if req.Model == "harness-job-child-fixture" || req.Model == "harness-job-child-crash-fixture" {
 			responses = []string{
 				`{"javascriptCode":"final('Delegate the seeded reference check',{})"}`,
 				`{"javascriptCode":"const child=team.researcher({question:'Find the seeded reference'}); if(!JSON.stringify(child).includes('REF-42')) throw Error('child evidence missing'); final('Report the reference',{child});"}`,
