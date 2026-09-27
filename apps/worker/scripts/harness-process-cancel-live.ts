@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, eq, getOrgId, pool, processing_job } from "@neko/db";
+import { db, eq, getOrgId, getOrCreateSoloAdmin, pool, processing_job } from "@neko/db";
 import { boss, enqueue, QUEUE, type WorkRunPayload } from "@neko/db/jobs";
 import { cancelWorkRunIfActive, createWorkRun, createWorkThread,
   ensureWorkWorkspace, markWorkRunRunning, shutdownAgentBroker } from "@neko/llm/work";
@@ -61,8 +61,10 @@ try {
     }
   });
   assert.equal((await fetch(control,{method:"POST",body:JSON.stringify({process_cancel:true})})).status,204);
-  const thread=await createWorkThread(orgId,"M5 cancellable isolated process");
-  const run=await createWorkRun(orgId,thread.id,"harness",{userId:null,role:"service"});
+  const actor = await getOrCreateSoloAdmin(orgId);
+  assert.ok(actor, "isolated solo operator required for HTTP Stop acceptance");
+  const thread=await createWorkThread(orgId,"M5 cancellable isolated process","web",actor.id);
+  const run=await createWorkRun(orgId,thread.id,"harness",{userId:actor.id,role:"admin"});
   const workspace=await ensureWorkWorkspace(orgId,thread.id,run.id);
   const [job]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,
     trigger:"test-process-cancel"}).returning({id:processing_job.id});
@@ -81,7 +83,15 @@ try {
       return true;
     } catch{return false;}
   },"partial process output inside OpenShell");
-  assert.equal(await cancelWorkRunIfActive(run.id,"Stopped by connected cancellation fixture"),true);
+  if (process.env.HARNESS_M5_PROCESS_CANCEL_HTTP === "1") {
+    const response = await fetch(`http://127.0.0.1:18121/api/work/runs/${run.id}/cancel`, {
+      method: "POST",
+    });
+    assert.equal(response.status, 200, "authenticated Work Stop must succeed");
+    assert.deepEqual(await response.json(), { ok: true, recovered: true });
+  } else {
+    assert.equal(await cancelWorkRunIfActive(run.id,"Stopped by connected cancellation fixture"),true);
+  }
   await waitFor(async()=>!await sandboxExists(name) && !await sandboxContainer(name),
     "process sandbox teardown");
   await waitFor(async()=>{
