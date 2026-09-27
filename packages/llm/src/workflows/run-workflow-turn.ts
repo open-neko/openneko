@@ -251,7 +251,7 @@ async function runWorkflowTurnTraced(
   const workspace = await startupPhase("workspace.prepare", async () => ensureWorkWorkspace(orgId, threadId, workRunId));
 
   try {
-    if (!backend.capabilities.mcpTools) {
+    if (!backend.capabilities.mcpTools && backend.id !== "harness") {
       throw new Error(
         "Workflow data access requires the native GraphJin broker tool; this backend does not support MCP tools.",
       );
@@ -316,9 +316,24 @@ async function runWorkflowTurnTraced(
       timeoutMs: opts.timeoutMs,
     });
     const spendStop = spendCapFromSignal(signal);
-    const result = spendStop
+    let result = spendStop
       ? { ...coreResult, status: "failed" as const, error: spendStop.message }
       : coreResult;
+    if (backend.id === "harness") {
+      const outputs = await pool().query<{ output_id: string; kind: string; emitted: boolean }>(`SELECT
+          h.result->>'outputId' AS output_id, h.result->>'kind' AS kind,
+          EXISTS (SELECT 1 FROM work_run_event e WHERE e.org_id=h.org_id AND e.run_id::text=h.run_id
+            AND e.kind='output_emit' AND e.payload->>'output_id'=h.result->>'outputId') AS emitted
+        FROM harness_operation h WHERE h.org_id=$1 AND h.run_id=$2
+          AND h.request->>'tool'='workflow_output' AND h.result->>'ok'='true'
+        ORDER BY h.operation_id`, [orgId, workRunId]);
+      for (const output of outputs.rows) {
+        if (!output.emitted) await wrappedEmit({ type: "output_emit", output_id: output.output_id, kind: output.kind });
+      }
+      if (result.status === "completed" && outputs.rowCount === 0) {
+        result = { ...result, status: "failed", error: "Harness workflow completed without a recorded output" };
+      }
+    }
     await eventTelemetry.finishAgent({
       status: result.status === "completed" ? "ok" : "error",
       ...(result.error ? { errorType: "agent_backend_error" } : {}),

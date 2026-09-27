@@ -4,6 +4,7 @@ import { startupEvent } from "@neko/telemetry/startup";
 import { recordHarnessLookup } from "./harness-operation";
 import { recordHarnessOperation } from "./harness-operation";
 import { WORK_MEMORY_KINDS } from "./memory-types";
+import { WORKFLOW_OUTPUT_SCHEMA } from "../workflows/fence-schemas";
 import {
   createServer,
   type IncomingMessage,
@@ -49,6 +50,9 @@ export interface RunBinding {
   cardEvents?: boolean;
   /** Controlled file-backed batch reads; never grants general GraphJin MCP. */
   batchRead?: boolean;
+  /** Exact queued workflow identity and its journaled output grant. */
+  workflowRunId?: string;
+  workflowOutput?: boolean;
   runId: string;
   orgId: string;
   /** Agent jobs have no work_run actor and intentionally use service reads. */
@@ -154,7 +158,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && binding.kind === "work" && path === "/v1/harness/memory/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && binding.kind === "work" && path === "/v1/harness/memory/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -382,6 +386,33 @@ async function handle(
         return send(res,200,await recordHarnessLookup(binding,body.operationId,request,()=>
           cp.askGraphjinDataAgent({orgId:binding.orgId,runId:binding.runId,...request,signal:abort.signal}),abort.signal));
       } finally { res.removeListener("close",disconnected); }
+    }
+    case "/v1/harness/workflow-output/emit": {
+      if (!binding.workflowRunId || binding.kind !== "workflow") return send(res,403,{error:"Workflow output denied"});
+      const instruction = typeof body.instruction === "string" ? body.instruction : "";
+      let output: ReturnType<typeof WORKFLOW_OUTPUT_SCHEMA.parse>;
+      try { output = WORKFLOW_OUTPUT_SCHEMA.strict().parse(JSON.parse(instruction)); }
+      catch { return send(res,400,{error:"Invalid workflow output"}); }
+      const {pool} = await import("@neko/db");
+      const owned = await pool().query("SELECT 1 FROM workflow_run WHERE org_id=$1 AND id=$2 AND work_run_id=$3 LIMIT 1",
+        [binding.orgId,binding.workflowRunId,binding.runId]);
+      if (!owned.rowCount) return send(res,403,{error:"Workflow run binding denied"});
+      const result = await recordHarnessOperation(binding,body.operationId,
+        {tool:"workflow_output",instruction,binding:body.binding as string},async()=>{
+          const saved = await cp.emitWorkflowOutput({
+            orgId:binding.orgId,workflowRunId:binding.workflowRunId!,workRunId:binding.runId,
+            ...output,
+            timeWindowStart:output.timeWindowStart ? new Date(output.timeWindowStart) : null,
+            timeWindowEnd:output.timeWindowEnd ? new Date(output.timeWindowEnd) : null,
+          });
+          return {ok:true,outputId:saved.id,kind:saved.kind};
+        });
+      if (result && typeof result === "object" && "outputId" in result && "kind" in result && typeof result.outputId === "string" && typeof result.kind === "string") {
+        await deps.onEvents(binding,[{type:"output_emit",output_id:result.outputId,kind:result.kind}]).catch(()=>{
+          console.warn(`[agent-broker] workflow output event delivery deferred to run reconciliation: ${binding.runId}`);
+        });
+      }
+      return send(res,200,result);
     }
     case "/v1/graphjin/agent":
       return send(
@@ -859,12 +890,18 @@ export async function startAgentBroker(
       if (binding.batchRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker batch grant");
       }
+      if (binding.workflowRunId && binding.kind !== "workflow") {
+        throw new Error("Invalid broker workflow identity");
+      }
+      if (binding.workflowOutput && (!binding.profile || binding.kind !== "workflow" || !binding.workflowRunId)) {
+        throw new Error("Invalid broker workflow output grant");
+      }
       if (existing) {
         const saved = tokens.get(existing)!;
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.libraryRead !== binding.libraryRead || saved.workflowRead !== binding.workflowRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.libraryRead !== binding.libraryRead || saved.workflowRead !== binding.workflowRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.workflowRunId !== binding.workflowRunId || saved.workflowOutput !== binding.workflowOutput || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }

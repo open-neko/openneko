@@ -20,6 +20,21 @@ const workspace: AgentWorkspace = {
 const controlPlane = {} as AgentControlPlane;
 
 describe("runWorkflowAgentBackend", () => {
+  it("binds a queued Harness workflow and its read-only child to the owning run", async () => {
+    let captured: AgentRunOptions | undefined;
+    const backend: AgentBackend = {
+      id: "harness",
+      capabilities: { mcpTools: false, brokerLookup: true, sessionResume: false, nativeDelegation: "ax-child-agent" },
+      async run(opts) { captured = opts; return { status: "completed", finalText: "done" }; },
+    };
+    await runWorkflowAgentBackend({ backend, prompt: "prompt", userMessage: "begin", orgId: "org-1",
+      threadId: "thread-1", runId: "run-1", workflowRunId: "workflow-run-1", mode: "headless",
+      networkHosts: [], workspace, controlPlane, emit: async () => {} });
+    expect(captured).toMatchObject({ runId: "run-1", nativeDelegation: "enabled", mcpServers: undefined,
+      mcpBridgeEnv: { OPENNEKO_MCP_MODE: "workflow", OPENNEKO_MCP_RUN_ID: "run-1",
+        OPENNEKO_HARNESS_WORKFLOW_RUN_ID: "workflow-run-1" } });
+  });
+
   it("threads workflow MCP bridge env needed by the in-box bridge", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {

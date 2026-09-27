@@ -157,6 +157,19 @@ export function buildWorkflowRunnerPrompt(
   input: BuildWorkflowRunnerPromptInput,
 ): string {
   const { workflow, mode, memoryContext, mcpTools, backend, workspace, knowledge } = input;
+  if (backend === "harness") {
+    return `You are OpenNeko running a saved workflow. The runtime supplies the exact tools admitted for this run. Use only those tools and preserve their evidence and refusals.
+
+Workflow: ${workflow.name}
+Description: ${workflow.description || "(none provided)"}
+Goal: ${workflow.goal || "(none provided)"}
+Steps:\n${workflow.steps.map((step, index) => `${index + 1}. ${step.description}`).join("\n") || "(none provided)"}
+${workflow.systemPromptOverlay.trim() ? `Author instructions (subject to policy):\n${workflow.systemPromptOverlay.trim()}\n` : ""}
+${memoryContext ? `Relevant existing memory:\n${memoryContext}\n` : ""}
+${GRAPHJIN_DATE_RULE}
+
+Use lookup for server-side GraphJin investigation. You may delegate independent read-only questions to team.researcher; the child shares this run's budget and cannot emit outputs or actions. Verify the returned evidence before using it. For each result this workflow produces, call workflow_output_emit and check its receipt; a final message alone is not an output. This run has no action-request tool: if a required step needs an action, explain that it cannot be completed and do not claim that it executed. Finish with a short account of the outputs actually recorded. Mode: ${mode}.`;
+  }
   if (!mcpTools) {
     throw new Error("Workflow runs require the native GraphJin broker tool");
   }
