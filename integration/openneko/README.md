@@ -66,6 +66,14 @@ the host GraphJin broker, and OpenShell with synthetic source data. It expects
 exit. The source-change event enters at the match handler, so this check does
 not cover a GraphJin websocket reconnect.
 
+For the focused queued Work process-cancellation gate, use the same command
+with `HARNESS_M5_PROCESS_CANCEL_ONLY=1` in place of
+`HARNESS_M5_TRIGGER_ONLY=1`. It waits until a child process has written a
+partial output inside its OpenShell sandbox, applies the same durable Stop
+transition used by the web route, and requires the sandbox to disappear with
+no published artifact. The expected marker is
+`M5_CONNECTED_PROCESS_CANCEL_PASS`. It does not issue an HTTP Stop request.
+
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.
 Before printing `M3_WEB_READY`, it requires `M5_WEB_ARTIFACT_PASS`: the live

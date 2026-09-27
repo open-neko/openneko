@@ -587,17 +587,27 @@ and denied direct network access inside the process compartment. A second
 queued run published a 2 MiB artifact with an exact host hash and one artifact
 event; the authenticated web route returned the exact bytes with attachment
 headers. The selected-upload fixture excluded an unselected sibling file and a
-host-only environment canary from the process compartment. Product-level
-cancellation and broader process limits remain to qualify
-through the full product path. The separate real OpenShell process suite now
+host-only environment canary from the process compartment. HTTP Stop-route
+cancellation and broader process limits remain to qualify through the full
+product path. The separate real OpenShell process suite now
 also rejects publication after a script writes an output and exits nonzero,
 after a partial output is cancelled, and when a declared output exceeds the
 16 MiB per-file limit.
 A separate production-queue Work fixture now runs a script that writes a
 partial CSV and exits nonzero. The Work run fails, emits no artifact event,
 leaves no published file, and retains one unresolved host operation rather
-than redispatching on retry. Product-level cancellation and process-tree cases
-remain open.
+than redispatching on retry.
+
+**Connected Work process cancellation (2026-09-28):** the web Stop route's
+durable cancellation transition is now observed by the worker. A queued Work
+run started a model-visible `process_run` whose script wrote a partial CSV and
+spawned a child process. The fixture applied that same durable transition,
+then observed cancellation telemetry, deletion of the agent and process
+OpenShell sandboxes, no artifact event or published file, and no successful
+operation receipt. A late handler invocation and a late attempt to mark the
+run running could not reopen it or call the model. The fixture calls the
+durable transition directly, so the HTTP Stop route itself remains to be
+exercised; broader process resource ceilings remain open.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,

@@ -23,6 +23,7 @@ func main() {
 	processTask := false
 	processFail := false
 	processLarge := false
+	processCancel := false
 	management := false
 	audit := false
 	auditDenied := false
@@ -64,6 +65,7 @@ func main() {
 			Process              bool `json:"process"`
 			ProcessFail          bool `json:"process_fail"`
 			ProcessLarge         bool `json:"process_large"`
+			ProcessCancel        bool `json:"process_cancel"`
 			Management           bool `json:"management"`
 			Audit                bool `json:"audit"`
 			AuditDenied          bool `json:"audit_denied"`
@@ -104,6 +106,7 @@ func main() {
 		processTask = c.Process
 		processFail = c.ProcessFail
 		processLarge = c.ProcessLarge
+		processCancel = c.ProcessCancel
 		management = c.Management
 		audit = c.Audit
 		auditDenied = c.AuditDenied
@@ -155,6 +158,7 @@ func main() {
 		runProcess := processTask
 		failProcess := processFail
 		runLargeProcess := processLarge
+		runCancelProcess := processCancel
 		readManagement := management
 		readAudit := audit
 		readUploadedLibrary := uploadedLibrary
@@ -348,7 +352,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -465,6 +469,12 @@ func main() {
 				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['result.csv']}); final('Report failed process',{result});", script)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Run the failing process fixture', {})"}`, string(encoded), `{"answer":"The process failed after writing a partial output."}`}
+			}
+			if runCancelProcess {
+				script := "import pathlib,subprocess,time\npathlib.Path('result.csv').write_text('partial')\nsubprocess.Popen(['python3','-c','import time; time.sleep(120)'])\nprint('partial ready',flush=True)\ntime.sleep(120)\n"
+				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['result.csv']}); final('Report cancelled process',{result});", script)
+				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+				responses = []string{`{"javascriptCode":"final('Run the cancellable isolated process fixture', {})"}`, string(encoded), `{"answer":"The isolated process was cancelled."}`}
 			}
 			if runLargeProcess {
 				script := "from pathlib import Path\nPath('large.bin').write_bytes(b'A' * (2 << 20))\n"
