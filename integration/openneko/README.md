@@ -140,6 +140,12 @@ queued Work run retrieves the concept through Ax, the MCP bridge and the
 actor-bound library broker. The model must receive the concept path, which is
 absent from the user request. No real provider key or customer document is used.
 
+`M5_QUEUE_SOURCE_CONFIG_READ_PASS` covers a feature-enabled admin Work run
+calling three pinned source metadata reads through Ax, MCP and the actor-bound
+broker. It must receive the seeded secret name and OpenAPI asset title; the
+member run is denied by the host, adjacent import/config-change routes are
+broker-denied, and the admin run records no mutation operation.
+
 With `HARNESS_M3_API_HTTP=1`, the isolated suite starts the real Next API
 alongside the worker. On 2026-09-27 it passed
 `M5_HTTP_API_BATCH_GRAPHJIN_PASS`: bearer-authenticated `POST` returned `202`,

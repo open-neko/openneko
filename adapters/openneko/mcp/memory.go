@@ -20,7 +20,7 @@ import (
 type ReadConfig struct {
 	BridgePath, BrokerURL, BrokerToken, OrgID, ThreadID, RunID, SkillsRoot string
 	Interaction, Cards, Workflow                                           bool
-	Management, Audit                                                      bool
+	Management, Audit, SourceConfig                                        bool
 }
 
 //go:embed interaction_schemas.json
@@ -28,6 +28,7 @@ var interactionSchemas []byte
 
 const searchSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":800,"minLength":2,"type":"string"}},"required":["query"],"type":"object"}`
 const workflowListSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":200,"minimum":1,"type":"integer"}},"type":"object"}`
+const sourceConfigListSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":100,"minimum":1,"type":"integer"}},"type":"object"}`
 const emptySchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{},"type":"object"}`
 const recordsCatalogSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"app":{"maxLength":63,"minLength":1,"type":"string"}},"type":"object"}`
 const recordsFindSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"after":{"maxLength":4096,"minLength":1,"type":"string"},"app":{"maxLength":63,"minLength":1,"type":"string"},"filters":{"items":{"properties":{"field":{"maxLength":63,"minLength":1,"type":"string"},"operator":{"enum":["eq","neq","in","contains","starts_with","is_null"],"type":"string"},"value":{}},"required":["field","operator"],"type":"object"},"maxItems":20,"type":"array"},"first":{"maximum":50,"minimum":1,"type":"integer"},"myRecords":{"type":"boolean"},"object":{"maxLength":63,"minLength":1,"type":"string"},"search":{"maxLength":200,"minLength":1,"type":"string"},"sort":{"properties":{"direction":{"enum":["asc","desc"],"type":"string"},"field":{"maxLength":63,"minLength":1,"type":"string"}},"required":["field","direction"],"type":"object"}},"required":["app","object"],"type":"object"}`
@@ -40,7 +41,7 @@ const recordsRecycleGetSchema = `{"$schema":"http://json-schema.org/draft-07/sch
 // Discovery must match the pinned schemas; bridge content cannot grant tools.
 func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records bool) ([]agent.Capability, func() error, error) {
 	u, err := url.Parse(cfg.BrokerURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards && !cfg.Workflow && !cfg.Management && !cfg.Audit) || (library && !memory) {
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards && !cfg.Workflow && !cfg.Management && !cfg.Audit && !cfg.SourceConfig) || (library && !memory) {
 		return nil, nil, fmt.Errorf("invalid OpenNeko read bridge binding")
 	}
 	if info, err := os.Stat(cfg.BridgePath); err != nil || !info.Mode().IsRegular() {
@@ -91,6 +92,14 @@ func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records 
 	if cfg.Audit {
 		servers = append(servers, "neko_audit")
 		allowed = append(allowed, shared.Admission{Name: "audit_audit_trail", Alias: "mcp_neko_audit_audit_trail", Version: "1", Origin: "openneko", Effect: "read", Description: "Read the bound Work actor's organization audit trail; the host denies non-admin actors.", Schema: json.RawMessage(workflowListSchema)})
+	}
+	if cfg.SourceConfig {
+		servers = append(servers, "neko_source_config_manager")
+		allowed = append(allowed,
+			shared.Admission{Name: "source_config_manager_describe_source_graph", Alias: "mcp_neko_source_config_manager_describe_source_graph", Version: "1", Origin: "openneko", Effect: "read", Description: "Describe the configured customer GraphJin source graph under the current admin actor.", Schema: json.RawMessage(emptySchema)},
+			shared.Admission{Name: "source_config_manager_list_source_secret_names", Alias: "mcp_neko_source_config_manager_list_source_secret_names", Version: "1", Origin: "openneko", Effect: "read", Description: "List admin-visible source secret names and descriptions, never values.", Schema: json.RawMessage(emptySchema)},
+			shared.Admission{Name: "source_config_manager_list_openapi_specs", Alias: "mcp_neko_source_config_manager_list_openapi_specs", Version: "1", Origin: "openneko", Effect: "read", Description: "List imported OpenAPI asset metadata without importing or changing a spec.", Schema: json.RawMessage(sourceConfigListSchema)},
+		)
 	}
 	if cfg.Interaction || cfg.Cards {
 		var schemas map[string]json.RawMessage

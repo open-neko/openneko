@@ -186,7 +186,11 @@ recorded no GraphJin or mutation operation. Adjacent request/save/delete routes
 remain denied. The separate audit-trail read passed queued admin and member
 Work turns: the admin received a seeded action request; the member received
 only the denial. An admin run from another org is rejected by the host gate.
-Source configuration and other management reads still need separate
+Three source-configuration metadata reads now pass a separately feature-gated,
+admin-only queued Work turn: source graph description, source secret names (never
+values), and imported OpenAPI asset metadata. The model received seeded secret
+and asset names; the member actor was denied by the host. Import, config-agent,
+preview and proposal routes remain excluded. Other management reads still need
 actor-specific qualification.
 The queued
 clarification reached `needs_input` after two outer model

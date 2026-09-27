@@ -61,6 +61,11 @@ read all six and recovered the seeded rule without a mutation operation.
 The audit trail is a separate pinned read. It uses the run's actor and
 organization at the host; a queued admin received a seeded action request,
 while a queued member received only the admin-only denial.
+The source-config MCP grant is narrower still: it requires the organization's
+source-config feature, a current admin Work actor and the web channel. It pins
+only source graph description, source secret names and OpenAPI asset listing.
+The broker rejects import, config-agent and change requests. A queued admin
+turn received seeded names through all three reads; a member was denied.
 The connected upload fixture sends Markdown to the real Work HTTP endpoint,
 then runs extraction, distillation and embedding through the queue before a
 separate Work turn retrieves its sourced concept with `mcp_library_search`.

@@ -25,6 +25,7 @@ func main() {
 	audit := false
 	auditDenied := false
 	uploadedLibrary := false
+	sourceConfig := false
 	clarification := false
 	card := false
 	skill := false
@@ -53,6 +54,7 @@ func main() {
 			Audit               bool `json:"audit"`
 			AuditDenied         bool `json:"audit_denied"`
 			UploadedLibrary     bool `json:"uploaded_library"`
+			SourceConfig        bool `json:"source_config"`
 			Clarification       bool `json:"clarification"`
 			Card                bool `json:"card"`
 			Skill               bool `json:"skill"`
@@ -80,6 +82,7 @@ func main() {
 		audit = c.Audit
 		auditDenied = c.AuditDenied
 		uploadedLibrary = c.UploadedLibrary
+		sourceConfig = c.SourceConfig
 		clarification = c.Clarification
 		card = c.Card
 		skill = c.Skill
@@ -117,6 +120,7 @@ func main() {
 		readManagement := management
 		readAudit := audit
 		readUploadedLibrary := uploadedLibrary
+		readSourceConfig := sourceConfig
 		expectAuditDenial := auditDenied
 		askClarification := clarification
 		renderCard := card
@@ -252,7 +256,11 @@ func main() {
 			http.Error(w, "missing uploaded library search evidence", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !readManagement && !readAudit && !readUploadedLibrary && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model == "harness-fixture" && readSourceConfig && (!strings.Contains(string(req.Messages), "SYNTHETIC_DB") || !strings.Contains(string(req.Messages), "Fixture source API")) {
+			http.Error(w, "missing source configuration read evidence", 422)
+			return
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -354,6 +362,9 @@ func main() {
 			}
 			if readUploadedLibrary {
 				responses = []string{`{"javascriptCode":"final('Search the uploaded library document', {})"}`, `{"javascriptCode":"const matches=mcp_library_search({query:'UPLOAD-LIBRARY-42'}); final('Report uploaded policy evidence',{matches});"}`, `{"answer":"The uploaded policy contains UPLOAD-LIBRARY-42."}`}
+			}
+			if readSourceConfig {
+				responses = []string{`{"javascriptCode":"final('Inspect source configuration metadata', {})"}`, `{"javascriptCode":"const graph=mcp_neko_source_config_manager_describe_source_graph({}); const names=mcp_neko_source_config_manager_list_source_secret_names({}); const specs=mcp_neko_source_config_manager_list_openapi_specs({limit:20}); final('Report source metadata',{graph,names,specs});"}`, `{"answer":"The source metadata includes the synthetic credential name and Fixture source API."}`}
 			}
 			if propose {
 				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}
