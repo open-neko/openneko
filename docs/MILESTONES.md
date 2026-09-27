@@ -576,9 +576,13 @@ Clicking it returned HTTP 200; fetching the same URL returned the exact
 worker/OpenShell turn read a staged `SKILL.md` through a read-only skill tool and
 created the expected CSV artifact; the script never called a model. This qualifies
 a small artifact through the browser, not the Daily Lead Union batch. The validated
-large batch artifact and general shell path remain open. External writers do not share
-the Go gate; the second version check narrows but cannot eliminate their
-check-to-rename race, so strict cross-process coordination needs a host lock.
+large batch artifact and general shell path remain open. Harness processes now
+take shared or exclusive advisory locks on the workspace directory inode around
+reads, searches, edits and writes. A real second-process test passed concurrent
+readers, a writer blocked until both readers released, and a reader blocked
+behind a writer. The second version check catches many noncooperating external
+edits, but external writers must follow the same lock protocol for a strict
+atomic edit contract.
 
 An opt-in model-visible `process_run` tool now reaches a run-bound Work broker
 operation. The trusted host stages only selected current-thread uploads and

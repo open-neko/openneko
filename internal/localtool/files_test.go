@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,6 +119,143 @@ func TestReadCanOverlapReadButEditWaits(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("edit stayed blocked")
 	}
+}
+
+func TestFileLockChild(t *testing.T) {
+	workspace := os.Getenv("HARNESS_FILE_LOCK_WORKSPACE")
+	if workspace == "" {
+		return
+	}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := os.WriteFile(os.Getenv("HARNESS_FILE_LOCK_READY"), []byte("ready"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var input json.RawMessage
+	var capability agent.Capability
+	if os.Getenv("HARNESS_FILE_LOCK_MODE") == "edit" {
+		read, err := f.Capabilities()[0].Call(context.Background(), json.RawMessage(`{"path":"note.txt"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result struct{ Version string }
+		if err := json.Unmarshal(read, &result); err != nil || result.Version != os.Getenv("HARNESS_FILE_LOCK_VERSION") {
+			t.Fatalf("child read version=%q err=%v", result.Version, err)
+		}
+		capability = f.Capabilities()[1]
+		input, _ = json.Marshal(map[string]string{"path": "note.txt", "version": os.Getenv("HARNESS_FILE_LOCK_VERSION"), "content": "second"})
+	} else {
+		capability = f.Capabilities()[0]
+		input = json.RawMessage(`{"path":"note.txt"}`)
+	}
+	if _, err := capability.Call(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkspaceLockCoordinatesSeparateProcesses(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	read, err := f.Capabilities()[0].Call(context.Background(), json.RawMessage(`{"path":"note.txt"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var version struct{ Version string }
+	if err := json.Unmarshal(read, &version); err != nil {
+		t.Fatal(err)
+	}
+	runChild := func(mode string, shouldBlock bool, partialRelease, release func()) {
+		t.Helper()
+		ready := filepath.Join(t.TempDir(), "ready")
+		cmd := exec.Command(os.Args[0], "-test.run=^TestFileLockChild$")
+		cmd.Env = append(os.Environ(),
+			"HARNESS_FILE_LOCK_WORKSPACE="+workspace,
+			"HARNESS_FILE_LOCK_READY="+ready,
+			"HARNESS_FILE_LOCK_MODE="+mode,
+			"HARNESS_FILE_LOCK_VERSION="+version.Version)
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		finished := make(chan error, 1)
+		go func() { finished <- cmd.Wait() }()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("child did not reach file operation")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if shouldBlock {
+			select {
+			case err := <-finished:
+				if partialRelease != nil {
+					partialRelease()
+				}
+				if release != nil {
+					release()
+				}
+				t.Fatalf("child bypassed workspace lock: %v", err)
+			case <-time.After(80 * time.Millisecond):
+			}
+			if partialRelease != nil {
+				partialRelease()
+				select {
+				case err := <-finished:
+					if release != nil {
+						release()
+					}
+					t.Fatalf("child bypassed second reader lock: %v", err)
+				case <-time.After(80 * time.Millisecond):
+				}
+			}
+		}
+		if release != nil {
+			release()
+		}
+		select {
+		case err := <-finished:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(2 * time.Second):
+			_ = cmd.Process.Kill()
+			t.Fatal("child file operation stayed blocked")
+		}
+	}
+	sharedUnlock, err := f.lock(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runChild("read", false, nil, nil) // Shared locks allow separate process reads.
+	sharedUnlock2, err := f.lock(context.Background(), false)
+	if err != nil {
+		sharedUnlock()
+		t.Fatal(err)
+	}
+	runChild("edit", true, sharedUnlock, sharedUnlock2)
+	if data, err := os.ReadFile(filepath.Join(workspace, "note.txt")); err != nil || string(data) != "second" {
+		t.Fatalf("cross-process edit=%q err=%v", data, err)
+	}
+
+	// An exclusive lock held in this process must block a separate reader.
+	exclusiveUnlock, err := f.lock(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runChild("read", true, nil, exclusiveUnlock)
 }
 
 func TestFileWriteCreatesOnlyInsideWorkspace(t *testing.T) {
