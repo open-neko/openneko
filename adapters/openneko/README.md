@@ -54,6 +54,10 @@ find/get, blueprint and recycle-bin reads through OpenNeko's trusted stdio
 bridge. Records-only turns omit GraphJin lookup and customer memory. The
 isolated connected run now reads a populated Records app through real GraphJin,
 the actor-bound broker, OpenShell, MCP and Ax.
+Customer Work turns also admit six read-only management lists (plugins, users,
+groups, channels, data sources and action rules) through pinned schemas; their
+adjacent request/save/delete routes remain broker-denied. A queued Work run
+read all six and recovered the seeded rule without a mutation operation.
 The separate `memory_save` capability uses a Work-run-only broker grant and
 host operation receipt. A lost receipt leaves the save outcome unknown and
 prevents later writes; the agent never retries the save automatically.

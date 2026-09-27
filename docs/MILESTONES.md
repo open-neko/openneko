@@ -179,6 +179,12 @@ customer Work fixture also listed one entitled workflow through the same path;
 the broker denied an ungranted token and filtered an unknown run to no workflows.
 Workflow definitions are read-only here; execution remains a separately admitted
 workflow run.
+Six additional read-only management catalogs (plugins, users, groups, channels,
+data sources and action rules) now pass the pinned MCP bridge. A queued Work
+turn called all six through the actor-bound broker, received a seeded rule, and
+recorded no GraphJin or mutation operation. Adjacent request/save/delete routes
+remain denied; source configuration, audit and other management reads still
+need separate actor-specific qualification.
 The queued
 clarification reached `needs_input` after two outer model
 calls; broker events entered the turn reducer, and queue redelivery preserved one

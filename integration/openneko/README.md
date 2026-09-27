@@ -121,6 +121,13 @@ downloaded the same bytes. The isolated suite removed its containers and web
 process afterward. This is synthetic acceptance, not a real GraphJin database
 or Daily Lead Union execution.
 
+The 2026-09-27 management-read fixture passed `M5_QUEUE_MANAGEMENT_READ_PASS`:
+the production Work queue used Go/Ax and OpenNeko's stdio MCP bridge to read
+plugins, users, groups, channels, data sources and action rules. The model
+received the seeded rule; its checkpoint contains six read tools and the host
+recorded no GraphJin or mutation operation. A broker test also rejects an
+ungranted token, a forged org argument and an adjacent rule-save route.
+
 With `HARNESS_M3_API_HTTP=1`, the isolated suite starts the real Next API
 alongside the worker. On 2026-09-27 it passed
 `M5_HTTP_API_BATCH_GRAPHJIN_PASS`: bearer-authenticated `POST` returned `202`,
