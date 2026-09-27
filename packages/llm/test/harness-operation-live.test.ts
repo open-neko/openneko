@@ -64,6 +64,11 @@ live.each([false,true])("operation dispatch is not repeated after SIGKILL (resul
       await pool().query("DELETE FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND operation_id=2",[scope.orgId,scope.runId]);
       return {response:{answer:"unrecorded"}};
     })).toEqual({error:"Harness operation outcome unknown; automatic dispatch disabled"});
+    const budgeted={...scope,operationLimit:8};
+    expect(await recordHarnessLookup(budgeted,5,request,async()=>{calls++;return {response:{answer:"fifth"}};})).toEqual({response:{answer:"fifth"}});
+    expect(await recordHarnessLookup(budgeted,5,request,async()=>{calls++;})).toEqual({error:"Harness operation recorded; automatic dispatch disabled"});
+    expect(await recordHarnessLookup(budgeted,9,request,async()=>{calls++;})).toEqual({error:"Invalid Harness lookup operation"});
+    expect(calls).toBe(2);
   } finally {
     child.kill("SIGKILL");
     await new Promise<void>(resolve=>server.close(()=>resolve()));

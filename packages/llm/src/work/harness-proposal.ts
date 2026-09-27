@@ -29,7 +29,7 @@ export async function validateHarnessAction(scope:{orgId:string;runId:string},ki
 }
 
 export async function proposeHarnessAction(
-  scope:{orgId:string;runId:string},body:Record<string,unknown>,cp:AgentControlPlane,
+  scope:{orgId:string;runId:string;operationLimit?:number},body:Record<string,unknown>,cp:AgentControlPlane,
 ):Promise<unknown> {
   const instruction=typeof body.instruction === "string" ? body.instruction : "";
   if (Buffer.byteLength(instruction)>65536) return {error:"Proposal exceeds limit"};

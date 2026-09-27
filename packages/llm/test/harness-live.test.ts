@@ -81,7 +81,7 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
         expect(JSON.stringify(result.backendState)).toContain("REF-42");
         const inspected = JSON.parse(execFileSync(process.env.HARNESS_INSPECT_BIN!, [], {
             env: { HARNESS_STATE_DIR: join(recoveredWorkspace.runRoot, ".harness") },
-            input: JSON.stringify({ version: 1, run_id: runId, input_id: runId, prompt: `${input.prompt.replaceAll(orgRoot,"/sandbox/workspace")}\n\nUser request:\n${input.userMessage}` }),
+            input: JSON.stringify({ version: 1, run_id: runId, input_id: runId, max_operations: 12, max_model_calls: 24, prompt: `${input.prompt.replaceAll(orgRoot,"/sandbox/workspace")}\n\nUser request:\n${input.userMessage}` }),
             encoding: "utf8",
         }));
         expect(inspected.outcome).toBe("terminal");

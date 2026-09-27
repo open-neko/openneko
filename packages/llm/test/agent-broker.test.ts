@@ -221,9 +221,10 @@ describe("startAgentBroker token registry", () => {
       const binding:RunBinding={runId:"restricted",orgId:"org",kind:"work",profile:"harness-read-only",memoryRead:true};
       const token=handle.tokenFor(binding);
       expect(handle.tokenFor({...binding})).toBe(token);
-      for(const change of [{orgId:"other"},{threadId:"other"},{memoryRead:false}]) {
+      for(const change of [{orgId:"other"},{threadId:"other"},{memoryRead:false},{operationLimit:12}]) {
         expect(()=>handle.tokenFor({...binding,...change})).toThrow("conflicts");
       }
+      expect(()=>handle.tokenFor({runId:"invalid-limit",orgId:"org",kind:"work",profile:"harness-read-only",operationLimit:33})).toThrow("Invalid broker operation limit");
       for(const change of [{profile:undefined},{kind:"workflow" as const}]) {
         expect(()=>handle.tokenFor({...binding,...change})).toThrow("Invalid broker memory grant");
       }
