@@ -23,6 +23,7 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   const libraryRunId = randomUUID();
   const saveRunId = randomUUID();
   const workflowRunId = randomUUID();
+  const childRunId = randomUUID();
   const priorEmbeddingURL = process.env.NEKO_EMBEDDING_URL;
   const orgRoot = join(process.env.HARNESS_STATE, "memory", runId);
   const workspace: AgentWorkspace = {
@@ -52,9 +53,16 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   });
   let searches = 0;
   let librarySearches = 0;
+  let childSearches = 0;
   const controlPlane = {
     async searchWorkMemoryByContext(args: { orgId: string; runId: string; query: string }) {
-      expect(args).toMatchObject({ orgId, runId, query: "find policy" });
+      expect(args.orgId).toBe(orgId);
+      if (args.runId === childRunId) {
+        expect(["find policy", "find exception"]).toContain(args.query);
+        childSearches++;
+        return [{id:args.query === "find policy" ? "memory-1" : "memory-2",text:"Fixture " + args.query}];
+      }
+      expect(args).toMatchObject({ runId, query: "find policy" });
       searches++;
       return [{ id: "memory-1", text: "Fixture policy" }];
     },
@@ -172,6 +180,33 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     const workflowSnapshot=JSON.parse(await readFile(join(workflowWorkspace.runRoot,".harness",`${createHash("sha256").update(workflowRunId).digest("hex")}.json`),"utf8"));
     expect(workflowSnapshot.operations).toHaveLength(1);
     expect(workflowSnapshot.operations[0]).toMatchObject({tool:"mcp_neko_workflow_builder_list_workflows",finished:true});
+
+    const childWorkspace: AgentWorkspace = {
+      ...workspace,
+      runRoot: join(workspace.runsRoot, childRunId),
+      artifactRoot: join(workspace.runsRoot, childRunId, "artifacts"),
+      binRoot: join(workspace.runsRoot, childRunId, "bin"),
+    };
+    for (const dir of [childWorkspace.runRoot, childWorkspace.artifactRoot, childWorkspace.binRoot]) await mkdir(dir,{recursive:true});
+    await db().insert(work_run).values({id:childRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"service"});
+    await writeFile(join(hermesHome,"config.yaml"),"model:\n  provider: custom\n  default: harness-child-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const childEvents:AgentEvent[]=[];
+    const childResult=await runCore({
+      backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId:childRunId,workspace:childWorkspace,
+      prompt:"Investigate two saved memory topics independently.",userMessage:"Find policy and exception.",
+      nativeDelegation:"enabled",dataSurface:"customer",pluginActions:[],emit:async event=>{childEvents.push(event);},
+    });
+    const childSnapshot=JSON.parse(await readFile(join(childWorkspace.runRoot,".harness",`${createHash("sha256").update(childRunId).digest("hex")}.json`),"utf8"));
+    expect(childResult).toMatchObject({status:"completed"});
+    expect(childResult.finalText).toContain("memory-1");
+    expect(childResult.finalText).toContain("memory-2");
+    expect(childSearches).toBe(2);
+    expect(childEvents.filter(event=>event.type==="tool_start" && event.name==="mcp_neko_memory_search")).toHaveLength(2);
+    expect(childSnapshot.operations).toHaveLength(2);
+    expect(childSnapshot.operations.map((operation:{tool:string})=>operation.tool)).toEqual(["mcp_memory_search","mcp_memory_search"]);
+    expect(childSnapshot.events.filter((event:{type:string})=>event.type==="child.started")).toHaveLength(2);
+    expect(childSnapshot.events.filter((event:{type:string})=>event.type==="child.finished")).toHaveLength(2);
+    expect(childSnapshot.events.filter((event:{type:string})=>event.type==="model.request.finished")).toHaveLength(9);
   } finally {
     if (priorEmbeddingURL === undefined) delete process.env.NEKO_EMBEDDING_URL;
     else process.env.NEKO_EMBEDDING_URL = priorEmbeddingURL;

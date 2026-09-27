@@ -6,6 +6,18 @@ import {
 import { createAgentEventTelemetry } from "../src/work/agent-event-telemetry";
 
 describe("agent event telemetry", () => {
+  it("counts Ax child delegation without double-counting child model usage", async () => {
+    const sink = new MemoryObservationSink();
+    const telemetry = createAgentEventTelemetry({observer:createHarnessObserver({runId:"child-run",sinks:[sink]}),operationId:"work:child-run"});
+    await telemetry.startAgent({backend:"harness"});
+    await telemetry.observeEvent({type:"tool_start",id:"harness-child-1",name:"ax_child_agent"});
+    await telemetry.observeEvent({type:"tool_end",id:"harness-child-1"});
+    await telemetry.observeEvent({type:"usage",source:"outer",usage:{totalTokens:90,coverage:"complete"}});
+    await telemetry.finishAgent({status:"ok",outputBytes:4});
+    expect(sink.observations.filter(item=>item.kind==="delegation.start")).toHaveLength(1);
+    expect(sink.observations.filter(item=>item.kind==="delegation.end")).toHaveLength(1);
+    expect(sink.observations.filter(item=>item.kind==="model.request")).toHaveLength(1);
+  });
   it("exports metadata and byte counts without prompt, payload, or tool content", async () => {
     const sink = new MemoryObservationSink();
     const observer = createHarnessObserver({ runId: "run-1", sinks: [sink] });
