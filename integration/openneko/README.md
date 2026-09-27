@@ -49,6 +49,23 @@ Set `HARNESS_M3_API_HTTP=1` on the command above to add the public HTTP
 submission, status-poll and download check through the Go/OpenShell/GraphJin
 batch worker. It starts one temporary Next dev process and cleans it up.
 
+For the focused cron and source-change replay gate, use the cached release
+agent image and run:
+
+```sh
+HARNESS_M5_FAST=1 HARNESS_M5_TRIGGER_ONLY=1 \
+AGENT_TEST_BASE_IMAGE=ghcr.io/open-neko/agent:v3.5.6 \
+OPENNEKO_TEST_SOURCE=/absolute/OpenNeko-integration-checkout \
+OPENSHELL_TEST_CLI=/absolute/openshell-0.0.116 \
+./integration/openneko/run.sh
+```
+
+This starts one isolated stack, queues real workflow jobs, and exercises Ax,
+the host GraphJin broker, and OpenShell with synthetic source data. It expects
+`M5_CONNECTED_TRIGGER_REPLAY_PASS` and removes its containers and volumes on
+exit. The source-change event enters at the match handler, so this check does
+not cover a GraphJin websocket reconnect.
+
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.
 Before printing `M3_WEB_READY`, it requires `M5_WEB_ARTIFACT_PASS`: the live

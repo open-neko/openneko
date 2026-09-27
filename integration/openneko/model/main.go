@@ -348,7 +348,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -384,6 +384,12 @@ func main() {
 				`{"javascriptCode":"const evidence=lookup('Independently verify the seeded reference'); final('Report second reference',{evidence});"}`,
 				`{"answer":"Second reference REF-42."}`,
 				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
+			}
+		} else if req.Model == "harness-trigger-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Find the seeded reference and record a finding',{})"}`,
+				`{"javascriptCode":"const evidence=lookup('Find the seeded reference'); if(!JSON.stringify(evidence).includes('REF-42')) throw Error('lookup evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Trigger reference',body:'The seeded reference is REF-42.',payload:{reference:'REF-42'}}); final('Report the finding',{evidence,receipt});"}`,
+				`{"answer":"Recorded the trigger finding for REF-42."}`,
 			}
 		} else if req.Model == "harness-workflow-action-fixture" {
 			responses = []string{
