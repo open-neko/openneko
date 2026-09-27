@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, library_concept, organization, sql, work_thread, work_run } from "@neko/db";
+import { db, library_concept, organization, pool, sql, work_thread, work_run } from "@neko/db";
 import { deleteTestOrg } from "@neko/db/test-helpers";
 import { expect, it } from "vitest";
-import type { AgentControlPlane } from "../src/work/control-plane";
+import { inProcessControlPlane, type AgentControlPlane } from "../src/work/control-plane";
 import type { AgentEvent, AgentWorkspace } from "../src/agent-backend";
 import { makeAgentBackend } from "../src/agent-runtime";
 import { startAgentBroker } from "../src/work/broker";
@@ -21,6 +21,7 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   const threadId = randomUUID();
   const runId = randomUUID();
   const libraryRunId = randomUUID();
+  const saveRunId = randomUUID();
   const priorEmbeddingURL = process.env.NEKO_EMBEDDING_URL;
   const orgRoot = join(process.env.HARNESS_STATE, "memory", runId);
   const workspace: AgentWorkspace = {
@@ -60,6 +61,7 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
       librarySearches++;
       return searchLibraryForRun(args);
     },
+    rememberWorkMemory: inProcessControlPlane.rememberWorkMemory,
   } as unknown as AgentControlPlane;
   const broker = await startAgentBroker({ port: 0, hostAlias: "host.docker.internal", controlPlane });
   try {
@@ -110,6 +112,35 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     expect(librarySnapshot.operations).toHaveLength(1);
     expect(librarySnapshot.operations[0]).toMatchObject({ tool: "mcp_library_search", finished: true });
     expect(librarySnapshot.events).toContainEqual(expect.objectContaining({ type: "tool.finished", name: "mcp_library_search", effect: "read" }));
+
+    const saveWorkspace: AgentWorkspace = {
+      ...workspace,
+      runRoot: join(workspace.runsRoot, saveRunId),
+      artifactRoot: join(workspace.runsRoot, saveRunId, "artifacts"),
+      binRoot: join(workspace.runsRoot, saveRunId, "bin"),
+    };
+    for (const dir of [saveWorkspace.runRoot, saveWorkspace.artifactRoot, saveWorkspace.binRoot]) await mkdir(dir, { recursive: true });
+    await db().insert(work_run).values({ id: saveRunId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
+    await writeFile(join(hermesHome, "config.yaml"), "model:\n  provider: custom\n  default: harness-memory-save-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const saveEvents: AgentEvent[] = [];
+    const saveResult = await runCore({
+      backend: makeAgentBackend({ id: "harness" }), orgId, threadId, runId: saveRunId, workspace: saveWorkspace,
+      prompt: "The operator explicitly asked you to remember this business rule.",
+      userMessage: "Remember: Never close a lead without a verified owner.",
+      dataSurface: "customer", pluginActions: [], emit: async event => { saveEvents.push(event); },
+    });
+    expect(saveResult.status).toBe("completed");
+    expect(saveEvents).toContainEqual(expect.objectContaining({ type: "tool_start", name: "memory_save" }));
+    const saved = (await pool().query("SELECT id,text,source_run_id,source_thread_id,scope FROM work_memory WHERE org_id=$1 AND source_run_id=$2",[orgId,saveRunId])).rows;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({text:"Never close a lead without a verified owner",source_run_id:saveRunId,source_thread_id:threadId,scope:"thread"});
+    const hostReceipt=(await pool().query("SELECT request,result FROM harness_operation WHERE org_id=$1 AND run_id=$2",[orgId,saveRunId])).rows;
+    expect(hostReceipt).toHaveLength(1);
+    expect(hostReceipt[0].request).toMatchObject({tool:"memory_save",binding:expect.stringMatching(/^[a-f0-9]{64}$/)});
+    expect(hostReceipt[0].result).toEqual({ok:true,memoryId:saved[0].id});
+    const saveSnapshot = JSON.parse(await readFile(join(saveWorkspace.runRoot, ".harness", `${createHash("sha256").update(saveRunId).digest("hex")}.json`), "utf8"));
+    expect(saveSnapshot.operations).toHaveLength(1);
+    expect(saveSnapshot.operations[0]).toMatchObject({tool:"memory_save",binding:hostReceipt[0].request.binding,finished:true,result:hostReceipt[0].result});
   } finally {
     if (priorEmbeddingURL === undefined) delete process.env.NEKO_EMBEDDING_URL;
     else process.env.NEKO_EMBEDDING_URL = priorEmbeddingURL;
