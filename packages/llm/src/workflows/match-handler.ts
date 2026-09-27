@@ -9,7 +9,6 @@ import {
   getWorkflow as defaultGetWorkflow,
   hasRecentSourceWriteForWorkflow as defaultHasRecentSourceWrite,
   startOfTodayUtc,
-  writeSourceChangeLog as defaultWriteSourceChangeLog,
   type SubscriptionRecord,
   type WorkflowRecord,
 } from "./store";
@@ -18,6 +17,7 @@ import type {
   SourceChangeMatch,
   WorkflowOutputMatch,
 } from "./subscription-query";
+import { dispatchSourceChangeDelivery, recordSourceChangeDelivery } from "./source-change-delivery";
 
 export type MatchHandlerDecision =
   | { action: "enqueued"; observationId: string; jobId: string | null }
@@ -50,12 +50,12 @@ export type HandleSourceChangeMatchOptions = {
   fanoutWindowMs?: number;
   /** Override for tests. */
   enqueue?: typeof defaultEnqueue;
-  createObservation?: typeof defaultCreateObservation;
+  recordDelivery?: typeof recordSourceChangeDelivery;
+  dispatchDelivery?: typeof dispatchSourceChangeDelivery;
   countWorkflowRunsForSubscription?: typeof defaultCountInFlight;
   countWorkflowRunsSince?: typeof defaultCountRunsSince;
   getWorkflow?: typeof defaultGetWorkflow;
   hasRecentSourceWriteForWorkflow?: typeof defaultHasRecentSourceWrite;
-  writeSourceChangeLog?: typeof defaultWriteSourceChangeLog;
 };
 
 const DEFAULT_MAX_CHAIN_DEPTH = 20;
@@ -188,7 +188,8 @@ export async function handleSourceChangeMatch(
   opts: HandleSourceChangeMatchOptions,
 ): Promise<MatchHandlerDecision> {
   const enqueue = opts.enqueue ?? defaultEnqueue;
-  const createObservation = opts.createObservation ?? defaultCreateObservation;
+  const recordDelivery = opts.recordDelivery ?? recordSourceChangeDelivery;
+  const dispatchDelivery = opts.dispatchDelivery ?? dispatchSourceChangeDelivery;
   const countInFlight =
     opts.countWorkflowRunsForSubscription ?? defaultCountInFlight;
   const countRunsSince =
@@ -196,7 +197,6 @@ export async function handleSourceChangeMatch(
   const getWorkflow = opts.getWorkflow ?? defaultGetWorkflow;
   const hasRecentSourceWrite =
     opts.hasRecentSourceWriteForWorkflow ?? defaultHasRecentSourceWrite;
-  const writeAudit = opts.writeSourceChangeLog ?? defaultWriteSourceChangeLog;
   const fanoutWindowMs = opts.fanoutWindowMs ?? DEFAULT_FANOUT_WINDOW_MS;
 
   const recentWrite = await hasRecentSourceWrite({
@@ -220,63 +220,24 @@ export async function handleSourceChangeMatch(
   });
   if (!guard.allowed) return { action: "dropped", reason: guard.reason };
 
-  const pkSummary = summarizePrimaryKey(opts.match.primary_key);
-  const observationRow = await createObservation({
+  const delivery = await recordDelivery({
     orgId: opts.subscription.orgId,
-    sourceOutputId: null,
-    consumerKind: "workflow",
-    consumerWorkflowId: opts.subscription.workflowId,
     subscriptionId: opts.subscription.id,
-    title: `${opts.match.table} ${pkSummary}`,
-    body: JSON.stringify(opts.match.snapshot).slice(0, 4_000),
-    mood: null,
-  });
-
-  await writeAudit({
-    orgId: opts.subscription.orgId,
+    subscriptionUpdatedAt: opts.subscription.updatedAt,
+    workflowId: opts.subscription.workflowId,
     sourceId: opts.dataSourceId,
-    tableName: opts.match.table,
-    changeKind: "subscription_match",
-    payload: {
-      subscription_id: opts.subscription.id,
-      observation_id: observationRow.id,
-      primary_key: opts.match.primary_key,
-      snapshot: opts.match.snapshot,
-      version_token: opts.match.version_token,
-    },
+    deliveryKey: buildSourceChangeIdempotencyKey(opts.subscription,opts.match),
+    match: opts.match,
   });
-
-  const singletonKey = buildSourceChangeIdempotencyKey(
-    opts.subscription,
-    opts.match,
-  );
-
-  const jobId = await enqueue(
-    QUEUE.WORKFLOW_RUN_FIRE,
-    {
-      orgId: opts.subscription.orgId,
-      workflowId: opts.subscription.workflowId,
-      triggerKind: "subscription" as const,
-      triggerPayload: {
-        subscription_id: opts.subscription.id,
-        observation_id: observationRow.id,
-        table: opts.match.table,
-        primary_key: opts.match.primary_key,
-        snapshot: opts.match.snapshot,
-        version_token: opts.match.version_token,
-      },
-      triggeredBySubscriptionId: opts.subscription.id,
-      triggeredByObservationId: observationRow.id,
-    },
-    {
-      singletonKey,
-      singletonHours: 1,
-    },
-  );
+  if (delivery.status !== "pending") {
+    return {action:"dropped",reason:`source-change delivery ${delivery.id} already ${delivery.status}`};
+  }
+  const jobId = await dispatchDelivery({id:delivery.id,enqueue});
+  if (!jobId) return {action:"dropped",reason:`source-change delivery ${delivery.id} is already dispatching`};
 
   return {
     action: "enqueued",
-    observationId: observationRow.id,
+    observationId: delivery.observationId,
     jobId,
   };
 }
@@ -447,7 +408,7 @@ function buildSourceChangeIdempotencyKey(
   match: SourceChangeMatch,
 ): string {
   const pkHash = hashPrimaryKey(match.primary_key);
-  const versionToken = match.version_token ?? "none";
+  const versionToken = match.version_token ?? `snapshot-${createHash("sha256").update(stableJson(match.snapshot)).digest("hex").slice(0,16)}`;
   if (sub.idempotencyKeyTemplate) {
     return sub.idempotencyKeyTemplate
       .replace("{subscription_id}", sub.id)
@@ -458,6 +419,15 @@ function buildSourceChangeIdempotencyKey(
   return `${sub.id}:${pkHash}:${versionToken}`;
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value).sort(([a],[b])=>a.localeCompare(b));
+    return `{${entries.map(([key,item])=>`${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function hashPrimaryKey(pk: Record<string, JsonScalar>): string {
   const parts = Object.entries(pk)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -466,9 +436,4 @@ function hashPrimaryKey(pk: Record<string, JsonScalar>): string {
     .update(parts.join(""))
     .digest("hex")
     .slice(0, 16);
-}
-
-function summarizePrimaryKey(pk: Record<string, JsonScalar>): string {
-  const parts = Object.entries(pk).map(([k, v]) => `${k}=${v == null ? "" : String(v)}`);
-  return parts.length === 0 ? "()" : `(${parts.join(", ")})`;
 }

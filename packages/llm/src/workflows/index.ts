@@ -102,6 +102,15 @@ export {
   type WorkflowCatchUpPolicy,
 } from "./durable-scheduler";
 export {
+  claimSourceChangeDelivery,
+  dispatchPendingSourceChangeDeliveries,
+  dispatchSourceChangeDelivery,
+  linkSourceChangeDeliveryRun,
+  recordSourceChangeDelivery,
+  releaseUnlinkedSourceChangeDelivery,
+  settleSourceChangeDelivery,
+} from "./source-change-delivery";
+export {
   sweepStaleWorkflowOutputs,
   type SweepStaleOutputsResult,
 } from "./ttl-sweep";

@@ -107,6 +107,8 @@ export type WorkflowRunFirePayload = {
   /** Durable cron firing ledger id. Cron deliveries use this as their
    * consumer-side idempotency boundary before creating a workflow run. */
   scheduleFiringId?: string;
+  /** Durable source-change stream delivery identity. */
+  sourceChangeDeliveryId?: string;
   triggerPayload?: Record<string, unknown>;
   userMessage?: string;
   threadId?: string;

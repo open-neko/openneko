@@ -16,14 +16,18 @@ import {
   boundedWorkflowApiResult,
   claimWorkflowApiAdmission,
   claimWorkflowScheduleFiring,
+  claimSourceChangeDelivery,
   completeWorkflowScheduleFiring,
   finishWorkflowApiAdmission,
   linkWorkflowScheduleFiringRun,
+  linkSourceChangeDeliveryRun,
   loadPreparedWorkflowRun,
   persistWorkflowApiTelemetry,
   prepareWorkflowRun,
   releaseWorkflowScheduleFiringRun,
+  releaseUnlinkedSourceChangeDelivery,
   settleLinkedWorkflowScheduleFiring,
+  settleSourceChangeDelivery,
   cancelWorkflowScheduleFiring,
   runCompiledWorkflowApiBatch,
   runWorkflowTurn,
@@ -307,6 +311,8 @@ async function runWorkflowRunFireTraced(
   payload: WorkflowRunFirePayload,
 ): Promise<void> {
   const scheduleFiringId = payload.scheduleFiringId;
+  const sourceChangeDeliveryId = payload.sourceChangeDeliveryId;
+  if (scheduleFiringId && sourceChangeDeliveryId) throw new Error("Workflow fire has conflicting delivery identities");
   if (scheduleFiringId) {
     const claimed = await startupPhase("workflow.claim_schedule", async () => claimWorkflowScheduleFiring({
       firingId: scheduleFiringId,
@@ -320,9 +326,19 @@ async function runWorkflowRunFireTraced(
       return;
     }
   }
+  if (sourceChangeDeliveryId) {
+    const claimed = await startupPhase("workflow.claim_source_change", () => claimSourceChangeDelivery({
+      id:sourceChangeDeliveryId,orgId:payload.orgId,workflowId:payload.workflowId,
+    }));
+    if (!claimed) {
+      console.log(`[workflow-run-fire] duplicate source-change delivery ignored id=${sourceChangeDeliveryId}`);
+      return;
+    }
+  }
 
   let workflowFinished = false;
   let scheduleLinked = false;
+  let sourceChangeLinked = false;
   let apiClaim: ClaimedWorkflowApiAdmission | null = null;
   let prepared: PreparedWorkflowRun | null = null;
   let telemetry: ReturnType<typeof createWorkerHarnessObserver> | null = null;
@@ -360,6 +376,10 @@ async function runWorkflowRunFireTraced(
         prepared.workflowRun.id,
       );
       scheduleLinked = true;
+    }
+    if (sourceChangeDeliveryId) {
+      await linkSourceChangeDeliveryRun(sourceChangeDeliveryId,prepared.workflowRun.id);
+      sourceChangeLinked = true;
     }
 
     const scrubber = getCurrentScrubber();
@@ -558,6 +578,10 @@ async function runWorkflowRunFireTraced(
     if (scheduleFiringId) {
       await completeWorkflowScheduleFiring(scheduleFiringId);
     }
+    if (sourceChangeDeliveryId) {
+      const settled=await settleSourceChangeDelivery(sourceChangeDeliveryId,prepared.workflowRun.id);
+      if(!settled)throw Error("Source-change delivery was not settled by its terminal workflow run");
+    }
   } catch (error) {
     if (telemetry && prepared && emit && !telemetryClosed) {
       await observeSafely(telemetry.observer, {
@@ -636,6 +660,20 @@ async function runWorkflowRunFireTraced(
             );
           },
         );
+      }
+    }
+    if (sourceChangeDeliveryId && !workflowFinished) {
+      if (sourceChangeLinked && prepared) {
+        const settled=await settleSourceChangeDelivery(sourceChangeDeliveryId,prepared.workflowRun.id)
+          .catch(settleError=>{
+            console.error(`[workflow-run-fire] could not settle source-change delivery=${sourceChangeDeliveryId}: ${settleError instanceof Error?settleError.message:String(settleError)}`);
+            return false;
+          });
+        if(!settled)console.warn(`[workflow-run-fire] retained linked source-change delivery=${sourceChangeDeliveryId} for reconciliation`);
+      } else {
+        await releaseUnlinkedSourceChangeDelivery(sourceChangeDeliveryId,error).catch(releaseError=>{
+          console.error(`[workflow-run-fire] could not release source-change delivery=${sourceChangeDeliveryId}: ${releaseError instanceof Error?releaseError.message:String(releaseError)}`);
+        });
       }
     }
     throw error;

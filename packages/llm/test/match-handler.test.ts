@@ -159,159 +159,74 @@ function fakeSourceChangeMatch(
 }
 
 describe("handleSourceChangeMatch", () => {
-  it("drops when the workflow recently wrote to the same (table, pk)", async () => {
-    const enqueue = vi.fn();
-    const createObservation = vi.fn();
-    const writeSourceChangeLog = vi.fn();
+  const base = () => ({
+    subscription: fakeSubscription({ sourceKind: "source_change" }),
+    match: fakeSourceChangeMatch(),
+    dataSourceId: "ds-1",
+    countWorkflowRunsForSubscription: async () => 0,
+    countWorkflowRunsSince: async () => 0,
+    getWorkflow: async () => null,
+    hasRecentSourceWriteForWorkflow: async () => false,
+  });
+  const delivery = { id: "delivery-1", observationId: "obs-sc-1", status: "pending", queueJobId: null };
+
+  it("drops a responder-write cycle before recording a delivery", async () => {
+    const recordDelivery = vi.fn();
     const decision = await handleSourceChangeMatch({
-      subscription: fakeSubscription({ sourceKind: "source_change" }),
-      match: fakeSourceChangeMatch(),
-      dataSourceId: "ds-1",
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      writeSourceChangeLog: writeSourceChangeLog as never,
-      countWorkflowRunsForSubscription: async () => 0,
-      countWorkflowRunsSince: async () => 0,
-      getWorkflow: async () => null,
+      ...base(), recordDelivery,
       hasRecentSourceWriteForWorkflow: async () => true,
     });
-    expect(decision.action).toBe("dropped");
-    if (decision.action === "dropped") {
-      expect(decision.reason).toMatch(/recently wrote/);
-    }
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(createObservation).not.toHaveBeenCalled();
-    expect(writeSourceChangeLog).not.toHaveBeenCalled();
+    expect(decision).toMatchObject({ action: "dropped", reason: expect.stringMatching(/recently wrote/) });
+    expect(recordDelivery).not.toHaveBeenCalled();
   });
 
   it("drops when subscription is at max_concurrent_runs", async () => {
+    const recordDelivery = vi.fn();
+    const decision = await handleSourceChangeMatch({
+      ...base(), subscription: fakeSubscription({ sourceKind: "source_change", maxConcurrentRuns: 3 }),
+      countWorkflowRunsForSubscription: async () => 3, recordDelivery,
+    });
+    expect(decision).toMatchObject({ action: "dropped", reason: expect.stringMatching(/max_concurrent_runs/) });
+    expect(recordDelivery).not.toHaveBeenCalled();
+  });
+
+  it("records one durable identity before dispatch and reuses it on replay", async () => {
+    const recordDelivery = vi.fn().mockResolvedValueOnce(delivery)
+      .mockResolvedValueOnce({ ...delivery, status: "enqueued", queueJobId: "job-abc" });
+    const dispatchDelivery = vi.fn().mockResolvedValue("job-abc");
     const enqueue = vi.fn();
-    const decision = await handleSourceChangeMatch({
-      subscription: fakeSubscription({
-        sourceKind: "source_change",
-        maxConcurrentRuns: 3,
-      }),
-      match: fakeSourceChangeMatch(),
-      dataSourceId: "ds-1",
-      enqueue: enqueue as never,
-      createObservation: vi.fn() as never,
-      writeSourceChangeLog: vi.fn() as never,
-      countWorkflowRunsForSubscription: async () => 3,
-      countWorkflowRunsSince: async () => 0,
-      getWorkflow: async () => null,
-      hasRecentSourceWriteForWorkflow: async () => false,
+    const first = await handleSourceChangeMatch({
+      ...base(), recordDelivery, dispatchDelivery, enqueue: enqueue as never,
     });
-    expect(decision.action).toBe("dropped");
-    if (decision.action === "dropped") {
-      expect(decision.reason).toMatch(/max_concurrent_runs/);
-    }
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(first).toEqual({ action: "enqueued", observationId: "obs-sc-1", jobId: "job-abc" });
+    expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({
+      orgId: "org-1", workflowId: "wf-1", subscriptionId: "sub-1", sourceId: "ds-1",
+      deliveryKey: expect.stringMatching(/^sub-1:[0-9a-f]{16}:2026-05-23T10:00:00\.000Z$/),
+      match: expect.objectContaining({ primary_key: { productid: 680, locationid: 6 } }),
+    }));
+    expect(dispatchDelivery).toHaveBeenCalledWith({ id: "delivery-1", enqueue });
+    const replay = await handleSourceChangeMatch({ ...base(), recordDelivery, dispatchDelivery });
+    expect(replay).toMatchObject({ action: "dropped", reason: expect.stringMatching(/already enqueued/) });
+    expect(dispatchDelivery).toHaveBeenCalledTimes(1);
   });
 
-  it("enqueues fire + writes audit + composite-PK idempotency on happy path", async () => {
-    const enqueue = vi.fn().mockResolvedValue("job-abc");
-    const createObservation = vi.fn().mockResolvedValue({
-      id: "obs-sc-1",
-      orgId: "org-1",
-    });
-    const writeSourceChangeLog = vi.fn().mockResolvedValue(undefined);
-
-    const decision = await handleSourceChangeMatch({
-      subscription: fakeSubscription({ sourceKind: "source_change" }),
-      match: fakeSourceChangeMatch(),
-      dataSourceId: "ds-1",
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      writeSourceChangeLog: writeSourceChangeLog as never,
-      countWorkflowRunsForSubscription: async () => 0,
-      countWorkflowRunsSince: async () => 0,
-      getWorkflow: async () => null,
-      hasRecentSourceWriteForWorkflow: async () => false,
-    });
-
-    expect(decision.action).toBe("enqueued");
-    if (decision.action === "enqueued") {
-      expect(decision.observationId).toBe("obs-sc-1");
-      expect(decision.jobId).toBe("job-abc");
-    }
-
-    expect(createObservation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceOutputId: null,
-        subscriptionId: "sub-1",
-        title: expect.stringContaining("productinventory"),
-      }),
-    );
-
-    expect(writeSourceChangeLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orgId: "org-1",
-        sourceId: "ds-1",
-        tableName: "productinventory",
-        changeKind: "subscription_match",
-      }),
-    );
-
-    const [, jobData, jobOpts] = enqueue.mock.calls[0];
-    expect(jobData.triggeredBySubscriptionId).toBe("sub-1");
-    expect(jobData.triggeredByObservationId).toBe("obs-sc-1");
-    expect(jobData.triggerPayload).toMatchObject({
-      table: "productinventory",
-      primary_key: { productid: 680, locationid: 6 },
-    });
-
-    // Idempotency key: ${sub.id}:${pkHash}:${versionToken}
-    // pkHash is sha256(sorted entries).slice(0,16), version_token = match.version_token
-    expect(jobOpts.singletonKey).toMatch(
-      /^sub-1:[0-9a-f]{16}:2026-05-23T10:00:00\.000Z$/,
-    );
-    expect(jobOpts.singletonHours).toBe(1);
-  });
-
-  it("idempotency key uses 'none' when version_token is null", async () => {
-    const enqueue = vi.fn().mockResolvedValue("job-id");
-    const createObservation = vi
-      .fn()
-      .mockResolvedValue({ id: "obs-2", orgId: "org-1" });
+  it("hashes the snapshot when no version column is configured", async () => {
+    const recordDelivery = vi.fn().mockResolvedValue(delivery);
     await handleSourceChangeMatch({
-      subscription: fakeSubscription({ sourceKind: "source_change" }),
-      match: fakeSourceChangeMatch({ version_token: null }),
-      dataSourceId: "ds-1",
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      writeSourceChangeLog: vi.fn() as never,
-      countWorkflowRunsForSubscription: async () => 0,
-      countWorkflowRunsSince: async () => 0,
-      getWorkflow: async () => null,
-      hasRecentSourceWriteForWorkflow: async () => false,
+      ...base(), match: fakeSourceChangeMatch({ version_token: null }),
+      recordDelivery, dispatchDelivery: vi.fn().mockResolvedValue("job-id"),
     });
-    const jobOpts = enqueue.mock.calls[0][2];
-    expect(jobOpts.singletonKey).toMatch(/^sub-1:[0-9a-f]{16}:none$/);
+    expect(recordDelivery.mock.calls[0][0].deliveryKey).toMatch(/^sub-1:[0-9a-f]{16}:snapshot-[0-9a-f]{16}$/);
   });
 
-  it("honors a custom idempotencyKeyTemplate with {primary_key}", async () => {
-    const enqueue = vi.fn().mockResolvedValue("job-id");
-    const createObservation = vi
-      .fn()
-      .mockResolvedValue({ id: "obs-3", orgId: "org-1" });
+  it("honors a custom idempotency key template", async () => {
+    const recordDelivery = vi.fn().mockResolvedValue(delivery);
     await handleSourceChangeMatch({
-      subscription: fakeSubscription({
-        sourceKind: "source_change",
-        idempotencyKeyTemplate:
-          "reorder-{primary_key}-{source_version}",
-      }),
-      match: fakeSourceChangeMatch(),
-      dataSourceId: "ds-1",
-      enqueue: enqueue as never,
-      createObservation: createObservation as never,
-      writeSourceChangeLog: vi.fn() as never,
-      countWorkflowRunsForSubscription: async () => 0,
-      countWorkflowRunsSince: async () => 0,
-      getWorkflow: async () => null,
-      hasRecentSourceWriteForWorkflow: async () => false,
+      ...base(), subscription: fakeSubscription({ sourceKind: "source_change",
+        idempotencyKeyTemplate: "reorder-{primary_key}-{source_version}" }),
+      recordDelivery, dispatchDelivery: vi.fn().mockResolvedValue("job-id"),
     });
-    const jobOpts = enqueue.mock.calls[0][2];
-    expect(jobOpts.singletonKey).toMatch(
+    expect(recordDelivery.mock.calls[0][0].deliveryKey).toMatch(
       /^reorder-[0-9a-f]{16}-2026-05-23T10:00:00\.000Z$/,
     );
   });
