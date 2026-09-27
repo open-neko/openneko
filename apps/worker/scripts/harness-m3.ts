@@ -442,6 +442,48 @@ assert.deepEqual(editCard.map(row=>row.payload.messages[0].createSurface.surface
 await assert.rejects(inProcessControlPlane.saveWorkflowWithTrigger({orgId,name:'Harness review workflow',steps:[{id:'stale',description:'Should not replace the newer step'}],expectedVersion:createdWorkflow.version_token}),/changed since it was listed/);
 assert.equal((await pool().query('SELECT description FROM workflow_definition WHERE id=$1',[createdWorkflow.id])).rows[0].description,'Reviewed synthetic leads');
 console.log('M5_QUEUE_WORKFLOW_EDIT_PASS',workflowEditRun.id);
+const workflowConfirmation=`DELETE WORKFLOW ${JSON.stringify('Harness review workflow')} PERMANENTLY`;
+const workflowDeleteDeniedRun=await createWorkRun(orgId,workflowAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+await createWorkMessage({orgId,threadId:workflowAuthorThread.id,runId:workflowDeleteDeniedRun.id,role:'user',content:'Delete the Harness review workflow.'});
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({workflow_delete_denied:true})})).status,204);
+const [workflowDeleteDeniedJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-workflow-delete-denied'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:workflowDeleteDeniedJob.id,orgId,runId:workflowDeleteDeniedRun.id,threadId:workflowAuthorThread.id,message:'Delete the Harness review workflow.'},{retryLimit:0});
+await waitForJob(workflowDeleteDeniedJob.id,workflowDeleteDeniedRun.id);
+const deniedDeleteReceipt=(await pool().query('SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,workflowDeleteDeniedRun.id])).rows;
+assert.deepEqual(deniedDeleteReceipt.map(row=>({ok:row.result.ok,error:row.result.error,requiredConfirmation:row.result.requiredConfirmation})),[{ok:false,error:'confirmation_required',requiredConfirmation:workflowConfirmation}]);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM workflow_definition WHERE id=$1',[createdWorkflow.id])).rows[0].n,1);
+assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE run_id=$1 AND kind='surface'",[workflowDeleteDeniedRun.id])).rows[0].n,0);
+console.log('M5_QUEUE_WORKFLOW_DELETE_DENIED_PASS',workflowDeleteDeniedRun.id);
+const staleDeleteRun=await createWorkRun(orgId,workflowAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+await createWorkMessage({orgId,threadId:workflowAuthorThread.id,runId:staleDeleteRun.id,role:'user',content:workflowConfirmation});
+assert.deepEqual(await inProcessControlPlane.deleteWorkflowForHarness({orgId,runId:staleDeleteRun.id,workflowId:createdWorkflow.id,name:'Harness review workflow',expectedVersion:createdWorkflow.version_token}),{ok:false,error:'workflow_changed'});
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM workflow_definition WHERE id=$1',[createdWorkflow.id])).rows[0].n,1);
+const unlinkedDeleteRun=await createWorkRun(orgId,workflowAuthorThread.id,'harness',{userId:null,role:'member'});
+await createWorkMessage({orgId,threadId:workflowAuthorThread.id,runId:unlinkedDeleteRun.id,role:'user',content:workflowConfirmation});
+assert.deepEqual(await inProcessControlPlane.deleteWorkflowForHarness({orgId,runId:unlinkedDeleteRun.id,workflowId:createdWorkflow.id,name:'Harness review workflow',expectedVersion:editedWorkflow.version_token}),{ok:false,error:'actor_denied'});
+await pool().query('UPDATE app_user SET disabled_at=now() WHERE org_id=$1 AND id=$2',[orgId,soloAdmin.id]);
+try {
+  assert.deepEqual(await inProcessControlPlane.deleteWorkflowForHarness({orgId,runId:staleDeleteRun.id,workflowId:createdWorkflow.id,name:'Harness review workflow',expectedVersion:editedWorkflow.version_token}),{ok:false,error:'actor_denied'});
+} finally {
+  await pool().query('UPDATE app_user SET disabled_at=NULL WHERE org_id=$1 AND id=$2',[orgId,soloAdmin.id]);
+}
+const [dependentRun]=await db().insert(workflow_run).values({org_id:orgId,workflow_id:createdWorkflow.id,thread_id:workflowAuthorThread.id,work_run_id:staleDeleteRun.id,trigger_kind:'manual'}).returning();
+const [dependentSubscription]=(await pool().query("INSERT INTO subscription(org_id,workflow_id,source_kind,filter,enabled) VALUES($1,$2,'source_change','{}'::jsonb,false) RETURNING id",[orgId,createdWorkflow.id])).rows;
+const workflowDeleteRun=await createWorkRun(orgId,workflowAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+await createWorkMessage({orgId,threadId:workflowAuthorThread.id,runId:workflowDeleteRun.id,role:'user',content:workflowConfirmation});
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({workflow_delete:true})})).status,204);
+const [workflowDeleteJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-workflow-delete'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:workflowDeleteJob.id,orgId,runId:workflowDeleteRun.id,threadId:workflowAuthorThread.id,message:workflowConfirmation},{retryLimit:0});
+await waitForJob(workflowDeleteJob.id,workflowDeleteRun.id);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM workflow_definition WHERE id=$1',[createdWorkflow.id])).rows[0].n,0);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM workflow_run WHERE id=$1',[dependentRun.id])).rows[0].n,0);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM subscription WHERE id=$1',[dependentSubscription.id])).rows[0].n,0);
+const workflowDeleteReceipt=(await pool().query('SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,workflowDeleteRun.id])).rows;
+assert.deepEqual(workflowDeleteReceipt.map(row=>({ok:row.result.ok,workflowId:row.result.workflowId})),[{ok:true,workflowId:createdWorkflow.id}]);
+const workflowDeleteCards=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,workflowDeleteRun.id])).rows;
+assert.deepEqual(workflowDeleteCards.map(row=>row.payload.messages[0].createSurface.surfaceId),[`workflow-delete-${createdWorkflow.id}`]);
+if (process.env.HARNESS_M3_WEB === '1') await writeFile(join(process.env.HARNESS_STATE!,'m5-workflow-delete-thread'),workflowAuthorThread.id);
+console.log('M5_QUEUE_WORKFLOW_DELETE_PASS',workflowDeleteRun.id);
 const ruleAuthorThread=await createWorkThread(orgId,'M5 rule authoring','web',soloAdmin.id);
 if (process.env.HARNESS_M3_WEB === '1') await writeFile(join(process.env.HARNESS_STATE!,'m5-rule-thread'),ruleAuthorThread.id);
 const ruleCreateRun=await createWorkRun(orgId,ruleAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});

@@ -220,6 +220,26 @@ export async function deleteWorkflow(
   return rows[0] ?? null;
 }
 
+/** Harness deletion must match the definition the operator reviewed. */
+export async function deleteWorkflowVersioned(input: {
+  orgId: string;
+  workflowId: string;
+  name: string;
+  expectedVersion: string;
+}): Promise<{ id: string; name: string } | null> {
+  if (!/^\d{1,12}$/.test(input.expectedVersion)) return null;
+  const rows = await db()
+    .delete(workflow_definition)
+    .where(and(
+      eq(workflow_definition.org_id, input.orgId),
+      eq(workflow_definition.id, input.workflowId),
+      eq(workflow_definition.name, input.name),
+      sql`xmin::text = ${input.expectedVersion}`,
+    ))
+    .returning({ id: workflow_definition.id, name: workflow_definition.name });
+  return rows[0] ?? null;
+}
+
 /**
  * OL7 "pause for today": re-enable workflows whose pause timer has
  * passed. The cron sweep calls this every tick so a paused workflow

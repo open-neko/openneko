@@ -179,6 +179,12 @@ export class BrokerControlPlane implements AgentControlPlane {
     return this.post("/v1/workflow/delete", input);
   }
 
+  deleteWorkflowForHarness(
+    _input: Parameters<AgentControlPlane["deleteWorkflowForHarness"]>[0],
+  ): ReturnType<AgentControlPlane["deleteWorkflowForHarness"]> {
+    throw new Error("Harness workflow deletion requires the direct bound capability");
+  }
+
   upsertActionPolicyByName(
     input: Parameters<AgentControlPlane["upsertActionPolicyByName"]>[0],
   ): ReturnType<AgentControlPlane["upsertActionPolicyByName"]> {
