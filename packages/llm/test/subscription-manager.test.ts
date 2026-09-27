@@ -192,4 +192,59 @@ describe("startSubscriptionManager — transport resolver", () => {
 
     await mgr.stop();
   });
+
+  it("reconnects a closed source-change socket and replaces an edited subscription", async () => {
+    vi.useFakeTimers();
+    let current = fakeSub({id: "sub-src", sourceKind: "source_change", filter: {
+      table: "productinventory", primary_key: ["productid"],
+    }});
+    listEnabledMock.mockImplementation(async () => [current]);
+    const stopped: Array<ReturnType<typeof vi.fn>> = [];
+    subscribeMock.mockImplementation(() => {
+      const stop = vi.fn();
+      stopped.push(stop);
+      return {stop, ready: Promise.resolve()};
+    });
+    const mgr = startSubscriptionManager({
+      resolveTransport: async () => ({baseUrl: "http://graphjin:8080"}),
+      onMatch: vi.fn(),
+      refreshIntervalMs: 60_000,
+    });
+    await mgr.ready;
+    expect(subscribeMock).toHaveBeenCalledTimes(1);
+    const first = subscribeMock.mock.calls[0]![0] as {onComplete: () => void};
+    first.onComplete();
+    expect(stopped[0]).toHaveBeenCalledOnce();
+    expect(mgr.activeSubscriptionIds()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(subscribeMock).toHaveBeenCalledTimes(2);
+    expect(mgr.activeSubscriptionIds()).toEqual(["sub-src"]);
+
+    current = {...current, updatedAt: new Date(current.updatedAt.getTime()+1),
+      filter: {table: "productinventory", primary_key: ["productid"], where: {quantity: {lt: 5}}}};
+    await mgr.refresh();
+    expect(stopped[1]).toHaveBeenCalledOnce();
+    expect(subscribeMock).toHaveBeenCalledTimes(3);
+    expect((subscribeMock.mock.calls[2]![0] as {query:string}).query).toContain("quantity: { lt: 5 }");
+    await mgr.stop();
+  });
+
+  it("retries a synchronous websocket startup failure", async () => {
+    vi.useFakeTimers();
+    listEnabledMock.mockResolvedValue([fakeSub({id: "sub-retry", sourceKind: "source_change",
+      filter: {table: "productinventory", primary_key: ["productid"]}})]);
+    subscribeMock.mockImplementationOnce(() => { throw Error("websocket URL rejected"); });
+    const onError = vi.fn();
+    const mgr = startSubscriptionManager({
+      resolveTransport: async () => ({baseUrl: "http://graphjin:8080"}),
+      onMatch: vi.fn(), onError,
+    });
+    await mgr.ready;
+    expect(onError).toHaveBeenCalledOnce();
+    expect(mgr.activeSubscriptionIds()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(subscribeMock).toHaveBeenCalledTimes(2);
+    expect(mgr.activeSubscriptionIds()).toEqual(["sub-retry"]);
+    await mgr.stop();
+  });
 });

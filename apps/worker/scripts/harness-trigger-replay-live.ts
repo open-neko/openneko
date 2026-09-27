@@ -1,13 +1,15 @@
 // Connected acceptance for cron and source-change triggers through pg-boss,
 // the production workflow handler, Ax, the host broker and OpenShell.
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { shutdownAgentBroker } from "@neko/llm/work";
-import { createSubscription, handleSourceChangeMatch } from "@neko/llm/workflows";
+import { createSubscription, handleSourceChangeMatch, startSubscriptionManager } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runDurableWorkflowSchedulerTick } from "../src/workflow-scheduler.js";
 
@@ -17,7 +19,9 @@ if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119")
 
 const orgId = await getOrgId();
 const queue = await boss();
+const runCommand=promisify(execFile);
 const workflows: string[] = [];
+let subscriptionManager:ReturnType<typeof startSubscriptionManager>|undefined;
 const control = "http://127.0.0.1:18118/control";
 const [priorProvider]=await db().select().from(llm_provider_config)
   .where(eq(llm_provider_config.org_id,orgId));
@@ -70,13 +74,29 @@ try {
   const subscription=await createSubscription({orgId,workflowId:sourceWorkflow.id,
     sourceKind:"source_change",filter:{table:"references",primary_key:["id"]}});
   assert.equal((await fetch(control,{method:"POST",body:"{}"})).status,204);
-  const match={table:"references",primary_key:{id:42},
-    snapshot:{id:42,label:"REF-42"},version_token:"fixture-v1"};
-  const first=await handleSourceChangeMatch({subscription,match,dataSourceId:source.id});
+  const decisions:Array<Awaited<ReturnType<typeof handleSourceChangeMatch>>>=[];
+  const subscriptionErrors:string[]=[];
+  subscriptionManager=startSubscriptionManager({
+    resolveTransport:async()=>({baseUrl:"http://127.0.0.1:18117/api/v1/graphql"}),
+    refreshIntervalMs:60_000,
+    onMatch:async event=>{
+      if(event.kind!=="source_change" || event.subscription.id!==subscription.id)return;
+      decisions.push(await handleSourceChangeMatch({subscription:event.subscription,
+        match:event.match,dataSourceId:source.id}));
+    },
+    onError:error=>{subscriptionErrors.push(error.message);},
+  });
+  await subscriptionManager.ready;
+  const waitForDecision=async(count:number)=>{
+    for(let attempt=0;attempt<120;attempt++){
+      if(decisions.length>=count)return decisions[count-1];
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    throw Error(`GraphJin websocket delivered ${decisions.length}/${count} matches: ${subscriptionErrors.join("; ")}`);
+  };
+  const first=await waitForDecision(1);
   assert.equal(first.action,"enqueued",JSON.stringify(first));
   if(first.action!=="enqueued" || !first.jobId)throw Error("source event not queued");
-  const replay=await handleSourceChangeMatch({subscription,match,dataSourceId:source.id});
-  assert.equal(replay.action,"dropped");
   const sourceRun=await waitForWorkflow(sourceWorkflow.id,first.jobId);
   const [delivery]=(await pool().query<{id:string;status:string;workflow_run_id:string}>(
     "select id,status,workflow_run_id from source_change_delivery where org_id=$1 and subscription_id=$2",
@@ -87,6 +107,10 @@ try {
     "select count(*)::int as n from observation where org_id=$1 and subscription_id=$2",
     [orgId,subscription.id])).rows[0].n,1);
   const sourceCalls=await modelCalls();
+  await runCommand("docker",["restart","harness-m3-graphjin-1"],{timeout:60_000});
+  const replay=await waitForDecision(2);
+  assert.equal(replay.action,"dropped",JSON.stringify(replay));
+  assert.deepEqual(await modelCalls(),sourceCalls,"websocket replay called the model again");
   const sourceJob=await queue.getJobById(QUEUE.WORKFLOW_RUN_FIRE,first.jobId);
   assert.ok(sourceJob);
   await runWorkflowRunFire(sourceJob.data as WorkflowRunFirePayload);
@@ -95,6 +119,7 @@ try {
     "select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
     [orgId,sourceWorkflow.id])).rows[0].n,1);
   console.log("M5_QUEUE_SOURCE_TRIGGER_REPLAY_PASS",sourceRun.id);
+  console.log("M5_GRAPHJIN_WEBSOCKET_LEDGER_PASS",subscription.id);
 
   const [cronWorkflow]=await db().insert(workflow_definition).values({
     org_id:orgId,name:`Trigger replay cron ${randomUUID()}`,
@@ -124,6 +149,7 @@ try {
     [orgId,cronWorkflow.id])).rows[0].n,1);
   console.log("M5_QUEUE_CRON_TRIGGER_REPLAY_PASS",cronRun.id);
 } finally {
+  await subscriptionManager?.stop();
   await queue.stop({graceful:true,timeout:5_000});
   await shutdownAgentBroker();
   await writeFile(configPath,priorConfig);
