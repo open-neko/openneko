@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, library_concept, organization, pool, sql, work_thread, work_run } from "@neko/db";
+import { db, library_concept, organization, pool, sql, work_thread, work_run, workflow_definition } from "@neko/db";
 import { deleteTestOrg } from "@neko/db/test-helpers";
 import { expect, it } from "vitest";
 import { inProcessControlPlane, type AgentControlPlane } from "../src/work/control-plane";
@@ -22,6 +22,7 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   const runId = randomUUID();
   const libraryRunId = randomUUID();
   const saveRunId = randomUUID();
+  const workflowRunId = randomUUID();
   const priorEmbeddingURL = process.env.NEKO_EMBEDDING_URL;
   const orgRoot = join(process.env.HARNESS_STATE, "memory", runId);
   const workspace: AgentWorkspace = {
@@ -43,6 +44,7 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
   await db().insert(organization).values({ id: orgId, name: "Harness memory acceptance" });
   await db().insert(work_thread).values({ id: threadId, org_id: orgId, title: "Memory" });
   await db().insert(work_run).values({ id: runId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
+  await db().insert(workflow_definition).values({org_id:orgId,name:"Fixture workflow",description:"A saved fixture workflow",steps:[{id:"verify",description:"Verify the result"}]});
   const vector = sql`${JSON.stringify([1, ...Array(383).fill(0)])}::vector`;
   await db().insert(library_concept).values({
     org_id: orgId, user_id: null, path: "contracts/example", type: "contract",
@@ -62,9 +64,16 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
       return searchLibraryForRun(args);
     },
     rememberWorkMemory: inProcessControlPlane.rememberWorkMemory,
+    listWorkflowsWithTriggers: inProcessControlPlane.listWorkflowsWithTriggers,
   } as unknown as AgentControlPlane;
   const broker = await startAgentBroker({ port: 0, hostAlias: "host.docker.internal", controlPlane });
   try {
+    const missingRunToken=broker.tokenFor({profile:"harness-read-only",workflowRead:true,lookupRead:false,kind:"work",orgId,runId:randomUUID(),threadId});
+    const missingRun=await fetch(`http://127.0.0.1:${broker.port}/v1/workflow/list`,{method:"POST",headers:{authorization:`Bearer ${missingRunToken}`,"content-type":"application/json"},body:JSON.stringify({limit:5,orgId,runId:workflowRunId})});
+    expect(missingRun.status).toBe(200);
+    expect((await missingRun.json()).workflows).toEqual([]);
+    const noGrantToken=broker.tokenFor({profile:"harness-read-only",lookupRead:false,kind:"work",orgId,runId:randomUUID(),threadId});
+    expect((await fetch(`http://127.0.0.1:${broker.port}/v1/workflow/list`,{method:"POST",headers:{authorization:`Bearer ${noGrantToken}`,"content-type":"application/json"},body:"{}"})).status).toBe(403);
     const runCore = makeSandboxRunCore({
       cli: process.env.HARNESS_M3_CLI!, gatewayName: "harness-m2", agentImage: "harness-openneko:m3",
       modelProvider: "harness-m3", modelHosts: [{ host: "host.docker.internal", port: 18118 }],
@@ -141,6 +150,28 @@ live("runs journaled Harness memory and library reads through OpenShell, MCP and
     const saveSnapshot = JSON.parse(await readFile(join(saveWorkspace.runRoot, ".harness", `${createHash("sha256").update(saveRunId).digest("hex")}.json`), "utf8"));
     expect(saveSnapshot.operations).toHaveLength(1);
     expect(saveSnapshot.operations[0]).toMatchObject({tool:"memory_save",binding:hostReceipt[0].request.binding,finished:true,result:hostReceipt[0].result});
+
+    const workflowWorkspace: AgentWorkspace = {
+      ...workspace,
+      runRoot: join(workspace.runsRoot, workflowRunId),
+      artifactRoot: join(workspace.runsRoot, workflowRunId, "artifacts"),
+      binRoot: join(workspace.runsRoot, workflowRunId, "bin"),
+    };
+    for (const dir of [workflowWorkspace.runRoot, workflowWorkspace.artifactRoot, workflowWorkspace.binRoot]) await mkdir(dir, { recursive: true });
+    await db().insert(work_run).values({id:workflowRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"service"});
+    await writeFile(join(hermesHome, "config.yaml"), "model:\n  provider: custom\n  default: harness-workflow-list-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const workflowEvents:AgentEvent[]=[];
+    const workflowResult=await runCore({
+      backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId:workflowRunId,workspace:workflowWorkspace,
+      prompt:"List the saved workflows.",userMessage:"What workflow did we save?",dataSurface:"customer",pluginActions:[],
+      emit:async event=>{workflowEvents.push(event);},
+    });
+    expect(workflowResult.status).toBe("completed");
+    expect(workflowResult.finalText).toContain("Fixture workflow");
+    expect(workflowEvents).toContainEqual(expect.objectContaining({type:"tool_start",name:"mcp_neko_workflow_builder_list_workflows"}));
+    const workflowSnapshot=JSON.parse(await readFile(join(workflowWorkspace.runRoot,".harness",`${createHash("sha256").update(workflowRunId).digest("hex")}.json`),"utf8"));
+    expect(workflowSnapshot.operations).toHaveLength(1);
+    expect(workflowSnapshot.operations[0]).toMatchObject({tool:"mcp_neko_workflow_builder_list_workflows",finished:true});
   } finally {
     if (priorEmbeddingURL === undefined) delete process.env.NEKO_EMBEDDING_URL;
     else process.env.NEKO_EMBEDDING_URL = priorEmbeddingURL;
