@@ -245,6 +245,29 @@ assert.deepEqual(artifactSnapshot.operations.map((op:{tool:string})=>op.tool),['
 assert.deepEqual(artifactSnapshot.operations[0].result.paths,[]);
 assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,artifactRun.id])).rows[0].n,0);
 console.log('M5_QUEUE_ARTIFACT_PASS',artifactRun.id);
+// The model-visible process tool must stage only this thread's selected upload,
+// execute in a second credential-free sandbox, and publish a journaled artifact.
+const processThread=await createWorkThread(orgId,'M5 isolated process','web',soloAdmin.id);
+const processRun=await createWorkRun(orgId,processThread.id,'harness',{userId:null,role:'service'});
+const processWorkspace=await ensureWorkWorkspace(orgId,processThread.id,processRun.id);
+await writeFile(join(processWorkspace.threadUploadsRoot,'lead.csv'),'lead_id\nLEAD-42\n');
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({process:true})})).status,204);
+const [processJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-isolated-process'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:processJob.id,orgId,runId:processRun.id,threadId:processThread.id,message:'Run a credential-isolated script on the uploaded lead file.'},{retryLimit:0});
+await waitForJob(processJob.id,processRun.id);
+assert.equal(await readFile(join(processWorkspace.artifactRoot,'process-1','result.csv'),'utf8'),'lead_id\nLEAD-42\n');
+const processEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,processRun.id])).rows;
+assert.deepEqual(processEvents.map(row=>row.payload.artifact.path),[`runs/${processRun.id}/artifacts/process-1/result.csv`]);
+const processJournal=(await pool().query('SELECT operation_id,request,result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,processRun.id])).rows;
+assert.equal(processJournal.length,1);
+assert.equal(processJournal[0].request.tool,'process_run');
+assert.equal(processJournal[0].result.ok,true);
+assert.equal(processJournal[0].result.files[0].sha256,createHash('sha256').update('lead_id\nLEAD-42\n').digest('hex'));
+console.log('M5_QUEUE_PROCESS_PASS',processRun.id);
+if (process.env.HARNESS_M3_WEB === '1' || process.env.HARNESS_M3_API_HTTP === '1') {
+  await writeFile(join(process.env.HARNESS_STATE!,'m5-process-run'),processRun.id);
+  await writeFile(join(process.env.HARNESS_STATE!,'m5-process-thread'),processThread.id);
+}
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
 // separately by the M5b fixture on the same isolated gateway.
