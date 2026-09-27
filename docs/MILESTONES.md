@@ -127,7 +127,9 @@ replay. Pinned OpenNeko read, clarification and card tools now use the same
 catalog and journal in the connected worker path. The trusted launcher now pins
 12 operations and 24 model calls in the run spec, broker token and checkpoint;
 the host journal accepts a fifth operation when explicitly bound, while legacy
-callers retain four. Postgres stores at most 32, matching the Go hard ceiling.
+callers retain four. Postgres stores the admitted limit for each run and allows
+at most one unfinished host operation, so an unknown effect prevents later
+dispatch. Its hard ceiling of 32 matches Go.
 Durable MCP product writes
 remain excluded until their effect boundaries are qualified. The full consumer
 capability inventory and general recovery matrix remain open.
