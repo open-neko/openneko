@@ -107,7 +107,7 @@ implementation or its model name prefixes inside the core.
 | --- | --- | --- |
 | M1: Ax execution | HTTP/Goja execution, callbacks, pairing, cancellation and snapshot boundary | `compat/`, Go race suite, [design findings](DESIGN.md#3-axagent-findings-and-implications) |
 | M2: OpenShell | Pinned 0.0.116 transport, credential lifecycle, policy enforcement, gateway restart, OTLP and teardown | [Live transport record](../integration/README.md) |
-| M3: First consumer slice | Browser/queue → Harness → broker → GraphJin; scoped evidence, accepted-input identity and output | [Consumer acceptance](../integration/m3/README.md) |
+| M3: First consumer slice | Browser/queue → Harness → broker → GraphJin; scoped evidence, accepted-input identity and output | [Consumer acceptance](../integration/openneko/README.md) |
 | M4: Durable governed operations | Receipt recovery, ownership, approval continuity, claimed effects, crash reconciliation and honest unknown outcomes | [Recovery and crash matrix](M4-RECOVERY.md) |
 
 M4 covers the implemented lookup/proposal/effect paths, not every tool in the
@@ -172,8 +172,9 @@ operation and returned the answer. The library
 run now uses the real entitlement lookup and pgvector search against an isolated
 Postgres row, with a deterministic embedding fixture. Hermes regression checks
 passed. Records catalog and shipped blueprint browse were tested end to end in a
-records-only OpenShell turn; find/get and recycle-bin reads used a synthetic broker
-behind the real bridge and still need data-backed acceptance. The queued
+records-only OpenShell turn. A second isolated turn seeded an active app, row and
+recycle entry, then read all five through real Records Postgres, GraphJin,
+actor-bound broker, MCP bridge, OpenShell and Ax. The queued
 clarification reached `needs_input` after two outer model
 calls; broker events entered the turn reducer, and queue redelivery preserved one
 question and surface without a model replay or assistant answer. A second queued
@@ -256,7 +257,7 @@ each route with bound actor/run identity and the existing operation journal
 before admission. A working stdio connection alone does not authorize tools.
 
 The Go MCP SDK now has an opt-in integration check against the real OpenNeko
-multiplexed stdio bridge (`OPENNEKO_TEST_SOURCE=... go test ./integration/m5b`).
+multiplexed stdio bridge (`OPENNEKO_TEST_SOURCE=... go test ./integration/batch`).
 With a synthetic broker and read-only memory, library and records servers, it
 verifies discovery, scoped calls, and child-process exit on close. The separate
 isolated OpenShell check qualifies memory/library search and records catalog,

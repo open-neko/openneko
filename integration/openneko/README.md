@@ -1,4 +1,4 @@
-# M3 acceptance — 2026-09-19
+# OpenNeko consumer acceptance
 
 The Go runtime remains independent. Optional product integration was tested in
 `OpenNeko-harness-m3` on `feat/openneko-harness`: initial product commit **`c17c9ec`**, based on
@@ -19,7 +19,7 @@ Set `GRAPHJIN_TEST_IMAGE` to an available pinned build; the default local tag is
 ```sh
 OPENNEKO_TEST_SOURCE=/absolute/OpenNeko-integration-checkout \
 OPENSHELL_TEST_CLI=/absolute/openshell-0.0.116 \
-./integration/m3/run.sh
+./integration/openneko/run.sh
 ```
 
 This builds the Go/Node integration image, starts isolated metadata Postgres,

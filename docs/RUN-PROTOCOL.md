@@ -67,7 +67,7 @@ OpenNeko translates tool results through its existing GraphJin usage normalizer:
 aggregate remote usage is counted once, never summed again with nested actor usage.
 Outer Ax token accounting and collector export remain unqualified and are explicitly
 reported as incomplete. Ax stage timings and remote trace IDs are retained locally.
-See [M3 acceptance](../integration/m3/README.md) for actual product evidence.
+See [M3 acceptance](../integration/openneko/README.md) for actual product evidence.
 
 For non-executing recovery evidence, build `cmd/harness-inspect` and supply the
 same trusted input and `HARNESS_STATE_DIR`, without model credentials. It rejects

@@ -7,7 +7,7 @@ go build -o "$HARNESS_STATE/harness-inspect" ./cmd/harness-inspect
 go build -o "$HARNESS_STATE/harness-batch" ./adapters/openneko/cmd/batch
 export HARNESS_INSPECT_BIN="$HARNESS_STATE/harness-inspect"
 mkdir -p "$HARNESS_STATE/workflow-bundle"
-cp integration/m5b/workflow-fixture.py "$HARNESS_STATE/workflow-bundle/run.py"
+cp integration/batch/workflow-fixture.py "$HARNESS_STATE/workflow-bundle/run.py"
 export HARNESS_M3_BATCH_BIN="$HARNESS_STATE/harness-batch" HARNESS_M3_BATCH_SCRIPT="$HARNESS_STATE/workflow-bundle/run.py"
 export HARNESS_BATCH_EXECUTOR_REGISTRY="$HARNESS_STATE/batch-registry.json"
 export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$HARNESS_STATE/openshell-compat"
@@ -30,11 +30,12 @@ binaries: [/usr/local/bin/harness-openneko]
 YAML
 "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m3-provider.yaml"
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
-bash ./integration/m5b/batch-check.sh
+bash ./integration/batch/batch-check.sh
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-live.test.ts)
+(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts)
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/harness-batch-live.test.ts)
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-approval-sandbox-live.test.ts)
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-remote-cancel-live.test.ts)
@@ -53,7 +54,7 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18119 RECORDS_PG_USER=neko RECORDS_PG_PASSWORD=synthetic-m3 RECORDS_PG_DATABASE=neko
   export OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development OPENNEKO_AGENT_HOME="$HARNESS_STATE/user" WORKER_ADMIN_URL=http://127.0.0.1:18122 OPENNEKO_BROKER_PORT=18123
-  docker compose -p harness-m3 -f integration/m3/compose.yml restart model
+  docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   if [[ ${HARNESS_M3_API_HTTP:-0} == 1 ]]; then
     export HARNESS_M3_WORKFLOW_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
     [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
@@ -72,7 +73,7 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
   fi
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts)
 if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
-  docker compose -p harness-m3 -f integration/m3/compose.yml restart model
+  docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   if [[ ${HARNESS_M3_API_HTTP:-0} != 1 ]]; then
     [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
     # Own the whole process group: terminating pnpm alone leaves Next listening.

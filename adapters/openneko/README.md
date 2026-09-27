@@ -3,7 +3,7 @@
 Optional consumer integration. Core packages do not import this directory, and
 building this adapter requires no OpenNeko checkout or application libraries.
 The optional product change adds a Harness backend while preserving Hermes as the
-default. See [M3 acceptance](../../integration/m3/README.md) for the concrete
+default. See [OpenNeko consumer acceptance](../../integration/openneko/README.md) for the concrete
 launcher, broker, queue and browser checks. Build the product image with
 `./adapters/openneko/build-image.sh /absolute/OpenNeko-checkout`.
 
@@ -48,11 +48,11 @@ status polling and exact-byte artifact download with the versioned registry.
 A real-data Daily Lead run remains in
 [M5b](../../docs/MILESTONES.md#m5b--file-backed-batch-path-and-mcp-readinteraction-slice).
 
-The Harness MCP adapter admits pinned memory/library reads and the records
-catalog/find/get subset through OpenNeko's trusted stdio bridge. Records-only
-turns omit GraphJin lookup and customer memory. The isolated M3 run exercises a
-real empty-registry records catalog; find/get currently have synthetic-broker
-bridge coverage and await data-backed acceptance.
+The Harness MCP adapter admits pinned memory/library and Records catalog,
+find/get, blueprint and recycle-bin reads through OpenNeko's trusted stdio
+bridge. Records-only turns omit GraphJin lookup and customer memory. The
+isolated M3 run now reads a populated Records app through real GraphJin,
+the actor-bound broker, OpenShell, MCP and Ax.
 
 ## Implemented: OpenShell cold-launch compatibility
 

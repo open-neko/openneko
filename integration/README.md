@@ -1,7 +1,7 @@
-# M2 — real OpenShell transport qualification
+# OpenShell transport acceptance
 
 The standalone suite qualifies OpenShell transport and credential lifecycle.
-The optional M3 consumer suite also covers the real broker and queue worker.
+The optional [OpenNeko consumer suite](openneko/README.md) also covers the real broker and queue worker.
 
 Prerequisites: local Docker with host-shared home paths, Go, Bash, OpenSSL, Python 3, and a separately
 installed, checksum-verified OpenShell **0.0.116** CLI. Do not upgrade the active

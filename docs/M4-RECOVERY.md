@@ -122,7 +122,7 @@ also kill owners before and after receipt publication, reject concurrent ownersh
 and recover from a different host directory.
 Run the lock test with `HARNESS_INSPECT_BIN` pointing to the built host binary.
 
-The isolated `integration/m3/run.sh` suite runs a real OpenShell sandbox, Go/Ax,
+The isolated `integration/openneko/run.sh` suite runs a real OpenShell sandbox, Go/Ax,
 broker, GraphJin and PostgreSQL. It injects a checkpoint-transfer failure after
 execution, recovers from the retained sandbox on a different host, then removes the receipt and
 recovers from the downloaded checkpoint. Concurrent recovery admits one owner.

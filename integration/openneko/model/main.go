@@ -151,6 +151,10 @@ func main() {
 			http.Error(w, "missing records catalog evidence", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-records-data-fixture" && (!strings.Contains(string(req.Messages), "loan-42") || !strings.Contains(string(req.Messages), "loan-deleted-42")) {
+			http.Error(w, "missing populated records evidence", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-fixture" && readUpload && !strings.Contains(string(req.Messages), "LEAD-42") {
 			http.Error(w, "missing uploaded file evidence", 422)
 			return
@@ -160,7 +164,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -177,6 +181,8 @@ func main() {
 			responses = []string{`{"javascriptCode":"final('Search the library', {})"}`, `{"javascriptCode":"const library=mcp_library_search({query:'find contract'}); final('Report library',{library});"}`, `{"answer":"Fixture contract contains TERMS-42."}`}
 		} else if req.Model == "harness-records-fixture" {
 			responses = []string{`{"javascriptCode":"final('Browse records apps and shipped blueprints', {})"}`, `{"javascriptCode":"const catalog=mcp_neko_records_browse_catalog({}); const blueprints=mcp_neko_records_browse_blueprints({}); final('Report records catalog',{catalog,blueprints});"}`, `{"answer":"The records catalog contains no generated apps for this test organization; the crm blueprint is available."}`}
+		} else if req.Model == "harness-records-data-fixture" {
+			responses = []string{`{"javascriptCode":"final('Read the equipment loan and recycle bin', {})"}`, `{"javascriptCode":"const catalog=mcp_neko_records_browse_catalog({app:'equipment'}); const found=mcp_neko_records_find_records({app:'equipment',object:'loan',first:5}); const detail=mcp_neko_records_get_record({app:'equipment',object:'loan',id:'loan-42'}); const recycled=mcp_neko_records_find_recycled_records({app:'equipment',object:'loan'}); const deleted=mcp_neko_records_get_recycled_record({app:'equipment',object:'loan',id:'loan-deleted-42'}); final('Report equipment loan',{catalog,found,detail,recycled,deleted});"}`, `{"answer":"The equipment loan is loan-42, and loan-deleted-42 is in the recycle bin."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
 			if answerQuestion {
