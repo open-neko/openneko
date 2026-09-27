@@ -408,11 +408,14 @@ async function runChatTurnTraced(
     const sourceConfigSettings = dataSurface === "customer"
       ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
       : { sourceConfigEnabled: false };
-    const supportsSourceConfigTool =
-      backend.capabilities.mcpTools &&
+    const sourceConfigAuthorized =
       actor.role === "admin" &&
       (opts.channel ?? "web") === "web" &&
       sourceConfigSettings.sourceConfigEnabled;
+    const supportsSourceConfigTool =
+      backend.capabilities.mcpTools && sourceConfigAuthorized;
+    const supportsSourceConfigReads =
+      backend.id === "harness" && sourceConfigAuthorized;
     const inlineTranscript = !backend.capabilities.sessionResume;
 
     // Inline-transcript backends grow unbounded on long threads — fold older
@@ -566,7 +569,7 @@ async function runChatTurnTraced(
       backendState: bundle.thread.backendState,
       pluginActions: customerSurface ? heldPluginActions : [],
       packActions: admittedPackActions,
-      sourceConfigEnabled: supportsSourceConfigTool,
+      sourceConfigEnabled: supportsSourceConfigTool || supportsSourceConfigReads,
       dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
