@@ -24,6 +24,7 @@ func main() {
 	management := false
 	audit := false
 	auditDenied := false
+	uploadedLibrary := false
 	clarification := false
 	card := false
 	skill := false
@@ -51,6 +52,7 @@ func main() {
 			Management          bool `json:"management"`
 			Audit               bool `json:"audit"`
 			AuditDenied         bool `json:"audit_denied"`
+			UploadedLibrary     bool `json:"uploaded_library"`
 			Clarification       bool `json:"clarification"`
 			Card                bool `json:"card"`
 			Skill               bool `json:"skill"`
@@ -77,6 +79,7 @@ func main() {
 		management = c.Management
 		audit = c.Audit
 		auditDenied = c.AuditDenied
+		uploadedLibrary = c.UploadedLibrary
 		clarification = c.Clarification
 		card = c.Card
 		skill = c.Skill
@@ -113,6 +116,7 @@ func main() {
 		runProcess := processTask
 		readManagement := management
 		readAudit := audit
+		readUploadedLibrary := uploadedLibrary
 		expectAuditDenial := auditDenied
 		askClarification := clarification
 		renderCard := card
@@ -244,7 +248,11 @@ func main() {
 				return
 			}
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !readManagement && !readAudit && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model == "harness-fixture" && readUploadedLibrary && (!strings.Contains(string(req.Messages), "UPLOAD-LIBRARY-42") || !strings.Contains(string(req.Messages), "fixture/uploaded-policy.md")) {
+			http.Error(w, "missing uploaded library search evidence", 422)
+			return
+		}
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !readManagement && !readAudit && !readUploadedLibrary && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -343,6 +351,9 @@ func main() {
 			}
 			if readAudit {
 				responses = []string{`{"javascriptCode":"final('Inspect audit trail', {})"}`, `{"javascriptCode":"const trail=mcp_neko_audit_audit_trail({limit:20}); final('Report the bound actor audit result',{trail});"}`, `{"answer":"The audit request was checked for this actor."}`}
+			}
+			if readUploadedLibrary {
+				responses = []string{`{"javascriptCode":"final('Search the uploaded library document', {})"}`, `{"javascriptCode":"const matches=mcp_library_search({query:'UPLOAD-LIBRARY-42'}); final('Report uploaded policy evidence',{matches});"}`, `{"answer":"The uploaded policy contains UPLOAD-LIBRARY-42."}`}
 			}
 			if propose {
 				responses = []string{`{"javascriptCode":"final('Request approval for the fixture', {})"}`, `{"javascriptCode":"const receipt=propose({action:'harness_effect_fixture',arguments:{value:42},summary:'Update the synthetic value'}); final('Report the pending approval',{receipt});"}`, `{"answer":"Approval requested for the synthetic change; it has not executed."}`}

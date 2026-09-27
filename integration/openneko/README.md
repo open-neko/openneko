@@ -134,6 +134,12 @@ through Ax, MCP and the broker; the member saw the host's admin-only denial
 without that marker. The database regression also rejects an admin run from a
 different organization.
 
+`M5_QUEUE_UPLOADED_LIBRARY_PASS` covers a real Work HTTP upload followed by
+queued extraction, deterministic distillation and embedding indexing. A second
+queued Work run retrieves the concept through Ax, the MCP bridge and the
+actor-bound library broker. The model must receive the concept path, which is
+absent from the user request. No real provider key or customer document is used.
+
 With `HARNESS_M3_API_HTTP=1`, the isolated suite starts the real Next API
 alongside the worker. On 2026-09-27 it passed
 `M5_HTTP_API_BATCH_GRAPHJIN_PASS`: bearer-authenticated `POST` returned `202`,

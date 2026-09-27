@@ -196,8 +196,11 @@ turn accepted the operator's answer and completed the same thread. Broker valida
 denied forged completion events, and a connected worker/OpenShell turn rendered
 one validated card through the real stdio bridge. Chromium opened the completed
 Work thread and found the same card exactly once before and after reload.
-Broader channel presentation,
-uploaded-document search and the real Daily Lead Union batch remain unqualified.
+The uploaded-document path now passes a connected Work HTTP upload, queued
+Markdown extraction, deterministic librarian distillation, durable embedding
+dispatch, pgvector indexing and a separate queued Ax library search. The
+returned concept keeps the uploaded document as its source. Broader channel
+presentation and the real Daily Lead Union batch remain unqualified.
 
 The controlled query-to-file runner now consumes the pinned script's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query
