@@ -213,6 +213,20 @@ copy of the parent's live stack. Each child receives explicit task context,
 narrowed capabilities, a parent ID, shared budget and cancellation scope. A
 transcript fork is not a prerequisite for delegation.
 
+The parent may be an interactive Work turn, a queued workflow run, or an
+agent job. A workflow has both a `workflow_run` (product outcome) and its
+owning `work_run` (agent execution); children belong to that `work_run` and
+carry the trusted workflow identity for trace and recovery. A child can
+investigate an independent step and return evidence to the parent, but cannot
+emit a workflow output or request an action unless the host explicitly grants
+that exact capability. The parent verifies child evidence, publishes outputs,
+and owns any governed action request. An API caller does not have to remain
+connected or approve a child spawn: the queued run uses its admitted actor,
+policy, budget and cancellation scope. Actions that require approval follow
+the existing asynchronous action-request lifecycle, not an interactive pause
+in the child. Resume joins recorded child results and does not repeat an
+ambiguous effect.
+
 For complex tasks, the agent may produce a small, inspectable plan of outcomes,
 dependencies and evidence needed. AxAgent retains the adaptive reasoning loop;
 the supervisor records the plan as derived task state and orchestrates governed

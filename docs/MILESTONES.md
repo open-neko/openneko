@@ -452,6 +452,17 @@ receive a workflow-bound child grant when M5c workflow admission is built.
 Crash-resume of an in-flight child, disabled-mode connected acceptance and
 workflow/agent-job modes remain open.
 
+For queued workflows, the `workflow_run` remains the product outcome, the
+owning `work_run` remains the execution/journal parent, and child IDs are
+correlated spans under that parent. The host grants each child an exact subset
+of the workflow actor's admitted read capabilities. The parent owns output
+emission and action requests; an API caller need not stay online for a child
+to run. Verify this with a queued synthetic workflow that delegates two
+investigations, joins their evidence, emits one output, and returns one
+pollable result. Cancellation, duplicate queue delivery, changed actor grants,
+and an ambiguous output receipt must preserve the same parent/child lineage
+without replaying an effect.
+
 **Deliver:** child agents using the same Go/Ax engine with narrowed capabilities,
 explicit context, child ownership and shared parent budgets. OpenNeko decides
 whether delegation is enabled. No named-agent framework, swarm scheduler or new
