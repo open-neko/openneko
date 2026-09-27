@@ -355,7 +355,13 @@ completed result on duplicate delivery without another model call or action
 request. The same isolated production queue and real Records GraphJin then
 qualified `record_create`, `record_delete` and `record_restore`: each waited
 for approval, changed the expected row state once, wrote one audit entry, and
-restored the effect receipt on duplicate execution. A restored terminal run
+restored the effect receipt on duplicate execution. A later connected gate
+replayed each queued CRUD run before approval without a second model call or
+action request. It then deliberately lost the Harness receipt after each
+real GraphJin effect committed. The Harness marked the effect unknown, then
+read the Records engine's completed receipt and audit to reconcile it without
+dispatching the mutation again. A crash before that engine receipt remains
+unknown and is never permission to retry the write. A restored terminal run
 currently logs an unsuccessful cleanup attempt when its sandbox was already
 deleted; the saved result and effect are unchanged, but cleanup telemetry needs
 to distinguish an absent sandbox from a failed deletion.
