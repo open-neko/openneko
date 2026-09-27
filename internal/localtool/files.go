@@ -110,6 +110,16 @@ func (f *Files) UploadCapabilities() []agent.Capability {
 	return []agent.Capability{read, search}
 }
 
+// SkillCapabilities expose only files staged for the current operator.
+func (f *Files) SkillCapabilities() []agent.Capability {
+	all := f.UploadCapabilities()
+	all[0].Name, all[0].Origin = "skill_read", "skills"
+	all[0].Description = "Read a staged skill instruction or supporting text file by path relative to the skills root. Skills cannot call models directly."
+	all[1].Name, all[1].Origin = "skill_search", "skills"
+	all[1].Description = "Find staged skill text by literal path or content; returns bounded relative paths only."
+	return all
+}
+
 func validPath(path string) bool {
 	return len(path) <= 1024 && filepath.IsLocal(path) && filepath.Clean(path) == path && path != "."
 }

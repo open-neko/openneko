@@ -96,6 +96,20 @@ func main() {
 		tools.Scope += "\nuploads:" + dir
 		closeTools = append(closeTools, uploads.Close)
 	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_SKILLS_READ"); enabled != "" {
+		if enabled != "1" || recordsOnly == "1" {
+			fmt.Fprintln(os.Stderr, "invalid skill capability binding")
+			os.Exit(2)
+		}
+		skills, openErr := localtool.OpenFiles(os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"))
+		if openErr != nil {
+			fmt.Fprintln(os.Stderr, "skill workspace unavailable:", openErr)
+			os.Exit(2)
+		}
+		tools.Capabilities = append(tools.Capabilities, skills.SkillCapabilities()...)
+		tools.Scope += "\nskills:" + os.Getenv("OPENNEKO_MCP_SKILLS_ROOT")
+		closeTools = append(closeTools, skills.Close)
+	}
 	cleanup := func() error {
 		var first error
 		for _, closeTool := range closeTools {

@@ -169,9 +169,10 @@ passed. Records catalog was tested end to end with an empty registry; find/get
 used a synthetic broker behind the real bridge and still need data-backed
 acceptance. The queued clarification reached `needs_input` after two outer model
 calls; broker events entered the turn reducer, and queue redelivery preserved one
-question and surface without a model replay or assistant answer. Broker validation
-denied forged completion events, and the real stdio bridge rendered a validated
-card against a synthetic event sink. Operator-answer continuation, browser reload,
+question and surface without a model replay or assistant answer. A second queued
+turn accepted the operator's answer and completed the same thread. Broker validation
+denied forged completion events, and a connected worker/OpenShell turn rendered
+one validated card through the real stdio bridge. Browser reload,
 uploaded-document search and the real Daily Lead Union batch remain unqualified.
 
 The controlled query-to-file runner now consumes the pinned script's cache-miss
@@ -377,8 +378,10 @@ pulled it back from OpenShell, emitted one Work artifact event and excluded a
 sibling run's file. The existing web download-route authorization suite passes,
 and the 2026-09-26 isolated Work page rendered `result.csv` as an artifact link.
 Clicking it returned HTTP 200; fetching the same URL returned the exact
-`lead_id\nLEAD-42\n` CSV bytes with attachment headers. This qualifies a small
-artifact through the browser, not the Daily Lead Union batch. The validated
+`lead_id\nLEAD-42\n` CSV bytes with attachment headers. A separate connected
+worker/OpenShell turn read a staged `SKILL.md` through a read-only skill tool and
+created the expected CSV artifact; the script never called a model. This qualifies
+a small artifact through the browser, not the Daily Lead Union batch. The validated
 large batch artifact and general shell path remain open. External writers do not share
 the Go gate; the second version check narrows but cannot eliminate their
 check-to-rename race, so strict cross-process coordination needs a host lock.

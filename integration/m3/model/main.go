@@ -21,6 +21,9 @@ func main() {
 	upload := false
 	artifact := false
 	clarification := false
+	card := false
+	skill := false
+	answerClarification := false
 	continuation := false
 	pauseResponder := false
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
@@ -35,14 +38,17 @@ func main() {
 			return
 		}
 		var c struct {
-			Delay          int  `json:"delay"`
-			EffectFences   bool `json:"effect_fences"`
-			Proposal       bool `json:"proposal"`
-			Upload         bool `json:"upload"`
-			Artifact       bool `json:"artifact"`
-			Clarification  bool `json:"clarification"`
-			Continue       bool `json:"continue"`
-			PauseResponder bool `json:"pause_responder"`
+			Delay               int  `json:"delay"`
+			EffectFences        bool `json:"effect_fences"`
+			Proposal            bool `json:"proposal"`
+			Upload              bool `json:"upload"`
+			Artifact            bool `json:"artifact"`
+			Clarification       bool `json:"clarification"`
+			Card                bool `json:"card"`
+			Skill               bool `json:"skill"`
+			AnswerClarification bool `json:"answer_clarification"`
+			Continue            bool `json:"continue"`
+			PauseResponder      bool `json:"pause_responder"`
 		}
 		if json.NewDecoder(r.Body).Decode(&c) != nil || c.Delay < 0 || c.Delay > 30 {
 			http.Error(w, "invalid", 400)
@@ -60,6 +66,9 @@ func main() {
 		upload = c.Upload
 		artifact = c.Artifact
 		clarification = c.Clarification
+		card = c.Card
+		skill = c.Skill
+		answerClarification = c.AnswerClarification
 		mu.Unlock()
 		w.WriteHeader(204)
 	})
@@ -90,6 +99,9 @@ func main() {
 		readUpload := upload
 		writeArtifact := artifact
 		askClarification := clarification
+		renderCard := card
+		followSkill := skill
+		answerQuestion := answerClarification
 		resume := continuation
 		n := counts[req.Model]
 		if pauseResponder && req.Model == "harness-fixture" && n == 2 {
@@ -148,7 +160,7 @@ func main() {
 			http.Error(w, "missing created artifact receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && !readUpload && !writeArtifact && !propose && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && !readUpload && !writeArtifact && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -167,8 +179,17 @@ func main() {
 			responses = []string{`{"javascriptCode":"final('Browse generated records apps', {})"}`, `{"javascriptCode":"const catalog=mcp_neko_records_browse_catalog({}); final('Report records catalog',{catalog});"}`, `{"answer":"The records catalog contains no generated apps for this test organization."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
+			if answerQuestion {
+				responses = []string{`{"javascriptCode":"final('Use the answered day', {})"}`, `{"javascriptCode":"final('The selected day is 2026-09-15', {})"}`, `{"answer":"The selected day is 2026-09-15."}`}
+			}
 			if askClarification {
 				responses = []string{`{"javascriptCode":"final('Ask for the missing day', {})"}`, `{"javascriptCode":"mcp_neko_interaction_ask_user_question({questions:[{question:'Which day?'}]}); final('Wait for the answer', {});"}`}
+			}
+			if renderCard {
+				responses = []string{`{"javascriptCode":"final('Render a summary card', {})"}`, `{"javascriptCode":"const card=mcp_neko_ui_render_cards({messages:[{version:'v1.0',createSurface:{surfaceId:'fixture-card',catalogId:'urn:openneko:catalog:work:v2',components:[{id:'root',component:'Text'}]}}]}); final('Report the card',{card});"}`, `{"answer":"Rendered the summary card."}`}
+			}
+			if followSkill {
+				responses = []string{`{"javascriptCode":"final('Follow the staged skill', {})"}`, `{"javascriptCode":"const skill=skill_read({path:'fixture-task/SKILL.md'}); if(!skill.content.includes('SKILL-MARKER')) throw Error('skill not staged'); const file=file_write({path:'skill-result.csv',content:'day\\n2026-09-15\\n'}); final('Report the skill artifact',{skill,file});"}`, `{"answer":"Created skill-result.csv for 2026-09-15."}`}
 			}
 			if readUpload {
 				responses = []string{`{"javascriptCode":"final('Read the uploaded lead file', {})"}`, `{"javascriptCode":"const hidden=upload_search({query:'OTHER-SECRET'}); const matches=upload_search({query:'lead.csv'}); const file=upload_read({path:matches.paths[0]}); final('Report the uploaded lead',{hidden,matches,file});"}`, `{"answer":"The uploaded lead is LEAD-42."}`}
