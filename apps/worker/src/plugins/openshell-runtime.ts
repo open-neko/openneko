@@ -140,15 +140,39 @@ export class OpenShellRuntime implements PluginRuntime {
       await this.run(["sandbox", "delete", spec.id], DELETE_TIMEOUT_MS);
       await this.createSandbox(spec, providerName);
     }
-    await this.run([
-      "sandbox",
-      "upload",
-      spec.id,
-      `${this.options.bundleDir}/${spec.id}/run.js`,
-      PLUGIN_RUNNER_PATH,
-    ], UPLOAD_TIMEOUT_MS);
-    const policy = buildPolicyUpdateArgs(spec.id, spec.hosts ?? []);
-    if (policy) await this.run(policy, (POLICY_LOAD_TIMEOUT_S + 15) * 1000);
+    try {
+      // The gateway can return from create before its container becomes Ready.
+      // Retry only that known startup state; every other upload error is final.
+      for (let attempt = 0; attempt < 30; attempt++) {
+        try {
+          await this.run([
+            "sandbox", "upload", spec.id,
+            `${this.options.bundleDir}/${spec.id}/run.js`, PLUGIN_RUNNER_PATH,
+          ], UPLOAD_TIMEOUT_MS);
+          break;
+        } catch (error) {
+          if (attempt === 29 && formatError(error).includes("sandbox is not ready")) {
+            const detail = await this.run(["sandbox", "get", spec.id, "-o", "json"], 30_000).then(raw => {
+              const state = JSON.parse(raw) as Record<string, unknown>;
+              return JSON.stringify({ status: state.status, state: state.state,
+                reason: state.reason, error: state.error, keys: Object.keys(state) });
+            }).catch(cause => `status unavailable: ${formatError(cause)}`);
+            throw new Error(`Plugin sandbox did not become ready: ${detail}`, { cause: error });
+          }
+          if (!formatError(error).includes("sandbox is not ready")) throw error;
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      const policy = buildPolicyUpdateArgs(spec.id, spec.hosts ?? []);
+      if (policy) await this.run(policy, (POLICY_LOAD_TIMEOUT_S + 15) * 1000);
+    } catch (error) {
+      // A failed upload or policy update must not leave an untracked VM behind.
+      try { await this.run(["sandbox", "delete", spec.id], DELETE_TIMEOUT_MS); }
+      catch (cleanupError) {
+        throw new Error(`Plugin sandbox startup failed and cleanup is unconfirmed: ${formatError(cleanupError)}`, { cause: error });
+      }
+      throw error;
+    }
     this.entries.set(spec.id, {
       spec,
       ...(egress.length > 0
@@ -193,8 +217,9 @@ export class OpenShellRuntime implements PluginRuntime {
   }
 
   private createSandbox(spec: PluginVmSpec, providerName?: string): Promise<string> {
-    // `-- node --version` is a cheap initial command; the supervisor
-    // replaces it and (without --no-keep) the sandbox stays Ready.
+    // A plugin VM serves later register/execute RPCs. Keep its initial process
+    // alive until stop() deletes the sandbox; a short command can close the
+    // supervisor's exec relay before the first RPC on current OpenShell.
     return this.run([
       "sandbox",
       "create",
@@ -206,8 +231,8 @@ export class OpenShellRuntime implements PluginRuntime {
       "--no-auto-providers",
       ...(providerName ? ["--provider", providerName] : []),
       "--",
-      "node",
-      "--version",
+      "sleep",
+      "infinity",
     ], CREATE_TIMEOUT_MS);
   }
 

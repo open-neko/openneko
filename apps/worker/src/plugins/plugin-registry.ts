@@ -27,7 +27,7 @@ import {
   watch as fsWatch,
 } from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import {
@@ -315,6 +315,8 @@ export class PluginRegistry {
     kind: string;
     description: string;
     pluginName?: string;
+    pluginVersion?: string;
+    pluginIntegrity?: string;
     default_mode?:
       | "auto"
       | "ask"
@@ -329,6 +331,8 @@ export class PluginRegistry {
       kind: string;
       description: string;
       pluginName?: string;
+      pluginVersion?: string;
+      pluginIntegrity?: string;
       default_mode?:
         | "auto"
         | "ask"
@@ -345,6 +349,8 @@ export class PluginRegistry {
           kind: decl.kind,
           description: decl.description,
           pluginName: entry.name,
+          pluginVersion: entry.version,
+          pluginIntegrity: entry.integrity,
           default_mode: decl.default_mode,
           example: decl.example,
         });
@@ -1824,8 +1830,14 @@ function mergeEnv(
   };
 }
 
-function pluginIdFromName(name: string): string {
-  return name.replace(/^@/, "").replace(/\//g, "-");
+export function pluginIdFromName(name: string): string {
+  const readable = name.replace(/^@/, "").replace(/[\/_]/g, "-");
+  if (readable.length <= 19) return readable;
+  // OpenShell sandbox names are capped at 19 characters. Keep the useful
+  // package suffix and hash the complete name to avoid collisions.
+  const suffix = readable.slice(-8).replace(/^-+/g, "") || "plugin";
+  const digest = createHash("sha256").update(name).digest("hex").slice(0, 10);
+  return `${suffix}-${digest}`;
 }
 
 /**

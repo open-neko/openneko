@@ -87,7 +87,7 @@ describe("startAgentBroker token registry", () => {
       expect(handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"internal"}]})).toBe(token);
       expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_delete",source:"plugin",scope:"internal"}]})).toThrow("conflicts");
       expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"external"}]})).toThrow("conflicts");
-      expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"internal",pluginName:"crm"}]})).toThrow("conflicts");
+      expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"plugin",scope:"internal",pluginName:"crm",pluginVersion:"1.0.0",pluginIntegrity:"sha512-AAAA"}]})).toThrow("conflicts");
       expect(()=>handle.tokenFor({...binding,actionGrants:[...grants!,...grants!]})).toThrow("Invalid broker action grants");
       expect(()=>handle.tokenFor({...binding,actionGrants:[{kind:"record_update",source:"pack",scope:"internal",pluginName:"crm"}]})).toThrow("Invalid broker action grants");
       expect(()=>handle.tokenFor({...binding,profile:"harness-read-only"})).toThrow("Invalid broker action grants");

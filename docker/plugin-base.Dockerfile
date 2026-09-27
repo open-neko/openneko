@@ -23,4 +23,6 @@ RUN groupadd -g 1000660000 sandbox \
     && install -d -o sandbox -g sandbox /sandbox
 
 WORKDIR /sandbox
+ENV HOME=/sandbox
+USER sandbox
 CMD ["node", "--version"]
