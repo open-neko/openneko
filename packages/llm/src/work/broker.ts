@@ -1,4 +1,5 @@
 import { proposeHarnessAction } from "./harness-proposal";
+import { validateRenderCardsInput } from "./a2ui-contract";
 import { startupEvent } from "@neko/telemetry/startup";
 import { recordHarnessLookup } from "./harness-operation";
 import {
@@ -35,6 +36,9 @@ export interface RunBinding {
   libraryRead?: boolean;
   /** Registry-backed catalog/find/get only; actor grants remain authoritative. */
   recordsRead?: boolean;
+  /** Run-scoped clarification and validated card events from the MCP bridge. */
+  interactionEvents?: boolean;
+  cardEvents?: boolean;
   /** Controlled file-backed batch reads; never grants general GraphJin MCP. */
   batchRead?: boolean;
   runId: string;
@@ -54,6 +58,24 @@ const harnessRecordsReadPaths = new Set([
   "/v1/records/get",
 ]);
 
+function validHarnessEvents(binding: RunBinding, value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 1) return false;
+  const event = value[0];
+  if (!event || typeof event !== "object") return false;
+  if (event.type === "surface") {
+    return binding.cardEvents === true && validateRenderCardsInput({ messages: event.messages }).success;
+  }
+  if (event.type !== "needs_input" || binding.interactionEvents !== true ||
+      typeof event.question !== "string" || !event.question.trim() || event.question.length > 500 ||
+      !Array.isArray(event.questions) || event.questions.length < 1 || event.questions.length > 3) return false;
+  return event.questions.every((question: unknown, index: number) => {
+    if (!question || typeof question !== "object") return false;
+    const item = question as Record<string, unknown>;
+    return item.id === `q${index + 1}` && typeof item.question === "string" &&
+      item.question.trim().length > 0 && item.question.length <= 500;
+  });
+}
+
 /**
  * Attach the host run's normal event sink to MCP bridge emissions. This keeps
  * approval cards, builder confirmations, and other tool-authored events on the
@@ -63,9 +85,13 @@ export function registerAgentBrokerEventSink(
   runId: string,
   sink: AgentBrokerEventSink,
 ): () => void {
+  const previous = runEventSinks.get(runId);
   runEventSinks.set(runId, sink);
   return () => {
-    if (runEventSinks.get(runId) === sink) runEventSinks.delete(runId);
+    if (runEventSinks.get(runId) === sink) {
+      if (previous) runEventSinks.set(runId, previous);
+      else runEventSinks.delete(runId);
+    }
   };
 }
 
@@ -117,7 +143,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -598,6 +624,9 @@ async function handle(
         }),
       );
     case "/v1/events":
+      if (binding.profile && !validHarnessEvents(binding, body.events)) {
+        return send(res, 403, { error: "Harness event capability denied" });
+      }
       await deps.onEvents(binding, (body.events as AgentEvent[]) ?? []);
       return send(res, 200, { ok: true });
     default:
@@ -777,6 +806,9 @@ export async function startAgentBroker(
       if (binding.recordsRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker records grant");
       }
+      if ((binding.interactionEvents || binding.cardEvents) && (!binding.profile || binding.kind !== "work")) {
+        throw new Error("Invalid broker interaction grant");
+      }
       if (binding.batchRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker batch grant");
       }
@@ -785,7 +817,7 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.libraryRead !== binding.libraryRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }
@@ -872,7 +904,7 @@ export async function shutdownAgentBroker(): Promise<void> {
   await active?.close();
 }
 
-async function routeBrokerEvents(
+export async function routeBrokerEvents(
   binding: RunBinding,
   events: AgentEvent[],
 ): Promise<void> {

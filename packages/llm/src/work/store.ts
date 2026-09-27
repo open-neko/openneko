@@ -577,6 +577,26 @@ export async function getWorkRunEvents(
   return rows.map((row) => row.payload as AgentEvent);
 }
 
+export async function getWorkRunClarification(orgId: string, runId: string): Promise<Extract<AgentEvent, { type: "needs_input" }> | null> {
+  const [row] = await db()
+    .select({ payload: work_run_event.payload })
+    .from(work_run_event)
+    .where(and(eq(work_run_event.org_id, orgId), eq(work_run_event.run_id, runId), eq(work_run_event.kind, "needs_input")))
+    .orderBy(desc(work_run_event.id))
+    .limit(1);
+  const event = row?.payload as AgentEvent | undefined;
+  return event?.type === "needs_input" ? event : null;
+}
+
+export async function hasWorkRunEvent(orgId: string, runId: string, kind: AgentEvent["type"]): Promise<boolean> {
+  const [row] = await db()
+    .select({ id: work_run_event.id })
+    .from(work_run_event)
+    .where(and(eq(work_run_event.org_id, orgId), eq(work_run_event.run_id, runId), eq(work_run_event.kind, kind)))
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function getWorkRunEventsAfter(
   orgId: string,
   runId: string,

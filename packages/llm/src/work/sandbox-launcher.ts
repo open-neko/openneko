@@ -1070,6 +1070,7 @@ function makeSandboxCore(
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { memoryRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { libraryRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" ? { recordsRead: true } : {}),
+                  ...(input.backend.id === "harness" && kind === "work" ? { interactionEvents: true, cardEvents: (input as RunAgentBackendInput).wantsCards ?? true } : {}),
                 }),
                 }
               : {}),
