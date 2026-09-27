@@ -462,6 +462,9 @@ delivery, duplicate consumer claims, pre-dispatch crash recovery, subscription
 edit rejection, and failed linked work-run reconciliation. This test exercises
 the delivery ledger and queue; the connected gate below covers the GraphJin
 websocket, workflow turn and reconnect replay.
+The isolated queue test also injects a lost acknowledgement after pg-boss
+accepts a job: the accepted job claims the pending delivery once, and the
+recovery sweep does not dispatch another workflow.
 
 **Connected trigger replay gate (2026-09-28):** the isolated acceptance stack
 used the production pg-boss `workflow_run_fire` handler, Ax, the host GraphJin
