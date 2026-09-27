@@ -575,8 +575,14 @@ Clicking it returned HTTP 200; fetching the same URL returned the exact
 `lead_id\nLEAD-42\n` CSV bytes with attachment headers. A separate connected
 worker/OpenShell turn read a staged `SKILL.md` through a read-only skill tool and
 created the expected CSV artifact; the script never called a model. This qualifies
-a small artifact through the browser, not the Daily Lead Union batch. The validated
-large batch artifact and general shell path remain open. Harness processes now
+a small artifact through the browser, not the Daily Lead Union batch. A separate
+connected Work queue gate now generated a real XLSX and DOCX from one staged CSV
+inside the no-provider/no-network process sandbox. The host verified both Office
+ZIP/XML packages, source value, exact output hashes, artifact event count and
+authenticated Work download bytes, MIME types and attachment headers. Chromium
+downloaded both files after a page reload with one link per artifact. This
+qualifies synthetic Office generation; the real customer lead union remains
+unconnected. Harness processes now
 take shared or exclusive advisory locks on the workspace directory inode around
 reads, searches, edits and writes. A real second-process test passed concurrent
 readers, a writer blocked until both readers released, and a reader blocked

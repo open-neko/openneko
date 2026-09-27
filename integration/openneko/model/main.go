@@ -26,6 +26,7 @@ func main() {
 	processCancel := false
 	processOversize := false
 	processFlood := false
+	processOffice := false
 	management := false
 	audit := false
 	auditDenied := false
@@ -70,6 +71,7 @@ func main() {
 			ProcessCancel        bool `json:"process_cancel"`
 			ProcessOversize      bool `json:"process_oversize"`
 			ProcessFlood         bool `json:"process_flood"`
+			ProcessOffice        bool `json:"process_office"`
 			Management           bool `json:"management"`
 			Audit                bool `json:"audit"`
 			AuditDenied          bool `json:"audit_denied"`
@@ -113,6 +115,7 @@ func main() {
 		processCancel = c.ProcessCancel
 		processOversize = c.ProcessOversize
 		processFlood = c.ProcessFlood
+		processOffice = c.ProcessOffice
 		management = c.Management
 		audit = c.Audit
 		auditDenied = c.AuditDenied
@@ -167,6 +170,7 @@ func main() {
 		runCancelProcess := processCancel
 		runOversizeProcess := processOversize
 		runFloodProcess := processFlood
+		runOfficeProcess := processOffice
 		readManagement := management
 		readAudit := audit
 		readUploadedLibrary := uploadedLibrary
@@ -319,6 +323,11 @@ func main() {
 			http.Error(w, "missing large process artifact receipt", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-fixture" && runOfficeProcess &&
+			(!strings.Contains(string(req.Messages), "process-1/leads.xlsx") || !strings.Contains(string(req.Messages), "process-1/summary.docx")) {
+			http.Error(w, "missing Office process artifact receipts", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-fixture" && readManagement &&
 			(!strings.Contains(string(req.Messages), "harness-management-rule") || !strings.Contains(string(req.Messages), "users") || !strings.Contains(string(req.Messages), "sources")) {
 			http.Error(w, "missing management catalog evidence", 422)
@@ -360,7 +369,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -501,6 +510,11 @@ func main() {
 				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['large.bin']}); final('Report the large process artifact',{result});", script)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Create a large isolated artifact', {})"}`, string(encoded), `{"answer":"Created large.bin."}`}
+			}
+			if runOfficeProcess {
+				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:['lead.csv'],outputs:['leads.xlsx','summary.docx']}); final('Report the Office artifacts',{result});", officeScript)
+				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+				responses = []string{`{"javascriptCode":"final('Create two Office artifacts from the selected upload', {})"}`, string(encoded), `{"answer":"Created leads.xlsx and summary.docx."}`}
 			}
 			if readManagement {
 				responses = []string{`{"javascriptCode":"final('Inspect management catalogs', {})"}`, `{"javascriptCode":"const users=mcp_neko_user_manager_list_users({}); const groups=mcp_neko_user_manager_list_groups({}); const sources=mcp_neko_data_source_manager_list_data_sources({}); const rules=mcp_neko_rule_builder_list_rules({}); const plugins=mcp_neko_plugin_manager_list_plugins({}); const channels=mcp_neko_channel_manager_list_channels({}); final('Report management catalogs',{users,groups,sources,rules,plugins,channels});"}`, `{"answer":"The management catalogs include the seeded rule and organization data source."}`}

@@ -107,6 +107,26 @@ fi
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18119 RECORDS_PG_USER=neko RECORDS_PG_PASSWORD=synthetic-m3 RECORDS_PG_DATABASE=neko
   export OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development OPENNEKO_AGENT_HOME="$HARNESS_STATE/user" WORKER_ADMIN_URL=http://127.0.0.1:18122 OPENNEKO_BROKER_PORT=18123
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
+  if [[ ${HARNESS_M5_OFFICE_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
+    set -m
+    (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m5-office-web.log 2>&1 &
+    web_pid=$!
+    set +m
+    trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+    ready=0
+    for ((n=0; n<90; n++)); do
+      if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+      kill -0 "$web_pid" || exit 1
+      sleep 1
+    done
+    [[ "$ready" == 1 ]] || { echo 'Isolated Office artifact web server did not start' >&2; exit 1; }
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-process-office-live.ts)
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-office-artifacts.mjs "$(cat "$HARNESS_STATE/m5-office-thread")")
+    echo M5_CONNECTED_OFFICE_ARTIFACTS_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M5_PROCESS_CANCEL_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     if [[ ${HARNESS_M5_PROCESS_TIMEOUT:-0} == 1 ]]; then
