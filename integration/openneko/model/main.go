@@ -324,7 +324,7 @@ func main() {
 			return
 		}
 		if n == 2 && req.Model == "harness-fixture" && runOfficeProcess &&
-			(!strings.Contains(string(req.Messages), "process-1/leads.xlsx") || !strings.Contains(string(req.Messages), "process-1/summary.docx")) {
+			(!strings.Contains(string(req.Messages), "OFFICE-SKILL-MARKER") || !strings.Contains(string(req.Messages), "process-2/leads.xlsx") || !strings.Contains(string(req.Messages), "process-2/summary.docx")) {
 			http.Error(w, "missing Office process artifact receipts", 422)
 			return
 		}
@@ -512,7 +512,7 @@ func main() {
 				responses = []string{`{"javascriptCode":"final('Create a large isolated artifact', {})"}`, string(encoded), `{"answer":"Created large.bin."}`}
 			}
 			if runOfficeProcess {
-				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:['lead.csv'],outputs:['leads.xlsx','summary.docx']}); final('Report the Office artifacts',{result});", officeScript)
+				call := fmt.Sprintf("const skill=skill_read({path:'office-fixture/SKILL.md'}); if(!skill.content.includes('OFFICE-SKILL-MARKER')) throw Error('skill not staged'); const result=process_run({language:'python',script:%q,uploads:['lead.csv'],outputs:['leads.xlsx','summary.docx']}); final('Report the Office artifacts',{skill,result});", officeScript)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Create two Office artifacts from the selected upload', {})"}`, string(encoded), `{"answer":"Created leads.xlsx and summary.docx."}`}
 			}

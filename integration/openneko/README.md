@@ -93,8 +93,8 @@ a queued 17 MiB declared output must fail without publication, and a noisy
 script must publish its valid CSV with a bounded, truncated model receipt.
 It reports `M5_CONNECTED_PROCESS_OUTPUT_LIMITS_PASS`.
 Set `HARNESS_M5_OFFICE_ONLY=1` for the focused Office artifact gate. A queued
-Work run reads one selected synthetic CSV in the credential-free process
-sandbox and writes XLSX and DOCX packages. The host verifies their ZIP/XML
+Work run follows a staged skill, reads one selected synthetic CSV in the
+credential-free process sandbox, and writes XLSX and DOCX packages. The host verifies their ZIP/XML
 contents, hashes and exact authorized download bytes; Chromium downloads both
 after reload and checks each link appears once. It reports
 `M5_CONNECTED_OFFICE_ARTIFACTS_PASS` and removes the isolated stack on exit.
