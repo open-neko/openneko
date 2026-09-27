@@ -76,6 +76,10 @@ no published artifact. The expected marker is
 `HARNESS_M5_PROCESS_CANCEL_HTTP=1` to issue the authenticated Work Stop request
 through a temporary isolated Next server; this also reports
 `M5_WEB_PROCESS_CANCEL_PASS`.
+Set `HARNESS_M5_PROCESS_TIMEOUT=1` instead to inspect the live compartment's
+CPU/memory limits and verify a two-second exec deadline, sandbox teardown and
+absence of any published partial artifact. This reports
+`M5_CONNECTED_PROCESS_TIMEOUT_PASS`.
 
 For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owned
 state directory and serves the real web app at `http://localhost:18121/work`.

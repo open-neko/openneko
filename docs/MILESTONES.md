@@ -587,9 +587,8 @@ and denied direct network access inside the process compartment. A second
 queued run published a 2 MiB artifact with an exact host hash and one artifact
 event; the authenticated web route returned the exact bytes with attachment
 headers. The selected-upload fixture excluded an unselected sibling file and a
-host-only environment canary from the process compartment. HTTP Stop-route
-cancellation and broader process limits remain to qualify through the full
-product path. The separate real OpenShell process suite now
+host-only environment canary from the process compartment. The separate real
+OpenShell process suite now
 also rejects publication after a script writes an output and exits nonzero,
 after a partial output is cancelled, and when a declared output exceeds the
 16 MiB per-file limit.
@@ -608,7 +607,16 @@ operation receipt. A late handler invocation and a late attempt to mark the
 run running could not reopen it or call the model. A second isolated run
 issued the authenticated HTTP Stop request while the process was active;
 the route returned `recovered: true`, and the same sandbox, artifact and
-late-delivery assertions passed. Broader process resource ceilings remain open.
+late-delivery assertions passed.
+
+**Connected process limits (2026-09-28):** a queued Work run started the
+same long-lived process with a host-configured two-second deadline. Docker
+inspection of its active OpenShell compartment verified a one-core CPU limit
+and 512 MiB memory limit. OpenShell ended the exec at the deadline; the worker
+marked the Work run failed, removed both sandboxes, and published neither an
+artifact event nor a file or successful operation receipt. The separate
+OpenShell suite covers oversized declared outputs; queued oversized-output
+and log-flood rejection are the remaining full-path limits checks.
 
 **Deliver:** Read, Edit, Write, file search and shell/process tools under
 OpenShell, file read-version checks, read-parallel/write-exclusive scheduling,
