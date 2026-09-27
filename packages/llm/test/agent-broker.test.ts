@@ -77,6 +77,20 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("denies Harness lookup to agent jobs without the server-agent grant", async () => {
+    const handle = await startAgentBroker({ controlPlane: stubControlPlane(), port: 0 });
+    try {
+      const binding: RunBinding = { runId: "job-1", orgId: "org", kind: "agent-job", profile: "harness-read-only", lookupRead: false };
+      const token = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({ ...binding, lookupRead: true })).toThrow("conflicts");
+      const response = await fetch(`http://127.0.0.1:${handle.port}/v1/harness/lookup`, {
+        method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ operationId: 1, instruction: "Find a reference" }),
+      });
+      expect(response.status).toBe(403);
+    } finally { await handle.close(); }
+  });
+
   it("admits workflow output only for an exact workflow-bound Harness token", async () => {
     const handle = await startAgentBroker({ controlPlane: stubControlPlane(), port: 0 });
     try {

@@ -24,7 +24,8 @@ export class HarnessBackend implements AgentBackend {
         if (!["openai", "openai-api", "custom"].includes(config.model?.provider ?? "")) {
             throw new Error("Harness M3 requires an OpenAI-compatible model route");
         }
-        if (!env.OPENNEKO_BROKER_URL || !env.OPENNEKO_BROKER_TOKEN || !env.api_key) {
+        const lookupRead = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_LOOKUP_READ !== "0";
+        if ((lookupRead && (!env.OPENNEKO_BROKER_URL || !env.OPENNEKO_BROKER_TOKEN)) || !env.api_key) {
             throw new Error("Harness M3 requires a scoped broker and OpenShell model placeholder");
         }
         const runId = opts.runId;
@@ -36,7 +37,8 @@ export class HarnessBackend implements AgentBackend {
             !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64)
             throw new Error("Invalid trusted Harness run budget");
         const workflowRunId = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_WORKFLOW_RUN_ID;
-        const childReads = opts.nativeDelegation !== "disabled" && workflowRunId ? "lookup" : opts.nativeDelegation !== "disabled" &&
+        const childReads = opts.nativeDelegation === "disabled" ? "" : opts.mcpBridgeEnv?.OPENNEKO_MCP_MODE === "agent-job"
+            ? lookupRead ? "lookup" : "" : workflowRunId ? "lookup" :
             (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_MCP_MEMORY_READ ?? env.OPENNEKO_HARNESS_MCP_MEMORY_READ) === "1" &&
             (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_RECORDS_ONLY ?? env.OPENNEKO_HARNESS_RECORDS_ONLY) !== "1"
             ? "lookup,mcp_memory_search" : "";

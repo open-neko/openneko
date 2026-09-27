@@ -1070,7 +1070,7 @@ function makeSandboxCore(
 
       log(
         `agent sandbox ready: ${name} (backend=${input.backend.id}, kind=${kind}, ` +
-          `graphjin=brokered, skill_overrides=${staged.skillOverrides.length})`,
+          `graphjin=${opts.brokerUrl ? "brokered" : "none"}, skill_overrides=${staged.skillOverrides.length})`,
       );
       await input.emit({ type: "status", message: "Agent is working…" });
       const result = await timed("exec", () => execAndStream(
@@ -1090,6 +1090,7 @@ function makeSandboxCore(
                   kind,
                   ...(input.backend.id === "harness" ? { profile: kind === "work" && (input as RunAgentBackendInput).packActions?.length ? "harness-governed" as const : "harness-read-only" as const } : {}),
                   ...(input.backend.id === "harness" ? { operationLimit: HARNESS_OPERATION_LIMIT } : {}),
+                  ...(input.backend.id === "harness" && kind === "agent-job" ? { lookupRead: jobInput?.access.graphjinAgent === true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface === "records" ? { lookupRead: false } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { memoryRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { memoryWrite: true } : {}),

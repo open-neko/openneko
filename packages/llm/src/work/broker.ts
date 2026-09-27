@@ -405,7 +405,7 @@ async function handle(
       if (req.aborted || res.destroyed) abort.abort();
       try {
         return send(res,200,await recordHarnessLookup(binding,body.operationId,request,()=>
-          cp.askGraphjinDataAgent({orgId:binding.orgId,runId:binding.runId,...request,signal:abort.signal}),abort.signal));
+          cp.askGraphjinDataAgent({orgId:binding.orgId,...(binding.kind === "agent-job" ? {} : {runId:binding.runId}),...request,signal:abort.signal}),abort.signal));
       } finally { res.removeListener("close",disconnected); }
     }
     case "/v1/harness/workflow-output/emit": {
@@ -887,7 +887,7 @@ export async function startAgentBroker(
       if (binding.operationLimit !== undefined && (!binding.profile || !Number.isInteger(binding.operationLimit) || binding.operationLimit < 1 || binding.operationLimit > 32)) {
         throw new Error("Invalid broker operation limit");
       }
-      if (binding.lookupRead === false && (!binding.profile || binding.kind !== "work")) {
+      if (binding.lookupRead === false && (!binding.profile || (binding.kind !== "work" && binding.kind !== "agent-job"))) {
         throw new Error("Invalid broker lookup grant");
       }
       if (binding.memoryRead && (!binding.profile || binding.kind !== "work")) {

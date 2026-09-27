@@ -244,7 +244,7 @@ async function runJob(
       mcpServers,
       wantsCards: false,
       mcpBridgeEnv:
-        graphjinRead || graphjinAgent || memorySearch
+        graphjinRead || graphjinAgent || memorySearch || backend.id === "harness"
           ? {
               OPENNEKO_MCP_ORG_ID: job.orgId,
               OPENNEKO_MCP_MODE: "agent-job",
@@ -253,6 +253,14 @@ async function runJob(
               OPENNEKO_MCP_SKILLS_ROOT: job.workspace.skillsRoot,
               OPENNEKO_MCP_PLUGIN_ACTIONS: "[]",
               OPENNEKO_MCP_MEMORY_READ_ONLY: "1",
+              ...(backend.id === "harness" ? {
+                OPENNEKO_HARNESS_LOOKUP_READ: graphjinAgent ? "1" : "0",
+                OPENNEKO_HARNESS_MCP_MEMORY_READ: "", OPENNEKO_HARNESS_MCP_LIBRARY_READ: "",
+                OPENNEKO_HARNESS_MCP_RECORDS_READ: "", OPENNEKO_HARNESS_MCP_WORKFLOW_READ: "",
+                OPENNEKO_HARNESS_MCP_INTERACTION: "", OPENNEKO_HARNESS_MCP_CARDS: "",
+                OPENNEKO_HARNESS_MEMORY_SAVE: "", OPENNEKO_HARNESS_SKILLS_READ: "",
+                OPENNEKO_HARNESS_WORKFLOW_RUN_ID: "",
+              } : {}),
             }
           : undefined,
     });
