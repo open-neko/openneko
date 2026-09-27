@@ -8,7 +8,7 @@ import { VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
 /** Opt-in read-only M3 backend. Hermes remains the default and keeps its warm pool. */
 export class HarnessBackend implements AgentBackend {
     readonly id = "harness" as const;
-    readonly capabilities = { mcpTools: false, brokerLookup: true, sessionResume: false } as const;
+    readonly capabilities = { mcpTools: false, brokerLookup: true, sessionResume: false, nativeDelegation: "ax-child-agent" } as const;
     constructor(readonly configuredIdentity?: AgentModelIdentity) { }
     get model() { return this.configuredIdentity?.model; }
     async run(opts: AgentRunOptions): Promise<AgentRunResult> {
@@ -35,9 +35,14 @@ export class HarnessBackend implements AgentBackend {
         if (!Number.isInteger(maxOperations) || maxOperations < 1 || maxOperations > 32 ||
             !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64)
             throw new Error("Invalid trusted Harness run budget");
+        const childReads = opts.nativeDelegation !== "disabled" &&
+            (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_MCP_MEMORY_READ ?? env.OPENNEKO_HARNESS_MCP_MEMORY_READ) === "1" &&
+            (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_RECORDS_ONLY ?? env.OPENNEKO_HARNESS_RECORDS_ONLY) !== "1"
+            ? "lookup,mcp_memory_search" : "";
         const child = spawn(VENDORED_HARNESS_MODEL_BINARY, [], {
             env: { ...env, ...opts.mcpBridgeEnv, HARNESS_MODEL_URL: config.model?.base_url ?? "", HARNESS_MODEL: config.model?.default ?? "",
                 HARNESS_MODEL_API_KEY: env.api_key, OPENNEKO_HARNESS_ACTION_KINDS: env.OPENNEKO_HARNESS_ACTION_KINDS ?? "", HARNESS_STATE_DIR: join(opts.workspace.runRoot, ".harness"),
+                OPENNEKO_HARNESS_CHILD_READS: childReads,
                 OPENNEKO_HARNESS_UPLOADS_DIR: opts.workspace.threadUploadsRoot,
                 OPENNEKO_HARNESS_WORKSPACE_DIR: opts.workspace.artifactRoot },
             stdio: ["pipe", "pipe", "ignore"],
@@ -77,6 +82,12 @@ export class HarnessBackend implements AgentBackend {
                 }
                 else if (event.type === "tool.finished") {
                     await opts.onEvent?.({ type: "tool_end", id: `harness-operation-${event.operation_id}`, result: event.data, ...(event.error ? { error: String(event.error) } : {}) });
+                }
+                else if (event.type === "child.started") {
+                    await opts.onEvent?.({ type: "tool_start", id: `harness-child-${event.span_id}`, name: "ax_child_agent" });
+                }
+                else if (event.type === "child.finished") {
+                    await opts.onEvent?.({ type: "tool_end", id: `harness-child-${event.span_id}` });
                 }
                 else if (event.type === "run.started") {
                     await opts.onEvent?.({ type: "status", message: "Harness is working…" });

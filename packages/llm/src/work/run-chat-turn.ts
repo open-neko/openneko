@@ -528,6 +528,7 @@ async function runChatTurnTraced(
       supportsPluginManagerTool,
       supportsNativeDelegation:
         backend.capabilities.nativeDelegation !== undefined &&
+        customerSurface &&
         opts.nativeDelegation !== "disabled",
       pluginCatalog,
       inlineTranscript,

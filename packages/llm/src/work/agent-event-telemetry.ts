@@ -93,6 +93,13 @@ export function createAgentEventTelemetry(input: {
           parentOperationId: `${input.operationId}:delegation:${event.id}`,
           attributes: { "openneko.model.scope": "inner" },
         });
+      } else if (event.name === "ax_child_agent") {
+        await observe({
+          kind: "delegation.start",
+          operationId: `${input.operationId}:delegation:${event.id}`,
+          parentOperationId: modelOperationId,
+          attributes: { "openneko.delegation.target": "ax-child-agent" },
+        });
       }
       return;
     }
@@ -139,6 +146,15 @@ export function createAgentEventTelemetry(input: {
           status: event.error ? "error" : "ok",
           ...(event.error ? { errorType: "graphjin_agent_error" } : {}),
           attributes: { "openneko.delegation.target": "graphjin-agent" },
+        });
+      } else if (started?.name === "ax_child_agent") {
+        await observe({
+          kind: "delegation.end",
+          operationId: `${input.operationId}:delegation:${event.id}`,
+          parentOperationId: modelOperationId,
+          status: event.error ? "error" : "ok",
+          ...(event.error ? { errorType: "child_agent_error" } : {}),
+          attributes: { "openneko.delegation.target": "ax-child-agent" },
         });
       }
       return;
@@ -293,6 +309,15 @@ export function createAgentEventTelemetry(input: {
           status: result.status,
           ...(result.errorType ? { errorType: result.errorType } : {}),
           attributes: { "openneko.delegation.target": "graphjin-agent" },
+        });
+      } else if (tool.name === "ax_child_agent") {
+        await observe({
+          kind: "delegation.end",
+          operationId: `${input.operationId}:delegation:${toolId}`,
+          parentOperationId: modelOperationId,
+          status: result.status,
+          ...(result.errorType ? { errorType: result.errorType } : {}),
+          attributes: { "openneko.delegation.target": "ax-child-agent" },
         });
       }
       await observe({
