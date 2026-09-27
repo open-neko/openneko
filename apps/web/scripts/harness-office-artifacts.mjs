@@ -9,13 +9,13 @@ try {
   const page = await browser.newPage({ acceptDownloads: true });
   await page.goto(`http://localhost:18121/work/${threadId}`, { waitUntil: "domcontentloaded" });
   for (const name of ["leads.xlsx", "summary.docx"]) {
-    const link = page.locator(`a[title$="/process-1/${name}"]`);
+    const link = page.locator(`a[title$="/process-2/${name}"]`);
     await link.waitFor({ timeout: 60_000 });
     assert.equal(await link.count(), 1, `${name} duplicated on first load`);
   }
   await page.reload({ waitUntil: "domcontentloaded" });
   for (const name of ["leads.xlsx", "summary.docx"]) {
-    const link = page.locator(`a[title$="/process-1/${name}"]`);
+    const link = page.locator(`a[title$="/process-2/${name}"]`);
     await link.waitFor({ timeout: 60_000 });
     assert.equal(await link.count(), 1, `${name} duplicated or lost after reload`);
     const downloadPromise = page.waitForEvent("download");
