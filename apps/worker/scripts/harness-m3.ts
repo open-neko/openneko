@@ -116,7 +116,7 @@ for (let n = 0; n < 120; n++) {
     if (current && ['completed', 'failed', 'cancelled', 'needs_input'].includes(current.status)) {
         assert.equal(current.status, expected, JSON.stringify(current));
         const [finished] = await db().select().from(processing_job).where(eq(processing_job.id, jobId));
-        if (finished.status !== 'succeeded') {
+        if (finished.status !== 'succeeded' && !(expected === 'failed' && finished.status === 'failed')) {
             await new Promise(r => setTimeout(r, 100));
             continue;
         }
@@ -289,6 +289,19 @@ if (process.env.HARNESS_M3_WEB === '1' || process.env.HARNESS_M3_API_HTTP === '1
   await writeFile(join(process.env.HARNESS_STATE!,'m5-process-run'),processRun.id);
   await writeFile(join(process.env.HARNESS_STATE!,'m5-process-thread'),processThread.id);
 }
+// A subprocess may write bytes and then fail. Those bytes must never become a
+// Work artifact, and its ambiguous host operation must not be replayed.
+const failedProcessThread=await createWorkThread(orgId,'M5 failed isolated process','web',soloAdmin.id);
+const failedProcessRun=await createWorkRun(orgId,failedProcessThread.id,'harness',{userId:null,role:'service'});
+const failedProcessWorkspace=await ensureWorkWorkspace(orgId,failedProcessThread.id,failedProcessRun.id);
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({process_fail:true})})).status,204);
+const [failedProcessJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-failed-isolated-process'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:failedProcessJob.id,orgId,runId:failedProcessRun.id,threadId:failedProcessThread.id,message:'Run the failing isolated process fixture.'},{retryLimit:0});
+await waitForJob(failedProcessJob.id,failedProcessRun.id,'failed');
+assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,failedProcessRun.id])).rows[0].n,0);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2 AND result IS NULL',[orgId,failedProcessRun.id])).rows[0].n,1);
+await assert.rejects(readFile(join(failedProcessWorkspace.artifactRoot,'process-1','result.csv')),{code:'ENOENT'});
+console.log('M5_QUEUE_PROCESS_FAILURE_PASS',failedProcessRun.id);
 // Read-only management MCP catalogs use the same Work actor and broker token;
 // none of these list tools grants its adjacent request/save/delete route.
 await db().insert(action_policy).values({org_id:orgId,name:'harness-management-rule',mode:'approval_required',applies_to_kinds:['harness_management_fixture'],applies_to_scopes:['external']});
