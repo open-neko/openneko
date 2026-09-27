@@ -165,6 +165,26 @@ assert.equal((await pool().query("SELECT count(*)::int AS n FROM work_run_event 
 assert.deepEqual(await assistantQuestionEvents(),[],'redelivery must not append an assistant answer');
 assert.deepEqual(await (await fetch('http://127.0.0.1:18118/control')).json(),questionCalls,'redelivery must not call model');
 console.log('M5_QUEUE_CLARIFICATION_PASS',questionRun.id);
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({answer_clarification:true})})).status,204);
+const answerRun=await createWorkRun(orgId,questionThread.id,'harness',{userId:null,role:'service'});
+const [answerJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-clarification-answer'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:answerJob.id,orgId,runId:answerRun.id,threadId:questionThread.id,message:'2026-09-15'},{retryLimit:0});
+await waitForJob(answerJob.id,answerRun.id);
+const answerReceipt=(await pool().query('SELECT accepted_context,result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2',[orgId,answerRun.id])).rows[0];
+assert.match(answerReceipt.accepted_context.prompt,/Which day\?/);
+assert.match(answerReceipt.accepted_context.prompt,/2026-09-15/);
+assert.match(answerReceipt.result.finalText,/2026-09-15/);
+console.log('M5_QUEUE_CLARIFICATION_ANSWER_PASS',answerRun.id);
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({card:true})})).status,204);
+const cardThread=await createWorkThread(orgId,'M5 rendered card');
+const cardRun=await createWorkRun(orgId,cardThread.id,'harness',{userId:null,role:'service'});
+const [cardJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-card'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:cardJob.id,orgId,runId:cardRun.id,threadId:cardThread.id,message:'Show a summary card.'},{retryLimit:0});
+await waitForJob(cardJob.id,cardRun.id);
+const cardEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,cardRun.id])).rows;
+assert.equal(cardEvents.length,1);
+assert.equal(cardEvents[0].payload.messages[0].createSurface.surfaceId,'fixture-card');
+console.log('M5_QUEUE_CARD_PASS',cardRun.id);
 // A staged upload must reach the Go harness through the production queue and
 // OpenShell sandbox, while another thread's upload remains invisible.
 const uploadThread=await createWorkThread(orgId,'M5 staged upload');
@@ -187,6 +207,19 @@ assert.deepEqual(uploadSnapshot.operations[1].result.paths,['lead.csv']);
 assert.match(uploadSnapshot.operations[2].result.content,/LEAD-42/);
 assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,uploadRun.id])).rows[0].n,0);
 console.log('M5_QUEUE_UPLOAD_PASS',uploadRun.id);
+const skillThread=await createWorkThread(orgId,'M5 staged skill');
+const skillRun=await createWorkRun(orgId,skillThread.id,'harness',{userId:null,role:'service'});
+const skillWorkspace=await ensureWorkWorkspace(orgId,skillThread.id,skillRun.id);
+await mkdir(join(skillWorkspace.skillsRoot,'fixture-task'),{recursive:true});
+await writeFile(join(skillWorkspace.skillsRoot,'fixture-task','SKILL.md'),'---\nname: fixture-task\ndescription: Create a dated fixture artifact\n---\nSKILL-MARKER: Write skill-result.csv with the selected day. Do not call an LLM from this skill.\n');
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({skill:true})})).status,204);
+const [skillJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-skill'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:skillJob.id,orgId,runId:skillRun.id,threadId:skillThread.id,message:'Follow fixture-task and create its dated CSV.'},{retryLimit:0});
+await waitForJob(skillJob.id,skillRun.id);
+assert.equal(await readFile(join(skillWorkspace.artifactRoot,'skill-result.csv'),'utf8'),'day\n2026-09-15\n');
+const skillSnapshot=JSON.parse(await readFile(join(skillWorkspace.runRoot,'.harness',`${createHash('sha256').update(skillRun.id).digest('hex')}.json`),'utf8'));
+assert.deepEqual(skillSnapshot.operations.map((op:{tool:string})=>op.tool),['skill_read','file_write']);
+console.log('M5_QUEUE_SKILL_PASS',skillRun.id);
 // Only this run's artifact directory is writable by the Go file tools. The
 // existing Work artifact projection must expose the completed CSV once.
 const soloAdmin=await getOrCreateSoloAdmin(orgId);
