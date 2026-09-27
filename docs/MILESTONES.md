@@ -342,9 +342,16 @@ to the same org and workflow execution, records intent before persistence,
 and refuses an ambiguous retry. A completed Harness workflow must have an
 output receipt; the host restores a missing output event from that receipt.
 An isolated pg-boss workflow executed two child GraphJin investigations,
-recorded one finding, and completed under OpenShell. The full connected suite
-and unchanged Hermes checks passed. API-admitted workflow budget/polling,
-workflow action requests, and broader mutation families remain open.
+recorded one finding, and completed under OpenShell. An API-admitted run
+returned a pollable result and a journaled output receipt; duplicate queue
+delivery did not repeat the effect. OpenNeko's existing finding dedupe may
+reuse a prior output row and increment its seen count, so the receipt and
+current run's output event are the evidence of emission. The API admission's
+model-call ceiling now reaches the shared Ax parent/child budget: a four-call
+run stopped at four model requests without an output. The full connected suite
+and unchanged Hermes checks passed. Workflow action requests and broader
+mutation families remain open. Server-side GraphJin agent calls remain under
+their own service budget and the API guard's conservative estimate.
 
 Source inventory for the next M5c slice:
 
@@ -459,8 +466,10 @@ OpenNeko's Work backend advertises this child only when delegation is enabled;
 the current child receives GraphJin lookup and memory search. Child lifecycle
 events project into delegation telemetry without a second inner-model usage
 entry. One queued workflow now owns two read-only child GraphJin investigations
-and one parent-emitted finding. API-admitted runs, crash-resume of an in-flight
-child, disabled-mode connected acceptance and agent-job mode remain open.
+and one parent-emitted finding. The API-admitted variant has a pollable result,
+durable output receipt, duplicate-delivery check and shared Ax call ceiling.
+Crash-resume of an in-flight child, disabled-mode connected acceptance and
+agent-job mode remain open.
 
 For queued workflows, the `workflow_run` remains the product outcome, the
 owning `work_run` remains the execution/journal parent, and child IDs are
