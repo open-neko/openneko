@@ -471,8 +471,9 @@ durable output receipt, duplicate-delivery check and shared Ax call ceiling.
 An isolated agent job with an explicit server-side GraphJin grant also ran one
 child investigation through the host broker, with one lookup receipt and six
 model-call receipts. A model-only job completed without a broker or GraphJin
-operation; an ungranted job token was denied at the broker. Crash-resume of an
-in-flight child and disabled-delegation connected acceptance remain open.
+operation; an ungranted job token was denied at the broker. A local checkpoint
+test interrupts a child after its read receipt, then resumes without repeating
+the host read. Connected crash-resume and disabled-delegation acceptance remain open.
 
 For queued workflows, the `workflow_run` remains the product outcome, the
 owning `work_run` remains the execution/journal parent, and child IDs are
