@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import {
   claimRecordsActionExecution,
   failRecordsActionExecution,
+  getRecordsActionExecution,
   setRecordsActionExecutionContext,
   succeedRecordsActionExecution,
 } from "../actions/execution";
@@ -257,6 +258,37 @@ export class RecordWriteExecutor {
     },
   ) {
     this.registry = dependencies.registry ?? new RecordRegistry(dependencies.pool);
+  }
+
+  /** Inspect an existing engine receipt without claiming or repeating a write. */
+  async reconcile(request: RecordWriteRequest): Promise<RecordWriteResult | null> {
+    if (request.operation === "upsert") return null;
+    const execution = await getRecordsActionExecution(
+      this.dependencies.pool,
+      request.actionRequestId,
+    );
+    if (!execution || execution.status !== "succeeded") return null;
+    if (execution.orgId !== request.orgId || execution.appId !== request.appId ||
+        execution.actionKind !== `record_${request.operation}`) {
+      throw new Error("Records action receipt identity mismatch");
+    }
+    const result = execution.result as Partial<RecordWriteResult> | null;
+    if (!result || result.actionRequestId !== request.actionRequestId ||
+        result.appId !== request.appId || result.objectApiName !== request.objectApiName ||
+        result.operation !== request.operation || typeof result.tableName !== "string" ||
+        typeof result.id !== "string" || !result.id ||
+        typeof result.mutationId !== "string" || !/^[a-f0-9]{64}$/.test(result.mutationId) ||
+        !(await this.auditExists({
+          mutationId: result.mutationId,
+          actionRequestId: request.actionRequestId,
+          orgId: request.orgId,
+          appId: request.appId,
+          objectApiName: request.objectApiName,
+          recordId: result.id,
+        }))) {
+      return null;
+    }
+    return { ...result, replayed: true, recovered: true } as RecordWriteResult;
   }
 
   private async resolve(request: RecordWriteRequest): Promise<{
