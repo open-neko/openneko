@@ -347,6 +347,8 @@ installed-plugin adapters still need product-level preflight/effect fixtures.
 An additional populated Records fixture passed a real approved `record_update`
 through its worker adapter and GraphJin, then restored the execution receipt
 on a duplicate call; the row and audit log each reflected one mutation.
+Worker preflight now checks Harness CRUD payload shape and actor availability
+before the approval is issued; legacy Hermes requests retain their existing path.
 Queued Work redelivery and the other Records CRUD actions remain unqualified.
 The direct `memory_save` capability now binds an explicit customer Work-run grant,
 validates the model's bounded text/kind/scope, and persists host operation intent
