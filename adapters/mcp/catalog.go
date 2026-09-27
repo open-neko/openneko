@@ -62,7 +62,7 @@ func Admit(ctx context.Context, session *protocol.ClientSession, allowed []Admis
 		}
 		actual, err := json.Marshal(tool.InputSchema)
 		if err != nil || !sameJSON(actual, item.Schema) {
-			return nil, fmt.Errorf("MCP schema changed")
+			return nil, fmt.Errorf("MCP schema changed for %s", item.Name)
 		}
 		name := item.Name
 		admitted = append(admitted, agent.Capability{Name: item.Alias, Version: item.Version, Origin: item.Origin, Effect: item.Effect, Description: item.Description, InputSchema: item.Schema,

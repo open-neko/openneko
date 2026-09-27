@@ -58,7 +58,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 			return
 		}
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["orgId"] != "org-fixture" || body["runId"] != "run-fixture" || (r.URL.Path == "/v1/memory/search" && body["query"] != "find policy") || (r.URL.Path == "/v1/library/search" && body["query"] != "find contract") {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["orgId"] != "org-fixture" || (r.URL.Path != "/v1/records/blueprints" && body["runId"] != "run-fixture") || (r.URL.Path == "/v1/memory/search" && body["query"] != "find policy") || (r.URL.Path == "/v1/library/search" && body["query"] != "find contract") {
 			http.Error(w, "wrong scope or query", http.StatusBadRequest)
 			return
 		}
@@ -70,7 +70,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/records/") {
 			recordsRequests.Add(1)
-			if body["appId"] != "crm" && r.URL.Path != "/v1/records/catalog" {
+			if body["appId"] != "crm" && r.URL.Path != "/v1/records/catalog" && r.URL.Path != "/v1/records/blueprints" {
 				http.Error(w, "wrong records app", http.StatusBadRequest)
 				return
 			}
@@ -82,6 +82,12 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 				_, _ = w.Write([]byte(`{"records":[{"id":"lead-42"}]}`))
 			case "/v1/records/get":
 				_, _ = w.Write([]byte(`{"id":"lead-42","name":"Fixture lead"}`))
+			case "/v1/records/blueprints":
+				_, _ = w.Write([]byte(`{"blueprints":[{"id":"crm"}]}`))
+			case "/v1/records/recycle/find":
+				_, _ = w.Write([]byte(`{"records":[{"id":"lead-deleted"}]}`))
+			case "/v1/records/recycle/get":
+				_, _ = w.Write([]byte(`{"id":"lead-deleted","deletedAt":"today"}`))
 			default:
 				http.Error(w, "unexpected records route", http.StatusNotFound)
 			}
@@ -150,7 +156,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	if err != nil || !strings.Contains(string(result), "memory-1") || requests.Load() != 2 {
 		t.Fatalf("product MCP read failed: result=%s err=%v requests=%d", result, err, requests.Load())
 	}
-	if len(productCaps) != 7 || productCaps[1].Name != "mcp_library_search" {
+	if len(productCaps) != 10 || productCaps[1].Name != "mcp_library_search" {
 		t.Fatalf("library read was not admitted: %+v", productCaps)
 	}
 	result, err = productCaps[1].Call(ctx, json.RawMessage(`{"query":"find contract"}`))
@@ -162,22 +168,25 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 		input, expected string
 	}{
 		{2, `{"app":"crm"}`, `crm`},
-		{3, `{"app":"crm","object":"lead","first":5}`, `lead-42`},
-		{4, `{"app":"crm","object":"lead","id":"lead-42"}`, `Fixture lead`},
+		{3, `{"blueprint":"crm"}`, `crm`},
+		{4, `{"app":"crm","object":"lead","first":5}`, `lead-42`},
+		{5, `{"app":"crm","object":"lead","id":"lead-42"}`, `Fixture lead`},
+		{6, `{"app":"crm","object":"lead"}`, `lead-deleted`},
+		{7, `{"app":"crm","object":"lead","id":"lead-deleted"}`, `deletedAt`},
 	} {
 		result, err := productCaps[call.index].Call(ctx, json.RawMessage(call.input))
 		if err != nil || !strings.Contains(string(result), call.expected) {
 			t.Fatalf("records read %d failed: %s %v", call.index, result, err)
 		}
 	}
-	if recordsRequests.Load() != 3 {
+	if recordsRequests.Load() != 6 {
 		t.Fatalf("records route count %d", recordsRequests.Load())
 	}
-	result, err = productCaps[5].Call(ctx, json.RawMessage(`{"questions":[{"question":"Which day?"}]}`))
+	result, err = productCaps[8].Call(ctx, json.RawMessage(`{"questions":[{"question":"Which day?"}]}`))
 	if err != nil || !strings.Contains(string(result), "needs_input") || eventPosts.Load() != 2 {
 		t.Fatalf("clarification did not reach the host: result=%s err=%v events=%d", result, err, eventPosts.Load())
 	}
-	result, err = productCaps[6].Call(ctx, json.RawMessage(`{"messages":[{"version":"v1.0","createSurface":{"surfaceId":"answer","catalogId":"urn:openneko:catalog:work:v2","components":[{"id":"root","component":"Text"}]}}]}`))
+	result, err = productCaps[9].Call(ctx, json.RawMessage(`{"messages":[{"version":"v1.0","createSurface":{"surfaceId":"answer","catalogId":"urn:openneko:catalog:work:v2","components":[{"id":"root","component":"Text"}]}}]}`))
 	if err != nil || !strings.Contains(string(result), "accepted") || eventPosts.Load() != 3 {
 		t.Fatalf("card did not reach the host: result=%s err=%v events=%d", result, err, eventPosts.Load())
 	}
@@ -189,14 +198,14 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeRecords()
-	if len(recordsOnly) != 3 || recordsOnly[0].Name != "mcp_neko_records_browse_catalog" {
+	if len(recordsOnly) != 6 || recordsOnly[0].Name != "mcp_neko_records_browse_catalog" {
 		t.Fatalf("records-only catalog invalid: %+v", recordsOnly)
 	}
 	bound := agent.Tools{Capabilities: recordsOnly}
 	if _, err := bound.Binding("mcp_neko_records_find_records"); err != nil {
 		t.Fatalf("records schema not admitted by engine: %v", err)
 	}
-	if _, err := bound.Binding("records_browse_blueprints"); err == nil {
-		t.Fatal("unadmitted records blueprint tool became visible")
+	if _, err := bound.Binding("mcp_neko_records_browse_blueprints"); err != nil {
+		t.Fatalf("records blueprint tool missing: %v", err)
 	}
 }

@@ -158,16 +158,17 @@ advertises unavailable capabilities. Existing M1–M4 tests still pass.
 ## M5b — File-backed batch path and MCP read/interaction slice
 
 **Partial status (2026-09-27):** customer-surface memory and library search, plus
-actor-scoped records catalog/find/get, are admitted through the actual OpenNeko
+actor-scoped records catalog/find/get, blueprint browse, and recycle-bin reads are admitted through the actual OpenNeko
 stdio bridge with pinned schemas. The broker binds org/run identity; records-only
 Harness turns cannot use GraphJin lookup or customer memory. Isolated OpenShell +
 worker + broker + Ax catalog and search turns each recorded one finished Go
 operation and returned the answer. The library
 run now uses the real entitlement lookup and pgvector search against an isolated
 Postgres row, with a deterministic embedding fixture. Hermes regression checks
-passed. Records catalog was tested end to end with an empty registry; find/get
-used a synthetic broker behind the real bridge and still need data-backed
-acceptance. The queued clarification reached `needs_input` after two outer model
+passed. Records catalog and shipped blueprint browse were tested end to end in a
+records-only OpenShell turn; find/get and recycle-bin reads used a synthetic broker
+behind the real bridge and still need data-backed acceptance. The queued
+clarification reached `needs_input` after two outer model
 calls; broker events entered the turn reducer, and queue redelivery preserved one
 question and surface without a model replay or assistant answer. A second queued
 turn accepted the operator's answer and completed the same thread. Broker validation

@@ -147,7 +147,7 @@ func main() {
 			http.Error(w, "missing library evidence", 422)
 			return
 		}
-		if n == 2 && req.Model == "harness-records-fixture" && !strings.Contains(string(req.Messages), "apps") {
+		if n == 2 && req.Model == "harness-records-fixture" && (!strings.Contains(string(req.Messages), "apps") || !strings.Contains(string(req.Messages), "crm")) {
 			http.Error(w, "missing records catalog evidence", 422)
 			return
 		}
@@ -176,7 +176,7 @@ func main() {
 		} else if req.Model == "harness-library-fixture" {
 			responses = []string{`{"javascriptCode":"final('Search the library', {})"}`, `{"javascriptCode":"const library=mcp_library_search({query:'find contract'}); final('Report library',{library});"}`, `{"answer":"Fixture contract contains TERMS-42."}`}
 		} else if req.Model == "harness-records-fixture" {
-			responses = []string{`{"javascriptCode":"final('Browse generated records apps', {})"}`, `{"javascriptCode":"const catalog=mcp_neko_records_browse_catalog({}); final('Report records catalog',{catalog});"}`, `{"answer":"The records catalog contains no generated apps for this test organization."}`}
+			responses = []string{`{"javascriptCode":"final('Browse records apps and shipped blueprints', {})"}`, `{"javascriptCode":"const catalog=mcp_neko_records_browse_catalog({}); const blueprints=mcp_neko_records_browse_blueprints({}); final('Report records catalog',{catalog,blueprints});"}`, `{"answer":"The records catalog contains no generated apps for this test organization; the crm blueprint is available."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
 			if answerQuestion {
