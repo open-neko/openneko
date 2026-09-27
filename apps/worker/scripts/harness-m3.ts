@@ -442,6 +442,58 @@ assert.deepEqual(editCard.map(row=>row.payload.messages[0].createSurface.surface
 await assert.rejects(inProcessControlPlane.saveWorkflowWithTrigger({orgId,name:'Harness review workflow',steps:[{id:'stale',description:'Should not replace the newer step'}],expectedVersion:createdWorkflow.version_token}),/changed since it was listed/);
 assert.equal((await pool().query('SELECT description FROM workflow_definition WHERE id=$1',[createdWorkflow.id])).rows[0].description,'Reviewed synthetic leads');
 console.log('M5_QUEUE_WORKFLOW_EDIT_PASS',workflowEditRun.id);
+const ruleAuthorThread=await createWorkThread(orgId,'M5 rule authoring','web',soloAdmin.id);
+if (process.env.HARNESS_M3_WEB === '1') await writeFile(join(process.env.HARNESS_STATE!,'m5-rule-thread'),ruleAuthorThread.id);
+const ruleCreateRun=await createWorkRun(orgId,ruleAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({rule_save:true})})).status,204);
+const [ruleCreateJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-rule-create'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:ruleCreateJob.id,orgId,runId:ruleCreateRun.id,threadId:ruleAuthorThread.id,message:'Create an approval-required rule for the synthetic fixture action.'},{retryLimit:0});
+await waitForJob(ruleCreateJob.id,ruleCreateRun.id);
+const [createdRule]=(await pool().query('SELECT id,description,mode,xmin::text AS version_token FROM action_policy WHERE org_id=$1 AND name=$2',[orgId,'Harness governed rule'])).rows;
+assert.equal(createdRule.description,'Require review for synthetic changes');
+assert.equal(createdRule.mode,'approval_required');
+const createdRuleCards=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,ruleCreateRun.id])).rows;
+assert.deepEqual(createdRuleCards.map(row=>row.payload.messages[0].createSurface.surfaceId),[`policy-save-${createdRule.id}`]);
+const createdRuleReceipt=(await pool().query('SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,ruleCreateRun.id])).rows;
+assert.deepEqual(createdRuleReceipt.map(row=>({ok:row.result.ok,action:row.result.action})),[{ok:true,action:'created'}]);
+console.log('M5_QUEUE_RULE_CREATE_PASS',ruleCreateRun.id);
+const ruleEditRun=await createWorkRun(orgId,ruleAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({rule_edit:true})})).status,204);
+const [ruleEditJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-rule-edit'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:ruleEditJob.id,orgId,runId:ruleEditRun.id,threadId:ruleAuthorThread.id,message:'Read the current version, then allow auto-approval for only low-risk fixture rule actions.'},{retryLimit:0});
+await waitForJob(ruleEditJob.id,ruleEditRun.id);
+const [editedRule]=(await pool().query('SELECT id,description,mode,risk_threshold_auto_approve,applies_to_kinds,applies_to_scopes,limits,xmin::text AS version_token FROM action_policy WHERE org_id=$1 AND name=$2',[orgId,'Harness governed rule'])).rows;
+assert.equal(editedRule.id,createdRule.id);
+assert.equal(editedRule.description,'Auto-approve synthetic low-risk changes');
+assert.equal(editedRule.mode,'auto_approve');
+assert.equal(editedRule.risk_threshold_auto_approve,'low');
+assert.deepEqual(editedRule.applies_to_kinds,['fixture_rule_action']);
+assert.deepEqual(editedRule.applies_to_scopes,['external']);
+assert.equal(editedRule.limits.daily_cap,2);
+assert.notEqual(editedRule.version_token,createdRule.version_token);
+const editedRuleCards=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,ruleEditRun.id])).rows;
+assert.deepEqual(editedRuleCards.map(row=>row.payload.messages[0].createSurface.surfaceId),[`policy-save-${createdRule.id}`]);
+const guardedRule={orgId,name:'Harness governed rule',description:'Should not replace newer policy',appliesToKinds:['fixture_rule_action'],appliesToScopes:['external'] as const,mode:'never' as const,riskThresholdAutoApprove:null,allowedTargets:null,deniedTargets:null,limits:{},priority:100,enabled:true};
+await assert.rejects(inProcessControlPlane.upsertActionPolicyByName({...guardedRule,appliesToScopes:['external'],expectedVersion:createdRule.version_token,createdByRunId:ruleEditRun.id}),/changed since it was listed/);
+const ruleMemberRun=await createWorkRun(orgId,ruleAuthorThread.id,'harness',{userId:null,role:'member'});
+await assert.rejects(inProcessControlPlane.upsertActionPolicyByName({...guardedRule,appliesToScopes:['external'],expectedVersion:editedRule.version_token,createdByRunId:ruleMemberRun.id}),/current admin actor/);
+await pool().query('UPDATE app_user SET disabled_at=now() WHERE org_id=$1 AND id=$2',[orgId,soloAdmin.id]);
+try {
+  await assert.rejects(inProcessControlPlane.upsertActionPolicyByName({...guardedRule,appliesToScopes:['external'],expectedVersion:editedRule.version_token,createdByRunId:ruleEditRun.id}),/current admin actor/);
+} finally {
+  await pool().query('UPDATE app_user SET disabled_at=NULL WHERE org_id=$1 AND id=$2',[orgId,soloAdmin.id]);
+}
+const concurrentRule={...guardedRule,name:'Harness concurrent rule',description:'One create-only winner',appliesToScopes:['external'] as ('internal'|'external')[],expectedVersion:'absent',createdByRunId:ruleEditRun.id};
+const concurrentSaves=await Promise.allSettled([
+  inProcessControlPlane.upsertActionPolicyByName(concurrentRule),
+  inProcessControlPlane.upsertActionPolicyByName(concurrentRule),
+]);
+assert.deepEqual(concurrentSaves.map(result=>result.status).sort(),['fulfilled','rejected']);
+const rejectedConcurrent=concurrentSaves.find((result):result is PromiseRejectedResult=>result.status==='rejected');
+assert.match(String(rejectedConcurrent?.reason),/changed since it was listed/);
+assert.equal((await pool().query('SELECT count(*)::int AS n FROM action_policy WHERE org_id=$1 AND name=$2',[orgId,'Harness concurrent rule'])).rows[0].n,1);
+assert.equal((await pool().query('SELECT mode FROM action_policy WHERE id=$1',[createdRule.id])).rows[0].mode,'auto_approve');
+console.log('M5_QUEUE_RULE_EDIT_PASS',ruleEditRun.id);
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
 // separately by the M5b fixture on the same isolated gateway.

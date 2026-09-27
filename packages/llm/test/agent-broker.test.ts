@@ -99,6 +99,24 @@ describe("startAgentBroker token registry", () => {
       expect((await post("/v1/harness/workflow/save",ungranted)).status).toBe(403);
     } finally {await handle.close();}
   });
+  it("binds rule saves to an admin Work grant without opening legacy writes", async () => {
+    const handle = await startAgentBroker({controlPlane:stubControlPlane(),port:0});
+    try {
+      const binding:RunBinding={runId:"rule-save",orgId:"org",threadId:"thread",kind:"work",
+        profile:"harness-read-only",ruleWrite:true};
+      const token=handle.tokenFor(binding);
+      expect(()=>handle.tokenFor({...binding,ruleWrite:false})).toThrow("conflicts");
+      expect(()=>handle.tokenFor({...binding,runId:"job",kind:"agent-job"})).toThrow("Invalid broker rule write grant");
+      const post=(path:string,bearer=token)=>fetch(`http://127.0.0.1:${handle.port}${path}`,{
+        method:"POST",headers:{authorization:`Bearer ${bearer}`,"content-type":"application/json"},
+        body:JSON.stringify({operationId:1,binding:"b".repeat(64),instruction:"{}"}),
+      });
+      expect((await post("/v1/harness/rule/save")).status).toBe(400);
+      expect((await post("/v1/rule/save")).status).toBe(403);
+      const ungranted=handle.tokenFor({runId:"other",orgId:"org",threadId:"thread",kind:"work",profile:"harness-read-only"});
+      expect((await post("/v1/harness/rule/save",ungranted)).status).toBe(403);
+    } finally {await handle.close();}
+  });
 
   it("limits source configuration to admin-read routes on one bound Work run", async () => {
     const describeSourceGraph = vi.fn(async ({orgId, runId}: {orgId: string; runId: string}) => ({orgId, runId, reachable: true}));
