@@ -77,6 +77,26 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("admits workflow output only for an exact workflow-bound Harness token", async () => {
+    const handle = await startAgentBroker({ controlPlane: stubControlPlane(), port: 0 });
+    try {
+      const binding: RunBinding = { runId: "work-1", orgId: "org", kind: "workflow", profile: "harness-read-only",
+        workflowRunId: "workflow-1", workflowOutput: true };
+      const token = handle.tokenFor(binding);
+      expect(() => handle.tokenFor({ ...binding, workflowRunId: "workflow-2" })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, workflowOutput: false })).toThrow("conflicts");
+      expect(() => handle.tokenFor({ ...binding, runId: "work-2", workflowRunId: undefined })).toThrow("Invalid broker workflow output grant");
+      expect(() => handle.tokenFor({ ...binding, runId: "work-3", kind: "work" })).toThrow("Invalid broker workflow identity");
+      const denied = handle.tokenFor({ runId: "work-4", orgId: "org", kind: "workflow", profile: "harness-read-only" });
+      const post = (bearer: string) => fetch(`http://127.0.0.1:${handle.port}/v1/harness/workflow-output/emit`, {
+        method: "POST", headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        body: JSON.stringify({ operationId: 1, instruction: '{}' }),
+      });
+      expect((await post(denied)).status).toBe(403);
+      expect((await post(token)).status).toBe(400);
+    } finally { await handle.close(); }
+  });
+
   it("routes run events through the active reducer and restores the worker sink", async () => {
     const outer = vi.fn(async () => {});
     const inner = vi.fn(async () => {});

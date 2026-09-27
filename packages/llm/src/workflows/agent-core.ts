@@ -154,6 +154,7 @@ export async function runWorkflowAgentBackend(
   for (let continuation = 0; ; continuation++) {
     heldTimeoutError = null;
     const result = await backend.run({
+      runId,
       prompt: turnPrompt,
       userMessage,
       orgId,
@@ -172,7 +173,17 @@ export async function runWorkflowAgentBackend(
               ? { OPENNEKO_MCP_TRIGGERED_BY_OBSERVATION_ID: triggeredByObservationId }
               : {}),
           }
+        : backend.id === "harness"
+          ? {
+              OPENNEKO_MCP_MODE: "workflow",
+              OPENNEKO_MCP_ORG_ID: orgId,
+              OPENNEKO_MCP_THREAD_ID: threadId,
+              OPENNEKO_MCP_RUN_ID: runId,
+              OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot,
+              OPENNEKO_HARNESS_WORKFLOW_RUN_ID: workflowRunId,
+            }
         : undefined,
+      nativeDelegation: backend.id === "harness" ? "enabled" : undefined,
       tag,
       signal,
       timeoutMs,

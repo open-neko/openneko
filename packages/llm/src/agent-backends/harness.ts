@@ -35,7 +35,8 @@ export class HarnessBackend implements AgentBackend {
         if (!Number.isInteger(maxOperations) || maxOperations < 1 || maxOperations > 32 ||
             !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64)
             throw new Error("Invalid trusted Harness run budget");
-        const childReads = opts.nativeDelegation !== "disabled" &&
+        const workflowRunId = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_WORKFLOW_RUN_ID;
+        const childReads = opts.nativeDelegation !== "disabled" && workflowRunId ? "lookup" : opts.nativeDelegation !== "disabled" &&
             (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_MCP_MEMORY_READ ?? env.OPENNEKO_HARNESS_MCP_MEMORY_READ) === "1" &&
             (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_RECORDS_ONLY ?? env.OPENNEKO_HARNESS_RECORDS_ONLY) !== "1"
             ? "lookup,mcp_memory_search" : "";

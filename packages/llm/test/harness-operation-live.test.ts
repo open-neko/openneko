@@ -12,6 +12,39 @@ import { inProcessControlPlane } from "../src/work/control-plane";
 import { recordHarnessLookup } from "../src/work/harness-operation";
 
 const live = process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
+live("queued Harness workflow output binds the run and does not redispatch", async () => {
+  if (process.env.NEKO_PG_PORT !== "18119") throw Error("isolated M3 database required");
+  const orgId = `workflow-output-${randomUUID()}`;
+  const threadId = randomUUID(), runId = randomUUID(), workflowId = randomUUID(), workflowRunId = randomUUID();
+  await db().insert(organization).values({ id: orgId, name: "Workflow output test" });
+  await db().insert(work_thread).values({ id: threadId, org_id: orgId, title: "Output" });
+  await db().insert(work_run).values({ id: runId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service" });
+  await pool().query("INSERT INTO workflow_definition (id,org_id,name) VALUES ($1,$2,'Test output')", [workflowId,orgId]);
+  await pool().query("INSERT INTO workflow_run (id,org_id,workflow_id,thread_id,work_run_id,trigger_kind,status) VALUES ($1,$2,$3,$4,$5,'manual','running')",
+    [workflowRunId,orgId,workflowId,threadId,runId]);
+  await pool().query("INSERT INTO harness_run_journal (org_id,run_id,fingerprint) VALUES ($1,$2,$3)", [orgId,runId,"0".repeat(64)]);
+  const events: unknown[] = [];
+  const broker = await startAgentBroker({port:0,controlPlane:inProcessControlPlane,onEvents:async (_,emitted)=>{events.push(...emitted);}});
+  const token = broker.tokenFor({orgId,runId,threadId,kind:"workflow",profile:"harness-read-only",workflowRunId,workflowOutput:true});
+  const call = () => fetch(`http://127.0.0.1:${broker.port}/v1/harness/workflow-output/emit`, {
+    method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},
+    body:JSON.stringify({operationId:1,binding:"a".repeat(64),instruction:JSON.stringify({kind:"finding",title:"Reference",body:"REF-42"}),workflowRunId:randomUUID(),orgId:"forged"}),
+  });
+  try {
+    const first = await (await call()).json() as {ok:boolean;outputId:string;kind:string};
+    expect(first).toMatchObject({ok:true,kind:"finding"});
+    expect(first.outputId).toBeTruthy();
+    expect(await (await call()).json()).toEqual({error:"Harness operation recorded; automatic dispatch disabled"});
+    const rows = (await pool().query("SELECT id,org_id,workflow_run_id,work_run_id FROM workflow_output WHERE org_id=$1",[orgId])).rows;
+    expect(rows).toEqual([{id:first.outputId,org_id:orgId,workflow_run_id:workflowRunId,work_run_id:runId}]);
+    expect(events).toEqual([{type:"output_emit",output_id:first.outputId,kind:"finding"}]);
+  } finally {
+    await broker.close();
+    await db().delete(organization).where(eq(organization.id,orgId));
+    await pool().end();
+  }
+},20_000);
+
 live.each([false,true])("operation dispatch is not repeated after SIGKILL (result saved: %s)",async saved=>{
   if (process.env.NEKO_PG_PORT !== "18119") throw Error("isolated M3 database required");
   const scope={orgId:`operation-${randomUUID()}`,runId:randomUUID()};

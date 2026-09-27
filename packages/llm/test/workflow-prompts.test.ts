@@ -84,6 +84,16 @@ describe("buildWorkflowRunnerPrompt", () => {
     ).toThrow(/native GraphJin broker tool/);
   });
 
+  it("gives Harness workflow children read-only investigations and keeps outputs with the parent", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, backend: "harness", mcpTools: false });
+    expect(prompt).toContain("team.researcher");
+    expect(prompt).toContain("workflow_output_emit");
+    expect(prompt).toContain("lookup");
+    expect(prompt).not.toContain("mcp_neko_workflow_output_emit");
+    expect(prompt).not.toContain("delegate_task");
+    expect(prompt).not.toContain("mcp_neko_action_request");
+  });
+
   it("surfaces installed plugin action kinds to the native tool path", () => {
       const prompt = buildWorkflowRunnerPrompt({
         ...base,
