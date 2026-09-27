@@ -66,6 +66,14 @@ if [[ ${HARNESS_M5_APPROVAL:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
     exit 0
   fi
 fi
+if [[ ${HARNESS_M5_RECORDS:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts)
+  if [[ ${HARNESS_M5_RECORDS_ONLY:-0} == 1 ]]; then
+    echo M5_RECORDS_ONLY_PASS
+    exit 0
+  fi
+fi
 
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"

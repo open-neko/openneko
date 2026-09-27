@@ -344,6 +344,10 @@ reconciliation-or-unknown boundary. A connected OpenShell run passed both a
 pack action and a synthetic internal-scope plugin action on a Records-only turn,
 each with pending human approval and one approved effect. Actual Records and
 installed-plugin adapters still need product-level preflight/effect fixtures.
+An additional populated Records fixture passed a real approved `record_update`
+through its worker adapter and GraphJin, then restored the execution receipt
+on a duplicate call; the row and audit log each reflected one mutation.
+Queued Work redelivery and the other Records CRUD actions remain unqualified.
 The direct `memory_save` capability now binds an explicit customer Work-run grant,
 validates the model's bounded text/kind/scope, and persists host operation intent
 before calling OpenNeko's existing memory service. A successful connected

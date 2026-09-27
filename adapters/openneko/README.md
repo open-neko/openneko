@@ -164,6 +164,10 @@ For a focused connected proposal/approval/effect check, add
 It still starts a fresh gateway and OpenShell sandbox, then exits before the
 long queue fixture. It checks pack and Records-only plugin proposal paths.
 The isolated test stack is removed on exit.
+For the populated Records read plus approved `record_update` through real
+GraphJin, set `HARNESS_M5_FAST=1`, `HARNESS_M5_RECORDS=1` and
+`HARNESS_M5_RECORDS_ONLY=1`. This focused gate verifies one source mutation
+and one audit entry without running the long queued Work fixture.
 
 ## Original integration contract (M3 implementation described above)
 
