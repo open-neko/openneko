@@ -59,6 +59,10 @@ export function startSubscriptionManager(
   opts: SubscriptionManagerOptions,
 ): SubscriptionManagerHandle {
   const handles = new Map<string, GraphjinSubscriptionHandle>();
+  const versions = new Map<string, number>();
+  const opening = new Set<string>();
+  const retryTimers = new Map<string, NodeJS.Timeout>();
+  const retryAttempts = new Map<string, number>();
   let stopping = false;
   let refreshTimer: NodeJS.Timeout | null = null;
   let resolveReady: () => void;
@@ -68,82 +72,118 @@ export function startSubscriptionManager(
     rejectReady = rej;
   });
 
-  const openOne = async (sub: SubscriptionRecord): Promise<void> => {
-    const payload = buildSubscriptionQuery({
-      sourceKind: sub.sourceKind,
-      filter: sub.filter,
-      orgId: sub.orgId,
-    });
-    if (!payload) {
-      console.warn(
-        `[subscription-manager] skipping subscription ${sub.id} — source_kind="${sub.sourceKind}" not wired or filter invalid`,
-      );
-      return;
-    }
-
-    let transport: SubscriptionTransport;
-    try {
-      transport = await opts.resolveTransport(sub);
-    } catch (err) {
-      opts.onError?.(
-        err instanceof Error ? err : new Error(String(err)),
-        sub,
-      );
-      return;
-    }
-
-    const handle = graphjinSubscribe<{ data?: unknown } & Record<string, unknown>>({
-      baseUrl: transport.baseUrl,
-      query: payload.query,
-      variables: payload.variables,
-      onNext: async (msg) => {
-        try {
-          if (sub.sourceKind === "workflow_output") {
-            const match = parseWorkflowOutputMatch(msg);
-            if (!match) return;
-            await opts.onMatch({
-              kind: "workflow_output",
-              subscription: sub,
-              output: match,
-            });
-            return;
-          }
-          if (sub.sourceKind === "source_change") {
-            const filter = parseSourceChangeFilter(sub.filter);
-            if (!filter) return;
-            const match = parseSourceChangeMatch(msg, filter);
-            if (!match) return;
-            await opts.onMatch({
-              kind: "source_change",
-              subscription: sub,
-              match,
-            });
-            return;
-          }
-        } catch (err) {
-          opts.onError?.(
-            err instanceof Error ? err : new Error(String(err)),
-            sub,
-          );
-        }
-      },
-      onError: (err) => {
-        opts.onError?.(err, sub);
-      },
-    });
-    // The handle's `ready` promise rejects when the WS connection fails;
-    // the same failure already fires onError above, so absorb the rejection
-    // here to keep it from surfacing as an unhandled rejection that crashes
-    // the worker. Manager-level callers consume errors via opts.onError.
-    handle.ready.catch(() => {});
-    handles.set(sub.id, handle);
-  };
-
   const closeOne = (id: string) => {
     const handle = handles.get(id);
     if (!handle) return;
-    handle.stop();
     handles.delete(id);
+    versions.delete(id);
+    handle.stop();
+  };
+
+  const scheduleReconnect = (sub: SubscriptionRecord) => {
+    if (stopping || retryTimers.has(sub.id)) return;
+    const attempt = (retryAttempts.get(sub.id) ?? 0) + 1;
+    retryAttempts.set(sub.id, attempt);
+    const delay = Math.min(1_000 * 2 ** Math.min(attempt - 1, 5), 30_000);
+    const timer = setTimeout(() => {
+      retryTimers.delete(sub.id);
+      void refresh().catch((err) => opts.onError?.(err instanceof Error ? err : new Error(String(err)), sub));
+    }, delay);
+    timer.unref();
+    retryTimers.set(sub.id, timer);
+  };
+
+  const openOne = async (sub: SubscriptionRecord): Promise<void> => {
+    opening.add(sub.id);
+    try {
+      const payload = buildSubscriptionQuery({
+        sourceKind: sub.sourceKind,
+        filter: sub.filter,
+        orgId: sub.orgId,
+      });
+      if (!payload) {
+        console.warn(
+          `[subscription-manager] skipping subscription ${sub.id} — source_kind="${sub.sourceKind}" not wired or filter invalid`,
+        );
+        return;
+      }
+
+      let transport: SubscriptionTransport;
+      try {
+        transport = await opts.resolveTransport(sub);
+      } catch (err) {
+        opts.onError?.(
+          err instanceof Error ? err : new Error(String(err)),
+          sub,
+        );
+        scheduleReconnect(sub);
+        return;
+      }
+
+      let handle: GraphjinSubscriptionHandle;
+      const disconnected = () => {
+        if (handles.get(sub.id) !== handle) return;
+        closeOne(sub.id);
+        scheduleReconnect(sub);
+      };
+      try {
+        handle = graphjinSubscribe<{ data?: unknown } & Record<string, unknown>>({
+          baseUrl: transport.baseUrl,
+          query: payload.query,
+          variables: payload.variables,
+          onNext: async (msg) => {
+            retryAttempts.delete(sub.id);
+            try {
+              if (sub.sourceKind === "workflow_output") {
+                const match = parseWorkflowOutputMatch(msg);
+                if (!match) return;
+                await opts.onMatch({
+                  kind: "workflow_output",
+                  subscription: sub,
+                  output: match,
+                });
+                return;
+              }
+              if (sub.sourceKind === "source_change") {
+                const filter = parseSourceChangeFilter(sub.filter);
+                if (!filter) return;
+                const match = parseSourceChangeMatch(msg, filter);
+                if (!match) return;
+                await opts.onMatch({
+                  kind: "source_change",
+                  subscription: sub,
+                  match,
+                });
+                return;
+              }
+            } catch (err) {
+              opts.onError?.(
+                err instanceof Error ? err : new Error(String(err)),
+                sub,
+              );
+            }
+          },
+          onError: (err) => {
+            opts.onError?.(err, sub);
+            disconnected();
+          },
+          onComplete: disconnected,
+        });
+      } catch (err) {
+        opts.onError?.(err instanceof Error ? err : new Error(String(err)), sub);
+        scheduleReconnect(sub);
+        return;
+      }
+      // The handle's `ready` promise rejects when the WS connection fails;
+      // the same failure already fires onError above, so absorb the rejection
+      // here to keep it from surfacing as an unhandled rejection that crashes
+      // the worker. Manager-level callers consume errors via opts.onError.
+      handles.set(sub.id, handle);
+      versions.set(sub.id, sub.updatedAt.getTime());
+      handle.ready.catch(disconnected);
+    } finally {
+      opening.delete(sub.id);
+    }
   };
 
   const refresh = async (): Promise<void> => {
@@ -153,8 +193,17 @@ export function startSubscriptionManager(
     for (const id of handles.keys()) {
       if (!desired.has(id)) closeOne(id);
     }
+    for (const [id, timer] of retryTimers) {
+      if (desired.has(id)) continue;
+      clearTimeout(timer);
+      retryTimers.delete(id);
+      retryAttempts.delete(id);
+    }
     for (const row of rows) {
-      if (handles.has(row.id)) continue;
+      if (handles.has(row.id) && versions.get(row.id) !== row.updatedAt.getTime()) {
+        closeOne(row.id);
+      }
+      if (handles.has(row.id) || opening.has(row.id) || retryTimers.has(row.id)) continue;
       await openOne(row);
     }
   };
@@ -185,6 +234,9 @@ export function startSubscriptionManager(
     stop: async () => {
       stopping = true;
       if (refreshTimer) clearInterval(refreshTimer);
+      for (const timer of retryTimers.values()) clearTimeout(timer);
+      retryTimers.clear();
+      retryAttempts.clear();
       for (const id of Array.from(handles.keys())) closeOne(id);
     },
   };
