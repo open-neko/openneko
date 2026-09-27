@@ -155,6 +155,7 @@ export function buildWorkflowBuilderServer(ctx: WorkflowBuilderContext) {
                   cronEnabled: w.cronEnabled,
                   when: w.when,
                   updatedAt: w.updatedAt,
+                  versionToken: w.versionToken,
                   createdAt: w.createdAt,
                 };
               }),

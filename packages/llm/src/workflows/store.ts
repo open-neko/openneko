@@ -108,6 +108,9 @@ export type SaveWorkflowInput = {
   createdByRunId?: string | null;
   /** CV1: omit/'' = org layer. */
   ownerUserId?: string;
+  /** Harness-only optimistic precondition. `absent` creates without replacing;
+   * a PostgreSQL row version updates exactly the listed revision. */
+  expectedVersion?: string;
 };
 
 export type SaveWorkflowResult = {
@@ -190,6 +193,21 @@ export async function listWorkflows(orgId: string): Promise<WorkflowRecord[]> {
   return rows.map(toRecord);
 }
 
+/** Definition and revision come from the same MVCC snapshot. A later write
+ * invalidates the token instead of pairing old content with a fresh revision. */
+export async function listWorkflowsWithVersions(
+  orgId: string,
+): Promise<Array<{ workflow: WorkflowRecord; versionToken: string }>> {
+  const rows = await db()
+    .select({ workflow: workflow_definition, versionToken: sql<string>`xmin::text` })
+    .from(workflow_definition)
+    .where(eq(workflow_definition.org_id, orgId))
+    .orderBy(desc(workflow_definition.updated_at));
+  return rows.map(({ workflow, versionToken }) => ({
+    workflow: toRecord(workflow), versionToken,
+  }));
+}
+
 // Removing the definition cascades (via FK ON DELETE CASCADE) to its
 // subscriptions/triggers, runs, outputs, and proposed action requests.
 // Returns null when no workflow matched (wrong id or cross-org).
@@ -251,6 +269,10 @@ export async function saveWorkflow(
 ): Promise<SaveWorkflowResult> {
   const ownerUserId = input.ownerUserId ?? "";
   const existing = await getWorkflowByOrgName(input.orgId, input.name, ownerUserId);
+  if (input.expectedVersion !== undefined &&
+      (input.expectedVersion === "absent" ? Boolean(existing) : !existing || !/^\d{1,12}$/.test(input.expectedVersion))) {
+    throw new Error("Workflow changed since it was listed; read it again before saving.");
+  }
   const cron = input.triggers?.cron ?? null;
   const cronTimezone = input.triggers?.timezone ?? "UTC";
   const cronEnabled = input.triggers?.enabled ?? true;
@@ -292,8 +314,11 @@ export async function saveWorkflow(
         output_contract: resolveOutputContract(existing.outputContract),
         updated_at: new Date(),
       })
-      .where(eq(workflow_definition.id, existing.id))
+      .where(and(eq(workflow_definition.id, existing.id),
+        ...(input.expectedVersion && input.expectedVersion !== "absent"
+          ? [sql`xmin::text = ${input.expectedVersion}`] : [])))
       .returning();
+    if (!row) throw new Error("Workflow changed since it was listed; read it again before saving.");
     const updated = toRecord(row);
     await versionWorkflowDefinition(updated, "Updated");
     return { action: "updated", workflow: updated };

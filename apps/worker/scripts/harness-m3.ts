@@ -196,9 +196,11 @@ assert.match(answerReceipt.accepted_context.prompt,/Which day\?/);
 assert.match(answerReceipt.accepted_context.prompt,/2026-09-15/);
 assert.match(answerReceipt.result.finalText,/2026-09-15/);
 console.log('M5_QUEUE_CLARIFICATION_ANSWER_PASS',answerRun.id);
+const soloAdmin=await getOrCreateSoloAdmin(orgId);
+assert.ok(soloAdmin,'isolated solo operator required for web acceptance');
 assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({card:true})})).status,204);
-const cardThread=await createWorkThread(orgId,'M5 rendered card');
-const cardRun=await createWorkRun(orgId,cardThread.id,'harness',{userId:null,role:'service'});
+const cardThread=await createWorkThread(orgId,'M5 rendered card','web',soloAdmin.id);
+const cardRun=await createWorkRun(orgId,cardThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
 const [cardJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-card'}).returning();
 await enqueue(QUEUE.WORK_RUN,{processingJobId:cardJob.id,orgId,runId:cardRun.id,threadId:cardThread.id,message:'Show a summary card.'},{retryLimit:0});
 await waitForJob(cardJob.id,cardRun.id);
@@ -245,8 +247,6 @@ assert.deepEqual(skillSnapshot.operations.map((op:{tool:string})=>op.tool),['ski
 console.log('M5_QUEUE_SKILL_PASS',skillRun.id);
 // Only this run's artifact directory is writable by the Go file tools. The
 // existing Work artifact projection must expose the completed CSV once.
-const soloAdmin=await getOrCreateSoloAdmin(orgId);
-assert.ok(soloAdmin,'isolated solo operator required for web download');
 const artifactThread=await createWorkThread(orgId,'M5 CSV artifact','web',soloAdmin.id);
 const artifactRun=await createWorkRun(orgId,artifactThread.id,'harness',{userId:null,role:'service'});
 const artifactWorkspace=await ensureWorkWorkspace(orgId,artifactThread.id,artifactRun.id);
@@ -407,6 +407,41 @@ assert.deepEqual(sourceSnapshot.operations.map((op:{tool:string})=>op.tool),[
 ]);
 assert.equal((await pool().query('SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,sourceRun.id])).rows[0].n,0);
 console.log('M5_QUEUE_SOURCE_CONFIG_READ_PASS',sourceRun.id);
+// Workflow writes use a separate journaled grant. Creating requires an absent
+// precondition; editing requires the exact version returned by the list tool.
+const workflowAuthorThread=await createWorkThread(orgId,'M5 workflow authoring','web',soloAdmin.id);
+if (process.env.HARNESS_M3_WEB === '1') await writeFile(join(process.env.HARNESS_STATE!,'m5-workflow-thread'),workflowAuthorThread.id);
+const workflowCreateRun=await createWorkRun(orgId,workflowAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({workflow_save:true})})).status,204);
+const [workflowCreateJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-workflow-create'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:workflowCreateJob.id,orgId,runId:workflowCreateRun.id,threadId:workflowAuthorThread.id,message:'Create a disabled daily Harness review workflow with one step and a lead_id CSV column.'},{retryLimit:0});
+await waitForJob(workflowCreateJob.id,workflowCreateRun.id);
+const [createdWorkflow]=(await pool().query('SELECT id,description,cron,cron_enabled,output_contract,xmin::text AS version_token FROM workflow_definition WHERE org_id=$1 AND name=$2',[orgId,'Harness review workflow'])).rows;
+assert.equal(createdWorkflow.description,'Review synthetic leads');
+assert.equal(createdWorkflow.cron,'0 9 * * *');
+assert.equal(createdWorkflow.cron_enabled,false);
+assert.equal(createdWorkflow.output_contract.apiBatch.columns[0].name,'lead_id');
+const createdCard=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,workflowCreateRun.id])).rows;
+assert.deepEqual(createdCard.map(row=>row.payload.messages[0].createSurface.surfaceId),[`workflow-save-${createdWorkflow.id}`]);
+const createdReceipt=(await pool().query('SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,workflowCreateRun.id])).rows;
+assert.equal(createdReceipt.length,1);
+assert.deepEqual({ok:createdReceipt[0].result.ok,action:createdReceipt[0].result.action},{ok:true,action:'created'});
+console.log('M5_QUEUE_WORKFLOW_CREATE_PASS',workflowCreateRun.id);
+const workflowEditRun=await createWorkRun(orgId,workflowAuthorThread.id,'harness',{userId:soloAdmin.id,role:'admin'});
+assert.equal((await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({workflow_edit:true})})).status,204);
+const [workflowEditJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-workflow-edit'}).returning();
+await enqueue(QUEUE.WORK_RUN,{processingJobId:workflowEditJob.id,orgId,runId:workflowEditRun.id,threadId:workflowAuthorThread.id,message:'Update the Harness review workflow description and step after reading its current version.'},{retryLimit:0});
+await waitForJob(workflowEditJob.id,workflowEditRun.id);
+const [editedWorkflow]=(await pool().query('SELECT id,description,steps,xmin::text AS version_token FROM workflow_definition WHERE org_id=$1 AND name=$2',[orgId,'Harness review workflow'])).rows;
+assert.equal(editedWorkflow.id,createdWorkflow.id);
+assert.equal(editedWorkflow.description,'Reviewed synthetic leads');
+assert.equal(editedWorkflow.steps[0].description,'Check the lead owner and status');
+assert.notEqual(editedWorkflow.version_token,createdWorkflow.version_token);
+const editCard=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,workflowEditRun.id])).rows;
+assert.deepEqual(editCard.map(row=>row.payload.messages[0].createSurface.surfaceId),[`workflow-save-${createdWorkflow.id}`]);
+await assert.rejects(inProcessControlPlane.saveWorkflowWithTrigger({orgId,name:'Harness review workflow',steps:[{id:'stale',description:'Should not replace the newer step'}],expectedVersion:createdWorkflow.version_token}),/changed since it was listed/);
+assert.equal((await pool().query('SELECT description FROM workflow_definition WHERE id=$1',[createdWorkflow.id])).rows[0].description,'Reviewed synthetic leads');
+console.log('M5_QUEUE_WORKFLOW_EDIT_PASS',workflowEditRun.id);
 // The real pg-boss queue owns a separate, long-lived batch run. This fake
 // executable tests host dispatch/projection; OpenShell execution is qualified
 // separately by the M5b fixture on the same isolated gateway.
