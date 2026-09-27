@@ -63,3 +63,18 @@ it("refuses a changed host executable before dispatch", async () => {
   await expect(runHarnessProcess(binding, "run-1", 1,
     JSON.stringify({language: "python", script: "print(1)", outputs: ["result.csv"]}))).rejects.toThrow("executable changed");
 });
+
+it("rejects an invalid host process deadline before dispatch", async () => {
+  const binding = await fixture();
+  const previous = process.env.OPENNEKO_PROCESS_TIMEOUT_SECONDS;
+  process.env.OPENNEKO_PROCESS_TIMEOUT_SECONDS = "0";
+  try {
+    await expect(runHarnessProcess(binding, "run-1", 1,
+      JSON.stringify({language: "python", script: "print(1)", uploads: ["source.csv"],
+        outputs: ["result.csv"]}))).rejects.toThrow("Invalid isolated process timeout limit");
+    await expect(readFile(join(binding.artifactRoot, "process-1", "result.csv"))).rejects.toThrow();
+  } finally {
+    if (previous === undefined) delete process.env.OPENNEKO_PROCESS_TIMEOUT_SECONDS;
+    else process.env.OPENNEKO_PROCESS_TIMEOUT_SECONDS = previous;
+  }
+});

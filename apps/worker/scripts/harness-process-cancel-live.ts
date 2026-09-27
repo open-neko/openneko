@@ -34,6 +34,16 @@ async function sandboxContainer(name:string):Promise<string|null> {
   return stdout.split("\n").find(row=>row.startsWith(`openshell-default--${name}-`)) ?? null;
 }
 
+async function assertProcessLimits(container:string):Promise<void> {
+  const {stdout}=await runCommand("docker",["inspect","--format","{{json .HostConfig}}",container],
+    {timeout:5000});
+  const host=JSON.parse(stdout) as {Memory:number;NanoCpus:number;CpuQuota:number;CpuPeriod:number};
+  assert.ok(host.Memory > 0 && host.Memory <= 512 * 1024 * 1024,
+    `process memory is not bounded to 512 MiB: ${host.Memory}`);
+  const cpu=host.NanoCpus > 0 ? host.NanoCpus / 1e9 : host.CpuPeriod > 0 ? host.CpuQuota / host.CpuPeriod : 0;
+  assert.ok(cpu > 0 && cpu <= 1,`process CPU is not bounded to one core: ${cpu}`);
+}
+
 async function waitFor(condition:()=>Promise<boolean>,label:string):Promise<void> {
   for(let n=0;n<120;n++){
     if(await condition())return;
@@ -83,7 +93,12 @@ try {
       return true;
     } catch{return false;}
   },"partial process output inside OpenShell");
-  if (process.env.HARNESS_M5_PROCESS_CANCEL_HTTP === "1") {
+  const timedOut = process.env.HARNESS_M5_PROCESS_TIMEOUT === "1";
+  if (timedOut) {
+    const container=await sandboxContainer(name);
+    assert.ok(container,"active process sandbox required for limit inspection");
+    await assertProcessLimits(container);
+  } else if (process.env.HARNESS_M5_PROCESS_CANCEL_HTTP === "1") {
     const response = await fetch(`http://127.0.0.1:18121/api/work/runs/${run.id}/cancel`, {
       method: "POST",
     });
@@ -100,7 +115,7 @@ try {
   },"cancelled queue handler");
   const [finished]=(await pool().query<{status:string}>(
     "select status from work_run where org_id=$1 and id=$2",[orgId,run.id])).rows;
-  assert.equal(finished.status,"cancelled");
+  assert.equal(finished.status,timedOut ? "failed" : "cancelled");
   assert.equal((await pool().query(
     "select count(*)::int as n from work_run_event where org_id=$1 and run_id=$2 and kind='artifact'",
     [orgId,run.id])).rows[0].n,0);
@@ -110,16 +125,20 @@ try {
     [orgId,run.id])).rows;
   assert.ok(operation,"process dispatch must be journaled");
   assert.equal(operation.result,null,"cancelled effect must not record a successful result");
-  await assert.rejects(markWorkRunRunning(run.id),/cancelled before execution/);
-  const calls=await (await fetch(control)).json();
-  await runWorkRun(job.id,orgId,{runId:run.id,threadId:thread.id,
-    message:"Run the cancellable process fixture.",channel:"web"});
-  assert.deepEqual(await (await fetch(control)).json(),calls,
-    "late queue delivery must not restart model work");
-  assert.equal((await pool().query(
-    "select status from work_run where org_id=$1 and id=$2",[orgId,run.id])).rows[0].status,
-    "cancelled");
-  console.log("M5_QUEUE_PROCESS_CANCEL_PASS",run.id);
+  if (timedOut) {
+    console.log("M5_QUEUE_PROCESS_TIMEOUT_PASS",run.id);
+  } else {
+    await assert.rejects(markWorkRunRunning(run.id),/cancelled before execution/);
+    const calls=await (await fetch(control)).json();
+    await runWorkRun(job.id,orgId,{runId:run.id,threadId:thread.id,
+      message:"Run the cancellable process fixture.",channel:"web"});
+    assert.deepEqual(await (await fetch(control)).json(),calls,
+      "late queue delivery must not restart model work");
+    assert.equal((await pool().query(
+      "select status from work_run where org_id=$1 and id=$2",[orgId,run.id])).rows[0].status,
+      "cancelled");
+    console.log("M5_QUEUE_PROCESS_CANCEL_PASS",run.id);
+  }
 } finally {
   await queue.stop({graceful:true,timeout:5_000});
   await shutdownAgentBroker();
