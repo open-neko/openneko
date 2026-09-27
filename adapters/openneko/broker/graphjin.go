@@ -27,7 +27,7 @@ func GraphJin(base, token, source string) (func(context.Context, string) (json.R
 			return nil, fmt.Errorf("invalid lookup instruction")
 		}
 		operationID := agent.OperationID(ctx)
-		if operationID == 0 || operationID > 4 {
+		if operationID == 0 || operationID > 32 {
 			return nil, fmt.Errorf("missing or invalid runtime operation ID")
 		}
 		body, _ := json.Marshal(struct {
@@ -69,7 +69,7 @@ func Propose(base, token string) (func(context.Context, agent.Proposal) (agent.P
 			return receipt, err
 		}
 		id := agent.OperationID(ctx)
-		if id < 1 || id > 4 {
+		if id < 1 || id > 32 {
 			return receipt, fmt.Errorf("missing or invalid runtime operation ID")
 		}
 		body, _ := json.Marshal(struct {

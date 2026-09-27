@@ -124,7 +124,11 @@ catalog hash on new checkpoints; retains old lookup/proposal checkpoint decoding
 and emits tool origin, effect and duration. The official Go MCP SDK is pinned at
 v1.8.0 with Go 1.25. An Ax run exercised native + MCP fixture calls and terminal
 replay. Pinned OpenNeko read, clarification and card tools now use the same
-catalog and journal in the connected worker path. Durable MCP product writes
+catalog and journal in the connected worker path. The trusted launcher now pins
+12 operations and 24 model calls in the run spec, broker token and checkpoint;
+the host journal accepts a fifth operation when explicitly bound, while legacy
+callers retain four. Postgres stores at most 32, matching the Go hard ceiling.
+Durable MCP product writes
 remain excluded until their effect boundaries are qualified. The full consumer
 capability inventory and general recovery matrix remain open.
 
