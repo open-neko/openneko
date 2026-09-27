@@ -83,8 +83,13 @@ once before and after reload. The same Work grant offers `workflow_delete`:
 the host requires the exact current-run user confirmation, a current enabled
 actor and the listed ID/name/version before a hard cascade. Connected tests
 covered unconfirmed and confirmed queue turns, stale and disabled actors,
-dependent-row deletion and a card reload. Data-change subscriptions and watchers await a separate
-partial-failure recovery contract. The image builder bundles the checkout's MCP bridge alongside
+dependent-row deletion and a card reload. The same save grant now accepts
+data-change subscriptions and condition watchers after a run-bound GraphJin
+read preflight. Definition and trigger rows commit in one transaction; editing
+the data-change condition retains one subscription. A connected queued fixture
+created and edited the condition, fired a watcher against seeded GraphJin data,
+and proved invalid conditions leave no definition. Scheduler/stream redelivery
+and crash-edge recovery still need broader qualification. The image builder bundles the checkout's MCP bridge alongside
 the Go runner so the listed version token reaches Ax unchanged.
 Admin customer Work runs can also use `rule_save`. A new name needs
 `expectedVersion=absent`; an edit must use the `versionToken` from the pinned

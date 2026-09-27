@@ -31,6 +31,10 @@ func main() {
 	workflowEdit := false
 	workflowDelete := false
 	workflowDeleteDenied := false
+	workflowWhen := false
+	workflowWhenEdit := false
+	workflowWatch := false
+	workflowBadTrigger := false
 	ruleSave := false
 	ruleEdit := false
 	clarification := false
@@ -67,6 +71,10 @@ func main() {
 			WorkflowEdit         bool `json:"workflow_edit"`
 			WorkflowDelete       bool `json:"workflow_delete"`
 			WorkflowDeleteDenied bool `json:"workflow_delete_denied"`
+			WorkflowWhen         bool `json:"workflow_when"`
+			WorkflowWhenEdit     bool `json:"workflow_when_edit"`
+			WorkflowWatch        bool `json:"workflow_watch"`
+			WorkflowBadTrigger   bool `json:"workflow_bad_trigger"`
 			RuleSave             bool `json:"rule_save"`
 			RuleEdit             bool `json:"rule_edit"`
 			Clarification        bool `json:"clarification"`
@@ -102,6 +110,10 @@ func main() {
 		workflowEdit = c.WorkflowEdit
 		workflowDelete = c.WorkflowDelete
 		workflowDeleteDenied = c.WorkflowDeleteDenied
+		workflowWhen = c.WorkflowWhen
+		workflowWhenEdit = c.WorkflowWhenEdit
+		workflowWatch = c.WorkflowWatch
+		workflowBadTrigger = c.WorkflowBadTrigger
 		ruleSave = c.RuleSave
 		ruleEdit = c.RuleEdit
 		clarification = c.Clarification
@@ -147,6 +159,10 @@ func main() {
 		editWorkflow := workflowEdit
 		deleteWorkflow := workflowDelete
 		denyWorkflowDelete := workflowDeleteDenied
+		createWorkflowWhen := workflowWhen
+		editWorkflowWhen := workflowWhenEdit
+		createWorkflowWatch := workflowWatch
+		rejectWorkflowTrigger := workflowBadTrigger
 		createRule := ruleSave
 		editRule := ruleEdit
 		expectAuditDenial := auditDenied
@@ -292,8 +308,12 @@ func main() {
 			http.Error(w, "missing source configuration read evidence", 422)
 			return
 		}
-		if n == 2 && req.Model == "harness-fixture" && (createWorkflow || editWorkflow || deleteWorkflow) && !strings.Contains(string(req.Messages), "workflowId") {
+		if n == 2 && req.Model == "harness-fixture" && (createWorkflow || editWorkflow || deleteWorkflow || createWorkflowWhen || editWorkflowWhen || createWorkflowWatch) && !strings.Contains(string(req.Messages), "workflowId") {
 			http.Error(w, "missing workflow save receipt", 422)
+			return
+		}
+		if n == 2 && req.Model == "harness-fixture" && rejectWorkflowTrigger && !strings.Contains(string(req.Messages), "mutation_loop") {
+			http.Error(w, "missing trigger rollback receipt", 422)
 			return
 		}
 		if n == 2 && req.Model == "harness-fixture" && denyWorkflowDelete && !strings.Contains(string(req.Messages), "confirmation_required") {
@@ -304,7 +324,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -424,6 +444,18 @@ func main() {
 			}
 			if deleteWorkflow || denyWorkflowDelete {
 				responses = []string{`{"javascriptCode":"final('List the workflow before deletion', {})"}`, `{"javascriptCode":"const listed=mcp_neko_workflow_builder_list_workflows({limit:20}); function unwrap(v){if(typeof v==='string')return unwrap(JSON.parse(v)); if(v&&v.content&&v.content[0])return unwrap(v.content[0]); if(v&&v.text)return unwrap(v.text); return v;} const item=(unwrap(listed).workflows||[]).find(w=>w.name==='Harness review workflow'); if(!item||!item.versionToken) throw Error('workflow version missing'); const receipt=workflow_delete({workflowId:item.id,name:item.name,expectedVersion:item.versionToken}); final('Report the workflow deletion decision',{receipt});"}`, `{"answer":"The workflow deletion request was checked by the host."}`}
+			}
+			if createWorkflowWhen {
+				responses = []string{`{"javascriptCode":"final('Create the source-change workflow', {})"}`, `{"javascriptCode":"const receipt=workflow_save({name:'Harness source-change workflow',description:'Report a changed reference',steps:[{id:'report',description:'Report the changed reference'}],triggers:{when:{table:'references',primary_key:['id'],select:['label'],enabled:true,idempotency_key_template:'reference:{id}'}},expectedVersion:'absent'}); final('Report the source-change receipt',{receipt});"}`, `{"answer":"Created the source-change workflow."}`}
+			}
+			if editWorkflowWhen {
+				responses = []string{`{"javascriptCode":"final('Edit the source-change workflow', {})"}`, `{"javascriptCode":"const listed=mcp_neko_workflow_builder_list_workflows({limit:20}); function unwrap(v){if(typeof v==='string')return unwrap(JSON.parse(v)); if(v&&v.content&&v.content[0])return unwrap(v.content[0]); if(v&&v.text)return unwrap(v.text); return v;} const item=(unwrap(listed).workflows||[]).find(w=>w.name==='Harness source-change workflow'); if(!item||!item.versionToken) throw Error('workflow version missing'); const receipt=workflow_save({name:item.name,description:'Report the watched reference with a filter',steps:[{id:'report',description:'Report reference 42'}],triggers:{when:{table:'references',primary_key:['id'],select:['label'],where:{id:{eq:42}},enabled:true,idempotency_key_template:'reference:{id}'}},expectedVersion:item.versionToken}); final('Report the updated trigger',{receipt});"}`, `{"answer":"Updated the source-change workflow."}`}
+			}
+			if createWorkflowWatch {
+				responses = []string{`{"javascriptCode":"final('Create the condition watch', {})"}`, `{"javascriptCode":"const receipt=workflow_save({name:'Harness condition watch',description:'Notice when the reference id exceeds 40',steps:[{id:'report',description:'Report the reference condition'}],triggers:{watch:{query:'query { references { id label } }',value_path:'references.0.id',op:'gt',threshold:40,cadence_seconds:60,debounce_seconds:0}},expectedVersion:'absent'}); final('Report the watch receipt',{receipt});"}`, `{"answer":"Created the condition watch."}`}
+			}
+			if rejectWorkflowTrigger {
+				responses = []string{`{"javascriptCode":"final('Try the unsafe trigger', {})"}`, `{"javascriptCode":"const receipt=workflow_save({name:'Harness looped workflow',goal:'Update references when references change',steps:[{id:'update',description:'Update references after a reference changes'}],triggers:{when:{table:'references',primary_key:['id'],enabled:true}},expectedVersion:'absent'}); final('Report the rejected trigger',{receipt});"}`, `{"answer":"The unsafe trigger was rejected without saving a workflow."}`}
 			}
 			if createRule {
 				responses = []string{`{"javascriptCode":"final('Create the fixture rule', {})"}`, `{"javascriptCode":"const receipt=rule_save({name:'Harness governed rule',description:'Require review for synthetic changes',applies_to_kinds:['fixture_rule_action'],applies_to_scopes:['external'],mode:'approval_required',approver_role:'admin',expectedVersion:'absent'}); final('Report the saved rule',{receipt});"}`, `{"answer":"Created the Harness governed rule."}`}

@@ -394,9 +394,19 @@ workflow with a batch contract, listed it through MCP, edited it, checked the
 database and confirmation events, and rejected the old version token. Chromium
 found the edited confirmation exactly once before and after a Work-thread reload.
 The image builder now includes the local MCP bridge so the list result retains
-its version token. This grant admits cron triggers; data-change subscriptions
-and watchers need a separate recovery contract because their wiring can fail after the
-definition commits.
+its version token.
+
+**Workflow trigger slice (2026-09-28):** the same direct grant now admits
+`triggers.when` and `triggers.watch`. The host rechecks the current enabled
+Work actor and runs each GraphJin read as that run before writing. The Harness
+save puts the definition, source-change subscription and condition watcher in
+one database transaction, then journals the outcome and persists trigger cards.
+Editing `when` updates the one source-change slot instead of appending another.
+In the connected queue fixture, creation and edit retained one subscription,
+a saved watcher fired on the seeded GraphJin result, and a detected mutation
+loop, invalid table, invalid watcher path and disabled author left no new
+definition. This establishes trigger wiring and one sweep on synthetic data;
+broader scheduler/stream redelivery and crash-edge qualification remain open.
 
 **Workflow deletion slice (2026-09-27):** the direct `workflow_delete` tool
 requires the listed workflow ID, name and exact `versionToken`. Before a hard
@@ -431,7 +441,7 @@ Source inventory for the next M5c slice:
 | Handler | Current effect boundary | Required harness qualification |
 | --- | --- | --- |
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
-| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch create/edit and revision-bound, explicitly confirmed delete use direct journaled broker calls with host-persisted cards. Qualify data-change/watch trigger wiring and lost-card recovery separately. |
+| `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. Qualify scheduler/stream redelivery and crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save and skill creation remain excluded. Add idempotency before any automatic retry of a lost save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
