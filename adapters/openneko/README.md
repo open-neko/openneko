@@ -75,6 +75,13 @@ validated files after successful completion. The worker has not yet bound this
 executor to the run-scoped broker or the Work artifact route, so it is not
 model-visible today. The connected fixture verifies a CSV, credential and
 network isolation, symlink rejection, cancellation and mandatory teardown.
+The `./adapters/openneko/cmd/process` host executable accepts only a bounded
+`{"Argv":[...],"Outputs":[...]}` request on stdin. The trusted launcher
+must supply `HARNESS_PROCESS_RUN_ID`, `HARNESS_PROCESS_OPERATION_ID`,
+`HARNESS_PROCESS_INPUT_ROOT`, `HARNESS_PROCESS_OUTPUT_ROOT`,
+`HARNESS_PROCESS_IMAGE`, `HARNESS_OPENSHELL_BIN` and `OPENSHELL_GATEWAY`.
+Its connected test invokes the executable itself. Do not install it in the
+agent image or pass the broker token to the process compartment.
 
 ## Implemented: OpenShell cold-launch compatibility
 

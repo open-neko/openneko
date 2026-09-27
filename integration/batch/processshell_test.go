@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,8 +45,9 @@ print('process completed without host credentials')
 func TestOpenShellProcessCompartment(t *testing.T) {
 	cli := os.Getenv("OPENSHELL_TEST_CLI")
 	gateway := os.Getenv("HARNESS_BATCH_TEST_GATEWAY")
-	if cli == "" || gateway == "" {
-		t.Skip("set OPENSHELL_TEST_CLI and HARNESS_BATCH_TEST_GATEWAY for isolated OpenShell test")
+	processBin := os.Getenv("HARNESS_PROCESS_TEST_BIN")
+	if cli == "" || gateway == "" || processBin == "" {
+		t.Skip("set OPENSHELL_TEST_CLI, HARNESS_BATCH_TEST_GATEWAY and HARNESS_PROCESS_TEST_BIN for isolated OpenShell test")
 	}
 	root := t.TempDir()
 	input, output := filepath.Join(root, "input"), filepath.Join(root, "published")
@@ -58,19 +61,30 @@ func TestOpenShellProcessCompartment(t *testing.T) {
 	if image == "" {
 		image = "harness-openneko:m3"
 	}
-	runner, err := processshell.New(processshell.Options{CLI: cli, Gateway: gateway, Image: image,
-		InputRoot: input, OutputRoot: output, RunID: "fixture-process-run", OperationID: 1, Memory: "512Mi", TimeoutSeconds: 30})
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("OPENNEKO_BROKER_TOKEN", "host-only-fixture-secret")
 	t.Setenv("MODEL_API_KEY", "host-only-fixture-secret")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	result, err := runner.Run(ctx, processshell.Request{Argv: []string{"python3", "run.py"}, Outputs: []string{"result.csv"}})
+	cmd := exec.CommandContext(ctx, processBin)
+	cmd.Env = append(os.Environ(),
+		"HARNESS_OPENSHELL_BIN="+cli, "OPENSHELL_GATEWAY="+gateway,
+		"HARNESS_PROCESS_IMAGE="+image, "HARNESS_PROCESS_RUN_ID=fixture-process-run",
+		"HARNESS_PROCESS_OPERATION_ID=1", "HARNESS_PROCESS_INPUT_ROOT="+input,
+		"HARNESS_PROCESS_OUTPUT_ROOT="+output, "HARNESS_PROCESS_TIMEOUT_SECONDS=30",
+	)
+	cmd.Stdin = strings.NewReader(`{"Argv":["python3","run.py"],"Outputs":["result.csv"]}`)
+	raw, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("isolated process failed: %v; output=%s", err, result.Output)
+		t.Fatalf("isolated process failed: %v; output=%s", err, raw)
 	}
+	var receipt struct {
+		OK     bool                `json:"ok"`
+		Result processshell.Result `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &receipt); err != nil || !receipt.OK {
+		t.Fatalf("invalid process command receipt: %s (%v)", raw, err)
+	}
+	result := receipt.Result
 	data, err := os.ReadFile(filepath.Join(output, "result.csv"))
 	if err != nil || string(data) != "lead_id\nLEAD-42\n" || !strings.Contains(result.Output, "process completed") || result.OutputTruncated {
 		t.Fatalf("invalid process receipt: result=%+v data=%q err=%v", result, data, err)
