@@ -34,7 +34,7 @@ export interface RunBinding {
   memoryRead?: boolean;
   /** Explicit customer-surface library search grant. */
   libraryRead?: boolean;
-  /** Registry-backed catalog/find/get only; actor grants remain authoritative. */
+  /** Registry-backed reads and shipped blueprints; actor grants remain authoritative. */
   recordsRead?: boolean;
   /** Run-scoped clarification and validated card events from the MCP bridge. */
   interactionEvents?: boolean;
@@ -56,6 +56,9 @@ const harnessRecordsReadPaths = new Set([
   "/v1/records/catalog",
   "/v1/records/find",
   "/v1/records/get",
+  "/v1/records/blueprints",
+  "/v1/records/recycle/find",
+  "/v1/records/recycle/get",
 ]);
 
 function validHarnessEvents(binding: RunBinding, value: unknown): boolean {

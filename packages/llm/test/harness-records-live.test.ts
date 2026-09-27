@@ -67,9 +67,11 @@ live("runs a records-only Harness turn through OpenShell and the actor-scoped br
     });
     expect(result.status).toBe("completed");
     expect(result.finalText).toContain("no generated apps");
+    expect(result.finalText).toContain("crm blueprint");
     const snapshot = JSON.parse(await readFile(join(workspace.runRoot, ".harness", `${createHash("sha256").update(runId).digest("hex")}.json`), "utf8"));
-    expect(snapshot.operations).toMatchObject([{ tool: "mcp_neko_records_browse_catalog", finished: true }]);
-    expect(snapshot.operations).toHaveLength(1);
+    expect(snapshot.operations).toMatchObject([{ tool: "mcp_neko_records_browse_catalog", finished: true }, { tool: "mcp_neko_records_browse_blueprints", finished: true }]);
+    expect(snapshot.operations[1].result.content.join(" ")).toContain("crm");
+    expect(snapshot.operations).toHaveLength(2);
     expect(events.some((event) => event.type === "tool_start")).toBe(true);
   } finally {
     try { await broker.close(); }
