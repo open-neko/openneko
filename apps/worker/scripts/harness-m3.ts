@@ -184,6 +184,8 @@ await waitForJob(cardJob.id,cardRun.id);
 const cardEvents=(await pool().query("SELECT payload FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='surface'",[orgId,cardRun.id])).rows;
 assert.equal(cardEvents.length,1);
 assert.equal(cardEvents[0].payload.messages[0].createSurface.surfaceId,'fixture-card');
+assert.equal(cardEvents[0].payload.messages[0].createSurface.components[0].text,'Harness card persisted');
+if (process.env.HARNESS_M3_WEB === '1') await writeFile(join(process.env.HARNESS_STATE!,'m5-card-thread'),cardThread.id);
 console.log('M5_QUEUE_CARD_PASS',cardRun.id);
 // A staged upload must reach the Go harness through the production queue and
 // OpenShell sandbox, while another thread's upload remains invisible.
