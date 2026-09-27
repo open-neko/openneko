@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -18,7 +19,11 @@ import (
 // ReadConfig is trusted launch context, never a model-selected tool argument.
 type ReadConfig struct {
 	BridgePath, BrokerURL, BrokerToken, OrgID, ThreadID, RunID, SkillsRoot string
+	Interaction, Cards                                                     bool
 }
+
+//go:embed interaction_schemas.json
+var interactionSchemas []byte
 
 const searchSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"limit":{"maximum":20,"minimum":1,"type":"integer"},"query":{"maxLength":800,"minLength":2,"type":"string"}},"required":["query"],"type":"object"}`
 const recordsCatalogSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","properties":{"app":{"maxLength":63,"minLength":1,"type":"string"}},"type":"object"}`
@@ -29,7 +34,7 @@ const recordsGetSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","
 // Discovery must match the pinned schemas; bridge content cannot grant tools.
 func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records bool) ([]agent.Capability, func() error, error) {
 	u, err := url.Parse(cfg.BrokerURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records) || (library && !memory) {
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || cfg.BrokerToken == "" || cfg.OrgID == "" || cfg.ThreadID == "" || cfg.RunID == "" || cfg.SkillsRoot == "" || !filepath.IsAbs(cfg.BridgePath) || (!memory && !library && !records && !cfg.Interaction && !cfg.Cards) || (library && !memory) {
 		return nil, nil, fmt.Errorf("invalid OpenNeko read bridge binding")
 	}
 	if info, err := os.Stat(cfg.BridgePath); err != nil || !info.Mode().IsRegular() {
@@ -59,6 +64,20 @@ func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records 
 			shared.Admission{Name: "records_get_record", Alias: "mcp_neko_records_get_record", Version: "1", Origin: "openneko", Effect: "read", Description: "Read one record by an exact id returned by find_records.", Schema: json.RawMessage(recordsGetSchema)},
 		)
 	}
+	if cfg.Interaction || cfg.Cards {
+		var schemas map[string]json.RawMessage
+		if err := json.Unmarshal(interactionSchemas, &schemas); err != nil {
+			return nil, nil, fmt.Errorf("invalid pinned interaction schemas: %w", err)
+		}
+		if cfg.Interaction {
+			servers = append(servers, "neko_interaction")
+			allowed = append(allowed, shared.Admission{Name: "interaction_ask_user_question", Alias: "mcp_neko_interaction_ask_user_question", Version: "1", Origin: "openneko", Effect: "pause", Description: "Ask the operator for missing information and end this turn. The next answer starts a new run.", Schema: schemas["ask_user_question"]})
+		}
+		if cfg.Cards {
+			servers = append(servers, "neko_ui")
+			allowed = append(allowed, shared.Admission{Name: "ui_render_cards", Alias: "mcp_neko_ui_render_cards", Version: "1", Origin: "openneko", Effect: "interaction", Description: "Render a validated Work card for this run.", Schema: schemas["render_cards"]})
+		}
+	}
 	args := []string{cfg.BridgePath, strings.Join(servers, ",")}
 	if strings.HasSuffix(cfg.BridgePath, ".ts") {
 		args = append([]string{"--import", "tsx"}, args...)
@@ -75,6 +94,7 @@ func ConnectReads(ctx context.Context, cfg ReadConfig, memory, library, records 
 		"OPENNEKO_MCP_THREAD_ID=" + cfg.ThreadID,
 		"OPENNEKO_MCP_RUN_ID=" + cfg.RunID,
 		"OPENNEKO_MCP_SKILLS_ROOT=" + cfg.SkillsRoot,
+		"OPENNEKO_MCP_WANTS_CARDS=" + map[bool]string{true: "1", false: "0"}[cfg.Cards],
 		"OPENNEKO_MCP_PLUGIN_ACTIONS=[]",
 		"OPENNEKO_MCP_PACK_ACTIONS=[]",
 		"OPENNEKO_MCP_MEMORY_READ_ONLY=1",

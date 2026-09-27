@@ -49,7 +49,7 @@ func Admit(ctx context.Context, session *protocol.ClientSession, allowed []Admis
 	}
 	admitted := make([]agent.Capability, 0, len(allowed))
 	for _, item := range allowed {
-		if item.Effect != "read" {
+		if item.Effect != "read" && item.Effect != "interaction" && item.Effect != "pause" {
 			return nil, fmt.Errorf("MCP effect boundary not qualified")
 		}
 		tool := discovered[item.Name]

@@ -22,8 +22,11 @@ The first M5b memory and library search slices passed through the feature worker
 Harness image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
 The records-only catalog turn passed the same path with GraphJin lookup and customer
 memory denied; find/get are qualified against the real bridge with a synthetic broker.
-The memory result and library database row were seeded; the batch task and broader MCP/interaction surface
-still need connected acceptance. Full M5c remains open. Demo health alone does
+The memory result and library database row were seeded. A queued clarification
+now passes the real bridge, broker, Ax and worker path: the question is persisted
+once, the model stops, and redelivery adds no question or assistant answer.
+Validated card rendering passes the bridge and broker with a synthetic sink;
+broader MCP reads and writes remain open. Full M5c remains open. Demo health alone does
 not qualify either milestone.
 Hermes remains the default until rollout.
 
@@ -114,15 +117,16 @@ bounded new attempt from evidence, not restoration of a JavaScript execution sta
 
 ## M5a — Shared capability catalog and invocation boundary
 
-**Local status (2026-09-26):** the Go catalog now validates names, JSON schemas,
+**Partial status (2026-09-27):** the Go catalog now validates names, JSON schemas,
 origin/effect metadata, results and collisions; dispatches native, direct and local
 MCP tools through the same Ax callback and durable operation journal; pins a
 catalog hash on new checkpoints; retains old lookup/proposal checkpoint decoding;
 and emits tool origin, effect and duration. The official Go MCP SDK is pinned at
 v1.8.0 with Go 1.25. An Ax run exercised native + MCP fixture calls and terminal
-replay. Only read-classified MCP tools are admitted until remote effect handlers
-are qualified. The OpenNeko bridge remains unwired, so this is local M5a evidence,
-not connected product acceptance.
+replay. Pinned OpenNeko read, clarification and card tools now use the same
+catalog and journal in the connected worker path. Durable MCP product writes
+remain excluded until their effect boundaries are qualified. The full consumer
+capability inventory and general recovery matrix remain open.
 
 **Deliver:** a run-scoped catalog and dispatch path for native Go, MCP and direct
 service tools. Reuse the existing operation journal, Ax callback bridge, policy and
@@ -163,8 +167,12 @@ run now uses the real entitlement lookup and pgvector search against an isolated
 Postgres row, with a deterministic embedding fixture. Hermes regression checks
 passed. Records catalog was tested end to end with an empty registry; find/get
 used a synthetic broker behind the real bridge and still need data-backed
-acceptance. Uploaded-document and browser search tasks, and the real Daily Lead
-Union batch, still need connected acceptance.
+acceptance. The queued clarification reached `needs_input` after two outer model
+calls; broker events entered the turn reducer, and queue redelivery preserved one
+question and surface without a model replay or assistant answer. Broker validation
+denied forged completion events, and the real stdio bridge rendered a validated
+card against a synthetic event sink. Operator-answer continuation, browser reload,
+uploaded-document search and the real Daily Lead Union batch remain unqualified.
 
 The controlled query-to-file runner now consumes the pinned script's cache-miss
 requests, calls a trusted read callback, writes bounded response files and query

@@ -20,6 +20,7 @@ func main() {
 	proposal := false
 	upload := false
 	artifact := false
+	clarification := false
 	continuation := false
 	pauseResponder := false
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +40,7 @@ func main() {
 			Proposal       bool `json:"proposal"`
 			Upload         bool `json:"upload"`
 			Artifact       bool `json:"artifact"`
+			Clarification  bool `json:"clarification"`
 			Continue       bool `json:"continue"`
 			PauseResponder bool `json:"pause_responder"`
 		}
@@ -57,6 +59,7 @@ func main() {
 		proposal = c.Proposal
 		upload = c.Upload
 		artifact = c.Artifact
+		clarification = c.Clarification
 		mu.Unlock()
 		w.WriteHeader(204)
 	})
@@ -86,6 +89,7 @@ func main() {
 		propose := proposal
 		readUpload := upload
 		writeArtifact := artifact
+		askClarification := clarification
 		resume := continuation
 		n := counts[req.Model]
 		if pauseResponder && req.Model == "harness-fixture" && n == 2 {
@@ -163,6 +167,9 @@ func main() {
 			responses = []string{`{"javascriptCode":"final('Browse generated records apps', {})"}`, `{"javascriptCode":"const catalog=mcp_neko_records_browse_catalog({}); final('Report records catalog',{catalog});"}`, `{"answer":"The records catalog contains no generated apps for this test organization."}`}
 		} else {
 			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
+			if askClarification {
+				responses = []string{`{"javascriptCode":"final('Ask for the missing day', {})"}`, `{"javascriptCode":"mcp_neko_interaction_ask_user_question({questions:[{question:'Which day?'}]}); final('Wait for the answer', {});"}`}
+			}
 			if readUpload {
 				responses = []string{`{"javascriptCode":"final('Read the uploaded lead file', {})"}`, `{"javascriptCode":"const hidden=upload_search({query:'OTHER-SECRET'}); const matches=upload_search({query:'lead.csv'}); const file=upload_read({path:matches.paths[0]}); final('Report the uploaded lead',{hidden,matches,file});"}`, `{"answer":"The uploaded lead is LEAD-42."}`}
 			}

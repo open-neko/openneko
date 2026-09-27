@@ -54,16 +54,19 @@ func main() {
 	memoryRead := os.Getenv("OPENNEKO_HARNESS_MCP_MEMORY_READ")
 	libraryRead := os.Getenv("OPENNEKO_HARNESS_MCP_LIBRARY_READ")
 	recordsRead := os.Getenv("OPENNEKO_HARNESS_MCP_RECORDS_READ")
-	if (memoryRead != "" && memoryRead != "1") || (libraryRead != "" && libraryRead != "1") || (recordsRead != "" && recordsRead != "1") || (libraryRead == "1" && memoryRead != "1") || (recordsOnly == "1" && (memoryRead != "" || libraryRead != "" || recordsRead != "1")) {
+	interaction := os.Getenv("OPENNEKO_HARNESS_MCP_INTERACTION")
+	cards := os.Getenv("OPENNEKO_HARNESS_MCP_CARDS")
+	if (memoryRead != "" && memoryRead != "1") || (libraryRead != "" && libraryRead != "1") || (recordsRead != "" && recordsRead != "1") || (interaction != "" && interaction != "1") || (cards != "" && cards != "1") || (libraryRead == "1" && memoryRead != "1") || (recordsOnly == "1" && (memoryRead != "" || libraryRead != "" || recordsRead != "1")) {
 		fmt.Fprintln(os.Stderr, "invalid read capability binding")
 		os.Exit(2)
 	}
-	if memoryRead == "1" || recordsRead == "1" {
+	if memoryRead == "1" || recordsRead == "1" || interaction == "1" || cards == "1" {
 		capabilities, closeSession, connectErr := productmcp.ConnectReads(context.Background(), productmcp.ReadConfig{
 			BridgePath: os.Getenv("OPENNEKO_MCP_BRIDGE"),
 			BrokerURL:  os.Getenv("OPENNEKO_BROKER_URL"), BrokerToken: os.Getenv("OPENNEKO_BROKER_TOKEN"),
 			OrgID: os.Getenv("OPENNEKO_MCP_ORG_ID"), ThreadID: os.Getenv("OPENNEKO_MCP_THREAD_ID"),
 			RunID: os.Getenv("OPENNEKO_MCP_RUN_ID"), SkillsRoot: os.Getenv("OPENNEKO_MCP_SKILLS_ROOT"),
+			Interaction: interaction == "1", Cards: cards == "1",
 		}, memoryRead == "1", libraryRead == "1", recordsRead == "1")
 		if connectErr != nil {
 			fmt.Fprintln(os.Stderr, "read capabilities unavailable:", connectErr)

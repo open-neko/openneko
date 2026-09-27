@@ -34,6 +34,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	var requests atomic.Int32
 	var libraryRequests atomic.Int32
 	var recordsRequests atomic.Int32
+	var eventPosts atomic.Int32
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "unexpected route", http.StatusNotFound)
@@ -41,6 +42,19 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 		}
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized) // Bridge warmup.
+			return
+		}
+		if r.URL.Path == "/v1/events" {
+			var posted struct {
+				Events []map[string]any `json:"events"`
+			}
+			if json.NewDecoder(r.Body).Decode(&posted) != nil || len(posted.Events) != 1 || (posted.Events[0]["type"] != "surface" && posted.Events[0]["type"] != "needs_input") {
+				http.Error(w, "invalid interaction event", http.StatusBadRequest)
+				return
+			}
+			eventPosts.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
 			return
 		}
 		var body map[string]any
@@ -126,7 +140,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	}
 	productCaps, closeProduct, err := product.ConnectReads(ctx, product.ReadConfig{
 		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,
-		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(),
+		OrgID: "org-fixture", ThreadID: "thread-fixture", RunID: "run-fixture", SkillsRoot: t.TempDir(), Interaction: true, Cards: true,
 	}, true, true, true)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +150,7 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	if err != nil || !strings.Contains(string(result), "memory-1") || requests.Load() != 2 {
 		t.Fatalf("product MCP read failed: result=%s err=%v requests=%d", result, err, requests.Load())
 	}
-	if len(productCaps) != 5 || productCaps[1].Name != "mcp_library_search" {
+	if len(productCaps) != 7 || productCaps[1].Name != "mcp_library_search" {
 		t.Fatalf("library read was not admitted: %+v", productCaps)
 	}
 	result, err = productCaps[1].Call(ctx, json.RawMessage(`{"query":"find contract"}`))
@@ -158,6 +172,14 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 	}
 	if recordsRequests.Load() != 3 {
 		t.Fatalf("records route count %d", recordsRequests.Load())
+	}
+	result, err = productCaps[5].Call(ctx, json.RawMessage(`{"questions":[{"question":"Which day?"}]}`))
+	if err != nil || !strings.Contains(string(result), "needs_input") || eventPosts.Load() != 2 {
+		t.Fatalf("clarification did not reach the host: result=%s err=%v events=%d", result, err, eventPosts.Load())
+	}
+	result, err = productCaps[6].Call(ctx, json.RawMessage(`{"messages":[{"version":"v1.0","createSurface":{"surfaceId":"answer","catalogId":"urn:openneko:catalog:work:v2","components":[{"id":"root","component":"Text"}]}}]}`))
+	if err != nil || !strings.Contains(string(result), "accepted") || eventPosts.Load() != 3 {
+		t.Fatalf("card did not reach the host: result=%s err=%v events=%d", result, err, eventPosts.Load())
 	}
 	recordsOnly, closeRecords, err := product.ConnectReads(ctx, product.ReadConfig{
 		BridgePath: bridge, BrokerURL: broker.URL, BrokerToken: token,

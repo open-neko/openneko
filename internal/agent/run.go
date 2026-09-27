@@ -188,7 +188,16 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			toolFailed = true
 		}
 	}
-	if events.err == nil && ctx.Err() == nil {
+	priorPaused := false
+	for _, op := range prior.Operations {
+		if capability, ok := available[op.Name()]; ok && capability.Effect == "pause" && len(op.Result) > 0 && !toolResultFailed(op.Result) {
+			priorPaused = true
+		}
+	}
+	if priorPaused {
+		events.pause()
+	}
+	if events.err == nil && ctx.Err() == nil && !priorPaused {
 		baseRuntime := axgoja.NewRuntime()
 		if len(admitted) > 0 {
 			// Goja counts host-call wait time in its deadline. Allow the broker
@@ -201,6 +210,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			runtime.RegisterCallable(name, func(value ax.Value) (ax.Value, error) {
 				if err := ctx.Err(); err != nil {
 					return nil, err
+				}
+				if events.isPaused() {
+					return nil, fmt.Errorf("turn is awaiting operator input")
 				}
 				instruction, err := capability.input(value)
 				if err != nil {
@@ -254,6 +266,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				finished.Data = append(json.RawMessage(nil), raw...)
 				if toolResultFailed(raw) {
 					toolFailed = true
+				}
+				if capability.Effect == "pause" && !toolResultFailed(raw) {
+					events.pause()
 				}
 				if name == "lookup" {
 					delegations = append(delegations, append(json.RawMessage(nil), raw...))
@@ -309,6 +324,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		result = Result{Status: "failed", Code: "deadline_exceeded"}
 	} else if ctx.Err() != nil {
 		result = Result{Status: "cancelled", Code: "cancelled"}
+	}
+	if events.isPaused() && ctx.Err() == nil {
+		result = Result{Status: "completed", Kind: "clarification", Answer: "Awaiting operator input."}
 	}
 	result.Delegations = delegations
 	if result.Status == "failed" {
@@ -379,11 +397,28 @@ type recorder struct {
 	modelCalls  int
 	usage       ModelUsage
 	modelDenied bool
+	paused      bool
 	err         error
+}
+
+func (r *recorder) pause() {
+	r.mu.Lock()
+	r.paused = true
+	r.mu.Unlock()
+}
+
+func (r *recorder) isPaused() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.paused
 }
 
 func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo) (ax.Value, error) {
 	r.mu.Lock()
+	if r.paused {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("turn is awaiting operator input")
+	}
 	if r.err != nil {
 		err := r.err
 		r.mu.Unlock()

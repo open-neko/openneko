@@ -79,7 +79,7 @@ func (t Tools) admitted() ([]admittedTool, error) {
 	seen := map[string]bool{}
 	admitted := make([]admittedTool, 0, len(list))
 	for _, cap := range list {
-		if !capabilityName.MatchString(cap.Name) || seen[cap.Name] || cap.Version == "" || len(cap.Version) > 128 || cap.Origin == "" || len(cap.Origin) > 128 || len(cap.Description) > 1000 || cap.Description == "" || cap.Call == nil || len(cap.InputSchema) == 0 || len(cap.InputSchema) > 16384 || (cap.Effect != "read" && cap.Effect != "approval" && cap.Effect != "interaction" && cap.Effect != "durable") {
+		if !capabilityName.MatchString(cap.Name) || seen[cap.Name] || cap.Version == "" || len(cap.Version) > 128 || cap.Origin == "" || len(cap.Origin) > 128 || len(cap.Description) > 1000 || cap.Description == "" || cap.Call == nil || len(cap.InputSchema) == 0 || len(cap.InputSchema) > 16384 || (cap.Effect != "read" && cap.Effect != "approval" && cap.Effect != "interaction" && cap.Effect != "pause" && cap.Effect != "durable") {
 			return nil, fmt.Errorf("invalid or duplicate capability")
 		}
 		seen[cap.Name] = true
