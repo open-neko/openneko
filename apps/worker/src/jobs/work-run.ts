@@ -1,7 +1,7 @@
 import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { ensureHostConfigProvisioned, type AgentEvent } from "@neko/llm";
+import { ensureHostConfigProvisioned, registerAgentCanceller, type AgentEvent } from "@neko/llm";
 import { enqueue, QUEUE } from "@neko/db/jobs";
-import { db, eq, skill_usage } from "@neko/db";
+import { db, eq, pool, skill_usage } from "@neko/db";
 import {
   agentRuntimeDepsFromConfig,
   appendWorkRunEvent,
@@ -52,6 +52,10 @@ async function runWorkRunTraced(
     console.warn(
       `[work-run] run ${runId} not found for thread ${threadId}; skipping stale job`,
     );
+    return;
+  }
+  if (run.status === "cancelled") {
+    console.log(`[work-run] cancelled run ${runId} skipped before dispatch`);
     return;
   }
   const runTelemetry = createWorkerHarnessObserver(runId);
@@ -110,24 +114,75 @@ async function runWorkRunTraced(
     const agentRuntime = await startupPhase("config.provision", () => ensureHostConfigProvisioned(orgId));
 
     const broker = await startupPhase("broker.ready", () => ensureAgentBroker());
-    const spendGuard = await createRunSpendGuard({ runId, emit });
-    unregisterBrokerEvents = registerAgentBrokerEventSink(runId, spendGuard.emit);
-    result = await runChatTurn(
-      {
-        orgId,
-        threadId,
-        runId,
-        message,
-        channel,
-        emit: spendGuard.emit,
-        signal: spendGuard.signal,
-        pluginActions,
-        packActions,
-        observer: runTelemetry.observer,
-      },
-      agentRuntimeDepsFromConfig(agentRuntime, broker),
-    );
+    const cancellation = new AbortController();
+    const unregisterShutdown = registerAgentCanceller(() => cancellation.abort());
+    let polling = false;
+    let watching = true;
+    const checkCancellation = async () => {
+      if (!watching || polling || cancellation.signal.aborted) return;
+      polling = true;
+      try {
+        const { rows } = await pool().query<{ status: string }>(
+          "select status from work_run where org_id=$1 and id=$2",
+          [orgId, runId],
+        );
+        if (watching && (!rows[0] || rows[0].status === "cancelled")) {
+          cancellation.abort();
+        }
+      } catch (error) {
+        // Without the durable run state, an effect cannot safely publish.
+        console.warn(
+          `[work-run] cancellation check failed run=${runId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        cancellation.abort(error);
+      } finally {
+        polling = false;
+      }
+    };
+    const cancellationTimer = setInterval(() => { void checkCancellation(); }, 500);
+    cancellationTimer.unref();
+    try {
+      await checkCancellation();
+      const spendGuard = await createRunSpendGuard({ runId, emit, signal: cancellation.signal });
+      try {
+        unregisterBrokerEvents = registerAgentBrokerEventSink(runId, spendGuard.emit);
+        result = await runChatTurn(
+          {
+            orgId,
+            threadId,
+            runId,
+            message,
+            channel,
+            emit: spendGuard.emit,
+            signal: spendGuard.signal,
+            pluginActions,
+            packActions,
+            observer: runTelemetry.observer,
+          },
+          agentRuntimeDepsFromConfig(agentRuntime, broker),
+        );
+      } finally {
+        spendGuard.dispose();
+      }
+    } finally {
+      watching = false;
+      clearInterval(cancellationTimer);
+      unregisterShutdown();
+    }
   } catch (cause) {
+    if ((await getWorkRun(orgId, runId).catch(() => null))?.status === "cancelled") {
+      await observeSafely(runTelemetry.observer, {
+        kind: "run.end",
+        operationId,
+        status: "error",
+        errorType: "cancelled",
+        attributes: { "openneko.outcome": "cancelled" },
+        measurements: { durationMs: Date.now() - startedAt, coverage: "unavailable" },
+      });
+      await persistProcessingJobTelemetry(jobId, runTelemetry.snapshot());
+      console.log(`[work-run] cancelled run ${runId} stopped in worker`);
+      return;
+    }
     await observeSafely(runTelemetry.observer, {
       kind: "run.end",
       operationId,
