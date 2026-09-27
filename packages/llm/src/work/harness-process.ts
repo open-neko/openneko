@@ -88,6 +88,10 @@ async function invokeBinary(
   binding: HarnessProcessBinding, runId: string, operationId: number,
   inputRoot: string, outputRoot: string, input: ProcessInput, signal?: AbortSignal,
 ): Promise<{files: string[]; output: string; outputTruncated: boolean; inputDigest: string}> {
+  const timeoutSeconds = process.env.OPENNEKO_PROCESS_TIMEOUT_SECONDS ?? "120";
+  if (!/^[1-9]\d{0,3}$/.test(timeoutSeconds) || Number(timeoutSeconds) > 1200) {
+    throw new Error("Invalid isolated process timeout limit");
+  }
   const child = spawn(binding.binary, [], {
     stdio: ["pipe", "pipe", "pipe"],
     env: {
@@ -102,7 +106,7 @@ async function invokeBinary(
       HARNESS_PROCESS_OPERATION_ID: String(operationId),
       HARNESS_PROCESS_INPUT_ROOT: inputRoot,
       HARNESS_PROCESS_OUTPUT_ROOT: outputRoot,
-      HARNESS_PROCESS_TIMEOUT_SECONDS: "120",
+      HARNESS_PROCESS_TIMEOUT_SECONDS: timeoutSeconds,
     },
   });
   const encoded = JSON.stringify({Argv: input.language === "python" ? ["python3", "run.py"] : ["sh", "run.sh"], Outputs: input.outputs});
