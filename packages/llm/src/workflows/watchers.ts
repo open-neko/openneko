@@ -2,6 +2,7 @@ import { and, data_source, db, desc, eq, watcher } from "@neko/db";
 import { packArtifactSource } from "../graphjin/pack-source";
 import { graphjinQuery } from "../graphjin/client";
 import { mintGraphjinToken } from "../graphjin/token";
+import type { WorkflowTx } from "./store";
 
 /**
  * OL4 — watchers, polling v1. A watcher runs a GraphJin query on its
@@ -85,6 +86,8 @@ function toRecord(row: typeof watcher.$inferSelect): WatcherRecord {
 
 export async function upsertWatcher(
   input: UpsertWatcherInput,
+  runner: ReturnType<typeof db> | WorkflowTx = db(),
+  enforceWorkflowOwnership = false,
 ): Promise<WatcherRecord> {
   if (!(WATCHER_OPS as readonly string[]).includes(input.op)) {
     throw new Error(`Invalid watcher op: ${input.op}`);
@@ -103,18 +106,21 @@ export async function upsertWatcher(
     severity: input.severity ?? "medium",
     updated_at: now,
   };
-  const [existing] = await db()
-    .select({ id: watcher.id })
+  const [existing] = await runner
+    .select({ id: watcher.id, workflowId: watcher.workflow_id })
     .from(watcher)
     .where(and(eq(watcher.org_id, input.orgId), eq(watcher.name, input.name)))
     .limit(1);
+  if (enforceWorkflowOwnership && existing && existing.workflowId !== input.workflowId) {
+    throw new Error("A watcher with this name belongs to another workflow");
+  }
   const [row] = existing
-    ? await db()
+    ? await runner
         .update(watcher)
         .set(values)
         .where(eq(watcher.id, existing.id))
         .returning()
-    : await db()
+    : await runner
         .insert(watcher)
         .values({ org_id: input.orgId, name: input.name, ...values })
         .returning();

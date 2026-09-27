@@ -15,9 +15,13 @@ import {
 import type { ActionExecutionOutcome } from "../workflows/action-executor";
 import { evaluateActionPolicy } from "../workflows/policy-engine";
 import {
+  saveHarnessWorkflowWithTrigger,
   saveWorkflowWithTrigger,
+  HarnessWorkflowValidationError,
   type SaveWorkflowWithTriggerResult,
 } from "../workflows/save-workflow-with-trigger";
+import { extractValueAtPath, listWatchers } from "../workflows/watchers";
+import { buildSourceChangeDryRunQuery } from "../workflows/subscription-query";
 import {
   deleteWorkflow,
   deleteWorkflowVersioned,
@@ -362,8 +366,10 @@ export type SourceConfigPreviewResult = {
 };
 
 export type WorkflowListEntry = Wire<WorkflowRecord> & {
-  /** Enabled source_change trigger filter, if any. */
+  /** Saved source_change trigger filter, if any. */
   when: Record<string, unknown> | null;
+  /** Saved condition watcher, if any. */
+  watch: Record<string, unknown> | null;
   /** Exact row revision for guarded Harness edits. */
   versionToken: string;
 };
@@ -1293,6 +1299,21 @@ export class InProcessControlPlane implements AgentControlPlane {
   async saveWorkflowWithTrigger(
     input: SaveWorkflowInput,
   ): Promise<Wire<SaveWorkflowWithTriggerResult>> {
+    if (input.expectedVersion !== undefined) {
+      if (!input.createdByRunId) throw new HarnessWorkflowValidationError("actor_denied", "Harness workflow save requires a current user run");
+      const [run] = await db()
+        .select({ actorUserId: work_run.actor_user_id })
+        .from(work_run)
+        .where(and(eq(work_run.org_id, input.orgId), eq(work_run.id, input.createdByRunId)))
+        .limit(1);
+      if (!run?.actorUserId) throw new HarnessWorkflowValidationError("actor_denied", "Harness workflow save requires a current user");
+      const [actor] = await db()
+        .select({ disabledAt: app_user.disabled_at })
+        .from(app_user)
+        .where(and(eq(app_user.org_id, input.orgId), eq(app_user.id, run.actorUserId)))
+        .limit(1);
+      if (!actor || actor.disabledAt) throw new HarnessWorkflowValidationError("actor_denied", "Harness workflow save requires a current enabled user");
+    }
     if (input.createdByRunId) {
       const owner = input.ownerUserId ?? "";
       const existing = (await listWorkflows(input.orgId)).find((w) => w.name === input.name && w.ownerUserId === owner);
@@ -1300,7 +1321,60 @@ export class InProcessControlPlane implements AgentControlPlane {
         throw new Error(`A workflow named "${input.name}" exists and this run cannot change it. Choose another name.`);
       }
     }
-    return toWire(await saveWorkflowWithTrigger(input));
+    if (input.expectedVersion !== undefined && input.triggers?.when) {
+      const when = input.triggers.when;
+      const probe = buildSourceChangeDryRunQuery({
+        table: when.table,
+        where: when.where,
+        select: when.select,
+        primary_key: when.primary_key,
+        version_column: when.version_column,
+      }, 1);
+      if (!probe) throw new HarnessWorkflowValidationError("invalid_trigger", "Invalid data-change trigger columns");
+      try {
+        const result = await this.queryGraphjinRead({
+          orgId: input.orgId,
+          runId: input.createdByRunId,
+          query: probe.query,
+          variables: probe.variables,
+        });
+        if (result.errors?.length || result.data === null) {
+          throw new Error(result.errors?.map((error) => error.message).join("; ") || "GraphJin returned no data");
+        }
+      } catch (error) {
+        throw new HarnessWorkflowValidationError(
+          "data_trigger_preflight_failed",
+          `The data-change filter did not pass GraphJin read preflight: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    if (input.expectedVersion !== undefined && input.triggers?.watch) {
+      const watch = input.triggers.watch;
+      let value: unknown;
+      try {
+        const result = await this.queryGraphjinRead({
+          orgId: input.orgId,
+          runId: input.createdByRunId,
+          query: watch.query,
+        });
+        if (result.errors?.length || result.data === null) {
+          throw new Error(result.errors?.map((error) => error.message).join("; ") || "GraphJin returned no data");
+        }
+        value = extractValueAtPath(result.data, watch.value_path);
+      } catch (error) {
+        throw new HarnessWorkflowValidationError(
+          "watcher_preflight_failed",
+          `The watcher query did not pass GraphJin read preflight: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (value === undefined || (watch.op !== "changed" && !["eq", "ne"].includes(watch.op) &&
+          (!Number.isFinite(Number(value)) || !Number.isFinite(Number(watch.threshold))))) {
+        throw new HarnessWorkflowValidationError("invalid_watcher_value", "The watcher value path or threshold is invalid for this query");
+      }
+    }
+    return toWire(await (input.expectedVersion !== undefined
+      ? saveHarnessWorkflowWithTrigger(input)
+      : saveWorkflowWithTrigger(input)));
   }
 
   async emitWorkflowOutput(
@@ -1323,13 +1397,19 @@ export class InProcessControlPlane implements AgentControlPlane {
     const triggers = await Promise.all(
       slice.map(({ workflow }) => listSubscriptionsByWorkflow(input.orgId, workflow.id)),
     );
+    const watches = new Map((await listWatchers(input.orgId))
+      .map((watch) => [watch.workflowId, watch] as const));
     return {
       total: all.length,
       workflows: slice.map(({ workflow: w, versionToken }, i) => {
         const dataTrigger = triggers[i].find(
-          (s) => s.sourceKind === "source_change" && s.enabled,
+          (s) => s.sourceKind === "source_change",
         );
-        return { ...toWire(w), when: dataTrigger ? dataTrigger.filter : null,
+        const watcher = watches.get(w.id);
+        return { ...toWire(w), when: dataTrigger ? {...dataTrigger.filter, enabled:dataTrigger.enabled} : null,
+          watch: watcher ? {query:watcher.query,value_path:watcher.valuePath,op:watcher.op,
+            threshold:watcher.threshold,cadence_seconds:watcher.cadenceSeconds,
+            debounce_seconds:watcher.debounceSeconds,severity:watcher.severity,enabled:watcher.enabled} : null,
           versionToken };
       }),
     };

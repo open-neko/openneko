@@ -103,6 +103,10 @@ export type SaveWorkflowInput = {
   expectedVersion?: string;
 };
 
+type WorkflowDb = ReturnType<typeof db>;
+export type WorkflowTx = Parameters<Parameters<WorkflowDb["transaction"]>[0]>[0];
+type WorkflowRunner = WorkflowDb | WorkflowTx;
+
 export type SaveWorkflowResult = {
   action: "created" | "updated";
   workflow: WorkflowRecord;
@@ -142,8 +146,9 @@ export async function getWorkflowByOrgName(
   orgId: string,
   name: string,
   ownerUserId = "",
+  runner: WorkflowRunner = db(),
 ): Promise<WorkflowRecord | null> {
-  const rows = await db()
+  const rows = await runner
     .select()
     .from(workflow_definition)
     .where(
@@ -276,9 +281,11 @@ export async function listCronWorkflows(): Promise<WorkflowRecord[]> {
 
 export async function saveWorkflow(
   input: SaveWorkflowInput,
+  runner: WorkflowRunner = db(),
+  versionDefinition = true,
 ): Promise<SaveWorkflowResult> {
   const ownerUserId = input.ownerUserId ?? "";
-  const existing = await getWorkflowByOrgName(input.orgId, input.name, ownerUserId);
+  const existing = await getWorkflowByOrgName(input.orgId, input.name, ownerUserId, runner);
   if (input.expectedVersion !== undefined &&
       (input.expectedVersion === "absent" ? Boolean(existing) : !existing || !/^\d{1,12}$/.test(input.expectedVersion))) {
     throw new Error("Workflow changed since it was listed; read it again before saving.");
@@ -305,7 +312,7 @@ export async function saveWorkflow(
   };
 
   if (existing) {
-    const [row] = await db()
+    const [row] = await runner
       .update(workflow_definition)
       .set({
         description: input.description ?? existing.description,
@@ -330,11 +337,11 @@ export async function saveWorkflow(
       .returning();
     if (!row) throw new Error("Workflow changed since it was listed; read it again before saving.");
     const updated = toRecord(row);
-    await versionWorkflowDefinition(updated, "Updated");
+    if (versionDefinition) await versionWorkflowDefinition(updated, "Updated");
     return { action: "updated", workflow: updated };
   }
 
-  const [row] = await db()
+  const [row] = await runner
     .insert(workflow_definition)
     .values({
       org_id: input.orgId,
@@ -355,13 +362,13 @@ export async function saveWorkflow(
     })
     .returning();
   // origin_id = self for originals (lineage root).
-  const [withOrigin] = await db()
+  const [withOrigin] = await runner
     .update(workflow_definition)
     .set({ origin_id: row.id })
     .where(eq(workflow_definition.id, row.id))
     .returning();
   const created = toRecord(withOrigin);
-  await versionWorkflowDefinition(created, "Added");
+  if (versionDefinition) await versionWorkflowDefinition(created, "Added");
   return { action: "created", workflow: created };
 }
 
@@ -423,7 +430,7 @@ export async function personalWorkflowFiles(
   }));
 }
 
-async function versionWorkflowDefinition(
+export async function versionWorkflowDefinition(
   workflow: WorkflowRecord,
   verb: "Added" | "Updated",
 ): Promise<void> {
@@ -880,8 +887,9 @@ function toSubscriptionRecord(
 
 export async function createSubscription(
   input: CreateSubscriptionInput,
+  runner: WorkflowRunner = db(),
 ): Promise<SubscriptionRecord> {
-  const [row] = await db()
+  const [row] = await runner
     .insert(subscription)
     .values({
       org_id: input.orgId,
@@ -895,6 +903,41 @@ export async function createSubscription(
       idempotency_key_template: input.idempotencyKeyTemplate ?? null,
     })
     .returning();
+  return toSubscriptionRecord(row);
+}
+
+/** A workflow definition has one `triggers.when` slot. Editing it replaces
+ * that slot rather than creating a second active source-change trigger. */
+export async function upsertWorkflowSourceChangeSubscription(
+  input: CreateSubscriptionInput,
+  runner: WorkflowRunner = db(),
+): Promise<SubscriptionRecord> {
+  if (input.sourceKind !== "source_change") throw new Error("Expected a source-change subscription");
+  const existing = await runner
+    .select({ id: subscription.id })
+    .from(subscription)
+    .where(and(
+      eq(subscription.org_id, input.orgId),
+      eq(subscription.workflow_id, input.workflowId),
+      eq(subscription.source_kind, "source_change"),
+    ))
+    .limit(2);
+  if (existing.length > 1) throw new Error("Workflow has multiple data-change triggers; resolve them before editing");
+  if (!existing[0]) return createSubscription(input, runner);
+  const [row] = await runner
+    .update(subscription)
+    .set({
+      filter: input.filter ?? {},
+      enabled: input.enabled ?? true,
+      idempotency_key_template: input.idempotencyKeyTemplate ?? null,
+      updated_at: new Date(),
+    })
+    .where(and(
+      eq(subscription.org_id, input.orgId),
+      eq(subscription.id, existing[0].id),
+    ))
+    .returning();
+  if (!row) throw new Error("Workflow data-change trigger changed during save");
   return toSubscriptionRecord(row);
 }
 
@@ -1224,8 +1267,9 @@ export type DataSourceContext = {
 
 export async function getDataSourceForOrg(
   orgId: string,
+  runner: WorkflowRunner = db(),
 ): Promise<DataSourceContext | null> {
-  const rows = await db()
+  const rows = await runner
     .select({
       id: data_source.id,
       graphql_url: data_source.graphql_url,
