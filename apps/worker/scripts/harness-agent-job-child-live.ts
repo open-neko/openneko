@@ -16,6 +16,7 @@ if (!prior) throw Error("isolated model configuration missing");
 const configPath = join(process.env.OPENNEKO_AGENT_HERMES_HOME ?? "", "config.yaml");
 const priorConfig = await readFile(configPath, "utf8");
 const isolated = await ensureIsolatedJobWorkspace("harness-child-check");
+let disabled: Awaited<ReturnType<typeof ensureIsolatedJobWorkspace>> | undefined;
 let modelOnly: Awaited<ReturnType<typeof ensureIsolatedJobWorkspace>> | undefined;
 const runId = randomUUID();
 try {
@@ -37,6 +38,17 @@ try {
   assert.equal(snapshot.events.filter((event: { type: string }) => event.type === "model.request.finished").length, 6);
   console.log("M5_AGENT_JOB_CHILD_PASS", runId);
 
+  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
+  disabled = await ensureIsolatedJobWorkspace("harness-child-disabled-check");
+  const disabledRunId = randomUUID();
+  const disabledBackend = await sandboxAgentBackendForJob({ backend: makeAgentBackend({ id: "harness" }), orgId,
+    runId: disabledRunId, workspace: disabled.workspace, access: { graphjinAgent: true } });
+  const disabledResult = await disabledBackend.run({ prompt: "Delegate the seeded reference check.", nativeDelegation: "disabled" });
+  assert.equal(disabledResult.status, "failed", JSON.stringify(disabledResult));
+  assert.equal((await pool().query("SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2",
+    [orgId, disabledRunId])).rows[0].n, 0);
+  console.log("M5_AGENT_JOB_CHILD_DISABLED_PASS", disabledRunId);
+
   await db().update(llm_provider_config).set({ model: "harness-job-model-only-fixture" }).where(eq(llm_provider_config.id, prior.id));
   await writeFile(configPath, "model:\n  provider: custom\n  default: harness-job-model-only-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
   await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
@@ -52,6 +64,7 @@ try {
 } finally {
   await shutdownAgentBroker();
   await isolated.cleanup();
+  await disabled?.cleanup();
   await modelOnly?.cleanup();
   await writeFile(configPath, priorConfig);
   await db().update(llm_provider_config).set({ model: prior.model }).where(eq(llm_provider_config.id, prior.id));
