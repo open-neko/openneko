@@ -304,7 +304,7 @@ async function runApiBatch(input: {
 }
 
 export function runWorkflowRunFire(payload: WorkflowRunFirePayload): Promise<void> {
-  return withStartupTrace({ requestId: payload.apiAdmissionId ?? payload.scheduleFiringId, workflowRunId: payload.workflowRunId }, () => startupPhase("workflow.dispatch", () => runWorkflowRunFireTraced(payload)));
+  return withStartupTrace({ requestId: payload.apiAdmissionId ?? payload.scheduleFiringId ?? payload.sourceChangeDeliveryId, workflowRunId: payload.workflowRunId }, () => startupPhase("workflow.dispatch", () => runWorkflowRunFireTraced(payload)));
 }
 
 async function runWorkflowRunFireTraced(
