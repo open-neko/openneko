@@ -37,8 +37,9 @@ For manual browser acceptance add `HARNESS_M3_WEB=1`. The script prints its owne
 state directory and serves the real web app at `http://localhost:18121/work`.
 Before printing `M3_WEB_READY`, it requires `M5_WEB_ARTIFACT_PASS`: the live
 Work route must return this queue run's exact CSV bytes with attachment headers
-and reject an unissued filename. The browser link remains a separate visual
-check.
+and reject an unissued filename. Chromium also opens the queued card's Work
+thread and verifies its text appears exactly once before and after page reload.
+The browser artifact link remains a separate visual check.
 Browser waiting is capped at 30 minutes; create `<printed-state>/web-done` when
 finished. Services use ports 18117–18119, 18121 and broker 18123. The queue driver
 runs only the real `runWorkRun` handler, not unrelated worker channel/records jobs.

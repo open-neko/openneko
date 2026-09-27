@@ -95,6 +95,7 @@ if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then
   rg -qi '^content-type: text/csv' "$HARNESS_STATE/artifact.headers"
   [[ $(curl -sS -o /dev/null -w '%{http_code}' "${artifact_url%result.csv}hidden.txt") == 404 ]]
   echo "M5_WEB_ARTIFACT_PASS $artifact_run"
+  (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-card-reload.mjs "$(cat "$HARNESS_STATE/m5-card-thread")")
   batch_run=$(cat "$HARNESS_STATE/m5-batch-workflow-run")
   batch_url="http://localhost:18121/api/workflow-runs/$batch_run/artifact"
   curl -fsS --max-time 10 -D "$HARNESS_STATE/batch.headers" -o "$HARNESS_STATE/batch.csv" "$batch_url"

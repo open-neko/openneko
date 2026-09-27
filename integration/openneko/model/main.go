@@ -198,7 +198,7 @@ func main() {
 				responses = []string{`{"javascriptCode":"final('Ask for the missing day', {})"}`, `{"javascriptCode":"mcp_neko_interaction_ask_user_question({questions:[{question:'Which day?'}]}); final('Wait for the answer', {});"}`}
 			}
 			if renderCard {
-				responses = []string{`{"javascriptCode":"final('Render a summary card', {})"}`, `{"javascriptCode":"const card=mcp_neko_ui_render_cards({messages:[{version:'v1.0',createSurface:{surfaceId:'fixture-card',catalogId:'urn:openneko:catalog:work:v2',components:[{id:'root',component:'Text'}]}}]}); final('Report the card',{card});"}`, `{"answer":"Rendered the summary card."}`}
+				responses = []string{`{"javascriptCode":"final('Render a summary card', {})"}`, `{"javascriptCode":"const card=mcp_neko_ui_render_cards({messages:[{version:'v1.0',createSurface:{surfaceId:'fixture-card',catalogId:'urn:openneko:catalog:work:v2',components:[{id:'root',component:'Text',text:'Harness card persisted'}]}}]}); final('Report the card',{card});"}`, `{"answer":"Rendered the summary card."}`}
 			}
 			if followSkill {
 				responses = []string{`{"javascriptCode":"final('Follow the staged skill', {})"}`, `{"javascriptCode":"const skill=skill_read({path:'fixture-task/SKILL.md'}); if(!skill.content.includes('SKILL-MARKER')) throw Error('skill not staged'); const file=file_write({path:'skill-result.csv',content:'day\\n2026-09-15\\n'}); final('Report the skill artifact',{skill,file});"}`, `{"answer":"Created skill-result.csv for 2026-09-15."}`}

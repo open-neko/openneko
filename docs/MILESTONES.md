@@ -180,7 +180,9 @@ calls; broker events entered the turn reducer, and queue redelivery preserved on
 question and surface without a model replay or assistant answer. A second queued
 turn accepted the operator's answer and completed the same thread. Broker validation
 denied forged completion events, and a connected worker/OpenShell turn rendered
-one validated card through the real stdio bridge. Browser reload,
+one validated card through the real stdio bridge. Chromium opened the completed
+Work thread and found the same card exactly once before and after reload.
+Broader channel presentation,
 uploaded-document search and the real Daily Lead Union batch remain unqualified.
 
 The controlled query-to-file runner now consumes the pinned script's cache-miss
