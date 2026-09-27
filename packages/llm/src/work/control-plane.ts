@@ -24,6 +24,7 @@ import {
   listSubscriptionsByWorkflow,
   getWorkflow,
   listWorkflows,
+  listWorkflowsWithVersions,
   type SaveWorkflowInput,
   type WorkflowRecord,
   type WorkflowOutputInput,
@@ -362,6 +363,8 @@ export type SourceConfigPreviewResult = {
 export type WorkflowListEntry = Wire<WorkflowRecord> & {
   /** Enabled source_change trigger filter, if any. */
   when: Record<string, unknown> | null;
+  /** Exact row revision for guarded Harness edits. */
+  versionToken: string;
 };
 
 export type WaitForActionExecutionResult =
@@ -1306,18 +1309,20 @@ export class InProcessControlPlane implements AgentControlPlane {
     runId?: string | null;
   }): Promise<{ total: number; workflows: WorkflowListEntry[] }> {
     const visible = await runWorkflowFilter(input.orgId, input.runId);
-    const all = (await listWorkflows(input.orgId)).filter(visible);
+    const all = (await listWorkflowsWithVersions(input.orgId))
+      .filter(({ workflow }) => visible(workflow));
     const slice = all.slice(0, input.limit ?? 50);
     const triggers = await Promise.all(
-      slice.map((w) => listSubscriptionsByWorkflow(input.orgId, w.id)),
+      slice.map(({ workflow }) => listSubscriptionsByWorkflow(input.orgId, workflow.id)),
     );
     return {
       total: all.length,
-      workflows: slice.map((w, i) => {
+      workflows: slice.map(({ workflow: w, versionToken }, i) => {
         const dataTrigger = triggers[i].find(
           (s) => s.sourceKind === "source_change" && s.enabled,
         );
-        return { ...toWire(w), when: dataTrigger ? dataTrigger.filter : null };
+        return { ...toWire(w), when: dataTrigger ? dataTrigger.filter : null,
+          versionToken };
       }),
     };
   }

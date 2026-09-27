@@ -77,6 +77,29 @@ function postEvents(
 }
 
 describe("startAgentBroker token registry", () => {
+  it("binds workflow saves to a Work run without opening legacy save or delete routes", async () => {
+    const handle = await startAgentBroker({controlPlane:stubControlPlane(),port:0});
+    try {
+      const binding:RunBinding={runId:"workflow-save",orgId:"org",threadId:"thread",kind:"work",
+        profile:"harness-read-only",workflowWrite:true};
+      const token=handle.tokenFor(binding);
+      expect(()=>handle.tokenFor({...binding,workflowWrite:false})).toThrow("conflicts");
+      expect(()=>handle.tokenFor({...binding,runId:"job",kind:"agent-job"})).toThrow("Invalid broker workflow write grant");
+      const post=(path:string,bearer=token,instruction="{}")=>fetch(`http://127.0.0.1:${handle.port}${path}`,{
+        method:"POST",headers:{authorization:`Bearer ${bearer}`,"content-type":"application/json"},
+        body:JSON.stringify({operationId:1,binding:"b".repeat(64),instruction}),
+      });
+      expect((await post("/v1/harness/workflow/save")).status).toBe(400);
+      const dataTrigger=JSON.stringify({name:"Needs separate trigger recovery",steps:[{id:"s",description:"Check"}],
+        expectedVersion:"absent",triggers:{when:{table:"lead",primary_key:["id"]}}});
+      expect((await post("/v1/harness/workflow/save",token,dataTrigger)).status).toBe(400);
+      expect((await post("/v1/workflow/save")).status).toBe(403);
+      expect((await post("/v1/workflow/delete")).status).toBe(403);
+      const ungranted=handle.tokenFor({runId:"other",orgId:"org",threadId:"thread",kind:"work",profile:"harness-read-only"});
+      expect((await post("/v1/harness/workflow/save",ungranted)).status).toBe(403);
+    } finally {await handle.close();}
+  });
+
   it("limits source configuration to admin-read routes on one bound Work run", async () => {
     const describeSourceGraph = vi.fn(async ({orgId, runId}: {orgId: string; runId: string}) => ({orgId, runId, reachable: true}));
     const listSourceSecretNames = vi.fn(async () => ({names: [{name: "SYNTHETIC_DB"}]}));

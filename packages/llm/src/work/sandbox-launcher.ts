@@ -1103,6 +1103,7 @@ function makeSandboxCore(
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { memoryWrite: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { libraryRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { workflowRead: true } : {}),
+                  ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { workflowWrite: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { managementRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" ? { auditRead: true } : {}),
                   ...(input.backend.id === "harness" && kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records" && (input as RunAgentBackendInput).sourceConfigEnabled ? { sourceConfigRead: true } : {}),
