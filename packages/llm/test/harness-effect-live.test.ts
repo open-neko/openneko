@@ -77,7 +77,13 @@ live.each(["before_dispatch","after_commit","after_commit_reconcile","after_rece
    expect((await getActionRequest(orgId,receipt.id))?.status).toBe("failed");
    await pool().query("UPDATE action_policy SET mode='approval_required' WHERE org_id=$1",[orgId]);
   }
-  const recovered=await executeApprovedActionRequest(orgId,receipt.id);
+  // SIGKILL closes the child before Postgres necessarily releases its socket.
+  // Observe the recovered state only after the dead owner's advisory lock clears.
+  let recovered=await executeApprovedActionRequest(orgId,receipt.id);
+  for(let attempt=0;attempt<50 && recovered.error==="Effect is still executing; redispatch disabled";attempt++) {
+   await new Promise(resolve=>setTimeout(resolve,100));
+   recovered=await executeApprovedActionRequest(orgId,receipt.id);
+  }
   expect(recovered.ok).toBe(recoverable);
   if(recoverable) expect(recovered.outcome).toEqual({result:{changed:true},externalRef:"fixture-effect"});
   else expect(recovered.error).toContain("outcome unknown");
