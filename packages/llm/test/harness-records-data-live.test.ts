@@ -3,7 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
-import { db, organization, work_thread, work_run, app_state, action_policy } from "@neko/db";
+import { db, pool, eq, organization, work_thread, work_run, app_state, action_policy, llm_provider_config, processing_job } from "@neko/db";
+import { boss, enqueue, QUEUE, type WorkRunPayload } from "@neko/db/jobs";
 import { buildRecordsPoolConfig, runRecordsMigrations } from "@neko/db/records-migrate";
 import { deleteTestOrg } from "@neko/db/test-helpers";
 import {
@@ -18,6 +19,8 @@ import { makeAgentBackend } from "../src/agent-runtime";
 import { startAgentBroker } from "../src/work/broker";
 import { inProcessControlPlane } from "../src/work/control-plane";
 import { makeSandboxRunCore } from "../src/work/sandbox-launcher";
+import { createWorkRun, createWorkThread, ensureWorkWorkspace, getWorkRun, shutdownAgentBroker } from "../src/work";
+import { runWorkRun } from "../../../apps/worker/src/jobs/work-run";
 import { approveActionRequest, getActionRequest } from "../src/workflows/action-store";
 import { executeApprovedActionRequest, registerActionAdapter } from "../src/workflows/action-executor";
 import { createRecordActionAdapter, registerHarnessRecordActionPreflight } from "../../../apps/worker/src/records/adapters";
@@ -43,6 +46,7 @@ live("reads and updates populated Records through OpenShell, approval and real G
   const recordsPool = new pg.Pool(buildRecordsPoolConfig());
   let child: ReturnType<typeof spawn> | undefined;
   let broker: Awaited<ReturnType<typeof startAgentBroker>> | undefined;
+  let queue: Awaited<ReturnType<typeof boss>> | undefined;
   let unregisterPreflight=()=>{};
   const priorUrl = process.env.OPENNEKO_RECORDS_GRAPHJIN_URL;
   let logs = "";
@@ -76,7 +80,7 @@ live("reads and updates populated Records through OpenShell, approval and real G
       (org_id, app_id, role, object_api_name, can_read, can_update)
       VALUES ($1, 'equipment', 'admin', 'loan', true, true)`, [orgId]);
     await recordsPool.query("INSERT INTO engine.actor (org_id,user_id,role) VALUES ($1,'records-service','service')",[orgId]);
-    await recordsPool.query(`INSERT INTO public.${tableName} (id, org_id, name) VALUES ('loan-42', $1, 'Fixture loan')`, [orgId]);
+    await recordsPool.query(`INSERT INTO public.${tableName} (id, org_id, name) VALUES ('loan-42', $1, 'Fixture loan'),('loan-43',$1,'Queued fixture loan')`, [orgId]);
     await ensureRecordsAuditTrigger(recordsPool,{tableSchema:"public",tableName,appId:"equipment",objectApiName:"loan"});
     await recordsPool.query(`INSERT INTO engine.recycle_record
       (org_id, app_id, object_api_name, visibility, record_id, record_name, deleted_at, deletion_action_request_id)
@@ -120,11 +124,11 @@ live("reads and updates populated Records through OpenShell, approval and real G
       return response.json();
     };
     expect(await post("/v1/records/catalog", { appId: "equipment" })).toMatchObject({ apps: [{ appId: "equipment" }] });
-    expect(await post("/v1/records/find", { appId: "equipment", objectApiName: "loan", first: 5 })).toMatchObject({ rows: [{ id: "loan-42" }] });
+    expect((await post("/v1/records/find", { appId: "equipment", objectApiName: "loan", first: 5 })).rows.map((row:{id:string})=>row.id).sort()).toEqual(["loan-42","loan-43"]);
     expect(await post("/v1/records/get", { appId: "equipment", objectApiName: "loan", recordId: "loan-42" })).toMatchObject({ row: { id: "loan-42" } });
     expect(await post("/v1/records/recycle/find", { appId: "equipment", objectApiName: "loan" })).toMatchObject({ rows: [{ recordId: "loan-deleted-42" }] });
     expect(await post("/v1/records/recycle/get", { appId: "equipment", objectApiName: "loan", recordId: "loan-deleted-42" })).toMatchObject({ row: { recordId: "loan-deleted-42" } });
-    expect((await post("/v1/records/find", { appId: "equipment", objectApiName: "loan", first: 5, orgId: "forged", runId: "forged" })).rows).toHaveLength(1);
+    expect((await post("/v1/records/find", { appId: "equipment", objectApiName: "loan", first: 5, orgId: "forged", runId: "forged" })).rows).toHaveLength(2);
     broker.release(runId);
     const runCore = makeSandboxRunCore({
       cli: process.env.HARNESS_M3_CLI!, gatewayName: "harness-m2", agentImage: "harness-openneko:m3",
@@ -185,8 +189,73 @@ live("reads and updates populated Records through OpenShell, approval and real G
     expect((await executeApprovedActionRequest(orgId,requestId)).ok).toBe(true);
     expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-42'`)).rows[0].name).toBe("Updated fixture loan");
     expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requestId])).rows[0].n).toBe(1);
+
+    // Drive the production Work queue for a second row. Redelivery of the
+    // completed run must restore its proposal without another model turn or
+    // effect; approval then crosses the same real Records adapter.
+    await db().update(organization).set({setup_complete_at:new Date()}).where(eq(organization.id,orgId));
+    await db().insert(llm_provider_config).values({org_id:orgId,scope:"primary",provider:"ollama",model:"harness-records-queue-fixture",
+      config:{url:"http://host.docker.internal:18118"}});
+    // The isolated consumer stack pins an operator-level model home. Its
+    // config takes precedence over the org provider row for sandbox launches.
+    await writeFile(join(process.env.OPENNEKO_AGENT_HERMES_HOME!,"config.yaml"),
+      "model:\n  provider: custom\n  default: harness-records-queue-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const queueThread=await createWorkThread(orgId,"Queued Records mutation","web",null,{recordContext:{
+      appId:"equipment",appLabel:"Equipment",objectApiName:"loan",objectLabel:"Loan",surface:"detail",recordId:"loan-43"}});
+    const queueRun=await createWorkRun(orgId,queueThread.id,"harness",{userId:null,role:"admin"});
+    const queueWorkspace=await ensureWorkWorkspace(orgId,queueThread.id,queueRun.id);
+    await mkdir(join(queueWorkspace.skillsRoot,"records"),{recursive:true});
+    await writeFile(join(queueWorkspace.skillsRoot,"records","SKILL.md"),"# Records\nPropose governed changes and wait for approval.\n");
+    queue=await boss();
+    await queue.createQueue(QUEUE.WORK_RUN);
+    await queue.work<WorkRunPayload>(QUEUE.WORK_RUN,async jobs=>{
+      for(const job of jobs) {
+        const {processingJobId,orgId:jobOrgId,...payload}=job.data;
+        await db().update(processing_job).set({status:"running"}).where(eq(processing_job.id,processingJobId));
+        try {
+          await runWorkRun(processingJobId,jobOrgId,{...payload,channel:"web"});
+          await db().update(processing_job).set({status:"succeeded"}).where(eq(processing_job.id,processingJobId));
+        } catch(error) {
+          await db().update(processing_job).set({status:"failed"}).where(eq(processing_job.id,processingJobId));
+          throw error;
+        }
+      }
+    });
+    const queueMessage="Rename loan-43 to Queued fixture loan updated; request approval first.";
+    const enqueueRun=async()=>{
+      const [job]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:"records-action-fixture"}).returning();
+      await enqueue(QUEUE.WORK_RUN,{processingJobId:job.id,orgId,runId:queueRun.id,threadId:queueThread.id,message:queueMessage},{retryLimit:0});
+      for(let attempt=0;attempt<90;attempt++) {
+        const current=await getWorkRun(orgId,queueRun.id);
+        const [processing]=await db().select().from(processing_job).where(eq(processing_job.id,job.id));
+        if(current?.status==="completed" && processing?.status==="succeeded") return;
+        if(current?.status==="failed" || processing?.status==="failed") {
+          const modelCounts=await (await fetch("http://127.0.0.1:18118/control")).json();
+          const checkpointPath=join(queueWorkspace.runRoot,".harness",`${createHash("sha256").update(queueRun.id).digest("hex")}.json`);
+          const checkpoint=await readFile(checkpointPath,"utf8").catch(()=>"{}");
+          const operations=JSON.parse(checkpoint).operations?.map((operation:{tool:string;finished:boolean})=>({tool:operation.tool,finished:operation.finished}));
+          throw Error(`Queued Records run failed: ${current?.error ?? "worker error"}; model counts=${JSON.stringify(modelCounts)}; operations=${JSON.stringify(operations)}`);
+        }
+        await new Promise(resolve=>setTimeout(resolve,500));
+      }
+      throw Error("Queued Records run did not finish");
+    };
+    await enqueueRun();
+    const [queuedRequest]= (await pool().query("SELECT id,status FROM action_request WHERE org_id=$1 AND work_run_id=$2",[orgId,queueRun.id])).rows;
+    expect(queuedRequest?.status).toBe("pending_approval");
+    expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-43'`)).rows[0].name).toBe("Queued fixture loan");
+    const modelCalls=(await (await fetch("http://127.0.0.1:18118/control")).json())["harness-records-queue-fixture"];
+    await enqueueRun();
+    expect((await (await fetch("http://127.0.0.1:18118/control")).json())["harness-records-queue-fixture"]).toBe(modelCalls);
+    expect((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1 AND work_run_id=$2",[orgId,queueRun.id])).rows[0].n).toBe(1);
+    await approveActionRequest({orgId,id:queuedRequest.id,approverUserId:null,approver:{userId:null,role:"admin"}});
+    expect((await executeApprovedActionRequest(orgId,queuedRequest.id)).ok).toBe(true);
+    expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-43'`)).rows[0].name).toBe("Queued fixture loan updated");
+    expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,queuedRequest.id])).rows[0].n).toBe(1);
   } finally {
     unregisterPreflight();
+    if(queue) await queue.offWork(QUEUE.WORK_RUN);
+    await shutdownAgentBroker();
     if (broker) await broker.close();
     if (child && child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
