@@ -152,6 +152,14 @@ sandbox. Other commands pass through. Failed creation remains the caller's
 responsibility. The live suite checks the original failure, staged bytes, exec,
 deletion and cleanup after a missing upload source.
 
+For M5 iteration, set `HARNESS_M5_FAST=1` with the usual
+`OPENNEKO_TEST_SOURCE` and `OPENSHELL_TEST_CLI` when running
+`integration/openneko/run.sh`. This starts a fresh isolated gateway, database,
+GraphJin fixture and queued OpenShell worker, but skips the unchanged M2
+transport probes, separate process suite, database Vitest groups and Hermes
+regression suite. The connected queue fixture still runs. Use the default
+mode as the combined acceptance gate before claiming a milestone complete.
+
 ## Original integration contract (M3 implementation described above)
 
 Translate the existing launch/job format into the harness run specification,

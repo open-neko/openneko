@@ -31,8 +31,18 @@ binaries: [/usr/local/bin/harness-openneko]
 YAML
 "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m3-provider.yaml"
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
-bash ./integration/batch/batch-check.sh
+mkdir -p "$HARNESS_STATE/provider-config"
+cat > "$HARNESS_STATE/provider-config/config.yaml" <<'YAML'
+model:
+  provider: custom
+  default: harness-fixture
+  base_url: http://host.docker.internal:18118/v1
+YAML
+if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
+  bash ./integration/batch/batch-check.sh
+fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts test/integration/audit-viewer.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-live.test.ts)
@@ -48,6 +58,7 @@ sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/us
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/hermes-live.test.ts)
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/work-run-memory-fence.test.ts)
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/reconciler.test.ts)
+fi
 
   mkdir -p "$HARNESS_STATE/bin"
   ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"

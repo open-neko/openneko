@@ -68,6 +68,12 @@ done
 sed -e 's/harness-m2/harness-m2-alt/g' -e 's/api_key/alternate_key/g' -e 's/MODEL_API_KEY/ALTERNATE_API_KEY/g' -e 's|/v1/|/alternate/v1/|g' integration/provider.yaml > "$state/alternate-provider.yaml"
 "${oss[@]}" provider profile import --file "$state/alternate-provider.yaml"
 "${oss[@]}" provider create --name harness-m2-alt --type harness-m2-alt --credential alternate_key=synthetic-M2-alternate
+if [[ ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  [[ -n "$consumer_checks" ]] || { echo 'HARNESS_M5_FAST requires consumer checks' >&2; exit 1; }
+  echo 'M5_FAST_GATEWAY_READY'
+  bash "$consumer_checks"
+  exit 0
+fi
 # v0.0.116 treats this as the canonical main process; a short `true` can exit
 # before readiness. Keep the workload alive and use exec for each probe.
 "${oss[@]}" sandbox create --name harness-m2-probe --from harness-m2:local --provider harness-m2 --provider harness-m2-alt --no-auto-providers --no-tty --detach --policy integration/policy.yaml -- sleep infinity
