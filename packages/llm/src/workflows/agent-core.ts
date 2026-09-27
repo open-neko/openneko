@@ -37,6 +37,7 @@ export interface RunWorkflowAgentBackendInput {
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  maxModelCalls?: number;
   tag?: string;
 }
 

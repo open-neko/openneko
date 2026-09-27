@@ -161,6 +161,8 @@ export type RunWorkflowTurnOptions = {
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Trusted API admission ceiling; the sandbox applies the lower Harness cap. */
+  maxModelCalls?: number;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
   /**
@@ -314,6 +316,7 @@ async function runWorkflowTurnTraced(
       tag: `workflow ${workflow.name} ${workflowRun.id}`,
       signal,
       timeoutMs: opts.timeoutMs,
+      maxModelCalls: opts.maxModelCalls,
     });
     const spendStop = spendCapFromSignal(signal);
     let result = spendStop
