@@ -86,3 +86,37 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 		t.Fatalf("disabled child was callable: result=%+v err=%v reads=%d writes=%d", result, err, reads.Load(), writes.Load())
 	}
 }
+
+func TestChildToolFailureCannotBecomeSuccessfulParentAnswer(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Delegate verification',{})"}`,
+		`{"javascriptCode":"const child=team.researcher({question:'Verify reference'}); final('Use child result',{child});"}`,
+		`{"javascriptCode":"final('Read the reference',{})"}`,
+		`{"javascriptCode":"const found=catalog({key:'reference'}); final('Report evidence',{found});"}`,
+		`{"answer":"Reference verified"}`,
+		`{"answer":"The reference is verified."}`,
+	}
+	var calls, reads atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	read := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a reference.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["key"],"properties":{"key":{"type":"string"}},"additionalProperties":false}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads.Add(1)
+			return json.RawMessage(`{"is_error":true,"content":["reference unavailable"]}`), nil
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-failed-read", InputID: "input", Prompt: "Verify the reference", MaxOperations: 4, MaxModelCalls: 12}, client,
+		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "incomplete_result" || reads.Load() != 1 {
+		t.Fatalf("failed child read was reported as success: result=%+v err=%v reads=%d models=%d", result, err, reads.Load(), calls.Load())
+	}
+}

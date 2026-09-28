@@ -788,6 +788,8 @@ when delegation was disabled and made no GraphJin operation. A second connected
 job killed the Go process after its child's GraphJin read, then resumed with
 one reused lookup and no second server-side GraphJin call. The full isolated
 suite passed, including Hermes and OpenShell teardown checks.
+A deterministic child read returning `is_error` now leaves the parent run
+failed and incomplete even when later model text claims the task succeeded.
 
 For queued workflows, the `workflow_run` remains the product outcome, the
 owning `work_run` remains the execution/journal parent, and child IDs are
