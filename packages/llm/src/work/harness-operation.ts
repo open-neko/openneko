@@ -13,14 +13,14 @@ export async function recordHarnessLookup(
 /** Tool identity lives in the same primary-key space; proposals cannot reset the budget. */
 export async function recordHarnessOperation(
   scope: {orgId:string; runId:string; operationLimit?:number}, operationId:unknown,
-  request: {instruction:string; tool?:"propose"|"memory_save"|"skill_create"|"workflow_save"|"workflow_delete"|"rule_save"|"workflow_output"|"process_run"; binding?:string; dataSourceId?:string; maxSteps?:number},
+  request: {instruction:string; tool?:"propose"|"memory_save"|"skill_create"|"skill_update"|"workflow_save"|"workflow_delete"|"rule_save"|"workflow_output"|"process_run"; binding?:string; dataSourceId?:string; maxSteps?:number},
   execute: () => Promise<unknown>, signal?: AbortSignal,
 ): Promise<unknown> {
   const limit=scope.operationLimit ?? 4;
   if (!Number.isInteger(limit) || limit<1 || limit>32 ||
       !Number.isInteger(operationId) || Number(operationId)<1 || Number(operationId)>limit ||
-      !request.instruction.trim() || Buffer.byteLength(request.instruction)>(request.tool === "propose" || request.tool === "workflow_save" || request.tool === "rule_save" ? 65536 : request.tool === "workflow_output" || request.tool === "process_run" || request.tool === "skill_create" ? 131072 : request.tool === "memory_save" || request.tool === "workflow_delete" ? 4096 : 8000) ||
-      ((request.tool === "memory_save" || request.tool === "skill_create" || request.tool === "workflow_save" || request.tool === "workflow_delete" || request.tool === "rule_save" || request.tool === "workflow_output" || request.tool === "process_run") && !/^[a-f0-9]{64}$/.test(request.binding ?? ""))) {
+      !request.instruction.trim() || Buffer.byteLength(request.instruction)>(request.tool === "propose" || request.tool === "workflow_save" || request.tool === "rule_save" ? 65536 : request.tool === "workflow_output" || request.tool === "process_run" || request.tool === "skill_create" || request.tool === "skill_update" ? 131072 : request.tool === "memory_save" || request.tool === "workflow_delete" ? 4096 : 8000) ||
+      ((request.tool === "memory_save" || request.tool === "skill_create" || request.tool === "skill_update" || request.tool === "workflow_save" || request.tool === "workflow_delete" || request.tool === "rule_save" || request.tool === "workflow_output" || request.tool === "process_run") && !/^[a-f0-9]{64}$/.test(request.binding ?? ""))) {
     return {error:"Invalid Harness lookup operation"};
   }
   if (signal?.aborted) return {error:"Harness lookup cancelled before dispatch"};

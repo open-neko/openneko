@@ -62,6 +62,7 @@ import type { PluginActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
 import { createAgentEventTelemetry } from "./agent-event-telemetry";
+import { recoverPendingHarnessSkillUpdates } from "./harness-skill-update";
 import { registerAgentBrokerEventSink } from "./broker";
 import {
   parseAppWorkContext,
@@ -74,9 +75,11 @@ import {
   type PluginCatalog,
 } from "./control-plane";
 import {
+  getOrgAgentRoot,
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
   listInstalledSkills as defaultListInstalledSkills,
 } from "./workspace";
+import { join } from "node:path";
 import type { HarnessObserver } from "@neko/telemetry";
 import { spendCapFromSignal } from "../spend/run-guard";
 
@@ -279,6 +282,7 @@ async function runChatTurnTraced(
     : "customer";
 
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
+  await startupPhase("workspace.skill_recovery", () => recoverPendingHarnessSkillUpdates(orgId,join(getOrgAgentRoot(orgId),"skills")));
   const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
 
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
