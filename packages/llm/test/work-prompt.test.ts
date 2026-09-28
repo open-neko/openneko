@@ -39,6 +39,7 @@ function build(
     supportsClarificationTool?: boolean;
     supportsPluginManagerTool?: boolean;
     supportsUserAdminProposal?: boolean;
+    supportsGroupAdminProposal?: boolean;
     supportsNativeDelegation?: boolean;
     pluginCatalog?: PluginCatalog;
     installedSkills?: Array<{ name: string; description: string }>;
@@ -69,6 +70,7 @@ function build(
     supportsClarificationTool: overrides.supportsClarificationTool ?? false,
     supportsPluginManagerTool: overrides.supportsPluginManagerTool ?? false,
     supportsUserAdminProposal: overrides.supportsUserAdminProposal ?? false,
+    supportsGroupAdminProposal: overrides.supportsGroupAdminProposal ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
     pluginCatalog: overrides.pluginCatalog,
     installedSkills: overrides.installedSkills,
@@ -109,6 +111,13 @@ it("mentions user administration only when the harness admits its proposal tool"
   expect(admitted).toContain("To invite a member, use propose with action user_admin");
   expect(admitted).toContain("awaits administrator approval");
   expect(admitted).toContain("Other user changes are unavailable");
+});
+
+it("advertises group creation only with the run-bound proposal grant", () => {
+  expect(build("harness")).not.toContain("To create a group, use propose");
+  const admitted=build("harness",{supportsGroupAdminProposal:true});
+  expect(admitted).toContain("To create a group, use propose with action group_admin");
+  expect(admitted).toContain("Other group and grant changes are unavailable");
 });
 
 describe("buildWorkPrompt UX metadata", () => {

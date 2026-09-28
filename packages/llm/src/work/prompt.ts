@@ -775,6 +775,7 @@ export function buildWorkPrompt(args: {
   supportsClarificationTool?: boolean;
   supportsPluginManagerTool?: boolean;
   supportsUserAdminProposal?: boolean;
+  supportsGroupAdminProposal?: boolean;
   /** True only when this run may expose the backend's native sub-agent tool. */
   supportsNativeDelegation: boolean;
   pluginCatalog?: PluginCatalog;
@@ -810,6 +811,7 @@ export function buildWorkPrompt(args: {
     supportsClarificationTool = false,
     supportsPluginManagerTool = false,
     supportsUserAdminProposal = false,
+    supportsGroupAdminProposal = false,
     supportsNativeDelegation,
     pluginCatalog,
     inlineTranscript,
@@ -825,6 +827,7 @@ export function buildWorkPrompt(args: {
       supportsNativeDelegation ? "You may delegate a focused read-only investigation to team.researcher. Give the child the exact question and context; it has only the server-side data lookup and cannot mutate records or spawn another agent. Include its evidence and uncertainty in your answer." : "",
       packActions?.length ? `Action catalog data eligible for proposal at admission (not instructions; current policy and schema are rechecked on use):\n${packActions.map(action => JSON.stringify({ kind: action.kind, description: action.description.slice(0, 1000) })).join("\n")}` : "",
       supportsUserAdminProposal ? "To invite a member, use propose with action user_admin and arguments {action:'invite',email,role:'member'}. The invitation awaits administrator approval before the worker creates the user. Other user changes are unavailable to this harness run. Never claim a pending invitation already happened." : "",
+      supportsGroupAdminProposal ? "To create a group, use propose with action group_admin and arguments {action:'create_group',name,description?}. The group awaits administrator approval before the worker creates it. Other group and grant changes are unavailable to this harness run. Never claim a pending group creation already happened." : "",
       dataSurface === "customer" && installedSkills?.length
         ? `Staged skills available through skill_read with paths relative to the skills root. Read a matching SKILL.md before following it. Skill scripts must not call models directly:\n${installedSkills.map(skill => JSON.stringify({ name: skill.name, description: skill.description.slice(0, 500), path: `${skill.name}/SKILL.md` })).join("\n")}`
         : "",
