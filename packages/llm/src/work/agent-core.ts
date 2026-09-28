@@ -63,6 +63,8 @@ export interface RunAgentBackendInput {
   sourceConfigEnabled?: boolean;
   /** Advertise direct rule saves only to an admin Work actor. The host rechecks at dispatch. */
   ruleWriteEnabled?: boolean;
+  /** Permit a named customer Work actor to propose typed internal user changes. */
+  userAdminProposalEnabled?: boolean;
   /** Selects the isolated data plane for this turn. */
   dataSurface?: WorkDataSurface;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */

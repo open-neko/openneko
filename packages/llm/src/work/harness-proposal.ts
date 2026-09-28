@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AgentControlPlane } from "./control-plane";
 import { entitlementActorForRun } from "./entitlement-scope";
 import { recordHarnessOperation } from "./harness-operation";
+import { validateHarnessInternalAction } from "./harness-internal-action";
 
 const proposalSchema=z.object({
   action:z.string().trim().min(1).max(128),
@@ -14,7 +15,7 @@ const proposalSchema=z.object({
 /** Frozen by the host at run admission; never supplied by the model. */
 export type HarnessActionGrant = {
   kind: string;
-  source: "pack" | "plugin";
+  source: "pack" | "plugin" | "internal";
   scope: "external" | "internal";
   /** Installed plugin entitlement, when the descriptor belongs to one. */
   pluginName?: string;
@@ -85,20 +86,28 @@ export async function proposeHarnessAction(
       if (!owned.rowCount) throw Error("Workflow action run binding changed");
     }
     let definition:unknown;
+    let target:string|undefined;
     if (grant.source === "pack") {
       try {definition={harnessSource:"pack",snapshot:await validateHarnessAction(scope,proposal.action,proposal.arguments)};}
       catch {return {status:"denied",reason:"Action unavailable or arguments invalid"};}
-    } else {
+    } else if (grant.source === "plugin") {
       try {definition=await validateHarnessPluginAction(scope,grant);}
       catch {return {status:"denied",reason:"Action is no longer available to this actor"};}
+    } else {
+      try {
+        const admitted=await validateHarnessInternalAction(scope,proposal.action,proposal.arguments);
+        definition=admitted.definition;
+        target=admitted.target;
+      } catch {return {status:"denied",reason:"Internal action unavailable or arguments invalid"};}
     }
-    const decision=await cp.evaluateActionPolicy({orgId:scope.orgId,scope:grant.scope,kind:proposal.action,riskLevel:"critical"});
+    const decision=await cp.evaluateActionPolicy({orgId:scope.orgId,scope:grant.scope,kind:proposal.action,
+      ...(target ? {target} : {}),riskLevel:grant.source==="internal" ? "high" : "critical"});
     if (decision.decision === "deny" || decision.decision === "no_policy") return {status:"denied",reason:"Action policy does not permit this proposal"};
     const request=await cp.createActionRequest({orgId:scope.orgId,workRunId:scope.runId,
       ...(scope.workflowRunId ? {workflowRunId:scope.workflowRunId,requestedByRunId:scope.workflowRunId} : {}),
       harnessOperationId:Number(body.operationId),harnessDefinition:definition as Record<string,unknown>,scope:grant.scope,kind:proposal.action,
-      payload:proposal.arguments,status:"pending_approval",policyId:decision.policy.id,
-      riskLevel:"critical",summary:proposal.summary,intent:proposal.summary});
+      ...(target ? {target} : {}),payload:proposal.arguments,status:"pending_approval",policyId:decision.policy.id,
+      riskLevel:grant.source==="internal" ? "high" : "critical",summary:proposal.summary,intent:proposal.summary});
     if (request.status !== "pending_approval") throw Error("Proposal was not prepared for approval");
     return {id:request.id,status:"pending_approval"};
   });

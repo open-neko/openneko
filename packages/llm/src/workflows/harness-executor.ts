@@ -2,6 +2,7 @@ import { pool, resolveUserGroups } from "@neko/db";
 import { isDeepStrictEqual } from "node:util";
 import { startupEvent } from "@neko/telemetry/startup";
 import { validateHarnessAction, validateHarnessPluginAction } from "../work/harness-proposal";
+import { validateHarnessInternalAction } from "../work/harness-internal-action";
 import { resolveDeploymentProfile } from "../work/deployment-profile";
 import { assertMayDecide, hasHumanActionApproval, listEnabledPolicies, type ActionRequestRecord } from "./action-store";
 import { evaluateActionPolicy } from "./policy-engine";
@@ -58,6 +59,8 @@ async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<Acti
         ...(typeof proposal.definition.pluginName === "string" ? {pluginName:proposal.definition.pluginName} : {}),
         ...(typeof proposal.definition.pluginVersion === "string" ? {pluginVersion:proposal.definition.pluginVersion} : {}),
         ...(typeof proposal.definition.pluginIntegrity === "string" ? {pluginIntegrity:proposal.definition.pluginIntegrity} : {})})
+    : proposal.definition.harnessSource === "internal"
+      ? (await validateHarnessInternalAction(scope,request.kind,proposal.payload)).definition
     : proposal.definition.harnessSource === "pack"
       ? {harnessSource:"pack",snapshot:await validateHarnessAction(scope,request.kind,proposal.payload)}
       : await validateHarnessAction(scope,request.kind,proposal.payload);

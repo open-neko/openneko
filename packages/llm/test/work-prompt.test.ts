@@ -38,6 +38,7 @@ function build(
     supportsSourceConfigTool?: boolean;
     supportsClarificationTool?: boolean;
     supportsPluginManagerTool?: boolean;
+    supportsUserAdminProposal?: boolean;
     supportsNativeDelegation?: boolean;
     pluginCatalog?: PluginCatalog;
     installedSkills?: Array<{ name: string; description: string }>;
@@ -67,6 +68,7 @@ function build(
     supportsSourceConfigTool: overrides.supportsSourceConfigTool ?? false,
     supportsClarificationTool: overrides.supportsClarificationTool ?? false,
     supportsPluginManagerTool: overrides.supportsPluginManagerTool ?? false,
+    supportsUserAdminProposal: overrides.supportsUserAdminProposal ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
     pluginCatalog: overrides.pluginCatalog,
     installedSkills: overrides.installedSkills,
@@ -99,6 +101,13 @@ it("lets the harness runtime describe its admitted tools without a conflicting r
   expect(prompt).not.toContain("read-only business-data assistant");
   expect(prompt).not.toContain("Use lookup(instruction)");
   expect(prompt).toContain('"kind":"fixture.update"');
+});
+
+it("mentions user administration only when the harness admits its proposal tool", () => {
+  expect(build("harness")).not.toContain("User changes use propose");
+  const admitted=build("harness",{supportsUserAdminProposal:true});
+  expect(admitted).toContain("User changes use propose with action user_admin");
+  expect(admitted).toContain("awaits administrator approval");
 });
 
 describe("buildWorkPrompt UX metadata", () => {

@@ -1098,7 +1098,8 @@ export async function startAgentBroker(
       }
       if (binding.actionGrants && (binding.profile !== "harness-governed" || (binding.kind !== "work" && binding.kind !== "workflow") || (binding.kind === "workflow" && !binding.workflowAction) || binding.actionGrants.length < 1 || binding.actionGrants.length > 64 ||
           binding.actionGrants.some((grant,index) => !grant || typeof grant.kind !== "string" || !grant.kind || grant.kind.length > 128 ||
-            !["pack","plugin"].includes(grant.source) || !["external","internal"].includes(grant.scope) ||
+            !["pack","plugin","internal"].includes(grant.source) || !["external","internal"].includes(grant.scope) ||
+            (grant.source === "internal" && (binding.kind !== "work" || grant.scope !== "internal" || grant.kind !== "user_admin")) ||
             (grant.pluginName !== undefined && (grant.source !== "plugin" || typeof grant.pluginName !== "string" || !grant.pluginName || grant.pluginName.length > 128 ||
               typeof grant.pluginVersion !== "string" || !/^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$/.test(grant.pluginVersion) ||
               typeof grant.pluginIntegrity !== "string" || !/^sha512-[A-Za-z0-9+/=]+$/.test(grant.pluginIntegrity))) ||
