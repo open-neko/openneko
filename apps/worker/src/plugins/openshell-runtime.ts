@@ -154,7 +154,7 @@ export class OpenShellRuntime implements PluginRuntime {
           if (attempt === 29 && formatError(error).includes("sandbox is not ready")) {
             const detail = await this.run(["sandbox", "get", spec.id, "-o", "json"], 30_000).then(raw => {
               const state = JSON.parse(raw) as Record<string, unknown>;
-              return JSON.stringify({ status: state.status, state: state.state,
+              return JSON.stringify({ phase: state.phase, status: state.status, state: state.state,
                 reason: state.reason, error: state.error, keys: Object.keys(state) });
             }).catch(cause => `status unavailable: ${formatError(cause)}`);
             throw new Error(`Plugin sandbox did not become ready: ${detail}`, { cause: error });

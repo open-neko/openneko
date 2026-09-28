@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,8 +22,9 @@ const kind = "fixture_plugin_effect";
 const pluginName = "@open-neko/plugin-harness-fixture";
 const declaration = { kind, description: "Apply one synthetic plugin effect", default_mode: "ask" };
 
-const runnerSource = `
+const runnerSource = (providerMode: boolean) => `
 const fs = require('node:fs');
+void (async () => {
 const method = process.argv[2];
 const params = JSON.parse(process.argv[3] || '{}');
 const countPath = '/sandbox/fixture-effect-count';
@@ -34,12 +36,20 @@ if (method === 'register') {
 } else if (method === 'execute_action') {
   const request = params.request;
   if (request.kind !== ${JSON.stringify(kind)} || request.payload?.value !== 42) throw Error('approved plugin payload changed');
+  let externalRef;
+  if (${providerMode}) {
+    const response = await fetch('http://host.docker.internal:443/effect', {method:'POST',
+      headers:{'content-type':'application/json'},body:JSON.stringify({id:request.id,kind:request.kind,value:request.payload.value})});
+    if (!response.ok) throw Error('fixture provider refused effect');
+    externalRef = (await response.json()).id;
+  }
   fs.writeFileSync(countPath, String(count() + 1));
-  result = {outcome:{result:{value:42}}};
+  result = {outcome:{externalRef,result:{value:42}}};
 } else if (method === 'effect_count') {
   result = {count:count()};
 } else throw Error('unsupported fixture RPC');
 process.stdout.write(JSON.stringify({ok:true,result}) + '\\n');
+})().catch(error => {process.stderr.write(String(error));process.exitCode=1;});
 `;
 
 live("queued Harness Work run approves and executes an installed plugin once", async () => {
@@ -49,22 +59,37 @@ live("queued Harness Work run approves and executes an installed plugin once", a
   const orgId = `harness-plugin-${randomUUID()}`;
   const root = await mkdtemp(join(tmpdir(), "harness-installed-plugin-"));
   const pluginId = pluginIdFromName(pluginName);
-  const runtime = new OpenShellRuntime({ image: process.env.OPENNEKO_PLUGIN_BASE_IMAGE ?? "ghcr.io/open-neko/plugin-base:v3.5.6",
+  const providerMode = process.env.HARNESS_M5_PLUGIN_PROVIDER === "1";
+  let providerCalls = 0;
+  const provider = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const effect = JSON.parse(body) as { id: string; kind: string; value: number };
+    if (req.method !== "POST" || req.url !== "/effect" || effect.kind !== kind || effect.value !== 42 || !effect.id) {
+      res.writeHead(403).end();
+      return;
+    }
+    providerCalls++;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ id: `plugin-provider-${providerCalls}` }));
+  });
+  const runtime = new OpenShellRuntime({ image: process.env.OPENNEKO_PLUGIN_BASE_IMAGE ?? "openneko-plugin:harness-m5",
     cli: process.env.HARNESS_M3_CLI!, gatewayName: "harness-m2", bundleDir: join(root, "work"), onLog: () => {} });
   let registry: PluginRegistry | undefined;
   let queue: Awaited<ReturnType<typeof boss>> | undefined;
   let adapterError = "";
   try {
+    if (providerMode) await new Promise<void>(resolve => provider.listen(443, "0.0.0.0", resolve));
     await mkdir(join(root, "repo"));
     await mkdir(join(root, "work"));
     await mkdir(join(root, "secrets"));
     const runnerPath = join(root, "runner.js");
-    await writeFile(runnerPath, runnerSource);
+    await writeFile(runnerPath, runnerSource(providerMode));
     const manifestPath = join(root, "repo", "openneko.plugins.json");
     const manifest = {
       schema: "https://open-neko.github.io/plugins/manifest.schema.json",
       plugins: [{ name: pluginName, version: "0.1.0", integrity: `sha512-${"a".repeat(86)}==`,
-        permissions: { network: [], env: [] }, capabilities: { action: { kinds: [declaration] } } }],
+        permissions: { network: providerMode ? ["host.docker.internal"] : [], env: [] }, capabilities: { action: { kinds: [declaration] } } }],
     };
     await writeFile(manifestPath, JSON.stringify(manifest));
     registry = new PluginRegistry({ repoRoot: join(root, "repo"), workRoot: join(root, "work"),
@@ -162,11 +187,16 @@ live("queued Harness Work run approves and executes an installed plugin once", a
     expect((await executeApprovedActionRequest(orgId, rows[0].id)).ok).toBe(true);
     expect(runtime.hasPlugin(pluginId)).toBe(true);
     expect(await runtime.callRpc(pluginId, "effect_count", "{}")).toMatchObject({ok:true,result:{count:1}});
+    if (providerMode) {
+      expect(execution.outcome?.externalRef).toBe("plugin-provider-1");
+      expect(providerCalls).toBe(1);
+    }
   } finally {
     setPluginRegistryInstance(null);
     if (queue) await queue.offWork(QUEUE.WORK_RUN);
     await shutdownAgentBroker();
     await registry?.stop();
+    if (providerMode) await new Promise<void>(resolve => provider.close(() => resolve()));
     await deleteTestOrg(orgId);
     await rm(root, { recursive: true, force: true });
   }
