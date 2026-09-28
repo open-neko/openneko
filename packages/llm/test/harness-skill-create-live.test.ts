@@ -9,6 +9,7 @@ import { makeAgentBackend } from "../src/agent-runtime";
 import { inProcessControlPlane } from "../src/work/control-plane";
 import { startAgentBroker } from "../src/work/broker";
 import { makeSandboxRunCore } from "../src/work/sandbox-launcher";
+import { harnessSkillVersion } from "../src/work/harness-skill-update";
 
 const live=process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
 
@@ -67,5 +68,38 @@ live("creates one host-owned org skill through connected Ax/OpenShell dispatch",
     expect(readResult.status,JSON.stringify(readResult)).toBe("completed");
     expect(readEvents).toContainEqual(expect.objectContaining({type:"tool_start",name:"skill_read"}));
     expect((await pool().query("SELECT count(*)::int AS n FROM harness_operation WHERE org_id=$1 AND run_id=$2",[orgId,readRunId])).rows[0].n).toBe(0);
+    const oldVersion=await harnessSkillVersion(workspace.skillsRoot,"fixture-lead-review");
+    const updateRunId=randomUUID();
+    const updateWorkspace:AgentWorkspace={...workspace,runRoot:join(workspace.runsRoot,updateRunId),
+      artifactRoot:join(workspace.runsRoot,updateRunId,"artifacts"),binRoot:join(workspace.runsRoot,updateRunId,"bin")};
+    for(const dir of [updateWorkspace.runRoot,updateWorkspace.artifactRoot,updateWorkspace.binRoot]) await mkdir(dir,{recursive:true});
+    await db().insert(work_run).values({id:updateRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"admin"});
+    await writeFile(join(hermesHome,"config.yaml"),"model:\n  provider: custom\n  default: harness-skill-update-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const updateEvents:Array<{type:string;name?:string}>=[];
+    const updateResult=await runCore({backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId:updateRunId,
+      workspace:updateWorkspace,prompt:"Update the installed skill after inspecting its version.",
+      userMessage:"Update the lead review skill to verify owners.",dataSurface:"customer",pluginActions:[],
+      emit:async event=>{updateEvents.push(event);}});
+    expect(updateResult.status,JSON.stringify(updateResult)).toBe("completed");
+    expect(updateEvents).toContainEqual(expect.objectContaining({type:"tool_start",name:"skill_inspect"}));
+    expect(updateEvents).toContainEqual(expect.objectContaining({type:"tool_start",name:"skill_update"}));
+    expect(await harnessSkillVersion(workspace.skillsRoot,"fixture-lead-review")).not.toBe(oldVersion);
+    expect(await readFile(join(path,"SKILL.md"),"utf8")).toContain("Verify the lead owner");
+    expect(await readdir(join(path,"scripts"))).toEqual(["new_check.py"]);
+    const [updateReceipt]=(await pool().query("SELECT request,result FROM harness_operation WHERE org_id=$1 AND run_id=$2",[orgId,updateRunId])).rows;
+    expect(updateReceipt.request).toMatchObject({tool:"skill_update"});
+    expect(updateReceipt.result).toMatchObject({ok:true,name:"fixture-lead-review",version:expect.stringMatching(/^[a-f0-9]{64}$/)});
+    const updateSnapshot=JSON.parse(await readFile(join(updateWorkspace.runRoot,".harness",`${createHash("sha256").update(updateRunId).digest("hex")}.json`),"utf8"));
+    expect(updateSnapshot.operations.map((operation:{tool:string})=>operation.tool)).toEqual(["skill_inspect","skill_update"]);
+    const finalRunId=randomUUID();
+    const finalWorkspace:AgentWorkspace={...workspace,runRoot:join(workspace.runsRoot,finalRunId),
+      artifactRoot:join(workspace.runsRoot,finalRunId,"artifacts"),binRoot:join(workspace.runsRoot,finalRunId,"bin")};
+    for(const dir of [finalWorkspace.runRoot,finalWorkspace.artifactRoot,finalWorkspace.binRoot]) await mkdir(dir,{recursive:true});
+    await db().insert(work_run).values({id:finalRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"admin"});
+    await writeFile(join(hermesHome,"config.yaml"),"model:\n  provider: custom\n  default: harness-skill-read-updated-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+    const finalResult=await runCore({backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId:finalRunId,
+      workspace:finalWorkspace,prompt:"Read the updated installed skill.",userMessage:"What does it say now?",
+      dataSurface:"customer",pluginActions:[],emit:async()=>{}});
+    expect(finalResult.status,JSON.stringify(finalResult)).toBe("completed");
   } finally { await broker.close(); await deleteTestOrg(orgId); }
-},90_000);
+},120_000);
