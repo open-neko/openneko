@@ -85,6 +85,14 @@ effect. Chromium checks the answer and completed approval card across
 reload. Expect `M5_CONNECTED_USER_ADMIN_PASS` and
 `M5_WEB_USER_ADMIN_PASS`; the isolated stack and web process are stopped.
 
+For the focused group-creation gate, replace the flag with
+`HARNESS_M5_GROUP_ADMIN_ONLY=1`. A queued Work turn proposes a group,
+and the worker creates it only after approval. A disabled requester or
+same-name group appearing after approval blocks effect claim; replay
+restores one saved effect. Chromium checks one answer and completed
+approval card across reload. Expect `M5_CONNECTED_GROUP_ADMIN_PASS`
+and `M5_WEB_GROUP_ADMIN_PASS`; cleanup stops the isolated stack.
+
 For a narrower websocket transport check, use the same command with
 `HARNESS_M5_WS_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`. It verifies
 changed source snapshots arrive before and after a real GraphJin restart and

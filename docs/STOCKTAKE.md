@@ -57,6 +57,11 @@ Duplicate Work and action delivery reused the request and effect; Chromium
 found the answer and terminal approval card once after reload. The
 invitation path is qualified. Other user-change variants and the group,
 channel, data-source, plugin and source-config mutation families remain open.
+The same queue and browser path then qualified `group_admin.create_group`:
+an intervening same-name group and disabled requester both stopped execution
+before an effect claim; approval followed by worker execution created one
+group and duplicate delivery reused its receipt. Other group changes remain
+open.
 
 Cron redelivery has a narrower Postgres-backed qualification: a stale firing
 cannot be claimed after the definition changes or is disabled; linking must
