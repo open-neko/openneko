@@ -53,6 +53,7 @@ const SANDBOX_BOOT_LABEL = "openneko.boot";
 const SANDBOX_BOOT_ID = randomUUID();
 const HARNESS_OPERATION_LIMIT = 12;
 const HARNESS_MODEL_CALL_LIMIT = 24;
+const HARNESS_MODEL_TOKEN_HARD_LIMIT = 1_000_000;
 
 function harnessActionGrants(
   input: RunAgentBackendInput | RunWorkflowAgentBackendInput,
@@ -667,6 +668,11 @@ function makeSandboxCore(
       throw new Error("Invalid workflow model-call ceiling");
     }
     const harnessModelCallLimit = Math.min(HARNESS_MODEL_CALL_LIMIT, requestedModelCalls ?? HARNESS_MODEL_CALL_LIMIT);
+    const requestedModelTokens = kind === "workflow" ? (input as RunWorkflowAgentBackendInput).maxModelTokens : undefined;
+    if (requestedModelTokens !== undefined && (!Number.isInteger(requestedModelTokens) || requestedModelTokens < 1)) {
+      throw new Error("Invalid workflow model-token ceiling");
+    }
+    const harnessModelTokenLimit = Math.min(HARNESS_MODEL_TOKEN_HARD_LIMIT, requestedModelTokens ?? HARNESS_MODEL_TOKEN_HARD_LIMIT);
     const started = performance.now();
     const timed = async <T>(
       phase: string,
@@ -719,7 +725,7 @@ function makeSandboxCore(
       const userMessage = jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : undefined);
       const prompt = acceptedPrompt;
       const spec = JSON.stringify({version: 1, run_id: input.runId, input_id: input.runId,
-        max_operations: HARNESS_OPERATION_LIMIT, max_model_calls: harnessModelCallLimit,
+        max_operations: HARNESS_OPERATION_LIMIT, max_model_calls: harnessModelCallLimit, max_model_tokens: harnessModelTokenLimit,
         ...(userMessage ? {skill_query: boundedSkillQuery(userMessage)} : {}),
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
@@ -809,7 +815,7 @@ function makeSandboxCore(
       ? await timed("harness_admission", () => journal(
           path.join(input.workspace.runsRoot, ".harness-launches", createHash("sha256").update(input.runId).digest("hex")),
           { version: 1, runId: input.runId, orgId: input.orgId, kind,
-            ...(input.backend.id === "harness" ? {maxOperations: HARNESS_OPERATION_LIMIT, maxModelCalls: harnessModelCallLimit} : {}),
+            ...(input.backend.id === "harness" ? {maxOperations: HARNESS_OPERATION_LIMIT, maxModelCalls: harnessModelCallLimit, maxModelTokens: harnessModelTokenLimit} : {}),
             threadId: !isJob ? (input as RunAgentBackendInput).threadId : null,
             userMessage: jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : null),
             prompt: toBox(inputPrompt), backend: input.backend.id, model: input.backend.configuredIdentity,
@@ -1188,7 +1194,7 @@ function makeSandboxCore(
             ...(opts.env ?? {}),
             ...(routing ? { HARNESS_MODEL_ROUTES: routing.manifest } : {}),
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: actionGrants.length ? JSON.stringify(actionGrants.map(action => action.kind)) : "" } : {}),
-            ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit),
+            ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit), OPENNEKO_HARNESS_MAX_MODEL_TOKENS: String(harnessModelTokenLimit),
               OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),

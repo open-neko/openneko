@@ -288,6 +288,7 @@ export type RunWorkflowTurnOptions = {
   maxToolIterations?: number;
   /** Trusted API admission ceiling; the sandbox applies the lower Harness cap. */
   maxModelCalls?: number;
+  maxModelTokens?: number;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
   /**
@@ -488,6 +489,7 @@ async function runWorkflowTurnTraced(
       maxToolIterations: opts.maxToolIterations ?? budget.maxToolIterations,
       maxContinuations: opts.timeoutMs ? 0 : budget.maxContinuations,
       maxModelCalls: opts.maxModelCalls,
+      maxModelTokens: opts.maxModelTokens,
     });
     const spendStop = spendCapFromSignal(signal);
     let result = spendStop
