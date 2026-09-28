@@ -236,8 +236,33 @@ export async function loadPreparedWorkflowRun(input: {
   };
 }
 
+/** Reload the exact linked run after a pre-model worker crash. The caller has
+ * already reclaimed an expired delivery lease; a running work_run is never
+ * eligible because it may have invoked the model. */
+export async function loadQueuedPreparedWorkflowRun(input: {
+  orgId:string;workflowId:string;workflowRunId:string;
+  triggerKind:"cron"|"subscription";
+}):Promise<PreparedWorkflowRun> {
+  const {workflow}=await resolveWorkflowPreparation({
+    orgId:input.orgId,workflowId:input.workflowId,triggerKind:input.triggerKind,
+  },{});
+  const workflowRun=await getWorkflowRun(input.orgId,input.workflowRunId);
+  if(!workflowRun || workflowRun.workflowId!==input.workflowId ||
+      workflowRun.triggerKind!==input.triggerKind || workflowRun.status!=="running") {
+    throw new Error("Linked queued workflow run could not be loaded");
+  }
+  const [work]=(await pool().query<{status:string}>(
+    "select status from work_run where id=$1 and org_id=$2 and thread_id=$3",
+    [workflowRun.workRunId,input.orgId,workflowRun.threadId])).rows;
+  if(work?.status!=="queued")throw new Error("Linked workflow work run is no longer queued");
+  return {workflow,workflowRun,threadId:workflowRun.threadId,workRunId:workflowRun.workRunId};
+}
+
 export type RunWorkflowTurnOptions = {
   prepared: PreparedWorkflowRun;
+  /** Queue-delivered triggers must win this state transition before any
+   * model call; a recovered delivery may race a stalled original worker. */
+  requireQueuedStart?: boolean;
   /** Efficacy evals disable time-saved metadata. Defaults to true. */
   includeUxMetadata?: boolean;
   userMessage?: string;
@@ -327,7 +352,14 @@ async function runWorkflowTurnTraced(
       throw new Error("Workflow backend binding changed");
     }
   });
-  await startupPhase("run.mark_running", async () => markWorkRunRunning(workRunId));
+  await startupPhase("run.mark_running", async () => {
+    if (!opts.requireQueuedStart) return markWorkRunRunning(workRunId);
+    const claimed=await pool().query(
+      `update work_run set status='running',updated_at=now()
+       where id=$1 and org_id=$2 and status='queued' returning id`,
+      [workRunId,orgId]);
+    if(claimed.rowCount!==1)throw new Error("Workflow work run already started");
+  });
 
   let assistantText = "";
   let needsInput = false;

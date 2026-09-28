@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { shutdownAgentBroker } from "@neko/llm/work";
-import { createSubscription, handleSourceChangeMatch, prepareWorkflowRunForDelivery, startSubscriptionManager } from "@neko/llm/workflows";
+import { claimSourceChangeDelivery, claimWorkflowScheduleFiring, createSubscription, dispatchPendingSourceChangeDeliveries, handleSourceChangeMatch, prepareWorkflowRunForDelivery, reclaimQueuedSourceChangeDelivery, reclaimQueuedWorkflowScheduleFiring, recordSourceChangeDelivery, startSubscriptionManager } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runDurableWorkflowSchedulerTick } from "../src/workflow-scheduler.js";
 
@@ -173,6 +173,137 @@ try {
     "select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
     [orgId,cronWorkflow.id])).rows[0].n,1);
   console.log("M5_QUEUE_CRON_TRIGGER_REPLAY_PASS",cronRun.id);
+
+  // Simulate the worker dying after the atomic delivery/run commit but before
+  // run.mark_running. The restarted handler must reuse the linked queued run.
+  const recoverySource=await recordSourceChangeDelivery({orgId,workflowId:sourceWorkflow.id,
+    subscriptionId:subscription.id,subscriptionUpdatedAt:subscription.updatedAt,
+    sourceId:source.id,deliveryKey:`crash-${randomUUID()}`,
+    match:{table:"references",primary_key:{id:"REF-42"},
+      snapshot:{id:"REF-42"},version_token:`crash-${randomUUID()}`}});
+  assert.equal(await claimSourceChangeDelivery({id:recoverySource.id,orgId,
+    workflowId:sourceWorkflow.id}),true);
+  const preparedSource=await prepareWorkflowRunForDelivery({orgId,
+    workflowId:sourceWorkflow.id,triggerKind:"subscription",
+    triggeredBySubscriptionId:subscription.id,
+    triggeredByObservationId:recoverySource.observationId},
+    {kind:"source_change",id:recoverySource.id});
+  assert.equal((await pool().query("select status from work_run where id=$1",
+    [preparedSource.workRunId])).rows[0].status,"queued");
+  await pool().query("update source_change_delivery set lease_until=now()-interval '1 second' where id=$1",
+    [recoverySource.id]);
+  assert.equal((await fetch(control,{method:"POST",body:"{}"})).status,204);
+  const sourceRecoveryPayload:WorkflowRunFirePayload={orgId,workflowId:sourceWorkflow.id,
+    triggerKind:"subscription",sourceChangeDeliveryId:recoverySource.id,
+    triggeredBySubscriptionId:subscription.id,
+    triggeredByObservationId:recoverySource.observationId};
+  assert.equal(await dispatchPendingSourceChangeDeliveries(),1);
+  const [requeuedSource]=(await pool().query<{queue_job_id:string}>(
+    "select queue_job_id from source_change_delivery where id=$1",
+    [recoverySource.id])).rows;
+  assert.ok(requeuedSource.queue_job_id);
+  await waitForWorkflow(sourceWorkflow.id,requeuedSource.queue_job_id);
+  assert.equal((await pool().query("select status from workflow_run where id=$1",
+    [preparedSource.workflowRun.id])).rows[0].status,"completed");
+  assert.equal((await pool().query("select status from source_change_delivery where id=$1",
+    [recoverySource.id])).rows[0].status,"completed");
+  const recoveredSourceCalls=await modelCalls();
+  await runWorkflowRunFire(sourceRecoveryPayload);
+  assert.deepEqual(await modelCalls(),recoveredSourceCalls,
+    "source-change recovery redelivery called the model again");
+  assert.equal((await pool().query("select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
+    [orgId,sourceWorkflow.id])).rows[0].n,2);
+  console.log("M5_SOURCE_TRIGGER_QUEUED_RECOVERY_PASS",preparedSource.workflowRun.id);
+
+  const recoveryFiringId=randomUUID();
+  await pool().query(
+    `insert into workflow_schedule_firing
+       (id,org_id,workflow_id,scheduled_for,status)
+     values ($1,$2,$3,$4,'enqueued')`,
+    [recoveryFiringId,orgId,cronWorkflow.id,new Date(Date.now()+60_000)]);
+  assert.equal(await claimWorkflowScheduleFiring({firingId:recoveryFiringId,
+    orgId,workflowId:cronWorkflow.id}),true);
+  const preparedCron=await prepareWorkflowRunForDelivery({orgId,
+    workflowId:cronWorkflow.id,triggerKind:"cron"},
+    {kind:"schedule",id:recoveryFiringId});
+  assert.equal((await pool().query("select status from work_run where id=$1",
+    [preparedCron.workRunId])).rows[0].status,"queued");
+  await pool().query("update workflow_schedule_firing set lease_until=now()-interval '1 second' where id=$1",
+    [recoveryFiringId]);
+  assert.equal((await fetch(control,{method:"POST",body:"{}"})).status,204);
+  const cronRecoveryPayload:WorkflowRunFirePayload={orgId,workflowId:cronWorkflow.id,
+    triggerKind:"cron",scheduleFiringId:recoveryFiringId};
+  await pool().query("update workflow_schedule_state set next_fire_at=now()+interval '1 day' where workflow_id=$1",
+    [cronWorkflow.id]);
+  const recoveryHealth=await runDurableWorkflowSchedulerTick();
+  assert.equal(recoveryHealth.status,"ok",JSON.stringify(recoveryHealth));
+  const [requeuedCron]=(await pool().query<{queue_job_id:string}>(
+    "select queue_job_id from workflow_schedule_firing where id=$1",
+    [recoveryFiringId])).rows;
+  assert.ok(requeuedCron.queue_job_id);
+  await waitForWorkflow(cronWorkflow.id,requeuedCron.queue_job_id);
+  assert.equal((await pool().query("select status from workflow_run where id=$1",
+    [preparedCron.workflowRun.id])).rows[0].status,"completed");
+  assert.equal((await pool().query("select status from workflow_schedule_firing where id=$1",
+    [recoveryFiringId])).rows[0].status,"completed");
+  const recoveredCronCalls=await modelCalls();
+  await runWorkflowRunFire(cronRecoveryPayload);
+  assert.deepEqual(await modelCalls(),recoveredCronCalls,
+    "cron recovery redelivery called the model again");
+  assert.equal((await pool().query("select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
+    [orgId,cronWorkflow.id])).rows[0].n,2);
+  console.log("M5_CRON_TRIGGER_QUEUED_RECOVERY_PASS",preparedCron.workflowRun.id);
+
+  // pg-boss may deliver before the dispatcher persists its queue acknowledgement.
+  // A linked queued run in dispatching state must still be reclaimed once.
+  const ackRaceSource=await recordSourceChangeDelivery({orgId,workflowId:sourceWorkflow.id,
+    subscriptionId:subscription.id,subscriptionUpdatedAt:subscription.updatedAt,
+    sourceId:source.id,deliveryKey:`ack-race-${randomUUID()}`,
+    match:{table:"references",primary_key:{id:"REF-42"},
+      snapshot:{id:"REF-42"},version_token:`ack-race-${randomUUID()}`}});
+  assert.equal(await claimSourceChangeDelivery({id:ackRaceSource.id,orgId,
+    workflowId:sourceWorkflow.id}),true);
+  const ackRaceSourceRun=await prepareWorkflowRunForDelivery({orgId,
+    workflowId:sourceWorkflow.id,triggerKind:"subscription"},
+    {kind:"source_change",id:ackRaceSource.id});
+  await pool().query("update source_change_delivery set status='dispatching',lease_until=now()+interval '2 minutes' where id=$1",
+    [ackRaceSource.id]);
+  assert.equal(await reclaimQueuedSourceChangeDelivery({id:ackRaceSource.id,orgId,
+    workflowId:sourceWorkflow.id}),ackRaceSourceRun.workflowRun.id);
+  assert.equal(await reclaimQueuedSourceChangeDelivery({id:ackRaceSource.id,orgId,
+    workflowId:sourceWorkflow.id}),null);
+  await pool().query("update work_run set status='running' where id=$1",
+    [ackRaceSourceRun.workRunId]);
+  await pool().query("update source_change_delivery set lease_until=now()-interval '1 second' where id=$1",
+    [ackRaceSource.id]);
+  assert.equal(await reclaimQueuedSourceChangeDelivery({id:ackRaceSource.id,orgId,
+    workflowId:sourceWorkflow.id}),null,"already-started source run must stay fenced");
+  console.log("M5_SOURCE_TRIGGER_ACK_RACE_PASS",ackRaceSourceRun.workflowRun.id);
+
+  const ackRaceFiringId=randomUUID();
+  await pool().query(
+    `insert into workflow_schedule_firing
+       (id,org_id,workflow_id,scheduled_for,status)
+     values ($1,$2,$3,$4,'enqueued')`,
+    [ackRaceFiringId,orgId,cronWorkflow.id,new Date(Date.now()+120_000)]);
+  assert.equal(await claimWorkflowScheduleFiring({firingId:ackRaceFiringId,
+    orgId,workflowId:cronWorkflow.id}),true);
+  const ackRaceCronRun=await prepareWorkflowRunForDelivery({orgId,
+    workflowId:cronWorkflow.id,triggerKind:"cron"},
+    {kind:"schedule",id:ackRaceFiringId});
+  await pool().query("update workflow_schedule_firing set status='dispatching',lease_until=now()+interval '2 minutes' where id=$1",
+    [ackRaceFiringId]);
+  assert.equal(await reclaimQueuedWorkflowScheduleFiring({firingId:ackRaceFiringId,
+    orgId,workflowId:cronWorkflow.id}),ackRaceCronRun.workflowRun.id);
+  assert.equal(await reclaimQueuedWorkflowScheduleFiring({firingId:ackRaceFiringId,
+    orgId,workflowId:cronWorkflow.id}),null);
+  await pool().query("update work_run set status='running' where id=$1",
+    [ackRaceCronRun.workRunId]);
+  await pool().query("update workflow_schedule_firing set lease_until=now()-interval '1 second' where id=$1",
+    [ackRaceFiringId]);
+  assert.equal(await reclaimQueuedWorkflowScheduleFiring({firingId:ackRaceFiringId,
+    orgId,workflowId:cronWorkflow.id}),null,"already-started cron run must stay fenced");
+  console.log("M5_CRON_TRIGGER_ACK_RACE_PASS",ackRaceCronRun.workflowRun.id);
 } finally {
   await subscriptionManager?.stop();
   await queue.stop({graceful:true,timeout:5_000});

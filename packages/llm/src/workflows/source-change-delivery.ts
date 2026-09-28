@@ -159,6 +159,19 @@ export async function dispatchPendingSourceChangeDeliveries(
   const now = at ?? (await pool().query<{now:Date}>("select now() as now")).rows[0]!.now;
   await pool().query(
     `update source_change_delivery delivery
+     set status='pending',lease_until=null,available_at=$1,updated_at=$1,
+         last_error='linked queued run awaiting redelivery'
+     from workflow_run run join work_run work on work.id=run.work_run_id
+     where delivery.status='running' and delivery.lease_until < $1
+       and delivery.workflow_run_id=run.id and run.status='running'
+       and work.status='queued'
+       and exists (select 1 from subscription sub join workflow_definition workflow
+         on workflow.id=sub.workflow_id where sub.id=delivery.subscription_id
+           and sub.org_id=delivery.org_id and sub.enabled=true and workflow.enabled=true
+           and sub.updated_at=delivery.subscription_updated_at)`,[now],
+  );
+  await pool().query(
+    `update source_change_delivery delivery
      set status='cancelled',lease_until=null,completed_at=$1,updated_at=$1,
          last_error='subscription or workflow changed before dispatch'
      from subscription sub join workflow_definition workflow on workflow.id=sub.workflow_id
@@ -217,6 +230,7 @@ export async function claimSourceChangeDelivery(input:{id:string;orgId:string;wo
      set status='running',lease_until=now()+interval '30 minutes',updated_at=now()
      where delivery.id=$1 and delivery.org_id=$2 and delivery.workflow_id=$3
        and delivery.status in ('pending','dispatching','enqueued')
+       and delivery.workflow_run_id is null
        and exists (select 1 from subscription sub join workflow_definition workflow
          on workflow.id=sub.workflow_id where sub.id=delivery.subscription_id
          and sub.org_id=delivery.org_id and sub.enabled=true and workflow.enabled=true
@@ -224,6 +238,30 @@ export async function claimSourceChangeDelivery(input:{id:string;orgId:string;wo
      returning delivery.id`,[input.id,input.orgId,input.workflowId],
   );
   return claimed.rowCount===1;
+}
+
+/** Recover only a linked run that never left queued. Once it is running the
+ * prior model/effect outcome may be ambiguous and must not be redispatched. */
+export async function reclaimQueuedSourceChangeDelivery(input:{
+  id:string;orgId:string;workflowId:string;now?:Date;
+}):Promise<string|null> {
+  const now=input.now??new Date();
+  const reclaimed=await pool().query<{workflow_run_id:string}>(
+    `update source_change_delivery delivery
+     set status='running',lease_until=$4::timestamptz + interval '30 minutes',updated_at=$4
+     where delivery.id=$1 and delivery.org_id=$2 and delivery.workflow_id=$3
+       and delivery.status in ('pending','dispatching','enqueued','running')
+       and (delivery.status <> 'running' or delivery.lease_until < $4)
+       and delivery.workflow_run_id is not null
+       and exists (select 1 from workflow_run run join work_run work on work.id=run.work_run_id
+         where run.id=delivery.workflow_run_id and run.org_id=delivery.org_id
+           and run.status='running' and work.status='queued')
+       and exists (select 1 from subscription sub join workflow_definition workflow
+         on workflow.id=sub.workflow_id where sub.id=delivery.subscription_id
+           and sub.org_id=delivery.org_id and sub.enabled=true and workflow.enabled=true
+           and sub.updated_at=delivery.subscription_updated_at)
+     returning delivery.workflow_run_id`,[input.id,input.orgId,input.workflowId,now]);
+  return reclaimed.rows[0]?.workflow_run_id??null;
 }
 
 export async function linkSourceChangeDeliveryRun(id:string,workflowRunId:string):Promise<void> {
