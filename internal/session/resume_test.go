@@ -254,6 +254,9 @@ func TestGraphJinTokenChargeSurvivesDurableResume(t *testing.T) {
 	}
 	_, err := Run(context.Background(), root, spec, client, lookup, func(e agent.Event) error {
 		if e.Type == "tool.finished" {
+			if e.RemoteUsage == nil || !e.RemoteUsage.Reported || e.RemoteUsage.TotalTokens != 60000 {
+				t.Fatalf("missing GraphJin usage receipt: %+v", e.RemoteUsage)
+			}
 			return errors.New("delivery interrupted")
 		}
 		return nil
@@ -265,9 +268,49 @@ func TestGraphJinTokenChargeSurvivesDurableResume(t *testing.T) {
 	if err != nil || !report.CanResume {
 		t.Fatalf("recovery=%+v err=%v", report, err)
 	}
-	result, err := Resume(context.Background(), root, spec, client, lookup, func(agent.Event) error { return nil })
-	if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || calls.Load() != 2 || lookups != 1 {
-		t.Fatalf("result=%+v err=%v calls=%d lookups=%d", result, err, calls.Load(), lookups)
+	var replayedUsage int
+	result, err := Resume(context.Background(), root, spec, client, lookup, func(e agent.Event) error {
+		if e.Type == "tool.finished" && e.RemoteUsage != nil && e.RemoteUsage.TotalTokens == 60000 {
+			replayedUsage++
+		}
+		return nil
+	})
+	if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || calls.Load() != 2 || lookups != 1 || replayedUsage != 1 {
+		t.Fatalf("result=%+v err=%v calls=%d lookups=%d replayed_usage=%d", result, err, calls.Load(), lookups, replayedUsage)
+	}
+}
+
+func TestFailedGraphJinLookupRecordsMissingUsageWithoutForgingReceipt(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "graphjin-failed-usage", InputID: "input", Prompt: "Find row"}
+	answers := []string{`{"javascriptCode":"final('Use lookup',{})"}`, `{"javascriptCode":"const data=lookup('find the row'); final('Done',{data});"}`}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected call", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 4000, "completion_tokens", 1000, "total_tokens", 5000)))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	var finished agent.Event
+	_, err := Run(context.Background(), root, spec, client, func(context.Context, string) (json.RawMessage, error) {
+		return json.RawMessage(`{"response":{"usage":{"total_tokens":60000}}}`), errors.New("broker failed")
+	}, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			finished = e
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || finished.RemoteUsage == nil || finished.RemoteUsage.Reported || finished.RemoteUsage.ChargedTokens != 12*4096 || len(finished.Data) != 0 {
+		t.Fatalf("err=%v remote usage=%+v data=%s", err, finished.RemoteUsage, finished.Data)
+	}
+	if report, err := Inspect(root, spec); err != nil || !report.CanResume {
+		t.Fatalf("failed lookup checkpoint: %+v %v", report, err)
 	}
 }
 

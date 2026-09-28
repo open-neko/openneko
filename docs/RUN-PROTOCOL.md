@@ -89,7 +89,12 @@ then replaces that reservation with the server's flat `response.usage`
 total. Missing usage keeps the reservation. Saved lookup receipts rebuild the
 charge on resume. The result's `usage` field still reports **outer Ax usage**;
 the admission ceiling includes outer and GraphJin tokens without merging the
-two telemetry scopes. This is an admission/stop rule, not a guarantee that
+two telemetry scopes. A lookup's `tool.finished.remote_usage` reports only the
+server's flat aggregate token and call counts plus the tokens charged for
+admission. `reported: false` means the charged amount is the conservative
+reservation, not observed provider usage. This content-free projection is
+replayed from the durable checkpoint without dispatching another lookup.
+This is an admission/stop rule, not a guarantee that
 provider billing cannot overshoot one request or one remote lookup.
 
 `HARNESS_STATE_DIR` enables atomic, fsynced, bounded 8 MiB checkpoints in a trusted

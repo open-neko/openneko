@@ -183,12 +183,27 @@ func TestGraphJinLookupSharesModelTokenAdmission(t *testing.T) {
 			lookups := 0
 			lookup := func(context.Context, string) (json.RawMessage, error) {
 				lookups++
-				return json.RawMessage(`{"response":{"status":"answered","usage":{"prompt_tokens":50000,"completion_tokens":10000,"total_tokens":60000}}}`), nil
+				return json.RawMessage(`{"response":{"status":"answered","usage":{"prompt_tokens":50000,"completion_tokens":10000,"total_tokens":60000,"llm_calls":3}}}`), nil
 			}
+			var events []Event
 			result, err := Run(context.Background(), Spec{Version: 1, RunID: tc.runID, InputID: "input", Prompt: "Find row", MaxModelTokens: tc.limit},
-				client, lookup, func(Event) error { return nil })
+				client, lookup, func(e Event) error { events = append(events, e); return nil })
 			if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || modelCalls.Load() != 2 || lookups != tc.lookups {
 				t.Fatalf("result=%+v err=%v model=%d lookups=%d", result, err, modelCalls.Load(), lookups)
+			}
+			var remoteEvents int
+			for _, event := range events {
+				if event.RemoteUsage == nil {
+					continue
+				}
+				remoteEvents++
+				if event.Type != "tool.finished" || event.Name != "lookup" || !event.RemoteUsage.Reported ||
+					event.RemoteUsage.TotalTokens != 60000 || event.RemoteUsage.ChargedTokens != 60000 || event.RemoteUsage.LLMCalls != 3 {
+					t.Fatalf("remote usage event=%+v", event)
+				}
+			}
+			if remoteEvents != tc.lookups {
+				t.Fatalf("remote usage events=%d, want %d", remoteEvents, tc.lookups)
 			}
 		})
 	}
@@ -201,6 +216,15 @@ func TestGraphJinUsageChargeDoesNotCountNestedEvidence(t *testing.T) {
 	}
 	if got := lookupTokenCharge(json.RawMessage(`{"response":{"data":{"usage":{"total_tokens":900000}}}}`)); got != remoteLookupReservation {
 		t.Fatalf("missing usage charge=%d", got)
+	}
+	for _, raw := range []json.RawMessage{
+		json.RawMessage(`{"response":{"usage":{"total_tokens":-1}}}`),
+		json.RawMessage(`{"response":{"usage":{"total_tokens":1000000000001}}}`),
+		json.RawMessage(`{"response":{"usage":{"prompt_tokens":1000000000000,"completion_tokens":1}}}`),
+	} {
+		if usage := GraphJinRemoteUsage(raw); usage.Reported || usage.ChargedTokens != remoteLookupReservation {
+			t.Fatalf("invalid usage escaped reservation: %+v", usage)
+		}
 	}
 }
 

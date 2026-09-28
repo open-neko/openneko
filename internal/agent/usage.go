@@ -20,6 +20,51 @@ type ModelUsage struct {
 	Coverage         string `json:"coverage,omitempty"`
 }
 
+// RemoteUsage is one GraphJin agent lookup's aggregate receipt. ChargedTokens
+// is the amount used for admission; it is a reservation when Reported is false.
+// It is separate from outer Ax model usage so consumers cannot double-count it.
+type RemoteUsage struct {
+	PromptTokens     int64 `json:"prompt_tokens,omitempty"`
+	CompletionTokens int64 `json:"completion_tokens,omitempty"`
+	TotalTokens      int64 `json:"total_tokens,omitempty"`
+	LLMCalls         int64 `json:"llm_calls,omitempty"`
+	ChargedTokens    int64 `json:"charged_tokens"`
+	Reported         bool  `json:"reported"`
+}
+
+// GraphJinRemoteUsage reads only the broker's flat response.usage. Nested
+// evidence may contain unrelated usage and is deliberately ignored.
+func GraphJinRemoteUsage(raw json.RawMessage) RemoteUsage {
+	missing := RemoteUsage{ChargedTokens: remoteLookupReservation}
+	var result struct {
+		Response struct {
+			Usage struct {
+				PromptTokens     int64 `json:"prompt_tokens"`
+				CompletionTokens int64 `json:"completion_tokens"`
+				TotalTokens      int64 `json:"total_tokens"`
+				LLMCalls         int64 `json:"llm_calls"`
+			} `json:"usage"`
+		} `json:"response"`
+	}
+	if json.Unmarshal(raw, &result) != nil {
+		return missing
+	}
+	u := result.Response.Usage
+	for _, count := range []int64{u.PromptTokens, u.CompletionTokens, u.TotalTokens, u.LLMCalls} {
+		if count < 0 || count > 1_000_000_000_000 {
+			return missing
+		}
+	}
+	if u.TotalTokens == 0 {
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+	}
+	if u.TotalTokens <= 0 || u.TotalTokens > 1_000_000_000_000 {
+		return missing
+	}
+	return RemoteUsage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens,
+		TotalTokens: u.TotalTokens, LLMCalls: u.LLMCalls, ChargedTokens: u.TotalTokens, Reported: true}
+}
+
 func (u *ModelUsage) AddReported(other ModelUsage) {
 	u.Reported += other.Reported
 	u.InputTokens += other.InputTokens

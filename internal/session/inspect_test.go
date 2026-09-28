@@ -88,8 +88,11 @@ func TestInspectAndReplayRejectInconsistentCheckpoints(t *testing.T) {
 		"wrong input":           func(s *checkpoint) { s.Events[1].InputID = "different" },
 		"duplicate tool result": func(s *checkpoint) { s.Events[3] = s.Events[2]; s.Events[3].Sequence = 4 },
 		"wrong evidence":        func(s *checkpoint) { s.Events[2].Data = json.RawMessage(`{"forged":true}`) },
-		"invalid status":        func(s *checkpoint) { s.Result.Status = "invented" },
-		"unsupported version":   func(s *checkpoint) { s.Version = 9 },
+		"forged remote usage": func(s *checkpoint) {
+			s.Events[2].RemoteUsage = &agent.RemoteUsage{TotalTokens: 1, ChargedTokens: 1, Reported: true}
+		},
+		"invalid status":      func(s *checkpoint) { s.Result.Status = "invented" },
+		"unsupported version": func(s *checkpoint) { s.Version = 9 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := terminal()
@@ -124,6 +127,9 @@ func TestReconcileRestoresEvidenceWithoutExecutingOrCompletingRun(t *testing.T) 
 	saved, err := decodeCheckpoint(data, state.Spec)
 	if err != nil || len(saved.Events) != 3 || saved.Events[2].Type != "tool.finished" {
 		t.Fatalf("missing paired event: %s %v", data, err)
+	}
+	if usage := saved.Events[2].RemoteUsage; usage == nil || usage.Reported || usage.ChargedTokens != 12*4096 {
+		t.Fatalf("missing conservative remote usage event: %+v", usage)
 	}
 	if _, err = Reconcile(root, state.Spec, []Receipt{receipt}); err != nil {
 		t.Fatal(err)

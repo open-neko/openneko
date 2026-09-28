@@ -92,6 +92,7 @@ type Event struct {
 	Effect      string          `json:"effect,omitempty"`
 	DurationMS  int64           `json:"duration_ms,omitempty"`
 	Usage       *ModelUsage     `json:"usage,omitempty"`
+	RemoteUsage *RemoteUsage    `json:"remote_usage,omitempty"`
 	Result      *Result         `json:"result,omitempty"`
 }
 
@@ -280,14 +281,15 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				events.send(Event{Type: "tool.started", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: operationID})
 				startedAt := time.Now()
 				finished := Event{Type: "tool.finished", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: operationID}
+				if name == "lookup" {
+					missing := GraphJinRemoteUsage(nil)
+					finished.RemoteUsage = &missing
+				}
 				defer func() { finished.DurationMS = time.Since(startedAt).Milliseconds(); events.send(finished) }()
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
 				raw, err := capability.invoke(WithOperationID(ctx, operationID), instruction)
-				if name == "lookup" {
-					events.finishRemoteLookup(raw)
-				}
 				if err != nil || ctx.Err() != nil {
 					finished.Error = name + "_failed"
 				}
@@ -305,6 +307,10 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					return ax.Object("error", "invalid_"+name+"_result"), nil
 				}
 				finished.Data = append(json.RawMessage(nil), raw...)
+				if name == "lookup" {
+					usage := events.finishRemoteLookup(raw)
+					finished.RemoteUsage = &usage
+				}
 				if toolResultFailed(raw) {
 					toolFailed = true
 				}
@@ -604,42 +610,19 @@ func (r *recorder) admitRemoteLookup() bool {
 	return true
 }
 
-func (r *recorder) finishRemoteLookup(raw json.RawMessage) {
+func (r *recorder) finishRemoteLookup(raw json.RawMessage) RemoteUsage {
+	usage := GraphJinRemoteUsage(raw)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.remoteTokens += lookupTokenCharge(raw) - remoteLookupReservation
+	r.remoteTokens += usage.ChargedTokens - remoteLookupReservation
 	if r.spec.MaxModelTokens > 0 && r.chargedTokens() > r.spec.MaxModelTokens {
 		r.modelTokenOverspent = true
 	}
+	return usage
 }
 
-// Charge only the broker's authoritative GraphJin response usage. Nested
-// usage in data/evidence describes source records and must not be counted.
 func lookupTokenCharge(raw json.RawMessage) int64 {
-	var result struct {
-		Response struct {
-			Usage struct {
-				PromptTokens     int64 `json:"prompt_tokens"`
-				CompletionTokens int64 `json:"completion_tokens"`
-				TotalTokens      int64 `json:"total_tokens"`
-			} `json:"usage"`
-		} `json:"response"`
-	}
-	if json.Unmarshal(raw, &result) != nil {
-		return remoteLookupReservation
-	}
-	if result.Response.Usage.PromptTokens < 0 || result.Response.Usage.PromptTokens > 1_000_000_000_000 ||
-		result.Response.Usage.CompletionTokens < 0 || result.Response.Usage.CompletionTokens > 1_000_000_000_000 {
-		return remoteLookupReservation
-	}
-	total := result.Response.Usage.TotalTokens
-	if total <= 0 {
-		total = result.Response.Usage.PromptTokens + result.Response.Usage.CompletionTokens
-	}
-	if total <= 0 || total > 1_000_000_000_000 {
-		return remoteLookupReservation
-	}
-	return total
+	return GraphJinRemoteUsage(raw).ChargedTokens
 }
 
 func (r *recorder) nextModelReservation() int64 {

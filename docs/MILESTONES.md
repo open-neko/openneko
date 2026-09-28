@@ -893,7 +893,10 @@ agent before broker dispatch, then charges the server's flat usage receipt
 once. A missing receipt retains the reservation. Saved lookup results rebuild
 this charge on resume; a depleted allowance blocks both another lookup and
 another Ax call. OpenNeko's queued API ceiling now includes the same inner
-receipt or conservative missing-usage charge. Cost and model-profile checks
+receipt or conservative missing-usage charge. A content-free
+`tool.finished.remote_usage` projection exposes reported GraphJin tokens,
+server LLM-call count, usage coverage and the admission charge without merging
+it into outer Ax usage; durable replay retains that projection. Cost and model-profile checks
 still require a connected GraphJin/OpenShell qualification.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and

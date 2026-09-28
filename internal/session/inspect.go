@@ -108,8 +108,13 @@ func inspect(root string, spec agent.Spec, receipts []Receipt) (Recovery, error)
 				}
 			}
 			if !ended {
-				state.Events = append(state.Events, agent.Event{Version: 1, RunID: spec.RunID, InputID: spec.InputID,
-					Sequence: uint64(len(state.Events) + 1), Type: "tool.finished", Name: op.Name(), OperationID: uint64(receipt.ID), Data: receipt.Result})
+				finished := agent.Event{Version: 1, RunID: spec.RunID, InputID: spec.InputID,
+					Sequence: uint64(len(state.Events) + 1), Type: "tool.finished", Name: op.Name(), OperationID: uint64(receipt.ID), Data: receipt.Result}
+				if op.Name() == "lookup" {
+					usage := agent.GraphJinRemoteUsage(receipt.Result)
+					finished.RemoteUsage = &usage
+				}
+				state.Events = append(state.Events, finished)
 			}
 		}
 		data, err := json.Marshal(state)
@@ -226,6 +231,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" ||
+			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
 			return invalid()
 		}
@@ -290,6 +296,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			}
 		case "tool.finished":
 			if started[e.OperationID] == "" || ended[e.OperationID] || e.Name != started[e.OperationID] {
+				return invalid()
+			}
+			if e.RemoteUsage != nil && *e.RemoteUsage != agent.GraphJinRemoteUsage(e.Data) {
 				return invalid()
 			}
 			ended[e.OperationID] = true
