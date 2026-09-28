@@ -941,7 +941,7 @@ describe("makeSandboxRunCore", () => {
   it("attaches only Harness route providers before execution and leaves Hermes on its primary route", async () => {
     const root = await mkdtemp(join(tmpdir(), "harness-routes-test-"));
     try {
-      const routing = parseHarnessRouting(JSON.stringify({context:"cheap",executor:"work",responder:"work",routes:[
+      const routing = parseHarnessRouting(JSON.stringify({context:"cheap",executor:"work",responder:"work",skill:"cheap",routes:[
         {key:"cheap",model:"fixture",url:"https://cheap.example/v1",provider:"cheap-provider",credential_env:"CHEAP_API_KEY",api_key_env:"HARNESS_CHEAP_KEY"},
         {key:"work",model:"fixture",url:"https://work.example/v1",provider:"work-provider",credential_env:"WORK_API_KEY",api_key_env:"HARNESS_WORK_KEY"},
       ]}));
@@ -968,6 +968,8 @@ describe("makeSandboxRunCore", () => {
       (call.args.includes("/usr/local/bin/harness-inspect") && call.args.some(arg=>arg.startsWith("HARNESS_MODEL_ROUTES="))) ||
       (call.env?.HARNESS_MODEL_ROUTES === routing.manifest && call.args.some(arg=>arg.includes("harness-inspect")))
     )).toBe(true);
+      const inspection = h.calls.find(call=>call.args.includes("/usr/local/bin/harness-inspect") || call.args.some(arg=>arg.includes("harness-inspect")));
+      expect(inspection?.stdin).toContain('"skill_query":"hello"');
       expect(JSON.stringify(jobCapture.policies)).toContain("cheap.example");
       expect(JSON.stringify(jobCapture.policies)).not.toContain("legacy.example");
 

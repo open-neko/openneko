@@ -6,6 +6,15 @@ export type HarnessRouting = {
   keyAliases: ReadonlyArray<{ from: string; to: string }>;
 };
 
+/** Keep the accepted skill query within Go's byte limit on every launch path. */
+export function boundedSkillQuery(value: string): string {
+  const bytes = Buffer.from(value, "utf8");
+  if (bytes.length <= 8192) return value;
+  let end = 8192;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+  return bytes.subarray(0, end).toString("utf8");
+}
+
 const routeKey = /^[a-z][a-z0-9_-]{0,63}$/;
 const envName = /^[A-Z][A-Z0-9_]{1,127}$/;
 const harnessKeyEnv = /^HARNESS_[A-Z0-9_]+_KEY$/;
@@ -25,7 +34,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     throw new Error("Invalid Harness routing configuration");
   }
   const value = config as Record<string, unknown>;
-  if (Object.keys(value).some(key => !["context", "executor", "responder", "routes"].includes(key)) ||
+  if (Object.keys(value).some(key => !["context", "executor", "responder", "skill", "routes"].includes(key)) ||
       !Array.isArray(value.routes) || value.routes.length < 1 || value.routes.length > 8) {
     throw new Error("Invalid Harness routing configuration");
   }
@@ -75,8 +84,12 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
       throw new Error("Harness stage has no approved route");
     }
   }
+  if (value.skill !== undefined && (typeof value.skill !== "string" || !keys.has(value.skill))) {
+    throw new Error("Harness skill stage has no approved route");
+  }
   return {
-    manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder, routes }),
+    manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder,
+      ...(value.skill ? { skill: value.skill } : {}), routes }),
     providers, modelHosts, keyAliases,
   };
 }

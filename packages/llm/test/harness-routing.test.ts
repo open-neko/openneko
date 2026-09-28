@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHarnessRouting } from "../src/work/harness-routing";
+import { boundedSkillQuery, parseHarnessRouting } from "../src/work/harness-routing";
 
 const routeConfig = {
   context: "cheap",
@@ -12,8 +12,13 @@ const routeConfig = {
 };
 
 describe("Harness OpenShell route admission", () => {
+  it("bounds multibyte skill queries by bytes without splitting characters", () => {
+    const query = boundedSkillQuery("🌱".repeat(3000));
+    expect(Buffer.byteLength(query)).toBeLessThanOrEqual(8192);
+    expect(query).toBe("🌱".repeat(2048));
+  });
   it("keeps two accounts for the same model distinct without serializing credentials", () => {
-    const parsed = parseHarnessRouting(JSON.stringify(routeConfig));
+    const parsed = parseHarnessRouting(JSON.stringify({ ...routeConfig, skill: "cheap" }));
     expect(parsed.providers).toEqual(["cheap-provider", "work-provider"]);
     expect(parsed.keyAliases).toEqual([
       { from: "CHEAP_API_KEY", to: "HARNESS_CHEAP_KEY" },
@@ -21,13 +26,14 @@ describe("Harness OpenShell route admission", () => {
     ]);
     expect(parsed.modelHosts).toEqual([{ host: "models.example" }]);
     expect(JSON.parse(parsed.manifest)).toEqual({
-      context: "cheap", executor: "work", responder: "work",
+      context: "cheap", executor: "work", responder: "work", skill: "cheap",
       routes: routeConfig.routes.map(({ key, model, url, api_key_env }) => ({ key, model, url, api_key_env })),
     });
   });
 
   it.each([
     { ...routeConfig, executor: "unapproved" },
+    { ...routeConfig, skill: "unapproved" },
     { ...routeConfig, routes: [routeConfig.routes[0], { ...routeConfig.routes[1], key: "cheap" }] },
     { ...routeConfig, routes: [routeConfig.routes[0], { ...routeConfig.routes[1], credential_env: "CHEAP_API_KEY" }] },
     { ...routeConfig, routes: [routeConfig.routes[0], { ...routeConfig.routes[1], api_key_env: "HARNESS_CHEAP_KEY" }] },

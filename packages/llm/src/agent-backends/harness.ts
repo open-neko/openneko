@@ -5,6 +5,7 @@ import { createInterface } from "node:readline";
 import { parse } from "yaml";
 import type { AgentBackend, AgentModelIdentity, AgentRunOptions, AgentRunResult, AgentTokenUsage } from "../agent-backend";
 import { VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
+import { boundedSkillQuery } from "../work/harness-routing";
 /** Opt-in read-only M3 backend. Hermes remains the default and keeps its warm pool. */
 export class HarnessBackend implements AgentBackend {
     readonly id = "harness" as const;
@@ -67,6 +68,7 @@ export class HarnessBackend implements AgentBackend {
         child.stdin.on("error", () => undefined);
         child.stdin.end(JSON.stringify({ version: 1, run_id: runId, input_id: runId,
             max_operations: maxOperations, max_model_calls: maxModelCalls,
+            ...(opts.userMessage ? { skill_query: boundedSkillQuery(opts.userMessage) } : {}),
             prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
         try {
             for await (const line of createInterface({ input: child.stdout })) {

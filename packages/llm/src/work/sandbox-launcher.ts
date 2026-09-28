@@ -28,7 +28,7 @@ import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
 import { VENDORED_HERMES_MODEL_BINARY, VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
-import { parseHarnessRouting, type HarnessRouting } from "./harness-routing";
+import { boundedSkillQuery, parseHarnessRouting, type HarnessRouting } from "./harness-routing";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { copySkillOverrides } from "./workspace";
@@ -720,6 +720,7 @@ function makeSandboxCore(
       const prompt = acceptedPrompt;
       const spec = JSON.stringify({version: 1, run_id: input.runId, input_id: input.runId,
         max_operations: HARNESS_OPERATION_LIMIT, max_model_calls: harnessModelCallLimit,
+        ...(userMessage ? {skill_query: boundedSkillQuery(userMessage)} : {}),
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
       const snapshot = path.join(state, `${createHash("sha256").update(input.runId).digest("hex")}.json`);
