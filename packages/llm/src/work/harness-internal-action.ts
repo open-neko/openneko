@@ -1,12 +1,11 @@
-import { and, app_user, db, eq, resolveUserGroups, work_run } from "@neko/db";
+import { and, app_user, db, eq, work_run } from "@neko/db";
 import { z } from "zod";
 
-const userAdminPayload = z.discriminatedUnion("action", [
-  z.object({action:z.literal("invite"),email:z.email(),role:z.enum(["admin","member"])}).strict(),
-  z.object({action:z.literal("set_role"),userId:z.uuid(),role:z.enum(["admin","member"])}).strict(),
-  z.object({action:z.literal("deactivate"),userId:z.uuid()}).strict(),
-  z.object({action:z.literal("reactivate"),userId:z.uuid()}).strict(),
-]);
+const userAdminPayload = z.object({
+  action:z.literal("invite"),
+  email:z.email(),
+  role:z.literal("member"),
+}).strict();
 
 /** Internal admin requests still require a live Work actor, a typed payload,
  * and a stable target. Only approval may dispatch the existing worker adapter. */
@@ -21,17 +20,9 @@ export async function validateHarnessInternalAction(
   const [actor]=await db().select({disabledAt:app_user.disabled_at})
     .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.id,run.userId))).limit(1);
   if (!actor || actor.disabledAt) throw new Error("Requesting actor is no longer active");
-  if (input.action==="invite") {
-    const email=input.email.trim().toLowerCase();
-    const [existing]=await db().select({id:app_user.id})
-      .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.email,email))).limit(1);
-    return {target:email,definition:{harnessSource:"internal",kind,target:email,
-      observed:{existingUserId:existing?.id??null}}};
-  }
-  const [user]=await db().select({id:app_user.id,disabledAt:app_user.disabled_at})
-    .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.id,input.userId))).limit(1);
-  if (!user) throw new Error("User is not in this organization");
-  const groups=await resolveUserGroups(scope.orgId,input.userId);
-  return {target:input.userId,definition:{harnessSource:"internal",kind,target:input.userId,
-    observed:{disabled:user.disabledAt!==null,administrator:groups.administrator}}};
+  const email=input.email.trim().toLowerCase();
+  const [existing]=await db().select({id:app_user.id})
+    .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.email,email))).limit(1);
+  return {target:email,definition:{harnessSource:"internal",kind,target:email,
+    observed:{existingUserId:existing?.id??null}}};
 }
