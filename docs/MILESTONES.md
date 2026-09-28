@@ -396,10 +396,12 @@ the instructions and supporting file, and read the new version in another run.
 The host locks publication across workers. Unit tests reject stale versions
 and restore the old or retain the new tree after interruption on either side
 of the directory swap. Customer Work recovers pending swaps before staging.
-This is connected agent evidence; a queued worker/browser skill-write gate is
-still needed. Workflow definition and rule writes are limited to the separately
-qualified paths below; most admin writes remain unqualified. The full connected queue and
-browser gates remain required before claiming M5c complete.
+A production pg-boss Work queue then created the skill, read it in a later run,
+inspected and updated the whole tree, and read the new version in another run.
+Redelivery of both writes reused the host receipt without another model call
+or user-visible result. Chromium found each completed answer exactly once before
+and after reload. Most admin writes remain unqualified; the full grouped
+OpenShell/worker/Hermes/browser regression is still required for M5c.
 
 **Queued workflow slice (2026-09-27):** Harness now receives the owning
 `work_run` and trusted `workflow_run` identity. Its parent Ax agent may run
@@ -530,7 +532,7 @@ Source inventory for the next M5c slice:
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. The real GraphJin websocket reconnect/replay gate passed; qualify trigger crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
-| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save remains excluded. Direct `skill_create` and whole-tree CAS `skill_update` journal and publish host-owned org skills; connected Ax/OpenShell turns and interrupted-swap recovery tests pass. A queued worker/browser write gate remains. Add idempotency before any automatic retry of a lost save receipt. |
+| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save remains excluded. Direct `skill_create` and whole-tree CAS `skill_update` journal and publish host-owned org skills; connected Ax/OpenShell and queued worker/browser gates pass, including redelivery and interrupted-swap recovery. Add idempotency before any automatic retry of a lost memory-save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 
@@ -886,7 +888,7 @@ authorized actions.
 1. Qualify remaining product writes at their actual effect boundaries. A real
    installed-plugin provider effect still needs an available provider instance;
    the synthetic installed-plugin effect and Records receipt recovery pass.
-2. Qualify queued skill writes, remaining admin writes and trigger crash edges at their host
+2. Qualify remaining admin writes and trigger crash edges at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
    product boundary. Use focused connected gates during iteration.

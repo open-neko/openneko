@@ -67,6 +67,14 @@ exit. The source-change event enters through a real GraphJin websocket;
 after a GraphJin restart, the manager reconnects and the delivery ledger
 drops the repeated snapshot without a second workflow or model call.
 
+For the focused org-skill write gate, replace `HARNESS_M5_TRIGGER_ONLY=1`
+with `HARNESS_M5_SKILL_QUEUE_ONLY=1`. Real pg-boss Work jobs create, read,
+inspect, update and re-read a skill through Ax, the broker and OpenShell.
+Redelivery of each write must reuse its receipt without another model call
+or user-visible answer. Chromium checks both completed Work answers once
+before and after reload. Expect `M5_CONNECTED_SKILL_QUEUE_PASS` and
+`M5_WEB_SKILL_WRITE_PASS`; the isolated stack and web process are stopped.
+
 For a narrower websocket transport check, use the same command with
 `HARNESS_M5_WS_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`. It verifies
 changed source snapshots arrive before and after a real GraphJin restart and
