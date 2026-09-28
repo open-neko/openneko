@@ -22,10 +22,14 @@ const mocks = vi.hoisted(() => ({
   boundedResult: vi.fn((text: string) => ({ text, truncated: false })),
 }));
 
-vi.mock("@neko/llm", () => ({
-  ensureHostConfigProvisioned: mocks.ensureHostConfigProvisioned,
-  registerAgentCanceller: vi.fn(() => () => undefined),
-}));
+vi.mock("@neko/llm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@neko/llm")>();
+  return {
+    normalizeGraphjinAgentUsage: actual.normalizeGraphjinAgentUsage,
+    ensureHostConfigProvisioned: mocks.ensureHostConfigProvisioned,
+    registerAgentCanceller: vi.fn(() => () => undefined),
+  };
+});
 
 vi.mock("@neko/llm/spend", () => ({
   SpendBudgetExceeded: class SpendBudgetExceeded extends Error {},
@@ -307,6 +311,24 @@ describe("workflow API execution consumer", () => {
         errorCode: "tool_call_limit",
       }),
     );
+    expect(mocks.boundedResult).not.toHaveBeenCalled();
+  });
+
+  it("counts GraphJin server usage before continuing an API run", async () => {
+    mocks.claimApi.mockResolvedValueOnce(apiClaim({ limits: { ...apiLimits, maxTokensPerRun: 5_000 } }));
+    mocks.run.mockImplementationOnce(async (options) => {
+      await options.emit({ type: "tool_start", id: "lookup-1", name: "neko_graphjin_agent" });
+      await options.emit({ type: "tool_end", id: "lookup-1", result: {
+        response: { status: "answered", usage: { prompt_tokens: 4_000, completion_tokens: 2_000, total_tokens: 6_000 } },
+      } });
+      return { status: "completed", finalText: "should not finish" };
+    });
+
+    await expect(runWorkflowRunFire(apiPayload)).resolves.toBeUndefined();
+
+    expect(mocks.finishApi).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed", errorCode: "token_limit",
+    }));
     expect(mocks.boundedResult).not.toHaveBeenCalled();
   });
 

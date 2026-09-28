@@ -2,6 +2,7 @@ import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@n
 import type { WorkflowRunFirePayload } from "@neko/db/jobs";
 import {
   ensureHostConfigProvisioned,
+  normalizeGraphjinAgentUsage,
   registerAgentCanceller,
   type AgentEvent,
 } from "@neko/llm";
@@ -95,6 +96,7 @@ function createApiCeilingGuard(input: {
   let modelCalls = 1;
   let totalTokens = 0;
   let costUsd = 0;
+  const toolNames = new Map<string, string>();
   let exceeded: WorkflowApiRunCeilingExceeded | null = null;
 
   const fail = (code: string, message: string): never => {
@@ -106,6 +108,7 @@ function createApiCeilingGuard(input: {
 
   const emit = async (event: AgentEvent): Promise<void> => {
     if (event.type === "tool_start") {
+      toolNames.set(event.id, event.name);
       toolCalls += 1;
       // Each tool result requires another outer-model turn. GraphJin agent
       // tools additionally execute one separately metered inner model.
@@ -120,7 +123,25 @@ function createApiCeilingGuard(input: {
         fail("model_call_limit", "The API run exceeded its model-call ceiling.");
       }
     }
-    if (event.type === "usage") {
+    if (event.type === "tool_end") {
+      const name = toolNames.get(event.id);
+      toolNames.delete(event.id);
+      if (name?.toLocaleLowerCase().includes("neko_graphjin_agent")) {
+        const inner = normalizeGraphjinAgentUsage(event.result);
+        totalTokens += inner?.usage.totalTokens ?? 12 * 4096;
+        costUsd += inner?.usage.billedCostUsd ?? 0;
+        // Persist the completed broker receipt before terminating a paid run.
+        await input.emit(event);
+        if (totalTokens > input.claim.limits.maxTokensPerRun) {
+          fail("token_limit", "The API run exceeded its token ceiling.");
+        }
+        if (costUsd * 1_000_000 > input.claim.limits.maxCostMicrosPerRun) {
+          fail("spend_limit", "The API run exceeded its provider-spend ceiling.");
+        }
+        return;
+      }
+    }
+    if (event.type === "usage" && event.source === "outer") {
       totalTokens += event.usage.totalTokens ?? 0;
       costUsd +=
         event.usage.billedCostUsd ?? event.usage.estimatedCostUsd ?? 0;
