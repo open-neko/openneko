@@ -93,8 +93,14 @@ dropped that replay without another workflow or model call.
 Trigger preparation now commits its delivery link with the thread, both run
 rows and spend reservation. The connected gate forced a link failure for each
 trigger kind and found no orphan rows, then passed the successful cron and
-websocket paths. A linked queued run after a post-commit crash still needs a
-recovery gate.
+websocket paths. The connected handler then recovered one expired linked,
+still-queued run of each trigger kind using the original run IDs and no second
+model call on redelivery. The production scheduler and source-change sweep
+re-enqueued those expired linked runs even without an active original job.
+Acknowledgement-race fixtures reclaimed each linked queued run before dispatch
+recorded the queue result, then denied reclaim after its work run was marked
+running. A queued-start compare-and-swap fences two workers racing to start
+the model on the same run.
 
 The connected cancellation fixture now stops a queued Work `process_run`
 after its child has written a partial file: the worker observes the durable

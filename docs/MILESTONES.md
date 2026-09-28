@@ -494,8 +494,14 @@ workflow run and spend reservation in one transaction. A connected gate forced
 the schedule and source-change link to fail after those inserts and verified
 all rows rolled back. Successful cron and websocket deliveries still executed
 once, and duplicate handler calls did not repeat a model call. Recovery of a
-linked, queued run after a crash immediately following that commit remains to
-be qualified.
+linked, queued run after a crash immediately following that commit now passed
+the same connected queue: an expired delivery lease was swept and re-enqueued,
+then the existing run completed its OpenShell turn; a subsequent redelivery
+made no model call. An acknowledgement-race fixture reclaimed a linked run
+while dispatch still showed an active lease. Only a work run still marked
+queued is eligible; a running run may already have performed effects and
+remains fenced. The queued-start state transition allows only one worker to
+reach the model if an old worker resumes after lease expiry.
 The fixture restarted GraphJin; the subscription manager reconnected, the
 same snapshot arrived again, and the durable delivery ledger dropped it
 without another workflow or model call. A second handler invocation likewise
