@@ -162,6 +162,7 @@ const {
   closeSandboxPools,
   makeSandboxJobRunCore,
   makeSandboxWorkflowRunCore,
+  isMissingSandboxDelete,
   buildModelEgressArgs,
   buildSandboxPolicy,
   buildScopedEgressArgs,
@@ -173,6 +174,13 @@ const {
   verifyOpenShellGateway,
   workflowExecBudgetMs,
 } = await import("../src/work/sandbox-launcher");
+
+it("accepts only a missing sandbox as completed-run cleanup", () => {
+  expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 exited 1; stderr=sandbox not found"))).toBe(true);
+  expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 exited 1; stderr=sandbox 'h-1' does not exist"))).toBe(true);
+  expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 exited 1; stderr=gateway server not found"))).toBe(false);
+  expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 timed out after 60000ms"))).toBe(false);
+});
 
 describe("sandboxLauncherOptionsFromEnv", () => {
   it("ignores a persisted operator binary and exposes only model hosts", () => {
