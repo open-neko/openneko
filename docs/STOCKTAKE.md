@@ -90,6 +90,11 @@ both record a workflow output and reject a second handler invocation without
 another run or model call. A real GraphJin websocket delivered the source
 match and replayed the same snapshot after restart; the delivery ledger
 dropped that replay without another workflow or model call.
+Trigger preparation now commits its delivery link with the thread, both run
+rows and spend reservation. The connected gate forced a link failure for each
+trigger kind and found no orphan rows, then passed the successful cron and
+websocket paths. A linked queued run after a post-commit crash still needs a
+recovery gate.
 
 The connected cancellation fixture now stops a queued Work `process_run`
 after its child has written a partial file: the worker observes the durable

@@ -459,7 +459,7 @@ In the connected queue fixture, creation and edit retained one subscription,
 a saved watcher fired on the seeded GraphJin result, and a detected mutation
 loop, invalid table, invalid watcher path and disabled author left no new
 definition. This establishes trigger wiring and one sweep on synthetic data;
-Trigger crash-edge qualification remains open; the websocket replay gate is below.
+trigger crash-edge qualification is below.
 
 **Cron redelivery hardening (2026-09-28):** a queued firing now rechecks the
 current enabled cron definition and persisted schedule version at claim time,
@@ -489,6 +489,13 @@ recovery sweep does not dispatch another workflow.
 used the production pg-boss `workflow_run_fire` handler, Ax, the host GraphJin
 broker, seeded GraphJin, and real OpenShell 0.0.116. A real GraphJin
 source-change websocket match produced one completed workflow and observation.
+The handler now commits a claimed delivery link, its workflow thread, work run,
+workflow run and spend reservation in one transaction. A connected gate forced
+the schedule and source-change link to fail after those inserts and verified
+all rows rolled back. Successful cron and websocket deliveries still executed
+once, and duplicate handler calls did not repeat a model call. Recovery of a
+linked, queued run after a crash immediately following that commit remains to
+be qualified.
 The fixture restarted GraphJin; the subscription manager reconnected, the
 same snapshot arrived again, and the durable delivery ledger dropped it
 without another workflow or model call. A second handler invocation likewise
