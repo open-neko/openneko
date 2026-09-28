@@ -76,6 +76,18 @@ CPU execution bound. The adapter exposes `lookup(instruction)`. A trusted host m
 `propose({action, arguments, summary})`; no actor shell, file, arbitrary HTTP or
 direct mutation capability is installed.
 
+The optional trusted `max_model_tokens` field admits the next outer Ax model
+request only when observed tokens plus a reservation fit. The reservation is
+at least 4096 tokens (or the whole configured ceiling if smaller) and rises to
+the largest reported request; an unreported request consumes 4096 tokens in
+the accounting. The OpenNeko launcher pins a one-million-token ceiling, or a
+lower workflow API claim. Usage and reservations survive checkpoint resume.
+A provider may exceed its reservation within one request; that run fails with
+`model_token_budget_exceeded` and cannot dispatch another model request. This
+is an admission/stop rule, not a guarantee that provider billing cannot
+overshoot one request. Remote GraphJin agent usage is not yet included in
+this ceiling and remains a separate M6 gate.
+
 `HARNESS_STATE_DIR` enables atomic, fsynced, bounded 8 MiB checkpoints in a trusted
 consumer-scoped directory. The process locks the hashed run ID, persists accepted
 input before model work and operation intent before lookup, then saves results

@@ -16,13 +16,14 @@ import (
 
 // Spec is trusted host input. It cannot select credentials, endpoints or capabilities.
 type Spec struct {
-	Version       int    `json:"version"`
-	RunID         string `json:"run_id"`
-	InputID       string `json:"input_id"`
-	Prompt        string `json:"prompt"`
-	SkillQuery    string `json:"skill_query,omitempty"` // Current request for optional skill matching.
-	MaxOperations int    `json:"max_operations,omitempty"`
-	MaxModelCalls int    `json:"max_model_calls,omitempty"`
+	Version        int    `json:"version"`
+	RunID          string `json:"run_id"`
+	InputID        string `json:"input_id"`
+	Prompt         string `json:"prompt"`
+	SkillQuery     string `json:"skill_query,omitempty"` // Current request for optional skill matching.
+	MaxOperations  int    `json:"max_operations,omitempty"`
+	MaxModelCalls  int    `json:"max_model_calls,omitempty"`
+	MaxModelTokens int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax model usage.
 	// Set by the host after decoding input, then pinned by the checkpoint.
 	HostRoutingDigest string `json:"host_routing_digest,omitempty"`
 }
@@ -63,12 +64,13 @@ type SavedOperation struct {
 
 // Continuation starts a new Ax attempt with resolved observations, not a VM snapshot.
 type Continuation struct {
-	Attempt    uint64
-	Sequence   uint64
-	SpanID     uint64
-	ModelCalls int
-	Usage      ModelUsage
-	Operations []SavedOperation
+	Attempt               uint64
+	Sequence              uint64
+	SpanID                uint64
+	ModelCalls            int
+	Usage                 ModelUsage
+	MaxReportedCallTokens int64
+	Operations            []SavedOperation
 }
 
 type Event struct {
@@ -143,7 +145,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			return Result{}, fmt.Errorf("staged skill catalog requires skill_read")
 		}
 	}
-	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > spec.OperationLimit() || prior.ModelCalls < 0 || prior.ModelCalls > spec.ModelCallLimit() ||
+	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > spec.OperationLimit() || prior.ModelCalls < 0 || prior.ModelCalls > spec.ModelCallLimit() || prior.MaxReportedCallTokens < 0 || prior.MaxReportedCallTokens > 1_000_000_000_000 ||
 		(prior.Usage.Requests != 0 && prior.Usage.Requests != prior.ModelCalls) || prior.Usage.Reported < 0 || prior.Usage.Reported > prior.ModelCalls ||
 		(prior.Attempt == 1 && (prior.Sequence != 0 || len(prior.Operations) != 0 || prior.ModelCalls != 0)) || (prior.Attempt > 1 && prior.Sequence == 0) {
 		return Result{}, fmt.Errorf("invalid attempt budget")
@@ -166,7 +168,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
 	}
 	if prior.Attempt > 1 && tools.OnResume != nil {
@@ -176,8 +178,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage}
+	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens}
 	events.usage.Requests = prior.ModelCalls
+	if spec.MaxModelTokens > 0 && events.chargedModelTokens() > spec.MaxModelTokens {
+		events.modelTokenOverspent = true
+	}
 	if prior.Attempt == 1 {
 		events.send(Event{Type: "run.started"})
 	} else {
@@ -377,7 +382,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				result.Code = "invalid_output"
 			}
 		}
-		if events.modelBudgetExceeded() {
+		if events.modelTokenBudgetExceeded() {
+			result = Result{Status: "failed", Kind: "failure", Code: "model_token_budget_exceeded"}
+		} else if events.modelBudgetExceeded() {
 			result = Result{Status: "failed", Kind: "failure", Code: "model_budget_exceeded"}
 		}
 	}
@@ -450,16 +457,19 @@ func toolResultFailed(raw json.RawMessage) bool {
 }
 
 type recorder struct {
-	mu          sync.Mutex
-	spec        Spec
-	emit        func(Event) error
-	cancel      context.CancelFunc
-	seq, spans  uint64
-	modelCalls  int
-	usage       ModelUsage
-	modelDenied bool
-	paused      bool
-	err         error
+	mu                    sync.Mutex
+	spec                  Spec
+	emit                  func(Event) error
+	cancel                context.CancelFunc
+	seq, spans            uint64
+	modelCalls            int
+	usage                 ModelUsage
+	maxReportedCallTokens int64
+	modelDenied           bool
+	modelTokenDenied      bool
+	modelTokenOverspent   bool
+	paused                bool
+	err                   error
 }
 
 func (r *recorder) pause() {
@@ -494,6 +504,15 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 		r.mu.Unlock()
 		return nil, fmt.Errorf("model request budget exhausted")
 	}
+	reservation := r.nextModelReservation()
+	if r.spec.MaxModelTokens > 0 && reservation > r.spec.MaxModelTokens {
+		reservation = r.spec.MaxModelTokens
+	}
+	if r.spec.MaxModelTokens > 0 && (r.modelTokenOverspent || r.chargedModelTokens()+reservation > r.spec.MaxModelTokens) {
+		r.modelTokenDenied = true
+		r.mu.Unlock()
+		return nil, fmt.Errorf("model token admission budget exhausted")
+	}
 	r.modelCalls++
 	r.usage.Requests++
 	id := uint64(r.modelCalls)
@@ -516,11 +535,17 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 		finished.Usage = &tokens
 	}
 	r.send(finished)
+	r.mu.Lock()
 	if finished.Usage != nil {
-		r.mu.Lock()
 		r.usage.AddReported(*finished.Usage)
-		r.mu.Unlock()
+		if finished.Usage.TotalTokens > r.maxReportedCallTokens {
+			r.maxReportedCallTokens = finished.Usage.TotalTokens
+		}
 	}
+	if r.spec.MaxModelTokens > 0 && r.chargedModelTokens() > r.spec.MaxModelTokens {
+		r.modelTokenOverspent = true
+	}
+	r.mu.Unlock()
 	return response, err
 }
 
@@ -536,6 +561,31 @@ func (r *recorder) modelBudgetExceeded() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.modelDenied
+}
+
+const missingModelUsageCharge int64 = 4096
+
+// Caller holds r.mu. An unfinished or unreported request consumes a
+// conservative reservation; provider usage replaces it when available.
+func (r *recorder) chargedModelTokens() int64 {
+	missing := r.usage.Requests - r.usage.Reported
+	if missing < 0 {
+		missing = 0
+	}
+	return r.usage.TotalTokens + int64(missing)*missingModelUsageCharge
+}
+
+func (r *recorder) nextModelReservation() int64 {
+	if r.maxReportedCallTokens > missingModelUsageCharge {
+		return r.maxReportedCallTokens
+	}
+	return missingModelUsageCharge
+}
+
+func (r *recorder) modelTokenBudgetExceeded() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.modelTokenDenied || r.modelTokenOverspent
 }
 
 func (r *recorder) send(e Event) {

@@ -50,7 +50,7 @@ func ResumeWithTools(ctx context.Context, root string, spec agent.Spec, client a
 }
 
 func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, tools agent.Tools, emit func(agent.Event) error, resume bool) (agent.Result, error) {
-	if root == "" || spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
+	if root == "" || spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
 		return agent.Result{}, fmt.Errorf("invalid persistent run")
 	}
 	catalog, err := tools.CatalogHash()
@@ -264,6 +264,9 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 		}
 		if event.Type == "model.request.finished" && event.Usage != nil {
 			prior.Usage.AddReported(*event.Usage)
+			if event.Usage.TotalTokens > prior.MaxReportedCallTokens {
+				prior.MaxReportedCallTokens = event.Usage.TotalTokens
+			}
 		}
 		if event.Type == "run.resumed" {
 			prior.Attempt++

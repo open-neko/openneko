@@ -187,6 +187,49 @@ func TestModelUsageSurvivesResume(t *testing.T) {
 	}
 }
 
+func TestObservedTokenReservationSurvivesResume(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "token-resume", InputID: "input", Prompt: "Read status", MaxModelTokens: 11000}
+	answers := []string{`{"javascriptCode":"final('Read status',{})"}`, `{"javascriptCode":"const status=native_status({}); final('Done',{status});"}`}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected call", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 4000, "completion_tokens", 1000, "total_tokens", 5000)))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	var reads int
+	tools := agent.Tools{Capabilities: []agent.Capability{{Name: "native_status", Version: "1", Origin: "fixture", Effect: "read", Description: "Read status.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads++
+			return json.RawMessage(`{"status":"ok"}`), nil
+		}}}}
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || calls.Load() != 2 || reads != 1 {
+		t.Fatalf("first attempt err=%v calls=%d reads=%d", err, calls.Load(), reads)
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume {
+		t.Fatalf("recovery=%+v err=%v", report, err)
+	}
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || calls.Load() != 2 || reads != 1 ||
+		result.Usage == nil || result.Usage.TotalTokens != 10000 {
+		t.Fatalf("result=%+v err=%v calls=%d reads=%d", result, err, calls.Load(), reads)
+	}
+}
+
 func TestResumeRefusesUnknownAndPersistsAttemptBudgetBeforeModel(t *testing.T) {
 	s := prefix()
 	root, _ := fixture(t, s)

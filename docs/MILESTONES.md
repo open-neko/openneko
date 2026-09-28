@@ -836,8 +836,7 @@ model request only after a content-free `model.request.started` event is durably
 recorded. A trusted `max_model_calls` limit (16 by default, at most 64) is
 enforced across Ax attempts; resume reconstructs spent calls from the checkpoint.
 A two-call fixture proved that interruption and resume do not authorize a third
-request. This limits calls even when provider usage is missing, but does not yet
-enforce a token or cost ceiling or cover multi-provider/child work. The same
+request. This limits calls even when provider usage is missing. The same
 limiter now journals content-free model finish receipts with Ax-normalized token
 counts and terminal `complete`/`partial`/`unavailable` coverage. Go fixtures
 verify three-call totals, an omitted provider report and exact aggregation
@@ -881,6 +880,15 @@ skill query changes. OpenNeko passes the bounded current request into the run
 and its recovery inspector; launcher tests cover the field. This remains local
 coverage until a connected multi-provider OpenShell run verifies credential
 replacement and the actual GraphJin server model profile.
+An outer Ax token-admission ceiling now reserves before every model call,
+including skill selection and child turns. It charges missing usage
+conservatively, uses the largest reported call as the next reservation, and
+reconstructs spent usage from events on resume. A provider can exceed the
+reservation within one call; the run then fails and makes no further model
+request. OpenNeko pins a 1M-token admission ceiling in its accepted run identity and
+lowers it to a workflow API claim's per-run token ceiling. Local fixtures
+cover reported usage, missing usage and interruption/resume. Remote GraphJin
+usage and provider cost still need admission accounting.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote
