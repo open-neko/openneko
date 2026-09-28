@@ -106,12 +106,18 @@ if [[ ${HARNESS_M5_RECORDS:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   fi
 fi
 if [[ ${HARNESS_M5_PLUGIN:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  docker build -q -f "$product/docker/plugin-base.Dockerfile" -t openneko-plugin:harness-m5 "$product" >/dev/null
+  export OPENNEKO_PLUGIN_BASE_IMAGE=openneko-plugin:harness-m5
   mkdir -p "$HARNESS_STATE/bin"
   ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
   export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
   export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
   export OPENNEKO_HOST_WEB_DEV=1 OPENNEKO_AGENT_HOME="$HARNESS_STATE/plugin-agent-home" OPENNEKO_BROKER_PORT=18123
-  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-installed-plugin-live.test.ts)
+  if ! (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-installed-plugin-live.test.ts); then
+    docker compose -p harness-m2 -f integration/compose.yml logs --tail=100 openshell-gateway >&2 || true
+    docker ps -a --format '{{.Names}} {{.Status}}' | rg 'openshell-default' >&2 || true
+    exit 1
+  fi
   if [[ ${HARNESS_M5_PLUGIN_ONLY:-0} == 1 ]]; then
     echo M5_PLUGIN_ONLY_PASS
     exit 0

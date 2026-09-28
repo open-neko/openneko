@@ -390,8 +390,10 @@ effect. The worker rechecks current installed kind, owner, scope, version and
 integrity before execution claims the effect: removing or changing the plugin
 after approval leaves no claim or RPC, and restoring the identical manifest
 permits the same approved request to execute once. The fixture runs its
-synthetic effect in a separate real OpenShell plugin VM; an external provider
-effect remains separate qualification work.
+synthetic effect in a separate real OpenShell plugin VM. A later connected gate
+used the current plugin-base image to execute an approved external HTTP effect
+from that VM once and restore the same receipt on duplicate execution. The
+older v3.5.6 plugin image lacks the OCI `USER` required by OpenShell 0.0.116.
 The direct `memory_save` capability now binds an explicit customer Work-run grant,
 validates the model's bounded text/kind/scope, and persists host operation intent
 before calling OpenNeko's existing memory service. A successful connected
@@ -962,11 +964,12 @@ authorized actions.
 
 ## Immediate order
 
-1. Qualify remaining product writes at their actual effect boundaries. A real
-   installed-plugin provider effect still needs an available provider instance;
-   the synthetic installed-plugin effect and Records receipt recovery pass.
-2. Qualify remaining admin writes and trigger crash edges at their host
-   effect boundaries; retain the accepted idle cancellation warning separately.
+1. Close the M5 admitted-capability gate with one final connected regression
+   and explicit exclusions. The real installed-plugin provider fixture now
+   passes; customer Daily Lead Union data remains unconnected.
+2. Qualify excluded product/admin writes for a later rollout cohort only after
+   their host effect boundaries and recovery rules are defined. Retain the
+   accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
    product boundary. Use focused connected gates during iteration.
 4. Complete M6 routing, budget and context evidence, then M7 parity and M8

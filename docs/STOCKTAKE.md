@@ -95,8 +95,11 @@ GraphJin API pack adapter also passed a separate isolated queue gate against
 a GraphJin-compatible HTTP provider (`/tmp/harness-m5-pack-effect-queue.log`).
 The production action handler recorded one approved provider effect and reused
 its receipt; a second provider commit lost its response and stayed unknown
-without redispatch. Installed-plugin effects that contact an external provider
-still need their own connected gate.
+without redispatch. The installed-plugin external-provider gate subsequently
+passed from a real OpenShell plugin VM (`/tmp/harness-m5-plugin-provider-fixed.log`):
+one approved HTTP effect, one recorded receipt and no second call on duplicate
+execution. It builds the current plugin-base Dockerfile locally because the
+older v3.5.6 image lacks the OCI `USER` required by this OpenShell version.
 The generic Go MCP adapter now preserves bounded resource links and structured
 content as separate result fields, while retaining text and `is_error`. Its
 focused SDK fixture covers paginated discovery, tool errors, unsupported image
