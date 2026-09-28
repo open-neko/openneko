@@ -1,4 +1,4 @@
-import { and, app_user, db, eq, listUserGroups, work_run } from "@neko/db";
+import { and, app_user, db, eq, getUserGroup, listGroupMembers, listUserGroups, work_run } from "@neko/db";
 import { z } from "zod";
 
 const userAdminPayload = z.object({
@@ -6,11 +6,18 @@ const userAdminPayload = z.object({
   email:z.email(),
   role:z.literal("member"),
 }).strict();
-const groupCreatePayload=z.object({
-  action:z.literal("create_group"),
-  name:z.string().trim().min(1).max(120),
-  description:z.string().trim().max(500).optional(),
-}).strict();
+const groupAdminPayload=z.discriminatedUnion("action",[
+  z.object({
+    action:z.literal("create_group"),
+    name:z.string().trim().min(1).max(120),
+    description:z.string().trim().max(500).optional(),
+  }).strict(),
+  z.object({
+    action:z.literal("add_member"),
+    groupId:z.uuid(),
+    userId:z.string().trim().min(1).max(128),
+  }).strict(),
+]);
 
 /** Internal admin requests still require a live Work actor, a typed payload,
  * and a stable target. Only approval may dispatch the existing worker adapter. */
@@ -32,10 +39,23 @@ export async function validateHarnessInternalAction(
     return {target:email,definition:{harnessSource:"internal",kind,target:email,
       observed:{existingUserId:existing?.id??null}}};
   }
-  const input=groupCreatePayload.parse(payload);
-  const name=input.name.toLowerCase();
-  const existing=(await listUserGroups(scope.orgId)).find(group=>group.name.toLowerCase()===name);
-  if (existing) throw new Error("Group name is already in use");
-  return {target:input.name,definition:{harnessSource:"internal",kind,target:input.name,
-    observed:{existingGroupId:null}}};
+  const input=groupAdminPayload.parse(payload);
+  if (input.action==="create_group") {
+    const name=input.name.toLowerCase();
+    const existing=(await listUserGroups(scope.orgId)).find(group=>group.name.toLowerCase()===name);
+    if (existing) throw new Error("Group name is already in use");
+    return {target:input.name,definition:{harnessSource:"internal",kind,target:input.name,
+      observed:{existingGroupId:null}}};
+  }
+  const group=await getUserGroup(scope.orgId,input.groupId);
+  if (!group || group.kind!=="custom") throw new Error("Custom group is no longer available");
+  const [member]=await db().select({id:app_user.id,disabledAt:app_user.disabled_at})
+    .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.id,input.userId))).limit(1);
+  if (!member || member.disabledAt) throw new Error("Member is no longer active");
+  const sources=(await listGroupMembers(scope.orgId,input.groupId))
+    .find(row=>row.userId===input.userId)?.sources ?? [];
+  if (sources.includes("local")) throw new Error("Member is already in this group");
+  const target=`${input.groupId}:${input.userId}`;
+  return {target,definition:{harnessSource:"internal",kind,target,
+    observed:{groupName:group.name,memberSources:[...sources].sort()}}};
 }
