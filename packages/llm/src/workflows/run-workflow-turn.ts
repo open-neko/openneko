@@ -40,6 +40,8 @@ import {
   type WorkflowRunRecord,
 } from "./store";
 import { spendCapFromSignal } from "../spend/run-guard";
+import { admitRunSpend, recordBudgetBlocked } from "../spend/admission";
+import { recordAuditEvent } from "./audit-chain";
 
 export class WorkflowNeedsInputError extends Error {
   constructor(message = "Workflow paused awaiting operator input") {
@@ -74,19 +76,18 @@ export type PreparedWorkflowRun = {
   workRunId: string;
 };
 
-export async function prepareWorkflowRun(
+type ClaimedDelivery =
+  | { kind: "schedule"; id: string }
+  | { kind: "source_change"; id: string };
+
+async function resolveWorkflowPreparation(
   opts: PrepareWorkflowRunOptions,
-  deps: Pick<Partial<RunWorkflowTurnDeps>, "resolveAgentBackend"> = {},
-): Promise<PreparedWorkflowRun> {
-  const resolveAgentBackend =
-    deps.resolveAgentBackend ?? defaultResolveAgentBackend;
+  deps: Pick<Partial<RunWorkflowTurnDeps>, "resolveAgentBackend">,
+) {
+  const resolveAgentBackend = deps.resolveAgentBackend ?? defaultResolveAgentBackend;
   const workflow = await startupPhase("workflow.load", async () => getWorkflow(opts.orgId, opts.workflowId));
-  if (!workflow) {
-    throw new Error(`Workflow ${opts.workflowId} not found for org ${opts.orgId}.`);
-  }
-  if (!workflow.enabled) {
-    throw new Error(`Workflow ${workflow.name} is disabled.`);
-  }
+  if (!workflow) throw new Error(`Workflow ${opts.workflowId} not found for org ${opts.orgId}.`);
+  if (!workflow.enabled) throw new Error(`Workflow ${workflow.name} is disabled.`);
   const backend = await startupPhase("config.backend", async () => resolveAgentBackend(opts.orgId));
   let actor: { userId: string | null; role: "admin" | "member" | "service" } = { userId: null, role: "service" };
   if (workflow.ownerUserId) {
@@ -95,6 +96,14 @@ export async function prepareWorkflowRun(
     const groups = await resolveUserGroups(opts.orgId, workflow.ownerUserId);
     actor = { userId: workflow.ownerUserId, role: groups.administrator ? "admin" : "member" };
   }
+  return {workflow,backend,actor};
+}
+
+export async function prepareWorkflowRun(
+  opts: PrepareWorkflowRunOptions,
+  deps: Pick<Partial<RunWorkflowTurnDeps>, "resolveAgentBackend"> = {},
+): Promise<PreparedWorkflowRun> {
+  const {workflow,backend,actor}=await resolveWorkflowPreparation(opts,deps);
   // Trigger threads live on the "workflow" channel, never "web", so they can't
   // surface in the human Ask sidebar — even as an orphan whose work_run never
   // persisted (the sidebar lists only "web" threads).
@@ -125,6 +134,80 @@ export async function prepareWorkflowRun(
     threadId,
     workRunId: created.id,
   };
+}
+
+/** A claimed cron or source-change delivery must never commit a run without
+ * its delivery link. Otherwise a crash before the separate link write leaves
+ * an orphan and a retry may prepare another run for the same occurrence. */
+export async function prepareWorkflowRunForDelivery(
+  opts: PrepareWorkflowRunOptions,
+  delivery: ClaimedDelivery,
+  deps: Pick<Partial<RunWorkflowTurnDeps>, "resolveAgentBackend"> = {},
+): Promise<PreparedWorkflowRun> {
+  if ((delivery.kind === "schedule" && opts.triggerKind !== "cron") ||
+      (delivery.kind === "source_change" && opts.triggerKind !== "subscription")) {
+    throw new Error("Claimed delivery does not match the workflow trigger");
+  }
+  const {workflow,backend,actor}=await resolveWorkflowPreparation(opts,deps);
+  const client=await pool().connect();
+  let released=false;
+  let workRunId:string;
+  let threadId:string;
+  let workflowRunId:string;
+  try {
+    await client.query("BEGIN");
+    if (opts.threadId) {
+      const existing=await client.query<{id:string}>(
+        "select id from work_thread where id=$1 and org_id=$2",[opts.threadId,opts.orgId]);
+      if (!existing.rows[0]) throw new Error("Workflow thread is no longer available");
+      threadId=opts.threadId;
+    } else {
+      const created=await client.query<{id:string}>(
+        "insert into work_thread (org_id,title,channel) values ($1,$2,'workflow') returning id",
+        [opts.orgId,workflow.name]);
+      threadId=created.rows[0]!.id;
+    }
+    const work=await client.query<{id:string}>(
+      `insert into work_run (org_id,thread_id,backend,status,actor_user_id,actor_role)
+       values ($1,$2,$3,'queued',$4,$5) returning id`,
+      [opts.orgId,threadId,backend.id,actor.userId,actor.role]);
+    workRunId=work.rows[0]!.id;
+    await admitRunSpend(client,{orgId:opts.orgId,workflowId:opts.workflowId,
+      workRunId,source:delivery.kind==="schedule"?"cron":"trigger"});
+    const created=await client.query<{id:string}>(
+      `insert into workflow_run
+         (org_id,workflow_id,thread_id,work_run_id,trigger_kind,trigger_payload,
+          chain_depth,triggered_by_subscription_id,triggered_by_output_id,
+          triggered_by_observation_id,status,started_at)
+       values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,'running',now()) returning id`,
+      [opts.orgId,opts.workflowId,threadId,workRunId,opts.triggerKind,
+        JSON.stringify(opts.triggerPayload??{}),
+        (opts.parentChainDepth??0)+(opts.triggerKind==="subscription"?1:0),
+        opts.triggeredBySubscriptionId??null,opts.triggeredByOutputId??null,
+        opts.triggeredByObservationId??null]);
+    workflowRunId=created.rows[0]!.id;
+    const table=delivery.kind==="schedule"?"workflow_schedule_firing":"source_change_delivery";
+    const linked=await client.query(
+      `update ${table} set workflow_run_id=$2,updated_at=now()
+       where id=$1 and org_id=$3 and workflow_id=$4 and status='running'
+         and workflow_run_id is null returning id`,
+      [delivery.id,workflowRunId,opts.orgId,opts.workflowId]);
+    if (linked.rowCount!==1) throw new Error("Claimed workflow delivery can no longer be linked");
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(()=>undefined);
+    client.release();
+    released=true;
+    await recordBudgetBlocked(error);
+    throw error;
+  } finally {
+    if (!released) client.release();
+  }
+  await recordAuditEvent({orgId:opts.orgId,entityKind:"work_run",entityId:workRunId,
+    event:"run:created",payload:{backend:backend.id,actorUserId:actor.userId,actorRole:actor.role}});
+  const workflowRun=await getWorkflowRun(opts.orgId,workflowRunId);
+  if (!workflowRun) throw new Error("Committed workflow run could not be loaded");
+  return {workflow,workflowRun,threadId,workRunId};
 }
 
 /** Load the linked rows created transactionally by external API admission. */

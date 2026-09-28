@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { shutdownAgentBroker } from "@neko/llm/work";
-import { createSubscription, handleSourceChangeMatch, startSubscriptionManager } from "@neko/llm/workflows";
+import { createSubscription, handleSourceChangeMatch, prepareWorkflowRunForDelivery, startSubscriptionManager } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runDurableWorkflowSchedulerTick } from "../src/workflow-scheduler.js";
 
@@ -69,8 +69,26 @@ try {
   const [sourceWorkflow]=await db().insert(workflow_definition).values({
     org_id:orgId,name:`Trigger replay source ${randomUUID()}`,
     goal:"Find the seeded reference and report it once",
-  }).returning({id:workflow_definition.id});
+  }).returning({id:workflow_definition.id,name:workflow_definition.name});
   workflows.push(sourceWorkflow.id);
+  const orphanCount=async(workflowId:string,threadTitle:string)=>{
+    const [row]=(await pool().query<{threads:number;workRuns:number;workflowRuns:number;reservations:number}>(
+      `select
+        (select count(*)::int from work_thread where org_id=$1 and title=$3) as threads,
+        (select count(*)::int from work_run run join work_thread thread on thread.id=run.thread_id
+          where run.org_id=$1 and thread.title=$3) as "workRuns",
+        (select count(*)::int from workflow_run where org_id=$1 and workflow_id=$2) as "workflowRuns",
+        (select count(*)::int from spend_reservation where org_id=$1 and workflow_id=$2) as reservations`,
+      [orgId,workflowId,threadTitle])).rows;
+    return row;
+  };
+  const sourceBefore=await orphanCount(sourceWorkflow.id,sourceWorkflow.name);
+  await assert.rejects(prepareWorkflowRunForDelivery({orgId,workflowId:sourceWorkflow.id,
+    triggerKind:"subscription"},{kind:"source_change",id:randomUUID()}),
+    /Claimed workflow delivery can no longer be linked/);
+  assert.deepEqual(await orphanCount(sourceWorkflow.id,sourceWorkflow.name),sourceBefore,
+    "failed source-change link must roll back the thread, runs and spend reservation");
+  console.log("M5_SOURCE_TRIGGER_PREPARE_ROLLBACK_PASS",sourceWorkflow.id);
   const subscription=await createSubscription({orgId,workflowId:sourceWorkflow.id,
     sourceKind:"source_change",filter:{table:"references",primary_key:["id"]}});
   assert.equal((await fetch(control,{method:"POST",body:"{}"})).status,204);
@@ -126,8 +144,15 @@ try {
     goal:"Find the seeded reference and report it once",cron:"* * * * *",
     cron_timezone:"UTC",cron_enabled:true,
     updated_at:new Date(Date.now()-120_000),
-  }).returning({id:workflow_definition.id});
+  }).returning({id:workflow_definition.id,name:workflow_definition.name});
   workflows.push(cronWorkflow.id);
+  const cronBefore=await orphanCount(cronWorkflow.id,cronWorkflow.name);
+  await assert.rejects(prepareWorkflowRunForDelivery({orgId,workflowId:cronWorkflow.id,
+    triggerKind:"cron"},{kind:"schedule",id:randomUUID()}),
+    /Claimed workflow delivery can no longer be linked/);
+  assert.deepEqual(await orphanCount(cronWorkflow.id,cronWorkflow.name),cronBefore,
+    "failed cron link must roll back the thread, runs and spend reservation");
+  console.log("M5_CRON_TRIGGER_PREPARE_ROLLBACK_PASS",cronWorkflow.id);
   assert.equal((await fetch(control,{method:"POST",body:"{}"})).status,204);
   const health=await runDurableWorkflowSchedulerTick();
   assert.equal(health.status,"ok",JSON.stringify(health));

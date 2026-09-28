@@ -116,6 +116,7 @@ export {
 } from "./ttl-sweep";
 export {
   prepareWorkflowRun,
+  prepareWorkflowRunForDelivery,
   loadPreparedWorkflowRun,
   runWorkflowTurn,
   WorkflowNeedsInputError,
