@@ -401,8 +401,9 @@ A production pg-boss Work queue then created the skill, read it in a later run,
 inspected and updated the whole tree, and read the new version in another run.
 Redelivery of both writes reused the host receipt without another model call
 or user-visible result. Chromium found each completed answer exactly once before
-and after reload. Most admin writes remain unqualified; the full grouped
-OpenShell/worker/Hermes/browser regression is still required for M5c.
+and after reload. Most admin writes remain unqualified. The full grouped
+OpenShell/worker/Hermes/browser regression passed on 2026-09-28 with synthetic
+data and no real provider key; it does not qualify the excluded admin writes.
 
 **Queued workflow slice (2026-09-27):** Harness now receives the owning
 `work_run` and trusted `workflow_run` identity. Its parent Ax agent may run

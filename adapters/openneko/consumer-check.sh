@@ -57,6 +57,11 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-skill-create-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts test/integration/audit-viewer.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-live.test.ts)
+mkdir -p "$HARNESS_STATE/bin"
+ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
+export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
+export OPENNEKO_HOST_WEB_DEV=1 OPENNEKO_AGENT_HOME="$HARNESS_STATE/records-agent-home" OPENNEKO_BROKER_PORT=18123
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts)
 (cd "$product" && pnpm --filter @neko/worker exec vitest run test/jobs/harness-batch-live.test.ts)
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-approval-sandbox-live.test.ts)
@@ -79,12 +84,16 @@ if [[ ${HARNESS_M5_APPROVAL:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
 fi
 if [[ ${HARNESS_M5_RECORDS:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   mkdir -p "$HARNESS_STATE/bin"
-  ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+  ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
   export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
   export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
   export OPENNEKO_HOST_WEB_DEV=1 OPENNEKO_AGENT_HOME="$HARNESS_STATE/records-agent-home" OPENNEKO_BROKER_PORT=18123
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
-  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts)
+  if ! (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts); then
+    docker compose -p harness-m3 -f integration/openneko/compose.yml logs --tail=60 model >&2 || true
+    docker compose -p harness-m2 -f integration/compose.yml logs --tail=60 openshell-gateway >&2 || true
+    exit 1
+  fi
   if [[ ${HARNESS_M5_RECORDS_ONLY:-0} == 1 ]]; then
     echo M5_RECORDS_ONLY_PASS
     exit 0
@@ -92,7 +101,7 @@ if [[ ${HARNESS_M5_RECORDS:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
 fi
 if [[ ${HARNESS_M5_PLUGIN:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   mkdir -p "$HARNESS_STATE/bin"
-  ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+  ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
   export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
   export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
   export OPENNEKO_HOST_WEB_DEV=1 OPENNEKO_AGENT_HOME="$HARNESS_STATE/plugin-agent-home" OPENNEKO_BROKER_PORT=18123
@@ -104,7 +113,7 @@ if [[ ${HARNESS_M5_PLUGIN:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
 fi
 
   mkdir -p "$HARNESS_STATE/bin"
-  ln -s "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+  ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
   export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
   export HARNESS_PROCESS_BIN="$HARNESS_STATE/harness-process" HARNESS_PROCESS_IMAGE=harness-openneko:m3
   export HARNESS_PROCESS_BIN_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$HARNESS_PROCESS_BIN")
