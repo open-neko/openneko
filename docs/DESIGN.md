@@ -397,15 +397,41 @@ Recovery must distinguish:
 
 ## 7. Model routing and budgets
 
-Start with logical profiles such as `fast` and `reasoning`, independently configurable per stage. Use Ax for provider selection, balancing and fallback within approved profiles.
+Route by known work boundary and Ax stage, not by guessing the difficulty of an
+entire user request. Keep approved logical profiles such as `fast`, `balanced`
+and `hard`. Ax Go supports `contextOptions`, `executorOptions`,
+`responderOptions` and ordered `executorModelPolicy` entries triggered by
+consecutive error turns or matched tool namespaces. Use those stage controls
+for the host agent, and Ax provider routing/balancing within the approved
+profile. An executor escalation changes only subsequent model calls; it does
+not expand capability grants or retry a committed effect.
 
-Ax's operational balancer is not semantic task-to-model selection. The application chooses a suitable profile; Ax may select an acceptable provider/model deployment within it.
+GraphJin lookups cross into a separate, server-owned Ax agent. Configure that
+GraphJin deployment with the `hard` model/reasoning profile because the host
+cannot reliably predict how much schema discovery and query reasoning the
+lookup will require. The Harness submits the instruction and caller scope, not
+a per-request model override. GraphJin currently resolves `agent.provider`,
+`agent.model` and `agent.reasoning` in its own server config; it has no public
+per-lookup difficulty mode. Account for its remote usage and latency in the
+parent budget and telemetry.
+
+Skill selection is a different boundary: exact-name or metadata lookup should
+remain deterministic; semantic selection, if needed, can use an approved
+`fast` model through Harness/Ax. A skill file never calls a model directly.
+Similarly, a cheap distiller or responder may be appropriate when the difficult
+work has already produced verified evidence. The executor starts on the
+approved baseline and escalates on observed difficulty using Ax's policy.
+
+Ax's operational balancer is not semantic task-to-model selection. The
+application binds the work boundary and allowed profile; Ax selects an
+eligible provider/model deployment within it.
 
 Every candidate route must satisfy capability, tenant policy, data residency and provider approval requirements. Failover must preserve those constraints and provider transcript compatibility. Do not switch providers in the middle of an unresolved tool sequence without a valid continuation strategy.
 
 Budget model attempts, tokens/cost, actor steps, tool operations, wall time and child work. Use reservations/admission controls and reconciliation for hard limits. Unknown usage is not zero. Do not independently retry at every layer and multiply attempts accidentally.
 
-For variable task size, evaluate a Jev-style Ax Go decision at admission: classify
+For variable task size, evaluate a Jev-style Ax Go decision at admission for
+**budget allocation only**, independently of stage/capability model routing: classify
 an approved, bounded task summary and trusted metadata into a few workload tiers
 (short answer, multi-step investigation, artifact/data pipeline, uncertain).
 Map the class to an initial budget profile for model calls, tool operations,

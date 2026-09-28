@@ -854,9 +854,24 @@ unverified success claim; the focused durable-write and broker tests cover the
 terminal mapping, and a checkpoint test proves an `is_error` result remains
 incomplete after resume. General claim-to-receipt verification remains open.
 
-**Deliver:** approved Ax model profiles and fallback; aggregate limits across model
-stages, tools, retries and child/remote work; context compaction preserving original
-intent and unresolved operations. Qualify two approved OpenShell-bound routes first.
+**Deliver:** approved Ax model profiles and fallback by known work boundary and
+agent stage; aggregate limits across model stages, tools, retries and child/remote
+work; context compaction preserving original intent and unresolved operations.
+Qualify two approved OpenShell-bound Harness routes first. Do not assign one
+easy/medium/hard label to the entire user request: its GraphJin lookup, skill
+selection, executor turns and final response can have very different costs.
+Configure the separate GraphJin server-side Ax agent with a strong `hard` model
+and reasoning profile at deployment. The Harness cannot reliably know whether
+one lookup will need difficult discovery, and GraphJin currently owns
+`agent.provider`, `agent.model` and `agent.reasoning` server-side rather than
+accepting a caller-selected model per lookup. The Harness accounts for the
+remote call; it does not route individual GraphJin agent turns.
+Use deterministic skill metadata/exact-name lookup first; route any semantic
+skill selection through an approved cheap Ax stage, never a model call from a
+skill file. Give the outer distiller, executor and responder separate approved
+model choices. Start the executor on a baseline and use Ax Go's
+`executorModelPolicy` to escalate after observed error turns or relevant
+namespace use. Escalation must not widen broker grants or replay an effect.
 Keep durable state authoritative; prompt compaction is only a model-context projection.
 For complex tasks, retain a compact plan with evidence and success criteria;
 verify receipts and artifacts before reporting completion. Do not add another
@@ -868,8 +883,9 @@ Reserve budget before each new model or remote call. Check observed usage on eve
 event, but do not rely on a provider's final cumulative snapshot to halt a run;
 missing usage requires a conservative admission limit.
 
-Add a Jev-style budget triage experiment using Ax Go's existing Typesafe native
-decision client. At admission, classify an approved bounded task summary plus
+Add a Jev-style **budget** triage experiment using Ax Go's existing Typesafe
+native decision client. It does not select the entire run's model or override
+the GraphJin server agent. At admission, classify an approved bounded task summary plus
 trusted signals (requested artifact, admitted tool families and input size) into
 short-answer, multi-step, artifact/data-pipeline or uncertain work. Map that
 result to a versioned initial budget profile inside the host's fixed hard cap.
@@ -893,8 +909,14 @@ compaction next; edit-and-verify and cheaper-model log reduction only when measu
 benefit justifies them. Include summarization/retrieval costs and deterministic
 validation/fallback. No autonomous production harness evolution.
 
-**Verify:** real multi-route requests under rate limits and transient failures,
-with no fallback around policy denial. Long mixed-tool conversations retain pending
+**Verify:** one connected parent run uses the approved cheap route for semantic
+skill selection, the server-owned strong GraphJin route for a lookup, and a
+separately selected outer executor/responder route. Record actual model/profile,
+stage or capability, usage coverage, latency and cost for each call without
+double-counting remote GraphJin usage. Prove Ax executor escalation changes
+only subsequent model calls and that GraphJin cannot be forced onto a weaker
+model by caller input. Exercise real multi-route requests under rate limits and
+transient failures, with no fallback around policy denial. Long mixed-tool conversations retain pending
 approvals, user constraints, tool-result pairing and evidence after compaction.
 For the GraphJin-inspired executor contract, deny one invocation before any
 effect, return one typed receipt from a successful capability, and exhaust actor
