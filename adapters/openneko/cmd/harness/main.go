@@ -291,6 +291,18 @@ func main() {
 			os.Exit(2)
 		}
 		tools.Capabilities = append(tools.Capabilities, skills.SkillCapabilities()...)
+		skillRoute, routeErr := command.RouteHasSkill(os.Getenv("HARNESS_MODEL_ROUTES"))
+		if routeErr != nil {
+			fmt.Fprintln(os.Stderr, "invalid Harness skill route:", routeErr)
+			os.Exit(2)
+		}
+		if skillRoute {
+			tools.SkillCatalog, openErr = skills.SkillCatalog()
+			if openErr != nil {
+				fmt.Fprintln(os.Stderr, "staged skill catalog unavailable:", openErr)
+				os.Exit(2)
+			}
+		}
 		tools.Scope += "\nskills:" + os.Getenv("OPENNEKO_MCP_SKILLS_ROOT")
 		closeTools = append(closeTools, skills.Close)
 	}

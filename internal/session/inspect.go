@@ -181,7 +181,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 {
 		return invalid()
 	}
 	if len(s.Operations) > spec.OperationLimit() {
@@ -209,6 +209,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	attempt := uint64(1)
 	modelCalls := 0
 	modelFinished := map[uint64]bool{}
+	modelStages := map[uint64]string{}
 	observedUsage := agent.ModelUsage{}
 	started := map[uint64]string{}
 	ended := map[uint64]bool{}
@@ -224,7 +225,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		if e.Type == "run.started" && i != 0 {
 			return invalid()
 		}
-		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" {
+		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" ||
+			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
 			return invalid()
 		}
 		switch e.Type {
@@ -245,11 +247,12 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			finishedChildren[e.SpanID] = true
 		case "model.request.started":
 			modelCalls++
-			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) {
+			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) || e.Stage != "" && e.Stage != "skill_selection" {
 				return invalid()
 			}
+			modelStages[uint64(modelCalls)] = e.Stage
 		case "model.request.finished":
-			if e.CallID == 0 || e.CallID > uint64(modelCalls) || modelFinished[e.CallID] {
+			if e.CallID == 0 || e.CallID > uint64(modelCalls) || modelFinished[e.CallID] || e.Stage != modelStages[e.CallID] {
 				return invalid()
 			}
 			modelFinished[e.CallID] = true
@@ -261,6 +264,12 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			}
 			if e.Usage != nil {
 				observedUsage.AddReported(*e.Usage)
+			}
+		case "skill.selected":
+			if e.Origin != "exact" && e.Origin != "semantic" || e.Name != "" && !agent.ValidSkillName(e.Name) ||
+				e.Origin == "exact" && (e.Name == "" || e.Error != "") ||
+				e.Error != "" && e.Error != "selection_unavailable" && e.Error != "invalid_selection" {
+				return invalid()
 			}
 		case "run.resumed":
 			attempt++

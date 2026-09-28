@@ -873,8 +873,14 @@ order, distinct credential aliases, route-specific egress, recovery manifest
 propagation and Hermes isolation. The Go inspector derives the same route digest
 without model credentials and rejects a changed manifest. Live gateway
 credential replacement and worker execution still need connected proof.
-This manifest routes the existing Ax context, executor and responder stages;
-semantic skill selection is a separate planned stage, not yet implemented.
+An optional `skill` route now sends semantic skill selection through a separate
+Ax call before the main agent. Exact-name matching uses no model. Go tests
+verified the cheap selection route, catalog-validated hint, shared model-call
+admission, replay without a second request, and rejection when the accepted
+skill query changes. OpenNeko passes the bounded current request into the run
+and its recovery inspector; launcher tests cover the field. This remains local
+coverage until a connected multi-provider OpenShell run verifies credential
+replacement and the actual GraphJin server model profile.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote

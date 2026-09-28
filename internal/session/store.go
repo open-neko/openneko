@@ -50,7 +50,7 @@ func ResumeWithTools(ctx context.Context, root string, spec agent.Spec, client a
 }
 
 func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, tools agent.Tools, emit func(agent.Event) error, resume bool) (agent.Result, error) {
-	if root == "" || spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
+	if root == "" || spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || strings.TrimSpace(spec.RunID) == "" || strings.TrimSpace(spec.InputID) == "" || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || len(spec.RunID) > 128 || len(spec.InputID) > 128 || emit == nil {
 		return agent.Result{}, fmt.Errorf("invalid persistent run")
 	}
 	catalog, err := tools.CatalogHash()
@@ -157,7 +157,8 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		}
 		return raw, err
 	}
-	durable := agent.Tools{Scope: tools.Scope, OnResume: tools.OnResume, ChildReads: append([]string(nil), tools.ChildReads...)}
+	durable := agent.Tools{Scope: tools.Scope, OnResume: tools.OnResume,
+		ChildReads: append([]string(nil), tools.ChildReads...), SkillCatalog: append([]agent.SkillMetadata(nil), tools.SkillCatalog...)}
 	if tools.Lookup != nil {
 		durable.Lookup = func(ctx context.Context, instruction string) (json.RawMessage, error) {
 			return record(ctx, "lookup", "", instruction, func() (json.RawMessage, error) { return tools.Lookup(ctx, instruction) })

@@ -6,7 +6,7 @@ inside OpenShell use its injected placeholder. For stage routing, the trusted
 host instead supplies `HARNESS_MODEL_ROUTES` as JSON, for example:
 
 ```json
-{"context":"cheap","executor":"work","responder":"work","routes":[{"key":"cheap","model":"model-a","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},{"key":"work","model":"model-b","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"}]}
+{"context":"cheap","executor":"work","responder":"work","skill":"cheap","routes":[{"key":"cheap","model":"model-a","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},{"key":"work","model":"model-b","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"}]}
 ```
 
 Each route has a distinct logical key. Two routes may use the same actual model
@@ -18,6 +18,20 @@ nonsecret routing configuration is pinned in the checkpoint, so replay/resume
 rejects a changed profile. Model-call events record the route key and actual
 model. This
 does not configure GraphJin: its server-side Ax agent owns its own strong model.
+The optional `skill` key names an approved route for semantic selection among
+staged skills. The OpenNeko adapter supplies a bounded `skill_query` containing
+the current request; the Go runtime reads at most 64 staged skill names and
+frontmatter descriptions. One exact name match needs no model call. Ambiguous
+requests make one Ax selection call on the `skill` route, counted against the
+same durable model-call limit, with a 12-second deadline. The selected name must
+exist in the staged catalog; it is only a hint to read `SKILL.md` through the
+already admitted `skill_read` capability. It cannot add tools or authorize an
+effect. Without a configured `skill` route, the adapter does not load the
+catalog or change the prior checkpoint identity. With the route enabled, its
+metadata participates in checkpoint identity. Selection
+events are content-free and include route/stage, mode, latency and usage when
+the provider reports it. This local route is not yet qualified through a live
+multi-provider OpenShell gateway.
 Multi-route OpenShell transport and credential replacement still need connected
 qualification before enabling this profile in production.
 Error-turn escalation is not enabled: a local fault-injection fixture found that
@@ -40,7 +54,7 @@ replacement through a live OpenShell gateway remains to be qualified.
 One bounded JSON object on stdin followed by EOF:
 
 ```json
-{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Explain the supplied task"}
+{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Explain the supplied task","skill_query":"Explain this task"}
 ```
 
 Unknown fields, caller-supplied routing digests, blank/oversized values and

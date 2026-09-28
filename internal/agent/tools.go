@@ -22,8 +22,33 @@ type Tools struct {
 	Propose      func(context.Context, Proposal) (ProposalReceipt, error)
 	OnResume     func(context.Context, []SavedOperation) error
 	Capabilities []Capability
-	ChildReads   []string // Exact host-admitted read tools for one owned child agent.
-	Scope        string   // Trusted run-scoped admission context, never model input.
+	ChildReads   []string        // Exact host-admitted read tools for one owned child agent.
+	SkillCatalog []SkillMetadata // Host-staged catalog hints; never capability grants.
+	Scope        string          // Trusted run-scoped admission context, never model input.
+}
+
+type SkillMetadata struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+var skillName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+func ValidSkillName(name string) bool { return skillName.MatchString(name) }
+
+func (t Tools) skills() ([]SkillMetadata, error) {
+	if len(t.SkillCatalog) > 64 {
+		return nil, fmt.Errorf("too many staged skills")
+	}
+	list := append([]SkillMetadata(nil), t.SkillCatalog...)
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	for i, skill := range list {
+		if !skillName.MatchString(skill.Name) || len(skill.Description) > 500 ||
+			(i > 0 && list[i-1].Name == skill.Name) {
+			return nil, fmt.Errorf("invalid staged skill catalog")
+		}
+	}
+	return list, nil
 }
 
 // Capability is installed by trusted host code for this run. Description is
@@ -134,7 +159,17 @@ func (t Tools) CatalogHash() (string, error) {
 	for i, capability := range child {
 		childNames[i] = capability.Name
 	}
-	raw, _ := json.Marshal([]any{t.Scope, bindings, childNames})
+	skills, err := t.skills()
+	if err != nil {
+		return "", err
+	}
+	var raw []byte
+	if len(skills) == 0 {
+		// Preserve the pre-selector catalog identity for existing checkpoints.
+		raw, _ = json.Marshal([]any{t.Scope, bindings, childNames})
+	} else {
+		raw, _ = json.Marshal([]any{t.Scope, bindings, childNames, skills})
+	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
 }

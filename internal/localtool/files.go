@@ -161,6 +161,59 @@ func (f *Files) SkillCapabilities() []agent.Capability {
 	return all
 }
 
+// SkillCatalog reads only bounded frontmatter from the staged skill root.
+// Instructions are read later through skill_read after the agent selects one.
+func (f *Files) SkillCatalog() ([]agent.SkillMetadata, error) {
+	root, err := f.root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	entries, err := root.ReadDir(0)
+	if err != nil {
+		return nil, err
+	}
+	var catalog []agent.SkillMetadata
+	for _, entry := range entries {
+		if !entry.IsDir() || !agent.ValidSkillName(entry.Name()) {
+			continue
+		}
+		file, err := f.root.Open(entry.Name() + "/SKILL.md")
+		if err != nil {
+			continue
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, 8192))
+		file.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		text := string(data)
+		if !strings.HasPrefix(text, "---\n") {
+			continue
+		}
+		end := strings.Index(text[4:], "\n---")
+		if end < 0 {
+			continue
+		}
+		frontmatter := text[4 : 4+end]
+		var description string
+		for _, line := range strings.Split(frontmatter, "\n") {
+			if strings.HasPrefix(line, "description:") {
+				description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+				break
+			}
+		}
+		if len(description) > 500 {
+			description = description[:500]
+		}
+		catalog = append(catalog, agent.SkillMetadata{Name: entry.Name(), Description: description})
+		if len(catalog) > 64 {
+			return nil, fmt.Errorf("too many staged skills")
+		}
+	}
+	return catalog, nil
+}
+
 func validPath(path string) bool {
 	return len(path) <= 1024 && filepath.IsLocal(path) && filepath.Clean(path) == path && path != "."
 }

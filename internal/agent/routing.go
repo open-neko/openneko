@@ -8,6 +8,7 @@ type StageModels struct {
 	Context   string
 	Executor  string
 	Responder string
+	Skill     string
 }
 
 // RoutedClient keeps route selection with the model transport. The agent reads

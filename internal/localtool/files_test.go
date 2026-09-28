@@ -382,6 +382,25 @@ func TestSkillCapabilitiesAreReadOnlyAndConfined(t *testing.T) {
 	}
 }
 
+func TestSkillCatalogReadsOnlyStagedFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "daily-lead-union"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "daily-lead-union", "SKILL.md"), []byte("---\nname: daily-lead-union\ndescription: Build the daily report\n---\nLong instructions remain in the file."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	catalog, err := f.SkillCatalog()
+	if err != nil || len(catalog) != 1 || catalog[0].Name != "daily-lead-union" || catalog[0].Description != "Build the daily report" {
+		t.Fatalf("catalog=%+v err=%v", catalog, err)
+	}
+}
+
 func TestUploadReadsUseAxJournal(t *testing.T) {
 	uploads := t.TempDir()
 	if err := os.WriteFile(filepath.Join(uploads, "invoice.txt"), []byte("Invoice approved"), 0600); err != nil {

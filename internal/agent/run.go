@@ -20,6 +20,7 @@ type Spec struct {
 	RunID         string `json:"run_id"`
 	InputID       string `json:"input_id"`
 	Prompt        string `json:"prompt"`
+	SkillQuery    string `json:"skill_query,omitempty"` // Current request for optional skill matching.
 	MaxOperations int    `json:"max_operations,omitempty"`
 	MaxModelCalls int    `json:"max_model_calls,omitempty"`
 	// Set by the host after decoding input, then pinned by the checkpoint.
@@ -84,6 +85,7 @@ type Event struct {
 	OperationID uint64          `json:"operation_id,omitempty"`
 	CallID      uint64          `json:"call_id,omitempty"`
 	Name        string          `json:"name,omitempty"`
+	Stage       string          `json:"stage,omitempty"`
 	Origin      string          `json:"origin,omitempty"`
 	Effect      string          `json:"effect,omitempty"`
 	DurationMS  int64           `json:"duration_ms,omitempty"`
@@ -123,6 +125,10 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if err != nil {
 		return Result{}, err
 	}
+	skills, err := tools.skills()
+	if err != nil {
+		return Result{}, err
+	}
 	childReads, err := tools.childReads(admitted)
 	if err != nil {
 		return Result{}, err
@@ -130,6 +136,12 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	available := make(map[string]admittedTool, len(admitted))
 	for _, capability := range admitted {
 		available[capability.Name] = capability
+	}
+	if len(skills) > 0 {
+		capability, ok := available["skill_read"]
+		if !ok || capability.Effect != "read" {
+			return Result{}, fmt.Errorf("staged skill catalog requires skill_read")
+		}
 	}
 	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > spec.OperationLimit() || prior.ModelCalls < 0 || prior.ModelCalls > spec.ModelCallLimit() ||
 		(prior.Usage.Requests != 0 && prior.Usage.Requests != prior.ModelCalls) || prior.Usage.Reported < 0 || prior.Usage.Reported > prior.ModelCalls ||
@@ -154,7 +166,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || client == nil || emit == nil {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
 	}
 	if prior.Attempt > 1 && tools.OnResume != nil {
@@ -310,6 +322,12 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		}
 		registerSaved(runtime)
 		instruction := "Answer using the supplied context. Do not invent tool access. Distilled evidence is available to executor code as globalThis.harnessEvidence."
+		if routed, ok := client.(*RoutedClient); ok && routed.Stages.Skill != "" && spec.SkillQuery != "" && len(skills) > 0 {
+			selected := selectSkill(ctx, client, routed.Stages.Skill, spec.SkillQuery, skills, events)
+			if selected != "" {
+				instruction += " Candidate staged skill: " + selected + ". Read " + selected + "/SKILL.md with skill_read before following it; the selection does not grant any capability."
+			}
+		}
 		for _, capability := range admitted {
 			instruction += " Available JavaScript function " + capability.Name + "(input): " + capability.Description + " Input JSON schema: " + string(capability.InputSchema) + ". Effect: " + capability.Effect + "."
 		}
@@ -457,6 +475,10 @@ func (r *recorder) isPaused() bool {
 }
 
 func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo) (ax.Value, error) {
+	return r.admitModelStage(next, info, "")
+}
+
+func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimitInfo, stage string) (ax.Value, error) {
 	r.mu.Lock()
 	if r.paused {
 		r.mu.Unlock()
@@ -476,7 +498,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	r.usage.Requests++
 	id := uint64(r.modelCalls)
 	r.seq++
-	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: info.Model, Origin: info.Provider}
+	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: info.Model, Origin: info.Provider, Stage: stage}
 	if err := r.emit(e); err != nil {
 		r.err = err
 		r.cancel()
@@ -486,7 +508,7 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 	r.mu.Unlock()
 	started := time.Now()
 	response, err := next()
-	finished := Event{Type: "model.request.finished", CallID: id, Name: info.Model, Origin: info.Provider, DurationMS: time.Since(started).Milliseconds()}
+	finished := Event{Type: "model.request.finished", CallID: id, Name: info.Model, Origin: info.Provider, Stage: stage, DurationMS: time.Since(started).Milliseconds()}
 	if err != nil {
 		finished.Error = "model_request_failed"
 	}

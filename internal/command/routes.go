@@ -24,6 +24,7 @@ type routeConfig struct {
 	Context   string       `json:"context"`
 	Executor  string       `json:"executor"`
 	Responder string       `json:"responder"`
+	Skill     string       `json:"skill,omitempty"`
 	Routes    []modelRoute `json:"routes"`
 }
 
@@ -60,7 +61,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES: %w", err)
 	}
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
-		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder,
+		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder, Skill: cfg.Skill,
 	}}, digest, nil
 }
 
@@ -72,6 +73,16 @@ func RoutingDigest(raw string) (string, error) {
 	}
 	_, digest, err := parseRouteConfig(raw)
 	return digest, err
+}
+
+// RouteHasSkill lets the product adapter load staged skill metadata only when
+// the trusted routing profile enables the separate semantic selector.
+func RouteHasSkill(raw string) (bool, error) {
+	if raw == "" {
+		return false, nil
+	}
+	cfg, _, err := parseRouteConfig(raw)
+	return cfg.Skill != "", err
 }
 
 func parseRouteConfig(raw string) (routeConfig, string, error) {
@@ -98,7 +109,10 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		}
 		known[route.Key] = true
 	}
-	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder} {
+	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.Skill} {
+		if model == "" {
+			continue
+		}
 		if !known[model] {
 			return routeConfig{}, "", fmt.Errorf("HARNESS_MODEL_ROUTES stage has no approved route")
 		}
