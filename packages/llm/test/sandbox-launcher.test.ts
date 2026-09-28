@@ -18,6 +18,7 @@ import type { RunAgentBackendInput } from "../src/work/agent-core";
 import { GRAPHJIN_DIRECT_GOVERNED_POLICY } from "../src/work/graphjin-tool-policy";
 import { KNOWLEDGE_FILES, refreshKnowledgeSnapshot } from "../src/knowledge-cache";
 import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
+import { parseHarnessRouting } from "../src/work/harness-routing";
 
 /**
  * The launcher shells out to the `openshell` CLI. We mock spawn: non-exec calls
@@ -26,7 +27,7 @@ import type { RunWorkflowAgentBackendInput } from "../src/workflows/agent-core";
  * relay to `emit` and parse into the AgentRunResult.
  */
 const h = vi.hoisted(() => {
-  const calls: { args: string[]; stdin?: string }[] = [];
+  const calls: { args: string[]; stdin?: string; env?: Record<string,string> }[] = [];
   const state = {
     inspections: [] as Array<string>,
     operations: [] as Array<{id:number;instruction:string;result:unknown}>,
@@ -38,8 +39,9 @@ const h = vi.hoisted(() => {
     collideOnNextCreate: false,
     execLines: undefined as string[] | undefined,
   };
-  function spawn(_cmd: string, args: string[]) {
-    const call: { args: string[]; stdin?: string } = { args };
+  function spawn(_cmd: string, args: string[], options?: {env?: Record<string,string>}) {
+    const call: { args: string[]; stdin?: string; env?: Record<string,string> } = { args,
+      env: options?.env?.HARNESS_MODEL_ROUTES ? {HARNESS_MODEL_ROUTES:options.env.HARNESS_MODEL_ROUTES} : undefined };
     calls.push(call);
     const inspector = args.includes("/usr/local/bin/harness-inspect") || _cmd.endsWith("harness-inspect");
     const inspection = inspector ? state.inspections.shift() : undefined;
@@ -934,6 +936,50 @@ describe("makeSandboxRunCore", () => {
       expect(tokenFor.mock.calls[0]?.[0]).not.toHaveProperty("memoryRead");
       expect(tokenFor.mock.calls[0]?.[0]).not.toHaveProperty("libraryRead");
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("attaches only Harness route providers before execution and leaves Hermes on its primary route", async () => {
+    const root = await mkdtemp(join(tmpdir(), "harness-routes-test-"));
+    try {
+      const routing = parseHarnessRouting(JSON.stringify({context:"cheap",executor:"work",responder:"work",routes:[
+        {key:"cheap",model:"fixture",url:"https://cheap.example/v1",provider:"cheap-provider",credential_env:"CHEAP_API_KEY",api_key_env:"HARNESS_CHEAP_KEY"},
+        {key:"work",model:"fixture",url:"https://work.example/v1",provider:"work-provider",credential_env:"WORK_API_KEY",api_key_env:"HARNESS_WORK_KEY"},
+      ]}));
+      const core = makeSandboxRunCore({agentImage:"test",warmPoolSize:0,onLog:()=>{},modelProvider:"legacy-provider",
+        modelHosts:[{host:"legacy.example"}],keyAliases:[{from:"api_key",to:"GEMINI_API_KEY"}],harnessRouting:routing});
+      const harness = {...fakeInput(async()=>{}, {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunAgentBackendInput["backend"]),workspace:fullWorkspace(root)};
+      h.state.execLines = [];
+      await expect(core(harness)).rejects.toThrow("without a result");
+      const create = h.calls.find(call=>call.args.includes("create"))!.args;
+      expect(create.slice(create.indexOf("--provider"),create.indexOf("--provider")+2)).toEqual(["--provider","cheap-provider"]);
+      expect(create).not.toContain("legacy-provider");
+      const attachIndex = h.calls.findIndex(call=>call.args.includes("attach") && call.args.includes("work-provider"));
+      const execIndex = h.calls.findIndex(call=>call.args.includes("exec") && !call.args.includes("/usr/local/bin/harness-inspect"));
+      expect(attachIndex).toBeGreaterThan(h.calls.findIndex(call=>call.args.includes("create")));
+      expect(attachIndex).toBeLessThan(execIndex);
+      const command = h.calls[execIndex]!.args.join(" ");
+      expect(command).toContain("HARNESS_MODEL_ROUTES");
+      expect(command).toContain('HARNESS_CHEAP_KEY="$CHEAP_API_KEY"');
+      expect(command).toContain('HARNESS_WORK_KEY="$WORK_API_KEY"');
+      expect(command).not.toContain("GEMINI_API_KEY");
+    h.state.inspections = [JSON.stringify({version:1,run_id:harness.runId,outcome:"outcome_unknown",can_resume:false,operations:[]})];
+    await expect(core(harness)).rejects.toThrow();
+    expect(h.calls.some(call=>
+      (call.args.includes("/usr/local/bin/harness-inspect") && call.args.some(arg=>arg.startsWith("HARNESS_MODEL_ROUTES="))) ||
+      (call.env?.HARNESS_MODEL_ROUTES === routing.manifest && call.args.some(arg=>arg.includes("harness-inspect")))
+    )).toBe(true);
+      expect(JSON.stringify(jobCapture.policies)).toContain("cheap.example");
+      expect(JSON.stringify(jobCapture.policies)).not.toContain("legacy.example");
+
+      h.calls.length = 0;
+      h.state.execLines = undefined;
+      await core(fakeInput(async()=>{}));
+      const hermesCreate = h.calls.find(call=>call.args.includes("create"))!.args;
+      expect(hermesCreate).toEqual(expect.arrayContaining(["--provider","legacy-provider"]));
+      expect(h.calls.some(call=>call.args.includes("work-provider"))).toBe(false);
+      const hermesCommand = h.calls.find(call=>call.args.includes("exec"))!.args.join(" ");
+      expect(hermesCommand).not.toContain("HARNESS_MODEL_ROUTES");
+    } finally { await rm(root,{recursive:true,force:true}); }
   });
 
   it.each(["ready", "busy", "unknown", "exhausted", "broker-unknown", "stale-active", "inventory-full", "inventory-invalid", "transfer-mismatch", "absent"])("handles interrupted Harness continuation: %s", async mode => {

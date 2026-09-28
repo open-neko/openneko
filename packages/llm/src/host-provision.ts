@@ -29,6 +29,7 @@ import {
   verifyOpenShellGateway,
   type AgentRuntimeLaunchConfig,
 } from "./work/sandbox-launcher";
+import { parseHarnessRouting } from "./work/harness-routing";
 
 const HERMES_DEFAULT_MAX_TURNS = 25;
 const HERMES_DELEGATION_DEFAULT_MAX_ITERATIONS = 50;
@@ -513,6 +514,7 @@ const OPERATOR_AGENT_ENV = {
   keyEnv: process.env.OPENNEKO_AGENT_MODEL_KEY_ENV || "",
   hermesHome: process.env.OPENNEKO_AGENT_HERMES_HOME || "",
 };
+const OPERATOR_HARNESS_ROUTING = process.env.OPENNEKO_HARNESS_ROUTING || "";
 
 function modelHosts(value: string): ProviderEndpoint[] {
   return value
@@ -572,6 +574,7 @@ function agentRuntimeLaunchConfig(args: {
       ? { keyAliases: [{ from: credentialName, to: keyEnv }] }
       : {}),
     ...(hermesHome ? { hermesHomeHostPath: hermesHome } : {}),
+    ...(OPERATOR_HARNESS_ROUTING ? { harnessRouting: parseHarnessRouting(OPERATOR_HARNESS_ROUTING) } : {}),
   };
 }
 

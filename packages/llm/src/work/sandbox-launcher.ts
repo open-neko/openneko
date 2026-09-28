@@ -28,6 +28,7 @@ import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
 import { VENDORED_HERMES_MODEL_BINARY, VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
+import { parseHarnessRouting, type HarnessRouting } from "./harness-routing";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { copySkillOverrides } from "./workspace";
@@ -127,6 +128,8 @@ export interface SandboxLauncherOptions {
   memory?: string;
   /** OpenShell provider holding the model key — the proxy injects it; never in the box. */
   modelProvider?: string;
+  /** Harness-only, operator-approved OpenShell provider and Ax route manifest. */
+  harnessRouting?: HarnessRouting;
   /** Model endpoint egress; always scoped to the vendored Hermes executable. */
   modelHosts?: ReadonlyArray<{ host: string; port?: number }>;
   /** Extra env exported into the exec sh-wrapper (e.g. HERMES_HOME). Values must be safe. */
@@ -167,7 +170,7 @@ export interface SandboxLauncherOptions {
  */
 export type AgentRuntimeLaunchConfig = Pick<
   SandboxLauncherOptions,
-  "modelProvider" | "modelHosts" | "keyAliases" | "hermesHomeHostPath"
+  "modelProvider" | "modelHosts" | "keyAliases" | "hermesHomeHostPath" | "harnessRouting"
 >;
 
 type RunCore = (input: RunAgentBackendInput) => Promise<AgentRunResult>;
@@ -630,6 +633,10 @@ function makeSandboxCore(
     input: SandboxRunInput, ownershipSignal?: AbortSignal, journal: HarnessRunJournal = admitHarnessLaunch,
   ): Promise<AgentRunResult> {
     const pool = kind === "work" && input.backend.id === "hermes" ? getSandboxPool(opts, input.workspace) : undefined;
+    const routing = input.backend.id === "harness" ? opts.harnessRouting : undefined;
+    const providers = routing?.providers ?? (opts.modelProvider ? [opts.modelProvider] : []);
+    const modelEndpoints = routing?.modelHosts ?? opts.modelHosts ?? [];
+    const credentialAliases = routing?.keyAliases ?? opts.keyAliases;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
     const processEligible = input.backend.id === "harness" && kind === "work" &&
@@ -720,9 +727,11 @@ function makeSandboxCore(
       try { await access(snapshot); local = true; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       const inspect = (args:string[], payload:string) => local
-        ? runProcessOnce(harnessInspector(), args, 30_000, signal, payload, {NODE_ENV: process.env.NODE_ENV, HARNESS_STATE_DIR: state})
+        ? runProcessOnce(harnessInspector(), args, 30_000, signal, payload, {NODE_ENV: process.env.NODE_ENV, HARNESS_STATE_DIR: state,
+            ...(routing ? {HARNESS_MODEL_ROUTES: routing.manifest} : {})})
         : run(["sandbox", "exec", "-n", name, "--no-tty", "--", "/usr/bin/env",
             `HARNESS_STATE_DIR=${path.posix.join(boxWorkspace.runRoot, ".harness")}`,
+            ...(routing ? [`HARNESS_MODEL_ROUTES=${routing.manifest}`] : []),
             "/usr/local/bin/harness-inspect", ...args], 30_000, payload);
       let output: string;
       try {
@@ -810,7 +819,9 @@ function makeSandboxCore(
               image: processBinding.image, openshell: processBinding.openshell,
               gateway: processBinding.gateway} : null,
             principal: !isJob ? (input as RunAgentBackendInput).sandboxUser ?? null : null,
-            environment: opts.env, gateway: opts.gatewayName ?? opts.gatewayEndpoint ?? null, image: opts.agentImage, provider: opts.modelProvider, endpoints: opts.modelHosts },
+            environment: opts.env, harnessRouting: routing?.manifest ?? null,
+            gateway: opts.gatewayName ?? opts.gatewayEndpoint ?? null, image: opts.agentImage,
+            providers, endpoints: modelEndpoints },
           reconcile,
           prompt => { acceptedPrompt = prompt; },
         ))
@@ -926,7 +937,7 @@ function makeSandboxCore(
         })()
       : [];
     const egressRules: SandboxEgressRule[] = [
-      ...(opts.modelHosts ?? []).map((endpoint) => ({
+      ...modelEndpoints.map((endpoint) => ({
         ...endpoint,
         binary: input.backend.id === "harness" ? VENDORED_HARNESS_MODEL_BINARY : VENDORED_HERMES_MODEL_BINARY,
       })),
@@ -1002,11 +1013,11 @@ function makeSandboxCore(
         // derive it from a prompt, agent backendState, or a browser claim.
         const session = reuse?.principalId && reuse.authorizationRevision ? {
           key: JSON.stringify([input.orgId, reuse.principalId]),
-          modelScope: createHash("sha256").update(JSON.stringify([opts.modelProvider, input.backend.id, input.backend.configuredIdentity])).digest("hex"),
+          modelScope: createHash("sha256").update(JSON.stringify([providers, routing?.manifest, input.backend.id, input.backend.configuredIdentity])).digest("hex"),
           authorizationScope: createHash("sha256").update(reuse.authorizationRevision).digest("hex"),
           scope: createHash("sha256").update(JSON.stringify([
-            reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
-            opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
+            reuse.authorizationRevision, providers, modelEndpoints,
+            credentialAliases, routing?.manifest, opts.env, input.backend.id, input.backend.configuredIdentity,
             workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.ruleWriteEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
@@ -1025,8 +1036,8 @@ function makeSandboxCore(
           const bindPolicy = async () => {
             // A reused slot has the same current authorization/model scope.
             if (lease!.reused) return;
-            if (opts.modelProvider) {
-              await timed("warm_provider", () => run(["sandbox", "provider", "attach", name, opts.modelProvider!], 60_000));
+            for (const provider of providers) {
+              await timed("warm_provider", () => run(["sandbox", "provider", "attach", name, provider], 60_000));
             }
             await timed("warm_policy", () => run(["policy", "set", name, "--policy", policyFile, "--wait", "--timeout", "60"], 65_000));
           };
@@ -1073,7 +1084,7 @@ function makeSandboxCore(
           "--no-auto-providers",
           ...sandboxOwnerLabelArgs(),
           ...(admission ? ["--label", "openneko.recovery=retain"] : []),
-          ...(opts.modelProvider ? ["--provider", opts.modelProvider] : []),
+          ...(providers[0] ? ["--provider", providers[0]] : []),
           "--policy",
           policyFile,
           "--upload",
@@ -1123,6 +1134,9 @@ function makeSandboxCore(
           }
         }
         sandboxCreated = true;
+        for (const provider of providers.slice(1)) {
+          await timed("attach_route_provider", () => run(["sandbox", "provider", "attach", name, provider], 60_000));
+        }
       }
 
       log(
@@ -1171,13 +1185,14 @@ function makeSandboxCore(
                 }
               : {}),
             ...(opts.env ?? {}),
+            ...(routing ? { HARNESS_MODEL_ROUTES: routing.manifest } : {}),
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: actionGrants.length ? JSON.stringify(actionGrants.map(action => action.kind)) : "" } : {}),
             ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit),
               OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
           },
-          keyAliases: opts.keyAliases,
+          keyAliases: credentialAliases,
         }),
         input.emit,
         // Must outlive the in-box turn budget with margin, so a long turn
@@ -1405,6 +1420,7 @@ export function sandboxLauncherOptionsFromEnv(
     modelHosts: hosts.map((host) => ({ host })),
     keyAliases: keyEnv ? [{ from: credName, to: keyEnv }] : undefined,
     hermesHomeHostPath: process.env.OPENNEKO_AGENT_HERMES_HOME || undefined,
+    harnessRouting: process.env.OPENNEKO_HARNESS_ROUTING ? parseHarnessRouting(process.env.OPENNEKO_HARNESS_ROUTING) : undefined,
   }, broker);
 }
 

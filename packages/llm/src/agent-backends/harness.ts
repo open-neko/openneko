@@ -13,19 +13,21 @@ export class HarnessBackend implements AgentBackend {
     get model() { return this.configuredIdentity?.model; }
     async run(opts: AgentRunOptions): Promise<AgentRunResult> {
         const env = { ...process.env };
-        const config = parse(readFileSync(join(env.HERMES_HOME ?? "", "config.yaml"), "utf8")) as {
+        const routed = Boolean(env.HARNESS_MODEL_ROUTES);
+        const config = (routed ? {} : parse(readFileSync(join(env.HERMES_HOME ?? "", "config.yaml"), "utf8"))) as {
             model?: {
                 provider?: string;
                 default?: string;
                 base_url?: string;
             };
         };
-        // First approved route is OpenAI-compatible; never reinterpret native Anthropic/Gemini.
-        if (!["openai", "openai-api", "custom"].includes(config.model?.provider ?? "")) {
+        // The legacy one-route path uses Hermes's OpenAI-compatible config.
+        // Host-approved multi-route manifests are parsed and pinned by Go.
+        if (!routed && !["openai", "openai-api", "custom"].includes(config.model?.provider ?? "")) {
             throw new Error("Harness M3 requires an OpenAI-compatible model route");
         }
         const lookupRead = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_LOOKUP_READ !== "0";
-        if ((lookupRead && (!env.OPENNEKO_BROKER_URL || !env.OPENNEKO_BROKER_TOKEN)) || !env.api_key) {
+        if ((lookupRead && (!env.OPENNEKO_BROKER_URL || !env.OPENNEKO_BROKER_TOKEN)) || (!routed && !env.api_key)) {
             throw new Error("Harness M3 requires a scoped broker and OpenShell model placeholder");
         }
         const runId = opts.runId;
