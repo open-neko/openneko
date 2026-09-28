@@ -86,6 +86,11 @@ result on Work/action redelivery. Chromium checks each answer and completed
 approval card across reload. Expect `M5_CONNECTED_USER_ADMIN_PASS` and the
 `M5_WEB_USER_*_PASS` markers; the isolated stack and web process are stopped.
 
+To run the user, group and data-source administration gates together, use
+`HARNESS_M5_FAST=1 HARNESS_M5_ADMIN_GROUPED=1`. This seeds once, runs all
+three queue fixtures against the same isolated stack, and checks all seven
+Work cards with one web server. Expect `M5_CONNECTED_ADMIN_GROUPED_PASS`.
+
 For the focused group-creation gate, replace the flag with
 `HARNESS_M5_GROUP_ADMIN_ONLY=1`. A queued Work turn proposes a group,
 and the worker creates it only after approval. A disabled requester or
