@@ -385,9 +385,14 @@ validates the model's bounded text/kind/scope, and persists host operation inten
 before calling OpenNeko's existing memory service. A successful connected
 OpenShell/Ax turn stored one real memory row and matching host/Go receipts.
 If the host commits the memory but loses its receipt, the outcome stays unknown
-and later effects are fenced; no automatic redispatch is permitted. Workflow
-definition and rule writes are limited to the separately qualified paths below;
-skill and most admin writes remain unqualified. The full connected queue and
+and later effects are fenced; no automatic redispatch is permitted. A direct
+`skill_create` capability now binds the Work run to its trusted org skills root,
+rechecks the current actor, journals intent and publishes a complete new skill
+directory. A connected Ax/OpenShell turn created a skill with a supporting file;
+a separate run staged and read its `SKILL.md`, and an ungranted token was denied.
+Existing skill updates remain excluded until a versioned replacement contract is
+qualified. Workflow definition and rule writes are limited to the separately
+qualified paths below; most admin writes remain unqualified. The full connected queue and
 browser gates remain required before claiming M5c complete.
 
 **Queued workflow slice (2026-09-27):** Harness now receives the owning
@@ -519,7 +524,7 @@ Source inventory for the next M5c slice:
 | `neko_pack_actions` / `neko_plugin_actions` in `work/tools.ts` | Policy evaluation, action request, optional enqueue and wait | Pack proposal uses M4 approval/claim path; plugin auto mode needs a separately qualified queue/effect receipt before admission |
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. The real GraphJin websocket reconnect/replay gate passed; qualify trigger crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
-| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save and skill creation remain excluded. Add idempotency before any automatic retry of a lost save receipt. |
+| `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save remains excluded. Direct `skill_create` journals and publishes a new host-owned org skill; existing skill update remains excluded. Add idempotency before any automatic retry of a lost save receipt. |
 | Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 
@@ -875,7 +880,7 @@ authorized actions.
 1. Qualify remaining product writes at their actual effect boundaries. A real
    installed-plugin provider effect still needs an available provider instance;
    the synthetic installed-plugin effect and Records receipt recovery pass.
-2. Qualify remaining skill/admin writes and trigger crash edges at their host
+2. Qualify versioned skill updates, remaining admin writes and trigger crash edges at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
    product boundary. Use focused connected gates during iteration.

@@ -48,8 +48,13 @@ if [[ ${HARNESS_M5_WS_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   echo M5_CONNECTED_GRAPHJIN_WEBSOCKET_PASS
   exit 0
 fi
+if [[ ${HARNESS_M5_SKILL_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-skill-create-live.test.ts)
+  echo M5_SKILL_CREATE_PASS
+  exit 0
+fi
 if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
-(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts test/integration/audit-viewer.test.ts)
+(cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts test/harness-memory-live.test.ts test/harness-memory-write-live.test.ts test/harness-skill-create-live.test.ts test/harness-run-journal-live.test.ts test/harness-operation-live.test.ts test/harness-proposal-live.test.ts test/harness-effect-live.test.ts test/integration/action-flow.test.ts test/integration/workflow-store.test.ts test/integration/audit-viewer.test.ts)
 export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18120 RECORDS_PG_USER=fixture RECORDS_PG_PASSWORD=fixture RECORDS_PG_DATABASE=fixture
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-live.test.ts)
 (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-records-data-live.test.ts)

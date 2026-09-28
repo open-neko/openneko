@@ -116,6 +116,38 @@ func MemorySave(base, token string) (func(context.Context, json.RawMessage, stri
 	}, nil
 }
 
+// SkillCreate publishes a new org skill through the trusted host. The host
+// checks the current Work actor, journals intent and stages files before publish.
+func SkillCreate(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {
+	call, err := bind(base, token, "/v1/harness/skill/create")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, input json.RawMessage, binding string) (json.RawMessage, error) {
+		id := agent.OperationID(ctx)
+		if id < 1 || id > 32 || len(binding) != 64 || len(input) == 0 || len(input) > 131072 || !json.Valid(input) {
+			return nil, fmt.Errorf("invalid skill create operation")
+		}
+		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
+			Instruction string `json:"instruction"`
+			Binding     string `json:"binding"`
+		}{id, string(input), binding})
+		data, err := call(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			OK   bool   `json:"ok"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(data, &receipt) != nil || !receipt.OK || receipt.Name == "" {
+			return nil, fmt.Errorf("skill create was not confirmed by broker")
+		}
+		return data, nil
+	}, nil
+}
+
 // WorkflowSave submits a version-guarded definition to the host. The broker
 // supplies run identity and journals the effect before OpenNeko persists it.
 func WorkflowSave(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {

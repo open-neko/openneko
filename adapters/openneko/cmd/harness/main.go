@@ -80,6 +80,31 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_SKILL_CREATE"); enabled != "" {
+		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {
+			fmt.Fprintln(os.Stderr, "invalid skill create binding")
+			os.Exit(2)
+		}
+		create, err := broker.SkillCreate(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "skill create broker unavailable:", err)
+			os.Exit(2)
+		}
+		var binding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "skill_create", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Create a new shared OpenNeko skill only when the operator asks. Use a new lowercase hyphenated name. Supporting files are staged with SKILL.md and published together. Skill files contain instructions and scripts; they must not make direct model calls. Existing skill names cannot be replaced by this tool.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name","description","body"],"properties":{"name":{"type":"string","pattern":"^[a-z0-9]+(-[a-z0-9]+)*$","maxLength":64},"description":{"type":"string","minLength":1,"maxLength":1024},"body":{"type":"string","minLength":1,"maxLength":60000},"license":{"type":"string","maxLength":200},"compatibility":{"type":"string","maxLength":500},"metadata":{"type":"object","additionalProperties":{"type":"string","maxLength":2048}},"allowedTools":{"type":"string","maxLength":1000},"files":{"type":"array","maxItems":10,"items":{"type":"object","required":["path","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":240},"content":{"type":"string","maxLength":32000}},"additionalProperties":false}}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return create(ctx, raw, binding)
+			},
+		})
+		binding, err = tools.Binding("skill_create")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid skill create capability:", err)
+			os.Exit(2)
+		}
+	}
 	if enabled := os.Getenv("OPENNEKO_HARNESS_WORKFLOW_SAVE"); enabled != "" {
 		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {
 			fmt.Fprintln(os.Stderr, "invalid workflow save binding")

@@ -269,6 +269,14 @@ func main() {
 			http.Error(w, "missing saved memory receipt", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-skill-create-fixture" && !strings.Contains(string(req.Messages), "fixture-lead-review/SKILL.md") {
+			http.Error(w, "missing published skill receipt", 422)
+			return
+		}
+		if n == 2 && req.Model == "harness-skill-read-fixture" && !strings.Contains(string(req.Messages), "Read the selected CSV") {
+			http.Error(w, "missing staged skill content", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-workflow-list-fixture" && !strings.Contains(string(req.Messages), "Fixture workflow") {
 			http.Error(w, "missing workflow list evidence", 422)
 			return
@@ -369,7 +377,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -435,6 +443,10 @@ func main() {
 			}
 		} else if req.Model == "harness-memory-save-fixture" {
 			responses = []string{`{"javascriptCode":"final('Save the operator rule', {})"}`, `{"javascriptCode":"const receipt=memory_save({text:'Never close a lead without a verified owner',kind:'business_rule',scope:'thread'}); final('Report saved memory',{receipt});"}`, `{"answer":"Saved the operator rule."}`}
+		} else if req.Model == "harness-skill-create-fixture" {
+			responses = []string{`{"javascriptCode":"final('Create the requested skill', {})"}`, `{"javascriptCode":"const receipt=skill_create({name:'fixture-lead-review',description:'Review a lead CSV',body:'Read the selected CSV and report the owner for each lead.',files:[{path:'scripts/check.py',content:'print(\"skill fixture\")\\n'}]}); final('Report the created skill',{receipt});"}`, `{"answer":"Created the fixture-lead-review skill."}`}
+		} else if req.Model == "harness-skill-read-fixture" {
+			responses = []string{`{"javascriptCode":"final('Read the installed skill', {})"}`, `{"javascriptCode":"const skill=skill_read({path:'fixture-lead-review/SKILL.md'}); if(!skill.content.includes('Read the selected CSV')) throw Error('installed skill missing'); final('Report installed skill',{skill});"}`, `{"answer":"The installed skill instructs me to read the selected CSV."}`}
 		} else if req.Model == "harness-workflow-list-fixture" {
 			responses = []string{`{"javascriptCode":"final('List the saved workflows', {})"}`, `{"javascriptCode":"const workflows=mcp_neko_workflow_builder_list_workflows({limit:5}); final('Report workflows',{workflows});"}`, `{"answer":"The saved workflow is Fixture workflow."}`}
 		} else if req.Model == "harness-library-fixture" {
