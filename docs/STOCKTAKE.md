@@ -100,6 +100,11 @@ passed from a real OpenShell plugin VM (`/tmp/harness-m5-plugin-provider-fixed.l
 one approved HTTP effect, one recorded receipt and no second call on duplicate
 execution. It builds the current plugin-base Dockerfile locally because the
 older v3.5.6 image lacks the OCI `USER` required by this OpenShell version.
+The final backend/transport regression then exited 0 at Harness `faee1db` and
+OpenNeko `fe7df069` (`/tmp/harness-m5-final-connected.log`). It passed the
+queued Work/workflow, GraphJin batch, child recovery and Hermes cold/warm gates;
+both isolated stacks were removed. The optional browser checks passed in the
+earlier source-bound regression; the final changes did not touch web behavior.
 The generic Go MCP adapter now preserves bounded resource links and structured
 content as separate result fields, while retaining text and `is_error`. Its
 focused SDK fixture covers paginated discovery, tool errors, unsupported image

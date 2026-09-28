@@ -964,9 +964,9 @@ authorized actions.
 
 ## Immediate order
 
-1. Close the M5 admitted-capability gate with one final connected regression
-   and explicit exclusions. The real installed-plugin provider fixture now
-   passes; customer Daily Lead Union data remains unconnected.
+1. M5a–M5e admitted-capability gate is closed with connected regressions and
+   explicit exclusions in [M5 exit](M5-EXIT.md). Customer Daily Lead Union data
+   remains unconnected.
 2. Qualify excluded product/admin writes for a later rollout cohort only after
    their host effect boundaries and recovery rules are defined. Retain the
    accepted idle cancellation warning separately.
