@@ -155,3 +155,75 @@ func TestSingleModelRequestOvershootFailsTerminally(t *testing.T) {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
+
+func TestGraphJinLookupSharesModelTokenAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, runID string
+		limit       int64
+		lookups     int
+	}{
+		{name: "denied before remote dispatch", runID: "remote-denied", limit: 55_000, lookups: 0},
+		{name: "remote usage stops next model call", runID: "remote-spent", limit: 74_000, lookups: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			answers := []string{`{"javascriptCode":"final('Need lookup',{})"}`, `{"javascriptCode":"const data=lookup('find the row'); final('Done',{data});"}`}
+			var modelCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				index := int(modelCalls.Add(1)) - 1
+				if index >= len(answers) {
+					http.Error(w, "unexpected model call", http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop")),
+					"usage", ax.Object("prompt_tokens", 4000, "completion_tokens", 1000, "total_tokens", 5000)))
+			}))
+			defer server.Close()
+			client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+			lookups := 0
+			lookup := func(context.Context, string) (json.RawMessage, error) {
+				lookups++
+				return json.RawMessage(`{"response":{"status":"answered","usage":{"prompt_tokens":50000,"completion_tokens":10000,"total_tokens":60000}}}`), nil
+			}
+			result, err := Run(context.Background(), Spec{Version: 1, RunID: tc.runID, InputID: "input", Prompt: "Find row", MaxModelTokens: tc.limit},
+				client, lookup, func(Event) error { return nil })
+			if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || modelCalls.Load() != 2 || lookups != tc.lookups {
+				t.Fatalf("result=%+v err=%v model=%d lookups=%d", result, err, modelCalls.Load(), lookups)
+			}
+		})
+	}
+}
+
+func TestGraphJinUsageChargeDoesNotCountNestedEvidence(t *testing.T) {
+	result := json.RawMessage(`{"response":{"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8},"data":{"usage":{"total_tokens":900000}}}}`)
+	if got := lookupTokenCharge(result); got != 8 {
+		t.Fatalf("charged nested usage: %d", got)
+	}
+	if got := lookupTokenCharge(json.RawMessage(`{"response":{"data":{"usage":{"total_tokens":900000}}}}`)); got != remoteLookupReservation {
+		t.Fatalf("missing usage charge=%d", got)
+	}
+}
+
+func TestResumedGraphJinUsageCannotResetTokenAllowance(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "unexpected model call", http.StatusBadRequest)
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	prior := Continuation{Attempt: 2, Sequence: 4, ModelCalls: 2, MaxReportedCallTokens: 5000,
+		Usage: ModelUsage{Requests: 2, Reported: 2, InputTokens: 8000, OutputTokens: 2000, TotalTokens: 10000},
+		Operations: []SavedOperation{{ID: 1, Instruction: "find the row", Finished: true,
+			Result: json.RawMessage(`{"response":{"status":"answered","usage":{"total_tokens":60000}}}`)}},
+	}
+	result, err := RunAttempt(context.Background(), Spec{Version: 1, RunID: "remote-resume", InputID: "input", Prompt: "Find row", MaxModelTokens: 74_000},
+		client, func(context.Context, string) (json.RawMessage, error) {
+			t.Fatal("lookup redispatched")
+			return nil, nil
+		},
+		func(Event) error { return nil }, prior)
+	if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || calls.Load() != 0 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+}

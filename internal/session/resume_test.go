@@ -230,6 +230,47 @@ func TestObservedTokenReservationSurvivesResume(t *testing.T) {
 	}
 }
 
+func TestGraphJinTokenChargeSurvivesDurableResume(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "graphjin-token-resume", InputID: "input", Prompt: "Find row", MaxModelTokens: 74_000}
+	answers := []string{`{"javascriptCode":"final('Use lookup',{})"}`, `{"javascriptCode":"const data=lookup('find the row'); final('Done',{data});"}`}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 4000, "completion_tokens", 1000, "total_tokens", 5000)))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	var lookups int
+	lookup := func(context.Context, string) (json.RawMessage, error) {
+		lookups++
+		return json.RawMessage(`{"response":{"status":"answered","usage":{"total_tokens":60000}}}`), nil
+	}
+	_, err := Run(context.Background(), root, spec, client, lookup, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || calls.Load() != 2 || lookups != 1 {
+		t.Fatalf("first attempt err=%v calls=%d lookups=%d", err, calls.Load(), lookups)
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume {
+		t.Fatalf("recovery=%+v err=%v", report, err)
+	}
+	result, err := Resume(context.Background(), root, spec, client, lookup, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "model_token_budget_exceeded" || calls.Load() != 2 || lookups != 1 {
+		t.Fatalf("result=%+v err=%v calls=%d lookups=%d", result, err, calls.Load(), lookups)
+	}
+}
+
 func TestResumeRefusesUnknownAndPersistsAttemptBudgetBeforeModel(t *testing.T) {
 	s := prefix()
 	root, _ := fixture(t, s)

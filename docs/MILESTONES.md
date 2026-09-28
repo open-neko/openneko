@@ -831,7 +831,7 @@ excluded from the rollout cohort. Do not claim full Hermes parity while they are
 
 ## M6 — Ax routing, context and efficiency
 
-**Local status (2026-09-27):** Ax's invocation-scoped rate limiter now admits a
+**Local status (2026-09-28):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably
 recorded. A trusted `max_model_calls` limit (16 by default, at most 64) is
 enforced across Ax attempts; resume reconstructs spent calls from the checkpoint.
@@ -885,10 +885,16 @@ including skill selection and child turns. It charges missing usage
 conservatively, uses the largest reported call as the next reservation, and
 reconstructs spent usage from events on resume. A provider can exceed the
 reservation within one call; the run then fails and makes no further model
-request. OpenNeko pins a 1M-token admission ceiling in its accepted run identity and
-lowers it to a workflow API claim's per-run token ceiling. Local fixtures
-cover reported usage, missing usage and interruption/resume. Remote GraphJin
-usage and provider cost still need admission accounting.
+request. OpenNeko pins a 1M-token admission ceiling in its accepted run
+identity and lowers it to a workflow API claim's per-run token ceiling. Local
+fixtures cover reported usage, missing usage and interruption/resume.
+GraphJin lookup admission now reserves 49,152 tokens for its 12-step server
+agent before broker dispatch, then charges the server's flat usage receipt
+once. A missing receipt retains the reservation. Saved lookup results rebuild
+this charge on resume; a depleted allowance blocks both another lookup and
+another Ax call. OpenNeko's queued API ceiling now includes the same inner
+receipt or conservative missing-usage charge. Cost and model-profile checks
+still require a connected GraphJin/OpenShell qualification.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote

@@ -23,7 +23,7 @@ type Spec struct {
 	SkillQuery     string `json:"skill_query,omitempty"` // Current request for optional skill matching.
 	MaxOperations  int    `json:"max_operations,omitempty"`
 	MaxModelCalls  int    `json:"max_model_calls,omitempty"`
-	MaxModelTokens int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax model usage.
+	MaxModelTokens int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax plus GraphJin lookup tokens.
 	// Set by the host after decoding input, then pinned by the checkpoint.
 	HostRoutingDigest string `json:"host_routing_digest,omitempty"`
 }
@@ -180,7 +180,12 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	defer cancel()
 	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens}
 	events.usage.Requests = prior.ModelCalls
-	if spec.MaxModelTokens > 0 && events.chargedModelTokens() > spec.MaxModelTokens {
+	for _, op := range prior.Operations {
+		if op.Name() == "lookup" {
+			events.remoteTokens += lookupTokenCharge(op.Result)
+		}
+	}
+	if spec.MaxModelTokens > 0 && events.chargedTokens() > spec.MaxModelTokens {
 		events.modelTokenOverspent = true
 	}
 	if prior.Attempt == 1 {
@@ -237,6 +242,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
+				if events.modelTokenBudgetExceeded() {
+					return ax.Object("error", "model_token_budget_exceeded"), nil
+				}
 				if events.isPaused() {
 					return nil, fmt.Errorf("turn is awaiting operator input")
 				}
@@ -264,6 +272,10 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					toolFailed = true
 					return ax.Object("error", name+"_limit_exceeded"), nil
 				}
+				if name == "lookup" && !events.admitRemoteLookup() {
+					toolFailed = true
+					return ax.Object("error", "model_token_budget_exceeded"), nil
+				}
 				operationID++
 				events.send(Event{Type: "tool.started", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: operationID})
 				startedAt := time.Now()
@@ -273,6 +285,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					return nil, err
 				}
 				raw, err := capability.invoke(WithOperationID(ctx, operationID), instruction)
+				if name == "lookup" {
+					events.finishRemoteLookup(raw)
+				}
 				if err != nil || ctx.Err() != nil {
 					finished.Error = name + "_failed"
 				}
@@ -465,6 +480,7 @@ type recorder struct {
 	modelCalls            int
 	usage                 ModelUsage
 	maxReportedCallTokens int64
+	remoteTokens          int64
 	modelDenied           bool
 	modelTokenDenied      bool
 	modelTokenOverspent   bool
@@ -508,7 +524,7 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 	if r.spec.MaxModelTokens > 0 && reservation > r.spec.MaxModelTokens {
 		reservation = r.spec.MaxModelTokens
 	}
-	if r.spec.MaxModelTokens > 0 && (r.modelTokenOverspent || r.chargedModelTokens()+reservation > r.spec.MaxModelTokens) {
+	if r.spec.MaxModelTokens > 0 && (r.modelTokenDenied || r.modelTokenOverspent || r.chargedTokens()+reservation > r.spec.MaxModelTokens) {
 		r.modelTokenDenied = true
 		r.mu.Unlock()
 		return nil, fmt.Errorf("model token admission budget exhausted")
@@ -542,7 +558,7 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 			r.maxReportedCallTokens = finished.Usage.TotalTokens
 		}
 	}
-	if r.spec.MaxModelTokens > 0 && r.chargedModelTokens() > r.spec.MaxModelTokens {
+	if r.spec.MaxModelTokens > 0 && r.chargedTokens() > r.spec.MaxModelTokens {
 		r.modelTokenOverspent = true
 	}
 	r.mu.Unlock()
@@ -564,15 +580,66 @@ func (r *recorder) modelBudgetExceeded() bool {
 }
 
 const missingModelUsageCharge int64 = 4096
+const GraphJinLookupMaxSteps = 12
+const remoteLookupReservation int64 = GraphJinLookupMaxSteps * missingModelUsageCharge
 
 // Caller holds r.mu. An unfinished or unreported request consumes a
 // conservative reservation; provider usage replaces it when available.
-func (r *recorder) chargedModelTokens() int64 {
+func (r *recorder) chargedTokens() int64 {
 	missing := r.usage.Requests - r.usage.Reported
 	if missing < 0 {
 		missing = 0
 	}
-	return r.usage.TotalTokens + int64(missing)*missingModelUsageCharge
+	return r.usage.TotalTokens + int64(missing)*missingModelUsageCharge + r.remoteTokens
+}
+
+func (r *recorder) admitRemoteLookup() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.spec.MaxModelTokens > 0 && (r.modelTokenOverspent || r.chargedTokens()+remoteLookupReservation > r.spec.MaxModelTokens) {
+		r.modelTokenDenied = true
+		return false
+	}
+	r.remoteTokens += remoteLookupReservation
+	return true
+}
+
+func (r *recorder) finishRemoteLookup(raw json.RawMessage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.remoteTokens += lookupTokenCharge(raw) - remoteLookupReservation
+	if r.spec.MaxModelTokens > 0 && r.chargedTokens() > r.spec.MaxModelTokens {
+		r.modelTokenOverspent = true
+	}
+}
+
+// Charge only the broker's authoritative GraphJin response usage. Nested
+// usage in data/evidence describes source records and must not be counted.
+func lookupTokenCharge(raw json.RawMessage) int64 {
+	var result struct {
+		Response struct {
+			Usage struct {
+				PromptTokens     int64 `json:"prompt_tokens"`
+				CompletionTokens int64 `json:"completion_tokens"`
+				TotalTokens      int64 `json:"total_tokens"`
+			} `json:"usage"`
+		} `json:"response"`
+	}
+	if json.Unmarshal(raw, &result) != nil {
+		return remoteLookupReservation
+	}
+	if result.Response.Usage.PromptTokens < 0 || result.Response.Usage.PromptTokens > 1_000_000_000_000 ||
+		result.Response.Usage.CompletionTokens < 0 || result.Response.Usage.CompletionTokens > 1_000_000_000_000 {
+		return remoteLookupReservation
+	}
+	total := result.Response.Usage.TotalTokens
+	if total <= 0 {
+		total = result.Response.Usage.PromptTokens + result.Response.Usage.CompletionTokens
+	}
+	if total <= 0 || total > 1_000_000_000_000 {
+		return remoteLookupReservation
+	}
+	return total
 }
 
 func (r *recorder) nextModelReservation() int64 {

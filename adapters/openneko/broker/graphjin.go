@@ -35,7 +35,7 @@ func GraphJin(base, token, source string) (func(context.Context, string) (json.R
 			Instruction string `json:"instruction"`
 			Source      string `json:"dataSourceId,omitempty"`
 			MaxSteps    int    `json:"maxSteps"`
-		}{operationID, instruction, source, 12})
+		}{operationID, instruction, source, agent.GraphJinLookupMaxSteps})
 		data, err := call(ctx, body)
 		if err != nil {
 			return nil, err

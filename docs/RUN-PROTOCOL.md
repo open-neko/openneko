@@ -83,10 +83,14 @@ the largest reported request; an unreported request consumes 4096 tokens in
 the accounting. The OpenNeko launcher pins a one-million-token ceiling, or a
 lower workflow API claim. Usage and reservations survive checkpoint resume.
 A provider may exceed its reservation within one request; that run fails with
-`model_token_budget_exceeded` and cannot dispatch another model request. This
-is an admission/stop rule, not a guarantee that provider billing cannot
-overshoot one request. Remote GraphJin agent usage is not yet included in
-this ceiling and remains a separate M6 gate.
+`model_token_budget_exceeded` and cannot dispatch another model request. A
+GraphJin lookup additionally reserves 49,152 tokens before broker dispatch,
+then replaces that reservation with the server's flat `response.usage`
+total. Missing usage keeps the reservation. Saved lookup receipts rebuild the
+charge on resume. The result's `usage` field still reports **outer Ax usage**;
+the admission ceiling includes outer and GraphJin tokens without merging the
+two telemetry scopes. This is an admission/stop rule, not a guarantee that
+provider billing cannot overshoot one request or one remote lookup.
 
 `HARNESS_STATE_DIR` enables atomic, fsynced, bounded 8 MiB checkpoints in a trusted
 consumer-scoped directory. The process locks the hashed run ID, persists accepted
