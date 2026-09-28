@@ -277,6 +277,14 @@ func main() {
 			http.Error(w, "missing staged skill content", 422)
 			return
 		}
+		if n == 2 && req.Model == "harness-skill-update-fixture" && !strings.Contains(string(req.Messages), "fixture-lead-review/SKILL.md") {
+			http.Error(w, "missing updated skill receipt", 422)
+			return
+		}
+		if n == 2 && req.Model == "harness-skill-read-updated-fixture" && !strings.Contains(string(req.Messages), "Verify the lead owner") {
+			http.Error(w, "missing updated staged skill", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-workflow-list-fixture" && !strings.Contains(string(req.Messages), "Fixture workflow") {
 			http.Error(w, "missing workflow list evidence", 422)
 			return
@@ -377,7 +385,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -447,6 +455,10 @@ func main() {
 			responses = []string{`{"javascriptCode":"final('Create the requested skill', {})"}`, `{"javascriptCode":"const receipt=skill_create({name:'fixture-lead-review',description:'Review a lead CSV',body:'Read the selected CSV and report the owner for each lead.',files:[{path:'scripts/check.py',content:'print(\"skill fixture\")\\n'}]}); final('Report the created skill',{receipt});"}`, `{"answer":"Created the fixture-lead-review skill."}`}
 		} else if req.Model == "harness-skill-read-fixture" {
 			responses = []string{`{"javascriptCode":"final('Read the installed skill', {})"}`, `{"javascriptCode":"const skill=skill_read({path:'fixture-lead-review/SKILL.md'}); if(!skill.content.includes('Read the selected CSV')) throw Error('installed skill missing'); final('Report installed skill',{skill});"}`, `{"answer":"The installed skill instructs me to read the selected CSV."}`}
+		} else if req.Model == "harness-skill-update-fixture" {
+			responses = []string{`{"javascriptCode":"final('Update the installed skill', {})"}`, `{"javascriptCode":"const prior=skill_inspect({name:'fixture-lead-review'}); const receipt=skill_update({name:'fixture-lead-review',description:'Review a lead CSV',body:'Verify the lead owner before reporting each row.',files:[{path:'scripts/new_check.py',content:'print(\"updated skill fixture\")'}],expectedVersion:prior.version}); final('Report updated skill',{prior,receipt});"}`, `{"answer":"Updated the fixture-lead-review skill."}`}
+		} else if req.Model == "harness-skill-read-updated-fixture" {
+			responses = []string{`{"javascriptCode":"final('Read the updated skill', {})"}`, `{"javascriptCode":"const skill=skill_read({path:'fixture-lead-review/SKILL.md'}); if(!skill.content.includes('Verify the lead owner')) throw Error('updated skill missing'); final('Report updated instructions',{skill});"}`, `{"answer":"The updated skill says to verify the lead owner."}`}
 		} else if req.Model == "harness-workflow-list-fixture" {
 			responses = []string{`{"javascriptCode":"final('List the saved workflows', {})"}`, `{"javascriptCode":"const workflows=mcp_neko_workflow_builder_list_workflows({limit:5}); final('Report workflows',{workflows});"}`, `{"answer":"The saved workflow is Fixture workflow."}`}
 		} else if req.Model == "harness-library-fixture" {

@@ -104,6 +104,36 @@ func main() {
 			fmt.Fprintln(os.Stderr, "invalid skill create capability:", err)
 			os.Exit(2)
 		}
+		inspect, err := broker.SkillInspect(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "skill inspect broker unavailable:", err)
+			os.Exit(2)
+		}
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "skill_inspect", Version: "1", Origin: "openneko", Effect: "read",
+			Description: "Read the current whole-tree version of an installed org skill before updating it. Read SKILL.md and supporting files with skill_read as needed; use the returned version as expectedVersion in skill_update.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name"],"properties":{"name":{"type":"string","pattern":"^[a-z0-9]+(-[a-z0-9]+)*$","maxLength":64}},"additionalProperties":false}`),
+			Call:        inspect,
+		})
+		update, err := broker.SkillUpdate(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "skill update broker unavailable:", err)
+			os.Exit(2)
+		}
+		var updateBinding string
+		tools.Capabilities = append(tools.Capabilities, agent.Capability{
+			Name: "skill_update", Version: "1", Origin: "openneko", Effect: "durable",
+			Description: "Replace an existing org skill only when the admin operator asks. First call skill_inspect for a whole-tree version, then submit the complete new SKILL.md content and all supporting files with that exact expectedVersion. A concurrent change is rejected. Skill files must not make direct model calls.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name","description","body","expectedVersion"],"properties":{"name":{"type":"string","pattern":"^[a-z0-9]+(-[a-z0-9]+)*$","maxLength":64},"description":{"type":"string","minLength":1,"maxLength":1024},"body":{"type":"string","minLength":1,"maxLength":60000},"expectedVersion":{"type":"string","pattern":"^[a-f0-9]{64}$"},"license":{"type":"string","maxLength":200},"compatibility":{"type":"string","maxLength":500},"metadata":{"type":"object","additionalProperties":{"type":"string","maxLength":2048}},"allowedTools":{"type":"string","maxLength":1000},"files":{"type":"array","maxItems":10,"items":{"type":"object","required":["path","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":240},"content":{"type":"string","maxLength":32000}},"additionalProperties":false}}},"additionalProperties":false}`),
+			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				return update(ctx, raw, updateBinding)
+			},
+		})
+		updateBinding, err = tools.Binding("skill_update")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid skill update capability:", err)
+			os.Exit(2)
+		}
 	}
 	if enabled := os.Getenv("OPENNEKO_HARNESS_WORKFLOW_SAVE"); enabled != "" {
 		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {

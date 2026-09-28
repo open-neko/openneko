@@ -148,6 +148,60 @@ func SkillCreate(base, token string) (func(context.Context, json.RawMessage, str
 	}, nil
 }
 
+func SkillInspect(base, token string) (func(context.Context, json.RawMessage) (json.RawMessage, error), error) {
+	call, err := bind(base, token, "/v1/harness/skill/inspect")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		if len(input) == 0 || len(input) > 512 || !json.Valid(input) {
+			return nil, fmt.Errorf("invalid skill inspection")
+		}
+		data, err := call(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			OK      bool   `json:"ok"`
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(data, &receipt) != nil || !receipt.OK || len(receipt.Version) != 64 {
+			return nil, fmt.Errorf("skill inspection was not confirmed by broker")
+		}
+		return data, nil
+	}, nil
+}
+
+func SkillUpdate(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {
+	call, err := bind(base, token, "/v1/harness/skill/update")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, input json.RawMessage, binding string) (json.RawMessage, error) {
+		id := agent.OperationID(ctx)
+		if id < 1 || id > 32 || len(binding) != 64 || len(input) == 0 || len(input) > 131072 || !json.Valid(input) {
+			return nil, fmt.Errorf("invalid skill update operation")
+		}
+		body, _ := json.Marshal(struct {
+			OperationID uint64 `json:"operationId"`
+			Instruction string `json:"instruction"`
+			Binding     string `json:"binding"`
+		}{id, string(input), binding})
+		data, err := call(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			OK      bool   `json:"ok"`
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(data, &receipt) != nil || !receipt.OK || len(receipt.Version) != 64 {
+			return nil, fmt.Errorf("skill update was not confirmed by broker")
+		}
+		return data, nil
+	}, nil
+}
+
 // WorkflowSave submits a version-guarded definition to the host. The broker
 // supplies run identity and journals the effect before OpenNeko persists it.
 func WorkflowSave(base, token string) (func(context.Context, json.RawMessage, string) (json.RawMessage, error), error) {
