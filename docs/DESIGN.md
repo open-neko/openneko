@@ -400,11 +400,14 @@ Recovery must distinguish:
 Route by known work boundary and Ax stage, not by guessing the difficulty of an
 entire user request. Keep approved logical profiles such as `fast`, `balanced`
 and `hard`. Ax Go supports `contextOptions`, `executorOptions`,
-`responderOptions` and ordered `executorModelPolicy` entries triggered by
-consecutive error turns or matched tool namespaces. Use those stage controls
-for the host agent, and Ax provider routing/balancing within the approved
-profile. An executor escalation changes only subsequent model calls; it does
-not expand capability grants or retry a committed effect.
+`responderOptions` and an `executorModelPolicy` option for ordered entries
+triggered by consecutive error turns or matched tool namespaces. The current
+Harness uses the verified stage controls and Ax provider routing within the
+approved profile. A live fault-injection test against the pinned Ax Go build
+found that it accepts `executorModelPolicy` but does not apply it during agent
+execution. Keep error-turn escalation disabled until an upgraded Ax build or
+another implementation passes a live route trace. When enabled, escalation
+must change only later model calls; it cannot expand grants or retry an effect.
 
 GraphJin lookups cross into a separate, server-owned Ax agent. Configure that
 GraphJin deployment with the `hard` model/reasoning profile because the host
@@ -420,7 +423,8 @@ remain deterministic; semantic selection, if needed, can use an approved
 `fast` model through Harness/Ax. A skill file never calls a model directly.
 Similarly, a cheap distiller or responder may be appropriate when the difficult
 work has already produced verified evidence. The executor starts on the
-approved baseline and escalates on observed difficulty using Ax's policy.
+approved baseline. Escalation on observed difficulty remains a verified-runtime
+requirement, not an active route today.
 
 Ax's operational balancer is not semantic task-to-model selection. The
 application binds the work boundary and allowed profile; Ax selects an

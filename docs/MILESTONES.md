@@ -877,9 +877,10 @@ remote call; it does not route individual GraphJin agent turns.
 Use deterministic skill metadata/exact-name lookup first; route any semantic
 skill selection through an approved cheap Ax stage, never a model call from a
 skill file. Give the outer distiller, executor and responder separate approved
-model choices. Start the executor on a baseline and use Ax Go's
-`executorModelPolicy` to escalate after observed error turns or relevant
-namespace use. Escalation must not widen broker grants or replay an effect.
+model choices. Start the executor on a baseline; enable error-turn or namespace
+escalation only after a live Ax route test passes. The pinned build currently
+fails that gate despite accepting `executorModelPolicy`. Escalation must not
+widen broker grants or replay an effect.
 Keep durable state authoritative; prompt compaction is only a model-context projection.
 For complex tasks, retain a compact plan with evidence and success criteria;
 verify receipts and artifacts before reporting completion. Do not add another
