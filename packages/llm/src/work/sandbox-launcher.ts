@@ -809,7 +809,14 @@ function makeSandboxCore(
       : undefined;
     if (admission?.result) {
       // Receipt is durable before cleanup, including redelivery after a cleanup crash.
-      await timed("harness_reconcile_cleanup", () => runCleanup(["sandbox", "delete", name], 60_000)).catch(() => {});
+      await timed("harness_reconcile_cleanup", async () => {
+        try {
+          await runCleanup(["sandbox", "delete", name], 60_000);
+        } catch (error) {
+          if (!isMissingSandboxDelete(error)) throw error;
+          startupEvent("sandbox.harness_reconcile_cleanup",{runId:input.runId,outcome:"already_absent"});
+        }
+      });
       await input.emit({ type: "status", message: "Restored saved run result" });
       await emitHarnessApprovals(admission.result,{orgId:input.orgId,runId:input.runId},input.emit);
       await emitHarnessRestoredAnswer(admission.result,{orgId:input.orgId,runId:input.runId},input.emit);
@@ -1238,6 +1245,13 @@ function makeSandboxCore(
           createHash("sha256").update(input.runId).digest("hex")), signal =>
             sandboxRunCore(input, AbortSignal.any([signal, databaseSignal]), journal)))
     : sandboxRunCore(input);
+}
+
+/** A saved terminal receipt may outlive the sandbox; other delete failures are unsafe. */
+export function isMissingSandboxDelete(error:unknown):boolean {
+  if (!(error instanceof Error)) return false;
+  const stderr=error.message.split("; stderr=")[1] ?? "";
+  return /\b(?:sandbox(?:\s+['"]?[-\w]+['"]?)?\s+(?:was\s+)?(?:not found|does not exist)|no such sandbox)\b/i.test(stderr);
 }
 
 /** `policy update` adding the model endpoint(s) scoped to the backend binary. */
