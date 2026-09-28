@@ -9,6 +9,8 @@ import { policySavedCard, workflowDeletedCard, workflowSavedCard, subscriptionSa
 import { HarnessWorkflowValidationError } from "../workflows/save-workflow-with-trigger";
 import { z } from "zod";
 import { parseHarnessProcessInput, runHarnessProcess, validHarnessProcessBinding, type HarnessProcessBinding } from "./harness-process";
+import { assertHarnessSkillAuthor, publishHarnessSkill } from "./harness-skill-create";
+import { basename, isAbsolute } from "node:path";
 import {
   createServer,
   type IncomingMessage,
@@ -45,6 +47,8 @@ export interface RunBinding {
   memoryRead?: boolean;
   /** Explicit Work-run grant for a journaled memory save. */
   memoryWrite?: boolean;
+  /** Host-published, create-only org skill; sandbox files are never authoritative. */
+  skillRoot?: string;
   /** Explicit customer-surface library search grant. */
   libraryRead?: boolean;
   /** Actor-filtered saved workflow definitions, without mutation authority. */
@@ -184,7 +188,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && !!binding.actionGrants?.length && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && !!binding.actionGrants?.length && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.skillRoot && path === "/v1/harness/skill/create" && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -396,6 +400,32 @@ async function handle(
           text:input.text as string,kind:(input.kind ?? "business_rule") as typeof WORK_MEMORY_KINDS[number],
           scope:(input.scope ?? "global") as "global"|"thread",pinned:(input.pinned ?? true) as boolean});
         return {ok:true,memoryId:memory.id};
+      }));
+    }
+    case "/v1/harness/skill/create": {
+      if (!binding.profile || !binding.skillRoot || binding.kind !== "work" || !binding.threadId ||
+          typeof body.instruction !== "string" || typeof body.binding !== "string" ||
+          !/^[a-f0-9]{64}$/.test(body.binding)) {
+        return send(res,403,{error:"Harness skill create denied"});
+      }
+      const schema=z.object({
+        name:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(64),
+        description:z.string().trim().min(1).max(1024),
+        body:z.string().min(1).max(60000),
+        license:z.string().max(200).optional(),
+        compatibility:z.string().max(500).optional(),
+        metadata:z.record(z.string().max(128),z.string().max(2048)).optional(),
+        allowedTools:z.string().max(1000).optional(),
+        files:z.array(z.object({path:z.string().min(1).max(240),content:z.string().max(32000)}).strict()).max(10).optional(),
+      }).strict();
+      let draft: z.infer<typeof schema>;
+      try { draft=schema.parse(JSON.parse(body.instruction)); }
+      catch { return send(res,400,{error:"Invalid Harness skill draft"}); }
+      const request={tool:"skill_create" as const,binding:body.binding,instruction:body.instruction};
+      return send(res,200,await recordHarnessOperation(binding,body.operationId,request,async()=>{
+        await assertHarnessSkillAuthor(binding.orgId,binding.runId);
+        const saved=await publishHarnessSkill(binding.skillRoot!,draft,body.binding as string);
+        return {ok:true,name:saved.name,skillFile:`${saved.name}/SKILL.md`};
       }));
     }
     case "/v1/harness/process/run": {
@@ -1032,6 +1062,10 @@ export async function startAgentBroker(
       if (binding.memoryWrite && (!binding.profile || binding.kind !== "work" || !binding.threadId)) {
         throw new Error("Invalid broker memory write grant");
       }
+      if (binding.skillRoot && (!binding.profile || binding.kind !== "work" || !binding.threadId ||
+          !isAbsolute(binding.skillRoot) || basename(binding.skillRoot) !== "skills")) {
+        throw new Error("Invalid broker skill write grant");
+      }
       if (binding.libraryRead && (!binding.profile || binding.kind !== "work")) {
         throw new Error("Invalid broker library grant");
       }
@@ -1080,7 +1114,7 @@ export async function startAgentBroker(
         if (
           (saved.profile || binding.profile) &&
           (saved.profile !== binding.profile || saved.orgId !== binding.orgId ||
-            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || JSON.stringify(saved.actionGrants) !== JSON.stringify(binding.actionGrants) || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.libraryRead !== binding.libraryRead || saved.ruleWrite !== binding.ruleWrite || saved.workflowRead !== binding.workflowRead || saved.workflowWrite !== binding.workflowWrite || saved.managementRead !== binding.managementRead || saved.auditRead !== binding.auditRead || saved.sourceConfigRead !== binding.sourceConfigRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.workflowRunId !== binding.workflowRunId || saved.workflowOutput !== binding.workflowOutput || saved.workflowAction !== binding.workflowAction || JSON.stringify(saved.processRun) !== JSON.stringify(binding.processRun) || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
+            saved.kind !== binding.kind || saved.threadId !== binding.threadId || saved.operationLimit !== binding.operationLimit || JSON.stringify(saved.actionGrants) !== JSON.stringify(binding.actionGrants) || saved.lookupRead !== binding.lookupRead || saved.memoryRead !== binding.memoryRead || saved.memoryWrite !== binding.memoryWrite || saved.skillRoot !== binding.skillRoot || saved.libraryRead !== binding.libraryRead || saved.ruleWrite !== binding.ruleWrite || saved.workflowRead !== binding.workflowRead || saved.workflowWrite !== binding.workflowWrite || saved.managementRead !== binding.managementRead || saved.auditRead !== binding.auditRead || saved.sourceConfigRead !== binding.sourceConfigRead || saved.recordsRead !== binding.recordsRead || saved.batchRead !== binding.batchRead || saved.workflowRunId !== binding.workflowRunId || saved.workflowOutput !== binding.workflowOutput || saved.workflowAction !== binding.workflowAction || JSON.stringify(saved.processRun) !== JSON.stringify(binding.processRun) || saved.interactionEvents !== binding.interactionEvents || saved.cardEvents !== binding.cardEvents)
         ) {
           throw new Error("Broker capability binding conflicts with existing run");
         }
