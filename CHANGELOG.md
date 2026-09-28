@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.7.0](https://github.com/open-neko/openneko/compare/v3.6.0...v3.7.0) (2026-09-28)
+
+
+### Features
+
+* **web:** add a command bar and loading skeletons ([b661556](https://github.com/open-neko/openneko/commit/b661556545fbdd5b70be82ec7aa36a1c98e147b2))
+* **web:** give Ask a calm starting point ([4fdddb1](https://github.com/open-neko/openneko/commit/4fdddb15b44b70061a47207a3329783328030a1b))
+* **web:** group workspace settings by purpose ([a7b4d86](https://github.com/open-neko/openneko/commit/a7b4d863995b012867ab4bb93da87f48e9bb50ae))
+* **web:** report approval outcomes truthfully and allow undo ([c0fbdc2](https://github.com/open-neko/openneko/commit/c0fbdc2abecccad527084e984c0ae22a0b121caa))
+* **web:** show approvals and findings in plain language ([adeee35](https://github.com/open-neko/openneko/commit/adeee359970e30ae0b40ea87c4ab5892629cda96))
+* **web:** tell the operator how an approved change ended ([085a69f](https://github.com/open-neko/openneko/commit/085a69f358a2197c352f8b7e0f571a1afb1e207e))
+
+
+### Bug Fixes
+
+* **web:** align page shells, controls, and states across pages ([884ffa0](https://github.com/open-neko/openneko/commit/884ffa0db177507a4751b828fd27cb709a04075e))
+* **web:** retire the editorial costume from operational screens ([62112e1](https://github.com/open-neko/openneko/commit/62112e1b3d53daaf4029447c7fd24fcf29aad1d0))
+* **web:** slim the sidebar chrome ([0396e04](https://github.com/open-neko/openneko/commit/0396e044bef1ff080fdc60563f39ebcfa71ecaeb))
+
 ## [3.6.0](https://github.com/open-neko/openneko/compare/v3.5.6...v3.6.0) (2026-09-27)
 
 
