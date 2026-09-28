@@ -127,11 +127,23 @@ function createApiCeilingGuard(input: {
       const name = toolNames.get(event.id);
       toolNames.delete(event.id);
       if (name?.toLocaleLowerCase().includes("neko_graphjin_agent")) {
-        const inner = normalizeGraphjinAgentUsage(event.result);
-        totalTokens += inner?.usage.totalTokens ?? 12 * 4096;
+        const harnessLookup = event.id.startsWith("harness-operation-");
+        const response = harnessLookup && event.result && typeof event.result === "object"
+          ? (event.result as { response?: { usage?: unknown } }).response
+          : undefined;
+        const inner = normalizeGraphjinAgentUsage(harnessLookup ? response?.usage : event.result);
+        totalTokens += harnessLookup
+          ? event.remoteUsage?.chargedTokens ?? 12 * 4096
+          : inner?.usage.totalTokens ?? 12 * 4096;
+        if (harnessLookup && event.remoteUsage?.reported) {
+          modelCalls += Math.max(1, event.remoteUsage.llmCalls ?? 1) - 1;
+        }
         costUsd += inner?.usage.billedCostUsd ?? 0;
         // Persist the completed broker receipt before terminating a paid run.
         await input.emit(event);
+        if (modelCalls > input.claim.limits.maxModelCalls) {
+          fail("model_call_limit", "The API run exceeded its model-call ceiling.");
+        }
         if (totalTokens > input.claim.limits.maxTokensPerRun) {
           fail("token_limit", "The API run exceeded its token ceiling.");
         }

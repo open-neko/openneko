@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { parse } from "yaml";
-import type { AgentBackend, AgentModelIdentity, AgentRunOptions, AgentRunResult, AgentTokenUsage } from "../agent-backend";
+import type { AgentBackend, AgentEvent, AgentModelIdentity, AgentRunOptions, AgentRunResult, AgentTokenUsage } from "../agent-backend";
 import { VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
 import { boundedSkillQuery } from "../work/harness-routing";
 /** Opt-in read-only M3 backend. Hermes remains the default and keeps its warm pool. */
@@ -90,7 +90,9 @@ export class HarnessBackend implements AgentBackend {
                     await opts.onEvent?.({ type: "tool_start", id: `harness-operation-${event.operation_id}`, name });
                 }
                 else if (event.type === "tool.finished") {
-                    await opts.onEvent?.({ type: "tool_end", id: `harness-operation-${event.operation_id}`, result: event.data, ...(event.error ? { error: String(event.error) } : {}) });
+                    await opts.onEvent?.({ type: "tool_end", id: `harness-operation-${event.operation_id}`, result: event.data,
+                        ...(event.name === "lookup" ? { remoteUsage: harnessRemoteUsage(event.remote_usage) } : {}),
+                        ...(event.error ? { error: String(event.error) } : {}) });
                 }
                 else if (event.type === "child.started") {
                     await opts.onEvent?.({ type: "tool_start", id: `harness-child-${event.span_id}`, name: "ax_child_agent" });
@@ -123,6 +125,28 @@ export class HarnessBackend implements AgentBackend {
             opts.signal?.removeEventListener("abort", abort);
         }
     }
+}
+
+/** Accept only the content-free Go receipt; malformed or older events charge conservatively. */
+export function harnessRemoteUsage(raw: unknown): Extract<AgentEvent, { type: "tool_end" }>["remoteUsage"] {
+    const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const positive = (number: unknown): number | undefined =>
+        typeof number === "number" && Number.isSafeInteger(number) && number > 0 && number <= 1_000_000_000_000 ? number : undefined;
+    const nonnegative = (number: unknown): number | undefined =>
+        typeof number === "number" && Number.isSafeInteger(number) && number >= 0 && number <= 1_000_000_000_000 ? number : undefined;
+    const chargedTokens = positive(value.charged_tokens);
+    if (chargedTokens === undefined || typeof value.reported !== "boolean") return undefined;
+    const totalTokens = positive(value.total_tokens);
+    if (value.reported && chargedTokens !== totalTokens) return undefined;
+    if (!value.reported && (totalTokens !== undefined || chargedTokens !== 12 * 4096)) return undefined;
+    const promptTokens = nonnegative(value.prompt_tokens);
+    const completionTokens = nonnegative(value.completion_tokens);
+    const llmCalls = nonnegative(value.llm_calls);
+    return { reported: value.reported, chargedTokens,
+        ...(promptTokens !== undefined ? { promptTokens } : {}),
+        ...(completionTokens !== undefined ? { completionTokens } : {}),
+        ...(totalTokens !== undefined ? { totalTokens } : {}),
+        ...(llmCalls !== undefined ? { llmCalls } : {}) };
 }
 
 /** Shared by live execution and validated checkpoint adoption. */

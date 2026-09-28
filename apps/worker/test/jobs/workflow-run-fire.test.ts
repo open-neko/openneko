@@ -332,6 +332,52 @@ describe("workflow API execution consumer", () => {
     expect(mocks.boundedResult).not.toHaveBeenCalled();
   });
 
+  it("uses the Harness remote receipt instead of nested evidence usage", async () => {
+    mocks.claimApi.mockResolvedValueOnce(apiClaim({ limits: { ...apiLimits, maxTokensPerRun: 7_000 } }));
+    mocks.run.mockImplementationOnce(async (options) => {
+      await options.emit({ type: "tool_start", id: "harness-operation-1", name: "neko_graphjin_agent" });
+      await options.emit({ type: "tool_end", id: "harness-operation-1", result: {
+        response: { status: "answered", data: { usage: { total_tokens: 900_000 } } },
+      }, remoteUsage: { reported: true, chargedTokens: 6_000, totalTokens: 6_000, llmCalls: 3 } });
+      return { status: "completed", finalText: "Done" };
+    });
+
+    await expect(runWorkflowRunFire(apiPayload)).resolves.toBeUndefined();
+    expect(mocks.finishApi).toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+  });
+
+  it("charges missing Harness remote usage conservatively", async () => {
+    mocks.claimApi.mockResolvedValueOnce(apiClaim({ limits: { ...apiLimits, maxTokensPerRun: 7_000 } }));
+    mocks.run.mockImplementationOnce(async (options) => {
+      await options.emit({ type: "tool_start", id: "harness-operation-1", name: "neko_graphjin_agent" });
+      await options.emit({ type: "tool_end", id: "harness-operation-1", result: {
+        response: { status: "answered", data: { usage: { total_tokens: 1 } } },
+      } });
+      return { status: "completed", finalText: "should not finish" };
+    });
+
+    await expect(runWorkflowRunFire(apiPayload)).resolves.toBeUndefined();
+    expect(mocks.finishApi).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed", errorCode: "token_limit",
+    }));
+  });
+
+  it("counts reported Harness server model calls against the API ceiling", async () => {
+    mocks.claimApi.mockResolvedValueOnce(apiClaim({ limits: { ...apiLimits, maxModelCalls: 4 } }));
+    mocks.run.mockImplementationOnce(async (options) => {
+      await options.emit({ type: "tool_start", id: "harness-operation-1", name: "neko_graphjin_agent" });
+      await options.emit({ type: "tool_end", id: "harness-operation-1", result: {
+        response: { status: "answered", usage: { total_tokens: 6_000, llm_calls: 3 } },
+      }, remoteUsage: { reported: true, chargedTokens: 6_000, totalTokens: 6_000, llmCalls: 3 } });
+      return { status: "completed", finalText: "should not finish" };
+    });
+
+    await expect(runWorkflowRunFire(apiPayload)).resolves.toBeUndefined();
+    expect(mocks.finishApi).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed", errorCode: "model_call_limit",
+    }));
+  });
+
   it("runs a compiled batch without invoking the model", async () => {
     const contract = {
       version: 1,
