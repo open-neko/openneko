@@ -543,6 +543,7 @@ export async function claimWorkflowScheduleFiring(input: {
      set status = 'running', lease_until = $4, updated_at = $3
      where id = $1 and org_id = $2 and workflow_id = $5
        and status in ('pending', 'dispatching', 'enqueued')
+       and workflow_run_id is null
        and exists (
          select 1
          from workflow_definition workflow
@@ -560,6 +561,34 @@ export async function claimWorkflowScheduleFiring(input: {
     [input.firingId, input.orgId, now, leaseUntil, input.workflowId],
   );
   return (claimed.rowCount ?? 0) === 1;
+}
+
+/** A worker may die after atomic preparation but before marking its work run
+ * running. Only that queued, linked run can be safely resumed after its lease;
+ * a running work run may already have called a model or performed an effect. */
+export async function reclaimQueuedWorkflowScheduleFiring(input: {
+  firingId: string; orgId: string; workflowId: string; now?: Date;
+}): Promise<string | null> {
+  const now=input.now??new Date();
+  const result=await pool().query<{workflow_run_id:string}>(
+    `update workflow_schedule_firing firing
+     set status='running',lease_until=$4::timestamptz + interval '30 minutes',updated_at=$4
+     where firing.id=$1 and firing.org_id=$2 and firing.workflow_id=$3
+       and firing.status in ('pending','dispatching','enqueued','running')
+       and (firing.status <> 'running' or firing.lease_until < $4)
+       and firing.workflow_run_id is not null
+       and exists (select 1 from workflow_run run join work_run work on work.id=run.work_run_id
+         where run.id=firing.workflow_run_id and run.org_id=firing.org_id
+           and run.status='running' and work.status='queued')
+       and exists (select 1 from workflow_definition workflow
+         join workflow_schedule_state state on state.workflow_id=workflow.id
+         where workflow.id=firing.workflow_id and workflow.org_id=firing.org_id
+           and workflow.enabled=true and workflow.cron_enabled=true
+           and workflow.cron=state.cron and workflow.cron_timezone=state.cron_timezone
+           and workflow.updated_at=state.definition_updated_at)
+     returning firing.workflow_run_id`,
+    [input.firingId,input.orgId,input.workflowId,now]);
+  return result.rows[0]?.workflow_run_id??null;
 }
 
 export async function linkWorkflowScheduleFiringRun(
@@ -603,7 +632,7 @@ export async function releaseWorkflowScheduleFiringRun(
      set status = 'pending', workflow_run_id = null, lease_until = null,
          available_at = $3 + interval '15 seconds', last_error = $2,
          updated_at = $3
-     where id = $1 and status = 'running'`,
+     where id = $1 and status = 'running' and workflow_run_id is null`,
     [firingId, error instanceof Error ? error.message : String(error), now],
   );
 }
@@ -647,6 +676,24 @@ export async function recoverStaleWorkflowScheduleFirings(
   now = new Date(),
   options: { orgId?: string } = {},
 ): Promise<number> {
+  // An exhausted queue job may never redeliver itself. Requeue only a linked
+  // work run that is still queued; the start CAS fences a stalled old worker.
+  const queued=await pool().query(
+    `update workflow_schedule_firing firing
+     set status='pending',lease_until=null,available_at=$1,updated_at=$1,
+         last_error='linked queued run awaiting redelivery'
+     from workflow_run run join work_run work on work.id=run.work_run_id
+     where firing.status='running' and firing.lease_until < $1
+       and firing.workflow_run_id=run.id and run.status='running'
+       and work.status='queued'
+       and ($2::text is null or firing.org_id=$2)
+       and exists (select 1 from workflow_definition workflow
+         join workflow_schedule_state state on state.workflow_id=workflow.id
+         where workflow.id=firing.workflow_id and workflow.org_id=firing.org_id
+           and workflow.enabled=true and workflow.cron_enabled=true
+           and workflow.cron=state.cron and workflow.cron_timezone=state.cron_timezone
+           and workflow.updated_at=state.definition_updated_at)
+     returning firing.id`,[now,options.orgId??null]);
   const finalized = await pool().query(
     `update workflow_schedule_firing firing
      set status = 'completed', lease_until = null, completed_at = $1,
@@ -686,7 +733,7 @@ export async function recoverStaleWorkflowScheduleFirings(
      returning firing.id`,
     [now, options.orgId ?? null],
   );
-  return (finalized.rowCount ?? 0) + (recovered.rowCount ?? 0);
+  return (queued.rowCount??0)+(finalized.rowCount ?? 0) + (recovered.rowCount ?? 0);
 }
 
 export async function recordWorkflowSchedulerSuccess(input: {

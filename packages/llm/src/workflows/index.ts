@@ -83,6 +83,7 @@ export {
   advanceWorkflowSchedule,
   applyWorkflowDailyBudget,
   claimWorkflowScheduleFiring,
+  reclaimQueuedWorkflowScheduleFiring,
   completeWorkflowScheduleFiring,
   leasePendingWorkflowFirings,
   linkWorkflowScheduleFiringRun,
@@ -103,6 +104,7 @@ export {
 } from "./durable-scheduler";
 export {
   claimSourceChangeDelivery,
+  reclaimQueuedSourceChangeDelivery,
   dispatchPendingSourceChangeDeliveries,
   dispatchSourceChangeDelivery,
   linkSourceChangeDeliveryRun,
@@ -117,6 +119,7 @@ export {
 export {
   prepareWorkflowRun,
   prepareWorkflowRunForDelivery,
+  loadQueuedPreparedWorkflowRun,
   loadPreparedWorkflowRun,
   runWorkflowTurn,
   WorkflowNeedsInputError,

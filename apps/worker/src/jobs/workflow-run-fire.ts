@@ -17,9 +17,12 @@ import {
   claimWorkflowApiAdmission,
   claimWorkflowScheduleFiring,
   claimSourceChangeDelivery,
+  reclaimQueuedWorkflowScheduleFiring,
+  reclaimQueuedSourceChangeDelivery,
   completeWorkflowScheduleFiring,
   finishWorkflowApiAdmission,
   loadPreparedWorkflowRun,
+  loadQueuedPreparedWorkflowRun,
   persistWorkflowApiTelemetry,
   prepareWorkflowRun,
   prepareWorkflowRunForDelivery,
@@ -316,6 +319,7 @@ async function runWorkflowRunFireTraced(
   if (payload.triggerKind === "api" && (scheduleFiringId || sourceChangeDeliveryId)) {
     throw new Error("API workflow fire cannot carry a scheduler delivery identity");
   }
+  let resumedWorkflowRunId:string|null=null;
   if (scheduleFiringId) {
     const claimed = await startupPhase("workflow.claim_schedule", async () => claimWorkflowScheduleFiring({
       firingId: scheduleFiringId,
@@ -323,10 +327,13 @@ async function runWorkflowRunFireTraced(
       workflowId: payload.workflowId,
     }));
     if (!claimed) {
-      console.log(
-        `[workflow-run-fire] duplicate delivery ignored firing=${scheduleFiringId}`,
-      );
-      return;
+      resumedWorkflowRunId=await startupPhase("workflow.reclaim_schedule",() =>
+        reclaimQueuedWorkflowScheduleFiring({firingId:scheduleFiringId,
+          orgId:payload.orgId,workflowId:payload.workflowId}));
+      if(!resumedWorkflowRunId){
+        console.log(`[workflow-run-fire] duplicate delivery ignored firing=${scheduleFiringId}`);
+        return;
+      }
     }
   }
   if (sourceChangeDeliveryId) {
@@ -334,8 +341,13 @@ async function runWorkflowRunFireTraced(
       id:sourceChangeDeliveryId,orgId:payload.orgId,workflowId:payload.workflowId,
     }));
     if (!claimed) {
-      console.log(`[workflow-run-fire] duplicate source-change delivery ignored id=${sourceChangeDeliveryId}`);
-      return;
+      resumedWorkflowRunId=await startupPhase("workflow.reclaim_source_change",() =>
+        reclaimQueuedSourceChangeDelivery({id:sourceChangeDeliveryId,
+          orgId:payload.orgId,workflowId:payload.workflowId}));
+      if(!resumedWorkflowRunId){
+        console.log(`[workflow-run-fire] duplicate source-change delivery ignored id=${sourceChangeDeliveryId}`);
+        return;
+      }
     }
   }
 
@@ -372,6 +384,9 @@ async function runWorkflowRunFireTraced(
         triggeredByObservationId: payload.triggeredByObservationId,
       };
       prepared = await startupPhase("workflow.prepare", async () =>
+        resumedWorkflowRunId ? loadQueuedPreparedWorkflowRun({orgId:payload.orgId,
+          workflowId:payload.workflowId,workflowRunId:resumedWorkflowRunId,
+          triggerKind:scheduleFiringId?"cron":"subscription"}) :
         scheduleFiringId ? prepareWorkflowRunForDelivery(preparation,{kind:"schedule",id:scheduleFiringId}) :
         sourceChangeDeliveryId ? prepareWorkflowRunForDelivery(preparation,{kind:"source_change",id:sourceChangeDeliveryId}) :
         prepareWorkflowRun(preparation));
@@ -494,6 +509,7 @@ async function runWorkflowRunFireTraced(
         result = await runWorkflowTurn(
           {
             prepared,
+            requireQueuedStart:Boolean(scheduleFiringId || sourceChangeDeliveryId),
             userMessage: apiClaim
               ? apiInputMessage(apiClaim!.requestPayload)
               : payload.userMessage,
