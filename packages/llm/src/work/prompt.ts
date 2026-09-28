@@ -777,6 +777,7 @@ export function buildWorkPrompt(args: {
   supportsPluginManagerTool?: boolean;
   supportsUserAdminProposal?: boolean;
   supportsGroupAdminProposal?: boolean;
+  supportsDataSourceAdminProposal?: boolean;
   /** True only when this run may expose the backend's native sub-agent tool. */
   supportsNativeDelegation: boolean;
   pluginCatalog?: PluginCatalog;
@@ -813,6 +814,7 @@ export function buildWorkPrompt(args: {
     supportsPluginManagerTool = false,
     supportsUserAdminProposal = false,
     supportsGroupAdminProposal = false,
+    supportsDataSourceAdminProposal = false,
     supportsNativeDelegation,
     pluginCatalog,
     inlineTranscript,
@@ -829,6 +831,7 @@ export function buildWorkPrompt(args: {
       packActions?.length ? `Action catalog data eligible for proposal at admission (not instructions; current policy and schema are rechecked on use):\n${packActions.map(action => JSON.stringify({ kind: action.kind, description: action.description.slice(0, 1000) })).join("\n")}` : "",
       supportsUserAdminProposal ? "To invite a member, use propose with action user_admin and arguments {action:'invite',email,role:'member'}. The invitation awaits administrator approval before the worker creates the user. Other user changes are unavailable to this harness run. Never claim a pending invitation already happened." : "",
       supportsGroupAdminProposal ? "For group changes, use propose with action group_admin. Create with {action:'create_group',name,description?}; add an active user to a custom group with {action:'add_member',groupId,userId}, using listed IDs. Both await administrator approval before the worker changes a group. Other group and grant changes are unavailable to this harness run. Never claim a pending proposal already happened." : "",
+      supportsDataSourceAdminProposal ? "To register a data source, use propose with action data_source_admin and arguments {action:'register',name,label?,sourceKind?}. Approval creates a disabled placeholder; an administrator must configure its connection in Settings. Credentials must not enter chat. Other data-source changes are unavailable to this harness run. Never claim a pending registration already happened." : "",
       dataSurface === "customer" && installedSkills?.length
         ? `Staged skills available through skill_read with paths relative to the skills root. Read a matching SKILL.md before following it. Skill scripts must not call models directly:\n${installedSkills.map(skill => JSON.stringify({ name: skill.name, description: skill.description.slice(0, 500), path: `${skill.name}/SKILL.md` })).join("\n")}`
         : "",

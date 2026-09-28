@@ -67,6 +67,8 @@ export interface RunAgentBackendInput {
   userAdminProposalEnabled?: boolean;
   /** Permit a named customer Work actor to propose a typed group creation. */
   groupAdminProposalEnabled?: boolean;
+  /** Permit a named customer Work actor to propose a disabled source placeholder. */
+  dataSourceAdminProposalEnabled?: boolean;
   /** Selects the isolated data plane for this turn. */
   dataSurface?: WorkDataSurface;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */
