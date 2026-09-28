@@ -2,7 +2,7 @@
 
 Source snapshot: `packages/llm/src/work/agent-core.ts`, `work/tools.ts`,
 `work/interaction-server.ts`, `workflows/{builder,rule-builder,action,output}-server.ts`
-on `feat/openneko-harness`, 2026-09-27. Names below are logical MCP
+on `feat/openneko-harness`, reviewed 2026-09-28. Names below are logical MCP
 `server.tool` names; the Go catalog uses pinned aliases such as
 `mcp_neko_records_find_records`. A discovered MCP tool is never admitted by
 discovery alone. “Excluded” means the Harness bridge and broker deny it, while
@@ -11,7 +11,7 @@ Hermes can retain its existing path.
 | Surface | Logical tools / capability | Harness status and recovery boundary |
 | --- | --- | --- |
 | Business data | GraphJin server agent and its catalog/query tools | `lookup` delegates to the host GraphJin agent; each call is host-journaled. Direct GraphJin MCP calls are excluded. |
-| Records | `neko_records.browse_catalog`, `browse_blueprints`, `find_records`, `get_record`, `find_recycled_records`, `get_recycled_record`; governed `record_*` action descriptors | Reads passed actor-bound GraphJin, MCP, OpenShell and Ax. A Records-only OpenShell turn proposed `record_update` against a seeded registry and row; worker preflight validated shape and actor before approval. Approval preceded the worker adapter's real GraphJin write; a duplicate execution restored the saved result with one Records audit entry. Queued Work redelivery and broader CRUD still need qualification. |
+| Records | `neko_records.browse_catalog`, `browse_blueprints`, `find_records`, `get_record`, `find_recycled_records`, `get_recycled_record`; governed `record_*` action descriptors | Reads passed actor-bound GraphJin, MCP, OpenShell and Ax. Queued Work runs qualified create, update, soft-delete and restore against seeded Records GraphJin data. Worker preflight and human approval preceded each effect; duplicate delivery reused the result. Withheld Harness or Records receipts were reconciled from the engine receipt and audit without dispatching a second write. |
 | Knowledge | `neko_memory.search`, `neko_library.search`, `neko_memory.save` | Search is admitted through the MCP bridge for customer Work runs. The equivalent `memory_save` direct capability is admitted only for customer Work runs and records a host effect receipt before Go checkpoint publication. An ambiguous save remains unknown and is never redispatched. The MCP `save` route remains excluded. |
 | Interaction | `neko_interaction.ask_user_question`, `neko_ui.render_cards` | Admitted for eligible Work turns. Question pause/answer and validated card events passed connected worker/OpenShell checks. The completed Work card rendered once before and after a real Chromium reload. |
 | Skills and local files | `neko_skills.create_skill`; Harness `skill_create`, `skill_inspect`, `skill_update`, `skill_read`, `file_read`, `file_edit`, `file_write`, `file_search`, `upload_read`, `upload_search` | Current-admin, host-journaled skill creation and whole-tree versioned update passed connected Ax/OpenShell and production queue turns; later runs read each published version. Redelivery did not repeat the model or host write, and Chromium showed each answer once after reload. An interrupted directory swap is recovered before customer Work staging. Read-only staged skill and upload tools and run-artifact file tools passed connected turns; Go file writes require a matching read version or create-only target. |
