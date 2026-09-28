@@ -61,7 +61,10 @@ The same queue and browser path then qualified `group_admin.create_group`:
 an intervening same-name group and disabled requester both stopped execution
 before an effect claim; approval followed by worker execution created one
 group and duplicate delivery reused its receipt. Other group changes remain
-open.
+open. A second queued Work turn used management MCP lists to propose
+`add_member` for that custom group and the active administrator. The
+worker added one local membership after approval; replay reused its effect,
+and Chromium found one answer and card across reload.
 
 Cron redelivery has a narrower Postgres-backed qualification: a stale firing
 cannot be claimed after the definition changes or is disabled; linking must

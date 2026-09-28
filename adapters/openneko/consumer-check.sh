@@ -149,6 +149,7 @@ fi
     done
     [[ "$ready" == 1 ]] || { echo 'Isolated group-admin web server did not start' >&2; exit 1; }
     (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-group-admin-reload.mjs "$(cat "$HARNESS_STATE/m5-group-admin-thread")")
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-group-member-reload.mjs "$(cat "$HARNESS_STATE/m5-group-member-thread")")
     echo M5_CONNECTED_GROUP_ADMIN_PASS
     exit 0
   fi

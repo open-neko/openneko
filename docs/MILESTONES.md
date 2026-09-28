@@ -547,8 +547,13 @@ created one pending request without a group row, rejected a disabled
 requester and an intervening same-name group before claiming the effect,
 then created one group through the existing worker adapter. Duplicate Work
 and action delivery produced no second request, model call or group.
-Chromium found one answer and completed approval card after reload. Other
-group, membership, item-grant and data-access changes remain unqualified.
+Chromium found one answer and completed approval card after reload. A
+second queued Work turn used pinned management MCP lists to select that
+group and an active user, then proposed `add_member` through the same
+grant. Approval preceded the local membership row; a changed membership
+was rejected before the effect claim, and duplicate delivery reused one
+result. Chromium found one membership answer and card after reload.
+Other group, item-grant and data-access changes remain unqualified.
 
 Source inventory for the next M5c slice:
 
@@ -558,7 +563,7 @@ Source inventory for the next M5c slice:
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. The real GraphJin websocket reconnect/replay gate passed; qualify trigger crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save remains excluded. Direct `skill_create` and whole-tree CAS `skill_update` journal and publish host-owned org skills; connected Ax/OpenShell and queued worker/browser gates pass, including redelivery and interrupted-swap recovery. Add idempotency before any automatic retry of a lost memory-save receipt. |
-| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Member invitation and group creation use separate run-bound internal grants, human approval and worker effects with actor/target recheck. Qualify other user/group changes and channel, data-source, plugin and source-config mutations separately. |
+| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Member invitation, group creation and custom-group `add_member` use run-bound internal grants, human approval and worker effects with actor/target recheck. Qualify other user/group changes and channel, data-source, plugin and source-config mutations separately. |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 
 These are source-level contracts, not acceptance claims. A successful MCP reply

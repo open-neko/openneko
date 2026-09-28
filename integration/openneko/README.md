@@ -92,6 +92,11 @@ same-name group appearing after approval blocks effect claim; replay
 restores one saved effect. Chromium checks one answer and completed
 approval card across reload. Expect `M5_CONNECTED_GROUP_ADMIN_PASS`
 and `M5_WEB_GROUP_ADMIN_PASS`; cleanup stops the isolated stack.
+The same gate then discovers the group and active administrator through
+the real management MCP lists, proposes `add_member`, rejects an intervening
+membership before effect claim, and adds one local membership after approval.
+Expect `M5_QUEUE_GROUP_MEMBER_EFFECT_PASS` and
+`M5_WEB_GROUP_MEMBER_PASS` across browser reload.
 
 For a narrower websocket transport check, use the same command with
 `HARNESS_M5_WS_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`. It verifies
