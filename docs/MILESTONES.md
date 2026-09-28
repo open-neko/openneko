@@ -290,9 +290,12 @@ structured content and the `is_error` status. An in-memory SDK server with
 one-tool pages verified paginated discovery, typed tool errors, rejection of
 unsupported image content and oversized results, and a call deadline. A
 second real OpenNeko stdio-bridge test killed the child after admission and
-verified that its next call failed. These checks do not yet prove a stalled
-product broker request cancels end to end or that a changed catalog is fenced
-on a nonterminal checkpoint resume.
+verified that its next call failed. A stalled synthetic broker read made the
+Go call hit its deadline; closing the bridge terminated its child and closed
+the broker request. A nonterminal checkpoint rejected an MCP version change
+before any new model or tool call, while the unchanged catalog resumed its
+saved read receipt. These checks qualify the exercised read path; they do not
+imply that every logical MCP server has end-to-end cancellation propagation.
 
 **Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
 its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or

@@ -87,7 +87,11 @@ content as separate result fields, while retaining text and `is_error`. Its
 focused SDK fixture covers paginated discovery, tool errors, unsupported image
 content, oversized results and call deadlines. A real OpenNeko stdio bridge
 was killed after admission; the next tool call failed. Product-broker stall
-cancellation and a nonterminal resume after catalog drift remain unverified.
+cancellation was exercised with a deadline and bridge teardown: the child
+exited and the synthetic broker request closed. A nonterminal MCP checkpoint
+rejected catalog version drift before model/tool replay and reused its saved
+read when the catalog was unchanged. Other logical MCP servers still need
+their own cancellation qualification before admission.
 
 The 2026-09-28 replay gate also distinguished an already-deleted OpenShell
 sandbox from a teardown failure. The former now records a successful

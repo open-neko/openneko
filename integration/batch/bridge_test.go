@@ -276,3 +276,90 @@ func TestOpenNekoStdioBridgeDeathFailsCall(t *testing.T) {
 		t.Fatal("dead bridge returned a successful tool result")
 	}
 }
+
+func TestOpenNekoStalledBrokerCallEndsOnBridgeTeardown(t *testing.T) {
+	source := os.Getenv("OPENNEKO_TEST_SOURCE")
+	if source == "" {
+		t.Skip("set OPENNEKO_TEST_SOURCE to the isolated OpenNeko checkout")
+	}
+	bridge := filepath.Join(source, "apps/worker/src/agent-sandbox/mcp-bridge.ts")
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["query"] == "stall policy" {
+			close(started)
+			<-r.Context().Done()
+			close(stopped)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer broker.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.Command("node", "--import", "tsx", bridge, "neko_memory")
+	cmd.Dir = filepath.Join(source, "apps/worker")
+	cmd.Env = append(os.Environ(),
+		"OPENNEKO_BROKER_URL="+broker.URL,
+		"OPENNEKO_BROKER_TOKEN=fixture-broker-token",
+		"OPENNEKO_MCP_MEMORY_READ_ONLY=1",
+		"OPENNEKO_MCP_MODE=work",
+		"OPENNEKO_MCP_ORG_ID=org-fixture",
+		"OPENNEKO_MCP_THREAD_ID=thread-fixture",
+		"OPENNEKO_MCP_RUN_ID=run-fixture",
+		"OPENNEKO_MCP_SKILLS_ROOT="+t.TempDir(),
+	)
+	session, err := protocol.NewClient(&protocol.Implementation{Name: "harness-m5b-stall", Version: "1"}, nil).
+		Connect(ctx, &protocol.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	listed, err := session.ListTools(ctx, nil)
+	if err != nil || len(listed.Tools) != 1 {
+		t.Fatalf("bridge discovery failed: %v %+v", err, listed)
+	}
+	schema, err := json.Marshal(listed.Tools[0].InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps, err := adapter.Admit(ctx, session, []adapter.Admission{{
+		Name: "memory_search", Alias: "mcp_memory_search", Version: "1", Origin: "openneko",
+		Effect: "read", Description: "Search run-scoped memory.", Schema: schema,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callCtx, stop := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer stop()
+	callDone := make(chan error, 1)
+	go func() {
+		_, callErr := caps[0].Call(callCtx, json.RawMessage(`{"query":"stall policy"}`))
+		callDone <- callErr
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stalled broker request never started")
+	}
+	select {
+	case callErr := <-callDone:
+		if callErr == nil {
+			t.Fatal("cancelled MCP call succeeded")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("MCP call did not observe its deadline")
+	}
+	closeErr := session.Close()
+	if cmd.ProcessState == nil {
+		t.Fatalf("bridge teardown left child process running: %v", closeErr)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("bridge teardown left the broker request open")
+	}
+}

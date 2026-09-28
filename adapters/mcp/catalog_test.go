@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -175,5 +176,78 @@ func TestMCPResultKindsAndBoundaries(t *testing.T) {
 	defer cancel()
 	if _, err := call(5, deadlineCtx); err == nil {
 		t.Fatal("stalled MCP call ignored deadline")
+	}
+}
+
+func TestMCPNonterminalResumeRejectsCatalogDrift(t *testing.T) {
+	ctx := context.Background()
+	server := protocol.NewServer(&protocol.Implementation{Name: "fixture", Version: "1"}, nil)
+	schema := json.RawMessage(`{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false}`)
+	var reads atomic.Int32
+	server.AddTool(&protocol.Tool{Name: "read_record", InputSchema: schema}, func(context.Context, *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
+		reads.Add(1)
+		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.TextContent{Text: "record-42"}}}, nil
+	})
+	clientSide, serverSide := protocol.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverSide, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	clientSession, err := protocol.NewClient(&protocol.Implementation{Name: "harness", Version: "1"}, nil).Connect(ctx, clientSide, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientSession.Close()
+	admission := Admission{Name: "read_record", Alias: "mcp_read_record", Version: "1", Origin: "fixture", Effect: "read", Description: "Read one record.", Schema: schema}
+	caps, err := Admit(ctx, clientSession, []Admission{admission})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answers := []string{
+		`{"javascriptCode":"final('Read the record',{})"}`,
+		`{"javascriptCode":"const row=mcp_read_record({key:'42'}); final('Use the row',{row});"}`,
+		`{"javascriptCode":"final('Continue the interrupted read',{})"}`,
+		`{"javascriptCode":"const row=mcp_read_record({key:'42'}); final('Use saved row',{row});"}`,
+		`{"answer":"Record 42"}`,
+	}
+	var modelCalls atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := int(modelCalls.Add(1)) - 1
+		if n >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[n]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	axClient := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	spec := agent.Spec{Version: 1, RunID: "mcp-drift", InputID: "input", Prompt: "Read record 42"}
+	root := t.TempDir()
+	_, err = session.RunWithTools(ctx, root, spec, axClient, agent.Tools{Capabilities: caps}, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("host interrupted after MCP result")
+		}
+		return nil
+	})
+	if err == nil || reads.Load() != 1 {
+		t.Fatalf("MCP result was not checkpointed: err=%v reads=%d", err, reads.Load())
+	}
+	admission.Version = "2"
+	changed, err := Admit(ctx, clientSession, []Admission{admission})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := modelCalls.Load()
+	if _, err := session.ResumeWithTools(ctx, root, spec, axClient, agent.Tools{Capabilities: changed}, func(agent.Event) error { return nil }); err == nil || !strings.Contains(err.Error(), "catalog changed") {
+		t.Fatalf("changed MCP binding resumed: %v", err)
+	}
+	if modelCalls.Load() != before || reads.Load() != 1 {
+		t.Fatalf("catalog drift replayed work: models=%d reads=%d", modelCalls.Load(), reads.Load())
+	}
+	result, err := session.ResumeWithTools(ctx, root, spec, axClient, agent.Tools{Capabilities: caps}, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || reads.Load() != 1 {
+		t.Fatalf("unchanged MCP catalog did not resume saved receipt: result=%+v err=%v reads=%d models=%d", result, err, reads.Load(), modelCalls.Load())
 	}
 }
