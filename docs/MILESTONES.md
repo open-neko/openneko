@@ -285,6 +285,14 @@ With a synthetic broker and read-only memory, library and records servers, it
 verifies discovery, scoped calls, and child-process exit on close. The separate
 isolated OpenShell check qualifies memory/library search and records catalog,
 not general MCP.
+The generic adapter now keeps bounded MCP resource links alongside text,
+structured content and the `is_error` status. An in-memory SDK server with
+one-tool pages verified paginated discovery, typed tool errors, rejection of
+unsupported image content and oversized results, and a call deadline. A
+second real OpenNeko stdio-bridge test killed the child after admission and
+verified that its next call failed. These checks do not yet prove a stalled
+product broker request cancels end to end or that a changed catalog is fenced
+on a nonterminal checkpoint resume.
 
 **Deliver:** connect the Go runtime to OpenNeko's existing logical servers through
 its trusted bridge. Reuse protocol support available in the pinned Ax Go stack or

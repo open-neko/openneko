@@ -220,3 +220,59 @@ func TestOpenNekoReadOnlyStdioBridge(t *testing.T) {
 		t.Fatalf("records blueprint tool missing: %v", err)
 	}
 }
+
+func TestOpenNekoStdioBridgeDeathFailsCall(t *testing.T) {
+	source := os.Getenv("OPENNEKO_TEST_SOURCE")
+	if source == "" {
+		t.Skip("set OPENNEKO_TEST_SOURCE to the isolated OpenNeko checkout")
+	}
+	bridge := filepath.Join(source, "apps/worker/src/agent-sandbox/mcp-bridge.ts")
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer broker.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.Command("node", "--import", "tsx", bridge, "neko_memory")
+	cmd.Dir = filepath.Join(source, "apps/worker")
+	cmd.Env = append(os.Environ(),
+		"OPENNEKO_BROKER_URL="+broker.URL,
+		"OPENNEKO_BROKER_TOKEN=fixture-broker-token",
+		"OPENNEKO_MCP_MEMORY_READ_ONLY=1",
+		"OPENNEKO_MCP_MODE=work",
+		"OPENNEKO_MCP_ORG_ID=org-fixture",
+		"OPENNEKO_MCP_THREAD_ID=thread-fixture",
+		"OPENNEKO_MCP_RUN_ID=run-fixture",
+		"OPENNEKO_MCP_SKILLS_ROOT="+t.TempDir(),
+	)
+	client := protocol.NewClient(&protocol.Implementation{Name: "harness-m5b-death", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &protocol.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	listed, err := session.ListTools(ctx, nil)
+	if err != nil || len(listed.Tools) != 1 {
+		t.Fatalf("bridge discovery failed: %v %+v", err, listed)
+	}
+	schema, err := json.Marshal(listed.Tools[0].InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps, err := adapter.Admit(ctx, session, []adapter.Admission{{
+		Name: "memory_search", Alias: "mcp_memory_search", Version: "1", Origin: "openneko",
+		Effect: "read", Description: "Search run-scoped memory.", Schema: schema,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	callCtx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+	defer stop()
+	if _, err := caps[0].Call(callCtx, json.RawMessage(`{"query":"find policy"}`)); err == nil {
+		t.Fatal("dead bridge returned a successful tool result")
+	}
+}

@@ -82,6 +82,12 @@ test containers. The Records fixture now uses the operator model-home path
 captured at module startup and restores its model config after the test; the
 runner supplies that path for the broad gate. The known upstream idle-proxy
 cancellation observation remained a warning, while sandbox teardown passed.
+The generic Go MCP adapter now preserves bounded resource links and structured
+content as separate result fields, while retaining text and `is_error`. Its
+focused SDK fixture covers paginated discovery, tool errors, unsupported image
+content, oversized results and call deadlines. A real OpenNeko stdio bridge
+was killed after admission; the next tool call failed. Product-broker stall
+cancellation and a nonterminal resume after catalog drift remain unverified.
 
 The 2026-09-28 replay gate also distinguished an already-deleted OpenShell
 sandbox from a teardown failure. The former now records a successful

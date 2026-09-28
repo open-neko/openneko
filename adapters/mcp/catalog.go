@@ -17,6 +17,15 @@ type Admission struct {
 	Schema                                            json.RawMessage
 }
 
+type resourceLink struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mime_type,omitempty"`
+	Size        *int64 `json:"size,omitempty"`
+}
+
 // Admit pins discovered schemas to the host allowlist. Unknown tools stay hidden.
 func Admit(ctx context.Context, session *protocol.ClientSession, allowed []Admission) ([]agent.Capability, error) {
 	if session == nil || len(allowed) > 64 {
@@ -79,18 +88,29 @@ func Admit(ctx context.Context, session *protocol.ClientSession, allowed []Admis
 					return nil, fmt.Errorf("empty MCP result")
 				}
 				texts := make([]string, 0, len(result.Content))
+				var resources []resourceLink
 				for _, content := range result.Content {
-					text, ok := content.(*protocol.TextContent)
-					if !ok {
+					switch block := content.(type) {
+					case *protocol.TextContent:
+						texts = append(texts, block.Text)
+					case *protocol.ResourceLink:
+						if block.URI == "" || block.Name == "" {
+							return nil, fmt.Errorf("invalid MCP resource link")
+						}
+						resources = append(resources, resourceLink{
+							URI: block.URI, Name: block.Name, Title: block.Title,
+							Description: block.Description, MIMEType: block.MIMEType, Size: block.Size,
+						})
+					default:
 						return nil, fmt.Errorf("unsupported MCP content")
 					}
-					texts = append(texts, text.Text)
 				}
 				encoded, err := json.Marshal(struct {
-					Content    []string `json:"content"`
-					Structured any      `json:"structured_content,omitempty"`
-					IsError    bool     `json:"is_error"`
-				}{texts, result.StructuredContent, result.IsError})
+					Content    []string       `json:"content"`
+					Resources  []resourceLink `json:"resource_links,omitempty"`
+					Structured any            `json:"structured_content,omitempty"`
+					IsError    bool           `json:"is_error"`
+				}{texts, resources, result.StructuredContent, result.IsError})
 				if err != nil || len(encoded) > 262144 {
 					return nil, fmt.Errorf("MCP result exceeds limit")
 				}
