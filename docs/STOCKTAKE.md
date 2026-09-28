@@ -91,8 +91,12 @@ cannot make a pack action available or execute its approval. The connected
 effect crash matrix rejected a wrong-source adapter before any effect claim;
 queued pack approval, installed-plugin and Records effects, workflow output,
 Hermes cold/warm runs and browser artifact checks still passed. The declarative
-GraphJin API pack adapter remains an admitted external-effect path needing its
-own connected provider gate.
+GraphJin API pack adapter also passed a separate isolated queue gate against
+a GraphJin-compatible HTTP provider (`/tmp/harness-m5-pack-effect-queue.log`).
+The production action handler recorded one approved provider effect and reused
+its receipt; a second provider commit lost its response and stayed unknown
+without redispatch. Installed-plugin effects that contact an external provider
+still need their own connected gate.
 The generic Go MCP adapter now preserves bounded resource links and structured
 content as separate result fields, while retaining text and `is_error`. Its
 focused SDK fixture covers paginated discovery, tool errors, unsupported image
