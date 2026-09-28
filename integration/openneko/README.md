@@ -98,6 +98,16 @@ membership before effect claim, and adds one local membership after approval.
 Expect `M5_QUEUE_GROUP_MEMBER_EFFECT_PASS` and
 `M5_WEB_GROUP_MEMBER_PASS` across browser reload.
 
+For the focused data-source registration gate, use
+`HARNESS_M5_DATA_SOURCE_ADMIN_ONLY=1`. A queued Work proposal leaves
+the registry unchanged pending approval. A disabled requester or an
+intervening same-name source blocks effect claim; approval creates one
+disabled API placeholder without connection secrets. Work and action
+redelivery preserve one request and effect. Chromium checks the answer
+and completed card across reload. Expect
+`M5_CONNECTED_DATA_SOURCE_ADMIN_PASS` and
+`M5_WEB_DATA_SOURCE_ADMIN_PASS`; the isolated stack is stopped.
+
 For a narrower websocket transport check, use the same command with
 `HARNESS_M5_WS_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`. It verifies
 changed source snapshots arrive before and after a real GraphJin restart and

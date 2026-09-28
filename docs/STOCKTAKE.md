@@ -55,8 +55,7 @@ pending invitation, inserted no user before approval, rejected execution
 when the requester was disabled, and inserted one user after approval.
 Duplicate Work and action delivery reused the request and effect; Chromium
 found the answer and terminal approval card once after reload. The
-invitation path is qualified. Other user-change variants and the group,
-channel, data-source, plugin and source-config mutation families remain open.
+invitation path is qualified. Other user changes remain open.
 The same queue and browser path then qualified `group_admin.create_group`:
 an intervening same-name group and disabled requester both stopped execution
 before an effect claim; approval followed by worker execution created one
@@ -65,6 +64,13 @@ open. A second queued Work turn used management MCP lists to propose
 `add_member` for that custom group and the active administrator. The
 worker added one local membership after approval; replay reused its effect,
 and Chromium found one answer and card across reload.
+A further connected queue and browser run qualified
+`data_source_admin.register`: a pending proposal left the registry
+untouched, a disabled requester and intervening source stopped effect
+claim, and approved execution created one disabled API placeholder.
+Replay reused the result, and Chromium found one answer and card after
+reload. Other group, channel, data-source, plugin and source-config
+mutations remain open.
 
 Cron redelivery has a narrower Postgres-backed qualification: a stale firing
 cannot be claimed after the definition changes or is disabled; linking must

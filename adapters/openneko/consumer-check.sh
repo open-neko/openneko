@@ -132,6 +132,26 @@ fi
     echo M5_CONNECTED_USER_ADMIN_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M5_DATA_SOURCE_ADMIN_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-data-source-admin-live.ts)
+    [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
+    set -m
+    (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m5-data-source-admin-next.log 2>&1 &
+    web_pid=$!
+    set +m
+    trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+    ready=0
+    for ((n=0; n<90; n++)); do
+      if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+      kill -0 "$web_pid" || exit 1
+      sleep 1
+    done
+    [[ "$ready" == 1 ]] || { echo 'Isolated data-source-admin web server did not start' >&2; exit 1; }
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-data-source-admin-reload.mjs "$(cat "$HARNESS_STATE/m5-data-source-admin-thread")")
+    echo M5_CONNECTED_DATA_SOURCE_ADMIN_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M5_GROUP_ADMIN_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-group-admin-live.ts)
