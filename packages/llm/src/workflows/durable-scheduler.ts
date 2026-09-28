@@ -1,5 +1,6 @@
 import cronParser from "cron-parser";
 import { pool } from "@neko/db";
+import { cancelStaleQueuedTriggerRuns } from "./queued-trigger-recovery";
 
 export const WORKFLOW_SCHEDULER_HEALTH_ID = "cron";
 export const WORKFLOW_SCHEDULER_LOCK_KEY =
@@ -137,6 +138,7 @@ type ActiveWorkflowRow = {
   cron: string;
   cron_timezone: string;
   updated_at: Date;
+  revision: string;
 };
 
 type DueScheduleRow = ActiveWorkflowRow & {
@@ -207,7 +209,8 @@ export async function materializeDueWorkflowFirings(
     );
 
     const active = await client.query<ActiveWorkflowRow>(
-      `select id, org_id, cron, cron_timezone, updated_at
+      `select id, org_id, cron, cron_timezone, updated_at,
+              updated_at::text as revision
        from workflow_definition
        where enabled = true and cron_enabled = true and cron is not null
          and ($1::text is null or org_id = $1)
@@ -266,7 +269,7 @@ export async function materializeDueWorkflowFirings(
           workflow.cron,
           workflow.cron_timezone,
           now,
-          workflow.updated_at,
+          workflow.revision,
         ],
       );
 
@@ -290,7 +293,7 @@ export async function materializeDueWorkflowFirings(
           workflow.org_id,
           workflow.cron,
           workflow.cron_timezone,
-          workflow.updated_at,
+          workflow.revision,
           nextFireAt,
           now,
         ],
@@ -315,18 +318,17 @@ export async function materializeDueWorkflowFirings(
     await client.query(
       `update workflow_schedule_firing firing
        set status = 'cancelled', completed_at = $2, lease_until = null,
-           last_error = 'schedule disabled before dispatch', updated_at = $2
+           last_error = 'schedule changed before dispatch', updated_at = $2
        where ($1::text is null or firing.org_id = $1)
          and firing.status in ('pending', 'dispatching', 'enqueued')
-         and exists (
-           select 1 from workflow_definition workflow
-           where workflow.id = firing.workflow_id
-             and (
-               workflow.enabled = false
-               or workflow.cron_enabled = false
-               or workflow.cron is null
-             )
-         )`,
+         and firing.workflow_run_id is null
+         and not exists (select 1 from workflow_definition workflow
+           join workflow_schedule_state state on state.workflow_id=workflow.id
+           where workflow.id=firing.workflow_id and workflow.enabled=true
+             and workflow.cron_enabled=true and workflow.cron=state.cron
+             and workflow.cron_timezone=state.cron_timezone
+             and workflow.updated_at=state.definition_updated_at
+             and firing.definition_updated_at=state.definition_updated_at)`,
       [options.orgId ?? null, now],
     );
 
@@ -336,6 +338,7 @@ export async function materializeDueWorkflowFirings(
               state.cron,
               state.cron_timezone,
               state.definition_updated_at as updated_at,
+              state.definition_updated_at::text as revision,
               state.next_fire_at,
               state.catch_up_policy,
               workflow.daily_run_budget
@@ -389,12 +392,12 @@ export async function materializeDueWorkflowFirings(
       for (const scheduledFor of occurrences) {
         const inserted = await client.query(
           `insert into workflow_schedule_firing (
-             org_id, workflow_id, scheduled_for, status, available_at,
+             org_id, workflow_id, scheduled_for, definition_updated_at, status, available_at,
              created_at, updated_at
-           ) values ($1, $2, $3, 'pending', $4, $4, $4)
+           ) values ($1, $2, $3, $5, 'pending', $4, $4, $4)
            on conflict (workflow_id, scheduled_for) do nothing
            returning id`,
-          [schedule.org_id, schedule.id, scheduledFor, now],
+          [schedule.org_id, schedule.id, scheduledFor, now, schedule.revision],
         );
         if ((inserted.rowCount ?? 0) > 0) {
           result.materialized++;
@@ -556,6 +559,7 @@ export async function claimWorkflowScheduleFiring(input: {
            and workflow.cron = state.cron
            and workflow.cron_timezone = state.cron_timezone
            and workflow.updated_at = state.definition_updated_at
+           and workflow_schedule_firing.definition_updated_at = state.definition_updated_at
        )
      returning id`,
     [input.firingId, input.orgId, now, leaseUntil, input.workflowId],
@@ -585,7 +589,8 @@ export async function reclaimQueuedWorkflowScheduleFiring(input: {
          where workflow.id=firing.workflow_id and workflow.org_id=firing.org_id
            and workflow.enabled=true and workflow.cron_enabled=true
            and workflow.cron=state.cron and workflow.cron_timezone=state.cron_timezone
-           and workflow.updated_at=state.definition_updated_at)
+           and workflow.updated_at=state.definition_updated_at
+           and firing.definition_updated_at=state.definition_updated_at)
      returning firing.workflow_run_id`,
     [input.firingId,input.orgId,input.workflowId,now]);
   return result.rows[0]?.workflow_run_id??null;
@@ -676,6 +681,7 @@ export async function recoverStaleWorkflowScheduleFirings(
   now = new Date(),
   options: { orgId?: string } = {},
 ): Promise<number> {
+  const staleCancelled=await cancelStaleQueuedTriggerRuns("schedule",now,options.orgId);
   // An exhausted queue job may never redeliver itself. Requeue only a linked
   // work run that is still queued; the start CAS fences a stalled old worker.
   const queued=await pool().query(
@@ -692,7 +698,8 @@ export async function recoverStaleWorkflowScheduleFirings(
          where workflow.id=firing.workflow_id and workflow.org_id=firing.org_id
            and workflow.enabled=true and workflow.cron_enabled=true
            and workflow.cron=state.cron and workflow.cron_timezone=state.cron_timezone
-           and workflow.updated_at=state.definition_updated_at)
+           and workflow.updated_at=state.definition_updated_at
+           and firing.definition_updated_at=state.definition_updated_at)
      returning firing.id`,[now,options.orgId??null]);
   const finalized = await pool().query(
     `update workflow_schedule_firing firing
@@ -733,7 +740,7 @@ export async function recoverStaleWorkflowScheduleFirings(
      returning firing.id`,
     [now, options.orgId ?? null],
   );
-  return (queued.rowCount??0)+(finalized.rowCount ?? 0) + (recovered.rowCount ?? 0);
+  return staleCancelled+(queued.rowCount??0)+(finalized.rowCount ?? 0) + (recovered.rowCount ?? 0);
 }
 
 export async function recordWorkflowSchedulerSuccess(input: {

@@ -1,6 +1,7 @@
 import { pool } from "@neko/db";
 import { enqueue as defaultEnqueue, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import type { SourceChangeMatch } from "./subscription-query";
+import { cancelStaleQueuedTriggerRuns } from "./queued-trigger-recovery";
 
 export type SourceChangeDelivery = {
   id: string;
@@ -31,11 +32,12 @@ export async function recordSourceChangeDelivery(input: {
       version_token: input.match.version_token,
     };
     const inserted = await client.query<{id:string}>(
-      `insert into source_change_delivery
-         (org_id, subscription_id, subscription_updated_at, workflow_id,
+       `insert into source_change_delivery
+         (org_id, subscription_id, subscription_updated_at, definition_updated_at, workflow_id,
           source_id, delivery_key, trigger_payload)
-       select $1, sub.id, sub.updated_at, $3, $4, $5, $6::jsonb
+       select $1, sub.id, sub.updated_at, workflow.updated_at, $3, $4, $5, $6::jsonb
        from subscription sub
+       join workflow_definition workflow on workflow.id=$3 and workflow.org_id=$1 and workflow.enabled=true
        join data_source source on source.id=$4 and source.org_id=$1 and source.enabled=true
        where sub.id=$2 and sub.org_id=$1 and sub.workflow_id=$3
          and sub.enabled=true and date_trunc('milliseconds',sub.updated_at)=$7
@@ -157,6 +159,7 @@ export async function dispatchPendingSourceChangeDeliveries(
   at?: Date, limit = 50,
 ): Promise<number> {
   const now = at ?? (await pool().query<{now:Date}>("select now() as now")).rows[0]!.now;
+  await cancelStaleQueuedTriggerRuns("source_change",now);
   await pool().query(
     `update source_change_delivery delivery
      set status='pending',lease_until=null,available_at=$1,updated_at=$1,
@@ -168,7 +171,8 @@ export async function dispatchPendingSourceChangeDeliveries(
        and exists (select 1 from subscription sub join workflow_definition workflow
          on workflow.id=sub.workflow_id where sub.id=delivery.subscription_id
            and sub.org_id=delivery.org_id and sub.enabled=true and workflow.enabled=true
-           and sub.updated_at=delivery.subscription_updated_at)`,[now],
+           and sub.updated_at=delivery.subscription_updated_at
+           and workflow.updated_at=delivery.definition_updated_at)`,[now],
   );
   await pool().query(
     `update source_change_delivery delivery
@@ -178,7 +182,8 @@ export async function dispatchPendingSourceChangeDeliveries(
      where delivery.subscription_id=sub.id and delivery.workflow_id=workflow.id
        and delivery.status in ('pending','dispatching','enqueued')
        and (sub.enabled=false or workflow.enabled=false
-            or sub.updated_at is distinct from delivery.subscription_updated_at)`,[now],
+            or sub.updated_at is distinct from delivery.subscription_updated_at
+            or workflow.updated_at is distinct from delivery.definition_updated_at)`,[now],
   );
   await pool().query(
     `update source_change_delivery d
@@ -234,7 +239,8 @@ export async function claimSourceChangeDelivery(input:{id:string;orgId:string;wo
        and exists (select 1 from subscription sub join workflow_definition workflow
          on workflow.id=sub.workflow_id where sub.id=delivery.subscription_id
          and sub.org_id=delivery.org_id and sub.enabled=true and workflow.enabled=true
-         and sub.updated_at=delivery.subscription_updated_at)
+         and sub.updated_at=delivery.subscription_updated_at
+         and workflow.updated_at=delivery.definition_updated_at)
      returning delivery.id`,[input.id,input.orgId,input.workflowId],
   );
   return claimed.rowCount===1;
@@ -259,7 +265,8 @@ export async function reclaimQueuedSourceChangeDelivery(input:{
        and exists (select 1 from subscription sub join workflow_definition workflow
          on workflow.id=sub.workflow_id where sub.id=delivery.subscription_id
            and sub.org_id=delivery.org_id and sub.enabled=true and workflow.enabled=true
-           and sub.updated_at=delivery.subscription_updated_at)
+           and sub.updated_at=delivery.subscription_updated_at
+           and workflow.updated_at=delivery.definition_updated_at)
      returning delivery.workflow_run_id`,[input.id,input.orgId,input.workflowId,now]);
   return reclaimed.rows[0]?.workflow_run_id??null;
 }

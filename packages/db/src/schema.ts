@@ -2050,6 +2050,7 @@ export const workflow_schedule_firing = pgTable(
       .notNull()
       .references(() => workflow_definition.id, { onDelete: "cascade" }),
     scheduled_for: ts("scheduled_for").notNull(),
+    definition_updated_at: ts("definition_updated_at"),
     status: text("status").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
     available_at: ts("available_at").notNull().defaultNow(),
@@ -2091,6 +2092,7 @@ export const source_change_delivery = pgTable(
     org_id: text("org_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
     subscription_id: uuid("subscription_id").notNull().references(() => subscription.id, { onDelete: "cascade" }),
     subscription_updated_at: ts("subscription_updated_at").notNull(),
+    definition_updated_at: ts("definition_updated_at"),
     workflow_id: uuid("workflow_id").notNull().references(() => workflow_definition.id, { onDelete: "cascade" }),
     source_id: uuid("source_id").notNull().references(() => data_source.id, { onDelete: "cascade" }),
     delivery_key: text("delivery_key").notNull(),

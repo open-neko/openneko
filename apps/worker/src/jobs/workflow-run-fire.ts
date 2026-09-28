@@ -509,7 +509,8 @@ async function runWorkflowRunFireTraced(
         result = await runWorkflowTurn(
           {
             prepared,
-            requireQueuedStart:Boolean(scheduleFiringId || sourceChangeDeliveryId),
+            queuedDelivery:scheduleFiringId?{kind:"schedule",id:scheduleFiringId}:
+              sourceChangeDeliveryId?{kind:"source_change",id:sourceChangeDeliveryId}:undefined,
             userMessage: apiClaim
               ? apiInputMessage(apiClaim!.requestPayload)
               : payload.userMessage,
