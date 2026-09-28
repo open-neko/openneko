@@ -108,11 +108,13 @@ it("lets the harness runtime describe its admitted tools without a conflicting r
 });
 
 it("mentions user administration only when the harness admits its proposal tool", () => {
-  expect(build("harness")).not.toContain("To invite a member, use propose");
+  expect(build("harness")).not.toContain("For user changes, use propose");
   const admitted=build("harness",{supportsUserAdminProposal:true});
-  expect(admitted).toContain("To invite a member, use propose with action user_admin");
+  expect(admitted).toContain("For user changes, use propose with action user_admin");
+  expect(admitted).toContain("deactivate or reactivate a nonadministrator");
+  expect(admitted).toContain("promote an active nonadministrator");
   expect(admitted).toContain("awaits administrator approval");
-  expect(admitted).toContain("Other user changes are unavailable");
+  expect(admitted).toContain("Demotion and administrator deactivation are unavailable");
 });
 
 it("advertises group changes only with the run-bound proposal grant", () => {

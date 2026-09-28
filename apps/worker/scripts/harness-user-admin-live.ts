@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { app_user, db, eq, getOrgId, getOrCreateSoloAdmin, llm_provider_config, pool, processing_job } from "@neko/db";
+import { administratorUserIds, app_user, db, eq, getOrgId, getOrCreateSoloAdmin, llm_provider_config, pool, processing_job, setLocalAdministrator } from "@neko/db";
 import { boss, enqueue, QUEUE, type ActionExecutePayload, type WorkRunPayload } from "@neko/db/jobs";
 import { createWorkRun, createWorkThread, shutdownAgentBroker } from "@neko/llm/work";
 import { approveActionRequest, createActionRequest, executeApprovedActionRequest, seedDefaultActionPolicies } from "@neko/llm/workflows";
@@ -40,11 +40,11 @@ async function waitFor(queueName:string,jobId:string):Promise<void> {
   throw Error(`${queueName} timed out`);
 }
 
-async function submitWork(runId:string,threadId:string,trigger:string):Promise<void> {
+async function submitWork(runId:string,threadId:string,trigger:string,message="Invite the synthetic team member as a member; request approval first."):Promise<void> {
   const [job]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger})
     .returning({id:processing_job.id});
   const queued=await enqueue(QUEUE.WORK_RUN,{processingJobId:job.id,orgId,runId,threadId,
-    message:"Invite the synthetic team member as a member; request approval first."},{retryLimit:0});
+    message},{retryLimit:0});
   assert.ok(queued);
   await waitFor(QUEUE.WORK_RUN,queued);
   const [run]=(await pool().query<{status:string;error:string|null}>(
@@ -142,6 +142,108 @@ try {
     [orgId,inviteEmail])).rows[0].n,1);
   await writeFile(join(process.env.HARNESS_STATE!,"m5-user-admin-thread"),thread.id);
   console.log("M5_QUEUE_USER_ADMIN_EFFECT_PASS",request.id);
+
+  const qualifyStateChange=async (action:"deactivate"|"reactivate",beforeDisabled:boolean):Promise<void> => {
+    const model=`harness-user-${action}-fixture`;
+    await db().update(llm_provider_config).set({model}).where(eq(llm_provider_config.id,provider.id));
+    await writeFile(configPath,`model:\n  provider: custom\n  default: ${model}\n  base_url: http://host.docker.internal:18118/v1\n`);
+    assert.equal((await fetch("http://127.0.0.1:18118/control",{method:"POST",body:"{}"})).status,204);
+    const stateThread=await createWorkThread(orgId,`M5 governed member ${action}`,"web",actor.id);
+    const stateRun=await createWorkRun(orgId,stateThread.id,"harness",{userId:actor.id,role:"admin"});
+    const message=`${action==="deactivate" ? "Deactivate" : "Reactivate"} the synthetic member; request approval first.`;
+    await submitWork(stateRun.id,stateThread.id,`test-user-${action}-proposal`,message);
+    const [stateRequest]=(await pool().query<{id:string;status:string;kind:string;target:string}>(
+      "select id,status,kind,target from action_request where org_id=$1 and work_run_id=$2",
+      [orgId,stateRun.id])).rows;
+    assert.ok(stateRequest);
+    assert.equal(stateRequest.status,"pending_approval");
+    assert.equal(stateRequest.kind,"user_admin");
+    assert.equal(stateRequest.target,invited.id);
+    const isDisabled=async ()=>(await pool().query<{disabled:boolean}>(
+      "select disabled_at is not null as disabled from app_user where org_id=$1 and id=$2",
+      [orgId,invited.id])).rows[0].disabled;
+    assert.equal(await isDisabled(),beforeDisabled,"proposal must not change target user");
+    const beforeStateCalls=await (await fetch("http://127.0.0.1:18118/control")).json();
+    await submitWork(stateRun.id,stateThread.id,`test-user-${action}-redelivery`,message);
+    assert.deepEqual(await (await fetch("http://127.0.0.1:18118/control")).json(),beforeStateCalls);
+    assert.equal((await pool().query("select count(*)::int as n from action_request where org_id=$1 and work_run_id=$2",
+      [orgId,stateRun.id])).rows[0].n,1);
+    console.log(`M5_QUEUE_USER_${action.toUpperCase()}_PROPOSAL_PASS`,stateRun.id);
+
+    await approveActionRequest({orgId,id:stateRequest.id,approverUserId:actor.id,
+      approver:{userId:actor.id,role:"admin"}});
+    await db().update(app_user).set({disabled_at:beforeDisabled ? null : new Date()})
+      .where(eq(app_user.id,invited.id));
+    try {
+      await assert.rejects(executeApprovedActionRequest(orgId,stateRequest.id),
+        /Target user state changed/);
+      assert.equal((await pool().query("select count(*)::int as n from action_execution where org_id=$1 and action_request_id=$2",
+        [orgId,stateRequest.id])).rows[0].n,0,"changed target state must stop before effect claim");
+    } finally {
+      await db().update(app_user).set({disabled_at:beforeDisabled ? new Date() : null})
+        .where(eq(app_user.id,invited.id));
+    }
+    const stateJob=await enqueue(QUEUE.ACTION_EXECUTE,{orgId,actionRequestId:stateRequest.id},{retryLimit:0});
+    assert.ok(stateJob);
+    await waitFor(QUEUE.ACTION_EXECUTE,stateJob);
+    assert.equal(await isDisabled(),!beforeDisabled);
+    const replay=await enqueue(QUEUE.ACTION_EXECUTE,{orgId,actionRequestId:stateRequest.id},{retryLimit:0});
+    assert.ok(replay);
+    await waitFor(QUEUE.ACTION_EXECUTE,replay);
+    assert.equal(await isDisabled(),!beforeDisabled);
+    assert.equal((await pool().query("select count(*)::int as n from action_execution where org_id=$1 and action_request_id=$2",
+      [orgId,stateRequest.id])).rows[0].n,1);
+    await writeFile(join(process.env.HARNESS_STATE!,`m5-user-${action}-thread`),stateThread.id);
+    console.log(`M5_QUEUE_USER_${action.toUpperCase()}_EFFECT_PASS`,stateRequest.id);
+  };
+  await qualifyStateChange("deactivate",false);
+  await qualifyStateChange("reactivate",true);
+
+  const promoteModel="harness-user-promote-fixture";
+  await db().update(llm_provider_config).set({model:promoteModel}).where(eq(llm_provider_config.id,provider.id));
+  await writeFile(configPath,`model:\n  provider: custom\n  default: ${promoteModel}\n  base_url: http://host.docker.internal:18118/v1\n`);
+  assert.equal((await fetch("http://127.0.0.1:18118/control",{method:"POST",body:"{}"})).status,204);
+  const promoteThread=await createWorkThread(orgId,"M5 governed member promotion","web",actor.id);
+  const promoteRun=await createWorkRun(orgId,promoteThread.id,"harness",{userId:actor.id,role:"admin"});
+  const promoteMessage="Promote the synthetic member to administrator; request approval first.";
+  await submitWork(promoteRun.id,promoteThread.id,"test-user-promote-proposal",promoteMessage);
+  const [promoteRequest]=(await pool().query<{id:string;status:string;kind:string;target:string}>(
+    "select id,status,kind,target from action_request where org_id=$1 and work_run_id=$2",
+    [orgId,promoteRun.id])).rows;
+  assert.ok(promoteRequest);
+  assert.equal(promoteRequest.status,"pending_approval");
+  assert.equal(promoteRequest.kind,"user_admin");
+  assert.equal(promoteRequest.target,invited.id);
+  assert.equal((await administratorUserIds(orgId)).has(invited.id),false,"proposal must not promote");
+  const beforePromoteCalls=await (await fetch("http://127.0.0.1:18118/control")).json();
+  await submitWork(promoteRun.id,promoteThread.id,"test-user-promote-redelivery",promoteMessage);
+  assert.deepEqual(await (await fetch("http://127.0.0.1:18118/control")).json(),beforePromoteCalls);
+  assert.equal((await pool().query("select count(*)::int as n from action_request where org_id=$1 and work_run_id=$2",
+    [orgId,promoteRun.id])).rows[0].n,1);
+  console.log("M5_QUEUE_USER_PROMOTE_PROPOSAL_PASS",promoteRun.id);
+  await approveActionRequest({orgId,id:promoteRequest.id,approverUserId:actor.id,
+    approver:{userId:actor.id,role:"admin"}});
+  await setLocalAdministrator(orgId,invited.id,true);
+  try {
+    await assert.rejects(executeApprovedActionRequest(orgId,promoteRequest.id),
+      /Target user is already an administrator/);
+    assert.equal((await pool().query("select count(*)::int as n from action_execution where org_id=$1 and action_request_id=$2",
+      [orgId,promoteRequest.id])).rows[0].n,0,"changed role must stop before effect claim");
+  } finally {
+    await setLocalAdministrator(orgId,invited.id,false);
+  }
+  const promoteJob=await enqueue(QUEUE.ACTION_EXECUTE,{orgId,actionRequestId:promoteRequest.id},{retryLimit:0});
+  assert.ok(promoteJob);
+  await waitFor(QUEUE.ACTION_EXECUTE,promoteJob);
+  assert.equal((await administratorUserIds(orgId)).has(invited.id),true);
+  const promoteReplay=await enqueue(QUEUE.ACTION_EXECUTE,{orgId,actionRequestId:promoteRequest.id},{retryLimit:0});
+  assert.ok(promoteReplay);
+  await waitFor(QUEUE.ACTION_EXECUTE,promoteReplay);
+  assert.equal((await administratorUserIds(orgId)).has(invited.id),true);
+  assert.equal((await pool().query("select count(*)::int as n from action_execution where org_id=$1 and action_request_id=$2",
+    [orgId,promoteRequest.id])).rows[0].n,1);
+  await writeFile(join(process.env.HARNESS_STATE!,"m5-user-promote-thread"),promoteThread.id);
+  console.log("M5_QUEUE_USER_PROMOTE_EFFECT_PASS",promoteRequest.id);
 } finally {
   await queue.stop({graceful:true,timeout:5000});
   await new Promise<void>(resolve=>admin.close(()=>resolve()));
