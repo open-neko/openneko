@@ -526,9 +526,9 @@ card once before and after reload. Harness action proposals still force
 human approval until auto-execution is separately qualified.
 
 **User-administration slice (2026-09-28):** an eligible customer Work run
-can propose a `user_admin` change through the run-bound Harness action
-grant. The host validates the exact invite, role, deactivate or reactivate
-arguments and current actor/target state before creating a pending internal
+can propose a member invitation through the run-bound `user_admin` action
+grant. The host validates the exact email and role and current actor/target
+state before creating a pending internal
 action request. The existing human approval and worker executor own the
 effect. Execution rechecks the frozen definition and current actor/target;
 disabling the requester after approval prevents an effect claim. A connected
