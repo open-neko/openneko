@@ -360,8 +360,13 @@ replayed each queued CRUD run before approval without a second model call or
 action request. It then deliberately lost the Harness receipt after each
 real GraphJin effect committed. The Harness marked the effect unknown, then
 read the Records engine's completed receipt and audit to reconcile it without
-dispatching the mutation again. A crash before that engine receipt remains
-unknown and is never permission to retry the write. A restored terminal run
+dispatching the mutation again. A later connected queue gate injected a failure
+after GraphJin committed `record_create` and wrote its trigger audit, but before
+the Records engine saved its receipt. Reconciliation derived the exact mutation
+identity from the frozen action and pre-dispatch target context, verified the audit, repaired the engine receipt
+and restored the Harness effect without a second GraphJin write. If the audit
+does not prove the mutation, the outcome stays unknown and is never permission
+to retry it. A restored terminal run
 currently logs an unsuccessful cleanup attempt when its sandbox was already
 deleted; the saved result and effect are unchanged, but cleanup telemetry needs
 to distinguish an absent sandbox from a failed deletion.
@@ -867,9 +872,9 @@ authorized actions.
 
 ## Immediate order
 
-1. Qualify a real installed-plugin provider effect when one is available;
-   cover Records CRUD crash and queue-redelivery edges beyond the connected
-   approved-effect fixtures.
+1. Qualify remaining product writes at their actual effect boundaries. A real
+   installed-plugin provider effect still needs an available provider instance;
+   the synthetic installed-plugin effect and Records receipt recovery pass.
 2. Qualify remaining skill/admin writes and trigger crash edges at their host
    effect boundaries; retain the accepted idle cancellation warning separately.
 3. Run the full isolated OpenShell/worker/Hermes/browser gate after each grouped
