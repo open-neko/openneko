@@ -898,11 +898,14 @@ receipt or conservative missing-usage charge. A content-free
 server LLM-call count, usage coverage and the admission charge without merging
 it into outer Ax usage; durable replay retains that projection. Cost and model-profile checks
 still require a connected GraphJin/OpenShell qualification.
-The pinned Ax Go build passed a deterministic `AxRunControl.Steer` fixture:
-guidance queued inside a host tool result appeared once in the subsequent
-model request and never in preceding requests. This qualifies the Ax boundary,
-not yet a durable lifecycle hook; the harness still needs to journal and
-reconstruct any state update before relying on it across interruption.
+The pinned Ax Go build passed deterministic `AxRunControl.Steer` fixtures:
+guidance queued inside an executor tool result reached the responder, while
+root-targeted guidance from a distiller result reached both executor and
+responder. A `root/executor` target reached only the executor. Therefore a
+durable lifecycle hook must choose an explicit stage path and verify the
+`applied` event; unscoped steering cannot promise exactly-once delivery.
+The harness still needs to journal and reconstruct any state update before
+relying on it across interruption.
 Use Ax's [published Go skills](https://axllm.dev/go/skills/) as scoped implementation
 references: `ax-go-agent` and `ax-go-agent-rlm` for actor/runtime behavior,
 `ax-go-agent-observability` for per-call usage, `ax-go-agent-memory-skills`

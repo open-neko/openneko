@@ -22,6 +22,45 @@ func TestAxRunControlAppliesToolResultSteeringAtModelBoundary(t *testing.T) {
 		`{"javascriptCode":"const row=read({}); final('Use the row',{row});"}`,
 		`{"answer":"REF-42"}`,
 	}
+	seen := axSteeringFixture(t, answers, "")
+	if strings.Contains(seen[0], "Host state updated") || strings.Contains(seen[1], "Host state updated") ||
+		strings.Count(seen[2], "Host state updated: REF-42") != 1 {
+		t.Fatalf("steering did not reach exactly the next boundary: %q", seen)
+	}
+}
+
+func TestAxRunControlRootSteeringRepeatsAcrossStages(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"const row=read({}); final('Use the row',{row});"}`,
+		`{"javascriptCode":"final('Keep the row',{});"}`,
+		`{"answer":"REF-42"}`,
+	}
+	seen := axSteeringFixture(t, answers, "")
+	if strings.Contains(seen[0], "Host state updated") ||
+		strings.Count(seen[1], "Host state updated: REF-42") != 1 ||
+		strings.Count(seen[2], "Host state updated: REF-42") != 1 {
+		t.Fatalf("unexpected root steering propagation: %d, %d, %d", strings.Count(seen[0], "Host state updated"),
+			strings.Count(seen[1], "Host state updated"), strings.Count(seen[2], "Host state updated"))
+	}
+}
+
+func TestAxRunControlScopedSteeringAppliesToOneStage(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"const row=read({}); final('Use the row',{row});"}`,
+		`{"javascriptCode":"final('Keep the row',{});"}`,
+		`{"answer":"REF-42"}`,
+	}
+	seen := axSteeringFixture(t, answers, "root/executor")
+	if strings.Contains(seen[0], "Host state updated") ||
+		strings.Count(seen[1], "Host state updated: REF-42") != 1 ||
+		strings.Contains(seen[2], "Host state updated") {
+		t.Fatalf("scoped steering propagated to the wrong stage: %d, %d, %d", strings.Count(seen[0], "Host state updated"),
+			strings.Count(seen[1], "Host state updated"), strings.Count(seen[2], "Host state updated"))
+	}
+}
+
+func axSteeringFixture(t *testing.T, answers []string, target string) []string {
+	t.Helper()
 	var mu sync.Mutex
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +81,13 @@ func TestAxRunControlAppliesToolResultSteeringAtModelBoundary(t *testing.T) {
 	control := ax.RunControl()
 	runtime := axgoja.NewRuntime()
 	runtime.RegisterCallable("read", func(ax.Value) (ax.Value, error) {
-		if err := control.Steer("Host state updated: REF-42"); err != nil {
+		var err error
+		if target == "" {
+			err = control.Steer("Host state updated: REF-42")
+		} else {
+			err = control.Steer("Host state updated: REF-42", target)
+		}
+		if err != nil {
 			return nil, err
 		}
 		return ax.Object("reference", "REF-42"), nil
@@ -57,8 +102,5 @@ func TestAxRunControlAppliesToolResultSteeringAtModelBoundary(t *testing.T) {
 	if err != nil || len(seen) != 3 || !strings.Contains(toJSON(output), "REF-42") {
 		t.Fatalf("output=%v err=%v requests=%d", output, err, len(seen))
 	}
-	if strings.Contains(seen[0], "Host state updated") || strings.Contains(seen[1], "Host state updated") ||
-		strings.Count(seen[2], "Host state updated: REF-42") != 1 {
-		t.Fatalf("steering did not reach exactly the next boundary: %q", seen)
-	}
+	return seen
 }

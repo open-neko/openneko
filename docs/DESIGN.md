@@ -372,12 +372,14 @@ is applied; AxAgent also exposes state/session export and restore. Apply state
 changes through the run owner at a documented safe boundary, never by concurrently
 mutating a running AxAgent. Persist any change needed after recovery before the
 next dependent model request, and test that a resumed run sees it exactly once.
-The pinned Go build has a local fixture proving that `AxRunControl.Steer`
-queued by a host tool callback enters the next model request once. Its
-`AxRuntimeHooks` surface contains rate limiting, tracing and metering, not a
-state-mutation callback. A production state hook therefore belongs at the
-harness-owned result boundary, with a durable state projection and replay rule;
-the Ax control alone is not the journal.
+The pinned Go build has local fixtures for `AxRunControl.Steer`. A root-targeted
+update queued during the distiller appears in both later stages; targeting
+`root/executor` confines it to the executor. Do not infer exactly-once
+application from the queued event: choose a stage path and observe its
+`applied` event. `AxRuntimeHooks` contains rate limiting, tracing and metering,
+not a state-mutation callback. A production state hook therefore belongs at
+the harness-owned result boundary, with a durable state projection and replay
+rule; the Ax control alone is not the journal.
 
 There are separate hook effects: **state transitions** may change agent working
 context, **policy gates** may deny a proposed operation, and **observers** emit
