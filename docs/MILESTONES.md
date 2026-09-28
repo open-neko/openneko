@@ -853,6 +853,14 @@ tool outcomes no longer return `status: completed` with the responder's
 unverified success claim; the focused durable-write and broker tests cover the
 terminal mapping, and a checkpoint test proves an `is_error` result remains
 incomplete after resume. General claim-to-receipt verification remains open.
+Host-approved Ax stage routes now select distinct context/executor/responder
+models. A two-route HTTP
+fixture verified model and credential selection on all three stages, model-call
+receipts, exact replay without new provider calls, and rejection of a changed
+profile at checkpoint recovery. This is local Go coverage; OpenShell multi-route
+qualification remains open. A fault-injection run found that this pinned Ax Go
+build accepts `executorModelPolicy` but does not use it in live execution; error-turn
+escalation is disabled until an Ax fix or a verified harness implementation.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote

@@ -1,8 +1,26 @@
 # Headless run protocol v1
 
-Build `go build -o bin/harness ./cmd/harness`. The trusted host supplies
-`HARNESS_MODEL_URL`, `HARNESS_MODEL` and `HARNESS_MODEL_API_KEY`; inside OpenShell
-use its injected placeholder. Provider types never enter the run contract.
+Build `go build -o bin/harness ./cmd/harness`. For a single model, the trusted
+host supplies `HARNESS_MODEL_URL`, `HARNESS_MODEL` and `HARNESS_MODEL_API_KEY`;
+inside OpenShell use its injected placeholder. For stage routing, the trusted
+host instead supplies `HARNESS_MODEL_ROUTES` as JSON, for example:
+
+```json
+{"context":"cheap-model","executor":"work-model","responder":"work-model","routes":[{"model":"cheap-model","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},{"model":"work-model","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"}]}
+```
+
+Each route must have a distinct actual provider model name. The named key
+environment variables hold credentials or OpenShell-replaced placeholders;
+neither credentials nor routes may be selected by run input. Ax's context,
+executor and responder stages use the approved models. A host-derived digest of the
+nonsecret routing configuration is pinned in the checkpoint, so replay/resume
+rejects a changed profile. Model-call events record the selected model. This
+does not configure GraphJin: its server-side Ax agent owns its own strong model.
+Multi-route OpenShell transport and credential replacement still need connected
+qualification before enabling this profile in production.
+Error-turn escalation is not enabled: a local fault-injection fixture found that
+the pinned Ax Go build accepts `executorModelPolicy` but does not apply it in a
+live agent run. It requires an Ax fix or a separately verified implementation.
 
 One bounded JSON object on stdin followed by EOF:
 
@@ -10,7 +28,8 @@ One bounded JSON object on stdin followed by EOF:
 {"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Explain the supplied task"}
 ```
 
-Unknown fields, blank/oversized values and trailing input are rejected. Stdout is
+Unknown fields, caller-supplied routing digests, blank/oversized values and
+trailing input are rejected. Stdout is
 ordered NDJSON: `run.started`, Ax `span.started`/`span.finished`, optional
 `tool.started`/`tool.finished`, and `run.finished`. Events carry version, run/input
 IDs and sequence; spans have local parent IDs; host tool operations have stable local

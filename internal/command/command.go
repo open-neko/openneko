@@ -7,12 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 
-	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/harness/internal/agent"
 	"github.com/open-neko/harness/internal/session"
 )
@@ -63,14 +61,14 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return 2, fmt.Errorf("expected exactly one run specification")
 	}
-	base := os.Getenv("HARNESS_MODEL_URL")
-	model := os.Getenv("HARNESS_MODEL")
-	key := os.Getenv("HARNESS_MODEL_API_KEY")
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || model == "" || key == "" {
-		return 2, fmt.Errorf("configure HARNESS_MODEL_URL, HARNESS_MODEL and HARNESS_MODEL_API_KEY")
+	if spec.HostRoutingDigest != "" {
+		return 2, fmt.Errorf("host routing digest cannot be selected by run input")
 	}
-	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model))
+	client, digest, err := loadModelClient(os.Getenv)
+	if err != nil {
+		return 2, err
+	}
+	spec.HostRoutingDigest = digest
 	encoder := json.NewEncoder(output)
 	emit := func(e agent.Event) error { return encoder.Encode(e) }
 	var result agent.Result
