@@ -72,6 +72,12 @@ Replay reused the result, and Chromium found one answer and card after
 reload. Other group, channel, data-source, plugin and source-config
 mutations remain open.
 
+The 2026-09-28 replay gate also distinguished an already-deleted OpenShell
+sandbox from a teardown failure. The former now records a successful
+`harness_reconcile_cleanup` phase; an unrecognized deletion failure is
+propagated. The restored Work summary still reports model-usage coverage
+`unavailable`, a separate telemetry gap.
+
 Cron redelivery has a narrower Postgres-backed qualification: a stale firing
 cannot be claimed after the definition changes or is disabled; linking must
 affect the claimed firing; a linked failed run settles without a second

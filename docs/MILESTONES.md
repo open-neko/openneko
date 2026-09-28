@@ -366,10 +366,11 @@ the Records engine saved its receipt. Reconciliation derived the exact mutation
 identity from the frozen action and pre-dispatch target context, verified the audit, repaired the engine receipt
 and restored the Harness effect without a second GraphJin write. If the audit
 does not prove the mutation, the outcome stays unknown and is never permission
-to retry it. A restored terminal run
-currently logs an unsuccessful cleanup attempt when its sandbox was already
-deleted; the saved result and effect are unchanged, but cleanup telemetry needs
-to distinguish an absent sandbox from a failed deletion.
+to retry it. A restored terminal run now records an already-absent sandbox
+as successful cleanup; other deletion failures stop replay so teardown
+cannot be silently ignored. The connected data-source gate verified the
+already-absent case. Restored-run usage remains marked unavailable in
+that gate and needs separate telemetry reconciliation.
 An installed-manifest `PluginRegistry` fixture now passes the production
 pg-boss Work queue, Harness OpenShell agent, actor-bound proposal, human
 approval and worker action executor. Duplicate delivery does not repeat the
