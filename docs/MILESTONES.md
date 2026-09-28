@@ -503,6 +503,11 @@ while dispatch still showed an active lease. Only a work run still marked
 queued is eligible; a running run may already have performed effects and
 remains fenced. The queued-start state transition allows only one worker to
 reach the model if an old worker resumes after lease expiry.
+A further connected gate edited the workflow definition after preparing each
+trigger type but before model start. The revision-bound start refused both;
+recovery cancelled the linked queued runs, released spend reservations and
+settled the deliveries without a model call. A sub-millisecond Postgres
+fixture verified the cron scheduler copies the exact definition revision.
 The fixture restarted GraphJin; the subscription manager reconnected, the
 same snapshot arrived again, and the durable delivery ledger dropped it
 without another workflow or model call. A second handler invocation likewise
