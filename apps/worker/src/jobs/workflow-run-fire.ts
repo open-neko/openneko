@@ -19,11 +19,10 @@ import {
   claimSourceChangeDelivery,
   completeWorkflowScheduleFiring,
   finishWorkflowApiAdmission,
-  linkWorkflowScheduleFiringRun,
-  linkSourceChangeDeliveryRun,
   loadPreparedWorkflowRun,
   persistWorkflowApiTelemetry,
   prepareWorkflowRun,
+  prepareWorkflowRunForDelivery,
   releaseWorkflowScheduleFiringRun,
   releaseUnlinkedSourceChangeDelivery,
   settleLinkedWorkflowScheduleFiring,
@@ -34,6 +33,7 @@ import {
   updateWorkflowApiRunProgress,
   type ClaimedWorkflowApiAdmission,
   type PreparedWorkflowRun,
+  type PrepareWorkflowRunOptions,
   type WorkflowApiBatchProgress,
 } from "@neko/llm/workflows";
 import { observeSafely } from "@neko/telemetry";
@@ -313,6 +313,9 @@ async function runWorkflowRunFireTraced(
   const scheduleFiringId = payload.scheduleFiringId;
   const sourceChangeDeliveryId = payload.sourceChangeDeliveryId;
   if (scheduleFiringId && sourceChangeDeliveryId) throw new Error("Workflow fire has conflicting delivery identities");
+  if (payload.triggerKind === "api" && (scheduleFiringId || sourceChangeDeliveryId)) {
+    throw new Error("API workflow fire cannot carry a scheduler delivery identity");
+  }
   if (scheduleFiringId) {
     const claimed = await startupPhase("workflow.claim_schedule", async () => claimWorkflowScheduleFiring({
       firingId: scheduleFiringId,
@@ -357,7 +360,7 @@ async function runWorkflowRunFireTraced(
       }));
     } else {
       await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
-      prepared = await startupPhase("workflow.prepare", async () => prepareWorkflowRun({
+      const preparation: PrepareWorkflowRunOptions = {
         orgId: payload.orgId,
         workflowId: payload.workflowId,
         triggerKind: payload.triggerKind,
@@ -367,20 +370,15 @@ async function runWorkflowRunFireTraced(
         triggeredBySubscriptionId: payload.triggeredBySubscriptionId,
         triggeredByOutputId: payload.triggeredByOutputId,
         triggeredByObservationId: payload.triggeredByObservationId,
-      }));
+      };
+      prepared = await startupPhase("workflow.prepare", async () =>
+        scheduleFiringId ? prepareWorkflowRunForDelivery(preparation,{kind:"schedule",id:scheduleFiringId}) :
+        sourceChangeDeliveryId ? prepareWorkflowRunForDelivery(preparation,{kind:"source_change",id:sourceChangeDeliveryId}) :
+        prepareWorkflowRun(preparation));
     }
 
-    if (scheduleFiringId) {
-      await linkWorkflowScheduleFiringRun(
-        scheduleFiringId,
-        prepared.workflowRun.id,
-      );
-      scheduleLinked = true;
-    }
-    if (sourceChangeDeliveryId) {
-      await linkSourceChangeDeliveryRun(sourceChangeDeliveryId,prepared.workflowRun.id);
-      sourceChangeLinked = true;
-    }
+    scheduleLinked=Boolean(scheduleFiringId);
+    sourceChangeLinked=Boolean(sourceChangeDeliveryId);
 
     const scrubber = getCurrentScrubber();
     emit = async (event: AgentEvent): Promise<void> => {
