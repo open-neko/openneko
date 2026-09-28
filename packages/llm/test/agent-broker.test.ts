@@ -110,9 +110,9 @@ describe("startAgentBroker token registry", () => {
         body:JSON.stringify({operationId:1,binding:"b".repeat(64),instruction}),
       });
       expect((await post("/v1/harness/workflow/save")).status).toBe(400);
-      const dataTrigger=JSON.stringify({name:"Needs separate trigger recovery",steps:[{id:"s",description:"Check"}],
-        expectedVersion:"absent",triggers:{when:{table:"lead",primary_key:["id"]}}});
-      expect((await post("/v1/harness/workflow/save",token,dataTrigger)).status).toBe(400);
+      const invalidTrigger=JSON.stringify({name:"Missing trigger identity",steps:[{id:"s",description:"Check"}],
+        expectedVersion:"absent",triggers:{when:{table:"lead",primary_key:[]}}});
+      expect((await post("/v1/harness/workflow/save",token,invalidTrigger)).status).toBe(400);
       expect((await post("/v1/workflow/save")).status).toBe(403);
       expect((await post("/v1/workflow/delete")).status).toBe(403);
       const ungranted=handle.tokenFor({runId:"other",orgId:"org",threadId:"thread",kind:"work",profile:"harness-read-only"});
