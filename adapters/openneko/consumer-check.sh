@@ -129,6 +129,9 @@ fi
     done
     [[ "$ready" == 1 ]] || { echo 'Isolated user-admin web server did not start' >&2; exit 1; }
     (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-user-admin-reload.mjs "$(cat "$HARNESS_STATE/m5-user-admin-thread")")
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-user-state-reload.mjs "$(cat "$HARNESS_STATE/m5-user-deactivate-thread")" deactivate)
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-user-state-reload.mjs "$(cat "$HARNESS_STATE/m5-user-reactivate-thread")" reactivate)
+    (cd "$product" && pnpm --filter @neko/web exec node scripts/harness-user-state-reload.mjs "$(cat "$HARNESS_STATE/m5-user-promote-thread")" promote)
     echo M5_CONNECTED_USER_ADMIN_PASS
     exit 0
   fi

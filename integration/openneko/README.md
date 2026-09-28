@@ -77,13 +77,14 @@ before and after reload. Expect `M5_CONNECTED_SKILL_QUEUE_PASS` and
 
 For the focused user-administration gate, use
 `HARNESS_M5_USER_ADMIN_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`.
-A queued Work turn proposes one internal invitation and leaves the user
-absent pending approval. The fixture approves it, verifies a disabled
-requester cannot claim the effect, then applies it through the worker
-executor. Work and action redelivery preserve one request, user row and
-effect. Chromium checks the answer and completed approval card across
-reload. Expect `M5_CONNECTED_USER_ADMIN_PASS` and
-`M5_WEB_USER_ADMIN_PASS`; the isolated stack and web process are stopped.
+A queued Work turn proposes an invitation and leaves the user absent pending
+approval. Three subsequent turns discover the synthetic member through the
+pinned MCP list and propose deactivate, reactivate and promotion. Each
+operation verifies a pending approval, changed-state or disabled-requester
+rejection before effect claim, one worker effect after approval and a saved
+result on Work/action redelivery. Chromium checks each answer and completed
+approval card across reload. Expect `M5_CONNECTED_USER_ADMIN_PASS` and the
+`M5_WEB_USER_*_PASS` markers; the isolated stack and web process are stopped.
 
 For the focused group-creation gate, replace the flag with
 `HARNESS_M5_GROUP_ADMIN_ONLY=1`. A queued Work turn proposes a group,

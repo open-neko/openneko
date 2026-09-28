@@ -526,19 +526,21 @@ concurrent create-only attempts yield one row. Chromium found the edited rule
 card once before and after reload. Harness action proposals still force
 human approval until auto-execution is separately qualified.
 
-**User-administration slice (2026-09-28):** an eligible customer Work run
-can propose a member invitation through the run-bound `user_admin` action
-grant. The host validates the exact email and role and current actor/target
-state before creating a pending internal
-action request. The existing human approval and worker executor own the
+**User-administration slice (2026-09-28):** eligible customer Work runs can
+propose member invitation, nonadministrator deactivate/reactivate and active
+nonadministrator promotion through the run-bound `user_admin` action grant.
+The host validates exact actor and target state before creating a pending
+internal request. Human approval and the existing worker executor own each
 effect. Execution rechecks the frozen definition and current actor/target;
-disabling the requester after approval prevents an effect claim. A connected
-Ax/OpenShell/pg-boss fixture proposed an invitation, confirmed no user row
-before approval, applied one user insert after approval, and restored the
-saved result on duplicate Work and action delivery. Chromium found one
-answer and a terminal approval card before and after reload. This qualifies
-the invitation path only; the other user-admin variants and other
-administration families still need connected effect gates.
+a disabled requester or changed target state prevents an effect claim. A
+connected Ax/OpenShell/pg-boss fixture invited a synthetic member, then
+discovered it through the pinned management MCP list for the three state
+changes. Each operation remained pending before approval, applied once after
+approval and restored its saved result on duplicate Work and action delivery.
+Chromium checked the answers and terminal approval cards across reload.
+Administrator deactivation, demotion and administrator invitations still need
+separate lockout and identity-provider qualification; other administration
+families remain open.
 
 **Group-creation slice (2026-09-28):** the separate run-bound
 `group_admin` grant admits `create_group` with a bounded name and
@@ -576,7 +578,7 @@ Source inventory for the next M5c slice:
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. The real GraphJin websocket reconnect/replay gate passed; qualify trigger crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save remains excluded. Direct `skill_create` and whole-tree CAS `skill_update` journal and publish host-owned org skills; connected Ax/OpenShell and queued worker/browser gates pass, including redelivery and interrupted-swap recovery. Add idempotency before any automatic retry of a lost memory-save receipt. |
-| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Member invitation, group creation, custom-group `add_member` and disabled data-source registration use run-bound internal grants, human approval and worker effects with actor/target recheck. Qualify other user/group changes and channel, remaining data-source, plugin and source-config mutations separately. |
+| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Member invitation, nonadministrator deactivate/reactivate and promotion, group creation, custom-group `add_member` and disabled data-source registration use run-bound internal grants, human approval and worker effects with actor/target recheck. Qualify administrator lockout-sensitive changes and other group, channel, data-source, plugin and source-config mutations separately. |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 
 These are source-level contracts, not acceptance claims. A successful MCP reply

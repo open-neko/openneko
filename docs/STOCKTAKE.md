@@ -50,12 +50,13 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
 
 The 2026-09-28 M5c user-administration slice adds a run-bound internal
-`user_admin` proposal. A connected Ax/OpenShell/pg-boss run created one
-pending invitation, inserted no user before approval, rejected execution
-when the requester was disabled, and inserted one user after approval.
-Duplicate Work and action delivery reused the request and effect; Chromium
-found the answer and terminal approval card once after reload. The
-invitation path is qualified. Other user changes remain open.
+`user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,
+then used pinned MCP user discovery to deactivate, reactivate and promote that
+member. Each run left the target unchanged pending approval, rejected a
+disabled requester or changed target before effect claim, applied one worker
+effect after approval and reused the request and receipt on redelivery.
+Chromium found each answer and terminal approval card once after reload.
+Administrator lockout-sensitive changes remain open.
 The same queue and browser path then qualified `group_admin.create_group`:
 an intervening same-name group and disabled requester both stopped execution
 before an effect claim; approval followed by worker execution created one
