@@ -324,6 +324,45 @@ export async function succeedRecordsActionExecution(
   throw new RecordsActionLeaseLostError(input.actionRequestId);
 }
 
+/** Repair a lost engine receipt only when the same-transaction mutation audit
+ * proves this exact action committed. The caller must also validate its frozen
+ * request and derive the expected mutation ID; no GraphJin write occurs here. */
+export async function recoverRecordsActionExecutionFromAudit(
+  pool: Pool,
+  input: {
+    actionRequestId: string;
+    orgId: string;
+    appId: string;
+    objectApiName: string;
+    actionKind: string;
+    action: "create" | "update" | "delete" | "restore";
+    recordId: string;
+    mutationId: string;
+    result: Record<string, unknown>;
+  },
+): Promise<RecordsActionExecution | null> {
+  const updated = await pool.query<RawExecution>(
+    `update engine.action_execution execution
+     set status='succeeded', result=$8::jsonb, error=null,
+         lease_owner=null, lease_expires_at=null, finished_at=now()
+     where execution.action_request_id=$1 and execution.org_id=$2
+       and execution.app_id=$3 and execution.action_kind=$4
+       and execution.status in ('claimed','running','failed')
+       and exists (
+         select 1 from engine.record_change_log audit
+         where audit.action_request_id=$1 and audit.org_id=$2
+           and audit.app_id=$3 and audit.object_api_name=$5
+           and audit.record_id=$6 and audit.mutation_id=$7
+           and audit.action=$9
+       )
+     returning ${EXECUTION_COLUMNS}`,
+    [input.actionRequestId, input.orgId, input.appId, input.actionKind,
+      input.objectApiName, input.recordId, input.mutationId,
+      JSON.stringify(input.result), input.action],
+  );
+  return updated.rows[0] ? mapExecution(updated.rows[0]) : null;
+}
+
 export async function failRecordsActionExecution(
   pool: Pool,
   input: {
