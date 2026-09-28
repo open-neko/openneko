@@ -187,11 +187,24 @@ export async function prepareWorkflowRunForDelivery(
         opts.triggeredByObservationId??null]);
     workflowRunId=created.rows[0]!.id;
     const table=delivery.kind==="schedule"?"workflow_schedule_firing":"source_change_delivery";
+    const currentRevision=delivery.kind==="schedule"
+      ? `exists (select 1 from workflow_schedule_state state
+          where state.workflow_id=$4
+            and ${table}.definition_updated_at=state.definition_updated_at
+            and date_trunc('milliseconds',state.definition_updated_at)=$5::timestamptz)`
+      : `exists (select 1 from subscription sub
+          where sub.id=${table}.subscription_id and sub.enabled=true
+            and sub.updated_at=${table}.subscription_updated_at
+            and date_trunc('milliseconds',${table}.definition_updated_at)=$5::timestamptz)`;
     const linked=await client.query(
       `update ${table} set workflow_run_id=$2,updated_at=now()
        where id=$1 and org_id=$3 and workflow_id=$4 and status='running'
-         and workflow_run_id is null returning id`,
-      [delivery.id,workflowRunId,opts.orgId,opts.workflowId]);
+         and workflow_run_id is null and ${currentRevision}
+         and exists (select 1 from workflow_definition workflow
+           where workflow.id=$4 and workflow.org_id=$3 and workflow.enabled=true
+             and date_trunc('milliseconds',workflow.updated_at)=$5::timestamptz)
+       returning id`,
+      [delivery.id,workflowRunId,opts.orgId,opts.workflowId,workflow.updatedAt]);
     if (linked.rowCount!==1) throw new Error("Claimed workflow delivery can no longer be linked");
     await client.query("COMMIT");
   } catch (error) {
@@ -260,9 +273,9 @@ export async function loadQueuedPreparedWorkflowRun(input: {
 
 export type RunWorkflowTurnOptions = {
   prepared: PreparedWorkflowRun;
-  /** Queue-delivered triggers must win this state transition before any
-   * model call; a recovered delivery may race a stalled original worker. */
-  requireQueuedStart?: boolean;
+  /** Queue-delivered triggers must still match their admitted revision and
+   * win one queued-to-running transition before any model call. */
+  queuedDelivery?: ClaimedDelivery;
   /** Efficacy evals disable time-saved metadata. Defaults to true. */
   includeUxMetadata?: boolean;
   userMessage?: string;
@@ -353,12 +366,30 @@ async function runWorkflowTurnTraced(
     }
   });
   await startupPhase("run.mark_running", async () => {
-    if (!opts.requireQueuedStart) return markWorkRunRunning(workRunId);
+    if (!opts.queuedDelivery) return markWorkRunRunning(workRunId);
+    const delivery=opts.queuedDelivery;
+    const revisionGuard=delivery.kind==="schedule"
+      ? `exists (select 1 from workflow_schedule_firing firing
+          join workflow_schedule_state state on state.workflow_id=firing.workflow_id
+          join workflow_definition workflow on workflow.id=firing.workflow_id
+          where firing.id=$3 and firing.workflow_run_id=$4 and firing.status='running'
+            and firing.definition_updated_at=state.definition_updated_at
+            and workflow.updated_at=state.definition_updated_at
+            and workflow.enabled=true and workflow.cron_enabled=true
+            and workflow.cron=state.cron and workflow.cron_timezone=state.cron_timezone)`
+      : `exists (select 1 from source_change_delivery delivery
+          join subscription sub on sub.id=delivery.subscription_id
+          join workflow_definition workflow on workflow.id=delivery.workflow_id
+          where delivery.id=$3 and delivery.workflow_run_id=$4 and delivery.status='running'
+            and sub.enabled=true and workflow.enabled=true
+            and sub.updated_at=delivery.subscription_updated_at
+            and workflow.updated_at=delivery.definition_updated_at)`;
     const claimed=await pool().query(
       `update work_run set status='running',updated_at=now()
-       where id=$1 and org_id=$2 and status='queued' returning id`,
-      [workRunId,orgId]);
-    if(claimed.rowCount!==1)throw new Error("Workflow work run already started");
+       where id=$1 and org_id=$2 and status='queued' and ${revisionGuard}
+       returning id`,
+      [workRunId,orgId,delivery.id,workflowRun.id]);
+    if(claimed.rowCount!==1)throw new Error("Workflow delivery changed or work run already started");
   });
 
   let assistantText = "";

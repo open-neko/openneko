@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { shutdownAgentBroker } from "@neko/llm/work";
-import { claimSourceChangeDelivery, claimWorkflowScheduleFiring, createSubscription, dispatchPendingSourceChangeDeliveries, handleSourceChangeMatch, prepareWorkflowRunForDelivery, reclaimQueuedSourceChangeDelivery, reclaimQueuedWorkflowScheduleFiring, recordSourceChangeDelivery, startSubscriptionManager } from "@neko/llm/workflows";
+import { claimSourceChangeDelivery, claimWorkflowScheduleFiring, createSubscription, dispatchPendingSourceChangeDeliveries, handleSourceChangeMatch, materializeDueWorkflowFirings, prepareWorkflowRunForDelivery, reclaimQueuedSourceChangeDelivery, reclaimQueuedWorkflowScheduleFiring, recordSourceChangeDelivery, runWorkflowTurn, startSubscriptionManager } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runDurableWorkflowSchedulerTick } from "../src/workflow-scheduler.js";
 
@@ -218,8 +218,9 @@ try {
   const recoveryFiringId=randomUUID();
   await pool().query(
     `insert into workflow_schedule_firing
-       (id,org_id,workflow_id,scheduled_for,status)
-     values ($1,$2,$3,$4,'enqueued')`,
+       (id,org_id,workflow_id,scheduled_for,definition_updated_at,status)
+     select $1,$2,$3,$4,workflow.updated_at,'enqueued'
+     from workflow_definition workflow where workflow.id=$3`,
     [recoveryFiringId,orgId,cronWorkflow.id,new Date(Date.now()+60_000)]);
   assert.equal(await claimWorkflowScheduleFiring({firingId:recoveryFiringId,
     orgId,workflowId:cronWorkflow.id}),true);
@@ -283,8 +284,9 @@ try {
   const ackRaceFiringId=randomUUID();
   await pool().query(
     `insert into workflow_schedule_firing
-       (id,org_id,workflow_id,scheduled_for,status)
-     values ($1,$2,$3,$4,'enqueued')`,
+       (id,org_id,workflow_id,scheduled_for,definition_updated_at,status)
+     select $1,$2,$3,$4,workflow.updated_at,'enqueued'
+     from workflow_definition workflow where workflow.id=$3`,
     [ackRaceFiringId,orgId,cronWorkflow.id,new Date(Date.now()+120_000)]);
   assert.equal(await claimWorkflowScheduleFiring({firingId:ackRaceFiringId,
     orgId,workflowId:cronWorkflow.id}),true);
@@ -304,6 +306,91 @@ try {
   assert.equal(await reclaimQueuedWorkflowScheduleFiring({firingId:ackRaceFiringId,
     orgId,workflowId:cronWorkflow.id}),null,"already-started cron run must stay fenced");
   console.log("M5_CRON_TRIGGER_ACK_RACE_PASS",ackRaceCronRun.workflowRun.id);
+
+  // An edit after the atomic link but before the model starts invalidates the
+  // admitted revision. Sweeps must terminalize the exact queued run and
+  // release its spend reservation, not leave an invisible running workflow.
+  const staleSource=await recordSourceChangeDelivery({orgId,workflowId:sourceWorkflow.id,
+    subscriptionId:subscription.id,subscriptionUpdatedAt:subscription.updatedAt,
+    sourceId:source.id,deliveryKey:`stale-${randomUUID()}`,
+    match:{table:"references",primary_key:{id:"REF-42"},
+      snapshot:{id:"REF-42"},version_token:`stale-${randomUUID()}`}});
+  assert.equal(await claimSourceChangeDelivery({id:staleSource.id,orgId,
+    workflowId:sourceWorkflow.id}),true);
+  const staleSourceRun=await prepareWorkflowRunForDelivery({orgId,
+    workflowId:sourceWorkflow.id,triggerKind:"subscription"},
+    {kind:"source_change",id:staleSource.id});
+  const staleFiringId=randomUUID();
+  await pool().query(
+    `insert into workflow_schedule_firing
+       (id,org_id,workflow_id,scheduled_for,definition_updated_at,status)
+     select $1,$2,$3,$4,workflow.updated_at,'enqueued'
+     from workflow_definition workflow where workflow.id=$3`,
+    [staleFiringId,orgId,cronWorkflow.id,new Date(Date.now()+180_000)]);
+  assert.equal(await claimWorkflowScheduleFiring({firingId:staleFiringId,
+    orgId,workflowId:cronWorkflow.id}),true);
+  const staleCronRun=await prepareWorkflowRunForDelivery({orgId,
+    workflowId:cronWorkflow.id,triggerKind:"cron"},
+    {kind:"schedule",id:staleFiringId});
+  const beforeStaleCalls=await modelCalls();
+  await pool().query("update workflow_definition set updated_at=now()+interval '1 second' where id=any($1::uuid[])",
+    [[sourceWorkflow.id,cronWorkflow.id]]);
+  await assert.rejects(runWorkflowTurn({prepared:staleSourceRun,
+    queuedDelivery:{kind:"source_change",id:staleSource.id},mode:"headless",emit:async()=>{}}),
+    /Workflow delivery changed or work run already started/);
+  await assert.rejects(runWorkflowTurn({prepared:staleCronRun,
+    queuedDelivery:{kind:"schedule",id:staleFiringId},mode:"headless",emit:async()=>{}}),
+    /Workflow delivery changed or work run already started/);
+  assert.equal(await dispatchPendingSourceChangeDeliveries(),0);
+  const staleHealth=await runDurableWorkflowSchedulerTick();
+  assert.equal(staleHealth.status,"ok",JSON.stringify(staleHealth));
+  for(const [deliveryTable,deliveryId,preparedRun] of [
+    ["source_change_delivery",staleSource.id,staleSourceRun],
+    ["workflow_schedule_firing",staleFiringId,staleCronRun],
+  ] as const){
+    assert.equal((await pool().query(`select status from ${deliveryTable} where id=$1`,
+      [deliveryId])).rows[0].status,"cancelled");
+    assert.equal((await pool().query("select status from workflow_run where id=$1",
+      [preparedRun.workflowRun.id])).rows[0].status,"cancelled");
+    assert.equal((await pool().query("select status from work_run where id=$1",
+      [preparedRun.workRunId])).rows[0].status,"cancelled");
+    assert.ok((await pool().query("select released_at from spend_reservation where work_run_id=$1",
+      [preparedRun.workRunId])).rows[0].released_at);
+  }
+  await runWorkflowRunFire({orgId,workflowId:sourceWorkflow.id,triggerKind:"subscription",
+    sourceChangeDeliveryId:staleSource.id});
+  await runWorkflowRunFire({orgId,workflowId:cronWorkflow.id,triggerKind:"cron",
+    scheduleFiringId:staleFiringId});
+  assert.deepEqual(await modelCalls(),beforeStaleCalls,
+    "a changed trigger definition must not call the model");
+  console.log("M5_SOURCE_TRIGGER_STALE_PRESTART_PASS",staleSourceRun.workflowRun.id);
+  console.log("M5_CRON_TRIGGER_STALE_PRESTART_PASS",staleCronRun.workflowRun.id);
+
+  const [precisionWorkflow]=await db().insert(workflow_definition).values({
+    org_id:orgId,name:`Trigger revision precision ${randomUUID()}`,
+    cron:"* * * * *",cron_timezone:"UTC",cron_enabled:true,
+  }).returning({id:workflow_definition.id});
+  workflows.push(precisionWorkflow.id);
+  await pool().query(
+    "update workflow_definition set updated_at=date_trunc('milliseconds',now())+interval '321 microseconds' where id=$1",
+    [precisionWorkflow.id]);
+  const exactRevision=(await pool().query<{revision:string}>(
+    "select updated_at::text as revision from workflow_definition where id=$1",
+    [precisionWorkflow.id])).rows[0].revision;
+  await materializeDueWorkflowFirings(new Date(Date.now()+120_000),{orgId});
+  const [precisionFiring]=(await pool().query<{id:string;revision:string;state_revision:string}>(
+    `select firing.id,firing.definition_updated_at::text as revision,
+       state.definition_updated_at::text as state_revision
+     from workflow_schedule_firing firing
+     join workflow_schedule_state state on state.workflow_id=firing.workflow_id
+     where firing.workflow_id=$1 order by firing.created_at desc limit 1`,
+    [precisionWorkflow.id])).rows;
+  assert.ok(precisionFiring,"sub-millisecond cron definition produced no firing");
+  assert.equal(precisionFiring.revision,exactRevision);
+  assert.equal(precisionFiring.state_revision,exactRevision);
+  assert.equal(await claimWorkflowScheduleFiring({firingId:precisionFiring.id,
+    orgId,workflowId:precisionWorkflow.id}),true);
+  console.log("M5_CRON_TRIGGER_EXACT_REVISION_PASS",precisionWorkflow.id);
 } finally {
   await subscriptionManager?.stop();
   await queue.stop({graceful:true,timeout:5_000});
