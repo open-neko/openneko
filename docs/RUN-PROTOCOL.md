@@ -24,6 +24,19 @@ Error-turn escalation is not enabled: a local fault-injection fixture found that
 the pinned Ax Go build accepts `executorModelPolicy` but does not apply it in a
 live agent run. It requires an Ax fix or a separately verified implementation.
 
+The optional OpenNeko adapter accepts the operator-owned
+`OPENNEKO_HARNESS_ROUTING` manifest. Each route adds `provider` (an existing
+OpenShell provider name) and `credential_env` (that provider's unique injected
+credential variable) to the Go fields above. The launcher removes these two
+host-only fields before passing `HARNESS_MODEL_ROUTES` to Go, attaches all named
+providers before Harness execution, scopes model egress to their URL hosts, and
+aliases each injected placeholder to its route's `api_key_env`. The same manifest
+is passed to `harness-inspect` during recovery so checkpoint profile comparison
+does not require credentials. This is opt-in for Harness; Hermes keeps its
+primary-provider launch path. The named providers must be provisioned on the
+gateway before launch. Local command fixtures cover this contract; credential
+replacement through a live OpenShell gateway remains to be qualified.
+
 One bounded JSON object on stdin followed by EOF:
 
 ```json

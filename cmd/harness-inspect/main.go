@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/harness/internal/command"
 	"github.com/open-neko/harness/internal/session"
 )
 
@@ -71,6 +72,21 @@ func inspect() error {
 	var extra any
 	if decoder.Decode(&extra) != io.EOF {
 		return fmt.Errorf("expected one recovery specification")
+	}
+	digest, err := command.RoutingDigest(os.Getenv("HARNESS_MODEL_ROUTES"))
+	if err != nil {
+		return err
+	}
+	if reconcile {
+		if request.Spec.HostRoutingDigest != "" {
+			return fmt.Errorf("host routing digest cannot be selected by recovery input")
+		}
+		request.Spec.HostRoutingDigest = digest
+	} else {
+		if spec.HostRoutingDigest != "" {
+			return fmt.Errorf("host routing digest cannot be selected by recovery input")
+		}
+		spec.HostRoutingDigest = digest
 	}
 	var result session.Recovery
 	if reconcile {

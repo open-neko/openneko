@@ -39,29 +39,15 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		}
 		return ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model)), "", nil
 	}
-	if len(raw) > 65536 {
-		return nil, "", fmt.Errorf("HARNESS_MODEL_ROUTES exceeds limit")
+	cfg, digest, err := parseRouteConfig(raw)
+	if err != nil {
+		return nil, "", err
 	}
-	decoder := json.NewDecoder(strings.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	var cfg routeConfig
-	if err := decoder.Decode(&cfg); err != nil {
-		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES")
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES")
-	}
-	if len(cfg.Routes) == 0 || len(cfg.Routes) > 8 || cfg.Context == "" || cfg.Executor == "" || cfg.Responder == "" {
-		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES profile")
-	}
-	known := make(map[string]bool, len(cfg.Routes))
 	entries := make([]ax.Value, 0, len(cfg.Routes))
 	for _, route := range cfg.Routes {
-		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || validModelURL(route.URL) != nil ||
-			!validEnvName(route.APIKeyEnv) || getenv(route.APIKeyEnv) == "" {
-			return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES route or missing credential")
+		if getenv(route.APIKeyEnv) == "" {
+			return nil, "", fmt.Errorf("HARNESS_MODEL_ROUTES route missing credential")
 		}
-		known[route.Key] = true
 		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.URL, "api_key", getenv(route.APIKeyEnv), "model", route.Model))
 		// A logical key can distinguish two accounts that expose the same model.
 		// Ax's explicit router entry strips the key before the provider call, so
@@ -69,20 +55,57 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		service.Name = route.Key
 		entries = append(entries, ax.RouterServiceEntry{Key: route.Key, Description: route.Model, Service: service})
 	}
-	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder} {
-		if !known[model] {
-			return nil, "", fmt.Errorf("HARNESS_MODEL_ROUTES stage has no approved route")
-		}
-	}
 	router, err := ax.NewMultiServiceRouter(entries)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES: %w", err)
 	}
-	canonical, _ := json.Marshal(cfg)
-	digest := sha256.Sum256(canonical)
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
 		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder,
-	}}, hex.EncodeToString(digest[:]), nil
+	}}, digest, nil
+}
+
+// RoutingDigest validates the host route manifest without resolving any keys.
+// The inspector uses it to compare the same trusted profile as the runner.
+func RoutingDigest(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	_, digest, err := parseRouteConfig(raw)
+	return digest, err
+}
+
+func parseRouteConfig(raw string) (routeConfig, string, error) {
+	if len(raw) > 65536 {
+		return routeConfig{}, "", fmt.Errorf("HARNESS_MODEL_ROUTES exceeds limit")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var cfg routeConfig
+	if err := decoder.Decode(&cfg); err != nil {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES")
+	}
+	if len(cfg.Routes) == 0 || len(cfg.Routes) > 8 || cfg.Context == "" || cfg.Executor == "" || cfg.Responder == "" {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES profile")
+	}
+	known := make(map[string]bool, len(cfg.Routes))
+	for _, route := range cfg.Routes {
+		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || validModelURL(route.URL) != nil ||
+			!validEnvName(route.APIKeyEnv) {
+			return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES route")
+		}
+		known[route.Key] = true
+	}
+	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder} {
+		if !known[model] {
+			return routeConfig{}, "", fmt.Errorf("HARNESS_MODEL_ROUTES stage has no approved route")
+		}
+	}
+	canonical, _ := json.Marshal(cfg)
+	digest := sha256.Sum256(canonical)
+	return cfg, hex.EncodeToString(digest[:]), nil
 }
 
 func validModelURL(base string) error {

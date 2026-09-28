@@ -867,6 +867,14 @@ without redispatch. A fixture reconciled a 200 KB result, proved the resumed
 model requests stayed under 100 KB, retrieved its label in Goja, and completed
 with no new lookup. This addresses crash-resume context pressure; ordinary
 long-turn compaction and scoped persisted references remain open.
+The OpenNeko branch now has an opt-in trusted route manifest for Harness-only
+multi-provider OpenShell launches. Local launcher tests check provider attach
+order, distinct credential aliases, route-specific egress, recovery manifest
+propagation and Hermes isolation. The Go inspector derives the same route digest
+without model credentials and rejects a changed manifest. Live gateway
+credential replacement and worker execution still need connected proof.
+This manifest routes the existing Ax context, executor and responder stages;
+semantic skill selection is a separate planned stage, not yet implemented.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote
@@ -874,6 +882,11 @@ work; context compaction preserving original intent and unresolved operations.
 Qualify two approved OpenShell-bound Harness routes first. Do not assign one
 easy/medium/hard label to the entire user request: its GraphJin lookup, skill
 selection, executor turns and final response can have very different costs.
+Route by the operation being performed: exact skill-name matching needs no
+model; ambiguous skill selection may use a small model; the outer executor and
+responder use their own approved routes; GraphJin runs its own server-side
+agent. A budget classifier may size the run's allowance but cannot downgrade
+the GraphJin route or choose a single model for the whole task.
 Configure the separate GraphJin server-side Ax agent with a strong `hard` model
 and reasoning profile at deployment. The Harness cannot reliably know whether
 one lookup will need difficult discovery, and GraphJin currently owns

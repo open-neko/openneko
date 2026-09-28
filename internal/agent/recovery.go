@@ -36,6 +36,7 @@ func recoveryProjection(operations []SavedOperation) string {
 		} else {
 			row["result_ref"] = savedReference(op.ID, op.Result)
 			row["result_bytes"] = len(op.Result)
+			row["result_preview"] = safePrefix(string(op.Result), 256)
 		}
 		rows = append(rows, row)
 	}
@@ -46,6 +47,7 @@ func recoveryProjection(operations []SavedOperation) string {
 				delete(rows[i], "result")
 				rows[i]["result_ref"] = savedReference(op.ID, op.Result)
 				rows[i]["result_bytes"] = len(op.Result)
+				rows[i]["result_preview"] = safePrefix(string(op.Result), 256)
 			}
 			if _, ok := rows[i]["instruction"]; ok && len(op.Instruction) > 128 {
 				delete(rows[i], "instruction")
@@ -60,6 +62,7 @@ func recoveryProjection(operations []SavedOperation) string {
 		for i, op := range operations {
 			delete(rows[i], "instruction")
 			delete(rows[i], "instruction_preview")
+			delete(rows[i], "result_preview")
 			rows[i]["instruction_ref"] = savedReference(op.ID, []byte(op.Instruction))
 			rows[i]["instruction_bytes"] = len(op.Instruction)
 		}
