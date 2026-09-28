@@ -40,6 +40,7 @@ function build(
     supportsPluginManagerTool?: boolean;
     supportsUserAdminProposal?: boolean;
     supportsGroupAdminProposal?: boolean;
+    supportsDataSourceAdminProposal?: boolean;
     supportsNativeDelegation?: boolean;
     pluginCatalog?: PluginCatalog;
     installedSkills?: Array<{ name: string; description: string }>;
@@ -71,6 +72,7 @@ function build(
     supportsPluginManagerTool: overrides.supportsPluginManagerTool ?? false,
     supportsUserAdminProposal: overrides.supportsUserAdminProposal ?? false,
     supportsGroupAdminProposal: overrides.supportsGroupAdminProposal ?? false,
+    supportsDataSourceAdminProposal: overrides.supportsDataSourceAdminProposal ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
     pluginCatalog: overrides.pluginCatalog,
     installedSkills: overrides.installedSkills,
@@ -119,6 +121,14 @@ it("advertises group changes only with the run-bound proposal grant", () => {
   expect(admitted).toContain("For group changes, use propose with action group_admin");
   expect(admitted).toContain("add an active user to a custom group");
   expect(admitted).toContain("Other group and grant changes are unavailable");
+});
+
+it("advertises disabled data-source registration only with the run-bound proposal grant", () => {
+  expect(build("harness")).not.toContain("To register a data source, use propose");
+  const admitted=build("harness",{supportsDataSourceAdminProposal:true});
+  expect(admitted).toContain("action data_source_admin");
+  expect(admitted).toContain("disabled placeholder");
+  expect(admitted).toContain("Credentials must not enter chat");
 });
 
 describe("buildWorkPrompt UX metadata", () => {

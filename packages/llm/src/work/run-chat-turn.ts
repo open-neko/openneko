@@ -554,6 +554,7 @@ async function runChatTurnTraced(
       supportsPluginManagerTool,
       supportsUserAdminProposal: backend.id === "harness" && customerSurface && !!actor.userId,
       supportsGroupAdminProposal: backend.id === "harness" && customerSurface && !!actor.userId,
+      supportsDataSourceAdminProposal: backend.id === "harness" && customerSurface && !!actor.userId,
       supportsNativeDelegation:
         backend.capabilities.nativeDelegation !== undefined &&
         customerSurface &&
@@ -598,6 +599,7 @@ async function runChatTurnTraced(
       ruleWriteEnabled: backend.id === "harness" && customerSurface && actor.role === "admin",
       userAdminProposalEnabled: backend.id === "harness" && customerSurface && !!actor.userId,
       groupAdminProposalEnabled: backend.id === "harness" && customerSurface && !!actor.userId,
+      dataSourceAdminProposalEnabled: backend.id === "harness" && customerSurface && !!actor.userId,
       dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
