@@ -285,6 +285,7 @@ export type RunWorkflowTurnOptions = {
   timeoutMs?: number;
   /** Trusted API admission ceiling; the sandbox applies the lower Harness cap. */
   maxModelCalls?: number;
+  maxModelTokens?: number;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
   /**
@@ -479,6 +480,7 @@ async function runWorkflowTurnTraced(
       signal,
       timeoutMs: opts.timeoutMs,
       maxModelCalls: opts.maxModelCalls,
+      maxModelTokens: opts.maxModelTokens,
     });
     const spendStop = spendCapFromSignal(signal);
     let result = spendStop

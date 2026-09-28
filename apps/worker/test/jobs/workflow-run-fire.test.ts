@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(async () => undefined),
   link: vi.fn(async () => undefined),
   release: vi.fn(async () => undefined),
+  reclaimSchedule: vi.fn(async () => null),
+  prepareForDelivery: vi.fn(),
+  settleSchedule: vi.fn(async () => false),
   prepare: vi.fn(),
   run: vi.fn(),
   claimApi: vi.fn(),
@@ -45,13 +48,16 @@ vi.mock("@neko/llm/workflows", () => ({
   boundedWorkflowApiResult: mocks.boundedResult,
   claimWorkflowApiAdmission: mocks.claimApi,
   claimWorkflowScheduleFiring: mocks.claim,
+  reclaimQueuedWorkflowScheduleFiring: mocks.reclaimSchedule,
   completeWorkflowScheduleFiring: mocks.complete,
   finishWorkflowApiAdmission: mocks.finishApi,
   linkWorkflowScheduleFiringRun: mocks.link,
   loadPreparedWorkflowRun: mocks.loadPrepared,
   persistWorkflowApiTelemetry: mocks.persistApiTelemetry,
   prepareWorkflowRun: mocks.prepare,
+  prepareWorkflowRunForDelivery: mocks.prepareForDelivery,
   releaseWorkflowScheduleFiringRun: mocks.release,
+  settleLinkedWorkflowScheduleFiring: mocks.settleSchedule,
   runCompiledWorkflowApiBatch: mocks.runBatch,
   runWorkflowTurn: mocks.run,
   updateWorkflowApiRunProgress: mocks.updateProgress,
@@ -105,6 +111,9 @@ describe("workflow schedule firing consumer", () => {
     vi.clearAllMocks();
     mocks.claim.mockResolvedValue(true);
     mocks.prepare.mockResolvedValue(prepared);
+    mocks.reclaimSchedule.mockResolvedValue(null);
+    mocks.prepareForDelivery.mockResolvedValue(prepared);
+    mocks.settleSchedule.mockResolvedValue(false);
     mocks.run.mockResolvedValue({ status: "completed" });
   });
 
@@ -115,7 +124,7 @@ describe("workflow schedule firing consumer", () => {
     await runWorkflowRunFire(payload);
 
     expect(mocks.ensureHostConfigProvisioned).not.toHaveBeenCalled();
-    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.prepareForDelivery).not.toHaveBeenCalled();
     expect(mocks.complete).not.toHaveBeenCalled();
   });
 
@@ -127,9 +136,9 @@ describe("workflow schedule firing consumer", () => {
       orgId: payload.orgId,
       workflowId: payload.workflowId,
     });
-    expect(mocks.link).toHaveBeenCalledWith(
-      payload.scheduleFiringId,
-      prepared.workflowRun.id,
+    expect(mocks.prepareForDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowId: payload.workflowId }),
+      { kind: "schedule", id: payload.scheduleFiringId },
     );
     expect(mocks.complete).toHaveBeenCalledWith(payload.scheduleFiringId);
     expect(mocks.release).not.toHaveBeenCalled();
@@ -139,17 +148,15 @@ describe("workflow schedule firing consumer", () => {
     );
   });
 
-  it("releases an interrupted firing for at-least-once retry", async () => {
+  it("retains an interrupted linked firing for reconciliation", async () => {
     mocks.run.mockResolvedValue({ status: "cancelled" });
 
     await expect(runWorkflowRunFire(payload)).rejects.toBeInstanceOf(
       WorkflowRunInterrupted,
     );
     expect(mocks.complete).not.toHaveBeenCalled();
-    expect(mocks.release).toHaveBeenCalledWith(
-      payload.scheduleFiringId,
-      expect.any(WorkflowRunInterrupted),
-    );
+    expect(mocks.settleSchedule).toHaveBeenCalledWith(payload.scheduleFiringId, prepared.workflowRun.id);
+    expect(mocks.release).not.toHaveBeenCalled();
   });
 
   it("leaves a terminal linked run for recovery if ledger completion fails", async () => {
@@ -254,6 +261,7 @@ describe("workflow API execution consumer", () => {
         mode: "headless",
         userMessage: expect.stringContaining('"orderId":"1042"'),
         timeoutMs: apiLimits.maxRuntimeSeconds * 1_000,
+        maxModelTokens: apiLimits.maxTokensPerRun,
       }),
       expect.any(Object),
     );

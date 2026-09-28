@@ -40,6 +40,7 @@ export interface RunWorkflowAgentBackendInput {
   signal?: AbortSignal;
   timeoutMs?: number;
   maxModelCalls?: number;
+  maxModelTokens?: number;
   tag?: string;
 }
 

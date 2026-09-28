@@ -36,8 +36,10 @@ export class HarnessBackend implements AgentBackend {
             throw new Error("Harness M3 requires host run identity and workspace");
         const maxOperations = env.OPENNEKO_HARNESS_MAX_OPERATIONS ? Number(env.OPENNEKO_HARNESS_MAX_OPERATIONS) : 4;
         const maxModelCalls = env.OPENNEKO_HARNESS_MAX_MODEL_CALLS ? Number(env.OPENNEKO_HARNESS_MAX_MODEL_CALLS) : 16;
+        const maxModelTokens = env.OPENNEKO_HARNESS_MAX_MODEL_TOKENS ? Number(env.OPENNEKO_HARNESS_MAX_MODEL_TOKENS) : 1_000_000;
         if (!Number.isInteger(maxOperations) || maxOperations < 1 || maxOperations > 32 ||
-            !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64)
+            !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64 ||
+            !Number.isInteger(maxModelTokens) || maxModelTokens < 1 || maxModelTokens > 1_000_000)
             throw new Error("Invalid trusted Harness run budget");
         const workflowRunId = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_WORKFLOW_RUN_ID;
         const childReads = opts.nativeDelegation === "disabled" ? "" : opts.mcpBridgeEnv?.OPENNEKO_MCP_MODE === "agent-job"
@@ -67,7 +69,7 @@ export class HarnessBackend implements AgentBackend {
         void exit.catch(() => undefined);
         child.stdin.on("error", () => undefined);
         child.stdin.end(JSON.stringify({ version: 1, run_id: runId, input_id: runId,
-            max_operations: maxOperations, max_model_calls: maxModelCalls,
+            max_operations: maxOperations, max_model_calls: maxModelCalls, max_model_tokens: maxModelTokens,
             ...(opts.userMessage ? { skill_query: boundedSkillQuery(opts.userMessage) } : {}),
             prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
         try {

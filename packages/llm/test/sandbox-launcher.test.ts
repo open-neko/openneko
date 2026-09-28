@@ -1135,6 +1135,24 @@ describe("makeSandboxRunCore", () => {
     expect(h.calls.filter((c) => c.args.includes("delete"))).toHaveLength(1);
   });
 
+  it("pins an API workflow token ceiling before Harness model dispatch", async () => {
+    const root = await mkdtemp(join(tmpdir(), "harness-workflow-budget-"));
+    try {
+      const backend = {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunWorkflowAgentBackendInput["backend"];
+      const input = {...fakeWorkflowInput(async()=>{}, backend, fullWorkspace(root)), maxModelCalls:4, maxModelTokens:5_000};
+      const runCore = makeSandboxWorkflowRunCore({agentImage:"test",onLog:()=>{},warmPoolSize:0});
+      h.state.execLines = [];
+      await expect(runCore(input)).rejects.toThrow("without a result");
+      const command = h.calls.find(call=>call.args.includes("exec") && !call.args.includes("/usr/local/bin/harness-inspect"))?.args.join(" ") ?? "";
+      expect(command).toContain("OPENNEKO_HARNESS_MAX_MODEL_TOKENS");
+      expect(command).toContain("5000");
+      h.state.inspections = [JSON.stringify({version:1,run_id:input.runId,outcome:"outcome_unknown",can_resume:false,operations:[]})];
+      await expect(runCore(input)).rejects.toThrow();
+      const inspection = h.calls.find(call=>call.args.includes("/usr/local/bin/harness-inspect") || call.args.some(arg=>arg.includes("harness-inspect")));
+      expect(inspection?.stdin).toContain('"max_model_tokens":5000');
+    } finally { await rm(root,{recursive:true,force:true}); }
+  });
+
   it("adds pack-declared workflow hosts to the OpenShell policy", async () => {
     const runCore = makeSandboxWorkflowRunCore({
       agentImage: "ghcr.io/open-neko/agent:test",
