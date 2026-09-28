@@ -49,6 +49,9 @@ live("reads and mutates populated Records through OpenShell, approval and real G
   let queue: Awaited<ReturnType<typeof boss>> | undefined;
   let unregisterPreflight=()=>{};
   const priorUrl = process.env.OPENNEKO_RECORDS_GRAPHJIN_URL;
+  if (!process.env.OPENNEKO_AGENT_HERMES_HOME) throw Error("isolated operator model home required");
+  const operatorModelConfig=join(process.env.OPENNEKO_AGENT_HERMES_HOME,"config.yaml");
+  const priorModelConfig=await readFile(operatorModelConfig,"utf8");
   let logs = "";
   try {
     await mkdir(root, { recursive: true });
@@ -218,7 +221,7 @@ live("reads and mutates populated Records through OpenShell, approval and real G
       config:{url:"http://host.docker.internal:18118"}});
     // The isolated consumer stack pins an operator-level model home. Its
     // config takes precedence over the org provider row for sandbox launches.
-    await writeFile(join(process.env.OPENNEKO_AGENT_HERMES_HOME!,"config.yaml"),
+    await writeFile(operatorModelConfig,
       "model:\n  provider: custom\n  default: harness-records-queue-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
     const queueThread=await createWorkThread(orgId,"Queued Records mutation","web",null,{recordContext:{
       appId:"equipment",appLabel:"Equipment",objectApiName:"loan",objectLabel:"Loan",surface:"detail",recordId:"loan-43"}});
@@ -292,7 +295,7 @@ live("reads and mutates populated Records through OpenShell, approval and real G
         return outcome;
       },{reconcile:stepAdapter.reconcile}));
       await db().update(llm_provider_config).set({model:step.model}).where(eq(llm_provider_config.org_id,orgId));
-      await writeFile(join(process.env.OPENNEKO_AGENT_HERMES_HOME!,"config.yaml"),
+      await writeFile(operatorModelConfig,
         `model:\n  provider: custom\n  default: ${step.model}\n  base_url: http://host.docker.internal:18118/v1\n`);
       const stepThread=await createWorkThread(orgId,`Queued ${step.kind}`,"web",null,{recordContext:{
         appId:"equipment",appLabel:"Equipment",objectApiName:"loan",objectLabel:"Loan",surface:"detail",recordId:"loan-43"}});
@@ -363,6 +366,7 @@ live("reads and mutates populated Records through OpenShell, approval and real G
     }
     if (priorUrl === undefined) delete process.env.OPENNEKO_RECORDS_GRAPHJIN_URL;
     else process.env.OPENNEKO_RECORDS_GRAPHJIN_URL = priorUrl;
+    await writeFile(operatorModelConfig,priorModelConfig);
     await recordsPool.query("DELETE FROM engine.action_execution WHERE org_id=$1",[orgId]);
     await recordsPool.query("DELETE FROM engine.record_change_log WHERE org_id=$1",[orgId]);
     await recordsPool.query("DELETE FROM engine.record_app WHERE org_id=$1", [orgId]);
