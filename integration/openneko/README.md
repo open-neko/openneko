@@ -75,6 +75,16 @@ or user-visible answer. Chromium checks both completed Work answers once
 before and after reload. Expect `M5_CONNECTED_SKILL_QUEUE_PASS` and
 `M5_WEB_SKILL_WRITE_PASS`; the isolated stack and web process are stopped.
 
+For the focused user-administration gate, use
+`HARNESS_M5_USER_ADMIN_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`.
+A queued Work turn proposes one internal invitation and leaves the user
+absent pending approval. The fixture approves it, verifies a disabled
+requester cannot claim the effect, then applies it through the worker
+executor. Work and action redelivery preserve one request, user row and
+effect. Chromium checks the answer and completed approval card across
+reload. Expect `M5_CONNECTED_USER_ADMIN_PASS` and
+`M5_WEB_USER_ADMIN_PASS`; the isolated stack and web process are stopped.
+
 For a narrower websocket transport check, use the same command with
 `HARNESS_M5_WS_ONLY=1` in place of `HARNESS_M5_TRIGGER_ONLY=1`. It verifies
 changed source snapshots arrive before and after a real GraphJin restart and

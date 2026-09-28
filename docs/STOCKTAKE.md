@@ -49,6 +49,15 @@ do not maintain a fork for this issue. This limitation does not block M2/M4.
 | M7 parity | Capability inventory and evaluation rules documented | Full Hermes outcome comparison, tenant/load checks and task-quality evidence |
 | M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
 
+The 2026-09-28 M5c user-administration slice adds a run-bound internal
+`user_admin` proposal. A connected Ax/OpenShell/pg-boss run created one
+pending invitation, inserted no user before approval, rejected execution
+when the requester was disabled, and inserted one user after approval.
+Duplicate Work and action delivery reused the request and effect; Chromium
+found the answer and terminal approval card once after reload. The
+invitation path is qualified. Other user-change variants and the group,
+channel, data-source, plugin and source-config mutation families remain open.
+
 Cron redelivery has a narrower Postgres-backed qualification: a stale firing
 cannot be claimed after the definition changes or is disabled; linking must
 affect the claimed firing; a linked failed run settles without a second

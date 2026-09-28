@@ -525,6 +525,20 @@ concurrent create-only attempts yield one row. Chromium found the edited rule
 card once before and after reload. Harness action proposals still force
 human approval until auto-execution is separately qualified.
 
+**User-administration slice (2026-09-28):** an eligible customer Work run
+can propose a `user_admin` change through the run-bound Harness action
+grant. The host validates the exact invite, role, deactivate or reactivate
+arguments and current actor/target state before creating a pending internal
+action request. The existing human approval and worker executor own the
+effect. Execution rechecks the frozen definition and current actor/target;
+disabling the requester after approval prevents an effect claim. A connected
+Ax/OpenShell/pg-boss fixture proposed an invitation, confirmed no user row
+before approval, applied one user insert after approval, and restored the
+saved result on duplicate Work and action delivery. Chromium found one
+answer and a terminal approval card before and after reload. This qualifies
+the invitation path only; the other user-admin variants and other
+administration families still need connected effect gates.
+
 Source inventory for the next M5c slice:
 
 | Handler | Current effect boundary | Required harness qualification |
@@ -533,7 +547,7 @@ Source inventory for the next M5c slice:
 | `neko_workflow_builder` in `workflows/builder-server.ts` | `saveWorkflowWithTrigger` or destructive `deleteWorkflow`, then confirmation card | Cron/batch and data-change/watch create/edit use a direct journaled broker call. The latter preflights through actor-bound GraphJin reads and commits definition plus trigger rows in one transaction; connected create/edit, one watcher sweep and rollback passed. Revision-bound, explicitly confirmed delete uses a separate direct call. The real GraphJin websocket reconnect/replay gate passed; qualify trigger crash-edge recovery separately. |
 | `neko_rule_builder` in `workflows/rule-builder-server.ts` | `upsertActionPolicyByName`, then confirmation card | Admin Work create/edit uses a host journal, current-role check, listed revision and persisted card. Rule deletion and broader auto-execution remain separate gates. |
 | `neko_memory` / `neko_skills` in `work/tools.ts` | Durable memory write or sandbox file write | Direct `memory_save` has a host receipt and unknown-outcome fence; MCP save remains excluded. Direct `skill_create` and whole-tree CAS `skill_update` journal and publish host-owned org skills; connected Ax/OpenShell and queued worker/browser gates pass, including redelivery and interrupted-swap recovery. Add idempotency before any automatic retry of a lost memory-save receipt. |
-| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | Reuse admin approval and current-role checks; keep internal scope separate from pack actions |
+| Admin manager tools in `work/tools.ts` | `proposeAdminAction` creates internal action requests | `user_admin` invitation now uses the run-bound internal grant, human approval and worker effect with actor/target recheck. Qualify the other user changes and group, channel, data-source, plugin and source-config mutations separately. |
 | `neko_records` in `work/tools.ts` | Read-only registry-backed browse/get; record writes are governed action kinds | Qualify exact record IDs and current grants at the action executor, not by treating a read tool as mutation authority |
 
 These are source-level contracts, not acceptance claims. A successful MCP reply
