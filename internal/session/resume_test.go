@@ -83,6 +83,46 @@ func TestResumeUsesSavedEvidenceAndContinuesOperationSequence(t *testing.T) {
 	}
 }
 
+func TestResumeIndexesLargeEvidenceAndRetrievesItWithoutRedispatch(t *testing.T) {
+	state := prefix()
+	root, _ := fixture(t, state)
+	large := json.RawMessage(`{"label":"REF-42","noise":"` + strings.Repeat("X", 200_000) + `"}`)
+	if report, err := Reconcile(root, state.Spec, []Receipt{{ID: 1, Instruction: "read", Result: large}}); err != nil || !report.CanResume {
+		t.Fatalf("reconcile: %+v %v", report, err)
+	}
+	answers := []string{
+		`{"javascriptCode":"final('Answer',{})"}`,
+		`{"javascriptCode":"const saved=harnessSavedOperation(1); final('Answer',{label:saved.result.label});"}`,
+		`{"answer":"REF-42"}`,
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		body, _ := io.ReadAll(r.Body)
+		if len(body) > 100_000 || strings.Contains(string(body), strings.Repeat("X", 1000)) {
+			t.Errorf("saved 200 KB result leaked into model request %d (bytes=%d)", index+1, len(body))
+		}
+		if index == 0 && !strings.Contains(string(body), "result_ref") {
+			t.Error("resume omitted the saved-result reference")
+		}
+		if index >= len(answers) {
+			http.Error(w, "unexpected request", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	result, err := Resume(context.Background(), root, state.Spec, client, func(context.Context, string) (json.RawMessage, error) {
+		t.Error("saved evidence was redispatched")
+		return nil, errors.New("unexpected lookup")
+	}, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || result.Answer != "REF-42" || calls.Load() != 3 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+}
+
 func TestResumeKeepsPersistedToolFailureIncomplete(t *testing.T) {
 	root := t.TempDir()
 	spec := agent.Spec{Version: 1, RunID: "failed-tool", InputID: "input", Prompt: "Save the file"}

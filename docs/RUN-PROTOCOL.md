@@ -67,6 +67,13 @@ references the prior operation. Attempts are capped at three and dispatched
 lookups at four across the run; event sequences and span IDs continue monotonically.
 This per-run checkpoint is not an arbitrary-crash continuation engine.
 
+Resume supplies a bounded (32 KiB) index of saved operations. Small results may
+appear inline; large results and instructions appear as digest-bearing references.
+Executor code can call `harnessSavedOperation(id)` to retrieve one full operation
+from the validated checkpoint for that run. This reads saved evidence without
+another broker dispatch or authorization grant. The original prompt and saved
+operations remain authoritative; the index is only a context projection.
+
 SIGINT/SIGTERM cancel admission and ignore late results. Broken sinks cancel work;
 a terminal event cannot be delivered to a broken sink. Sinks must return promptly.
 Exit codes: 0 completed, 1 runtime/cancellation/delivery failure, 2 CLI input or

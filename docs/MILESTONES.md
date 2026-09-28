@@ -861,6 +861,12 @@ profile at checkpoint recovery. This is local Go coverage; OpenShell multi-route
 qualification remains open. A fault-injection run found that this pinned Ax Go
 build accepts `executorModelPolicy` but does not use it in live execution; error-turn
 escalation is disabled until an Ax fix or a verified harness implementation.
+Resume now projects saved operations into a bounded 32 KiB evidence index. The
+executor can retrieve a full prior operation by ID from the validated checkpoint
+without redispatch. A fixture reconciled a 200 KB result, proved the resumed
+model requests stayed under 100 KB, retrieved its label in Goja, and completed
+with no new lookup. This addresses crash-resume context pressure; ordinary
+long-turn compaction and scoped persisted references remain open.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote

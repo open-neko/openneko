@@ -188,7 +188,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		return invalid()
 	}
 	for i, op := range s.Operations {
-		if op.ID != i+1 || !op.ValidInput() || len(op.Result) > 262144 {
+		if op.ID != i+1 || !op.ValidInput() || len(op.Result) > 262144 || len(op.Error) > 128 {
 			return invalid()
 		}
 		if !op.Finished && (len(op.Result) != 0 || op.Error != "") {
