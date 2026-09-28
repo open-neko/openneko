@@ -4,6 +4,7 @@ import {
   claimRecordsActionExecution,
   failRecordsActionExecution,
   getRecordsActionExecution,
+  recoverRecordsActionExecutionFromAudit,
   setRecordsActionExecutionContext,
   succeedRecordsActionExecution,
 } from "../actions/execution";
@@ -267,28 +268,60 @@ export class RecordWriteExecutor {
       this.dependencies.pool,
       request.actionRequestId,
     );
-    if (!execution || execution.status !== "succeeded") return null;
+    if (!execution) return null;
     if (execution.orgId !== request.orgId || execution.appId !== request.appId ||
         execution.actionKind !== `record_${request.operation}`) {
       throw new Error("Records action receipt identity mismatch");
     }
-    const result = execution.result as Partial<RecordWriteResult> | null;
-    if (!result || result.actionRequestId !== request.actionRequestId ||
-        result.appId !== request.appId || result.objectApiName !== request.objectApiName ||
-        result.operation !== request.operation || typeof result.tableName !== "string" ||
-        typeof result.id !== "string" || !result.id ||
-        typeof result.mutationId !== "string" || !/^[a-f0-9]{64}$/.test(result.mutationId) ||
-        !(await this.auditExists({
-          mutationId: result.mutationId,
-          actionRequestId: request.actionRequestId,
-          orgId: request.orgId,
-          appId: request.appId,
-          objectApiName: request.objectApiName,
-          recordId: result.id,
-        }))) {
-      return null;
+    if (execution.status === "succeeded") {
+      const result = execution.result as Partial<RecordWriteResult> | null;
+      if (!result || result.actionRequestId !== request.actionRequestId ||
+          result.appId !== request.appId || result.objectApiName !== request.objectApiName ||
+          result.operation !== request.operation || typeof result.tableName !== "string" ||
+          typeof result.id !== "string" || !result.id ||
+          typeof result.mutationId !== "string" || !/^[a-f0-9]{64}$/.test(result.mutationId) ||
+          !(await this.auditExists({
+            mutationId: result.mutationId,
+            actionRequestId: request.actionRequestId,
+            orgId: request.orgId,
+            appId: request.appId,
+            objectApiName: request.objectApiName,
+            recordId: result.id,
+            action: request.operation,
+          }))) {
+        return null;
+      }
+      return { ...result, replayed: true, recovered: true } as RecordWriteResult;
     }
-    return { ...result, replayed: true, recovered: true } as RecordWriteResult;
+    if (!["claimed", "running", "failed"].includes(execution.status)) return null;
+    const prior = execution.result;
+    if (prior?.record_object_api_name !== request.objectApiName ||
+        typeof prior.record_table_name !== "string" ||
+        typeof prior.record_id !== "string" ||
+        typeof prior.mutation_id !== "string") return null;
+    const snapshot = await this.registry.loadApp(request.orgId, request.appId);
+    const object = snapshot?.objects.find(candidate =>
+      candidate.apiName === validateRecordIdentifier(request.objectApiName));
+    if (!object || object.tableName !== prior.record_table_name) return null;
+    const id = request.operation === "create"
+      ? String(request.fields?.id ?? deterministicRecordId(request.actionRequestId))
+      : request.id?.trim() ?? "";
+    if (!id || id.length > 512) return null;
+    const mutationId = deterministicMutationId(request, request.operation, id);
+    if (prior.record_id !== id || prior.mutation_id !== mutationId) return null;
+    if (!(await this.auditExists({mutationId,actionRequestId:request.actionRequestId,
+      orgId:request.orgId,appId:request.appId,objectApiName:request.objectApiName,
+      recordId:id,action:request.operation}))) return null;
+    await this.dependencies.recordSourceWrite({actionRequestId:request.actionRequestId,
+      orgId:request.orgId,tableName:object.tableName,recordId:id});
+    const recovered:RecordWriteResult = {actionRequestId:request.actionRequestId,
+      appId:request.appId,objectApiName:request.objectApiName,tableName:object.tableName,
+      id,operation:request.operation,mutationId,replayed:true,recovered:true};
+    const receipt = await recoverRecordsActionExecutionFromAudit(this.dependencies.pool,{
+      actionRequestId:request.actionRequestId,orgId:request.orgId,appId:request.appId,
+      objectApiName:request.objectApiName,actionKind:`record_${request.operation}`,
+      action:request.operation,recordId:id,mutationId,result:recovered});
+    return receipt ? recovered : null;
   }
 
   private async resolve(request: RecordWriteRequest): Promise<{
@@ -379,11 +412,13 @@ export class RecordWriteExecutor {
     appId: string;
     objectApiName: string;
     recordId: string;
+    action?: RecordWriteOperation;
   }): Promise<boolean> {
     const result = await this.dependencies.pool.query(
       `select 1 from engine.record_change_log
        where mutation_id = $1 and action_request_id = $2 and org_id = $3
-         and app_id = $4 and object_api_name = $5 and record_id = $6`,
+         and app_id = $4 and object_api_name = $5 and record_id = $6
+         ${input.action ? "and action = $7" : ""}`,
       [
         input.mutationId,
         input.actionRequestId,
@@ -391,6 +426,7 @@ export class RecordWriteExecutor {
         input.appId,
         input.objectApiName,
         input.recordId,
+        ...(input.action ? [input.action] : []),
       ],
     );
     return result.rowCount === 1;
@@ -646,6 +682,18 @@ export class RecordWriteExecutor {
       recordId: id,
     };
     try {
+      if (!sync) {
+        const context = {record_object_api_name:object.apiName,
+          record_table_name:object.tableName,record_id:id,mutation_id:mutationId};
+        if (claim.execution.result) {
+          if (Object.entries(context).some(([key,value])=>claim.execution.result?.[key]!==value)) {
+            throw new Error("Records action target changed after dispatch was claimed");
+          }
+        } else {
+          await setRecordsActionExecutionContext(this.dependencies.pool,{
+            actionRequestId:request.actionRequestId,leaseOwner:this.dependencies.leaseOwner,context});
+        }
+      }
       if (
         await (sync
           ? this.normalizeSyncAudit(auditIdentity)

@@ -174,9 +174,15 @@ live("reads and mutates populated Records through OpenShell, approval and real G
     expect((await getActionRequest(orgId,requestId))?.status).toBe("pending_approval");
     expect((await recordsPool.query(`SELECT name FROM public.${tableName} WHERE id='loan-42'`)).rows[0].name).toBe("Fixture loan");
     await approveActionRequest({orgId,id:requestId,approverUserId:null,approver:{userId:null,role:"admin"}});
+    let failBeforeEngineReceiptFor:string|null=null;
     const executor=new RecordWriteExecutor({pool:recordsPool,graphjin:new RecordsGraphjinClient({baseUrl:"http://127.0.0.1:18124"}),
       serviceToken:org=>mintRecordsGraphjinToken({secret:recordsGraphjinSigningSecret(org),orgId:org,userId:"records-service",role:"service"}),
-      leaseOwner:`harness-records-${actionRunId}`,recordSourceWrite:async()=>{}});
+      leaseOwner:`harness-records-${actionRunId}`,recordSourceWrite:async input=>{
+        if(input.actionRequestId===failBeforeEngineReceiptFor){
+          failBeforeEngineReceiptFor=null;
+          throw Error("Fixture lost the Records engine receipt after GraphJin committed");
+        }
+      }});
     const adapter=createRecordActionAdapter("record_update",executor);
     let effectCause:unknown;
     let loseHostReceipt=true;
@@ -323,13 +329,20 @@ live("reads and mutates populated Records through OpenShell, approval and real G
       expect((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1 AND work_run_id=$2",[orgId,stepRun.id])).rows[0].n).toBe(1);
       expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(0);
       await approveActionRequest({orgId,id:requests[0].id,approverUserId:null,approver:{userId:null,role:"admin"}});
+      if(step.kind==="record_create")failBeforeEngineReceiptFor=requests[0].id;
       const interrupted=await executeApprovedActionRequest(orgId,requests[0].id);
       expect(interrupted.ok,`${step.kind}: ${JSON.stringify(interrupted)}`).toBe(false);
       expect(interrupted.error).toContain("outcome unknown");
       expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(1);
+      if(step.kind==="record_create"){
+        const engine=(await recordsPool.query("SELECT status,result FROM engine.action_execution WHERE action_request_id=$1",[requests[0].id])).rows[0];
+        expect(engine.status).toBe("running");
+        expect(engine.result).toMatchObject({record_table_name:tableName,record_object_api_name:"loan"});
+      }
       const outcome=await executeApprovedActionRequest(orgId,requests[0].id);
       expect(outcome.ok,`${step.kind}: ${JSON.stringify(outcome)}`).toBe(true);
       expect((outcome.outcome?.result as {recovered?:boolean})?.recovered).toBe(true);
+      expect((await recordsPool.query("SELECT status FROM engine.action_execution WHERE action_request_id=$1",[requests[0].id])).rows[0].status).toBe("succeeded");
       expect((await executeApprovedActionRequest(orgId,requests[0].id)).ok).toBe(true);
       expect((await recordsPool.query("SELECT count(*)::int AS n FROM engine.record_change_log WHERE org_id=$1 AND action_request_id=$2",[orgId,requests[0].id])).rows[0].n).toBe(1);
       if(step.kind==="record_create") {
