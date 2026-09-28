@@ -15,7 +15,7 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	t.Setenv("HARNESS_CHEAP_KEY", "cheap-secret")
 	t.Setenv("HARNESS_WORK_KEY", "work-secret")
 	var requested []string
-	serve := func(expectedModel, expectedKey string, responses []string) *httptest.Server {
+	serve := func(routeKey, expectedModel, expectedKey string, responses []string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("Authorization") != "Bearer "+expectedKey {
 				t.Errorf("wrong credential for %s", expectedModel)
@@ -29,7 +29,7 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 			if body.Model != expectedModel {
 				t.Errorf("route sent %q to %s", body.Model, expectedModel)
 			}
-			requested = append(requested, body.Model)
+			requested = append(requested, routeKey)
 			if len(responses) == 0 {
 				http.Error(w, "too many calls", 400)
 				return
@@ -40,24 +40,24 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
 		}))
 	}
-	cheap := serve("gpt-4o-mini", "cheap-secret", []string{`{"javascriptCode":"final('Find reference', {})"}`})
+	cheap := serve("cheap", "fixture", "cheap-secret", []string{`{"javascriptCode":"final('Find reference', {})"}`})
 	defer cheap.Close()
-	work := serve("gpt-4o", "work-secret", []string{`{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `{"answer":"REF-42"}`})
+	work := serve("work", "fixture", "work-secret", []string{`{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `{"answer":"REF-42"}`})
 	defer work.Close()
 	config := func(responder string) string {
-		b, _ := json.Marshal(routeConfig{Context: "gpt-4o-mini", Executor: "gpt-4o", Responder: responder, Routes: []modelRoute{
-			{Model: "gpt-4o-mini", URL: cheap.URL, APIKeyEnv: "HARNESS_CHEAP_KEY"},
-			{Model: "gpt-4o", URL: work.URL, APIKeyEnv: "HARNESS_WORK_KEY"},
+		b, _ := json.Marshal(routeConfig{Context: "cheap", Executor: "work", Responder: responder, Routes: []modelRoute{
+			{Key: "cheap", Model: "fixture", URL: cheap.URL, APIKeyEnv: "HARNESS_CHEAP_KEY"},
+			{Key: "work", Model: "fixture", URL: work.URL, APIKeyEnv: "HARNESS_WORK_KEY"},
 		}})
 		return string(b)
 	}
-	t.Setenv("HARNESS_MODEL_ROUTES", config("gpt-4o"))
+	t.Setenv("HARNESS_MODEL_ROUTES", config("work"))
 	var out bytes.Buffer
 	code, err := run(context.Background(), strings.NewReader(request), &out)
 	if code != 0 || err != nil {
 		t.Fatalf("code=%d err=%v output=%s", code, err, out.String())
 	}
-	if got := strings.Join(requested, ","); got != "gpt-4o-mini,gpt-4o,gpt-4o" {
+	if got := strings.Join(requested, ","); got != "cheap,work,work" {
 		t.Fatalf("stage routes=%s", got)
 	}
 	rawEvents := out.String()
@@ -65,10 +65,10 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	var modelEvents []string
 	for _, event := range events(t, copyOfEvents) {
 		if event.Type == "model.request.started" {
-			modelEvents = append(modelEvents, event.Name)
+			modelEvents = append(modelEvents, event.Origin+":"+event.Name)
 		}
 	}
-	if got := strings.Join(modelEvents, ","); got != "gpt-4o-mini,gpt-4o,gpt-4o" {
+	if got := strings.Join(modelEvents, ","); got != "cheap:fixture,work:fixture,work:fixture" {
 		t.Fatalf("model receipts=%s", got)
 	}
 	for _, secret := range []string{"cheap-secret", "work-secret"} {
@@ -81,7 +81,7 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	if code != 0 || err != nil || replay.String() != rawEvents || len(requested) != 3 {
 		t.Fatalf("same-route replay failed: code=%d err=%v", code, err)
 	}
-	t.Setenv("HARNESS_MODEL_ROUTES", config("gpt-4o-mini"))
+	t.Setenv("HARNESS_MODEL_ROUTES", config("cheap"))
 	var changed bytes.Buffer
 	code, err = run(context.Background(), strings.NewReader(request), &changed)
 	if code != 1 || err == nil || len(requested) != 3 {
@@ -90,7 +90,7 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 }
 
 func TestRejectCallerRoutingAndUnapprovedStage(t *testing.T) {
-	t.Setenv("HARNESS_MODEL_ROUTES", `{"context":"small","executor":"work","responder":"work","routes":[{"model":"small","url":"http://127.0.0.1:1","api_key_env":"HARNESS_CHEAP_KEY"}]}`)
+	t.Setenv("HARNESS_MODEL_ROUTES", `{"context":"small","executor":"work","responder":"work","routes":[{"key":"small","model":"fixture","url":"http://127.0.0.1:1","api_key_env":"HARNESS_CHEAP_KEY"}]}`)
 	t.Setenv("HARNESS_CHEAP_KEY", "synthetic")
 	var out bytes.Buffer
 	code, err := run(context.Background(), strings.NewReader(request), &out)

@@ -6,15 +6,17 @@ inside OpenShell use its injected placeholder. For stage routing, the trusted
 host instead supplies `HARNESS_MODEL_ROUTES` as JSON, for example:
 
 ```json
-{"context":"cheap-model","executor":"work-model","responder":"work-model","routes":[{"model":"cheap-model","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},{"model":"work-model","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"}]}
+{"context":"cheap","executor":"work","responder":"work","routes":[{"key":"cheap","model":"model-a","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},{"key":"work","model":"model-b","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"}]}
 ```
 
-Each route must have a distinct actual provider model name. The named key
+Each route has a distinct logical key. Two routes may use the same actual model
+with different accounts or endpoints. The named key
 environment variables hold credentials or OpenShell-replaced placeholders;
 neither credentials nor routes may be selected by run input. Ax's context,
 executor and responder stages use the approved models. A host-derived digest of the
 nonsecret routing configuration is pinned in the checkpoint, so replay/resume
-rejects a changed profile. Model-call events record the selected model. This
+rejects a changed profile. Model-call events record the route key and actual
+model. This
 does not configure GraphJin: its server-side Ax agent owns its own strong model.
 Multi-route OpenShell transport and credential replacement still need connected
 qualification before enabling this profile in production.
