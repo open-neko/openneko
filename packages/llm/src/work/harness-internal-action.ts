@@ -1,11 +1,16 @@
-import { and, app_user, data_source, db, eq, getUserGroup, listGroupMembers, listUserGroups, work_run } from "@neko/db";
+import { administratorUserIds, and, app_user, data_source, db, eq, getUserGroup, listGroupMembers, listUserGroups, work_run } from "@neko/db";
 import { z } from "zod";
 
-const userAdminPayload = z.object({
-  action:z.literal("invite"),
-  email:z.email(),
-  role:z.literal("member"),
-}).strict();
+const userAdminPayload = z.discriminatedUnion("action",[
+  z.object({
+    action:z.literal("invite"),
+    email:z.email(),
+    role:z.literal("member"),
+  }).strict(),
+  z.object({action:z.literal("deactivate"),userId:z.string().trim().min(1).max(128)}).strict(),
+  z.object({action:z.literal("reactivate"),userId:z.string().trim().min(1).max(128)}).strict(),
+  z.object({action:z.literal("set_role"),userId:z.string().trim().min(1).max(128),role:z.literal("admin")}).strict(),
+]);
 const groupAdminPayload=z.discriminatedUnion("action",[
   z.object({
     action:z.literal("create_group"),
@@ -39,11 +44,29 @@ export async function validateHarnessInternalAction(
   if (!actor || actor.disabledAt) throw new Error("Requesting actor is no longer active");
   if (kind==="user_admin") {
     const input=userAdminPayload.parse(payload);
-    const email=input.email.trim().toLowerCase();
-    const [existing]=await db().select({id:app_user.id})
-      .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.email,email))).limit(1);
-    return {target:email,definition:{harnessSource:"internal",kind,target:email,
-      observed:{existingUserId:existing?.id??null}}};
+    if (input.action==="invite") {
+      const email=input.email.trim().toLowerCase();
+      const [existing]=await db().select({id:app_user.id})
+        .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.email,email))).limit(1);
+      return {target:email,definition:{harnessSource:"internal",kind,target:email,
+        observed:{existingUserId:existing?.id??null}}};
+    }
+    if (input.userId===run.userId) throw new Error("Actor cannot change their own active state");
+    const [targetUser]=await db().select({disabledAt:app_user.disabled_at})
+      .from(app_user).where(and(eq(app_user.org_id,scope.orgId),eq(app_user.id,input.userId))).limit(1);
+    if (!targetUser) throw new Error("Target user is no longer in this organization");
+    const administrator=(await administratorUserIds(scope.orgId)).has(input.userId);
+    if (input.action==="set_role") {
+      if (targetUser.disabledAt) throw new Error("Target user is disabled");
+      if (administrator) throw new Error("Target user is already an administrator");
+      return {target:input.userId,definition:{harnessSource:"internal",kind,target:input.userId,
+        observed:{disabled:false,administrator:false}}};
+    }
+    if (administrator) throw new Error("Administrator active state requires a separate lockout guard");
+    const disabled=targetUser.disabledAt!==null;
+    if (disabled !== (input.action==="reactivate")) throw new Error("Target user state changed");
+    return {target:input.userId,definition:{harnessSource:"internal",kind,target:input.userId,
+      observed:{disabled,administrator}}};
   }
   if (kind==="data_source_admin") {
     const input=dataSourceRegisterPayload.parse(payload);
