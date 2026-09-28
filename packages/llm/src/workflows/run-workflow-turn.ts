@@ -427,7 +427,7 @@ async function runWorkflowTurnTraced(
       knowledgePackPaths(workspace.knowledgeRoot),
     ));
     const packActions = backend.id === "harness"
-      ? (await filterHeldActions(runActor, await listPackActionDescriptors(orgId)))
+      ? (await filterHeldActions(runActor, await listPackActionDescriptors(orgId, { forHarness: true })))
           .sort((a, b) => a.kind.localeCompare(b.kind)).slice(0, 64)
       : [];
 

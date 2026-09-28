@@ -167,7 +167,7 @@ export const declarativePackActionAdapter: ActionAdapter = async ({ request }) =
 
 export const resolveDeclarativePackActionAdapter: ActionAdapterResolver = async (request) => {
   const result = await pool().query<{ owned: boolean }>(
-    "select true as owned from pack_action_definition where org_id=$1 and kind=$2 limit 1",
+    "select true as owned from pack_action_definition where org_id=$1 and kind=$2 and enabled=true and readiness='ready' and definition->'adapter'->>'kind'='graphjin_api_operation' limit 1",
     [request.orgId, request.kind],
   );
   return result.rows[0]?.owned ? declarativePackActionAdapter : null;

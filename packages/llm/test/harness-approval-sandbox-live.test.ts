@@ -43,7 +43,8 @@ live("OpenShell Go/Ax proposal returns a durable approval and terminal recovery 
   expect(await (await fetch("http://127.0.0.1:18118/control")).json()).toEqual(counts);
   expect((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1",[orgId])).rows[0].n).toBe(1);
   await approveActionRequest({orgId,id:card.action_request_id,approverUserId:null,approver:{userId:null,role:"admin"}});
-  let effects=0;registerActionAdapter(kind,async()=>{effects++;return {result:{value:42}};});
+  let effects=0;const fixtureEffect=async()=>{effects++;return {result:{value:42}};};
+  registerActionAdapter(kind,fixtureEffect,"pack");
   expect((await executeApprovedActionRequest(orgId,card.action_request_id)).ok).toBe(true);
   expect((await executeApprovedActionRequest(orgId,card.action_request_id)).ok).toBe(true);expect(effects).toBe(1);
   // The same Go/Ax/OpenShell proposal path must admit a host-bound plugin
@@ -67,6 +68,7 @@ live("OpenShell Go/Ax proposal returns a durable approval and terminal recovery 
   expect(pluginRequest?.status).toBe("pending_approval");
   expect(pluginRequest?.scope).toBe("internal");
   await approveActionRequest({orgId,id:pluginCard.action_request_id,approverUserId:null,approver:{userId:null,role:"admin"}});
+  registerActionAdapter(kind,fixtureEffect,"plugin");
   expect((await executeApprovedActionRequest(orgId,pluginCard.action_request_id)).ok).toBe(true);
   expect(effects).toBe(2);
   // Cancellation must cross the sandbox boundary even when the proxy's idle

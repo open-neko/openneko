@@ -198,7 +198,7 @@ live("reads and mutates populated Records through OpenShell, approval and real G
         }
         return outcome;
       } catch(error) {effectCause=error;throw error;}
-    },{reconcile:adapter.reconcile}));
+    },{reconcile:adapter.reconcile}),"plugin");
     const interrupted=await executeApprovedActionRequest(orgId,requestId);
     const effectDetail=effectCause instanceof RecordsGraphjinRequestError
       ? JSON.stringify({status:effectCause.status,errors:effectCause.graphjinErrors}) : String(effectCause);
@@ -293,7 +293,7 @@ live("reads and mutates populated Records through OpenShell, approval and real G
           throw Error("Fixture lost the host receipt after Records committed");
         }
         return outcome;
-      },{reconcile:stepAdapter.reconcile}));
+      },{reconcile:stepAdapter.reconcile}),"plugin");
       await db().update(llm_provider_config).set({model:step.model}).where(eq(llm_provider_config.org_id,orgId));
       await writeFile(operatorModelConfig,
         `model:\n  provider: custom\n  default: ${step.model}\n  base_url: http://host.docker.internal:18118/v1\n`);

@@ -9,7 +9,7 @@ vi.mock("../src/workflows/action-store", () => ({
 }));
 
 import * as store from "../src/workflows/action-store";
-import { executeApprovedActionRequest, registerActionAdapter, registerFallbackActionAdapterResolver } from "../src/workflows/action-executor";
+import { executeApprovedActionRequest, getRegisteredPackActionKinds, registerActionAdapter, registerFallbackActionAdapterResolver } from "../src/workflows/action-executor";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -62,4 +62,12 @@ it("cannot execute Harness proposals through the legacy executor", async () => {
   await expect(executeApprovedActionRequest("org","request")).rejects.toThrow("Harness governed action execution is not enabled");
   expect(adapter).not.toHaveBeenCalled();
   expect(store.recordActionExecution).not.toHaveBeenCalled();
+});
+
+it("does not mistake a plugin registration for a native pack executor", () => {
+  const kind = "harness_source_collision_fixture";
+  registerActionAdapter(kind, async () => ({}), "pack");
+  expect(getRegisteredPackActionKinds()).toContain(kind);
+  registerActionAdapter(kind, async () => ({}), "plugin");
+  expect(getRegisteredPackActionKinds()).not.toContain(kind);
 });

@@ -46,7 +46,7 @@ if (process.argv.includes('--approval-worker-only')) {
         const result=await (await fetch(`http://127.0.0.1:${(effect.address() as {port:number}).port}`,{method:'POST',headers:{'idempotency-key':idempotencyKey ?? ''}})).json();
         if (process.argv.includes('--effect-unknown')) throw Error('Controlled receipt loss after external commit');
         return {result};
-    });
+    }, 'pack');
     await queue.createQueue(QUEUE.ACTION_EXECUTE);
     await queue.work(QUEUE.ACTION_EXECUTE,async jobs=>{
         for (const job of jobs) await runActionExecute(job.data as Parameters<typeof runActionExecute>[0]);
@@ -789,6 +789,11 @@ if (process.env.HARNESS_M3_WEB === '1') {
 }
 // Exercise the production queue handler and worker-owned proposal preflight API.
 const approvalKind='harness_effect_fixture';
+// This driver splits Work admission and action execution into two processes.
+// Production registers executors in the worker before admitting a Harness
+// action; mirror that availability here while the separate approval worker
+// owns the controlled HTTP effect.
+registerActionAdapter(approvalKind, async () => { throw Error('approval effect belongs to the separate worker'); }, 'pack');
 const beforeExecutions=(await pool().query('SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1',[orgId])).rows[0].n;
 await db().insert(pack_action_definition).values({org_id:orgId,kind:approvalKind,readiness:'ready',definition_hash:'fixture',definition:{kind:approvalKind,description:'Controlled fixture action',inputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value'],additionalProperties:false}}}).onConflictDoNothing();
 await db().insert(action_policy).values({org_id:orgId,name:'Harness fixture approval',mode:'approval_required',applies_to_kinds:[approvalKind],applies_to_scopes:['external']});

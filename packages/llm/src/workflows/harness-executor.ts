@@ -9,7 +9,7 @@ import { evaluateActionPolicy } from "./policy-engine";
 import type { ActionAdapter, ActionExecutionOutcome } from "./action-executor";
 
 /** One claim, one dispatch. Without a provider receipt, interrupted effects stay unknown. */
-export async function executeHarnessAction(request:ActionRequestRecord,resolve:()=>Promise<ActionAdapter|undefined>) {
+export async function executeHarnessAction(request:ActionRequestRecord,resolve:(source:"pack"|"plugin"|"internal")=>Promise<ActionAdapter|undefined>) {
   const owner=await pool().connect();
   const key=`harness.effect:${request.orgId}:${request.id}`;
   const abort=new AbortController();
@@ -38,7 +38,7 @@ async function markUnknown(request:ActionRequestRecord) {
     WHERE org_id=$1 AND id=$2 AND EXISTS(SELECT 1 FROM unknown)`,[request.orgId,request.id]);
 }
 
-async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<ActionAdapter|undefined>,signal:AbortSignal) {
+async function executeOwned(request:ActionRequestRecord,resolve:(source:"pack"|"plugin"|"internal")=>Promise<ActionAdapter|undefined>,signal:AbortSignal) {
   const scope={orgId:request.orgId,runId:request.workRunId!};
   const args=[request.orgId,request.id];
   const saved=(await pool().query("SELECT id,status,result FROM action_execution WHERE org_id=$1 AND action_request_id=$2 AND executor='harness'",args)).rows[0];
@@ -52,6 +52,8 @@ async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<Acti
   const row=(await pool().query("SELECT harness_proposal FROM action_request WHERE org_id=$1 AND id=$2",args)).rows[0];
   const proposal=row?.harness_proposal;
   if (!proposal?.definition) throw Error("Harness proposal has no bound action definition");
+  const source: "pack" | "plugin" | "internal" = proposal.definition.harnessSource === "plugin"
+    ? "plugin" : proposal.definition.harnessSource === "internal" ? "internal" : "pack";
   const actor=(await pool().query("SELECT actor_user_id,actor_role,backend FROM work_run WHERE org_id=$1 AND id=$2",[request.orgId,request.workRunId])).rows[0];
   if (!actor || !isDeepStrictEqual(proposal.actor,{userId:actor.actor_user_id,role:actor.actor_role,backend:actor.backend})) throw Error("Requesting actor changed; request approval again");
   const definition=proposal.definition.harnessSource === "plugin"
@@ -72,7 +74,7 @@ async function executeOwned(request:ActionRequestRecord,resolve:()=>Promise<Acti
   } else if (resolveDeploymentProfile() !== "solo") throw Error("Current deployment requires a named approver");
   const decision=evaluateActionPolicy({scope:request.scope,kind:request.kind,target:request.target,riskLevel:request.riskLevel},await listEnabledPolicies(request.orgId));
   if (decision.decision === "deny" || decision.decision === "no_policy" || decision.policy.id !== request.policyId) throw Error("Action policy changed; request approval again");
-  const adapter=await resolve();
+  const adapter=await resolve(source);
   if (!adapter) throw Error("No adapter available for approved Harness action");
   const frozen={scope:request.scope,kind:request.kind,target:request.target,payload:request.payload,policyId:request.policyId,riskLevel:request.riskLevel,actorUserId:request.actorUserId,actorRole:request.actorRole,actorBackend:request.actorBackend};
   if (!isDeepStrictEqual(frozen,request.harnessPrepared)) throw Error("Approved action arguments changed");

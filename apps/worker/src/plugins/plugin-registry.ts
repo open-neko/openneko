@@ -1292,7 +1292,7 @@ export class PluginRegistry {
           }
           seenKinds.add(kind);
           const adapter = this.makeAdapter(pluginId, kind);
-          registerActionAdapter(kind, adapter);
+          registerActionAdapter(kind, adapter, "plugin");
           this.options.onAdapter?.(kind, adapter);
         }
       }

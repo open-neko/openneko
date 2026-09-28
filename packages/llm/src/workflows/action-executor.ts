@@ -30,14 +30,17 @@ export type ActionAdapterResolver = (
 ) => Promise<ActionAdapter | null>;
 
 const adapters = new Map<string, ActionAdapter>();
+const adapterOrigins = new Map<string, "pack" | "plugin" | "internal">();
 let fallbackAdapterResolver: ActionAdapterResolver | null = null;
 
 /** Register an executor for a specific action kind. Test-overridable. */
 export function registerActionAdapter(
   kind: string,
   adapter: ActionAdapter,
+  origin: "pack" | "plugin" | "internal" = "internal",
 ): void {
   adapters.set(kind, adapter);
+  adapterOrigins.set(kind, origin);
 }
 
 /** Register one resolver for action kinds supplied by installed packs. */
@@ -50,6 +53,22 @@ export function registerFallbackActionAdapterResolver(resolver: ActionAdapterRes
 
 export function getRegisteredActionKinds(): string[] {
   return Array.from(adapters.keys());
+}
+
+/** Native pack adapters only; plugin registrations cannot advertise a pack tool. */
+export function getRegisteredPackActionKinds(): string[] {
+  return Array.from(adapterOrigins).filter(([, origin]) => origin === "pack").map(([kind]) => kind);
+}
+
+async function resolveHarnessAdapter(
+  request: ActionRequestRecord,
+  source: "pack" | "plugin" | "internal",
+): Promise<ActionAdapter | undefined> {
+  if (source === "pack") {
+    const declarative = await fallbackAdapterResolver?.(request);
+    if (declarative) return declarative;
+  }
+  return adapterOrigins.get(request.kind) === source ? adapters.get(request.kind) : undefined;
 }
 
 export class ActionRequestNotApprovedError extends Error {
@@ -94,7 +113,7 @@ export async function executeApprovedActionRequest(
   if (request.actorBackend === "harness") {
     if (!request.harnessOperationId || !request.harnessPrepared) throw new Error("Harness governed action execution is not enabled for an unprepared request");
     const {executeHarnessAction}=await import("./harness-executor");
-    return executeHarnessAction(request,async()=>adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined);
+    return executeHarnessAction(request,source=>resolveHarnessAdapter(request,source));
   }
   if (request.status !== "approved") throw new ActionRequestNotApprovedError(request.status);
 
