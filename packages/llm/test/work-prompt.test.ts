@@ -113,10 +113,11 @@ it("mentions user administration only when the harness admits its proposal tool"
   expect(admitted).toContain("Other user changes are unavailable");
 });
 
-it("advertises group creation only with the run-bound proposal grant", () => {
-  expect(build("harness")).not.toContain("To create a group, use propose");
+it("advertises group changes only with the run-bound proposal grant", () => {
+  expect(build("harness")).not.toContain("For group changes, use propose");
   const admitted=build("harness",{supportsGroupAdminProposal:true});
-  expect(admitted).toContain("To create a group, use propose with action group_admin");
+  expect(admitted).toContain("For group changes, use propose with action group_admin");
+  expect(admitted).toContain("add an active user to a custom group");
   expect(admitted).toContain("Other group and grant changes are unavailable");
 });
 

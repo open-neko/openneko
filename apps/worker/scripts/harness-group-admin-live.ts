@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { app_user, createUserGroup, db, deleteUserGroup, eq, getOrgId, getOrCreateSoloAdmin, llm_provider_config, pool, processing_job } from "@neko/db";
+import { addLocalGroupMember, app_user, createUserGroup, db, deleteUserGroup, eq, getOrgId, getOrCreateSoloAdmin, llm_provider_config, pool, processing_job, removeLocalGroupMember } from "@neko/db";
 import { boss, enqueue, QUEUE, type ActionExecutePayload, type WorkRunPayload } from "@neko/db/jobs";
 import { createWorkRun, createWorkThread, shutdownAgentBroker } from "@neko/llm/work";
 import { approveActionRequest, createActionRequest, executeApprovedActionRequest, seedDefaultActionPolicies } from "@neko/llm/workflows";
@@ -40,15 +40,24 @@ async function waitFor(queueName:string,jobId:string):Promise<void> {
   throw Error(`${queueName} timed out`);
 }
 
-async function submitWork(runId:string,threadId:string,trigger:string):Promise<void> {
+async function submitWork(runId:string,threadId:string,trigger:string,message="Create the Harness Reviewers group; request approval first."):Promise<void> {
   const [job]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger})
     .returning({id:processing_job.id});
   const queued=await enqueue(QUEUE.WORK_RUN,{processingJobId:job.id,orgId,runId,threadId,
-    message:"Create the Harness Reviewers group; request approval first."},{retryLimit:0});
+    message},{retryLimit:0});
   assert.ok(queued);
   await waitFor(QUEUE.WORK_RUN,queued);
   const [run]=(await pool().query<{status:string;error:string|null}>(
     "select status,error from work_run where org_id=$1 and id=$2",[orgId,runId])).rows;
+  if(run?.status!=="completed") {
+    const operations=(await pool().query(
+      "select request,result,finished_at from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
+      [orgId,runId])).rows;
+    const events=(await pool().query(
+      "select kind,payload from work_run_event where org_id=$1 and run_id=$2 order by created_at",
+      [orgId,runId])).rows;
+    console.error("GROUP_ADMIN_RUN_DIAGNOSTIC",JSON.stringify({run,operations,events}));
+  }
   assert.equal(run?.status,"completed",JSON.stringify(run));
 }
 
@@ -151,6 +160,55 @@ try {
     [orgId,groupName])).rows[0].n,1);
   await writeFile(join(process.env.HARNESS_STATE!,"m5-group-admin-thread"),thread.id);
   console.log("M5_QUEUE_GROUP_ADMIN_EFFECT_PASS",request.id);
+
+  await db().update(llm_provider_config).set({model:"harness-group-member-fixture"})
+    .where(eq(llm_provider_config.id,provider.id));
+  await writeFile(configPath,"model:\n  provider: custom\n  default: harness-group-member-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
+  assert.equal((await fetch("http://127.0.0.1:18118/control",{method:"POST",body:"{}"})).status,204);
+  const memberThread=await createWorkThread(orgId,"M5 governed group membership","web",actor.id);
+  const memberRun=await createWorkRun(orgId,memberThread.id,"harness",{userId:actor.id,role:"admin"});
+  const memberMessage="Add the current administrator to Harness Reviewers; request approval first.";
+  await submitWork(memberRun.id,memberThread.id,"test-group-member-proposal",memberMessage);
+  const [memberRequest]=(await pool().query<{id:string;status:string;kind:string;target:string}>(
+    "select id,status,kind,target from action_request where org_id=$1 and work_run_id=$2",
+    [orgId,memberRun.id])).rows;
+  assert.ok(memberRequest);
+  assert.equal(memberRequest.status,"pending_approval");
+  assert.equal(memberRequest.kind,"group_admin");
+  assert.equal(memberRequest.target,`${createdGroup.id}:${actor.id}`);
+  const membershipCount=async ()=>(await pool().query<{n:number}>(
+    "select count(*)::int as n from user_group_membership where org_id=$1 and group_id=$2 and user_id=$3 and source='local'",
+    [orgId,createdGroup.id,actor.id])).rows[0].n;
+  assert.equal(await membershipCount(),0,"proposal must not change group membership");
+  const beforeMemberCalls=await (await fetch("http://127.0.0.1:18118/control")).json();
+  await submitWork(memberRun.id,memberThread.id,"test-group-member-redelivery",memberMessage);
+  assert.deepEqual(await (await fetch("http://127.0.0.1:18118/control")).json(),beforeMemberCalls);
+  assert.equal((await pool().query("select count(*)::int as n from action_request where org_id=$1 and work_run_id=$2",
+    [orgId,memberRun.id])).rows[0].n,1);
+  console.log("M5_QUEUE_GROUP_MEMBER_PROPOSAL_PASS",memberRun.id);
+  await approveActionRequest({orgId,id:memberRequest.id,approverUserId:actor.id,
+    approver:{userId:actor.id,role:"admin"}});
+  await addLocalGroupMember(orgId,createdGroup.id,actor.id);
+  try {
+    await assert.rejects(executeApprovedActionRequest(orgId,memberRequest.id),
+      /Member is already in this group/);
+    assert.equal((await pool().query("select count(*)::int as n from action_execution where org_id=$1 and action_request_id=$2",
+      [orgId,memberRequest.id])).rows[0].n,0,"changed membership must stop before the effect claim");
+  } finally {
+    await removeLocalGroupMember(orgId,createdGroup.id,actor.id);
+  }
+  const memberEffectJob=await enqueue(QUEUE.ACTION_EXECUTE,{orgId,actionRequestId:memberRequest.id},{retryLimit:0});
+  assert.ok(memberEffectJob);
+  await waitFor(QUEUE.ACTION_EXECUTE,memberEffectJob);
+  assert.equal(await membershipCount(),1);
+  const memberReplayJob=await enqueue(QUEUE.ACTION_EXECUTE,{orgId,actionRequestId:memberRequest.id},{retryLimit:0});
+  assert.ok(memberReplayJob);
+  await waitFor(QUEUE.ACTION_EXECUTE,memberReplayJob);
+  assert.equal(await membershipCount(),1);
+  assert.equal((await pool().query("select count(*)::int as n from action_execution where org_id=$1 and action_request_id=$2",
+    [orgId,memberRequest.id])).rows[0].n,1);
+  await writeFile(join(process.env.HARNESS_STATE!,"m5-group-member-thread"),memberThread.id);
+  console.log("M5_QUEUE_GROUP_MEMBER_EFFECT_PASS",memberRequest.id);
 } finally {
   await queue.stop({graceful:true,timeout:5000});
   await new Promise<void>(resolve=>admin.close(()=>resolve()));
