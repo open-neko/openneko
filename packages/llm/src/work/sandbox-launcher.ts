@@ -67,7 +67,11 @@ function harnessActionGrants(
       ...(action.pluginVersion ? {pluginVersion: action.pluginVersion} : {}),
       ...(action.pluginIntegrity ? {pluginIntegrity: action.pluginIntegrity} : {})} : {}),
   })) : [];
-  return [...packs, ...plugins].sort((a,b) => a.kind.localeCompare(b.kind));
+  const internal = kind === "work" && (input as RunAgentBackendInput).userAdminProposalEnabled
+    ? [{kind:"user_admin",source:"internal" as const,scope:"internal" as const}] : [];
+  const reserved=new Set(internal.map(action=>action.kind));
+  return [...internal,...packs.filter(action=>!reserved.has(action.kind)),
+    ...plugins.filter(action=>!reserved.has(action.kind))].sort((a,b) => a.kind.localeCompare(b.kind));
 }
 
 /** web or worker; each host deletes only boxes it owns. */
