@@ -59,7 +59,7 @@ live.each(["before_dispatch","after_commit","after_commit_reconcile","after_rece
     const outcome=await (await fetch(${JSON.stringify(url)},{method:"POST",headers:{"idempotency-key":idempotencyKey}})).json();
     ${phase.startsWith("after_commit") ? 'process.send("ready");await new Promise(()=>{});' : ''}
     return outcome;
-   });
+   },"pack");
    await executeApprovedActionRequest(${JSON.stringify(orgId)},${JSON.stringify(receipt.id)});
    process.send("ready");await new Promise(()=>{});
   `],{stdio:["ignore","ignore","pipe","ipc"]});
@@ -68,7 +68,7 @@ live.each(["before_dispatch","after_commit","after_commit_reconcile","after_rece
   const adapter=Object.assign(async()=>{effects++;return {result:{duplicate:true}};},phase === "after_commit_reconcile" ? {
    reconcile:async({idempotencyKey}:{idempotencyKey:string})=> (await fetch(url,{headers:{"idempotency-key":idempotencyKey}})).json(),
   } : {});
-  registerActionAdapter(kind,adapter);
+  registerActionAdapter(kind,adapter,"pack");
   const overlap=await executeApprovedActionRequest(orgId,receipt.id);
   expect(overlap.ok).toBe(phase === "after_receipt");
   const exited=once(child,"exit");child.kill("SIGKILL");await exited;
@@ -94,6 +94,11 @@ live.each(["before_dispatch","after_commit","after_commit_reconcile","after_rece
   if (phase === "after_receipt") {
    const next=await send(3,{value:43});
    await approveActionRequest({orgId,id:next.id,approverUserId:null,approver:{userId:null,role:"admin"}});
+   registerActionAdapter(kind,async()=>{effects++;return {result:{wrongSource:true}};},"plugin");
+   await expect(executeApprovedActionRequest(orgId,next.id)).rejects.toThrow("No adapter available for approved Harness action");
+   expect(effects).toBe(1);
+   expect((await pool().query("SELECT count(*)::int AS n FROM action_execution WHERE org_id=$1 AND action_request_id=$2",[orgId,next.id])).rows[0].n).toBe(0);
+   registerActionAdapter(kind,adapter,"pack");
    await pool().query("UPDATE action_policy SET mode='never' WHERE org_id=$1",[orgId]);
    await expect(executeApprovedActionRequest(orgId,next.id)).rejects.toThrow("policy changed");
    await pool().query("UPDATE action_policy SET mode='approval_required' WHERE org_id=$1",[orgId]);

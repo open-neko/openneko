@@ -1427,9 +1427,9 @@ export function registerMagentoV2Runtime(): () => void {
     "magento.manage_customers",
     "magento.undo_changeset",
   ]) {
-    registerActionAdapter(kind, ({ request }) => executeChangeset(request));
+    registerActionAdapter(kind, ({ request }) => executeChangeset(request), "pack");
   }
-  registerActionAdapter("magento.financial_handoff", financialHandoffAdapter);
+  registerActionAdapter("magento.financial_handoff", financialHandoffAdapter, "pack");
   return registerActionRequestCreatedHook(async (request) => {
     if (request.kind === "magento.financial_handoff") return;
     if (request.kind === "magento.undo_changeset") return prepareUndo(request);

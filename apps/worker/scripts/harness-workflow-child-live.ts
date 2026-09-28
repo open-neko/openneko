@@ -121,6 +121,8 @@ try {
     readiness: "ready", definition_hash: "fixture", definition: { kind: actionKind,
       description: "Update the synthetic reference", inputSchema: { type: "object",
         properties: { value: { type: "integer" } }, required: ["value"], additionalProperties: false } } });
+  let effects = 0;
+  registerActionAdapter(actionKind, async ({ idempotencyKey }) => { effects++; return { result: { value: 42 }, externalRef: idempotencyKey }; }, "pack");
   const [policy] = await db().insert(action_policy).values({ org_id: orgId, name: "Harness workflow action fixture",
     mode: "approval_required", applies_to_kinds: [actionKind], applies_to_scopes: ["external"] }).returning({ id: action_policy.id });
   admin = createServer(createAdminHandler({ actionRequests: { create: async input => {
@@ -162,8 +164,6 @@ try {
   await runWorkflowRunFire({ orgId, workflowId: workflow.id, triggerKind: "api", apiAdmissionId: actionAdmission.id,
     workflowRunId: actionRun.runId, workRunId: actionRow.work_run_id, queueAttempt: actionAdmission.attempts });
   assert.equal((await pool().query("SELECT count(*)::int AS n FROM action_request WHERE org_id=$1 AND workflow_run_id=$2", [orgId,actionRun.runId])).rows[0].n, 1);
-  let effects = 0;
-  registerActionAdapter(actionKind, async ({ idempotencyKey }) => { effects++; return { result: { value: 42 }, externalRef: idempotencyKey }; });
   await approveActionRequest({ orgId, id: request.id, approverUserId: null, approver: { userId: null, role: "admin" } });
   const executed = await executeApprovedActionRequest(orgId, request.id);
   assert.equal(executed.ok, true);

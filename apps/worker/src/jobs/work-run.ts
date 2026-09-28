@@ -105,7 +105,8 @@ async function runWorkRunTraced(
     const pluginActions = includeRecordActionDescriptors(
       getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
     );
-    const packActions = await startupPhase("context.pack_actions", () => listPackActionDescriptors(orgId));
+    const packActions = await startupPhase("context.pack_actions", () =>
+      listPackActionDescriptors(orgId, { forHarness: run.backend === "harness" }));
 
     // Same gate the workflow job runs: if the boot-time provider sync lost a
     // race with a gateway restart, this is the retry — memoized on success, so

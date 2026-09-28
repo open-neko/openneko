@@ -454,7 +454,7 @@ export function registerHarnessRecordActionPreflight(
 
 export function registerRecordActionAdapters(
   executor: RecordActionExecutor,
-  register: (kind: string, adapter: ActionAdapter) => void = registerActionAdapter,
+  register: (kind: string, adapter: ActionAdapter) => void = (kind, adapter) => registerActionAdapter(kind, adapter, "plugin"),
   resolveActor: RecordActionActorResolver = actorForRequest,
 ): void {
   for (const kind of RECORD_ACTION_KINDS) {

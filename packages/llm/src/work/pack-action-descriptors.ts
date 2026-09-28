@@ -1,5 +1,6 @@
 import { and, db, eq, pack_action_definition } from "@neko/db";
 import type { PackActionDescriptor } from "./tools";
+import { getRegisteredPackActionKinds } from "../workflows/action-executor";
 
 type PackActionDefinition = {
   kind?: unknown;
@@ -7,6 +8,7 @@ type PackActionDefinition = {
   inputSchema?: unknown;
   example?: unknown;
   adapter?: {
+    kind?: unknown;
     operations?: Record<
       string,
       {
@@ -47,7 +49,12 @@ function operationContract(definition: PackActionDefinition): string {
  */
 export async function listPackActionDescriptors(
   orgId: string,
+  options: { forHarness?: boolean } = {},
 ): Promise<PackActionDescriptor[]> {
+  // A ready definition is not proof that the worker can execute it. Hermes
+  // keeps its existing discovery behavior; Harness advertises only a native
+  // registered executor or the supported declarative GraphJin API adapter.
+  const registered = options.forHarness ? new Set(getRegisteredPackActionKinds()) : null;
   const rows = await db()
     .select({ definition: pack_action_definition.definition })
     .from(pack_action_definition)
@@ -69,6 +76,12 @@ export async function listPackActionDescriptors(
     ) {
       return [];
     }
+    const adapterOperations = value.adapter?.operations;
+    if (registered && !registered.has(value.kind) && !(
+      value.adapter?.kind === "graphjin_api_operation" &&
+      adapterOperations && typeof adapterOperations === "object" && !Array.isArray(adapterOperations) &&
+      Object.keys(adapterOperations).length > 0
+    )) return [];
     const schema =
       value.inputSchema && typeof value.inputSchema === "object"
         ? ` Payload schema: ${JSON.stringify(value.inputSchema)}.`

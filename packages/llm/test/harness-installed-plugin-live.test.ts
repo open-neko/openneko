@@ -72,7 +72,7 @@ live("queued Harness Work run approves and executes an installed plugin once", a
       onAdapter: (registeredKind, adapter: ActionAdapter) => registerActionAdapter(registeredKind, async input => {
         try { return await adapter(input); }
         catch (error) { adapterError = error instanceof Error ? error.message : String(error); throw error; }
-      }) });
+      }, "plugin") });
     await registry.start();
     expect(registry.getRegisteredActionDescriptors()).toMatchObject([{ kind, pluginName }]);
     setPluginRegistryInstance(registry);
