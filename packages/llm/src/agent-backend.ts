@@ -100,7 +100,14 @@ export type AgentEvent =
       usageSnapshot?: AgentTokenUsage;
     }
   | { type: "tool_delta"; id: string; delta: unknown }
-  | { type: "tool_end"; id: string; result?: unknown; error?: string }
+  | { type: "tool_end"; id: string; result?: unknown; error?: string; remoteUsage?: {
+      reported: boolean;
+      chargedTokens: number;
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      llmCalls?: number;
+    } }
   | { type: "surface"; messages: AgentSurfaceMessage[] }
   | { type: "artifact"; artifact: AgentArtifact }
   | { type: "status"; message: string }

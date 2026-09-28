@@ -6,6 +6,17 @@ import {
 import { createAgentEventTelemetry } from "../src/work/agent-event-telemetry";
 
 describe("agent event telemetry", () => {
+  it("uses only the Harness remote usage projection for a lookup", async () => {
+    const sink = new MemoryObservationSink();
+    const telemetry = createAgentEventTelemetry({ observer: createHarnessObserver({ runId: "remote-run", sinks: [sink] }), operationId: "work:remote-run" });
+    await telemetry.startAgent({ backend: "harness" });
+    await telemetry.observeEvent({ type: "tool_start", id: "harness-operation-1", name: "neko_graphjin_agent" });
+    await telemetry.observeEvent({ type: "tool_end", id: "harness-operation-1", result: {
+      response: { data: { usage: { total_tokens: 900_000 } } },
+    }, remoteUsage: { reported: true, chargedTokens: 6_000, totalTokens: 6_000, promptTokens: 4_000, completionTokens: 2_000, llmCalls: 3 } });
+    const inner = sink.observations.find(item => item.kind === "model.response");
+    expect(inner?.measurements).toMatchObject({ totalTokens: 6_000, coverage: "complete" });
+  });
   it("counts Ax child delegation without double-counting child model usage", async () => {
     const sink = new MemoryObservationSink();
     const telemetry = createAgentEventTelemetry({observer:createHarnessObserver({runId:"child-run",sinks:[sink]}),operationId:"work:child-run"});

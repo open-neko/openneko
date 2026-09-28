@@ -120,7 +120,9 @@ export function createAgentEventTelemetry(input: {
         },
       });
       if (started && isGraphjinAgentTool(started.name)) {
-        const inner = normalizeGraphjinAgentUsage(event.result);
+        const harnessLookup = event.id.startsWith("harness-operation-");
+        const inner = harnessLookup ? undefined : normalizeGraphjinAgentUsage(event.result);
+        const remote = harnessLookup ? event.remoteUsage : undefined;
         await observe({
           kind: "model.response",
           operationId: `${input.operationId}:inner-model:${event.id}`,
@@ -134,9 +136,14 @@ export function createAgentEventTelemetry(input: {
               : {}),
             ...(inner?.model ? { "gen_ai.response.model": inner.model } : {}),
           },
-          measurements: inner?.usage ?? {
+          measurements: remote?.reported ? {
+            ...(remote.promptTokens !== undefined ? { inputTokens: remote.promptTokens } : {}),
+            ...(remote.completionTokens !== undefined ? { outputTokens: remote.completionTokens } : {}),
+            totalTokens: remote.totalTokens,
+            coverage: remote.promptTokens !== undefined && remote.completionTokens !== undefined ? "complete" : "partial",
+          } : inner?.usage ?? {
             coverage: "unavailable",
-            missingReasons: ["GraphJin agent response omitted normalized usage"],
+            missingReasons: ["GraphJin agent response omitted flat usage"],
           },
         });
         await observe({
