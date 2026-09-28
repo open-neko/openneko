@@ -896,7 +896,11 @@ another Ax call. OpenNeko's queued API ceiling now includes the same inner
 receipt or conservative missing-usage charge. A content-free
 `tool.finished.remote_usage` projection exposes reported GraphJin tokens,
 server LLM-call count, usage coverage and the admission charge without merging
-it into outer Ax usage; durable replay retains that projection. Cost and model-profile checks
+it into outer Ax usage; durable replay retains that projection. The OpenNeko
+adapter now passes this receipt to API admission and metadata-only telemetry,
+so nested `usage` fields in result data cannot masquerade as GraphJin agent
+usage. Reported server LLM calls count toward a queued API call ceiling after
+the broker receipt is persisted. Cost and model-profile checks
 still require a connected GraphJin/OpenShell qualification.
 The pinned Ax Go build passed deterministic `AxRunControl.Steer` fixtures:
 guidance queued inside an executor tool result reached the responder, while
