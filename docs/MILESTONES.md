@@ -937,7 +937,10 @@ skill selection through an approved cheap Ax stage, never a model call from a
 skill file. Give the outer distiller, executor and responder separate approved
 model choices. Start the executor on a baseline; enable error-turn or namespace
 escalation only after a live Ax route test passes. The pinned build currently
-fails that gate despite accepting `executorModelPolicy`. Escalation must not
+fails that gate despite accepting `executorModelPolicy`. The newer Go module
+available on 2026-09-29 (`b780a14a3cb9`) still stores and validates the policy
+without a live executor-selection call in generated source, so that update alone
+does not clear the gate. Escalation must not
 widen broker grants or replay an effect.
 Keep durable state authoritative; prompt compaction is only a model-context projection.
 For complex tasks, retain a compact plan with evidence and success criteria;
