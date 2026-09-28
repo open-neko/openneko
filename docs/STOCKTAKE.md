@@ -82,6 +82,17 @@ test containers. The Records fixture now uses the operator model-home path
 captured at module startup and restores its model config after the test; the
 runner supplies that path for the broad gate. The known upstream idle-proxy
 cancellation observation remained a warning, while sandbox teardown passed.
+
+The later source-bound action regression also exited 0 on the full connected
+suite (`/tmp/harness-m5-source-bound-final.log`). Native pack grants now require
+a worker adapter registered as `pack`, and approved Harness effects resolve an
+adapter with the same trusted pack/plugin/internal source. A plugin registration
+cannot make a pack action available or execute its approval. The connected
+effect crash matrix rejected a wrong-source adapter before any effect claim;
+queued pack approval, installed-plugin and Records effects, workflow output,
+Hermes cold/warm runs and browser artifact checks still passed. The declarative
+GraphJin API pack adapter remains an admitted external-effect path needing its
+own connected provider gate.
 The generic Go MCP adapter now preserves bounded resource links and structured
 content as separate result fields, while retaining text and `is_error`. Its
 focused SDK fixture covers paginated discovery, tool errors, unsupported image
