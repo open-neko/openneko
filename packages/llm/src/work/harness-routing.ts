@@ -46,7 +46,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     throw new Error("Invalid Harness routing configuration");
   }
   const value = config as Record<string, unknown>;
-  if (Object.keys(value).some(key => !["context", "executor", "responder", "skill", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
+  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
       !Array.isArray(value.routes) || value.routes.length < 1 || value.routes.length > 8) {
     throw new Error("Invalid Harness routing configuration");
   }
@@ -107,8 +107,18 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   if (value.skill !== undefined && (typeof value.skill !== "string" || !keys.has(value.skill))) {
     throw new Error("Harness skill stage has no approved route");
   }
+  const escalation = value.executor_escalation;
+  const afterErrors = value.executor_after_errors;
+  if ((escalation === undefined) !== (afterErrors === undefined) ||
+      escalation !== undefined && (typeof escalation !== "string" || !keys.has(escalation) ||
+        !Number.isInteger(afterErrors) || (afterErrors as number) < 1 || (afterErrors as number) > 8 ||
+        escalation === value.executor || value.executor === value.context ||
+        value.executor === value.responder || value.executor === value.skill)) {
+    throw new Error("Invalid Harness executor escalation");
+  }
   return {
     manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder,
+      ...(escalation ? {executor_escalation: escalation, executor_after_errors: afterErrors} : {}),
       ...(value.skill ? { skill: value.skill } : {}), routes,
       ...(priced ? {pricing_version: value.pricing_version} : {}),
       ...(graphjinPrice ? {graphjin_price: graphjinPrice} : {}) }),
