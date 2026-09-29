@@ -995,14 +995,11 @@ pending approval. Every ordinary request retained the original no-execution
 constraint, a later request still contained the pending approval, and the
 largest request was 12.3 KiB. Ax did not invoke its summarizer in this fixture,
 so this is ordinary-turn preservation evidence, not a compaction pass.
-Use Ax's [published Go skills](https://axllm.dev/go/skills/) as scoped implementation
-references: `ax-go-agent` and `ax-go-agent-rlm` for actor/runtime behavior,
-`ax-go-agent-observability` for per-call usage, `ax-go-agent-memory-skills`
-for discovery, and `ax-go-agent-context` for long-context choices. Each is
-generated with the Go package; verify a suggested API against the pinned
-source and no-key fixture before adopting it. The observability skill confirms
-the process-wide usage observer is best-effort, so admission remains on the
-invocation-scoped limiter and durable receipt path.
+Use the [Ax Go development guide](AX-DEVELOPMENT.md) to select the relevant
+published skill for each M6 change. Verify its APIs against the pinned generated
+Go package and a no-key fixture. The process-wide Ax usage observer is
+best-effort; admission remains on the invocation-scoped limiter and durable
+receipt path.
 
 **Deliver:** approved Ax model profiles and fallback by known work boundary and
 agent stage; aggregate limits across model stages, tools, retries and child/remote
