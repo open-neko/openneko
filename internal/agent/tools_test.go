@@ -65,6 +65,29 @@ func TestChildReadsRejectEffectsAndMissingTools(t *testing.T) {
 	}
 }
 
+func TestFinalizerRequiresTerminalVerificationAndPinsVersion(t *testing.T) {
+	finalizer := func(context.Context, []SavedOperation) (TerminalDecision, error) {
+		return TerminalDecision{Accepted: false}, nil
+	}
+	tools := Tools{FinalizerGate: finalizer, FinalizerGateVersion: "v1"}
+	if _, err := tools.CatalogHash(); err == nil {
+		t.Fatal("accepted a finalizer without terminal verification")
+	}
+	tools.TerminalGate = func(context.Context, Result, []SavedOperation) (TerminalDecision, error) {
+		return TerminalDecision{Accepted: false}, nil
+	}
+	tools.TerminalGateVersion = "v1"
+	first, err := tools.CatalogHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools.FinalizerGateVersion = "v2"
+	second, err := tools.CatalogHash()
+	if err != nil || first == second {
+		t.Fatalf("finalizer policy version did not bind catalog: %q %q %v", first, second, err)
+	}
+}
+
 func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
 	var calls atomic.Int32
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

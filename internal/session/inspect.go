@@ -243,8 +243,15 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	finishedChildren := map[uint64]bool{}
 	stageSummaries := map[uint64]map[string]bool{}
 	var terminalCheck *agent.Event
+	finalizerEvent := false
+	finalizerAdmitted := false
+	finalizerCalls := 0
 	for i, e := range s.Events {
 		if terminalCheck != nil && e.Type != "run.finished" && e.Type != "run.resumed" {
+			return invalid()
+		}
+		if finalizerEvent && !finalizerAdmitted && e.Type != "run.finished" && e.Type != "run.resumed" ||
+			finalizerAdmitted && (e.Type == "tool.started" || e.Type == "model.request.started" && e.Stage != "terminal_finalizer") {
 			return invalid()
 		}
 		if e.Version != 1 || e.RunID != spec.RunID || e.InputID != spec.InputID || e.Sequence != uint64(i+1) {
@@ -260,7 +267,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			e.StageUsage != nil && e.Type != "model.stage_usage" ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.StateUpdate != nil && e.Type != "runtime.state.updated" ||
-			e.Terminal != nil && e.Type != "terminal.checked" ||
+			e.Terminal != nil && e.Type != "terminal.checked" && e.Type != "finalizer.admitted" ||
 			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
 			return invalid()
 		}
@@ -288,8 +295,13 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			finishedChildren[e.SpanID] = true
 		case "model.request.started":
 			modelCalls++
-			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) || e.Stage != "" && e.Stage != "skill_selection" {
+			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) ||
+				e.Stage != "" && e.Stage != "skill_selection" && e.Stage != "terminal_finalizer" ||
+				e.Stage == "terminal_finalizer" && (!finalizerAdmitted || finalizerCalls > 0) {
 				return invalid()
+			}
+			if e.Stage == "terminal_finalizer" {
+				finalizerCalls++
 			}
 			modelStages[uint64(modelCalls)] = e.Stage
 			if e.CostMicros != nil {
@@ -336,6 +348,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			terminalCheck = nil
+			finalizerEvent = false
+			finalizerAdmitted = false
+			finalizerCalls = 0
 		case "tool.reused":
 			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()
@@ -378,6 +393,19 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			stateFailures[e.OperationID] = true
+		case "finalizer.admitted":
+			if finalizerEvent || e.Terminal == nil || !e.Terminal.Accepted || len(e.Terminal.EvidenceIDs) == 0 ||
+				!e.Terminal.Valid(s.Operations) || len(started) != len(ended) || e.Origin == "" || len(e.Origin) > 128 || e.Error != "" {
+				return invalid()
+			}
+			finalizerEvent = true
+			finalizerAdmitted = true
+		case "finalizer.denied":
+			if finalizerEvent || e.Terminal != nil || e.Origin == "" || len(e.Origin) > 128 ||
+				e.Error != "insufficient_evidence" && e.Error != "evidence_unavailable" && e.Error != "evidence_too_large" {
+				return invalid()
+			}
+			finalizerEvent = true
 		case "terminal.checked":
 			if terminalCheck != nil || e.Terminal == nil || e.Origin == "" || len(e.Origin) > 128 ||
 				len(started) != len(ended) || !e.Terminal.Valid(s.Operations) ||
@@ -389,6 +417,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			terminalCheck = &copy
 		case "run.finished":
 			if i != len(s.Events)-1 || s.Result == nil || e.Result == nil || !sameJSON(e.Result, s.Result) {
+				return invalid()
+			}
+			if finalizerEvent && e.Result.Status == "completed" && (!finalizerAdmitted || finalizerCalls != 1) {
 				return invalid()
 			}
 			if terminalCheck != nil && (terminalCheck.Terminal.Accepted != (e.Result.Status == "completed") ||
@@ -455,7 +486,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 
 func validStageSummary(name string, usage *agent.ModelUsage, limit int) bool {
 	switch name {
-	case "distiller", "executor", "responder", "child.distiller", "child.executor", "child.responder", "unattributed":
+	case "distiller", "executor", "responder", "child.distiller", "child.executor", "child.responder", "finalizer", "unattributed":
 	default:
 		return false
 	}

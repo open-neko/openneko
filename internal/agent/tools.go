@@ -29,10 +29,15 @@ type Tools struct {
 	// artifacts. It is read-only and runs before a terminal result is committed.
 	TerminalGate        func(context.Context, Result, []SavedOperation) (TerminalDecision, error)
 	TerminalGateVersion string
-	Capabilities        []Capability
-	ChildReads          []string        // Exact host-admitted read tools for one owned child agent.
-	SkillCatalog        []SkillMetadata // Host-staged catalog hints; never capability grants.
-	Scope               string          // Trusted run-scoped admission context, never model input.
+	// FinalizerGate selects already committed receipts that justify one tool-less
+	// answer attempt after the Ax executor reaches its step ceiling. The normal
+	// TerminalGate still checks the resulting answer before completion.
+	FinalizerGate        func(context.Context, []SavedOperation) (TerminalDecision, error)
+	FinalizerGateVersion string
+	Capabilities         []Capability
+	ChildReads           []string        // Exact host-admitted read tools for one owned child agent.
+	SkillCatalog         []SkillMetadata // Host-staged catalog hints; never capability grants.
+	Scope                string          // Trusted run-scoped admission context, never model input.
 }
 
 func (t Tools) validStateHook() bool {
@@ -41,6 +46,11 @@ func (t Tools) validStateHook() bool {
 
 func (t Tools) validTerminalGate() bool {
 	return (t.TerminalGate == nil) == (t.TerminalGateVersion == "") && len(t.TerminalGateVersion) <= 128
+}
+
+func (t Tools) validFinalizerGate() bool {
+	return (t.FinalizerGate == nil) == (t.FinalizerGateVersion == "") && len(t.FinalizerGateVersion) <= 128 &&
+		(t.FinalizerGate == nil || t.TerminalGate != nil)
 }
 
 type SkillMetadata struct {
@@ -164,6 +174,9 @@ func (t Tools) CatalogHash() (string, error) {
 	if !t.validTerminalGate() {
 		return "", fmt.Errorf("invalid terminal gate")
 	}
+	if !t.validFinalizerGate() {
+		return "", fmt.Errorf("invalid finalizer gate")
+	}
 	admitted, err := t.admitted()
 	if err != nil {
 		return "", err
@@ -177,6 +190,9 @@ func (t Tools) CatalogHash() (string, error) {
 	}
 	if t.TerminalGate != nil {
 		bindings = append(bindings, "@terminal-gate:"+t.TerminalGateVersion)
+	}
+	if t.FinalizerGate != nil {
+		bindings = append(bindings, "@finalizer-gate:"+t.FinalizerGateVersion)
 	}
 	sort.Strings(bindings)
 	child, err := t.childReads(admitted)

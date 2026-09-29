@@ -856,9 +856,16 @@ checks candidate completion against committed operation receipts and journals
 `terminal.checked` before `run.finished`. Local no-key fixtures prove a missing
 receipt fails, a successful receipt is accepted, invented evidence IDs fail,
 and interruption after the saved decision can resume without redispatching the
-operation; changing the gate version blocks that resume. The host still needs
-to supply artifact-specific verification, and step-exhaustion finalization plus
-connected queue redelivery remain open.
+operation; changing the gate version blocks that resume. The pinned Ax Go
+actor loop reads `max_actor_steps`; the Harness now sets an explicit eight-step
+parent and three-step child ceiling. When the parent exhausts its steps, an
+optional version-pinned host gate may select successful saved receipts for one
+bounded, tool-less Ax finalizer call. The ordinary terminal gate checks its
+answer afterward. No-key fixtures prove the evidenced case completes, the
+no-evidence case fails without a finalizer call, and a completed finalizer
+replays from a validated checkpoint on queue redelivery without contacting the
+model or tool. The host still needs to supply artifact-specific verification;
+connected OpenShell/worker redelivery with this gate remains open.
 Host-approved Ax stage routes now select distinct context/executor/responder
 models. A two-route HTTP
 fixture verified model and credential selection on all three stages, model-call
