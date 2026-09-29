@@ -242,7 +242,11 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	children := map[uint64]bool{}
 	finishedChildren := map[uint64]bool{}
 	stageSummaries := map[uint64]map[string]bool{}
+	var terminalCheck *agent.Event
 	for i, e := range s.Events {
+		if terminalCheck != nil && e.Type != "run.finished" && e.Type != "run.resumed" {
+			return invalid()
+		}
 		if e.Version != 1 || e.RunID != spec.RunID || e.InputID != spec.InputID || e.Sequence != uint64(i+1) {
 			return invalid()
 		}
@@ -256,6 +260,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			e.StageUsage != nil && e.Type != "model.stage_usage" ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.StateUpdate != nil && e.Type != "runtime.state.updated" ||
+			e.Terminal != nil && e.Type != "terminal.checked" ||
 			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
 			return invalid()
 		}
@@ -330,6 +335,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {
 				return invalid()
 			}
+			terminalCheck = nil
 		case "tool.reused":
 			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()
@@ -372,8 +378,21 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			stateFailures[e.OperationID] = true
+		case "terminal.checked":
+			if terminalCheck != nil || e.Terminal == nil || e.Origin == "" || len(e.Origin) > 128 ||
+				len(started) != len(ended) || !e.Terminal.Valid(s.Operations) ||
+				e.Terminal.Accepted && e.Error != "" ||
+				!e.Terminal.Accepted && e.Error != "verification_failed" && e.Error != "verification_unavailable" && e.Error != "invalid_verification" {
+				return invalid()
+			}
+			copy := e
+			terminalCheck = &copy
 		case "run.finished":
 			if i != len(s.Events)-1 || s.Result == nil || e.Result == nil || !sameJSON(e.Result, s.Result) {
+				return invalid()
+			}
+			if terminalCheck != nil && (terminalCheck.Terminal.Accepted != (e.Result.Status == "completed") ||
+				!terminalCheck.Terminal.Accepted && (e.Result.Code != terminalCheck.Error || e.Result.Kind != "failure")) {
 				return invalid()
 			}
 		default:

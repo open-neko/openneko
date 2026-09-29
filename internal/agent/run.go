@@ -100,6 +100,7 @@ type Event struct {
 	RemoteUsage *RemoteUsage        `json:"remote_usage,omitempty"`
 	CostMicros  *int64              `json:"cost_micros,omitempty"`
 	StateUpdate *RuntimeStateUpdate `json:"state_update,omitempty"`
+	Terminal    *TerminalDecision   `json:"terminal,omitempty"`
 	Result      *Result             `json:"result,omitempty"`
 }
 
@@ -156,6 +157,9 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tools, emit func(Event) error, prior Continuation) (Result, error) {
 	if !tools.validStateHook() {
 		return Result{}, fmt.Errorf("invalid runtime state hook")
+	}
+	if !tools.validTerminalGate() {
+		return Result{}, fmt.Errorf("invalid terminal gate")
 	}
 	admitted, err := tools.admitted()
 	if err != nil {
@@ -595,6 +599,28 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	result.Usage = &usage
 	if spec.MaxCostMicros > 0 {
 		result.Cost = &CostSummary{PricingVersion: pricing.PricingVersion, ChargedMicros: events.costSnapshot(), BudgetMicros: spec.MaxCostMicros}
+	}
+	if tools.TerminalGate != nil && result.Status == "completed" {
+		operations := terminalOperations(parentView.snapshot(), childView.snapshot())
+		decision, gateErr := tools.TerminalGate(ctx, result, operations)
+		code := ""
+		switch {
+		case gateErr != nil:
+			code = "verification_unavailable"
+			decision = TerminalDecision{Accepted: false}
+		case !decision.Valid(operations):
+			code = "invalid_verification"
+			decision = TerminalDecision{Accepted: false}
+		case !decision.Accepted:
+			code = "verification_failed"
+		}
+		events.send(Event{Type: "terminal.checked", Origin: tools.TerminalGateVersion, Terminal: &decision, Error: code})
+		if code != "" {
+			result.Status = "failed"
+			result.Kind = "failure"
+			result.Code = code
+			result.Answer = "The result did not pass host verification."
+		}
 	}
 	events.send(Event{Type: "run.finished", Result: &result})
 	events.mu.Lock()

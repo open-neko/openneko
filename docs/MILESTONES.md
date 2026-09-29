@@ -851,7 +851,14 @@ worker/OpenShell/GraphJin regression passed after this change. Failed or partial
 tool outcomes no longer return `status: completed` with the responder's
 unverified success claim; the focused durable-write and broker tests cover the
 terminal mapping, and a checkpoint test proves an `is_error` result remains
-incomplete after resume. General claim-to-receipt verification remains open.
+incomplete after resume. An optional, version-pinned host terminal gate now
+checks candidate completion against committed operation receipts and journals
+`terminal.checked` before `run.finished`. Local no-key fixtures prove a missing
+receipt fails, a successful receipt is accepted, invented evidence IDs fail,
+and interruption after the saved decision can resume without redispatching the
+operation; changing the gate version blocks that resume. The host still needs
+to supply artifact-specific verification, and step-exhaustion finalization plus
+connected queue redelivery remain open.
 Host-approved Ax stage routes now select distinct context/executor/responder
 models. A two-route HTTP
 fixture verified model and credential selection on all three stages, model-call

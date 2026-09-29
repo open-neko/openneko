@@ -164,6 +164,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		return raw, err
 	}
 	durable := agent.Tools{Scope: tools.Scope, OnResume: tools.OnResume, AfterTool: tools.AfterTool, StateHookVersion: tools.StateHookVersion,
+		TerminalGate: tools.TerminalGate, TerminalGateVersion: tools.TerminalGateVersion,
 		ChildReads: append([]string(nil), tools.ChildReads...), SkillCatalog: append([]agent.SkillMetadata(nil), tools.SkillCatalog...)}
 	if tools.Lookup != nil {
 		durable.Lookup = func(ctx context.Context, instruction string) (json.RawMessage, error) {

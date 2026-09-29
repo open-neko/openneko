@@ -25,14 +25,22 @@ type Tools struct {
 	// tool receipt. Its version is pinned in the run catalog across resume.
 	AfterTool        func(context.Context, SavedOperation) (*RuntimeStateUpdate, error)
 	StateHookVersion string
-	Capabilities     []Capability
-	ChildReads       []string        // Exact host-admitted read tools for one owned child agent.
-	SkillCatalog     []SkillMetadata // Host-staged catalog hints; never capability grants.
-	Scope            string          // Trusted run-scoped admission context, never model input.
+	// TerminalGate checks the candidate answer against host-owned receipts or
+	// artifacts. It is read-only and runs before a terminal result is committed.
+	TerminalGate        func(context.Context, Result, []SavedOperation) (TerminalDecision, error)
+	TerminalGateVersion string
+	Capabilities        []Capability
+	ChildReads          []string        // Exact host-admitted read tools for one owned child agent.
+	SkillCatalog        []SkillMetadata // Host-staged catalog hints; never capability grants.
+	Scope               string          // Trusted run-scoped admission context, never model input.
 }
 
 func (t Tools) validStateHook() bool {
 	return (t.AfterTool == nil) == (t.StateHookVersion == "") && len(t.StateHookVersion) <= 128
+}
+
+func (t Tools) validTerminalGate() bool {
+	return (t.TerminalGate == nil) == (t.TerminalGateVersion == "") && len(t.TerminalGateVersion) <= 128
 }
 
 type SkillMetadata struct {
@@ -153,6 +161,9 @@ func (t Tools) CatalogHash() (string, error) {
 	if !t.validStateHook() {
 		return "", fmt.Errorf("invalid runtime state hook")
 	}
+	if !t.validTerminalGate() {
+		return "", fmt.Errorf("invalid terminal gate")
+	}
 	admitted, err := t.admitted()
 	if err != nil {
 		return "", err
@@ -163,6 +174,9 @@ func (t Tools) CatalogHash() (string, error) {
 	}
 	if t.AfterTool != nil {
 		bindings = append(bindings, "@runtime-state:"+t.StateHookVersion)
+	}
+	if t.TerminalGate != nil {
+		bindings = append(bindings, "@terminal-gate:"+t.TerminalGateVersion)
 	}
 	sort.Strings(bindings)
 	child, err := t.childReads(admitted)
