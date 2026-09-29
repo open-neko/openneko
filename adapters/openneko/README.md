@@ -35,6 +35,10 @@ exact revision, checks binary hashes, and the Go runner verifies the script
 and entire bundle. Keep retired entries until their accepted runs drain; use
 immutable image references in production. The worker also verifies the
 workflow definition, admitted contract and actor before publishing the artifact.
+For queued workflow turns, the Harness terminal gate requires a saved
+broker-confirmed `workflow_output_emit` receipt before accepting a final answer.
+After executor step exhaustion, only that receipt can authorize one tool-less
+answer attempt; the terminal gate checks the answer again.
 `POST /api/v1/workflows/{id}/runs` in the
 default `single` mode accepts `{"targetDay":"YYYY-MM-DD"}` and an idempotency key,
 returns `202` with a run URL, and exposes the validated CSV through the

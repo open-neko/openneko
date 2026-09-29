@@ -865,7 +865,13 @@ answer afterward. No-key fixtures prove the evidenced case completes, the
 no-evidence case fails without a finalizer call, and a completed finalizer
 replays from a validated checkpoint on queue redelivery without contacting the
 model or tool. The host still needs to supply artifact-specific verification;
-connected OpenShell/worker redelivery with this gate remains open.
+connected OpenShell/worker redelivery with this gate remains open. The
+standalone OpenNeko adapter now installs these gates only for queued workflow
+runs: the selected evidence must be a bound, broker-confirmed
+`workflow_output_emit` receipt. A no-key integration fixture runs the model,
+session store and broker together; a final answer without output fails, while
+one persisted output completes. OpenNeko's existing post-run output query
+remains an independent check. Other artifact kinds need their own host gate.
 Host-approved Ax stage routes now select distinct context/executor/responder
 models. A two-route HTTP
 fixture verified model and credential selection on all three stages, model-call

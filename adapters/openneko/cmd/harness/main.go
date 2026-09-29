@@ -234,6 +234,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "invalid workflow output capability:", err)
 			os.Exit(2)
 		}
+		bindWorkflowOutputVerification(&tools, binding)
 		tools.Scope += "\nworkflow:" + workflowRunID
 	}
 	var closeTools []func() error

@@ -606,7 +606,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if spec.MaxCostMicros > 0 {
 		result.Cost = &CostSummary{PricingVersion: pricing.PricingVersion, ChargedMicros: events.costSnapshot(), BudgetMicros: spec.MaxCostMicros}
 	}
-	if tools.TerminalGate != nil && result.Status == "completed" {
+	if tools.TerminalGate != nil && result.Status == "completed" && result.Kind == "answer" {
 		operations := terminalOperations(parentView.snapshot(), childView.snapshot())
 		decision, gateErr := tools.TerminalGate(ctx, result, operations)
 		code := ""
