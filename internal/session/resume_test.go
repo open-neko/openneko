@@ -295,6 +295,67 @@ func TestDurableModelChargeSurvivesInterruptedDelivery(t *testing.T) {
 	}
 }
 
+func TestCommittedRuntimeStateSurvivesResumeWithoutReplayingTool(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "state-resume", InputID: "input", Prompt: "Find reference"}
+	answers := []string{`{"javascriptCode":"final('Read',{})"}`, `{"javascriptCode":"const row=read({}); final('Use row',{row});"}`,
+		`{"javascriptCode":"final('Continue',{})"}`, `{"javascriptCode":"final('Answer',{})"}`, `{"answer":"REF-42"}`}
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, string(body))
+		if len(requests) > len(answers) {
+			http.Error(w, "unexpected call", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[len(requests)-1]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	reads, hooks := 0, 0
+	tools := agent.Tools{StateHookVersion: "test-v1", AfterTool: func(_ context.Context, op agent.SavedOperation) (*agent.RuntimeStateUpdate, error) {
+		hooks++
+		if op.Error != "" {
+			t.Fatalf("failed receipt: %+v", op)
+		}
+		return &agent.RuntimeStateUpdate{Target: "root/responder", State: json.RawMessage(`{"workflow_phase":"verified"}`)}, nil
+	}, Capabilities: []agent.Capability{{Name: "read", Version: "1", Origin: "fixture", Effect: "read", Description: "Read fixture.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads++
+			return json.RawMessage(`{"reference":"REF-42"}`), nil
+		}}}}
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "runtime.state.updated" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || len(requests) != 2 || reads != 1 || hooks != 1 {
+		t.Fatalf("initial err=%v requests=%d reads=%d hooks=%d", err, len(requests), reads, hooks)
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume {
+		t.Fatalf("inspect=%+v err=%v", report, err)
+	}
+	changed := tools
+	changed.StateHookVersion = "test-v2"
+	if _, err := ResumeWithTools(context.Background(), root, spec, client, changed, func(agent.Event) error { return nil }); err == nil || len(requests) != 2 {
+		t.Fatalf("changed state hook admitted: err=%v requests=%d", err, len(requests))
+	}
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || len(requests) != 5 || reads != 1 || hooks != 1 ||
+		strings.Count(requests[2], "workflow_phase") != 1 {
+		t.Fatalf("resume result=%+v err=%v requests=%d reads=%d hooks=%d state=%d", result, err, len(requests), reads, hooks,
+			func() int {
+				if len(requests) > 2 {
+					return strings.Count(requests[2], "workflow_phase")
+				}
+				return -1
+			}())
+	}
+}
+
 func TestObservedTokenReservationSurvivesResume(t *testing.T) {
 	root := t.TempDir()
 	spec := agent.Spec{Version: 1, RunID: "token-resume", InputID: "input", Prompt: "Read status", MaxModelTokens: 11000}

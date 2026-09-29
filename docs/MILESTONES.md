@@ -921,8 +921,15 @@ root-targeted guidance from a distiller result reached both executor and
 responder. A `root/executor` target reached only the executor. Therefore a
 durable lifecycle hook must choose an explicit stage path and verify the
 `applied` event; unscoped steering cannot promise exactly-once delivery.
-The harness still needs to journal and reconstruct any state update before
-relying on it across interruption.
+The Harness now exposes a version-pinned `AfterTool` lifecycle hook for a
+host-owned, bounded replacement state snapshot. After a tool result is
+committed, the hook's JSON state is journaled and steered to one explicit Ax
+stage. Resume reconstructs the latest snapshot from the checkpoint and sends
+it as data to the new attempt; a changed hook version is rejected before
+model dispatch. Local no-key fixtures verify the responder sees an update
+once after a tool result and the resumed distiller sees the same committed
+snapshot without repeating the tool. This does not yet prove a connected
+OpenNeko state hook or Ax's applied-event acknowledgement under failures.
 Ax's stage-option rate limiter did not override the already-bound outer client
 limiter in a no-key route fixture, so call-time stage labels remain unavailable
 from that hook. The Harness now emits a separate content-free

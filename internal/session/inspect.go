@@ -233,6 +233,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	modelStages := map[uint64]string{}
 	modelCosts := map[uint64]int64{}
 	toolCosts := map[uint64]int64{}
+	stateUpdates := map[uint64]bool{}
+	stateFailures := map[uint64]bool{}
 	var chargedCost int64
 	observedUsage := agent.ModelUsage{}
 	started := map[uint64]string{}
@@ -253,6 +255,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" ||
 			e.StageUsage != nil && e.Type != "model.stage_usage" ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
+			e.StateUpdate != nil && e.Type != "runtime.state.updated" ||
 			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
 			return invalid()
 		}
@@ -359,6 +362,16 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 					return invalid()
 				}
 			}
+		case "runtime.state.updated":
+			if !ended[e.OperationID] || stateUpdates[e.OperationID] || e.StateUpdate == nil || !e.StateUpdate.Valid() {
+				return invalid()
+			}
+			stateUpdates[e.OperationID] = true
+		case "runtime.state.failed":
+			if !ended[e.OperationID] || stateFailures[e.OperationID] || e.Error != "runtime_state_failed" {
+				return invalid()
+			}
+			stateFailures[e.OperationID] = true
 		case "run.finished":
 			if i != len(s.Events)-1 || s.Result == nil || e.Result == nil || !sameJSON(e.Result, s.Result) {
 				return invalid()

@@ -163,7 +163,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		}
 		return raw, err
 	}
-	durable := agent.Tools{Scope: tools.Scope, OnResume: tools.OnResume,
+	durable := agent.Tools{Scope: tools.Scope, OnResume: tools.OnResume, AfterTool: tools.AfterTool, StateHookVersion: tools.StateHookVersion,
 		ChildReads: append([]string(nil), tools.ChildReads...), SkillCatalog: append([]agent.SkillMetadata(nil), tools.SkillCatalog...)}
 	if tools.Lookup != nil {
 		durable.Lookup = func(ctx context.Context, instruction string) (json.RawMessage, error) {
@@ -274,7 +274,14 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 	started := 0
 	modelCosts := map[uint64]int64{}
 	lookupCosts := map[uint64]int64{}
+	stateFailed := false
 	for _, event := range state.Events {
+		if event.Type == "runtime.state.updated" {
+			prior.StateUpdate = event.StateUpdate
+		}
+		if event.Type == "runtime.state.failed" {
+			stateFailed = true
+		}
 		if event.Type == "model.request.started" {
 			prior.ModelCalls++
 			if event.CostMicros != nil {
@@ -312,6 +319,9 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 		}
 	}
 	prior.Usage.Requests = prior.ModelCalls
+	if stateFailed {
+		return agent.Continuation{}, fmt.Errorf("runtime state update failed")
+	}
 	if prior.Attempt > 3 {
 		return agent.Continuation{}, fmt.Errorf("continuation attempt limit exceeded")
 	}

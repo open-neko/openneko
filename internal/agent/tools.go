@@ -18,13 +18,21 @@ import (
 // Tools are host-installed capabilities. Propose only creates an approval request;
 // it cannot execute an effect or accept model-selected approval state.
 type Tools struct {
-	Lookup       func(context.Context, string) (json.RawMessage, error)
-	Propose      func(context.Context, Proposal) (ProposalReceipt, error)
-	OnResume     func(context.Context, []SavedOperation) error
-	Capabilities []Capability
-	ChildReads   []string        // Exact host-admitted read tools for one owned child agent.
-	SkillCatalog []SkillMetadata // Host-staged catalog hints; never capability grants.
-	Scope        string          // Trusted run-scoped admission context, never model input.
+	Lookup   func(context.Context, string) (json.RawMessage, error)
+	Propose  func(context.Context, Proposal) (ProposalReceipt, error)
+	OnResume func(context.Context, []SavedOperation) error
+	// AfterTool derives a bounded replacement state snapshot from a committed
+	// tool receipt. Its version is pinned in the run catalog across resume.
+	AfterTool        func(context.Context, SavedOperation) (*RuntimeStateUpdate, error)
+	StateHookVersion string
+	Capabilities     []Capability
+	ChildReads       []string        // Exact host-admitted read tools for one owned child agent.
+	SkillCatalog     []SkillMetadata // Host-staged catalog hints; never capability grants.
+	Scope            string          // Trusted run-scoped admission context, never model input.
+}
+
+func (t Tools) validStateHook() bool {
+	return (t.AfterTool == nil) == (t.StateHookVersion == "") && len(t.StateHookVersion) <= 128
 }
 
 type SkillMetadata struct {
@@ -142,6 +150,9 @@ func (t Tools) CatalogHash() (string, error) {
 	if len(t.Scope) > 16384 {
 		return "", fmt.Errorf("catalog scope exceeds limit")
 	}
+	if !t.validStateHook() {
+		return "", fmt.Errorf("invalid runtime state hook")
+	}
 	admitted, err := t.admitted()
 	if err != nil {
 		return "", err
@@ -149,6 +160,9 @@ func (t Tools) CatalogHash() (string, error) {
 	bindings := make([]string, 0, len(admitted))
 	for _, capability := range admitted {
 		bindings = append(bindings, capability.Name+":"+capability.binding)
+	}
+	if t.AfterTool != nil {
+		bindings = append(bindings, "@runtime-state:"+t.StateHookVersion)
 	}
 	sort.Strings(bindings)
 	child, err := t.childReads(admitted)
