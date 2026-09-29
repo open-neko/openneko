@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.8.0](https://github.com/open-neko/openneko/compare/v3.7.0...v3.8.0) (2026-09-29)
+
+
+### Features
+
+* **actions:** rules check the targets in the payload ([b6a5b32](https://github.com/open-neko/openneko/commit/b6a5b329db5ef3f91cd9365fefe8df251767b320))
+* **actions:** rules check the targets in the payload ([dddc704](https://github.com/open-neko/openneko/commit/dddc7041c22798b95ac6f4646019d7c4e26bb2f1))
+
+
+### Bug Fixes
+
+* **llm:** omit default Anthropic temperature ([4f3cef1](https://github.com/open-neko/openneko/commit/4f3cef1532c73138c117fb6bf901cd626b423dbb))
+
 ## [3.7.0](https://github.com/open-neko/openneko/compare/v3.6.0...v3.7.0) (2026-09-28)
 
 
