@@ -933,6 +933,10 @@ remain the only admission and total-usage receipts. Extra model calls omitted
 from Ax's stage log are marked `unattributed`; this telemetry does not expose
 prompts or double-count tokens. Per-call stage attribution and cost accounting
 remain open for connected qualification.
+The OpenNeko feature branch now validates and forwards that projection as a
+metadata-only `model.stage_usage` observation. Its summary accumulator excludes
+the attribution view from additive run usage; focused LLM/telemetry tests and
+worker typecheck pass. Connected OTLP export is still to be qualified.
 An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
 diagnostics: three read turns with 14 KiB console observations grew an executor
 request past 80 KiB and triggered an extra summary request. The Harness now
