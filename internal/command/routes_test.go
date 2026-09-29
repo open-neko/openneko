@@ -329,3 +329,89 @@ func TestMissingUsageRetainsCostReservation(t *testing.T) {
 		t.Fatalf("reservation or coverage lost: %+v", terminal)
 	}
 }
+
+func TestGraphJinCostReservationBlocksBrokerDispatch(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	t.Setenv("HARNESS_TEST_KEY", "synthetic")
+	responses := []string{`{"javascriptCode":"final('Find the row',{})"}`, `{"javascriptCode":"const row=lookup('find row'); final('Done',{row});"}`, `{"answer":"Unable to finish"}`}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(responses) == 0 {
+			http.Error(w, "unexpected model call", 400)
+			return
+		}
+		content := responses[0]
+		responses = responses[1:]
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
+			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
+	}))
+	defer server.Close()
+	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
+	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", PricingVersion: "test-v1", GraphJinPrice: price,
+		Routes: []modelRoute{{Key: "only", Model: "fixture", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY", Price: price}}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	lookups := 0
+	var out bytes.Buffer
+	code, err := execute(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find row","max_cost_micros":49000}`), &out,
+		func(context.Context, string) (json.RawMessage, error) {
+			lookups++
+			return json.RawMessage(`{"response":{"answer":"row"}}`), nil
+		})
+	if code != 1 || err != nil || lookups != 0 {
+		t.Fatalf("broker dispatch admitted: code=%d err=%v lookups=%d output=%s", code, err, lookups, out.String())
+	}
+	var terminal *agent.Result
+	for _, event := range events(t, &out) {
+		if event.Type == "run.finished" {
+			terminal = event.Result
+		}
+	}
+	if terminal == nil || terminal.Code != "cost_budget_exceeded" || terminal.Cost == nil || terminal.Cost.ChargedMicros >= 49_000 {
+		t.Fatalf("cost gate result=%+v", terminal)
+	}
+}
+
+func TestGraphJinReportedCostReplacesReservation(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	t.Setenv("HARNESS_TEST_KEY", "synthetic")
+	responses := []string{`{"javascriptCode":"final('Find the row',{})"}`, `{"javascriptCode":"const row=lookup('find row'); final('Done',{row});"}`, `{"answer":"row"}`}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(responses) == 0 {
+			http.Error(w, "unexpected model call", 400)
+			return
+		}
+		content := responses[0]
+		responses = responses[1:]
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
+			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
+	}))
+	defer server.Close()
+	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
+	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", PricingVersion: "test-v1", GraphJinPrice: price,
+		Routes: []modelRoute{{Key: "only", Model: "fixture", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY", Price: price}}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	lookups := 0
+	var out bytes.Buffer
+	code, err := execute(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find row","max_cost_micros":100000}`), &out,
+		func(context.Context, string) (json.RawMessage, error) {
+			lookups++
+			return json.RawMessage(`{"response":{"answer":"row","usage":{"prompt_tokens":70,"completion_tokens":30,"total_tokens":100,"llm_calls":1}}}`), nil
+		})
+	if code != 0 || err != nil || lookups != 1 {
+		t.Fatalf("lookup result: code=%d err=%v lookups=%d output=%s", code, err, lookups, out.String())
+	}
+	var terminal *agent.Result
+	var lookupCharge int64
+	for _, event := range events(t, &out) {
+		if event.Type == "tool.finished" && event.Name == "lookup" && event.CostMicros != nil {
+			lookupCharge = *event.CostMicros
+		}
+		if event.Type == "run.finished" {
+			terminal = event.Result
+		}
+	}
+	if lookupCharge != 100 || terminal == nil || terminal.Cost == nil || terminal.Cost.ChargedMicros != 145 {
+		t.Fatalf("cost receipt=%d result=%+v", lookupCharge, terminal)
+	}
+}

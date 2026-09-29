@@ -259,7 +259,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		costEvent := e.Type == "model.request.started" || e.Type == "model.request.finished" ||
 			(e.Type == "tool.started" || e.Type == "tool.finished") && e.Name == "lookup"
 		if (spec.MaxCostMicros > 0 && costEvent) != (e.CostMicros != nil) ||
-			e.CostMicros != nil && (*e.CostMicros < 1 || *e.CostMicros > 1_000_000_000_000_000) {
+			e.CostMicros != nil && (*e.CostMicros < 1 || *e.CostMicros > 8_000_000_000_000_000) {
 			return invalid()
 		}
 		switch e.Type {

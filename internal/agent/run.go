@@ -206,7 +206,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		pricing, ok = client.(*RoutedClient)
 		if !ok || pricing.PricingVersion == "" || len(pricing.Prices) == 0 ||
 			(available["lookup"].Name != "" && (pricing.GraphJinPrice == nil || !pricing.GraphJinPrice.Valid())) ||
-			prior.CostMicros < 0 || prior.CostMicros > 1_000_000_000_000 {
+			prior.CostMicros < 0 || prior.CostMicros > 8_000_000_000_000_000 {
 			return Result{}, fmt.Errorf("trusted cost budget requires complete route pricing")
 		}
 	}
@@ -684,7 +684,7 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 	}
 	charge := costReservation
 	if finished.Usage != nil && finished.Usage.TotalTokens > 0 {
-		charge = price.Observed(finished.Usage.InputTokens, finished.Usage.OutputTokens, finished.Usage.TotalTokens)
+		charge = price.ObservedModel(*finished.Usage)
 	}
 	if r.spec.MaxCostMicros > 0 {
 		finished.CostMicros = &charge

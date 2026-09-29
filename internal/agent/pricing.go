@@ -8,8 +8,8 @@ type TokenPrice struct {
 	OutputMicrosPerMillion int64 `json:"output_micros_per_million"`
 }
 
-// CostSummary is the durable admission charge, in micros of the host's
-// accounting currency. Missing provider usage retains its reservation.
+// CostSummary is the durable admission charge in USD micros. Missing provider
+// usage retains its reservation. It is an estimate, not a provider invoice.
 type CostSummary struct {
 	PricingVersion string `json:"pricing_version"`
 	ChargedMicros  int64  `json:"charged_micros"`
@@ -48,8 +48,15 @@ func (p TokenPrice) Observed(input, output, total int64) int64 {
 		millionthCeil(output, p.OutputMicrosPerMillion) + p.Reservation(extra)
 }
 
-// Prices are bounded at 1e9 micros per million and usage at 1e12 tokens, so
-// the quotient/remainder products below fit in int64 without floating point.
+// Ax may report cache traffic separately from ordinary input. Charge both at
+// the full input rate; any overlap only makes the admission estimate safer.
+func (p TokenPrice) ObservedModel(usage ModelUsage) int64 {
+	return p.Observed(usage.InputTokens+usage.CacheReadTokens+usage.CacheWriteTokens,
+		usage.OutputTokens, usage.TotalTokens)
+}
+
+// Prices are bounded at 1e9 micros per million and each reported usage field
+// at 1e12 tokens, so these products fit in int64 without floating point.
 func millionthCeil(tokens, rate int64) int64 {
 	if tokens <= 0 || rate <= 0 {
 		return 0

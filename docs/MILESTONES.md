@@ -946,8 +946,13 @@ reservation with reported usage when available, and retains the reservation
 when usage is absent or dispatch is interrupted. Cost charges are content-free
 durable events and a terminal summary; checkpoint resume reconstructs spend
 from those events. Local no-key fixtures prove model admission, missing-usage
-charging, and terminal replay. OpenNeko has not yet passed its queued workflow
-cost claim to this gate, nor has connected multi-route pricing been qualified.
+charging, terminal replay, GraphJin pre-dispatch denial and reported remote
+cost replacing its reservation. OpenNeko's feature branch now passes its
+queued workflow API cost claim through the accepted launch, recovery input and
+sandbox adapter. It preserves the host price manifest and exports one run-level
+estimated cost observation with a pinned pricing version. Focused Go, worker
+and telemetry fixtures pass. Connected multi-route pricing and a real GraphJin
+server cost profile remain to be qualified.
 An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
 diagnostics: three read turns with 14 KiB console observations grew an executor
 request past 80 KiB and triggered an extra summary request. The Harness now
