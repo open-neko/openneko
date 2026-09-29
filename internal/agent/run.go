@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -73,6 +74,7 @@ type Continuation struct {
 	Usage                 ModelUsage
 	MaxReportedCallTokens int64
 	CostMicros            int64
+	ExecutorErrorTurns    int
 	StateUpdate           *RuntimeStateUpdate
 	Operations            []SavedOperation
 }
@@ -187,6 +189,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		}
 	}
 	if prior.Attempt < 1 || prior.Attempt > 3 || len(prior.Operations) > spec.OperationLimit() || prior.ModelCalls < 0 || prior.ModelCalls > spec.ModelCallLimit() || prior.MaxReportedCallTokens < 0 || prior.MaxReportedCallTokens > 1_000_000_000_000 ||
+		prior.ExecutorErrorTurns < 0 || prior.ExecutorErrorTurns > prior.ModelCalls ||
 		(prior.Usage.Requests != 0 && prior.Usage.Requests != prior.ModelCalls) || prior.Usage.Reported < 0 || prior.Usage.Reported > prior.ModelCalls ||
 		(prior.StateUpdate != nil && !prior.StateUpdate.Valid()) ||
 		(prior.Attempt == 1 && (prior.Sequence != 0 || len(prior.Operations) != 0 || prior.ModelCalls != 0)) || (prior.Attempt > 1 && prior.Sequence == 0) {
@@ -212,6 +215,14 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
+	}
+	if routed, ok := client.(*RoutedClient); ok {
+		s := routed.Stages
+		if (s.ExecutorEscalation == "") != (s.ExecutorAfterErrors == 0) ||
+			s.ExecutorEscalation != "" && (s.ExecutorAfterErrors < 1 || s.ExecutorAfterErrors > 8 ||
+				s.ExecutorEscalation == s.Executor || s.Executor == s.Context || s.Executor == s.Responder || s.Executor == s.Skill) {
+			return Result{}, fmt.Errorf("invalid executor escalation profile")
+		}
 	}
 	var pricing *RoutedClient
 	if spec.MaxCostMicros > 0 {
@@ -302,6 +313,19 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			baseRuntime = axgoja.NewRuntime(axgoja.WithRuntimePolicy(ax.Object("timeoutMs", 60_000, "maxDiagnosticsBytes", 4096)))
 		}
 		runtime := &handoffRuntime{Runtime: baseRuntime}
+		attemptClient := client
+		if routed, ok := client.(*RoutedClient); ok && routed.Stages.ExecutorEscalation != "" {
+			var executorErrors atomic.Int32
+			executorErrors.Store(int32(prior.ExecutorErrorTurns))
+			runtime.onExecutorError = func() {
+				events.send(Event{Type: "executor.step.failed", CallID: uint64(events.modelCallCount()), Error: "actor_code_error"})
+				if !events.hasError() {
+					executorErrors.Add(1)
+				}
+			}
+			attemptClient = &executorErrorRoute{AIClient: client, baseline: routed.Stages.Executor,
+				escalation: routed.Stages.ExecutorEscalation, after: int32(routed.Stages.ExecutorAfterErrors), errors: &executorErrors}
+		}
 		control := ax.RunControl()
 		register := func(runtime *handoffRuntime, capability admittedTool, view *observationView) {
 			name := capability.Name
@@ -503,7 +527,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			engine.AddChildAgent("team", "researcher", childAgent)
 		}
 		stageStartCalls := events.modelCallCount()
-		output, err := engine.ForwardWithHooks(ctx, client, values, ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
+		output, err := engine.ForwardWithHooks(ctx, attemptClient, values, ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
 		projectedCalls := 0
 		for _, stage := range stageUsageProjection(engine.GetChatLog(), "") {
 			usage := stage.Usage

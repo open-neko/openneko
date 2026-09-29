@@ -22,13 +22,15 @@ type modelRoute struct {
 }
 
 type routeConfig struct {
-	Context        string            `json:"context"`
-	Executor       string            `json:"executor"`
-	Responder      string            `json:"responder"`
-	Skill          string            `json:"skill,omitempty"`
-	Routes         []modelRoute      `json:"routes"`
-	PricingVersion string            `json:"pricing_version,omitempty"`
-	GraphJinPrice  *agent.TokenPrice `json:"graphjin_price,omitempty"`
+	Context             string            `json:"context"`
+	Executor            string            `json:"executor"`
+	ExecutorEscalation  string            `json:"executor_escalation,omitempty"`
+	ExecutorAfterErrors int               `json:"executor_after_errors,omitempty"`
+	Responder           string            `json:"responder"`
+	Skill               string            `json:"skill,omitempty"`
+	Routes              []modelRoute      `json:"routes"`
+	PricingVersion      string            `json:"pricing_version,omitempty"`
+	GraphJinPrice       *agent.TokenPrice `json:"graphjin_price,omitempty"`
 }
 
 // loadModelClient reads a host-owned allowlist. The run JSON cannot add a
@@ -71,6 +73,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 	}
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
 		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder, Skill: cfg.Skill,
+		ExecutorEscalation: cfg.ExecutorEscalation, ExecutorAfterErrors: cfg.ExecutorAfterErrors,
 	}, PricingVersion: cfg.PricingVersion, Prices: prices, GraphJinPrice: cfg.GraphJinPrice}, digest, nil
 }
 
@@ -123,13 +126,18 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		}
 		known[route.Key] = true
 	}
-	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.Skill} {
+	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.Skill, cfg.ExecutorEscalation} {
 		if model == "" {
 			continue
 		}
 		if !known[model] {
 			return routeConfig{}, "", fmt.Errorf("HARNESS_MODEL_ROUTES stage has no approved route")
 		}
+	}
+	if cfg.ExecutorEscalation == "" && cfg.ExecutorAfterErrors != 0 ||
+		cfg.ExecutorEscalation != "" && (cfg.ExecutorAfterErrors < 1 || cfg.ExecutorAfterErrors > 8 ||
+			cfg.ExecutorEscalation == cfg.Executor || cfg.Executor == cfg.Context || cfg.Executor == cfg.Responder || cfg.Executor == cfg.Skill) {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES executor escalation")
 	}
 	canonical, _ := json.Marshal(cfg)
 	digest := sha256.Sum256(canonical)

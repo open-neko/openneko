@@ -103,6 +103,167 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	}
 }
 
+func TestExecutorErrorEscalatesOnlyLaterApprovedModelCalls(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	var selected []string
+	serve := func(alias, key string, responses []string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer "+key {
+				t.Errorf("wrong route credential for %s", alias)
+			}
+			selected = append(selected, alias)
+			if len(responses) == 0 {
+				http.Error(w, "unexpected model call", http.StatusBadRequest)
+				return
+			}
+			content := responses[0]
+			responses = responses[1:]
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
+				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
+		}))
+	}
+	contextServer := serve("context", "context-secret", []string{`{"javascriptCode":"final('Plan',{});"}`, `{"answer":"Done"}`})
+	defer contextServer.Close()
+	baseline := serve("base", "base-secret", []string{`{"javascriptCode":"throw new Error('retry this actor step');"}`})
+	defer baseline.Close()
+	strong := serve("strong", "strong-secret", []string{`{"javascriptCode":"final('Done',{});"}`})
+	defer strong.Close()
+	t.Setenv("HARNESS_CONTEXT_KEY", "context-secret")
+	t.Setenv("HARNESS_BASE_KEY", "base-secret")
+	t.Setenv("HARNESS_STRONG_KEY", "strong-secret")
+	price := func(n int64) *agent.TokenPrice {
+		return &agent.TokenPrice{InputMicrosPerMillion: n, OutputMicrosPerMillion: n}
+	}
+	raw, _ := json.Marshal(routeConfig{Context: "context", Executor: "base", ExecutorEscalation: "strong", ExecutorAfterErrors: 1,
+		Responder: "context", PricingVersion: "test-v1", Routes: []modelRoute{
+			{Key: "context", Model: "fixture-context", URL: contextServer.URL, APIKeyEnv: "HARNESS_CONTEXT_KEY", Price: price(1_000_000)},
+			{Key: "base", Model: "fixture-base", URL: baseline.URL, APIKeyEnv: "HARNESS_BASE_KEY", Price: price(2_000_000)},
+			{Key: "strong", Model: "fixture-strong", URL: strong.URL, APIKeyEnv: "HARNESS_STRONG_KEY", Price: price(4_000_000)},
+		}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Complete the task","max_cost_micros":50000}`), &out)
+	if code != 0 || err != nil {
+		t.Fatalf("code=%d err=%v events=%s", code, err, out.String())
+	}
+	if got := strings.Join(selected, ","); got != "context,base,strong,context" {
+		t.Fatalf("actual route order=%s", got)
+	}
+	rawEvents := out.String()
+	var started []string
+	var failed int
+	var terminal *agent.Result
+	for _, event := range events(t, &out) {
+		switch event.Type {
+		case "model.request.started":
+			started = append(started, event.Origin+":"+event.Name)
+		case "executor.step.failed":
+			failed++
+			if event.CallID != 2 || event.Error != "actor_code_error" {
+				t.Fatalf("invalid error-turn receipt: %+v", event)
+			}
+		case "run.finished":
+			terminal = event.Result
+		}
+	}
+	if got := strings.Join(started, ","); got != "context:fixture-context,base:fixture-base,strong:fixture-strong,context:fixture-context" {
+		t.Fatalf("model admission routes=%s", got)
+	}
+	if failed != 1 || terminal == nil || terminal.Status != "completed" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 120 {
+		t.Fatalf("failed=%d terminal=%+v", failed, terminal)
+	}
+	var replay bytes.Buffer
+	code, err = run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Complete the task","max_cost_micros":50000}`), &replay)
+	if code != 0 || err != nil || replay.String() != rawEvents || len(selected) != 4 {
+		t.Fatalf("terminal replay dispatched: code=%d err=%v calls=%d", code, err, len(selected))
+	}
+}
+
+func TestExecutorEscalationDoesNotBypassModelAdmission(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	var baselineCalls, strongCalls int
+	serve := func(responses []string, calls *int) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			(*calls)++
+			if len(responses) == 0 {
+				http.Error(w, "unexpected request", http.StatusBadRequest)
+				return
+			}
+			content := responses[0]
+			responses = responses[1:]
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
+		}))
+	}
+	contextCalls := 0
+	contextServer := serve([]string{`{"javascriptCode":"final('Plan',{});"}`}, &contextCalls)
+	defer contextServer.Close()
+	baseServer := serve([]string{`{"javascriptCode":"throw new Error('executor failed');"}`}, &baselineCalls)
+	defer baseServer.Close()
+	strongServer := serve([]string{`{"javascriptCode":"final('Done',{});"}`}, &strongCalls)
+	defer strongServer.Close()
+	t.Setenv("HARNESS_CONTEXT_KEY", "synthetic")
+	t.Setenv("HARNESS_BASE_KEY", "synthetic")
+	t.Setenv("HARNESS_STRONG_KEY", "synthetic")
+	raw, _ := json.Marshal(routeConfig{Context: "context", Executor: "base", ExecutorEscalation: "strong", ExecutorAfterErrors: 1,
+		Responder: "context", Routes: []modelRoute{
+			{Key: "context", Model: "fixture", URL: contextServer.URL, APIKeyEnv: "HARNESS_CONTEXT_KEY"},
+			{Key: "base", Model: "fixture", URL: baseServer.URL, APIKeyEnv: "HARNESS_BASE_KEY"},
+			{Key: "strong", Model: "fixture", URL: strongServer.URL, APIKeyEnv: "HARNESS_STRONG_KEY"},
+		}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Complete","max_model_calls":2}`), &out)
+	if code != 1 || err != nil || contextCalls != 1 || baselineCalls != 1 || strongCalls != 0 {
+		t.Fatalf("model cap bypassed: code=%d err=%v routes=%d,%d,%d events=%s", code, err, contextCalls, baselineCalls, strongCalls, out.String())
+	}
+	var failed, terminal int
+	for _, e := range events(t, &out) {
+		if e.Type == "executor.step.failed" {
+			failed++
+		}
+		if e.Type == "run.finished" && e.Result != nil && e.Result.Code == "model_budget_exceeded" {
+			terminal++
+		}
+	}
+	if failed != 1 || terminal != 1 {
+		t.Fatalf("error and budget denial were not preserved: failed=%d terminal=%d", failed, terminal)
+	}
+}
+
+func TestExecutorEscalationPolicyIsPinnedAndScoped(t *testing.T) {
+	base := routeConfig{Context: "context", Executor: "base", Responder: "context", ExecutorEscalation: "strong", ExecutorAfterErrors: 1,
+		Routes: []modelRoute{
+			{Key: "context", Model: "fixture", URL: "https://context.example/v1", APIKeyEnv: "HARNESS_CONTEXT_KEY"},
+			{Key: "base", Model: "fixture", URL: "https://base.example/v1", APIKeyEnv: "HARNESS_BASE_KEY"},
+			{Key: "strong", Model: "fixture", URL: "https://strong.example/v1", APIKeyEnv: "HARNESS_STRONG_KEY"},
+		}}
+	digest := func(config routeConfig) (string, error) {
+		raw, _ := json.Marshal(config)
+		return RoutingDigest(string(raw))
+	}
+	first, err := digest(base)
+	if err != nil || first == "" {
+		t.Fatalf("valid policy: digest=%q err=%v", first, err)
+	}
+	changed := base
+	changed.ExecutorAfterErrors = 2
+	second, err := digest(changed)
+	if err != nil || second == first {
+		t.Fatalf("changed threshold was not pinned: digest=%q err=%v", second, err)
+	}
+	for _, config := range []routeConfig{
+		func() routeConfig { c := base; c.ExecutorEscalation = "missing"; return c }(),
+		func() routeConfig { c := base; c.ExecutorAfterErrors = 0; return c }(),
+		func() routeConfig { c := base; c.Responder = "base"; return c }(),
+	} {
+		if _, err := digest(config); err == nil {
+			t.Fatalf("unsafe route policy was accepted: %+v", config)
+		}
+	}
+}
+
 func TestSkillSelectionUsesApprovedCheapRoute(t *testing.T) {
 	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
 	t.Setenv("HARNESS_CHEAP_KEY", "cheap-secret")

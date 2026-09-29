@@ -13,25 +13,32 @@ const maxHandoffBytes = 256 * 1024
 // handoffRuntime keeps distilled evidence in the run's code session. Ax drops
 // reserved distiller inputs during its stage patch, so the host restores only
 // the model's narrowed evidence under a non-input binding.
-type handoffRuntime struct{ *axgoja.Runtime }
+type handoffRuntime struct {
+	*axgoja.Runtime
+	onExecutorError func()
+}
 
 func (r *handoffRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {
 	base, err := r.Runtime.CreateSession(globals, options)
 	if err != nil {
 		return nil, err
 	}
-	return &handoffSession{CodeSession: base}, nil
+	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError}, nil
 }
 
 type handoffSession struct {
 	ax.CodeSession
-	evidence ax.Value
-	patched  bool
+	evidence        ax.Value
+	patched         bool
+	onExecutorError func()
 }
 
 func (s *handoffSession) Execute(code string, options map[string]ax.Value) ax.Value {
 	result := s.CodeSession.Execute(code, options)
 	if s.patched {
+		if envelope, ok := result.(map[string]ax.Value); ok && envelope["is_error"] == true && s.onExecutorError != nil {
+			s.onExecutorError()
+		}
 		return result
 	}
 	step, ok := result.(map[string]ax.Value)

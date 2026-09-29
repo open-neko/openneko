@@ -878,8 +878,15 @@ fixture verified model and credential selection on all three stages, model-call
 receipts, exact replay without new provider calls, and rejection of a changed
 profile at checkpoint recovery. This is local Go coverage; OpenShell multi-route
 qualification remains open. A fault-injection run found that this pinned Ax Go
-build accepts `executorModelPolicy` but does not use it in live execution; error-turn
-escalation is disabled until an Ax fix or a verified harness implementation.
+build accepts `executorModelPolicy` but does not use it in live execution. The
+Harness now has an opt-in host-approved executor route switch after a committed
+actor-code error. A local no-key run observed context, baseline executor,
+stronger executor and responder calls with the actual route and price recorded;
+checkpoint interruption after the error resumed on the stronger route, and a
+model-call ceiling prevented that dispatch entirely. The OpenNeko feature
+branch passes the optional route policy and third OpenShell provider through
+its trusted manifest. Connected credential replacement and provider-failure
+fallback remain open.
 Resume now projects saved operations into a bounded 32 KiB evidence index. The
 executor can retrieve a full prior operation by ID from the validated checkpoint
 without redispatch. A fixture reconciled a 200 KB result, proved the resumed
@@ -1021,13 +1028,15 @@ remote call; it does not route individual GraphJin agent turns.
 Use deterministic skill metadata/exact-name lookup first; route any semantic
 skill selection through an approved cheap Ax stage, never a model call from a
 skill file. Give the outer distiller, executor and responder separate approved
-model choices. Start the executor on a baseline; enable error-turn or namespace
-escalation only after a live Ax route test passes. The pinned build currently
-fails that gate despite accepting `executorModelPolicy`. The newer Go module
+model choices. Start the executor on a baseline; enable error-turn escalation
+only for a host-approved alternate route after an actor-code error is durably
+recorded. The pinned Ax build fails the native policy gate despite accepting
+`executorModelPolicy`. The newer Go module
 available on 2026-09-29 (`b780a14a3cb9`) still stores and validates the policy
 without a live executor-selection call in generated source, so that update alone
-does not clear the gate. Escalation must not
-widen broker grants or replay an effect.
+does not clear the native policy gate. The Harness route switch passed local
+no-key tests; its live OpenShell qualification remains open. Escalation must
+not widen broker grants or replay an effect.
 Keep durable state authoritative; prompt compaction is only a model-context projection.
 For complex tasks, retain a compact plan with evidence and success criteria;
 verify receipts and artifacts before reporting completion. Do not add another

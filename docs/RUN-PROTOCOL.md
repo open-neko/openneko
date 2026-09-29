@@ -34,9 +34,19 @@ the provider reports it. This local route is not yet qualified through a live
 multi-provider OpenShell gateway.
 Multi-route OpenShell transport and credential replacement still need connected
 qualification before enabling this profile in production.
-Error-turn escalation is not enabled: a local fault-injection fixture found that
-the pinned Ax Go build accepts `executorModelPolicy` but does not apply it in a
-live agent run. It requires an Ax fix or a separately verified implementation.
+The optional host manifest may set `executor_escalation` to a second approved
+route key and `executor_after_errors` to an integer from one through eight.
+When enabled, the baseline executor key must be distinct from context,
+responder and skill keys. A committed `executor.step.failed` receipt records
+each failed actor-code turn. Only later executor model requests use the second
+route; the original request and tool operations are never retried by this
+switch. The provider rate limiter records the actual selected route and charges
+its pinned price before dispatch. Resume rebuilds the error count from the
+journal. If model or cost admission denies the next call, the stronger route is
+not contacted. This is a Harness implementation because the pinned Ax Go build
+accepts `executorModelPolicy` without applying it in the live executor loop.
+Local no-key model and checkpoint fixtures pass; the multi-provider OpenShell
+path still needs connected qualification.
 
 The optional OpenNeko adapter accepts the operator-owned
 `OPENNEKO_HARNESS_ROUTING` manifest. Each route adds `provider` (an existing

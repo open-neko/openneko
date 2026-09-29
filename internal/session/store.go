@@ -284,6 +284,9 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 		if event.Type == "runtime.state.failed" {
 			stateFailed = true
 		}
+		if event.Type == "executor.step.failed" {
+			prior.ExecutorErrorTurns++
+		}
 		if event.Type == "model.request.started" {
 			prior.ModelCalls++
 			if event.CostMicros != nil {

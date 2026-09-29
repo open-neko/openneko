@@ -232,6 +232,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	modelFinished := map[uint64]bool{}
 	modelStages := map[uint64]string{}
 	modelCosts := map[uint64]int64{}
+	executorErrors := map[uint64]bool{}
 	toolCosts := map[uint64]int64{}
 	stateUpdates := map[uint64]bool{}
 	stateFailures := map[uint64]bool{}
@@ -325,6 +326,11 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			if e.Usage != nil {
 				observedUsage.AddReported(*e.Usage)
 			}
+		case "executor.step.failed":
+			if e.CallID == 0 || e.CallID != uint64(modelCalls) || !modelFinished[e.CallID] || executorErrors[e.CallID] || e.Error != "actor_code_error" {
+				return invalid()
+			}
+			executorErrors[e.CallID] = true
 		case "model.stage_usage":
 			if !validStageSummary(e.Name, e.StageUsage, spec.ModelCallLimit()) {
 				return invalid()
