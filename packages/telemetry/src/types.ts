@@ -9,6 +9,7 @@ export const OBSERVATION_KINDS = [
   "model.request",
   "model.first_chunk",
   "model.response",
+  "model.stage_usage",
   "tool.start",
   "tool.end",
   "delegation.start",

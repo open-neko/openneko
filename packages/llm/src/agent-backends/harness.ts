@@ -85,6 +85,10 @@ export class HarnessBackend implements AgentBackend {
                     result = harnessResult(event.result);
                     await opts.onEvent?.({ type: "usage", source: "outer", usage: harnessUsage(event.result?.usage) });
                 }
+                else if (event.type === "model.stage_usage") {
+                    const stage = harnessStageUsage(event);
+                    if (stage) await opts.onEvent?.(stage);
+                }
                 else if (event.type === "tool.started") {
                     const name = event.name === "propose" ? "neko_action_proposal" : event.name === "lookup" ? "neko_graphjin_agent" : event.name === "mcp_memory_search" ? "mcp_neko_memory_search" : event.name;
                     await opts.onEvent?.({ type: "tool_start", id: `harness-operation-${event.operation_id}`, name });
@@ -125,6 +129,32 @@ export class HarnessBackend implements AgentBackend {
             opts.signal?.removeEventListener("abort", abort);
         }
     }
+}
+
+const HARNESS_STAGES = new Set(["distiller", "executor", "responder", "child.distiller", "child.executor", "child.responder", "unattributed"]);
+
+/** A diagnostic projection of Ax stage usage. It never feeds spend admission. */
+export function harnessStageUsage(raw: unknown): Extract<AgentEvent, { type: "stage_usage" }> | undefined {
+    if (!raw || typeof raw !== "object") return undefined;
+    const event = raw as Record<string, unknown>;
+    if (!HARNESS_STAGES.has(String(event.name))) return undefined;
+    const value = event.stage_usage;
+    if (!value || typeof value !== "object") return undefined;
+    const fields = value as Record<string, unknown>;
+    const requests = fields.requests;
+    const reported = fields.reported ?? 0;
+    const coverage = fields.coverage;
+    if (!Number.isSafeInteger(requests) || (requests as number) < 1 || (requests as number) > 64 ||
+        !Number.isSafeInteger(reported) || (reported as number) < 0 || (reported as number) > (requests as number)) return undefined;
+    const expected = reported === requests ? "complete" : reported ? "partial" : "unavailable";
+    if (coverage !== expected) return undefined;
+    const tokenFields = ["input_tokens", "output_tokens", "total_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"] as const;
+    if (tokenFields.some(field => fields[field] !== undefined &&
+        (!Number.isSafeInteger(fields[field]) || (fields[field] as number) < 0 || (fields[field] as number) > 1_000_000_000_000))) return undefined;
+    const usage = harnessUsage(fields);
+    if (usage.coverage !== coverage || usage.missingReasons?.some(reason => reason.startsWith("Harness "))) return undefined;
+    return { type: "stage_usage", source: "harness", stage: event.name as Extract<AgentEvent, { type: "stage_usage" }>["stage"],
+        requests: requests as number, reported: reported as number, usage };
 }
 
 /** Accept only the content-free Go receipt; malformed or older events charge conservatively. */

@@ -132,6 +132,15 @@ export type AgentEvent =
       modelIdentity?: AgentModelIdentityAttestation;
       usage: AgentTokenUsage;
     }
+  /** Ax stage attribution is diagnostic and must not be added to run usage. */
+  | {
+      type: "stage_usage";
+      source: "harness";
+      stage: "distiller" | "executor" | "responder" | "child.distiller" | "child.executor" | "child.responder" | "unattributed";
+      requests: number;
+      reported: number;
+      usage: AgentTokenUsage;
+    }
   /** Content-free operational summary persisted for clients and operators. */
   | { type: "telemetry"; summary: HarnessRunSummary }
   | { type: "error"; message: string }

@@ -170,6 +170,21 @@ export function createAgentEventTelemetry(input: {
       outerUsage = event;
       return;
     }
+    if (event.type === "stage_usage" && event.source === "harness") {
+      await observe({
+        kind: "model.stage_usage",
+        operationId: `${input.operationId}:stage-usage:${event.stage}`,
+        parentOperationId: modelOperationId,
+        attributes: {
+          "openneko.agent.stage": event.stage,
+          "openneko.model.scope": "outer",
+          "openneko.model.requests": event.requests,
+          "openneko.model.reported_requests": event.reported,
+        },
+        measurements: event.usage,
+      });
+      return;
+    }
     if (
       event.type === "status" &&
       event.message === "Hermes returned no output; retrying…"

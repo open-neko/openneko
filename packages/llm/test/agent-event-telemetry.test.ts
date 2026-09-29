@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
   MemoryObservationSink,
+  HarnessRunSummaryAccumulator,
   createHarnessObserver,
 } from "@neko/telemetry";
 import { createAgentEventTelemetry } from "../src/work/agent-event-telemetry";
 
 describe("agent event telemetry", () => {
+  it("exports Harness stage attribution without adding it to run usage", async () => {
+    const sink = new MemoryObservationSink();
+    const summary = new HarnessRunSummaryAccumulator("stage-run");
+    const telemetry = createAgentEventTelemetry({ observer: createHarnessObserver({ runId: "stage-run", sinks: [sink, summary] }), operationId: "work:stage-run" });
+    await telemetry.startAgent({ backend: "harness" });
+    await telemetry.observeEvent({ type: "stage_usage", source: "harness", stage: "executor", requests: 2, reported: 2,
+      usage: { inputTokens: 30, outputTokens: 10, totalTokens: 40, coverage: "complete" } });
+    await telemetry.observeEvent({ type: "usage", source: "outer", usage: { inputTokens: 60, outputTokens: 20, totalTokens: 80, coverage: "complete" } });
+    await telemetry.finishAgent({ status: "ok", outputBytes: 1 });
+    expect(sink.observations.find(item => item.kind === "model.stage_usage")).toMatchObject({
+      attributes: { "openneko.agent.stage": "executor", "openneko.model.requests": 2 },
+      measurements: { totalTokens: 40, coverage: "complete" },
+    });
+    expect(summary.snapshot().usage.totalTokens).toBe(80);
+  });
   it("uses only the Harness remote usage projection for a lookup", async () => {
     const sink = new MemoryObservationSink();
     const telemetry = createAgentEventTelemetry({ observer: createHarnessObserver({ runId: "remote-run", sinks: [sink] }), operationId: "work:remote-run" });

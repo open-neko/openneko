@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { harnessRemoteUsage, harnessResult, harnessUsage } from "../src/agent-backends/harness";
+import { harnessRemoteUsage, harnessResult, harnessStageUsage, harnessUsage } from "../src/agent-backends/harness";
 
 it("projects Harness model usage without claiming delegated usage", () => {
   const usage = { requests: 3, reported: 3, input_tokens: 60, output_tokens: 12, total_tokens: 72, coverage: "complete" };
@@ -25,4 +25,15 @@ it("accepts only a bounded flat Harness remote usage projection", () => {
   });
   expect(harnessRemoteUsage({ reported: true, charged_tokens: 1, total_tokens: 6000 })).toBeUndefined();
   expect(harnessRemoteUsage({ reported: false, charged_tokens: 0 })).toBeUndefined();
+});
+
+it("accepts only bounded stage usage as diagnostic telemetry", () => {
+  const stage = { name: "child.executor", stage_usage: { requests: 2, reported: 2,
+    input_tokens: 40, output_tokens: 8, total_tokens: 48, coverage: "complete" } };
+  expect(harnessStageUsage(stage)).toMatchObject({ type: "stage_usage", source: "harness", stage: "child.executor",
+    requests: 2, reported: 2, usage: { totalTokens: 48, coverage: "complete" } });
+  expect(harnessStageUsage({ ...stage, name: "unknown" })).toBeUndefined();
+  expect(harnessStageUsage({ ...stage, stage_usage: { ...stage.stage_usage, requests: 1000 } })).toBeUndefined();
+  expect(harnessStageUsage({ ...stage, stage_usage: { ...stage.stage_usage, total_tokens: -1 } })).toBeUndefined();
+  expect(harnessStageUsage({ ...stage, stage_usage: { ...stage.stage_usage, coverage: "unavailable" } })).toBeUndefined();
 });
