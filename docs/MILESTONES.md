@@ -1057,6 +1057,15 @@ or uncertain classifier uses the current fixed default. Reassess only at durable
 checkpoints when actual progress warrants more allocation; persist each extension and never
 reset spent budget on resume. The classifier does not choose permissions, broker
 grants or model/provider routes.
+The shadow evaluator now uses the pinned Ax Go `Typesafe(...).SystemOne` native
+Choice API, with a 2 KiB approved-summary cap, trusted input/tool-family
+signals, a three-second deadline, a priced pre-call reserve and content-free
+observations. No-key HTTP fixtures cover clear short and artifact work,
+misleading short prompts, split probabilities, uncertainty, provider failure
+and pre-dispatch cost denial. Its recommendation is not applied to live run
+limits. Live admission still needs an OpenShell-authorized Typesafe route,
+durable reservation/charge in the run checkpoint, fixed-cap profile mapping,
+and held-out outcome calibration before any canary.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
 Measure admitted-tool schema cost and selection errors. If they are material,

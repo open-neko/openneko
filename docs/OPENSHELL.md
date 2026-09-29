@@ -199,6 +199,14 @@ Provider-derived policy is additive and can be suppressed by a global policy ove
 
 The current generic `api_key` slot cannot simply be repeated across attached providers. Use unique slot names and verify collision handling on the selected release. Attaching all accounts for convenience increases the workload's authority; attach only the run's approved routes.
 
+Ax Go's native Typesafe/Jev `SystemOne` client calls `/v1/systemone`, rather
+than the OpenAI-compatible chat path used by the current stage router. A
+future budget classifier therefore needs its own host-approved provider
+attachment, egress rule and credential replacement test. Do not infer that a
+working `/chat/completions` route proves native Typesafe traffic is brokered.
+Keep the classifier in shadow mode until that path and its durable cost charge
+are verified inside the intended OpenShell worker.
+
 ### Rotation
 
 The v0.0.54 resolver tests explicitly show old revisioned placeholders retaining old values. Current upstream documentation instead describes stable placeholders for managed-refresh credentials and revocation on detachment/reconfiguration. These are different contracts.
