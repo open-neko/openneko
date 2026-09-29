@@ -910,6 +910,16 @@ durable lifecycle hook must choose an explicit stage path and verify the
 `applied` event; unscoped steering cannot promise exactly-once delivery.
 The harness still needs to journal and reconstruct any state update before
 relying on it across interruption.
+An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
+diagnostics: three read turns with 14 KiB console observations grew an executor
+request past 80 KiB and triggered an extra summary request. The Harness now
+pins Ax's `checkpointed`/`balanced` context policy and caps each Goja turn's
+console diagnostics at 4 KiB for parent and child runs. A no-key six-stage
+fixture completes with its original user constraint present in every ordinary
+model request, visible truncation, and a largest request below 45 KiB. This
+is a bounded-observation regression, not proof that Ax compaction preserves
+pending approvals or durable evidence across a longer mixed-tool run; that
+exit gate remains open.
 Use Ax's [published Go skills](https://axllm.dev/go/skills/) as scoped implementation
 references: `ax-go-agent` and `ax-go-agent-rlm` for actor/runtime behavior,
 `ax-go-agent-observability` for per-call usage, `ax-go-agent-memory-skills`
