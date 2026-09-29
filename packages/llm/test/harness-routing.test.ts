@@ -60,6 +60,23 @@ describe("Harness OpenShell route admission", () => {
     ]) expect(() => parseHarnessRouting(JSON.stringify(invalid))).toThrow();
   });
 
+  it("passes only host-approved one-step provider fallbacks", () => {
+    const spare = {key: "spare", model: "gemini-3.8-flash", url: "https://spare.example/v1", provider: "spare-provider",
+      credential_env: "SPARE_API_KEY", api_key_env: "HARNESS_SPARE_KEY"};
+    const config = {...routeConfig, fallbacks: [{from: "cheap", to: "spare"}], routes: [...routeConfig.routes, spare]};
+    const parsed = parseHarnessRouting(JSON.stringify(config));
+    expect(JSON.parse(parsed.manifest).fallbacks).toEqual([{from: "cheap", to: "spare"}]);
+    expect(parsed.providers).toContain("spare-provider");
+    expect(parsed.keyAliases).toContainEqual({from: "SPARE_API_KEY", to: "HARNESS_SPARE_KEY"});
+    for (const invalid of [
+      {...config, fallbacks: [{from: "unknown", to: "work"}]},
+      {...config, fallbacks: [{from: "cheap", to: "unknown"}]},
+      {...config, fallbacks: [{from: "cheap", to: "cheap"}]},
+      {...config, fallbacks: [{from: "cheap", to: "spare"}, {from: "cheap", to: "work"}]},
+      {...config, fallbacks: [{from: "cheap", to: "work", extra: true}]},
+    ]) expect(() => parseHarnessRouting(JSON.stringify(invalid))).toThrow();
+  });
+
   it.each([
     { ...routeConfig, executor: "unapproved" },
     { ...routeConfig, skill: "unapproved" },

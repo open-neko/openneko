@@ -46,7 +46,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     throw new Error("Invalid Harness routing configuration");
   }
   const value = config as Record<string, unknown>;
-  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
+  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "fallbacks", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
       !Array.isArray(value.routes) || value.routes.length < 1 || value.routes.length > 8) {
     throw new Error("Invalid Harness routing configuration");
   }
@@ -116,10 +116,28 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
         value.executor === value.responder || value.executor === value.skill)) {
     throw new Error("Invalid Harness executor escalation");
   }
+  const active = new Set([value.context, value.executor, value.responder, value.skill, escalation]);
+  const fallbackRows = value.fallbacks;
+  if (fallbackRows !== undefined && (!Array.isArray(fallbackRows) || fallbackRows.length > routes.length)) {
+    throw new Error("Invalid Harness fallback profile");
+  }
+  const fallbacks: Array<{from: string; to: string}> = [];
+  const fallbackSources = new Set<string>();
+  for (const entry of (fallbackRows ?? []) as unknown[]) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid Harness fallback route");
+    const pair = entry as Record<string, unknown>;
+    if (Object.keys(pair).some(key => !["from", "to"].includes(key)) ||
+        typeof pair.from !== "string" || !active.has(pair.from) || fallbackSources.has(pair.from) ||
+        typeof pair.to !== "string" || !keys.has(pair.to) || pair.from === pair.to) {
+      throw new Error("Invalid Harness fallback route");
+    }
+    fallbackSources.add(pair.from);
+    fallbacks.push({from: pair.from, to: pair.to});
+  }
   return {
     manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder,
       ...(escalation ? {executor_escalation: escalation, executor_after_errors: afterErrors} : {}),
-      ...(value.skill ? { skill: value.skill } : {}), routes,
+      ...(value.skill ? { skill: value.skill } : {}), ...(fallbacks.length > 0 ? {fallbacks} : {}), routes,
       ...(priced ? {pricing_version: value.pricing_version} : {}),
       ...(graphjinPrice ? {graphjin_price: graphjinPrice} : {}) }),
     providers, modelHosts, keyAliases,
