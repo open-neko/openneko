@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -21,12 +22,13 @@ func TestLongRunKeepsUserConstraintWithoutReplayingAllObservations(t *testing.T)
 	var requests []string
 	var actionCalls int
 	var summarizerCalls int
+	var reads atomic.Int32
 	answers := []string{
 		`{"javascriptCode":"final('Read and verify the receipt',{});"}`,
-		`{"javascriptCode":"const row=read({step:1}); console.log(row);"}`,
-		`{"javascriptCode":"const row=read({step:2}); console.log(row);"}`,
-		`{"javascriptCode":"const row=read({step:3}); console.log(row);"}`,
-		`{"javascriptCode":"const row=read({step:4}); final('Report verified receipt',{receipt:row.receipt});"}`,
+		`{"javascriptCode":"const row1=read({step:1}); console.log(row1);"}`,
+		`{"javascriptCode":"const row2=read({step:2}); console.log(row2);"}`,
+		`{"javascriptCode":"const row3=read({step:3}); console.log(row3);"}`,
+		`{"javascriptCode":"const row4=read({step:4}); final('Report verified receipt',{receipt:row4.receipt});"}`,
 		`{"answer":"REF-42"}`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +59,7 @@ func TestLongRunKeepsUserConstraintWithoutReplayingAllObservations(t *testing.T)
 	read := Capability{Name: "read", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a receipt and a large irrelevant observation.",
 		InputSchema: json.RawMessage(`{"type":"object","required":["step"],"properties":{"step":{"type":"integer"}}}`),
 		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads.Add(1)
 			return json.Marshal(ax.Object("receipt", "REF-42", "noise", strings.Repeat("irrelevant-observation-", 600)))
 		}}
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "long-context", InputID: "input", Prompt: constraint, MaxOperations: 8}, client, Tools{Capabilities: []Capability{read}}, func(Event) error { return nil })
@@ -64,8 +67,8 @@ func TestLongRunKeepsUserConstraintWithoutReplayingAllObservations(t *testing.T)
 	seen := append([]string(nil), requests...)
 	steps, summaries := actionCalls, summarizerCalls
 	mu.Unlock()
-	if err != nil || result.Status != "completed" || result.Answer != "REF-42" || steps != len(answers) || len(seen) != steps+summaries {
-		t.Fatalf("result=%+v err=%v requests=%d actions=%d summaries=%d", result, err, len(seen), steps, summaries)
+	if err != nil || result.Status != "completed" || result.Answer != "REF-42" || reads.Load() != 4 || steps != len(answers) || len(seen) != steps+summaries {
+		t.Fatalf("result=%+v err=%v reads=%d requests=%d actions=%d summaries=%d", result, err, reads.Load(), len(seen), steps, summaries)
 	}
 	var largest int
 	for i, request := range seen {
