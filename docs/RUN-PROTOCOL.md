@@ -48,6 +48,22 @@ accepts `executorModelPolicy` without applying it in the live executor loop.
 Local no-key model and checkpoint fixtures pass; the multi-provider OpenShell
 path still needs connected qualification.
 
+The optional `fallbacks` list holds explicit `{ "from": "route-key", "to":
+"alternate-key" }` pairs. A source must be a configured context, executor,
+responder, skill or escalated-executor route; each source has at most one
+alternate, which must be another approved route. A failed, content-free Ax
+`Chat` call is retried once on the alternate only when Ax classifies its error
+as transient. A 403 denial, cancellation, or a call that returned content stays
+on the original route. The Harness commits `model.route.fallback` after the
+failed attempt and before the alternate dispatch. Both attempts cross the
+ordinary model-call and cost gates, and an unavailable usage report retains
+its reservation. `Stream` is not retried because its slice-returning interface
+cannot prove that no content reached the caller before failure. No fallback
+changes GraphJin's server-owned model or grants another capability. Local
+fixtures cover 503 fallback, 403 denial, 429 with an exhausted call ceiling,
+crash before alternate dispatch, cost and terminal replay. Connected OpenShell
+credential replacement and streaming first-content qualification remain open.
+
 The optional OpenNeko adapter accepts the operator-owned
 `OPENNEKO_HARNESS_ROUTING` manifest. Each route adds `provider` (an existing
 OpenShell provider name) and `credential_env` (that provider's unique injected

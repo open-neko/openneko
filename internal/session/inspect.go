@@ -232,6 +232,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	modelFinished := map[uint64]bool{}
 	modelStages := map[uint64]string{}
 	modelCosts := map[uint64]int64{}
+	modelProviders := map[uint64]string{}
+	modelFailed := map[uint64]bool{}
+	fallbacks := map[uint64]bool{}
 	executorErrors := map[uint64]bool{}
 	toolCosts := map[uint64]int64{}
 	stateUpdates := map[uint64]bool{}
@@ -305,6 +308,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				finalizerCalls++
 			}
 			modelStages[uint64(modelCalls)] = e.Stage
+			modelProviders[uint64(modelCalls)] = e.Origin
 			if e.CostMicros != nil {
 				modelCosts[e.CallID] = *e.CostMicros
 				chargedCost += *e.CostMicros
@@ -314,6 +318,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			modelFinished[e.CallID] = true
+			modelFailed[e.CallID] = e.Error == "model_request_failed"
 			if e.CostMicros != nil {
 				chargedCost += *e.CostMicros - modelCosts[e.CallID]
 			}
@@ -331,6 +336,12 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			executorErrors[e.CallID] = true
+		case "model.route.fallback":
+			if e.CallID == 0 || e.CallID != uint64(modelCalls) || !modelFinished[e.CallID] || !modelFailed[e.CallID] || fallbacks[e.CallID] ||
+				e.Name == "" || e.Name != modelProviders[e.CallID] || e.Origin == "" || e.Origin == e.Name || e.Error != "transient_provider_failure" {
+				return invalid()
+			}
+			fallbacks[e.CallID] = true
 		case "model.stage_usage":
 			if !validStageSummary(e.Name, e.StageUsage, spec.ModelCallLimit()) {
 				return invalid()

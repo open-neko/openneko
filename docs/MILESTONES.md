@@ -885,8 +885,13 @@ stronger executor and responder calls with the actual route and price recorded;
 checkpoint interruption after the error resumed on the stronger route, and a
 model-call ceiling prevented that dispatch entirely. The OpenNeko feature
 branch passes the optional route policy and third OpenShell provider through
-its trusted manifest. Connected credential replacement and provider-failure
-fallback remain open.
+its trusted manifest. The Go runtime now also accepts explicit, approved
+one-step fallback pairs. No-key fixtures confirm a content-free 503 moves to
+the secondary route, with both attempts charged; 403 stays on the original
+route; a 429 cannot bypass the model-call ceiling; and a journal failure stops
+secondary dispatch. The OpenNeko parser includes fallback-only providers and
+credential aliases. Connected OpenShell credential replacement, rate-limit
+behavior and streaming first-content qualification remain open.
 Resume now projects saved operations into a bounded 32 KiB evidence index. The
 executor can retrieve a full prior operation by ID from the validated checkpoint
 without redispatch. A fixture reconciled a 200 KB result, proved the resumed

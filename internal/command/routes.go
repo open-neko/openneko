@@ -21,6 +21,11 @@ type modelRoute struct {
 	Price     *agent.TokenPrice `json:"price,omitempty"`
 }
 
+type modelFallback struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 type routeConfig struct {
 	Context             string            `json:"context"`
 	Executor            string            `json:"executor"`
@@ -28,6 +33,7 @@ type routeConfig struct {
 	ExecutorAfterErrors int               `json:"executor_after_errors,omitempty"`
 	Responder           string            `json:"responder"`
 	Skill               string            `json:"skill,omitempty"`
+	Fallbacks           []modelFallback   `json:"fallbacks,omitempty"`
 	Routes              []modelRoute      `json:"routes"`
 	PricingVersion      string            `json:"pricing_version,omitempty"`
 	GraphJinPrice       *agent.TokenPrice `json:"graphjin_price,omitempty"`
@@ -66,15 +72,19 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES: %w", err)
 	}
 	prices := make(map[string]agent.TokenPrice, len(cfg.Routes))
+	fallbacks := make(map[string]string, len(cfg.Fallbacks))
 	for _, route := range cfg.Routes {
 		if route.Price != nil {
 			prices[route.Key] = *route.Price
 		}
 	}
+	for _, fallback := range cfg.Fallbacks {
+		fallbacks[fallback.From] = fallback.To
+	}
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
 		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder, Skill: cfg.Skill,
 		ExecutorEscalation: cfg.ExecutorEscalation, ExecutorAfterErrors: cfg.ExecutorAfterErrors,
-	}, PricingVersion: cfg.PricingVersion, Prices: prices, GraphJinPrice: cfg.GraphJinPrice}, digest, nil
+	}, Fallbacks: fallbacks, PricingVersion: cfg.PricingVersion, Prices: prices, GraphJinPrice: cfg.GraphJinPrice}, digest, nil
 }
 
 // RoutingDigest validates the host route manifest without resolving any keys.
@@ -138,6 +148,23 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		cfg.ExecutorEscalation != "" && (cfg.ExecutorAfterErrors < 1 || cfg.ExecutorAfterErrors > 8 ||
 			cfg.ExecutorEscalation == cfg.Executor || cfg.Executor == cfg.Context || cfg.Executor == cfg.Responder || cfg.Executor == cfg.Skill) {
 		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES executor escalation")
+	}
+	if len(cfg.Fallbacks) > len(cfg.Routes) {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES fallback profile")
+	}
+	active := map[string]bool{cfg.Context: true, cfg.Executor: true, cfg.Responder: true}
+	if cfg.Skill != "" {
+		active[cfg.Skill] = true
+	}
+	if cfg.ExecutorEscalation != "" {
+		active[cfg.ExecutorEscalation] = true
+	}
+	fallbackSources := map[string]bool{}
+	for _, fallback := range cfg.Fallbacks {
+		if !active[fallback.From] || !known[fallback.To] || fallback.From == fallback.To || fallbackSources[fallback.From] {
+			return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES fallback profile")
+		}
+		fallbackSources[fallback.From] = true
 	}
 	canonical, _ := json.Marshal(cfg)
 	digest := sha256.Sum256(canonical)

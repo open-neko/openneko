@@ -25,9 +25,54 @@ type StageModels struct {
 type RoutedClient struct {
 	ax.AIClient
 	Stages         StageModels
+	Fallbacks      map[string]string
 	PricingVersion string
 	Prices         map[string]TokenPrice
 	GraphJinPrice  *TokenPrice
+}
+
+// transientRouteFallback changes only a failed model-generation request. Ax
+// classifies provider errors; a nonretryable denial, cancellation, or a call
+// that returned content never reaches the alternate route. The second call
+// enters the selected provider's own admission hook and is charged separately.
+// Stream is intentionally not retried: the AIClient slice API cannot prove
+// whether a failed stream already emitted content.
+type transientRouteFallback struct {
+	ax.AIClient
+	fallbacks map[string]string
+	before    func(from, to string) error
+}
+
+func (r *transientRouteFallback) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
+	result, err := r.AIClient.Chat(ctx, request, options)
+	if err == nil || result != nil || ctx.Err() != nil || !ax.IsRetryable(err) {
+		return result, err
+	}
+	from, _ := request["model"].(string)
+	to := r.fallbacks[from]
+	if to == "" || to == from {
+		return result, err
+	}
+	if r.before != nil {
+		if journalErr := r.before(from, to); journalErr != nil {
+			return nil, journalErr
+		}
+	}
+	copy := make(map[string]ax.Value, len(request))
+	for key, value := range request {
+		copy[key] = value
+	}
+	copy["model"] = to
+	return r.AIClient.Chat(ctx, copy, options)
+}
+
+func (r *transientRouteFallback) GetFeatures(model string) map[string]ax.Value {
+	if features, ok := r.AIClient.(interface {
+		GetFeatures(string) map[string]ax.Value
+	}); ok {
+		return features.GetFeatures(model)
+	}
+	return nil
 }
 
 // Keep Ax's model-aware capabilities visible through the Harness wrapper.
@@ -107,4 +152,17 @@ func (r *executorErrorRoute) GetFeatures(model string) map[string]ax.Value {
 		return features.GetFeatures(r.selected(model))
 	}
 	return nil
+}
+
+func routedProfile(client ax.AIClient) *RoutedClient {
+	switch current := client.(type) {
+	case *RoutedClient:
+		return current
+	case *executorErrorRoute:
+		return routedProfile(current.AIClient)
+	case *transientRouteFallback:
+		return routedProfile(current.AIClient)
+	default:
+		return nil
+	}
 }

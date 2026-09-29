@@ -264,6 +264,190 @@ func TestExecutorEscalationPolicyIsPinnedAndScoped(t *testing.T) {
 	}
 }
 
+func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	var requested []string
+	primaryCalls := 0
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, "primary")
+		primaryCalls++
+		if primaryCalls == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"temporary outage"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": `{"answer":"Done"}`}, "finish_reason": "stop"}},
+			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
+	}))
+	defer primary.Close()
+	serve := func(alias, answer string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requested = append(requested, alias)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": answer}, "finish_reason": "stop"}},
+				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
+		}))
+	}
+	secondary := serve("secondary", `{"javascriptCode":"final('Plan',{});"}`)
+	defer secondary.Close()
+	executor := serve("executor", `{"javascriptCode":"final('Done',{});"}`)
+	defer executor.Close()
+	t.Setenv("HARNESS_PRIMARY_KEY", "synthetic")
+	t.Setenv("HARNESS_SECONDARY_KEY", "synthetic")
+	t.Setenv("HARNESS_EXECUTOR_KEY", "synthetic")
+	price := func(n int64) *agent.TokenPrice {
+		return &agent.TokenPrice{InputMicrosPerMillion: n, OutputMicrosPerMillion: n}
+	}
+	raw, _ := json.Marshal(routeConfig{Context: "primary", Executor: "executor", Responder: "primary", PricingVersion: "test-v1",
+		Fallbacks: []modelFallback{{From: "primary", To: "secondary"}}, Routes: []modelRoute{
+			{Key: "primary", Model: "fixture", URL: primary.URL, APIKeyEnv: "HARNESS_PRIMARY_KEY", Price: price(1_000_000)},
+			{Key: "secondary", Model: "fixture", URL: secondary.URL, APIKeyEnv: "HARNESS_SECONDARY_KEY", Price: price(2_000_000)},
+			{Key: "executor", Model: "fixture", URL: executor.URL, APIKeyEnv: "HARNESS_EXECUTOR_KEY", Price: price(3_000_000)},
+		}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Finish","max_cost_micros":50000}`), &out)
+	if code != 0 || err != nil || strings.Join(requested, ",") != "primary,secondary,executor,primary" {
+		t.Fatalf("fallback failed: code=%d err=%v routes=%v output=%s", code, err, requested, out.String())
+	}
+	rawEvents := out.String()
+	var starts []string
+	var decisions int
+	var terminal *agent.Result
+	for _, e := range events(t, &out) {
+		if e.Type == "model.request.started" {
+			starts = append(starts, e.Origin)
+		}
+		if e.Type == "model.route.fallback" {
+			decisions++
+			if e.CallID != 1 || e.Name != "primary" || e.Origin != "secondary" || e.Error != "transient_provider_failure" {
+				t.Fatalf("fallback receipt=%+v", e)
+			}
+		}
+		if e.Type == "run.finished" {
+			terminal = e.Result
+		}
+	}
+	if strings.Join(starts, ",") != "primary,secondary,executor,primary" || decisions != 1 || terminal == nil ||
+		terminal.Cost == nil || terminal.Cost.ChargedMicros != 4186 || terminal.Usage == nil || terminal.Usage.Coverage != "partial" {
+		t.Fatalf("admission/cost receipts: starts=%v decisions=%d result=%+v", starts, decisions, terminal)
+	}
+	var replay bytes.Buffer
+	code, err = run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Finish","max_cost_micros":50000}`), &replay)
+	if code != 0 || err != nil || replay.String() != rawEvents || len(requested) != 4 {
+		t.Fatalf("fallback replay dispatched: code=%d err=%v routes=%v", code, err, requested)
+	}
+}
+
+func TestProviderDenialCannotFallback(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	primaryCalls, secondaryCalls := 0, 0
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		primaryCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"message":"denied"}}`))
+	}))
+	defer primary.Close()
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		secondaryCalls++
+		http.Error(w, "unexpected fallback", http.StatusInternalServerError)
+	}))
+	defer secondary.Close()
+	t.Setenv("HARNESS_PRIMARY_KEY", "synthetic")
+	t.Setenv("HARNESS_SECONDARY_KEY", "synthetic")
+	raw, _ := json.Marshal(routeConfig{Context: "primary", Executor: "primary", Responder: "primary",
+		Fallbacks: []modelFallback{{From: "primary", To: "secondary"}}, Routes: []modelRoute{
+			{Key: "primary", Model: "fixture", URL: primary.URL, APIKeyEnv: "HARNESS_PRIMARY_KEY"},
+			{Key: "secondary", Model: "fixture", URL: secondary.URL, APIKeyEnv: "HARNESS_SECONDARY_KEY"},
+		}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(request), &out)
+	if code != 1 || err != nil || primaryCalls != 1 || secondaryCalls != 0 || strings.Contains(out.String(), "model.route.fallback") {
+		t.Fatalf("denial rerouted: code=%d err=%v primary=%d secondary=%d output=%s", code, err, primaryCalls, secondaryCalls, out.String())
+	}
+}
+
+func TestProviderFallbackCannotBypassModelCallCeiling(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	primaryCalls, secondaryCalls := 0, 0
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		primaryCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"rate limited"}}`))
+	}))
+	defer primary.Close()
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		secondaryCalls++
+		http.Error(w, "unexpected fallback dispatch", http.StatusInternalServerError)
+	}))
+	defer secondary.Close()
+	t.Setenv("HARNESS_PRIMARY_KEY", "synthetic")
+	t.Setenv("HARNESS_SECONDARY_KEY", "synthetic")
+	raw, _ := json.Marshal(routeConfig{Context: "primary", Executor: "primary", Responder: "primary",
+		Fallbacks: []modelFallback{{From: "primary", To: "secondary"}}, Routes: []modelRoute{
+			{Key: "primary", Model: "fixture", URL: primary.URL, APIKeyEnv: "HARNESS_PRIMARY_KEY"},
+			{Key: "secondary", Model: "fixture", URL: secondary.URL, APIKeyEnv: "HARNESS_SECONDARY_KEY"},
+		}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_model_calls":1}`), &out)
+	if code != 1 || err != nil || primaryCalls != 1 || secondaryCalls != 0 {
+		t.Fatalf("model ceiling bypassed: code=%d err=%v primary=%d secondary=%d output=%s", code, err, primaryCalls, secondaryCalls, out.String())
+	}
+	var starts, fallback, denied int
+	for _, event := range events(t, &out) {
+		if event.Type == "model.request.started" {
+			starts++
+		}
+		if event.Type == "model.route.fallback" {
+			fallback++
+		}
+		if event.Type == "run.finished" && event.Result != nil && event.Result.Code == "model_budget_exceeded" {
+			denied++
+		}
+	}
+	if starts != 1 || fallback != 1 || denied != 1 {
+		t.Fatalf("incorrect fallback admission receipts: starts=%d fallback=%d denied=%d", starts, fallback, denied)
+	}
+}
+
+func TestFallbackPolicyPinsOnlyApprovedStageRoutes(t *testing.T) {
+	base := routeConfig{Context: "primary", Executor: "primary", Responder: "primary",
+		Fallbacks: []modelFallback{{From: "primary", To: "spare"}}, Routes: []modelRoute{
+			{Key: "primary", Model: "fixture", URL: "https://primary.example/v1", APIKeyEnv: "HARNESS_PRIMARY_KEY"},
+			{Key: "spare", Model: "fixture", URL: "https://spare.example/v1", APIKeyEnv: "HARNESS_SPARE_KEY"},
+			{Key: "unused", Model: "fixture", URL: "https://unused.example/v1", APIKeyEnv: "HARNESS_UNUSED_KEY"},
+		}}
+	digest := func(config routeConfig) (string, error) {
+		raw, _ := json.Marshal(config)
+		return RoutingDigest(string(raw))
+	}
+	first, err := digest(base)
+	if err != nil || first == "" {
+		t.Fatalf("valid fallback: digest=%q err=%v", first, err)
+	}
+	changed := base
+	changed.Fallbacks = []modelFallback{{From: "primary", To: "unused"}}
+	second, err := digest(changed)
+	if err != nil || second == first {
+		t.Fatalf("changed fallback not pinned: digest=%q err=%v", second, err)
+	}
+	for _, pair := range []modelFallback{
+		{From: "unused", To: "spare"}, {From: "primary", To: "missing"}, {From: "primary", To: "primary"},
+	} {
+		invalid := base
+		invalid.Fallbacks = []modelFallback{pair}
+		if _, err := digest(invalid); err == nil {
+			t.Fatalf("unsafe fallback accepted: %+v", pair)
+		}
+	}
+}
+
 func TestSkillSelectionUsesApprovedCheapRoute(t *testing.T) {
 	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
 	t.Setenv("HARNESS_CHEAP_KEY", "cheap-secret")

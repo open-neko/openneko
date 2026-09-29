@@ -84,3 +84,46 @@ func TestExecutorErrorRouteSurvivesInterruptedAttempt(t *testing.T) {
 		t.Fatalf("durable error or actual route missing: failed=%d strong=%d", failed, strongSeen)
 	}
 }
+
+func TestFallbackDecisionIsDurableBeforeSecondaryDispatch(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "fallback-interruption", InputID: "input", Prompt: "Answer"}
+	primaryCalls, secondaryCalls := 0, 0
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		primaryCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"temporary outage"}}`))
+	}))
+	defer primary.Close()
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		secondaryCalls++
+		http.Error(w, "unexpected secondary dispatch", http.StatusInternalServerError)
+	}))
+	defer secondary.Close()
+	entries := []ax.Value{}
+	for _, route := range []struct{ key, url string }{{"primary", primary.URL}, {"secondary", secondary.URL}} {
+		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.url, "api_key", "synthetic", "model", "fixture"))
+		service.Name = route.key
+		entries = append(entries, ax.RouterServiceEntry{Key: route.key, Service: service})
+	}
+	router, err := ax.NewMultiServiceRouter(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{Context: "primary", Executor: "primary", Responder: "primary"},
+		Fallbacks: map[string]string{"primary": "secondary"}}
+	_, err = RunWithTools(context.Background(), root, spec, client, agent.Tools{}, func(e agent.Event) error {
+		if e.Type == "model.route.fallback" {
+			return errors.New("delivery interrupted after journal append")
+		}
+		return nil
+	})
+	if err == nil || primaryCalls != 1 || secondaryCalls != 0 {
+		t.Fatalf("fallback dispatched after journal failure: err=%v primary=%d secondary=%d", err, primaryCalls, secondaryCalls)
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume || report.NextAttempt != 2 {
+		t.Fatalf("fallback event was not committed: report=%+v err=%v", report, err)
+	}
+}
