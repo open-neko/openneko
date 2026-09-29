@@ -44,6 +44,22 @@ describe("Harness OpenShell route admission", () => {
     expect(() => parseHarnessRouting(JSON.stringify({...config, graphjin_price: {...price, output_micros_per_million: -1}}))).toThrow();
   });
 
+  it("passes an approved later executor route without changing other stages", () => {
+    const strong = {key: "strong", model: "gemini-3.8-pro", url: "https://strong.example/v1", provider: "strong-provider",
+      credential_env: "STRONG_API_KEY", api_key_env: "HARNESS_STRONG_KEY"};
+    const config = {...routeConfig, responder: "cheap", executor_escalation: "strong", executor_after_errors: 1,
+      routes: [...routeConfig.routes, strong]};
+    const parsed = parseHarnessRouting(JSON.stringify(config));
+    expect(JSON.parse(parsed.manifest)).toMatchObject({context: "cheap", executor: "work", responder: "cheap",
+      executor_escalation: "strong", executor_after_errors: 1});
+    expect(parsed.providers).toEqual(["cheap-provider", "work-provider", "strong-provider"]);
+    expect(parsed.keyAliases).toContainEqual({from: "STRONG_API_KEY", to: "HARNESS_STRONG_KEY"});
+    for (const invalid of [
+      {...config, executor_after_errors: undefined}, {...config, executor_after_errors: 0},
+      {...config, executor_escalation: "unknown"}, {...config, responder: "work"},
+    ]) expect(() => parseHarnessRouting(JSON.stringify(invalid))).toThrow();
+  });
+
   it.each([
     { ...routeConfig, executor: "unapproved" },
     { ...routeConfig, skill: "unapproved" },
