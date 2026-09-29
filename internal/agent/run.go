@@ -92,6 +92,7 @@ type Event struct {
 	Effect      string          `json:"effect,omitempty"`
 	DurationMS  int64           `json:"duration_ms,omitempty"`
 	Usage       *ModelUsage     `json:"usage,omitempty"`
+	StageUsage  *ModelUsage     `json:"stage_usage,omitempty"`
 	RemoteUsage *RemoteUsage    `json:"remote_usage,omitempty"`
 	Result      *Result         `json:"result,omitempty"`
 }
@@ -415,6 +416,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 		engine := ax.NewAgent(signature, engineOptions)
+		var childAgent *ax.AxAgent
 		if len(childReads) > 0 {
 			childRuntime := &handoffRuntime{Runtime: axgoja.NewRuntime(axgoja.WithRuntimePolicy(ax.Object("timeoutMs", 60_000, "maxDiagnosticsBytes", 4096)))}
 			childInstruction := "Investigate only the assigned question. Return concise evidence with uncertainty. Do not claim action or tool access beyond the listed read functions."
@@ -430,10 +432,28 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					childOptions[key] = value
 				}
 			}
-			child := ax.NewAgent("question:string -> answer:string", childOptions)
-			engine.AddChildAgent("team", "researcher", child)
+			childAgent = ax.NewAgent("question:string -> answer:string", childOptions)
+			engine.AddChildAgent("team", "researcher", childAgent)
 		}
+		stageStartCalls := events.modelCallCount()
 		output, err := engine.ForwardWithHooks(ctx, client, values, ax.Object("maxSteps", 8, "validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
+		projectedCalls := 0
+		for _, stage := range stageUsageProjection(engine.GetChatLog(), "") {
+			usage := stage.Usage
+			projectedCalls += usage.Requests
+			events.send(Event{Type: "model.stage_usage", Name: stage.Name, StageUsage: &usage})
+		}
+		if childAgent != nil {
+			for _, stage := range stageUsageProjection(childAgent.GetChatLog(), "child.") {
+				usage := stage.Usage
+				projectedCalls += usage.Requests
+				events.send(Event{Type: "model.stage_usage", Name: stage.Name, StageUsage: &usage})
+			}
+		}
+		if missing := events.modelCallCount() - stageStartCalls - projectedCalls; missing > 0 {
+			usage := ModelUsage{Requests: missing, Coverage: "unavailable"}
+			events.send(Event{Type: "model.stage_usage", Name: "unattributed", StageUsage: &usage})
+		}
 		engine.CloseRuntimeSession()
 		var providerError ax.AxError
 		if errors.As(err, &providerError) && providerError.Status > 0 {
@@ -622,6 +642,12 @@ func (r *recorder) usageSnapshot() ModelUsage {
 	usage := r.usage
 	usage.setCoverage()
 	return usage
+}
+
+func (r *recorder) modelCallCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.modelCalls
 }
 
 func (r *recorder) modelBudgetExceeded() bool {

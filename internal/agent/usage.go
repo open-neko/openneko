@@ -32,6 +32,55 @@ type RemoteUsage struct {
 	Reported         bool  `json:"reported"`
 }
 
+type stageUsageRow struct {
+	Name  string
+	Usage ModelUsage
+}
+
+// Ax's chat log contains complete prompts. This projection keeps only stage
+// identity and token counters. It is telemetry, never an admission receipt.
+func stageUsageProjection(chatLog ax.Value, prefix string) []stageUsageRow {
+	var entries []ax.Value
+	switch value := chatLog.(type) {
+	case *ax.AxArray:
+		entries = value.Items
+	case []ax.Value:
+		entries = value
+	default:
+		return nil
+	}
+	byName := map[string]*ModelUsage{}
+	for _, entry := range entries {
+		row, ok := entry.(map[string]ax.Value)
+		if !ok {
+			continue
+		}
+		name, _ := row["name"].(string)
+		if name != "distiller" && name != "executor" && name != "responder" {
+			continue
+		}
+		name = prefix + name
+		u := byName[name]
+		if u == nil {
+			u = &ModelUsage{}
+			byName[name] = u
+		}
+		u.Requests++
+		if reported, ok := modelTokens(ax.Object("model_usage", ax.Object("tokens", row["usage"]))); ok {
+			u.AddReported(reported)
+		}
+	}
+	result := make([]stageUsageRow, 0, len(byName))
+	for _, stage := range []string{"distiller", "executor", "responder"} {
+		name := prefix + stage
+		if u := byName[name]; u != nil {
+			u.setCoverage()
+			result = append(result, stageUsageRow{Name: name, Usage: *u})
+		}
+	}
+	return result
+}
+
 // GraphJinRemoteUsage reads only the broker's flat response.usage. Nested
 // evidence may contain unrelated usage and is deliberately ignored.
 func GraphJinRemoteUsage(raw json.RawMessage) RemoteUsage {

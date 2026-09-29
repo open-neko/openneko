@@ -831,7 +831,7 @@ excluded from the rollout cohort. Do not claim full Hermes parity while they are
 
 ## M6 — Ax routing, context and efficiency
 
-**Local status (2026-09-28):** Ax's invocation-scoped rate limiter now admits a
+**Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably
 recorded. A trusted `max_model_calls` limit (16 by default, at most 64) is
 enforced across Ax attempts; resume reconstructs spent calls from the checkpoint.
@@ -923,6 +923,16 @@ durable lifecycle hook must choose an explicit stage path and verify the
 `applied` event; unscoped steering cannot promise exactly-once delivery.
 The harness still needs to journal and reconstruct any state update before
 relying on it across interruption.
+Ax's stage-option rate limiter did not override the already-bound outer client
+limiter in a no-key route fixture, so call-time stage labels remain unavailable
+from that hook. The Harness now emits a separate content-free
+`model.stage_usage` projection from Ax's per-stage chat log after each attempt.
+Local route and child-agent fixtures prove distiller, executor, responder and
+child request counts with reported usage, while ordinary model request events
+remain the only admission and total-usage receipts. Extra model calls omitted
+from Ax's stage log are marked `unattributed`; this telemetry does not expose
+prompts or double-count tokens. Per-call stage attribution and cost accounting
+remain open for connected qualification.
 An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
 diagnostics: three read turns with 14 KiB console observations grew an executor
 request past 80 KiB and triggered an extra summary request. The Harness now

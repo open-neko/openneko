@@ -51,6 +51,7 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 		t.Fatalf("result=%+v err=%v calls=%d reads=%d writes=%d events=%d", result, err, modelCalls.Load(), reads.Load(), writes.Load(), len(events))
 	}
 	started, finished := 0, 0
+	stageCalls := map[string]int{}
 	for _, event := range events {
 		if event.Type == "child.started" {
 			started++
@@ -58,9 +59,17 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 		if event.Type == "child.finished" {
 			finished++
 		}
+		if event.Type == "model.stage_usage" && event.StageUsage != nil {
+			stageCalls[event.Name] = event.StageUsage.Requests
+		}
 	}
 	if started != 2 || finished != 2 {
 		t.Fatalf("child lifecycle events started=%d finished=%d", started, finished)
+	}
+	for _, stage := range []string{"distiller", "executor", "responder"} {
+		if stageCalls[stage] != 1 || stageCalls["child."+stage] != 2 {
+			t.Fatalf("stage request counts=%v", stageCalls)
+		}
 	}
 	modelCalls.Store(0)
 	reads.Store(0)

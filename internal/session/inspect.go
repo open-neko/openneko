@@ -228,6 +228,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	ended := map[uint64]bool{}
 	children := map[uint64]bool{}
 	finishedChildren := map[uint64]bool{}
+	stageSummaries := map[uint64]map[string]bool{}
 	for i, e := range s.Events {
 		if e.Version != 1 || e.RunID != spec.RunID || e.InputID != spec.InputID || e.Sequence != uint64(i+1) {
 			return invalid()
@@ -239,6 +240,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" ||
+			e.StageUsage != nil && e.Type != "model.stage_usage" ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
 			return invalid()
@@ -279,6 +281,17 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			if e.Usage != nil {
 				observedUsage.AddReported(*e.Usage)
 			}
+		case "model.stage_usage":
+			if !validStageSummary(e.Name, e.StageUsage, spec.ModelCallLimit()) {
+				return invalid()
+			}
+			if stageSummaries[attempt] == nil {
+				stageSummaries[attempt] = map[string]bool{}
+			}
+			if stageSummaries[attempt][e.Name] {
+				return invalid()
+			}
+			stageSummaries[attempt][e.Name] = true
 		case "skill.selected":
 			if e.Origin != "exact" && e.Origin != "semantic" || e.Name != "" && !agent.ValidSkillName(e.Name) ||
 				e.Origin == "exact" && (e.Name == "" || e.Error != "") ||
@@ -371,4 +384,30 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 	}
 	return s, nil
+}
+
+func validStageSummary(name string, usage *agent.ModelUsage, limit int) bool {
+	switch name {
+	case "distiller", "executor", "responder", "child.distiller", "child.executor", "child.responder", "unattributed":
+	default:
+		return false
+	}
+	if usage == nil || usage.Requests < 1 || usage.Requests > limit || usage.Reported < 0 || usage.Reported > usage.Requests {
+		return false
+	}
+	coverage := "unavailable"
+	if usage.Reported == usage.Requests {
+		coverage = "complete"
+	} else if usage.Reported > 0 {
+		coverage = "partial"
+	}
+	if usage.Coverage != coverage {
+		return false
+	}
+	for _, count := range []int64{usage.InputTokens, usage.OutputTokens, usage.TotalTokens, usage.CacheReadTokens, usage.CacheWriteTokens, usage.ReasoningTokens} {
+		if count < 0 || count > 1_000_000_000_000 {
+			return false
+		}
+	}
+	return true
 }

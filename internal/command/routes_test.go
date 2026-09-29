@@ -40,7 +40,8 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 			content := responses[0]
 			responses = responses[1:]
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
+			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
+				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
 		}))
 	}
 	cheap := serve("cheap", "fixture", "cheap-secret", []string{`{"javascriptCode":"final('Find reference', {})"}`})
@@ -66,13 +67,23 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	rawEvents := out.String()
 	copyOfEvents := bytes.NewBufferString(rawEvents)
 	var modelEvents []string
+	var stageUsage []string
 	for _, event := range events(t, copyOfEvents) {
 		if event.Type == "model.request.started" {
 			modelEvents = append(modelEvents, event.Origin+":"+event.Name)
 		}
+		if event.Type == "model.stage_usage" {
+			if event.StageUsage == nil || event.StageUsage.Requests != 1 || event.StageUsage.Reported != 1 || event.StageUsage.TotalTokens != 15 || event.StageUsage.Coverage != "complete" {
+				t.Fatalf("invalid stage projection: %+v", event)
+			}
+			stageUsage = append(stageUsage, event.Name)
+		}
 	}
 	if got := strings.Join(modelEvents, ","); got != "cheap:fixture,work:fixture,work:fixture" {
 		t.Fatalf("model receipts=%s", got)
+	}
+	if got := strings.Join(stageUsage, ","); got != "distiller,executor,responder" {
+		t.Fatalf("stage usage=%s", got)
 	}
 	for _, secret := range []string{"cheap-secret", "work-secret"} {
 		if strings.Contains(rawEvents, secret) {
