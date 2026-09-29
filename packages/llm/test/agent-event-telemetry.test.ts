@@ -7,6 +7,20 @@ import {
 import { createAgentEventTelemetry } from "../src/work/agent-event-telemetry";
 
 describe("agent event telemetry", () => {
+  it("records one total Harness cost without adding stage or inner token usage twice", async () => {
+    const sink = new MemoryObservationSink();
+    const summary = new HarnessRunSummaryAccumulator("cost-run");
+    const telemetry = createAgentEventTelemetry({observer:createHarnessObserver({runId:"cost-run",sinks:[sink,summary]}),operationId:"work:cost-run"});
+    const cost = {type:"cost" as const, source:"harness" as const, chargedMicros:9200, budgetMicros:20_000, pricingVersion:"operator-2026-09"};
+    await telemetry.startAgent({backend:"harness"});
+    await telemetry.observeEvent({type:"usage",source:"outer",usage:{totalTokens:50,coverage:"complete"}});
+    await telemetry.observeEvent({type:"stage_usage",source:"harness",stage:"executor",requests:1,reported:1,usage:{totalTokens:50,coverage:"complete"}});
+    await telemetry.observeEvent(cost);
+    await telemetry.finishAgent({status:"ok",cost});
+    expect(sink.observations.filter(item=>item.kind==="run.cost")).toHaveLength(1);
+    expect(summary.snapshot().usage).toMatchObject({totalTokens:50,estimatedCostUsd:0.0092,
+      pricingCatalogVersion:"operator-2026-09",costStatus:"estimated"});
+  });
   it("exports Harness stage attribution without adding it to run usage", async () => {
     const sink = new MemoryObservationSink();
     const summary = new HarnessRunSummaryAccumulator("stage-run");

@@ -19,6 +19,18 @@ const routeKey = /^[a-z][a-z0-9_-]{0,63}$/;
 const envName = /^[A-Z][A-Z0-9_]{1,127}$/;
 const harnessKeyEnv = /^HARNESS_[A-Z0-9_]+_KEY$/;
 const providerName = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+type HarnessPrice = { input_micros_per_million: number; output_micros_per_million: number };
+
+function parsePrice(value: unknown): HarnessPrice {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Harness price");
+  const price = value as Record<string, unknown>;
+  if (Object.keys(price).some(key => !["input_micros_per_million", "output_micros_per_million"].includes(key)) ||
+      ![price.input_micros_per_million, price.output_micros_per_million].every(rate => Number.isSafeInteger(rate) && (rate as number) > 0 && (rate as number) <= 1_000_000_000)) {
+    throw new Error("Invalid Harness price");
+  }
+  return {input_micros_per_million: price.input_micros_per_million as number,
+    output_micros_per_million: price.output_micros_per_million as number};
+}
 
 /**
  * The operator pre-provisions each named OpenShell provider. This parser
@@ -34,11 +46,16 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     throw new Error("Invalid Harness routing configuration");
   }
   const value = config as Record<string, unknown>;
-  if (Object.keys(value).some(key => !["context", "executor", "responder", "skill", "routes"].includes(key)) ||
+  if (Object.keys(value).some(key => !["context", "executor", "responder", "skill", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
       !Array.isArray(value.routes) || value.routes.length < 1 || value.routes.length > 8) {
     throw new Error("Invalid Harness routing configuration");
   }
-  const routes: Array<{ key: string; model: string; url: string; api_key_env: string }> = [];
+  const priced = value.pricing_version !== undefined || value.graphjin_price !== undefined ||
+    value.routes.some((route: unknown) => Boolean(route && typeof route === "object" && "price" in route));
+  if (priced && (typeof value.pricing_version !== "string" || !value.pricing_version || value.pricing_version.length > 128 ||
+      value.pricing_version.trim() !== value.pricing_version)) throw new Error("Invalid Harness pricing version");
+  const graphjinPrice = value.graphjin_price === undefined ? undefined : parsePrice(value.graphjin_price);
+  const routes: Array<{ key: string; model: string; url: string; api_key_env: string; price?: HarnessPrice }> = [];
   const providers: string[] = [];
   const modelHosts: Array<{ host: string; port?: number }> = [];
   const keyAliases: Array<{ from: string; to: string }> = [];
@@ -49,7 +66,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   for (const entry of value.routes) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid Harness route");
     const route = entry as Record<string, unknown>;
-    if (Object.keys(route).some(key => !["key", "model", "url", "provider", "credential_env", "api_key_env"].includes(key)) ||
+    if (Object.keys(route).some(key => !["key", "model", "url", "provider", "credential_env", "api_key_env", "price"].includes(key)) ||
         typeof route.key !== "string" || !routeKey.test(route.key) || keys.has(route.key) ||
         typeof route.model !== "string" || !route.model || route.model.length > 128 ||
         typeof route.url !== "string" || typeof route.provider !== "string" || !providerName.test(route.provider) ||
@@ -57,6 +74,8 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
         typeof route.api_key_env !== "string" || !harnessKeyEnv.test(route.api_key_env) || aliasTargets.has(route.api_key_env)) {
       throw new Error("Invalid Harness route");
     }
+    if (priced && route.price === undefined) throw new Error("Missing Harness route price");
+    const price = route.price === undefined ? undefined : parsePrice(route.price);
     let url: URL;
     try { url = new URL(route.url); }
     catch { throw new Error("Invalid Harness route URL"); }
@@ -66,7 +85,8 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     keys.add(route.key);
     credentialNames.add(route.credential_env);
     aliasTargets.add(route.api_key_env);
-    routes.push({ key: route.key, model: route.model, url: route.url, api_key_env: route.api_key_env });
+    routes.push({ key: route.key, model: route.model, url: route.url, api_key_env: route.api_key_env,
+      ...(price ? {price} : {}) });
     if (!providers.includes(route.provider)) providers.push(route.provider);
     keyAliases.push({ from: route.credential_env, to: route.api_key_env });
     const endpoint = { host: url.hostname, ...(url.port || url.protocol === "http:" ? { port: Number(url.port || 80) } : {}) };
@@ -89,7 +109,9 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   }
   return {
     manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder,
-      ...(value.skill ? { skill: value.skill } : {}), routes }),
+      ...(value.skill ? { skill: value.skill } : {}), routes,
+      ...(priced ? {pricing_version: value.pricing_version} : {}),
+      ...(graphjinPrice ? {graphjin_price: graphjinPrice} : {}) }),
     providers, modelHosts, keyAliases,
   };
 }

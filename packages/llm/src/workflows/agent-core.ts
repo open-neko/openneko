@@ -44,6 +44,7 @@ export interface RunWorkflowAgentBackendInput {
   timeoutMs?: number;
   maxModelCalls?: number;
   maxModelTokens?: number;
+  maxCostMicros?: number;
   tag?: string;
   /** Steps with a script run in order before the agent turn. */
   steps?: readonly WorkflowStep[];

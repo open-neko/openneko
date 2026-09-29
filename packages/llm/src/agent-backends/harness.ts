@@ -37,9 +37,11 @@ export class HarnessBackend implements AgentBackend {
         const maxOperations = env.OPENNEKO_HARNESS_MAX_OPERATIONS ? Number(env.OPENNEKO_HARNESS_MAX_OPERATIONS) : 4;
         const maxModelCalls = env.OPENNEKO_HARNESS_MAX_MODEL_CALLS ? Number(env.OPENNEKO_HARNESS_MAX_MODEL_CALLS) : 16;
         const maxModelTokens = env.OPENNEKO_HARNESS_MAX_MODEL_TOKENS ? Number(env.OPENNEKO_HARNESS_MAX_MODEL_TOKENS) : 1_000_000;
+        const maxCostMicros = env.OPENNEKO_HARNESS_MAX_COST_MICROS ? Number(env.OPENNEKO_HARNESS_MAX_COST_MICROS) : undefined;
         if (!Number.isInteger(maxOperations) || maxOperations < 1 || maxOperations > 32 ||
             !Number.isInteger(maxModelCalls) || maxModelCalls < 1 || maxModelCalls > 64 ||
-            !Number.isInteger(maxModelTokens) || maxModelTokens < 1 || maxModelTokens > 1_000_000)
+            !Number.isInteger(maxModelTokens) || maxModelTokens < 1 || maxModelTokens > 1_000_000 ||
+            maxCostMicros !== undefined && (!Number.isSafeInteger(maxCostMicros) || maxCostMicros < 1 || maxCostMicros > 1_000_000_000_000))
             throw new Error("Invalid trusted Harness run budget");
         const workflowRunId = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_WORKFLOW_RUN_ID;
         const childReads = opts.nativeDelegation === "disabled" ? "" : opts.mcpBridgeEnv?.OPENNEKO_MCP_MODE === "agent-job"
@@ -70,6 +72,7 @@ export class HarnessBackend implements AgentBackend {
         child.stdin.on("error", () => undefined);
         child.stdin.end(JSON.stringify({ version: 1, run_id: runId, input_id: runId,
             max_operations: maxOperations, max_model_calls: maxModelCalls, max_model_tokens: maxModelTokens,
+            ...(maxCostMicros ? {max_cost_micros: maxCostMicros} : {}),
             ...(opts.userMessage ? { skill_query: boundedSkillQuery(opts.userMessage) } : {}),
             prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
         try {
@@ -84,6 +87,8 @@ export class HarnessBackend implements AgentBackend {
                         throw new Error("Invalid harness result");
                     result = harnessResult(event.result);
                     await opts.onEvent?.({ type: "usage", source: "outer", usage: harnessUsage(event.result?.usage) });
+                    const cost = harnessCost(event.result?.cost);
+                    if (cost) await opts.onEvent?.({type: "cost", source: "harness", ...cost});
                 }
                 else if (event.type === "model.stage_usage") {
                     const stage = harnessStageUsage(event);
@@ -180,10 +185,21 @@ export function harnessRemoteUsage(raw: unknown): Extract<AgentEvent, { type: "t
 }
 
 /** Shared by live execution and validated checkpoint adoption. */
-export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; proposals?: {id?:string;status:string}[]; delegations?: unknown[]; usage?: unknown; answer?: string; code?: string}): AgentRunResult {
+export function harnessResult(result: {status: AgentRunResult["status"]; kind?: string; proposals?: {id?:string;status:string}[]; delegations?: unknown[]; usage?: unknown; cost?: unknown; answer?: string; code?: string}): AgentRunResult {
     const outer = harnessUsage(result.usage);
-    return { backendState: { harness: { version: 1, kind: result.kind, proposals: result.proposals ?? [], delegations: result.delegations ?? [], usageCoverage: outer.coverage, usageScope: "outer-only" } }, status: result.status, finalText: result.answer ?? "",
+    const cost = harnessCost(result.cost);
+    return { backendState: { harness: { version: 1, kind: result.kind, proposals: result.proposals ?? [], delegations: result.delegations ?? [], usageCoverage: outer.coverage, usageScope: "outer-only",
+      ...(cost ? {cost} : {}) } }, status: result.status, finalText: result.answer ?? "",
         ...(result.code ? {error: result.code} : {}) };
+}
+
+export function harnessCost(raw: unknown): {chargedMicros: number; budgetMicros: number; pricingVersion: string} | undefined {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const cost = raw as Record<string, unknown>;
+    if (typeof cost.pricing_version !== "string" || !cost.pricing_version || cost.pricing_version.length > 128 ||
+        !Number.isSafeInteger(cost.charged_micros) || (cost.charged_micros as number) < 0 || (cost.charged_micros as number) > 8_000_000_000_000_000 ||
+        !Number.isSafeInteger(cost.budget_micros) || (cost.budget_micros as number) < 1 || (cost.budget_micros as number) > 1_000_000_000_000) return undefined;
+    return {chargedMicros: cost.charged_micros as number, budgetMicros: cost.budget_micros as number, pricingVersion: cost.pricing_version};
 }
 
 export function harnessUsage(raw: unknown): AgentTokenUsage {

@@ -1096,10 +1096,10 @@ function telemetryActuals(summary: HarnessRunSummary | null | undefined): {
   tokens: number | null;
   costMicros: number | null;
 } {
-  if (!summary || summary.usage.coverage === "unavailable") {
+  if (!summary) {
     return { tokens: null, costMicros: null };
   }
-  const tokens = summary.usage.totalTokens;
+  const tokens = summary.usage.coverage === "unavailable" ? null : summary.usage.totalTokens;
   const cost = summary.usage.billedCostUsd ?? summary.usage.estimatedCostUsd;
   return {
     tokens: typeof tokens === "number" && Number.isFinite(tokens) ? Math.ceil(tokens) : null,

@@ -194,9 +194,12 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
           measurements.estimatedCostUsd,
         ),
         billedCostUsd: add(current.billedCostUsd, measurements.billedCostUsd),
-        ...(measurements.currency ? { currency: measurements.currency } : {}),
-        ...(measurements.pricingCatalogVersion
-          ? { pricingCatalogVersion: measurements.pricingCatalogVersion }
+        ...((measurements.currency ?? current.currency) ? { currency: measurements.currency ?? current.currency } : {}),
+        ...((measurements.pricingCatalogVersion ?? current.pricingCatalogVersion)
+          ? { pricingCatalogVersion: measurements.pricingCatalogVersion ?? current.pricingCatalogVersion }
+          : {}),
+        ...((measurements.costSource ?? current.costSource)
+          ? { costSource: measurements.costSource ?? current.costSource }
           : {}),
         ...(current.costStatus === "unknown" || measurements.costStatus === "unknown"
           ? { costStatus: "unknown" as const }

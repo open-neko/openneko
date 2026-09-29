@@ -4,6 +4,7 @@ export const OBSERVATION_KINDS = [
   "run.start",
   "run.first_output",
   "run.end",
+  "run.cost",
   "stage.start",
   "stage.end",
   "model.request",

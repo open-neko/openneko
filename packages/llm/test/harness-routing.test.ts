@@ -31,6 +31,19 @@ describe("Harness OpenShell route admission", () => {
     });
   });
 
+  it("passes a complete versioned cost profile to the Go manifest", () => {
+    const price = {input_micros_per_million: 120_000, output_micros_per_million: 600_000};
+    const config = {...routeConfig, pricing_version: "operator-2026-09", graphjin_price: price,
+      routes: routeConfig.routes.map(route => ({...route, price}))};
+    expect(JSON.parse(parseHarnessRouting(JSON.stringify(config)).manifest)).toEqual({
+      context: "cheap", executor: "work", responder: "work", pricing_version: "operator-2026-09",
+      graphjin_price: price, routes: routeConfig.routes.map(({key, model, url, api_key_env}) => ({key, model, url, api_key_env, price})),
+    });
+    expect(() => parseHarnessRouting(JSON.stringify({...config, routes: [config.routes[0], routeConfig.routes[1]]}))).toThrow();
+    expect(() => parseHarnessRouting(JSON.stringify({...config, pricing_version: undefined}))).toThrow();
+    expect(() => parseHarnessRouting(JSON.stringify({...config, graphjin_price: {...price, output_micros_per_million: -1}}))).toThrow();
+  });
+
   it.each([
     { ...routeConfig, executor: "unapproved" },
     { ...routeConfig, skill: "unapproved" },
