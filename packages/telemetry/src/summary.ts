@@ -164,6 +164,9 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
             : {}),
         };
       }
+      // Ax stage usage is an attribution-only view of the outer receipts.
+      // The normal model.response observation already owns the run total.
+      if (observation.kind === "model.stage_usage") return;
       const current = this.value.usage;
       const hasUsageValue = [
         measurements.inputTokens,
