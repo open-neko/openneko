@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.0](https://github.com/open-neko/openneko/compare/v3.8.0...v3.9.0) (2026-09-29)
+
+
+### Features
+
+* **admin:** install plugins and enter their settings in the browser ([a3b12e9](https://github.com/open-neko/openneko/commit/a3b12e9fd6fca5c8b8e1e9e3e5d5746d12259eb2))
+* **admin:** install plugins and enter their settings in the browser ([9eec887](https://github.com/open-neko/openneko/commit/9eec887095531f3db7d4bf6290e177d73373bdd9))
+
 ## [3.8.0](https://github.com/open-neko/openneko/compare/v3.7.0...v3.8.0) (2026-09-29)
 
 
