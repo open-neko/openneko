@@ -113,6 +113,14 @@ func inspect(root string, spec agent.Spec, receipts []Receipt) (Recovery, error)
 				if op.Name() == "lookup" {
 					usage := agent.GraphJinRemoteUsage(receipt.Result)
 					finished.RemoteUsage = &usage
+					if spec.MaxCostMicros > 0 {
+						for _, event := range state.Events {
+							if event.Type == "tool.started" && event.OperationID == uint64(receipt.ID) {
+								finished.CostMicros = event.CostMicros // Retain reservation after ambiguous dispatch.
+								break
+							}
+						}
+					}
 				}
 				state.Events = append(state.Events, finished)
 			}
@@ -194,7 +202,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 {
 		return invalid()
 	}
 	if len(s.Operations) > spec.OperationLimit() {
@@ -223,6 +231,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	modelCalls := 0
 	modelFinished := map[uint64]bool{}
 	modelStages := map[uint64]string{}
+	modelCosts := map[uint64]int64{}
+	toolCosts := map[uint64]int64{}
+	var chargedCost int64
 	observedUsage := agent.ModelUsage{}
 	started := map[uint64]string{}
 	ended := map[uint64]bool{}
@@ -243,6 +254,12 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			e.StageUsage != nil && e.Type != "model.stage_usage" ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.Stage != "" && e.Type != "model.request.started" && e.Type != "model.request.finished" {
+			return invalid()
+		}
+		costEvent := e.Type == "model.request.started" || e.Type == "model.request.finished" ||
+			(e.Type == "tool.started" || e.Type == "tool.finished") && e.Name == "lookup"
+		if (spec.MaxCostMicros > 0 && costEvent) != (e.CostMicros != nil) ||
+			e.CostMicros != nil && (*e.CostMicros < 1 || *e.CostMicros > 1_000_000_000_000_000) {
 			return invalid()
 		}
 		switch e.Type {
@@ -267,11 +284,18 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			modelStages[uint64(modelCalls)] = e.Stage
+			if e.CostMicros != nil {
+				modelCosts[e.CallID] = *e.CostMicros
+				chargedCost += *e.CostMicros
+			}
 		case "model.request.finished":
 			if e.CallID == 0 || e.CallID > uint64(modelCalls) || modelFinished[e.CallID] || e.Stage != modelStages[e.CallID] {
 				return invalid()
 			}
 			modelFinished[e.CallID] = true
+			if e.CostMicros != nil {
+				chargedCost += *e.CostMicros - modelCosts[e.CallID]
+			}
 			if u := e.Usage; u != nil && (u.Requests != 0 || u.Reported != 1 || u.Coverage != "" ||
 				u.InputTokens < 0 || u.OutputTokens < 0 || u.TotalTokens < 0 || u.CacheReadTokens < 0 || u.CacheWriteTokens < 0 || u.ReasoningTokens < 0 ||
 				u.InputTokens > 1_000_000_000_000 || u.OutputTokens > 1_000_000_000_000 || u.TotalTokens > 1_000_000_000_000 ||
@@ -312,6 +336,10 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			started[e.OperationID] = e.Name
+			if e.CostMicros != nil {
+				toolCosts[e.OperationID] = *e.CostMicros
+				chargedCost += *e.CostMicros
+			}
 			if e.OperationID <= uint64(len(s.Operations)) && s.Operations[e.OperationID-1].Name() != e.Name {
 				return invalid()
 			}
@@ -323,6 +351,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			ended[e.OperationID] = true
+			if e.CostMicros != nil {
+				chargedCost += *e.CostMicros - toolCosts[e.OperationID]
+			}
 			if len(e.Data) > 0 {
 				if e.OperationID > uint64(len(s.Operations)) || !sameJSON(e.Data, s.Operations[e.OperationID-1].Result) {
 					return invalid()
@@ -340,6 +371,10 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		return invalid()
 	}
 	if s.Result != nil {
+		if (spec.MaxCostMicros > 0) != (s.Result.Cost != nil) ||
+			s.Result.Cost != nil && (s.Result.Cost.PricingVersion == "" || s.Result.Cost.BudgetMicros != spec.MaxCostMicros || s.Result.Cost.ChargedMicros != chargedCost) {
+			return invalid()
+		}
 		if len(s.Events) < 2 || s.Events[len(s.Events)-1].Type != "run.finished" || len(started) != len(ended) {
 			return invalid()
 		}

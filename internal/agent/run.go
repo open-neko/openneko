@@ -24,6 +24,7 @@ type Spec struct {
 	MaxOperations  int    `json:"max_operations,omitempty"`
 	MaxModelCalls  int    `json:"max_model_calls,omitempty"`
 	MaxModelTokens int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax plus GraphJin lookup tokens.
+	MaxCostMicros  int64  `json:"max_cost_micros,omitempty"`  // Host ceiling against the pinned route price profile.
 	// Set by the host after decoding input, then pinned by the checkpoint.
 	HostRoutingDigest string `json:"host_routing_digest,omitempty"`
 }
@@ -47,6 +48,7 @@ type Result struct {
 	Kind        string            `json:"kind,omitempty"`
 	Delegations []json.RawMessage `json:"delegations,omitempty"`
 	Usage       *ModelUsage       `json:"usage,omitempty"`
+	Cost        *CostSummary      `json:"cost,omitempty"`
 	Status      string            `json:"status"`
 	Answer      string            `json:"answer,omitempty"`
 	Code        string            `json:"code,omitempty"`
@@ -70,6 +72,7 @@ type Continuation struct {
 	ModelCalls            int
 	Usage                 ModelUsage
 	MaxReportedCallTokens int64
+	CostMicros            int64
 	Operations            []SavedOperation
 }
 
@@ -94,6 +97,7 @@ type Event struct {
 	Usage       *ModelUsage     `json:"usage,omitempty"`
 	StageUsage  *ModelUsage     `json:"stage_usage,omitempty"`
 	RemoteUsage *RemoteUsage    `json:"remote_usage,omitempty"`
+	CostMicros  *int64          `json:"cost_micros,omitempty"`
 	Result      *Result         `json:"result,omitempty"`
 }
 
@@ -193,8 +197,18 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
+	}
+	var pricing *RoutedClient
+	if spec.MaxCostMicros > 0 {
+		var ok bool
+		pricing, ok = client.(*RoutedClient)
+		if !ok || pricing.PricingVersion == "" || len(pricing.Prices) == 0 ||
+			(available["lookup"].Name != "" && (pricing.GraphJinPrice == nil || !pricing.GraphJinPrice.Valid())) ||
+			prior.CostMicros < 0 || prior.CostMicros > 1_000_000_000_000 {
+			return Result{}, fmt.Errorf("trusted cost budget requires complete route pricing")
+		}
 	}
 	if prior.Attempt > 1 && tools.OnResume != nil {
 		if err := tools.OnResume(ctx, prior.Operations); err != nil {
@@ -203,7 +217,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens}
+	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens, pricing: pricing, costMicros: prior.CostMicros}
 	events.usage.Requests = prior.ModelCalls
 	for _, op := range prior.Operations {
 		if op.Name() == "lookup" {
@@ -284,6 +298,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				if events.modelTokenBudgetExceeded() {
 					return ax.Object("error", "model_token_budget_exceeded"), nil
 				}
+				if events.costBudgetExceeded() {
+					return ax.Object("error", "cost_budget_exceeded"), nil
+				}
 				if events.isPaused() {
 					return nil, fmt.Errorf("turn is awaiting operator input")
 				}
@@ -313,16 +330,25 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				}
 				if name == "lookup" && !events.admitRemoteLookup() {
 					toolFailed = true
-					return ax.Object("error", "model_token_budget_exceeded"), nil
+					return ax.Object("error", "model_budget_exceeded"), nil
 				}
 				operationID++
 				currentID := operationID
-				events.send(Event{Type: "tool.started", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: currentID})
+				startedEvent := Event{Type: "tool.started", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: currentID}
+				if name == "lookup" && spec.MaxCostMicros > 0 {
+					charge := pricing.GraphJinPrice.Reservation(remoteLookupReservation)
+					startedEvent.CostMicros = &charge
+				}
+				events.send(startedEvent)
 				startedAt := time.Now()
 				finished := Event{Type: "tool.finished", Name: name, Origin: capability.Origin, Effect: capability.Effect, OperationID: currentID}
 				if name == "lookup" {
 					missing := GraphJinRemoteUsage(nil)
 					finished.RemoteUsage = &missing
+					if spec.MaxCostMicros > 0 {
+						charge := pricing.GraphJinPrice.Reservation(remoteLookupReservation)
+						finished.CostMicros = &charge
+					}
 				}
 				defer func() {
 					if len(finished.Data) == 0 && finished.Error == "" {
@@ -357,6 +383,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				if name == "lookup" {
 					usage := events.finishRemoteLookup(raw)
 					finished.RemoteUsage = &usage
+					if spec.MaxCostMicros > 0 && usage.Reported {
+						charge := pricing.GraphJinPrice.Observed(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+						finished.CostMicros = &charge
+						events.finishRemoteCost(charge)
+					}
 				}
 				if toolResultFailed(raw) {
 					toolFailed = true
@@ -470,6 +501,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		}
 		if events.modelTokenBudgetExceeded() {
 			result = Result{Status: "failed", Kind: "failure", Code: "model_token_budget_exceeded"}
+		} else if events.costBudgetExceeded() {
+			result = Result{Status: "failed", Kind: "failure", Code: "cost_budget_exceeded"}
 		} else if events.modelBudgetExceeded() {
 			result = Result{Status: "failed", Kind: "failure", Code: "model_budget_exceeded"}
 		}
@@ -529,6 +562,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	usage := events.usageSnapshot()
 	result.Usage = &usage
+	if spec.MaxCostMicros > 0 {
+		result.Cost = &CostSummary{PricingVersion: pricing.PricingVersion, ChargedMicros: events.costSnapshot(), BudgetMicros: spec.MaxCostMicros}
+	}
 	events.send(Event{Type: "run.finished", Result: &result})
 	events.mu.Lock()
 	defer events.mu.Unlock()
@@ -552,6 +588,10 @@ type recorder struct {
 	usage                 ModelUsage
 	maxReportedCallTokens int64
 	remoteTokens          int64
+	pricing               *RoutedClient
+	costMicros            int64
+	costDenied            bool
+	costOverspent         bool
 	modelDenied           bool
 	modelTokenDenied      bool
 	modelTokenOverspent   bool
@@ -600,17 +640,38 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 		r.mu.Unlock()
 		return nil, fmt.Errorf("model token admission budget exhausted")
 	}
+	var price TokenPrice
+	var costReservation int64
+	if r.spec.MaxCostMicros > 0 {
+		var ok bool
+		price, ok = r.pricing.Prices[info.Provider]
+		if !ok || !price.Valid() {
+			r.costDenied = true
+			r.mu.Unlock()
+			return nil, fmt.Errorf("model route has no approved price")
+		}
+		costReservation = price.Reservation(reservation)
+		if r.costDenied || r.costOverspent || r.costMicros+costReservation > r.spec.MaxCostMicros {
+			r.costDenied = true
+			r.mu.Unlock()
+			return nil, fmt.Errorf("model cost admission budget exhausted")
+		}
+	}
 	r.modelCalls++
 	r.usage.Requests++
 	id := uint64(r.modelCalls)
 	r.seq++
 	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: info.Model, Origin: info.Provider, Stage: stage}
+	if r.spec.MaxCostMicros > 0 {
+		e.CostMicros = &costReservation
+	}
 	if err := r.emit(e); err != nil {
 		r.err = err
 		r.cancel()
 		r.mu.Unlock()
 		return nil, err
 	}
+	r.costMicros += costReservation
 	r.mu.Unlock()
 	started := time.Now()
 	response, err := next()
@@ -621,8 +682,19 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 	if tokens, ok := modelTokens(response); ok {
 		finished.Usage = &tokens
 	}
+	charge := costReservation
+	if finished.Usage != nil && finished.Usage.TotalTokens > 0 {
+		charge = price.Observed(finished.Usage.InputTokens, finished.Usage.OutputTokens, finished.Usage.TotalTokens)
+	}
+	if r.spec.MaxCostMicros > 0 {
+		finished.CostMicros = &charge
+	}
 	r.send(finished)
 	r.mu.Lock()
+	r.costMicros += charge - costReservation
+	if r.spec.MaxCostMicros > 0 && r.costMicros > r.spec.MaxCostMicros {
+		r.costOverspent = true
+	}
 	if finished.Usage != nil {
 		r.usage.AddReported(*finished.Usage)
 		if finished.Usage.TotalTokens > r.maxReportedCallTokens {
@@ -677,8 +749,37 @@ func (r *recorder) admitRemoteLookup() bool {
 		r.modelTokenDenied = true
 		return false
 	}
+	if r.spec.MaxCostMicros > 0 {
+		charge := r.pricing.GraphJinPrice.Reservation(remoteLookupReservation)
+		if r.costDenied || r.costOverspent || r.costMicros+charge > r.spec.MaxCostMicros {
+			r.costDenied = true
+			return false
+		}
+		r.costMicros += charge
+	}
 	r.remoteTokens += remoteLookupReservation
 	return true
+}
+
+func (r *recorder) finishRemoteCost(observed int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.costMicros += observed - r.pricing.GraphJinPrice.Reservation(remoteLookupReservation)
+	if r.costMicros > r.spec.MaxCostMicros {
+		r.costOverspent = true
+	}
+}
+
+func (r *recorder) costBudgetExceeded() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.costDenied || r.costOverspent
+}
+
+func (r *recorder) costSnapshot() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.costMicros
 }
 
 func (r *recorder) finishRemoteLookup(raw json.RawMessage) RemoteUsage {

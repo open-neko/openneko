@@ -256,6 +256,45 @@ func TestModelUsageSurvivesResume(t *testing.T) {
 	}
 }
 
+func TestDurableModelChargeSurvivesInterruptedDelivery(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "cost-resume", InputID: "input", Prompt: "Answer", MaxCostMicros: 4100}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", `{"javascriptCode":"final('Answer',{})"}`), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 10, "completion_tokens", 5, "total_tokens", 15)))
+	}))
+	defer server.Close()
+	service := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	service.Name = "priced"
+	router, err := ax.NewMultiServiceRouter([]ax.Value{ax.RouterServiceEntry{Key: "priced", Service: service}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{Context: "priced", Executor: "priced", Responder: "priced"},
+		PricingVersion: "test-v1", Prices: map[string]agent.TokenPrice{"priced": {InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}}}
+	_, err = RunWithTools(context.Background(), root, spec, client, agent.Tools{}, func(e agent.Event) error {
+		if e.Type == "model.request.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || requests.Load() != 1 {
+		t.Fatalf("interruption err=%v requests=%d", err, requests.Load())
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume {
+		t.Fatalf("inspection=%+v err=%v", report, err)
+	}
+	result, err := ResumeWithTools(context.Background(), root, spec, client, agent.Tools{}, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "cost_budget_exceeded" || result.Cost == nil ||
+		result.Cost.ChargedMicros != 15 || requests.Load() != 1 {
+		t.Fatalf("resume result=%+v cost=%+v err=%v requests=%d", result, result.Cost, err, requests.Load())
+	}
+}
+
 func TestObservedTokenReservationSurvivesResume(t *testing.T) {
 	root := t.TempDir()
 	spec := agent.Spec{Version: 1, RunID: "token-resume", InputID: "input", Prompt: "Read status", MaxModelTokens: 11000}

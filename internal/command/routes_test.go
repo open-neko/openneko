@@ -211,3 +211,121 @@ func TestSkillCatalogLoadingFollowsTrustedRoute(t *testing.T) {
 		t.Fatalf("skill route unavailable: %t %v", enabled, err)
 	}
 }
+
+func TestPricingProfileIsCompleteAndPinned(t *testing.T) {
+	base := routeConfig{Context: "cheap", Executor: "work", Responder: "work", Routes: []modelRoute{
+		{Key: "cheap", Model: "fixture", URL: "https://example.invalid/v1", APIKeyEnv: "HARNESS_CHEAP_KEY"},
+		{Key: "work", Model: "fixture", URL: "https://example.invalid/v1", APIKeyEnv: "HARNESS_WORK_KEY"},
+	}}
+	encode := func(c routeConfig) string { b, _ := json.Marshal(c); return string(b) }
+	first, err := RoutingDigest(encode(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.PricingVersion = "2026-09"
+	if _, err := RoutingDigest(encode(base)); err == nil {
+		t.Fatal("unpriced routes admitted with version")
+	}
+	base.Routes[0].Price = &agent.TokenPrice{InputMicrosPerMillion: 100, OutputMicrosPerMillion: 200}
+	if _, err := RoutingDigest(encode(base)); err == nil {
+		t.Fatal("partially priced routes admitted")
+	}
+	base.Routes[1].Price = &agent.TokenPrice{InputMicrosPerMillion: 300, OutputMicrosPerMillion: 400}
+	base.GraphJinPrice = &agent.TokenPrice{InputMicrosPerMillion: 500, OutputMicrosPerMillion: 600}
+	second, err := RoutingDigest(encode(base))
+	if err != nil || first == second {
+		t.Fatalf("price profile digest not pinned: %v", err)
+	}
+	base.Routes[1].Price.OutputMicrosPerMillion++
+	third, err := RoutingDigest(encode(base))
+	if err != nil || second == third {
+		t.Fatalf("rate change did not change digest: %v", err)
+	}
+	base.PricingVersion = ""
+	if _, err := RoutingDigest(encode(base)); err == nil {
+		t.Fatal("unversioned prices admitted")
+	}
+}
+
+func TestCostAdmissionStopsBeforeNextModelDispatch(t *testing.T) {
+	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
+	t.Setenv("HARNESS_TEST_KEY", "synthetic")
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": `{"javascriptCode":"final('Answer',{})"}`}, "finish_reason": "stop"}},
+			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
+	}))
+	defer server.Close()
+	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
+	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", PricingVersion: "test-v1", Routes: []modelRoute{
+		{Key: "only", Model: "fixture", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY", Price: price},
+	}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	input := `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":4100}`
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(input), &out)
+	if code != 1 || err != nil || requests != 1 {
+		t.Fatalf("cost gate: code=%d err=%v requests=%d output=%s", code, err, requests, out.String())
+	}
+	rawEvents := out.String()
+	var started, finished int
+	for _, event := range events(t, &out) {
+		if event.Type == "model.request.started" {
+			started++
+			if event.CostMicros == nil || *event.CostMicros != 4096 {
+				t.Fatalf("reservation: %+v", event)
+			}
+		}
+		if event.Type == "model.request.finished" {
+			finished++
+			if event.CostMicros == nil || *event.CostMicros != 15 {
+				t.Fatalf("observed charge: %+v", event)
+			}
+		}
+		if event.Type == "run.finished" && (event.Result == nil || event.Result.Code != "cost_budget_exceeded" ||
+			event.Result.Cost == nil || event.Result.Cost.ChargedMicros != 15 || event.Result.Cost.PricingVersion != "test-v1") {
+			t.Fatalf("terminal cost: %+v", event.Result)
+		}
+	}
+	if started != 1 || finished != 1 {
+		t.Fatalf("model starts=%d finishes=%d", started, finished)
+	}
+	var replay bytes.Buffer
+	code, err = run(context.Background(), strings.NewReader(input), &replay)
+	if code != 1 || err != nil || replay.String() != rawEvents || requests != 1 {
+		t.Fatalf("terminal replay changed: code=%d err=%v requests=%d", code, err, requests)
+	}
+}
+
+func TestMissingUsageRetainsCostReservation(t *testing.T) {
+	t.Setenv("HARNESS_TEST_KEY", "synthetic")
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": `{"javascriptCode":"final('Answer',{})"}`}, "finish_reason": "stop"}}})
+	}))
+	defer server.Close()
+	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
+	raw, _ := json.Marshal(routeConfig{Context: "only", Executor: "only", Responder: "only", PricingVersion: "test-v1", Routes: []modelRoute{
+		{Key: "only", Model: "fixture", URL: server.URL, APIKeyEnv: "HARNESS_TEST_KEY", Price: price},
+	}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","max_cost_micros":4100}`), &out)
+	if code != 1 || err != nil || requests != 1 {
+		t.Fatalf("missing usage: code=%d err=%v requests=%d output=%s", code, err, requests, out.String())
+	}
+	var terminal *agent.Result
+	for _, event := range events(t, &out) {
+		if event.Type == "run.finished" {
+			terminal = event.Result
+		}
+	}
+	if terminal == nil || terminal.Code != "cost_budget_exceeded" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 4096 ||
+		terminal.Usage == nil || terminal.Usage.Coverage != "unavailable" {
+		t.Fatalf("reservation or coverage lost: %+v", terminal)
+	}
+}

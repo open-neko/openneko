@@ -937,6 +937,17 @@ The OpenNeko feature branch now validates and forwards that projection as a
 metadata-only `model.stage_usage` observation. Its summary accumulator excludes
 the attribution view from additive run usage; focused LLM/telemetry tests and
 worker typecheck pass. Connected OTLP export is still to be qualified.
+The Go route manifest now accepts a versioned, complete per-route upper-bound
+price profile and an optional GraphJin server-agent price. Price changes alter
+the trusted route digest, so a resumed run cannot silently switch accounting
+rates. When the host supplies `max_cost_micros`, the harness requires this
+profile, reserves before each outer Ax or GraphJin dispatch, replaces the
+reservation with reported usage when available, and retains the reservation
+when usage is absent or dispatch is interrupted. Cost charges are content-free
+durable events and a terminal summary; checkpoint resume reconstructs spend
+from those events. Local no-key fixtures prove model admission, missing-usage
+charging, and terminal replay. OpenNeko has not yet passed its queued workflow
+cost claim to this gate, nor has connected multi-route pricing been qualified.
 An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
 diagnostics: three read turns with 14 KiB console observations grew an executor
 request past 80 KiB and triggered an extra summary request. The Harness now

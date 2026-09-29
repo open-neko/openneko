@@ -14,18 +14,21 @@ import (
 )
 
 type modelRoute struct {
-	Key       string `json:"key"`
-	Model     string `json:"model"`
-	URL       string `json:"url"`
-	APIKeyEnv string `json:"api_key_env"`
+	Key       string            `json:"key"`
+	Model     string            `json:"model"`
+	URL       string            `json:"url"`
+	APIKeyEnv string            `json:"api_key_env"`
+	Price     *agent.TokenPrice `json:"price,omitempty"`
 }
 
 type routeConfig struct {
-	Context   string       `json:"context"`
-	Executor  string       `json:"executor"`
-	Responder string       `json:"responder"`
-	Skill     string       `json:"skill,omitempty"`
-	Routes    []modelRoute `json:"routes"`
+	Context        string            `json:"context"`
+	Executor       string            `json:"executor"`
+	Responder      string            `json:"responder"`
+	Skill          string            `json:"skill,omitempty"`
+	Routes         []modelRoute      `json:"routes"`
+	PricingVersion string            `json:"pricing_version,omitempty"`
+	GraphJinPrice  *agent.TokenPrice `json:"graphjin_price,omitempty"`
 }
 
 // loadModelClient reads a host-owned allowlist. The run JSON cannot add a
@@ -60,9 +63,15 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES: %w", err)
 	}
+	prices := make(map[string]agent.TokenPrice, len(cfg.Routes))
+	for _, route := range cfg.Routes {
+		if route.Price != nil {
+			prices[route.Key] = *route.Price
+		}
+	}
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
 		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder, Skill: cfg.Skill,
-	}}, digest, nil
+	}, PricingVersion: cfg.PricingVersion, Prices: prices, GraphJinPrice: cfg.GraphJinPrice}, digest, nil
 }
 
 // RoutingDigest validates the host route manifest without resolving any keys.
@@ -102,9 +111,14 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES profile")
 	}
 	known := make(map[string]bool, len(cfg.Routes))
+	priced := cfg.PricingVersion != "" || cfg.GraphJinPrice != nil
+	if len(cfg.PricingVersion) > 128 || strings.TrimSpace(cfg.PricingVersion) != cfg.PricingVersion ||
+		(cfg.PricingVersion == "") != (!priced) || cfg.GraphJinPrice != nil && !cfg.GraphJinPrice.Valid() {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES pricing profile")
+	}
 	for _, route := range cfg.Routes {
 		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || validModelURL(route.URL) != nil ||
-			!validEnvName(route.APIKeyEnv) {
+			!validEnvName(route.APIKeyEnv) || route.Price != nil && !route.Price.Valid() || priced && route.Price == nil || !priced && route.Price != nil {
 			return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES route")
 		}
 		known[route.Key] = true

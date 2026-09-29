@@ -15,7 +15,10 @@ type StageModels struct {
 // only the stage profile; capability admission remains entirely in Tools.
 type RoutedClient struct {
 	ax.AIClient
-	Stages StageModels
+	Stages         StageModels
+	PricingVersion string
+	Prices         map[string]TokenPrice
+	GraphJinPrice  *TokenPrice
 }
 
 func stageOptions(stages StageModels) map[string]ax.Value {
