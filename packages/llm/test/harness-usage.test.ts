@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { harnessRemoteUsage, harnessResult, harnessStageUsage, harnessUsage } from "../src/agent-backends/harness";
+import { harnessCost, harnessRemoteUsage, harnessResult, harnessStageUsage, harnessUsage } from "../src/agent-backends/harness";
 
 it("projects Harness model usage without claiming delegated usage", () => {
   const usage = { requests: 3, reported: 3, input_tokens: 60, output_tokens: 12, total_tokens: 72, coverage: "complete" };
@@ -12,6 +12,14 @@ it("projects Harness model usage without claiming delegated usage", () => {
   });
   expect(harnessUsage({ ...usage, input_tokens: -1 })).toMatchObject({ coverage: "unavailable" });
   expect(harnessUsage({ requests: 1, reported: 1, coverage: "complete" })).toMatchObject({ coverage: "unavailable" });
+});
+
+it("accepts only bounded, versioned Harness admission cost", () => {
+  const raw = {pricing_version: "operator-2026-09", charged_micros: 4567, budget_micros: 20_000};
+  expect(harnessCost(raw)).toEqual({pricingVersion: "operator-2026-09", chargedMicros: 4567, budgetMicros: 20_000});
+  expect(harnessResult({status: "failed", cost: raw}).backendState?.harness).toMatchObject({cost: {chargedMicros: 4567}});
+  expect(harnessCost({...raw, charged_micros: -1})).toBeUndefined();
+  expect(harnessCost({...raw, pricing_version: ""})).toBeUndefined();
 });
 
 it("accepts only a bounded flat Harness remote usage projection", () => {

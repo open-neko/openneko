@@ -41,11 +41,25 @@ export function createAgentEventTelemetry(input: {
   let firstOutputObserved = false;
   let stageOpen = false;
   let modelOpen = false;
+  let costSeen = false;
   let outerUsage: Extract<AgentEvent, { type: "usage" }> | undefined;
 
   const observe = async (
     observation: Parameters<HarnessObserver["observe"]>[0],
   ): Promise<void> => observeSafely(input.observer, observation);
+
+  const observeCost = async (event: Extract<AgentEvent, {type: "cost"}>): Promise<void> => {
+    if (costSeen) return;
+    costSeen = true;
+    await observe({
+      kind: "run.cost",
+      operationId: `${input.operationId}:cost`,
+      parentOperationId: input.operationId,
+      attributes: {"openneko.cost.scope": "outer-and-graphjin", "openneko.cost.budget_micros": event.budgetMicros},
+      measurements: {estimatedCostUsd: event.chargedMicros / 1_000_000, currency: "USD",
+        pricingCatalogVersion: event.pricingVersion, costStatus: "estimated", costSource: "harness-admission", coverage: "complete"},
+    });
+  };
 
   const observeEvent = async (event: AgentEvent): Promise<void> => {
     if (
@@ -170,6 +184,10 @@ export function createAgentEventTelemetry(input: {
       outerUsage = event;
       return;
     }
+    if (event.type === "cost" && event.source === "harness") {
+      await observeCost(event);
+      return;
+    }
     if (event.type === "stage_usage" && event.source === "harness") {
       await observe({
         kind: "model.stage_usage",
@@ -263,7 +281,9 @@ export function createAgentEventTelemetry(input: {
     status: ObservationStatus;
     errorType?: string;
     outputBytes?: number;
+    cost?: Extract<AgentEvent, {type: "cost"}>;
   }): Promise<void> => {
+    if (result.cost) await observeCost(result.cost);
     await observe({
       kind: "model.response",
       operationId: modelOperationId,

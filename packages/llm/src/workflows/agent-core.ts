@@ -41,6 +41,7 @@ export interface RunWorkflowAgentBackendInput {
   timeoutMs?: number;
   maxModelCalls?: number;
   maxModelTokens?: number;
+  maxCostMicros?: number;
   tag?: string;
 }
 

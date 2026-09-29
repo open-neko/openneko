@@ -266,6 +266,7 @@ describe("workflow API execution consumer", () => {
         userMessage: expect.stringContaining('"orderId":"1042"'),
         timeoutMs: apiLimits.maxRuntimeSeconds * 1_000,
         maxModelTokens: apiLimits.maxTokensPerRun,
+        maxCostMicros: apiLimits.maxCostMicrosPerRun,
       }),
       expect.any(Object),
     );

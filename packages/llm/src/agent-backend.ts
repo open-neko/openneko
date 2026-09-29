@@ -132,6 +132,8 @@ export type AgentEvent =
       modelIdentity?: AgentModelIdentityAttestation;
       usage: AgentTokenUsage;
     }
+  /** Host-admission charge for all Harness model work, including GraphJin. */
+  | { type: "cost"; source: "harness"; chargedMicros: number; budgetMicros: number; pricingVersion: string }
   /** Ax stage attribution is diagnostic and must not be added to run usage. */
   | {
       type: "stage_usage";

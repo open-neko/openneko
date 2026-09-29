@@ -286,6 +286,7 @@ export type RunWorkflowTurnOptions = {
   /** Trusted API admission ceiling; the sandbox applies the lower Harness cap. */
   maxModelCalls?: number;
   maxModelTokens?: number;
+  maxCostMicros?: number;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
   /**
@@ -481,6 +482,7 @@ async function runWorkflowTurnTraced(
       timeoutMs: opts.timeoutMs,
       maxModelCalls: opts.maxModelCalls,
       maxModelTokens: opts.maxModelTokens,
+      maxCostMicros: opts.maxCostMicros,
     });
     const spendStop = spendCapFromSignal(signal);
     let result = spendStop
@@ -505,6 +507,11 @@ async function runWorkflowTurnTraced(
       status: result.status === "completed" ? "ok" : "error",
       ...(result.error ? { errorType: "agent_backend_error" } : {}),
       outputBytes: Buffer.byteLength(result.finalText, "utf8"),
+      ...(result.backendState?.harness && typeof result.backendState.harness === "object" &&
+        "cost" in result.backendState.harness && result.backendState.harness.cost &&
+        typeof result.backendState.harness.cost === "object"
+        ? {cost: {type: "cost" as const, source: "harness" as const,
+          ...(result.backendState.harness.cost as {chargedMicros:number;budgetMicros:number;pricingVersion:string})}} : {}),
     });
 
     if (needsInput) {

@@ -665,6 +665,10 @@ function makeSandboxCore(
       throw new Error("Invalid workflow model-token ceiling");
     }
     const harnessModelTokenLimit = Math.min(HARNESS_MODEL_TOKEN_HARD_LIMIT, requestedModelTokens ?? HARNESS_MODEL_TOKEN_HARD_LIMIT);
+    const requestedCostMicros = kind === "workflow" ? (input as RunWorkflowAgentBackendInput).maxCostMicros : undefined;
+    if (requestedCostMicros !== undefined && (!Number.isSafeInteger(requestedCostMicros) || requestedCostMicros < 1 || requestedCostMicros > 1_000_000_000_000)) {
+      throw new Error("Invalid workflow cost ceiling");
+    }
     const started = performance.now();
     const timed = async <T>(
       phase: string,
@@ -718,6 +722,7 @@ function makeSandboxCore(
       const prompt = acceptedPrompt;
       const spec = JSON.stringify({version: 1, run_id: input.runId, input_id: input.runId,
         max_operations: HARNESS_OPERATION_LIMIT, max_model_calls: harnessModelCallLimit, max_model_tokens: harnessModelTokenLimit,
+        ...(requestedCostMicros ? {max_cost_micros: requestedCostMicros} : {}),
         ...(userMessage ? {skill_query: boundedSkillQuery(userMessage)} : {}),
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
@@ -807,7 +812,8 @@ function makeSandboxCore(
       ? await timed("harness_admission", () => journal(
           path.join(input.workspace.runsRoot, ".harness-launches", createHash("sha256").update(input.runId).digest("hex")),
           { version: 1, runId: input.runId, orgId: input.orgId, kind,
-            ...(input.backend.id === "harness" ? {maxOperations: HARNESS_OPERATION_LIMIT, maxModelCalls: harnessModelCallLimit, maxModelTokens: harnessModelTokenLimit} : {}),
+            ...(input.backend.id === "harness" ? {maxOperations: HARNESS_OPERATION_LIMIT, maxModelCalls: harnessModelCallLimit, maxModelTokens: harnessModelTokenLimit,
+              ...(requestedCostMicros ? {maxCostMicros: requestedCostMicros} : {})} : {}),
             threadId: !isJob ? (input as RunAgentBackendInput).threadId : null,
             userMessage: jobInput?.run.userMessage ?? (!isJob ? (input as RunAgentBackendInput).userMessage : null),
             prompt: toBox(inputPrompt), backend: input.backend.id, model: input.backend.configuredIdentity,
@@ -1181,6 +1187,7 @@ function makeSandboxCore(
             ...(routing ? { HARNESS_MODEL_ROUTES: routing.manifest } : {}),
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: actionGrants.length ? JSON.stringify(actionGrants.map(action => action.kind)) : "" } : {}),
             ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit), OPENNEKO_HARNESS_MAX_MODEL_TOKENS: String(harnessModelTokenLimit),
+              ...(requestedCostMicros ? {OPENNEKO_HARNESS_MAX_COST_MICROS: String(requestedCostMicros)} : {}),
               OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),
