@@ -123,6 +123,75 @@ func TestResumeIndexesLargeEvidenceAndRetrievesItWithoutRedispatch(t *testing.T)
 	}
 }
 
+func TestLiveLargeObservationBecomesRunReferenceAndSurvivesResume(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "large-live", InputID: "input", Prompt: "Verify the saved receipt"}
+	large := json.RawMessage(`{"label":"REF-42","noise":"` + strings.Repeat("X", 200_000) + `"}`)
+	var reads atomic.Int32
+	tools := agent.Tools{Capabilities: []agent.Capability{{Name: "large_read", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a large receipt.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads.Add(1)
+			return large, nil
+		}}}}
+	first, _ := proposalModel(t, `const ref=large_read({}); console.log(ref.reference);`)
+	_, err := RunWithTools(context.Background(), root, spec, first, tools, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("delivery interrupted")
+		}
+		return nil
+	})
+	if err == nil || reads.Load() != 1 {
+		t.Fatalf("large result was not saved before interruption: err=%v reads=%d", err, reads.Load())
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || !report.CanResume || len(report.Operations) != 1 || !report.Operations[0].Finished {
+		t.Fatalf("saved observation unavailable: report=%+v err=%v", report, err)
+	}
+	answers := []string{
+		`{"javascriptCode":"final('Verify saved receipt',{});"}`,
+		`{"javascriptCode":"const saved=harnessSavedOperation(1); final('Report receipt',{label:saved.result.label});"}`,
+		`{"answer":"REF-42"}`,
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		body, _ := io.ReadAll(r.Body)
+		if len(body) > 100_000 || strings.Contains(string(body), strings.Repeat("X", 1000)) {
+			t.Errorf("large result leaked into resumed model request %d: %d bytes", index+1, len(body))
+		}
+		if index >= len(answers) {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || result.Answer != "REF-42" || reads.Load() != 1 || calls.Load() != 3 {
+		t.Fatalf("result=%+v err=%v reads=%d calls=%d", result, err, reads.Load(), calls.Load())
+	}
+}
+
+func TestTerminalReplayRejectsAnotherAdmissionScope(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "scoped-result", InputID: "input", Prompt: "Answer"}
+	client, calls := proposalModel(t, `final('Answer',{});`)
+	first := agent.Tools{Scope: "tenant-A"}
+	result, err := RunWithTools(context.Background(), root, spec, client, first, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || calls.Load() != 3 {
+		t.Fatalf("initial result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+	if _, err := RunWithTools(context.Background(), root, spec, nil, agent.Tools{Scope: "tenant-B"}, func(agent.Event) error { return nil }); err == nil {
+		t.Fatal("another admission scope replayed a terminal result")
+	}
+	replayed, err := RunWithTools(context.Background(), root, spec, nil, first, func(agent.Event) error { return nil })
+	if err != nil || replayed.Answer != result.Answer || calls.Load() != 3 {
+		t.Fatalf("same-scope replay=%+v err=%v calls=%d", replayed, err, calls.Load())
+	}
+}
+
 func TestResumeKeepsPersistedToolFailureIncomplete(t *testing.T) {
 	root := t.TempDir()
 	spec := agent.Spec{Version: 1, RunID: "failed-tool", InputID: "input", Prompt: "Save the file"}

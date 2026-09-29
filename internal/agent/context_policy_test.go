@@ -25,10 +25,10 @@ func TestLongRunKeepsUserConstraintWithoutReplayingAllObservations(t *testing.T)
 	var reads atomic.Int32
 	answers := []string{
 		`{"javascriptCode":"final('Read and verify the receipt',{});"}`,
-		`{"javascriptCode":"const row1=read({step:1}); console.log(row1);"}`,
-		`{"javascriptCode":"const row2=read({step:2}); console.log(row2);"}`,
-		`{"javascriptCode":"const row3=read({step:3}); console.log(row3);"}`,
-		`{"javascriptCode":"const row4=read({step:4}); final('Report verified receipt',{receipt:row4.receipt});"}`,
+		`{"javascriptCode":"const row1=read({step:1}); console.log('irrelevant-observation-'.repeat(600));"}`,
+		`{"javascriptCode":"const row2=read({step:2}); console.log('irrelevant-observation-'.repeat(600));"}`,
+		`{"javascriptCode":"const row3=read({step:3}); console.log('irrelevant-observation-'.repeat(600));"}`,
+		`{"javascriptCode":"const row4=read({step:4}); const saved4=harnessSavedOperation(4); final('Report verified receipt',{receipt:saved4.result.receipt});"}`,
 		`{"answer":"REF-42"}`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

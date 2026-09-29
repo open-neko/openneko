@@ -865,7 +865,20 @@ executor can retrieve a full prior operation by ID from the validated checkpoint
 without redispatch. A fixture reconciled a 200 KB result, proved the resumed
 model requests stayed under 100 KB, retrieved its label in Goja, and completed
 with no new lookup. This addresses crash-resume context pressure; ordinary
-long-turn compaction and scoped persisted references remain open.
+long-turn compaction remains open. A live large tool result now returns a
+bounded run-local reference plus preview to Ax; the full result stays in the
+authoritative operation checkpoint and can be inspected with
+`harnessSavedOperation(id)` during the same attempt or after resume. A fixture
+retrieved an 85 KiB result during distillation without putting its body in the
+executor request. Another saved a 200 KiB live result, interrupted after its
+tool event, resumed from the reference, and made no second tool call. Terminal
+replay now checks a durable hash of the trusted admission scope even when its
+tool catalog is no longer installed; OpenNeko binds that scope to its org and
+thread IDs. The local cross-scope replay fixture denies a different scope.
+An owned child can retrieve its own large read result but cannot inspect that
+result from the parent's live runtime through the same numeric ID.
+Connected tenant-isolation and larger file-backed result qualification remain
+open.
 The OpenNeko branch now has an opt-in trusted route manifest for Harness-only
 multi-provider OpenShell launches. Local launcher tests check provider attach
 order, distinct credential aliases, route-specific egress, recovery manifest

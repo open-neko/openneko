@@ -35,11 +35,17 @@ func main() {
 		}
 	}
 	tools := agent.Tools{Lookup: lookup}
+	if orgID := os.Getenv("OPENNEKO_MCP_ORG_ID"); orgID != "" {
+		tools.Scope = "org:" + orgID
+	}
+	if threadID := os.Getenv("OPENNEKO_MCP_THREAD_ID"); threadID != "" {
+		tools.Scope += "\nthread:" + threadID
+	}
 	if child := os.Getenv("OPENNEKO_HARNESS_CHILD_READS"); child != "" {
 		tools.ChildReads = strings.Split(child, ",")
 	}
 	if recordsOnly == "1" {
-		tools.Scope = "records-only"
+		tools.Scope += "\nrecords-only"
 	}
 	if kinds := os.Getenv("OPENNEKO_HARNESS_ACTION_KINDS"); kinds != "" {
 		propose, bindErr := broker.Propose(os.Getenv("OPENNEKO_BROKER_URL"), os.Getenv("OPENNEKO_BROKER_TOKEN"))

@@ -3,8 +3,10 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -118,5 +120,42 @@ func TestChildToolFailureCannotBecomeSuccessfulParentAnswer(t *testing.T) {
 		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(Event) error { return nil })
 	if err != nil || result.Status != "failed" || result.Code != "incomplete_result" || reads.Load() != 1 {
 		t.Fatalf("failed child read was reported as success: result=%+v err=%v reads=%d models=%d", result, err, reads.Load(), calls.Load())
+	}
+}
+
+func TestChildLargeResultReferenceStaysInChildRuntime(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Delegate read',{});"}`,
+		`{"javascriptCode":"const child=team.researcher({question:'Verify receipt'}); let escaped=false; try { harnessSavedOperation(1); } catch (err) { escaped=true; } if (!escaped) throw new Error('child receipt escaped'); final('Answer',{child});"}`,
+		`{"javascriptCode":"final('Read receipt',{});"}`,
+		`{"javascriptCode":"const ref=catalog({}); if (!ref.reference) throw new Error('missing reference'); const saved=harnessSavedOperation(1); final('Verified',{label:saved.result.label});"}`,
+		`{"answer":"REF-42"}`,
+		`{"answer":"REF-42"}`,
+	}
+	var calls, reads atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(calls.Add(1)) - 1
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), strings.Repeat("X", 1000)) {
+			t.Error("child's large observation leaked into model context")
+		}
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	read := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a large receipt.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads.Add(1)
+			return json.Marshal(ax.Object("label", "REF-42", "noise", strings.Repeat("X", 200_000)))
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-reference", InputID: "input", Prompt: "Verify receipt", MaxOperations: 4, MaxModelCalls: 8}, client,
+		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(Event) error { return nil })
+	if err != nil || result.Status != "completed" || reads.Load() != 1 || calls.Load() != int32(len(answers)) {
+		t.Fatalf("result=%+v err=%v reads=%d calls=%d", result, err, reads.Load(), calls.Load())
 	}
 }

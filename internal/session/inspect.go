@@ -186,6 +186,14 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
+	if s.ScopeHash != "" {
+		if len(s.ScopeHash) != 64 {
+			return invalid()
+		}
+		if _, err := hex.DecodeString(s.ScopeHash); err != nil {
+			return invalid()
+		}
+	}
 	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 {
 		return invalid()
 	}

@@ -22,6 +22,7 @@ type operation = agent.SavedOperation
 type checkpoint struct {
 	Version    int           `json:"version"`
 	Catalog    string        `json:"catalog,omitempty"`
+	ScopeHash  string        `json:"scope_hash,omitempty"`
 	Spec       agent.Spec    `json:"spec"`
 	Events     []agent.Event `json:"events"`
 	Operations []operation   `json:"operations"`
@@ -77,7 +78,7 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		return agent.Result{}, fmt.Errorf("run already executing")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	state := checkpoint{Version: 1, Catalog: catalog, Spec: spec}
+	state := checkpoint{Version: 1, Catalog: catalog, ScopeHash: scopeHash(tools.Scope), Spec: spec}
 	file, err := os.Open(path + ".json")
 	var data []byte
 	if err == nil {
@@ -89,6 +90,11 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		state, err = decodeCheckpoint(data, spec)
 		if err != nil {
 			return agent.Result{}, err
+		}
+		// A terminal result may replay without reinstalling its tools, but it
+		// must never cross the trusted admission scope that owns its evidence.
+		if state.ScopeHash != scopeHash(tools.Scope) {
+			return agent.Result{}, fmt.Errorf("run admission scope changed; new run required")
 		}
 		if state.Result == nil {
 			if state.Catalog != "" && state.Catalog != catalog {
@@ -213,6 +219,14 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		}
 		return emit(e)
 	}, prior)
+}
+
+func scopeHash(scope string) string {
+	if scope == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(scope))
+	return hex.EncodeToString(sum[:])
 }
 
 func saveCheckpoint(root, path string, state checkpoint) error {
