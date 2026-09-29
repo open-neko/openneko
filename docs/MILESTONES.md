@@ -990,6 +990,11 @@ model request, visible truncation, and a largest request below 45 KiB. This
 is a bounded-observation regression, not proof that Ax compaction preserves
 pending approvals or durable evidence across a longer mixed-tool run; that
 exit gate remains open.
+An additional no-key nine-request fixture combines five read receipts with a
+pending approval. Every ordinary request retained the original no-execution
+constraint, a later request still contained the pending approval, and the
+largest request was 12.3 KiB. Ax did not invoke its summarizer in this fixture,
+so this is ordinary-turn preservation evidence, not a compaction pass.
 Use Ax's [published Go skills](https://axllm.dev/go/skills/) as scoped implementation
 references: `ax-go-agent` and `ax-go-agent-rlm` for actor/runtime behavior,
 `ax-go-agent-observability` for per-call usage, `ax-go-agent-memory-skills`
