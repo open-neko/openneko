@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.4](https://github.com/open-neko/openneko/compare/v3.9.3...v3.9.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* **agent:** let neko_data reach the run socket from execute_code ([56e6782](https://github.com/open-neko/openneko/commit/56e6782fcaa9530d427942d697cf44cf73879562))
+* **agent:** let neko_data reach the run socket from execute_code ([66c7390](https://github.com/open-neko/openneko/commit/66c73905b23668fc59cd18438523983b4459b0cc))
+
 ## [3.9.3](https://github.com/open-neko/openneko/compare/v3.9.2...v3.9.3) (2026-09-30)
 
 
