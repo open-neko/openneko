@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.3](https://github.com/open-neko/openneko/compare/v3.9.2...v3.9.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* **agent:** keep the reasoning-config line in the run-budget patch ([5ad9e2c](https://github.com/open-neko/openneko/commit/5ad9e2c4c7de943b26acd82132fb2c02cede2bcc))
+* **agent:** keep the reasoning-config line in the run-budget patch ([b5e02c5](https://github.com/open-neko/openneko/commit/b5e02c545f98cf6232b1b204cd3daf17f03bc366))
+
 ## [3.9.2](https://github.com/open-neko/openneko/compare/v3.9.1...v3.9.2) (2026-09-30)
 
 
