@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.1](https://github.com/open-neko/openneko/compare/v3.9.0...v3.9.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **work:** make render tool discoverable in Hermes ([c67de97](https://github.com/open-neko/openneko/commit/c67de976213bdb4ef6e19e70e0e2ff2e46a004dc))
+* **work:** make renderer tool discoverable ([1482f51](https://github.com/open-neko/openneko/commit/1482f5197ef6a113d1f2a5fe58aa8fb60f832871))
+
 ## [3.9.0](https://github.com/open-neko/openneko/compare/v3.8.0...v3.9.0) (2026-09-29)
 
 
