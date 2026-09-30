@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.9.2](https://github.com/open-neko/openneko/compare/v3.9.1...v3.9.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **plugins:** install packages into the plugin install directory ([8fa28d3](https://github.com/open-neko/openneko/commit/8fa28d389943baea17e2da8ca072e4c1a34128f3))
+* **workflows:** let skill scripts query data and finish long runs ([34599ea](https://github.com/open-neko/openneko/commit/34599eafe58f9197eb8ce592e2a59dd548864fda))
+* **workflows:** let skill scripts query data and finish long runs ([866a56e](https://github.com/open-neko/openneko/commit/866a56e3d5f064d560227dd877d5d1033c260e59))
+
 ## [3.9.1](https://github.com/open-neko/openneko/compare/v3.9.0...v3.9.1) (2026-09-30)
 
 
