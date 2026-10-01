@@ -108,19 +108,23 @@ CMD ["serve"]
 # Pinned static OpenShell client shared by control planes and the readiness
 # one-shot without pulling a Node/worker filesystem into the latter.
 FROM debian:bookworm-slim AS openshell-bin
-ARG OPENSHELL_VERSION=0.0.54
-ARG OPENSHELL_ASSET_AMD64=436365845
-ARG OPENSHELL_ASSET_ARM64=436365844
+ARG OPENSHELL_VERSION=0.0.116
+ARG OPENSHELL_ASSET_AMD64=533546389
+ARG OPENSHELL_ASSET_ARM64=533546383
+ARG OPENSHELL_SHA256_AMD64=4fb4476d80a1875a0b83547ec3aba999cf0a2e2d75f95f2f709b622e2103520e
+ARG OPENSHELL_SHA256_ARM64=7a949c48d1e000cd280869eea1e203e24816b9cfefc575b68a8b72b939cb3f43
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && OPENSHELL_ASSET_ID="$(case "${TARGETARCH}" in amd64) echo "${OPENSHELL_ASSET_AMD64}" ;; arm64) echo "${OPENSHELL_ASSET_ARM64}" ;; *) exit 1 ;; esac)" \
+    && OPENSHELL_SHA256="$(case "${TARGETARCH}" in amd64) echo "${OPENSHELL_SHA256_AMD64}" ;; arm64) echo "${OPENSHELL_SHA256_ARM64}" ;; *) exit 1 ;; esac)" \
     && curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors -o /tmp/openshell.tgz \
       -H 'Accept: application/octet-stream' \
       "https://api.github.com/repos/NVIDIA/OpenShell/releases/assets/${OPENSHELL_ASSET_ID}" \
+    && printf '%s  %s\n' "${OPENSHELL_SHA256}" /tmp/openshell.tgz | sha256sum -c - \
     && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
     && rm /tmp/openshell.tgz \
     && rm -rf /var/lib/apt/lists/* \
-    && openshell --version
+    && test "$(openshell --version)" = "openshell ${OPENSHELL_VERSION}"
 
 FROM alpine:3.22 AS openshell-ready
 RUN apk add --no-cache ca-certificates

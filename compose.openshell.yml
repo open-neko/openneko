@@ -48,7 +48,7 @@ services:
   # image → run the binary directly. The state dir is mounted at an identical
   # path so generate-certs' temp-dir rename stays on one device (requirement #2).
   openshell-certgen:
-    image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}
+    image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.116}
     restart: "no"
     user: "0:0"
     command:
@@ -142,7 +142,7 @@ services:
       - openshell-config:/config/openshell
 
   openshell-gateway:
-    image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}
+    image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.116}
     restart: unless-stopped
     user: "0:0"                       # needs the host docker.sock (use a socket-proxy in prod)
     command:
