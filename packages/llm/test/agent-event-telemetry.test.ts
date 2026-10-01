@@ -52,7 +52,7 @@ describe("agent event telemetry", () => {
     const telemetry = createAgentEventTelemetry({observer:createHarnessObserver({runId:"child-run",sinks:[sink]}),operationId:"work:child-run"});
     await telemetry.startAgent({backend:"harness"});
     await telemetry.observeEvent({type:"model_call",phase:"started",callId:1,model:"small-model",provider:"fixture",stage:"executor"});
-    await telemetry.observeEvent({type:"model_call",phase:"finished",callId:1,model:"small-model",provider:"fixture",stage:"executor",durationMs:8,usageCoverage:"complete"});
+    await telemetry.observeEvent({type:"model_call",phase:"finished",callId:1,model:"small-model",provider:"fixture",stage:"executor",durationMs:8,usage:{totalTokens:30,coverage:"complete"}});
     await telemetry.observeEvent({type:"tool_start",id:"harness-child-1",name:"ax_child_agent"});
     await telemetry.observeEvent({type:"tool_end",id:"harness-child-1"});
     await telemetry.observeEvent({type:"usage",source:"outer",usage:{totalTokens:90,coverage:"complete"}});
@@ -68,11 +68,15 @@ describe("agent event telemetry", () => {
     await telemetry.startAgent({backend:"harness",model:"configured-alias"});
     for (const [id,model,stage] of [[1,"cheap-model","executor"],[2,"strong-model","responder"]] as const) {
       await telemetry.observeEvent({type:"model_call",phase:"started",callId:id,model,provider:"fixture",stage});
-      await telemetry.observeEvent({type:"model_call",phase:"finished",callId:id,model,provider:"fixture",stage,durationMs:12,usageCoverage:"complete"});
+      await telemetry.observeEvent({type:"model_call",phase:"finished",callId:id,model,provider:"fixture",stage,durationMs:12,
+        usage:{totalTokens:20,coverage:"complete"},chargedMicros:100});
     }
     await telemetry.observeEvent({type:"usage",source:"outer",usage:{totalTokens:40,coverage:"complete"}});
     await telemetry.finishAgent({status:"ok",outputBytes:4});
     expect(sink.observations.filter(item=>item.kind==="model.request")).toHaveLength(2);
+    expect(sink.observations.filter(item=>item.kind==="model.response")).toEqual(expect.arrayContaining([
+      expect.objectContaining({attributes:expect.objectContaining({"openneko.agent.stage":"responder"}),
+        measurements:expect.objectContaining({totalTokens:20,estimatedCostUsd:0.0001})})]));
     expect(summary.snapshot()).toMatchObject({requestedModel:"cheap-model",resolvedModel:"strong-model",
       counts:{inference:2},usage:{totalTokens:40,coverage:"complete"}});
     expect(JSON.stringify(sink.observations)).not.toContain("configured-alias");

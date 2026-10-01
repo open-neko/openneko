@@ -4,12 +4,14 @@ import { harnessCost, harnessModelCall, harnessProvisionalAnswer, harnessRemoteU
 it("accepts only bounded content-free model route receipts", () => {
   const started={type:"model.request.started",call_id:2,name:"gemini-3.8-flash",origin:"google",stage:"responder"};
   expect(harnessModelCall(started)).toEqual({type:"model_call",phase:"started",callId:2,model:"gemini-3.8-flash",provider:"google",stage:"responder"});
-  expect(harnessModelCall({...started,type:"model.request.finished",duration_ms:19,
-    usage:{reported:1,coverage:"complete"}})).toMatchObject({phase:"finished",durationMs:19,usageCoverage:"complete",failed:false});
+  expect(harnessModelCall({...started,type:"model.request.finished",duration_ms:19,cost_micros:100,
+    usage:{requests:1,reported:1,coverage:"complete",input_tokens:6,output_tokens:4,total_tokens:10}})).toMatchObject({phase:"finished",durationMs:19,
+      usage:{coverage:"complete",totalTokens:10},chargedMicros:100,failed:false});
   expect(harnessModelCall({...started,origin:undefined,stage:undefined})).toMatchObject({provider:"unknown",stage:"unattributed"});
   expect(harnessModelCall({...started,name:"bad\nsecret"})).toBeUndefined();
   expect(harnessModelCall({...started,call_id:65})).toBeUndefined();
   expect(harnessModelCall({...started,type:"model.request.finished",duration_ms:-1})).toBeUndefined();
+  expect(harnessModelCall({...started,type:"model.request.finished",duration_ms:1,cost_micros:-1})).toBeUndefined();
 });
 
 it("accepts only bounded responder deltas as provisional output", () => {

@@ -66,7 +66,7 @@ export function createAgentEventTelemetry(input: {
   const observeEvent = async (event: AgentEvent): Promise<void> => {
     if (event.type === "model_call") {
       const operationId = `${input.operationId}:model-call:${event.callId}`;
-      const attributes = {"openneko.model.scope":"outer", "openneko.agent.stage":event.stage,
+      const attributes = {"openneko.model.scope":"outer_call", "openneko.agent.stage":event.stage,
         "openneko.model.call_id":event.callId,
         "gen_ai.provider.name":event.provider,
         "gen_ai.request.model":event.model};
@@ -81,7 +81,9 @@ export function createAgentEventTelemetry(input: {
           status:event.failed ? "error" : "ok",...(event.failed ? {errorType:"model_request_failed"} : {}),
           attributes:{...attributes,"gen_ai.response.model":event.model},
           measurements:{durationMs:event.durationMs ?? (prior ? Date.now()-prior.startedAt : 0),
-            coverage:event.usageCoverage ?? "unavailable"}});
+            ...(event.usage ?? {coverage:"unavailable" as const}),
+            ...(event.chargedMicros !== undefined ? {estimatedCostUsd:event.chargedMicros/1_000_000,
+              currency:"USD",costStatus:"estimated" as const,costSource:"harness-admission"} : {})}});
       }
       return;
     }
@@ -271,7 +273,7 @@ export function createAgentEventTelemetry(input: {
     for (const [callId, call] of modelCalls) {
       await observe({kind:"model.response",operationId:`${input.operationId}:model-call:${callId}`,
         parentOperationId:stageOperationId,status:"error",errorType:"model_receipt_missing",
-        attributes:{"openneko.model.scope":"outer","openneko.agent.stage":call.stage,
+        attributes:{"openneko.model.scope":"outer_call","openneko.agent.stage":call.stage,
           "openneko.model.call_id":callId,"gen_ai.provider.name":call.provider,
           "gen_ai.response.model":call.model},
         measurements:{durationMs:Date.now()-call.startedAt,coverage:"unavailable",missingReasons:[reason]}});

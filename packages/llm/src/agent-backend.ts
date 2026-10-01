@@ -143,7 +143,8 @@ export type AgentEvent =
       provider: string;
       stage: string;
       durationMs?: number;
-      usageCoverage?: "complete" | "unavailable";
+      usage?: AgentTokenUsage;
+      chargedMicros?: number;
       failed?: boolean;
     }
   /** Host-admission charge for all Harness model work, including GraphJin. */

@@ -173,6 +173,9 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
       // Ax stage usage is an attribution-only view of the outer receipts.
       // The normal model.response observation already owns the run total.
       if (observation.kind === "model.stage_usage") return;
+      // Per-call Ax receipts are diagnostic. The terminal Harness receipt
+      // already charges their aggregate usage and cost to this run.
+      if (observation.kind === "model.response" && attrs["openneko.model.scope"] === "outer_call") return;
       const current = this.value.usage;
       const hasUsageValue = [
         measurements.inputTokens,

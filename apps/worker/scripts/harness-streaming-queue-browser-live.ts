@@ -60,10 +60,12 @@ try {
   const modelReceipts=await db().select({id:work_run_event.id}).from(work_run_event)
     .where(and(eq(work_run_event.run_id,run.id),eq(work_run_event.kind,"model_call")));
   assert.equal(modelReceipts.length,0,"internal model metadata leaked into Work events");
-  const telemetry=(await pool().query<{summary:{counts?:{inference?:number};requestedModel?:string;resolvedModel?:string}}>(
+  const telemetry=(await pool().query<{summary:{counts?:{inference?:number};requestedModel?:string;resolvedModel?:string;usage?:{totalTokens?:number;coverage?:string}}}>(
     "SELECT payload->'summary' AS summary FROM work_run_event WHERE run_id=$1 AND kind='telemetry' ORDER BY id DESC LIMIT 1",[run.id])).rows[0]?.summary;
   assert.ok((telemetry?.counts?.inference ?? 0)>1,"summary counted a Harness turn instead of actual model calls");
   assert.equal(telemetry?.resolvedModel,"harness-stream-fixture");
+  assert.equal(telemetry?.usage?.totalTokens,40,"per-call usage was added to the aggregate twice");
+  assert.equal(telemetry?.usage?.coverage,"partial");
   console.log("M6_QUEUED_BROWSER_STREAMING_PASS",run.id);
 } finally {
   browser.kill("SIGTERM");

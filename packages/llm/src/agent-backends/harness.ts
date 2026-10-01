@@ -180,11 +180,13 @@ export function harnessModelCall(raw: unknown): Extract<AgentEvent, {type: "mode
         event.stage !== undefined && (typeof event.stage !== "string" || event.stage.length > 64 || !/^[A-Za-z0-9._-]*$/.test(event.stage))) return undefined;
     const duration = event.duration_ms;
     if (phase === "finished" && (!Number.isSafeInteger(duration) || (duration as number) < 0 || (duration as number) > 86_400_000)) return undefined;
+    if (event.cost_micros !== undefined && (!Number.isSafeInteger(event.cost_micros) || (event.cost_micros as number) < 0 || (event.cost_micros as number) > 8_000_000_000_000_000)) return undefined;
     const usage = event.usage && typeof event.usage === "object" ? event.usage as Record<string, unknown> : undefined;
     return {type:"model_call",phase,callId:event.call_id as number,model:event.name as string,provider:(event.origin as string | undefined) || "unknown",
         stage:(event.stage as string | undefined) || "unattributed",
         ...(phase === "finished" ? {durationMs:duration as number,
-            usageCoverage:usage?.reported === 1 && usage.coverage === "complete" ? "complete" as const : "unavailable" as const,
+            usage:usage ? harnessUsage(usage) : {coverage:"unavailable" as const},
+            ...(event.cost_micros !== undefined ? {chargedMicros:event.cost_micros as number} : {}),
             failed:Boolean(event.error)} : {})};
 }
 
