@@ -212,6 +212,11 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		if persistenceErr != nil {
 			return persistenceErr
 		}
+		if e.Type == "answer.delta" {
+			// Provisional responder chunks are live-only. They carry no durable
+			// sequence and must not change replay or checkpoint identity.
+			return emit(e)
+		}
 		state.Events = append(state.Events, e)
 		if e.Result != nil {
 			state.Result = e.Result

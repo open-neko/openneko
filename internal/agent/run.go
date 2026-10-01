@@ -18,15 +18,16 @@ import (
 
 // Spec is trusted host input. It cannot select credentials, endpoints or capabilities.
 type Spec struct {
-	Version        int    `json:"version"`
-	RunID          string `json:"run_id"`
-	InputID        string `json:"input_id"`
-	Prompt         string `json:"prompt"`
-	SkillQuery     string `json:"skill_query,omitempty"` // Current request for optional skill matching.
-	MaxOperations  int    `json:"max_operations,omitempty"`
-	MaxModelCalls  int    `json:"max_model_calls,omitempty"`
-	MaxModelTokens int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax plus GraphJin lookup tokens.
-	MaxCostMicros  int64  `json:"max_cost_micros,omitempty"`  // Host ceiling against the pinned route price profile.
+	Version         int    `json:"version"`
+	RunID           string `json:"run_id"`
+	InputID         string `json:"input_id"`
+	Prompt          string `json:"prompt"`
+	StreamResponses bool   `json:"stream_responses,omitempty"` // Host-qualified incremental responder transport.
+	SkillQuery      string `json:"skill_query,omitempty"`      // Current request for optional skill matching.
+	MaxOperations   int    `json:"max_operations,omitempty"`
+	MaxModelCalls   int    `json:"max_model_calls,omitempty"`
+	MaxModelTokens  int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax plus GraphJin lookup tokens.
+	MaxCostMicros   int64  `json:"max_cost_micros,omitempty"`  // Host ceiling against the pinned route price profile.
 	// These host-owned signals are pinned by the checkpoint. An empty summary
 	// disables optional shadow classification; no task skill can dispatch it.
 	TriageSummary           string `json:"triage_summary,omitempty"`
@@ -630,7 +631,16 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		if routed, ok := client.(*RoutedClient); ok {
 			anchoredClient.contextRoute = routed.Stages.Context
 		}
-		output, err := engine.ForwardWithHooks(ctx, anchoredClient, values, ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
+		streamClient := &streamingModeClient{AIClient: anchoredClient, enabled: spec.StreamResponses}
+		// Ax streams only the responder. Candidate deltas are observable while
+		// the response is in flight, but the host terminal gate still owns the
+		// final answer. Do not checkpoint provisional text or treat it as a
+		// committed assistant message.
+		answer, streamErr := streamAnswer(ctx, engine, streamClient, values,
+			ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0,
+				"runtimeHooks", ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)}), events, spec.StreamResponses)
+		var output ax.Value = ax.Object("answer", answer)
+		err := streamErr
 		projectedCalls := 0
 		for _, stage := range stageUsageProjection(engine.GetChatLog(), "") {
 			usage := stage.Usage
@@ -656,7 +666,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		if err == nil {
 			object, ok := output.(map[string]ax.Value)
 			answer, valid := object["answer"].(string)
-			if ok && valid && strings.TrimSpace(answer) != "" && len(answer) <= 65536 {
+			if ok && valid && strings.TrimSpace(answer) != "" && len(answer) <= 65536 && !leakedActorCode(answer) {
 				result = Result{Status: "completed", Kind: "answer", Answer: answer}
 			} else {
 				result.Code = "invalid_output"
@@ -775,6 +785,66 @@ func toolResultFailed(raw json.RawMessage) bool {
 		IsError bool `json:"is_error"`
 	}
 	return json.Unmarshal(raw, &status) == nil && status.IsError
+}
+
+// A malformed responder can echo an executor program as its answer. Ax may
+// surface that string as a valid text field, but it is not a verified answer.
+func leakedActorCode(answer string) bool {
+	var object map[string]json.RawMessage
+	if json.Unmarshal([]byte(answer), &object) != nil || len(object) != 1 {
+		return false
+	}
+	var code string
+	return json.Unmarshal(object["javascriptCode"], &code) == nil && strings.TrimSpace(code) != ""
+}
+
+func streamAnswer(ctx context.Context, engine *ax.AxAgent, client ax.AIClient, values, options map[string]ax.Value, events *recorder, emitDeltas bool) (string, error) {
+	var answer strings.Builder
+	version := -1
+	for delta, err := range engine.StreamingForward(ctx, client, values, options) {
+		if err != nil {
+			return "", err
+		}
+		if delta.Index != 0 {
+			continue
+		}
+		if delta.Version != version {
+			version = delta.Version
+			answer.Reset()
+		}
+		part, ok := delta.Delta["answer"].(string)
+		if !ok || part == "" {
+			continue
+		}
+		if answer.Len()+len(part) > 65536 {
+			// Drain Ax to settle the model request and its usage receipt. The
+			// terminal validator rejects the oversized assembled response.
+			answer.WriteString(part[:max(0, 65537-answer.Len())])
+			continue
+		}
+		answer.WriteString(part)
+		if !emitDeltas {
+			continue
+		}
+		payload, _ := json.Marshal(struct {
+			Version int    `json:"version"`
+			Index   int    `json:"index"`
+			Text    string `json:"text"`
+		}{Version: version, Index: delta.Index, Text: part})
+		events.progress(Event{Type: "answer.delta", Data: payload})
+	}
+	assembled := answer.String()
+	// Older OpenAI-compatible fixtures answer a text field with a single
+	// JSON object. Ax's buffered Forward path unwraps that compatibility form;
+	// StreamingForward yields its raw text, so keep the final contract equal.
+	var legacy map[string]json.RawMessage
+	if json.Unmarshal([]byte(assembled), &legacy) == nil && len(legacy) == 1 {
+		var text string
+		if json.Unmarshal(legacy["answer"], &text) == nil {
+			return text, nil
+		}
+	}
+	return assembled, nil
 }
 
 type recorder struct {
@@ -1047,6 +1117,23 @@ func (r *recorder) send(e Event) {
 	e.RunID = r.spec.RunID
 	e.InputID = r.spec.InputID
 	e.Sequence = r.seq
+	if err := r.emit(e); err != nil {
+		r.err = err
+		r.cancel()
+	}
+}
+
+// Progress bypasses the durable sequence. A replay resumes from committed
+// events and never replays provisional responder text.
+func (r *recorder) progress(e Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.err != nil {
+		return
+	}
+	e.Version = 1
+	e.RunID = r.spec.RunID
+	e.InputID = r.spec.InputID
 	if err := r.emit(e); err != nil {
 		r.err = err
 		r.cancel()

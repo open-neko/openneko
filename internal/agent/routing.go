@@ -66,6 +66,11 @@ func (r *transientRouteFallback) Chat(ctx context.Context, request, options map[
 	return r.AIClient.Chat(ctx, copy, options)
 }
 
+func (r *transientRouteFallback) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
+	// A stream error may follow visible content. Do not retry on another route.
+	return streamEvents(ctx, r.AIClient, request, options)
+}
+
 func (r *transientRouteFallback) GetFeatures(model string) map[string]ax.Value {
 	if features, ok := r.AIClient.(interface {
 		GetFeatures(string) map[string]ax.Value
@@ -83,6 +88,10 @@ func (r *RoutedClient) GetFeatures(model string) map[string]ax.Value {
 		return features.GetFeatures(model)
 	}
 	return nil
+}
+
+func (r *RoutedClient) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
+	return streamEvents(ctx, r.AIClient, request, options)
 }
 
 func stageOptions(stages StageModels) map[string]ax.Value {
@@ -141,6 +150,10 @@ func (r *executorErrorRoute) Chat(ctx context.Context, request, options map[stri
 
 func (r *executorErrorRoute) Stream(ctx context.Context, request, options map[string]ax.Value) ([]ax.Value, error) {
 	return r.AIClient.Stream(ctx, r.request(request), options)
+}
+
+func (r *executorErrorRoute) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
+	return streamEvents(ctx, r.AIClient, r.request(request), options)
 }
 
 // AxGen checks provider features before transport. Preserve the router's

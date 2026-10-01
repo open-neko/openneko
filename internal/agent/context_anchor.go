@@ -82,6 +82,10 @@ func (c *contextAnchorClient) Stream(ctx context.Context, request, options map[s
 	return c.AIClient.Stream(ctx, c.anchored(request), options)
 }
 
+func (c *contextAnchorClient) StreamEvents(ctx context.Context, request, options map[string]ax.Value) (ax.AxChatStream, error) {
+	return streamEvents(ctx, c.AIClient, c.anchored(request), options)
+}
+
 func (c *contextAnchorClient) GetFeatures(model string) map[string]ax.Value {
 	if features, ok := c.AIClient.(interface {
 		GetFeatures(string) map[string]ax.Value

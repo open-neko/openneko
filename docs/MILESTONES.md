@@ -831,6 +831,16 @@ excluded from the rollout cohort. Do not claim full Hermes parity while they are
 
 ## M6 — Ax routing, context and efficiency
 
+**Streaming slice (2026-10-02):** The harness upgraded its Ax Go dependency and
+uses `AxAgent.StreamingForward` for the responder on every run. Host-qualified
+incremental routes can emit live `answer.delta` events without advancing the
+durable sequence; a local SSE fixture proves first content arrives before the
+provider finishes, and a checkpoint fixture proves terminal replay omits those
+provisional chunks. The final answer remains subject to the existing terminal
+gate. The OpenNeko adapter still needs a provisional-text projection and a
+connected OpenShell first-content test before it enables incremental provider
+transport for operator runs.
+
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably
 recorded. A trusted `max_model_calls` limit (16 by default, at most 64) is

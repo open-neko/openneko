@@ -62,7 +62,20 @@ cannot prove that no content reached the caller before failure. No fallback
 changes GraphJin's server-owned model or grants another capability. Local
 fixtures cover 503 fallback, 403 denial, 429 with an exhausted call ceiling,
 crash before alternate dispatch, cost and terminal replay. Connected OpenShell
-credential replacement and streaming first-content qualification remain open.
+credential replacement and connected streaming first-content qualification remain open.
+
+Ax Go's `AxAgent.StreamingForward` now drives the responder path. A trusted
+`stream_responses` run field enables incremental provider transport after that
+route has passed qualification; the engine uses the same forward path with a
+single buffered response for legacy non-SSE routes. On an incremental route,
+`answer.delta` carries `{version,index,text}` as a live-only event with
+`sequence: 0`. A new version replaces the prior candidate. Consumers must not
+advance the durable sequence, checkpoint these chunks, or display them as a
+verified answer. The final `run.finished` result still passes the host terminal
+gate. Local HTTP SSE tests prove first content arrives before stream completion
+and terminal replay omits the provisional chunks. OpenNeko projection and a
+connected OpenShell first-content run remain to be qualified before the host
+sets `stream_responses` for production runs.
 
 The optional OpenNeko adapter accepts the operator-owned
 `OPENNEKO_HARNESS_ROUTING` manifest. Each route adds `provider` (an existing
