@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.12.0](https://github.com/open-neko/openneko/compare/v3.11.1...v3.12.0) (2026-10-01)
+
+
+### Features
+
+* upgrade OpenShell gateway, CLI, agent, and plugin runtime to 0.1.2, and reap exited plugin sandboxes ([#391](https://github.com/open-neko/openneko/pull/391))
+* keep embedded OpenShell CLI and gateway versions aligned ([#392](https://github.com/open-neko/openneko/pull/392))
+
 ## [3.11.1](https://github.com/open-neko/openneko/compare/v3.11.0...v3.11.1) (2026-10-01)
 
 
