@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.1](https://github.com/open-neko/openneko/compare/v3.12.0...v3.12.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* make agent runtime readable to OpenShell sandbox users ([#395](https://github.com/open-neko/openneko/issues/395)) ([1150c13](https://github.com/open-neko/openneko/commit/1150c137ebba49bf91ac47422d6e7e05a9949e60))
+
 ## [3.12.0](https://github.com/open-neko/openneko/compare/v3.11.1...v3.12.0) (2026-10-01)
 
 
