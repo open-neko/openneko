@@ -64,6 +64,7 @@ try {
   await updateWorkflowApiLimits({ orgId, workflowId, actor,
     limits: { maxModelCalls: 48, maxTokensPerRun: 100_000, maxCostMicrosPerRun: 1_000_000 } });
   const clientFingerprint = `harness-compaction-${orgId}`;
+  const workflowStartedAt = Date.now();
   const admitted = await admitWorkflowApiRun({ workflowId, token,
     idempotencyKey: `compaction-approval-${randomUUID()}`, mode: "single",
     value: { reference: "REF-42", constraint: "Never execute a change without approval" }, clientFingerprint });
@@ -82,6 +83,7 @@ try {
   const checkpointBytes = await readFile(join(checkpointRoot,
     `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`));
   const checkpoint = JSON.parse(checkpointBytes.toString("utf8")) as {
+      spec?: { host_budget_mode?: string };
       result: { status: string; answer?: string; code?: string; cost?: { charged_micros: number } };
       events: Array<{ type: string; stage?: string; origin?: string; name?: string; operation_id?: number; call_id?: number; cost_micros?: number;
         data?: { version?: string; choice?: string; suggested_profile?: string; probabilities?: Record<string, number>;
@@ -106,6 +108,7 @@ try {
   assert.equal(apiStatus?.status, "completed");
   assert.equal(run.status, "completed");
   assert.equal(checkpoint.result.status, "completed");
+  assert.equal(checkpoint.spec?.host_budget_mode ?? "", process.env.OPENNEKO_HARNESS_BUDGET_CANARY === "1" ? "canary" : "");
   assert.match(checkpoint.result.answer ?? "", /pending approval/);
   assert.equal(counts[`ordinary:${model}`], 10);
   assert.ok((counts[`summary:${model}`] ?? 0) >= 1, "Ax did not compact the approval trajectory");
@@ -161,7 +164,7 @@ try {
   assert.equal((await pool().query("select count(*)::int as n from action_request where workflow_run_id=$1", [admitted.runId])).rows[0].n, 1);
   assert.equal((await pool().query("select count(*)::int as n from workflow_output where workflow_run_id=$1", [admitted.runId])).rows[0].n, 1);
   assert.equal(effectCount, 0);
-  if (process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1") {
+  if (process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1" && process.env.OPENNEKO_HARNESS_BUDGET_CANARY !== "1") {
     assert.ok(process.env.HARNESS_BUDGET_EVAL_MANIFEST);
     await writeFile(process.env.HARNESS_BUDGET_EVAL_MANIFEST, JSON.stringify({version: 1, cases: [{
       id: "connected-approval-compaction", root: checkpointRoot, run_id: run.work_run_id,
@@ -169,6 +172,18 @@ try {
       split: "calibration", source: "synthetic",
       label: {task_class: "investigation", outcome: "verified_success", wall_ms: 0},
     }]}));
+  }
+  if (process.env.HARNESS_BUDGET_COMPARISON_REPORT) {
+    await writeFile(process.env.HARNESS_BUDGET_COMPARISON_REPORT, JSON.stringify({
+      mode: checkpoint.spec?.host_budget_mode === "canary" ? "canary" : "fixed",
+      verified: apiStatus?.status === "completed" && checkpoint.result.status === "completed" &&
+        request.status === "pending_approval" && outputs.length === 1 && executions === 0 && effectCount === 0,
+      modelCalls: checkpoint.events.filter(event => event.type === "model.request.started").length,
+      ordinaryCalls: counts[`ordinary:${model}`] ?? 0,
+      triageCalls: counts["jev-fixture"] ?? 0,
+      chargedMicros: checkpoint.result.cost?.charged_micros ?? null,
+      wallMS: Date.now() - workflowStartedAt,
+    }));
   }
   console.log("M6_CONNECTED_WORKFLOW_APPROVAL_COMPACTION_PASS", run.work_run_id);
 } finally {
