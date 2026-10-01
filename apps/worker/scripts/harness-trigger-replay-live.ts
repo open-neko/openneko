@@ -2,13 +2,13 @@
 // the production workflow handler, Ax, the host broker and OpenShell.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
-import { shutdownAgentBroker } from "@neko/llm/work";
+import { getOrgAgentRoot, shutdownAgentBroker } from "@neko/llm/work";
 import { claimSourceChangeDelivery, claimWorkflowScheduleFiring, createSubscription, dispatchPendingSourceChangeDeliveries, handleSourceChangeMatch, materializeDueWorkflowFirings, prepareWorkflowRunForDelivery, reclaimQueuedSourceChangeDelivery, reclaimQueuedWorkflowScheduleFiring, recordSourceChangeDelivery, runWorkflowTurn, startSubscriptionManager } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runDurableWorkflowSchedulerTick } from "../src/workflow-scheduler.js";
@@ -52,6 +52,39 @@ async function modelCalls():Promise<Record<string,number>> {
   const response=await fetch(control);
   assert.equal(response.status,200);
   return response.json() as Promise<Record<string,number>>;
+}
+
+async function verifiedOutputCheckpoint(workRunId:string):Promise<string> {
+  const file=join(getOrgAgentRoot(orgId),"runs",workRunId,".harness",
+    `${createHash("sha256").update(workRunId).digest("hex")}.json`);
+  const contents=await readFile(file,"utf8");
+  const checkpoint=JSON.parse(contents) as {
+    result?:{status:string};
+    events:Array<{type:string;origin?:string;terminal?:{accepted:boolean;evidence_ids?:number[]}}>;
+    operations:Array<{id:number;tool?:string;binding?:string;finished:boolean;error?:string;result?:{ok?:boolean;outputId?:string;kind?:string}}>;
+  };
+  assert.equal(checkpoint.result?.status,"completed");
+  const terminal=checkpoint.events.find(event=>event.type==="terminal.checked");
+  assert.equal(terminal?.origin,"openneko-workflow-output-v1");
+  assert.equal(terminal.terminal?.accepted,true);
+  const ids=terminal.terminal.evidence_ids;
+  assert.ok(ids?.length,"terminal gate must cite a broker-confirmed output");
+  assert.ok(checkpoint.events.findIndex(event=>event.type==="terminal.checked") <
+    checkpoint.events.findIndex(event=>event.type==="run.finished"));
+  for(const id of ids){
+    const operation=checkpoint.operations.find(item=>item.id===id);
+    assert.equal(operation?.tool,"workflow_output_emit");
+    assert.equal(operation?.finished,true);
+    assert.equal(operation?.error,undefined);
+    assert.equal(operation?.result?.ok,true);
+    assert.ok(operation.result.outputId);
+    assert.ok(operation.result.kind);
+    const [receipt]=(await pool().query<{result:{ok:boolean;outputId:string;kind:string}}>(
+      `select result from harness_operation where org_id=$1 and run_id=$2 and operation_id=$3
+         and request->>'tool'='workflow_output'`,[orgId,workRunId,id])).rows;
+    assert.deepEqual(receipt?.result,operation.result);
+  }
+  return contents;
 }
 
 try {
@@ -116,6 +149,7 @@ try {
   assert.equal(first.action,"enqueued",JSON.stringify(first));
   if(first.action!=="enqueued" || !first.jobId)throw Error("source event not queued");
   const sourceRun=await waitForWorkflow(sourceWorkflow.id,first.jobId);
+  const sourceCheckpoint=await verifiedOutputCheckpoint(sourceRun.work_run_id);
   const [delivery]=(await pool().query<{id:string;status:string;workflow_run_id:string}>(
     "select id,status,workflow_run_id from source_change_delivery where org_id=$1 and subscription_id=$2",
     [orgId,subscription.id])).rows;
@@ -133,6 +167,8 @@ try {
   assert.ok(sourceJob);
   await runWorkflowRunFire(sourceJob.data as WorkflowRunFirePayload);
   assert.deepEqual(await modelCalls(),sourceCalls,"source redelivery called the model again");
+  assert.equal(await verifiedOutputCheckpoint(sourceRun.work_run_id),sourceCheckpoint,
+    "source redelivery changed the terminal checkpoint");
   assert.equal((await pool().query(
     "select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
     [orgId,sourceWorkflow.id])).rows[0].n,1);
@@ -162,6 +198,7 @@ try {
     [orgId,cronWorkflow.id])).rows;
   assert.ok(firing?.queue_job_id);
   const cronRun=await waitForWorkflow(cronWorkflow.id,firing.queue_job_id);
+  const cronCheckpoint=await verifiedOutputCheckpoint(cronRun.work_run_id);
   assert.equal((await pool().query(
     "select status from workflow_schedule_firing where id=$1",[firing.id])).rows[0].status,"completed");
   const cronCalls=await modelCalls();
@@ -169,6 +206,9 @@ try {
   assert.ok(cronJob);
   await runWorkflowRunFire(cronJob.data as WorkflowRunFirePayload);
   assert.deepEqual(await modelCalls(),cronCalls,"cron redelivery called the model again");
+  assert.equal(await verifiedOutputCheckpoint(cronRun.work_run_id),cronCheckpoint,
+    "cron redelivery changed the terminal checkpoint");
+  console.log("M6_CONNECTED_WORKFLOW_TERMINAL_REPLAY_PASS",sourceRun.work_run_id,cronRun.work_run_id);
   assert.equal((await pool().query(
     "select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
     [orgId,cronWorkflow.id])).rows[0].n,1);
