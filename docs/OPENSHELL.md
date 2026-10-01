@@ -16,6 +16,52 @@ Evidence levels used below:
 
 Research below is supplemented by [M2's initial live compatibility results](../integration/README.md). A separate 0.0.116 test gateway/sandbox now passes synthetic HTTP credential and policy checks; the active application stack was not changed and no real-provider credentials or requests were used. Read-only worker/queue/browser gates now have local evidence in [M3 acceptance](../integration/openneko/README.md); M4 recovery also has [live acceptance evidence](M4-RECOVERY.md). Upstream idle-stream cancellation is an accepted nonblocking limitation as of 2026-09-20; provider work may consume additional tokens until closure or sandbox teardown.
 
+### OpenShell 0.1.2 migration gate (2026-10-02)
+
+OpenNeko main is expected to move to 0.1.2. Harness currently qualifies only
+0.0.116: `adapters/openneko/cmd/openshell-compat` explicitly rejects another
+CLI version, the isolated gateway image and scripts pin 0.0.116, and the
+OpenNeko consumer binding hashes that CLI. Do not widen the shim's version
+check or repoint the suite at 0.1.2 and call it compatible.
+
+The breaking boundary is primarily 0.1.0, which 0.1.2 includes. The
+[official upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)
+says 0.0.x installations cannot upgrade in place, 0.0.x sandboxes must be
+recreated, and mixed 0.0.x/0.1.x peers are unsupported. It also requires
+schema-v2 gateway configuration, explicit provider-profile import, explicit
+provider attachment, and updates to authored policy and SDK contracts. The
+[0.1.2 release](https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.2)
+adds fixes on top of that boundary; its short release notes are not a migration
+guide.
+
+For our CLI-based path, verify these exact surfaces against a disposable 0.1.2
+gateway and CLI before updating the OpenNeko branch:
+
+1. Generate certificates and start the gateway with schema-v2 configuration;
+   check readiness and telemetry without touching an existing gateway.
+2. Import the OpenNeko credential-only profile explicitly, create and attach
+   a synthetic provider, and prove `openshell:resolve:env:…` replacement at the
+   intended destination, plus denial at a different destination. Confirm
+   rotation and late attachment semantics for a **new** process.
+3. Validate the generated run policy and built image under 0.1.2's stricter
+   policy and image rules. Create, upload, exec, download, cancel, and delete
+   one sandbox; reconcile deletion by observed absence, not the initial
+   accepted response.
+4. Run the isolated Harness worker/queue and web gates, including multi-route
+   Ax credentials, streaming first content, workflow output publication,
+   replay, and unchanged Hermes behavior. Keep 0.0.116 coverage until the
+   0.1.2 gate passes, then replace the compatibility shim or keep it as an
+   explicit legacy adapter.
+
+OpenNeko's existing sandbox creation already supplies `--provider` and a
+prebuilt image, so those two migration rules appear aligned on source review.
+The live CLI behavior, generated policy, provider profile, gateway config and
+process cleanup remain unqualified. The official guide also changes mutation
+retry semantics: admitted work can outlive cancellation, so a failed exec or
+delete must be reconciled using the same request identity rather than blindly
+reissued. See the [0.1.0 upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)
+for the exact contract.
+
 ## 1. Recommendation
 
 Run AxAgent and its Goja actor runtime inside an OpenShell sandbox. Keep the consumer's trusted control plane, persistence, authorization and broker outside. Let Ax select approved native provider routes, and let OpenShell substitute provider credentials on inspected outbound HTTP traffic.
