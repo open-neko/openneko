@@ -1006,7 +1006,10 @@ remain open for connected qualification.
 The OpenNeko feature branch now validates and forwards that projection as a
 metadata-only `model.stage_usage` observation. Its summary accumulator excludes
 the attribution view from additive run usage; focused LLM/telemetry tests and
-worker typecheck pass. Connected OTLP export is still to be qualified.
+worker typecheck pass. A connected queued worker run now exports
+`model.stage_usage`, the stage label and request count through a local OTLP
+receiver; the export contains the run ID and excludes the workflow prompt.
+Exact per-call stage/cost attribution remains open.
 The Go route manifest now accepts a versioned, complete per-route upper-bound
 price profile and an optional GraphJin server-agent price. Price changes alter
 the trusted route digest, so a resumed run cannot silently switch accounting
