@@ -933,11 +933,11 @@ result from the parent's live runtime through the same numeric ID.
 Connected tenant-isolation and larger file-backed result qualification remain
 open.
 The OpenNeko branch now has an opt-in trusted route manifest for Harness-only
-multi-provider OpenShell launches. Local launcher tests check provider attach
-order, distinct credential aliases, route-specific egress, recovery manifest
+multi-provider OpenShell launches. Local launcher tests check provider order,
+distinct credential aliases, route-specific egress, recovery manifest
 propagation and Hermes isolation. The Go inspector derives the same route digest
-without model credentials and rejects a changed manifest. Live gateway
-credential replacement and worker execution still need connected proof.
+without model credentials and rejects a changed manifest. Connected gateway
+credential replacement and worker execution now pass with synthetic providers.
 An optional `skill` route now sends semantic skill selection through a separate
 Ax call before the main agent. Exact-name matching uses no model. Go tests
 verified the cheap selection route, catalog-validated hint, shared model-call
@@ -972,8 +972,9 @@ it into outer Ax usage; durable replay retains that projection. The OpenNeko
 adapter now passes this receipt to API admission and metadata-only telemetry,
 so nested `usage` fields in result data cannot masquerade as GraphJin agent
 usage. Reported server LLM calls count toward a queued API call ceiling after
-the broker receipt is persisted. Cost and model-profile checks
-still require a connected GraphJin/OpenShell qualification.
+the broker receipt is persisted. The connected worker run confirms the server
+model profile and separate remote-usage receipt; a priced GraphJin deployment
+still needs qualification.
 The pinned Ax Go build passed deterministic `AxRunControl.Steer` fixtures:
 guidance queued inside an executor tool result reached the responder, while
 root-targeted guidance from a distiller result reached both executor and
@@ -1017,8 +1018,11 @@ cost replacing its reservation. OpenNeko's feature branch now passes its
 queued workflow API cost claim through the accepted launch, recovery input and
 sandbox adapter. It preserves the host price manifest and exports one run-level
 estimated cost observation with a pinned pricing version. Focused Go, worker
-and telemetry fixtures pass. Connected multi-route pricing and a real GraphJin
-server cost profile remain to be qualified.
+and telemetry fixtures pass. A connected OpenShell run now charges three
+distinct priced outer routes at 15, 30 and 45 micro-units, producing a 90-unit
+terminal total under the pinned price version. A budget below the first
+reservation denied dispatch with zero new upstream calls. A real priced
+GraphJin server profile remains to be qualified.
 An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
 diagnostics: three read turns with 14 KiB console observations grew an executor
 request past 80 KiB and triggered an extra summary request. The Harness now

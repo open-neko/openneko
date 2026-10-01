@@ -59,8 +59,8 @@ YAML
   --provider harness-m6-context-403 --provider harness-m6-context-429 --provider harness-m6-executor --provider harness-m6-executor-base \
   --provider harness-m6-executor-strong --provider harness-m6-responder \
   --no-auto-providers --no-tty --detach --policy "$state/m6-policy.yaml" -- sleep infinity
-manifest='{"context":"context","executor":"executor","responder":"responder","routes":[{"key":"context","model":"harness-route-context","url":"http://host.docker.internal:18118/route/context/v1","api_key_env":"HARNESS_CONTEXT_KEY"},{"key":"executor","model":"harness-route-executor","url":"http://host.docker.internal:18118/route/executor/v1","api_key_env":"HARNESS_EXECUTOR_KEY"},{"key":"responder","model":"harness-route-responder","url":"http://host.docker.internal:18118/route/responder/v1","api_key_env":"HARNESS_RESPONDER_KEY"}]}'
-spec='{"version":1,"run_id":"m6-routing","input_id":"m6-routing-input","prompt":"Answer the routing check"}'
+manifest='{"context":"context","executor":"executor","responder":"responder","pricing_version":"m6-test-v1","routes":[{"key":"context","model":"harness-route-context","url":"http://host.docker.internal:18118/route/context/v1","api_key_env":"HARNESS_CONTEXT_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}},{"key":"executor","model":"harness-route-executor","url":"http://host.docker.internal:18118/route/executor/v1","api_key_env":"HARNESS_EXECUTOR_KEY","price":{"input_micros_per_million":2000000,"output_micros_per_million":2000000}},{"key":"responder","model":"harness-route-responder","url":"http://host.docker.internal:18118/route/responder/v1","api_key_env":"HARNESS_RESPONDER_KEY","price":{"input_micros_per_million":3000000,"output_micros_per_million":3000000}}]}'
+spec='{"version":1,"run_id":"m6-routing","input_id":"m6-routing-input","prompt":"Answer the routing check","max_cost_micros":50000}'
 "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
   export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
   printf "%s" "$2" | /usr/local/bin/harness-openneko
@@ -72,8 +72,10 @@ routes=[(e.get('origin'),e.get('name')) for e in events if e.get('type')=='model
 assert routes == [('context','harness-route-context'),('executor','harness-route-executor'),('responder','harness-route-responder')], routes
 done=[e for e in events if e.get('type')=='run.finished']
 assert len(done)==1 and done[0]['result']['status']=='completed' and done[0]['result']['answer']=='ROUTED-OK',done
+assert done[0]['result']['cost']=={'pricing_version':'m6-test-v1','charged_micros':90,'budget_micros':50000},done
 usage=[e for e in events if e.get('type')=='model.request.finished']
 assert len(usage)==3 and all(e.get('usage',{}).get('reported')==1 and e['usage'].get('total_tokens')==15 for e in usage),usage
+assert [e.get('cost_micros') for e in usage]==[15,30,45],usage
 stages=[e for e in events if e.get('type')=='model.stage_usage']
 assert {e['name'] for e in stages}=={'distiller','executor','responder'} and all(e.get('stage_usage',{}).get('coverage')=='complete' for e in stages),stages
 PY
@@ -85,6 +87,30 @@ for stage in ('context','executor','responder'):
  assert counts.get('harness-route-'+stage)==1,counts
 PY
 echo M6_CONNECTED_OPENSHELL_ROUTING_PASS
+
+spec='{"version":1,"run_id":"m6-cost-denied","input_id":"m6-cost-denied-input","prompt":"Answer the routing check","max_cost_micros":4095}'
+if "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  printf "%s" "$2" | /usr/local/bin/harness-openneko
+' sh "$manifest" "$spec" > "$state/m6-cost-denied-events.jsonl"; then
+  echo 'cost gate admitted a model request' >&2
+  exit 1
+fi
+python3 - "$state/m6-cost-denied-events.jsonl" <<'PY'
+import json,sys
+events=[json.loads(line) for line in open(sys.argv[1]) if line.startswith('{')]
+assert not [e for e in events if e.get('type')=='model.request.started'],events
+done=[e for e in events if e.get('type')=='run.finished']
+assert len(done)==1 and done[0]['result'].get('code')=='cost_budget_exceeded',done
+PY
+counts=$(curl -fsS http://127.0.0.1:18118/control)
+python3 - "$counts" <<'PY'
+import json,sys
+counts=json.loads(sys.argv[1])
+for stage in ('context','executor','responder'):
+ assert counts.get('harness-route-'+stage)==1,counts
+PY
+echo M6_CONNECTED_OPENSHELL_COST_GATE_PASS
 
 for status in 503 403 429; do
   curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
