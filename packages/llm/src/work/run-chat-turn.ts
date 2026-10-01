@@ -338,6 +338,7 @@ async function runChatTurnTraced(
     }
     toolRecorder.observe(event);
     await eventTelemetry.observeEvent(event);
+    if (event.type === "model_call") return;
     await emit(event);
     if (((event.type === "message" && event.role === "assistant" && event.content) || event.type === "provisional_answer" || event.type === "surface") && !firstOutputLogged) {
       firstOutputLogged = true;

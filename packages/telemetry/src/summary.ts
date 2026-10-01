@@ -93,6 +93,12 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
     this.value.provider ??= asString(attrs["gen_ai.provider.name"]);
     this.value.requestedModel ??= asString(attrs["gen_ai.request.model"]);
     this.value.resolvedModel ??= asString(attrs["gen_ai.response.model"]);
+    // A Harness turn may route planning and execution differently. Present
+    // the responder as the resolved outer model while preserving per-call spans.
+    if (attrs["openneko.agent.stage"] === "responder" && observation.kind === "model.response") {
+      this.value.provider = asString(attrs["gen_ai.provider.name"]) ?? this.value.provider;
+      this.value.resolvedModel = asString(attrs["gen_ai.response.model"]) ?? this.value.resolvedModel;
+    }
     this.value.dataPath ??= asString(attrs["openneko.data.path"]);
     this.value.productPath ??= asString(attrs["openneko.product.path"]);
 

@@ -410,6 +410,7 @@ async function runWorkflowTurnTraced(
       needsInput = true;
     }
     await eventTelemetry.observeEvent(event);
+    if (event.type === "model_call") return;
     await emit(event);
   };
 

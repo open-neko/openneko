@@ -134,6 +134,18 @@ export type AgentEvent =
       modelIdentity?: AgentModelIdentityAttestation;
       usage: AgentTokenUsage;
     }
+  /** Content-free Go Harness model receipt, used for per-call routing telemetry. */
+  | {
+      type: "model_call";
+      phase: "started" | "finished";
+      callId: number;
+      model: string;
+      provider: string;
+      stage: string;
+      durationMs?: number;
+      usageCoverage?: "complete" | "unavailable";
+      failed?: boolean;
+    }
   /** Host-admission charge for all Harness model work, including GraphJin. */
   | { type: "cost"; source: "harness"; chargedMicros: number; budgetMicros: number; pricingVersion: string }
   /** Ax stage attribution is diagnostic and must not be added to run usage. */

@@ -110,6 +110,11 @@ export class HarnessBackend implements AgentBackend {
                     const stage = harnessStageUsage(event);
                     if (stage) await opts.onEvent?.(stage);
                 }
+                else if (event.type === "model.request.started" || event.type === "model.request.finished") {
+                    const call = harnessModelCall(event);
+                    // Telemetry must never fail an otherwise valid agent run.
+                    if (call) await opts.onEvent?.(call);
+                }
                 else if (event.type === "tool.started") {
                     const name = event.name === "propose" ? "neko_action_proposal" : event.name === "lookup" ? "neko_graphjin_agent" : event.name === "mcp_memory_search" ? "mcp_neko_memory_search" : event.name;
                     await opts.onEvent?.({ type: "tool_start", id: `harness-operation-${event.operation_id}`, name });
@@ -162,6 +167,25 @@ export function harnessProvisionalAnswer(raw: unknown): Extract<AgentEvent, {typ
         data.index !== 0 || typeof data.text !== "string" || !data.text || Buffer.byteLength(data.text, "utf8") > 65536)
         return undefined;
     return {type: "provisional_answer", version: data.version as number, index: 0, text: data.text};
+}
+
+/** Keep the Go journal's actual route identity without forwarding model content. */
+export function harnessModelCall(raw: unknown): Extract<AgentEvent, {type: "model_call"}> | undefined {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const event = raw as Record<string, unknown>;
+    const phase = event.type === "model.request.started" ? "started" : event.type === "model.request.finished" ? "finished" : undefined;
+    const safeText = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f\x7f]/.test(value);
+    if (!phase || !Number.isSafeInteger(event.call_id) || (event.call_id as number) < 1 || (event.call_id as number) > 64 ||
+        !safeText(event.name) || event.origin !== undefined && !safeText(event.origin) ||
+        event.stage !== undefined && (typeof event.stage !== "string" || event.stage.length > 64 || !/^[A-Za-z0-9._-]*$/.test(event.stage))) return undefined;
+    const duration = event.duration_ms;
+    if (phase === "finished" && (!Number.isSafeInteger(duration) || (duration as number) < 0 || (duration as number) > 86_400_000)) return undefined;
+    const usage = event.usage && typeof event.usage === "object" ? event.usage as Record<string, unknown> : undefined;
+    return {type:"model_call",phase,callId:event.call_id as number,model:event.name as string,provider:(event.origin as string | undefined) || "unknown",
+        stage:(event.stage as string | undefined) || "unattributed",
+        ...(phase === "finished" ? {durationMs:duration as number,
+            usageCoverage:usage?.reported === 1 && usage.coverage === "complete" ? "complete" as const : "unavailable" as const,
+            failed:Boolean(event.error)} : {})};
 }
 
 /** A diagnostic projection of Ax stage usage. It never feeds spend admission. */

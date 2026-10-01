@@ -37,7 +37,9 @@ export function createAgentEventTelemetry(input: {
   const stageOperationId = `${input.operationId}:agent`;
   const modelOperationId = `${input.operationId}:model:1`;
   const toolStarts = new Map<string, { name: string; startedAt: number }>();
+  const modelCalls = new Map<number, {model:string; provider:string; stage:string; startedAt:number}>();
   let agentStartedAt = Date.now();
+  let backendKind = "";
   let firstOutputObserved = false;
   let stageOpen = false;
   let modelOpen = false;
@@ -62,6 +64,27 @@ export function createAgentEventTelemetry(input: {
   };
 
   const observeEvent = async (event: AgentEvent): Promise<void> => {
+    if (event.type === "model_call") {
+      const operationId = `${input.operationId}:model-call:${event.callId}`;
+      const attributes = {"openneko.model.scope":"outer", "openneko.agent.stage":event.stage,
+        "openneko.model.call_id":event.callId,
+        "gen_ai.provider.name":event.provider,
+        "gen_ai.request.model":event.model};
+      if (event.phase === "started") {
+        if (modelCalls.has(event.callId)) return;
+        modelCalls.set(event.callId,{model:event.model,provider:event.provider,stage:event.stage,startedAt:Date.now()});
+        await observe({kind:"model.request",operationId,parentOperationId:stageOperationId,attributes});
+      } else {
+        const prior = modelCalls.get(event.callId);
+        modelCalls.delete(event.callId);
+        await observe({kind:"model.response",operationId,parentOperationId:stageOperationId,
+          status:event.failed ? "error" : "ok",...(event.failed ? {errorType:"model_request_failed"} : {}),
+          attributes:{...attributes,"gen_ai.response.model":event.model},
+          measurements:{durationMs:event.durationMs ?? (prior ? Date.now()-prior.startedAt : 0),
+            coverage:event.usageCoverage ?? "unavailable"}});
+      }
+      return;
+    }
     if (
       !firstOutputObserved &&
       ((event.type === "message" && event.role === "assistant") ||
@@ -244,11 +267,24 @@ export function createAgentEventTelemetry(input: {
     }
   };
 
+  const closeModelCalls = async (reason: string): Promise<void> => {
+    for (const [callId, call] of modelCalls) {
+      await observe({kind:"model.response",operationId:`${input.operationId}:model-call:${callId}`,
+        parentOperationId:stageOperationId,status:"error",errorType:"model_receipt_missing",
+        attributes:{"openneko.model.scope":"outer","openneko.agent.stage":call.stage,
+          "openneko.model.call_id":callId,"gen_ai.provider.name":call.provider,
+          "gen_ai.response.model":call.model},
+        measurements:{durationMs:Date.now()-call.startedAt,coverage:"unavailable",missingReasons:[reason]}});
+    }
+    modelCalls.clear();
+  };
+
   const startAgent = async (metadata: {
     backend: string;
     model?: string;
     inputBytes?: number;
   }): Promise<void> => {
+    backendKind = metadata.backend;
     agentStartedAt = Date.now();
     await observe({
       kind: "stage.start",
@@ -257,6 +293,7 @@ export function createAgentEventTelemetry(input: {
       attributes: { "openneko.stage": "agent" },
     });
     stageOpen = true;
+    if (backendKind === "harness") return;
     await observe({
       kind: "model.request",
       operationId: modelOperationId,
@@ -285,7 +322,8 @@ export function createAgentEventTelemetry(input: {
     cost?: Extract<AgentEvent, {type: "cost"}>;
   }): Promise<void> => {
     if (result.cost) await observeCost(result.cost);
-    await observe({
+    await closeModelCalls("Harness model finish receipt missing");
+    if (backendKind !== "harness") await observe({
       kind: "model.response",
       operationId: modelOperationId,
       parentOperationId: stageOperationId,
@@ -320,7 +358,8 @@ export function createAgentEventTelemetry(input: {
       attributes: { "openneko.stage": "agent" },
       measurements: {
         durationMs: Date.now() - agentStartedAt,
-        coverage: "unavailable",
+        ...(backendKind === "harness" ? outerUsage?.usage ?? {coverage:"unavailable" as const,
+          missingReasons:["backend emitted no normalized usage"]} : {coverage:"unavailable" as const}),
       },
     });
     stageOpen = false;
@@ -332,6 +371,7 @@ export function createAgentEventTelemetry(input: {
     errorType?: string;
     usageMissingReason: string;
   }): Promise<void> => {
+    await closeModelCalls(result.usageMissingReason);
     for (const [toolId, tool] of toolStarts) {
       if (isGraphjinAgentTool(tool.name)) {
         await observe({
@@ -405,7 +445,8 @@ export function createAgentEventTelemetry(input: {
         },
         measurements: {
           durationMs: Date.now() - agentStartedAt,
-          coverage: "unavailable",
+          ...(backendKind === "harness" ? outerUsage?.usage ?? {coverage:"unavailable" as const,
+            missingReasons:[result.usageMissingReason]} : {coverage:"unavailable" as const}),
         },
       });
       stageOpen = false;

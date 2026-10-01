@@ -57,6 +57,13 @@ try {
   const drafts=await db().select({id:work_run_event.id}).from(work_run_event)
     .where(and(eq(work_run_event.run_id,run.id),eq(work_run_event.kind,"provisional_answer")));
   assert.equal(drafts.length,0,"draft leaked into durable run events");
+  const modelReceipts=await db().select({id:work_run_event.id}).from(work_run_event)
+    .where(and(eq(work_run_event.run_id,run.id),eq(work_run_event.kind,"model_call")));
+  assert.equal(modelReceipts.length,0,"internal model metadata leaked into Work events");
+  const telemetry=(await pool().query<{summary:{counts?:{inference?:number};requestedModel?:string;resolvedModel?:string}}>(
+    "SELECT payload->'summary' AS summary FROM work_run_event WHERE run_id=$1 AND kind='telemetry' ORDER BY id DESC LIMIT 1",[run.id])).rows[0]?.summary;
+  assert.ok((telemetry?.counts?.inference ?? 0)>1,"summary counted a Harness turn instead of actual model calls");
+  assert.equal(telemetry?.resolvedModel,"harness-stream-fixture");
   console.log("M6_QUEUED_BROWSER_STREAMING_PASS",run.id);
 } finally {
   browser.kill("SIGTERM");
