@@ -722,6 +722,10 @@ function makeSandboxCore(
       throw new Error("Invalid workflow cost ceiling");
     }
     const triageShadowEnabled = input.backend.id === "harness" && process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1";
+    const budgetCanaryEnabled = input.backend.id === "harness" && kind === "workflow" && process.env.OPENNEKO_HARNESS_BUDGET_CANARY === "1";
+    if (budgetCanaryEnabled && (!triageShadowEnabled || !requestedCostMicros)) {
+      throw new Error("Harness budget canary requires triage and a pinned workflow cost ceiling");
+    }
     const streamResponses = input.backend.id === "harness" && process.env.OPENNEKO_HARNESS_STREAM_RESPONSES === "1";
     const started = performance.now();
     const timed = async <T>(
@@ -786,9 +790,11 @@ function makeSandboxCore(
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       const inspect = (args:string[], payload:string) => local
         ? runProcessOnce(harnessInspector(), args, 30_000, signal, payload, {NODE_ENV: process.env.NODE_ENV, HARNESS_STATE_DIR: state,
+            HARNESS_BUDGET_MODE: budgetCanaryEnabled ? "canary" : "",
             ...(routing ? {HARNESS_MODEL_ROUTES: routing.manifest} : {})})
         : run(["sandbox", "exec", "-n", name, "--no-tty", "--", "/usr/bin/env",
             `HARNESS_STATE_DIR=${path.posix.join(boxWorkspace.runRoot, ".harness")}`,
+            `HARNESS_BUDGET_MODE=${budgetCanaryEnabled ? "canary" : ""}`,
             ...(routing ? [`HARNESS_MODEL_ROUTES=${routing.manifest}`] : []),
             "/usr/local/bin/harness-inspect", ...args], 30_000, payload);
       let output: string;
@@ -1257,6 +1263,7 @@ function makeSandboxCore(
             ...(routing ? { HARNESS_MODEL_ROUTES: routing.manifest } : {}),
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: actionGrants.length ? JSON.stringify(actionGrants.map(action => action.kind)) : "" } : {}),
             ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit), OPENNEKO_HARNESS_MAX_MODEL_TOKENS: String(harnessModelTokenLimit),
+              HARNESS_BUDGET_MODE: budgetCanaryEnabled ? "canary" : "",
               ...(requestedCostMicros ? {OPENNEKO_HARNESS_MAX_COST_MICROS: String(requestedCostMicros)} : {}),
               ...(triageShadowEnabled ? {OPENNEKO_HARNESS_TRIAGE_SHADOW: "1"} : {}),
               ...(streamResponses ? {OPENNEKO_HARNESS_STREAM_RESPONSES: "1"} : {}),

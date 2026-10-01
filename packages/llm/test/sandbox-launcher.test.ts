@@ -1237,7 +1237,9 @@ describe("makeSandboxRunCore", () => {
   it("pins a trusted workflow artifact signal in launch and recovery triage input", async () => {
     const root = await mkdtemp(join(tmpdir(), "harness-triage-artifact-"));
     const previous = process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW;
+    const previousCanary = process.env.OPENNEKO_HARNESS_BUDGET_CANARY;
     process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW = "1";
+    process.env.OPENNEKO_HARNESS_BUDGET_CANARY = "1";
     try {
       const price = {input_micros_per_million: 1_000_000, output_micros_per_million: 1_000_000};
       const routing = parseHarnessRouting(JSON.stringify({context: "work", executor: "work", responder: "work",
@@ -1259,14 +1261,18 @@ describe("makeSandboxRunCore", () => {
       h.state.execLines = [];
       await expect(core(input)).rejects.toThrow("without a result");
       expect(jobCapture.jobs.at(-1)).toMatchObject({agentRun: {budgetTriageArtifactRequested: true}});
+      expect(h.calls.some(call => call.args.join(" ").includes("HARNESS_BUDGET_MODE") && call.args.join(" ").includes("canary"))).toBe(true);
       h.state.inspections = [JSON.stringify({version: 1, run_id: input.runId, outcome: "outcome_unknown",
         can_resume: false, operations: []})];
       await expect(core(input)).rejects.toThrow();
       const inspect = h.calls.find(call => call.args.some(arg => arg.includes("harness-inspect")) && call.stdin?.includes('"triage_artifact_requested":true'));
       expect(inspect?.stdin).toContain('"triage_tool_families":"file,graphjin,workflow"');
+      expect(inspect?.args.some(arg => arg === "HARNESS_BUDGET_MODE=canary")).toBe(true);
     } finally {
       if (previous === undefined) delete process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW;
       else process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW = previous;
+      if (previousCanary === undefined) delete process.env.OPENNEKO_HARNESS_BUDGET_CANARY;
+      else process.env.OPENNEKO_HARNESS_BUDGET_CANARY = previousCanary;
       await rm(root, {recursive: true, force: true});
     }
   });
