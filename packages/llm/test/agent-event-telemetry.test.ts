@@ -81,6 +81,24 @@ describe("agent event telemetry", () => {
       counts:{inference:2},usage:{totalTokens:40,coverage:"complete"}});
     expect(JSON.stringify(sink.observations)).not.toContain("configured-alias");
   });
+  it("uses ordinary outer routes when an unstaged Ax turn starts with budget triage", async () => {
+    const summary = new HarnessRunSummaryAccumulator("triaged-route-run");
+    const telemetry = createAgentEventTelemetry({observer:createHarnessObserver({runId:"triaged-route-run",sinks:[summary]}),operationId:"work:triaged-route-run"});
+    await telemetry.startAgent({backend:"harness"});
+    for (const [id,model,provider,stage] of [
+      [1,"jev-fixture","triage","budget_triage"],
+      [2,"context-fixture","context",""],
+      [3,"work-fixture","work",""],
+    ] as const) {
+      await telemetry.observeEvent({type:"model_call",phase:"started",callId:id,model,provider,stage});
+      await telemetry.observeEvent({type:"model_call",phase:"finished",callId:id,model,provider,stage,durationMs:12,
+        usage:{totalTokens:20,coverage:"complete"},chargedMicros:100});
+    }
+    await telemetry.observeEvent({type:"usage",source:"outer",usage:{totalTokens:60,coverage:"complete"}});
+    await telemetry.finishAgent({status:"ok",outputBytes:4});
+    expect(summary.snapshot()).toMatchObject({provider:"work",requestedModel:"context-fixture",resolvedModel:"work-fixture",
+      counts:{inference:3},usage:{totalTokens:60,coverage:"complete"}});
+  });
   it("exports metadata and byte counts without prompt, payload, or tool content", async () => {
     const sink = new MemoryObservationSink();
     const observer = createHarnessObserver({ runId: "run-1", sinks: [sink] });

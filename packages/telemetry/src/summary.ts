@@ -61,6 +61,7 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
   private readonly value: HarnessRunSummary;
   private sawUsageValue = false;
   private sawUsageGap = false;
+  private sawResponderModel = false;
 
   constructor(runId: string) {
     this.value = {
@@ -90,14 +91,21 @@ export class HarnessRunSummaryAccumulator implements ObservationSink {
     this.value.durations.queueMs ??= observation.measurements?.queueDurationMs;
     this.value.traceId ??= observation.traceId;
     this.value.backend ??= asString(attrs["openneko.backend"]);
-    this.value.provider ??= asString(attrs["gen_ai.provider.name"]);
-    this.value.requestedModel ??= asString(attrs["gen_ai.request.model"]);
-    this.value.resolvedModel ??= asString(attrs["gen_ai.response.model"]);
-    // A Harness turn may route planning and execution differently. Present
-    // the responder as the resolved outer model while preserving per-call spans.
-    if (attrs["openneko.agent.stage"] === "responder" && observation.kind === "model.response") {
+    const outerCall = attrs["openneko.model.scope"] === "outer_call";
+    const stage = attrs["openneko.agent.stage"];
+    const classifierCall = outerCall && stage === "budget_triage";
+    if (!classifierCall) {
+      this.value.provider ??= asString(attrs["gen_ai.provider.name"]);
+      this.value.requestedModel ??= asString(attrs["gen_ai.request.model"]);
+      this.value.resolvedModel ??= asString(attrs["gen_ai.response.model"]);
+    }
+    // Ax can leave the stage empty. Use the last ordinary outer response in
+    // that case, while an explicitly identified responder takes precedence.
+    if (outerCall && !classifierCall && observation.kind === "model.response" &&
+        (!this.sawResponderModel || stage === "responder")) {
       this.value.provider = asString(attrs["gen_ai.provider.name"]) ?? this.value.provider;
       this.value.resolvedModel = asString(attrs["gen_ai.response.model"]) ?? this.value.resolvedModel;
+      if (stage === "responder") this.sawResponderModel = true;
     }
     this.value.dataPath ??= asString(attrs["openneko.data.path"]);
     this.value.productPath ??= asString(attrs["openneko.product.path"]);

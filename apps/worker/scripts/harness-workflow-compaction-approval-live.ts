@@ -78,6 +78,11 @@ try {
   const [run] = (await pool().query<{ work_run_id: string; status: string; error: string | null }>(
     "select work_run_id,status,error from workflow_run where id=$1", [admitted.runId])).rows;
   assert.ok(run);
+  const [telemetryRow] = (await pool().query<{ telemetry_summary: {provider?: string; requestedModel?: string; resolvedModel?: string} | null }>(
+    "select telemetry_summary from workflow_run where id=$1", [admitted.runId])).rows;
+  assert.equal(telemetryRow?.telemetry_summary?.provider, "fixture");
+  assert.equal(telemetryRow?.telemetry_summary?.requestedModel, model);
+  assert.equal(telemetryRow?.telemetry_summary?.resolvedModel, model);
   const counts = await (await fetch(control)).json() as Record<string, number>;
   const checkpointRoot = join(getOrgAgentRoot(orgId), "runs", run.work_run_id, ".harness");
   const checkpointBytes = await readFile(join(checkpointRoot,
