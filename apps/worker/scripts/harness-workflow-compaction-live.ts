@@ -93,6 +93,13 @@ try {
   assert.equal(outputs.length, 1);
   assert.equal(outputs[0].kind, "file");
   assert.equal(outputs[0].artifact_path, "result.csv");
+  const [published] = (await pool().query<{ result_artifact_path: string | null; artifact_events: number }>(
+    `select r.result_artifact_path,
+       (select count(*)::int from work_run_event e where e.org_id=r.org_id and e.run_id=r.work_run_id and e.kind='artifact') as artifact_events
+     from workflow_run r where r.id=$1`, [run.id])).rows;
+  console.log("M6_CONNECTED_ARTIFACT_PUBLICATION", JSON.stringify(published));
+  assert.equal(published.result_artifact_path, `runs/${run.work_run_id}/artifacts/result.csv`);
+  assert.equal(published.artifact_events, 1);
   assert.equal((operations[1].result as { outputId?: string }).outputId, outputs[0].id);
   assert.equal(checkpoint.events.find(event => event.type === "terminal.checked")?.terminal?.accepted, true);
   const before = JSON.stringify({ counts, operations, outputs });
@@ -105,12 +112,21 @@ try {
   assert.equal(after, before, "completed queue redelivery repeated model or broker work");
   assert.equal(createHash("sha256").update(await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id,
     "artifacts", "result.csv"))).digest("hex"), createHash("sha256").update(expectedArtifact).digest("hex"));
+  if (process.env.HARNESS_M6_COMPACTION_WEB === "1") {
+    assert.ok(process.env.HARNESS_STATE);
+    await writeFile(join(process.env.HARNESS_STATE, "m6-compaction-work-run"), run.work_run_id);
+    await writeFile(join(process.env.HARNESS_STATE, "m6-compaction-workflow-run"), run.id);
+  }
   console.log("M6_CONNECTED_WORKFLOW_COMPACTION_PASS", run.work_run_id);
 } finally {
   await queue.stop({ graceful: true, timeout: 5_000 });
   await shutdownAgentBroker();
   await writeFile(configPath, priorConfig);
   await db().update(llm_provider_config).set({ model: prior.model }).where(eq(llm_provider_config.id, prior.id));
-  if (workflowId) await db().delete(workflow_definition).where(eq(workflow_definition.id, workflowId));
+  // The optional web gate needs the workflow/run rows after this process exits.
+  // Its isolated Postgres volume is removed when the gate completes.
+  if (workflowId && process.env.HARNESS_M6_COMPACTION_WEB !== "1") {
+    await db().delete(workflow_definition).where(eq(workflow_definition.id, workflowId));
+  }
   await pool().end();
 }

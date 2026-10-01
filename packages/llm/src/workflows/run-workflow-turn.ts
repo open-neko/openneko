@@ -20,6 +20,7 @@ import {
   setWorkRunValue,
 } from "../work/store";
 import { ensureWorkWorkspace } from "../work/workspace";
+import { discoverRunArtifacts } from "../work/artifacts";
 import { inProcessControlPlane } from "../work/control-plane";
 import { createAgentEventTelemetry } from "../work/agent-event-telemetry";
 import {
@@ -552,6 +553,37 @@ async function runWorkflowTurnTraced(
     persistedText = valueFence.text;
     const analysisMinutes = clampAnalysisMinutes(valueFence.payload?.minutes_saved);
 
+    let resultArtifactPath: string | null = null;
+    if (result.status === "completed") {
+      // A file output is a receipt, not a download grant. Only publish files
+      // actually returned to this run's artifact directory by the backend.
+      const files = await discoverRunArtifacts(workspace);
+      const emitted = await pool().query<{ artifact_path: string | null }>(
+        `SELECT artifact_path FROM workflow_output
+         WHERE org_id=$1 AND workflow_run_id=$2 AND work_run_id=$3
+           AND kind='file' AND artifact_path IS NOT NULL
+         ORDER BY created_at, id`,
+        [orgId, workflowRun.id, workRunId],
+      );
+      const priorEvents = await pool().query<{ path: string | null }>(
+        `SELECT payload->'artifact'->>'path' AS path FROM work_run_event
+         WHERE org_id=$1 AND run_id=$2 AND kind='artifact'`,
+        [orgId, workRunId],
+      );
+      const published = new Set(priorEvents.rows.map(row => row.path));
+      for (const output of emitted.rows) {
+        const artifact = files.find(file =>
+          output.artifact_path === file.path ||
+          `runs/${workRunId}/artifacts/${output.artifact_path}` === file.path);
+        if (!artifact) continue;
+        if (!published.has(artifact.path)) {
+          await wrappedEmit({ type: "artifact", artifact });
+          published.add(artifact.path);
+        }
+        resultArtifactPath ??= artifact.path;
+      }
+    }
+
     await finishWorkRun(workRunId, result.status, result.error ?? null);
     if (valueFence.payload) {
       try {
@@ -575,6 +607,7 @@ async function runWorkflowTurnTraced(
       status: result.status,
       summary,
       error: result.error ?? null,
+      resultArtifactPath,
     }));
 
     if (persistedText) {

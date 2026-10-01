@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { db, eq, pool, work_run, work_thread, workflow_output, workflow_run } from "@neko/db";
 import { withTestOrg, dbReachable } from "@neko/db/test-helpers";
 import { createWorkThread, listWorkThreads } from "../../src/work/store";
@@ -114,6 +116,52 @@ describeIfDb("runWorkflowTurn", () => {
       expect(eventTypes).toContain("status");
       expect(eventTypes).toContain("message");
       expect(eventTypes).toContain("done");
+    });
+  });
+
+  it("publishes only a recorded file output physically inside the run artifact directory", async () => {
+    await withTestOrg(async (orgId) => {
+      const { workflow } = await saveWorkflow({
+        orgId, name: "file output workflow", steps: [{ id: "s1", description: "produce a file" }],
+      });
+      const prepared = await prepareWorkflowRun({
+        orgId, workflowId: workflow.id, triggerKind: "manual",
+      }, { resolveAgentBackend: async () => fakeBackend(async () => ({ status: "completed", finalText: "done" })) });
+      const events: AgentEvent[] = [];
+      const result = await runWorkflowTurn({
+        prepared, mode: "live", emit: async event => { events.push(event); },
+      }, {
+        resolveAgentBackend: async () => fakeBackend(async () => ({ status: "completed", finalText: "done" })),
+        formatGlobalMemoryPromptContext: async () => "",
+        runCore: async input => {
+          await mkdir(input.workspace.artifactRoot, { recursive: true });
+          await writeFile(join(input.workspace.artifactRoot, "result.csv"), "id\n42\n");
+          await writeFile(join(input.workspace.runRoot, "private.txt"), "private");
+          await symlink(join(input.workspace.runRoot, "private.txt"), join(input.workspace.artifactRoot, "private.csv"));
+          await emitWorkflowOutput({
+            orgId, workflowRunId: prepared.workflowRun.id, workRunId: prepared.workRunId,
+            kind: "file", artifactPath: "result.csv", title: "result",
+          });
+          await emitWorkflowOutput({
+            orgId, workflowRunId: prepared.workflowRun.id, workRunId: prepared.workRunId,
+            kind: "file", artifactPath: "result.csv", title: "second receipt",
+          });
+          await emitWorkflowOutput({
+            orgId, workflowRunId: prepared.workflowRun.id, workRunId: prepared.workRunId,
+            kind: "file", artifactPath: "private.csv", title: "private",
+          });
+          return { status: "completed", finalText: "done" };
+        },
+      });
+      expect(result.status).toBe("completed");
+      expect(events.filter(event => event.type === "artifact")).toEqual([{
+        type: "artifact", artifact: {
+          path: `runs/${prepared.workRunId}/artifacts/result.csv`, label: "result.csv",
+        },
+      }]);
+      const [saved] = await db().select().from(workflow_run)
+        .where(eq(workflow_run.id, prepared.workflowRun.id));
+      expect(saved.result_artifact_path).toBe(`runs/${prepared.workRunId}/artifacts/result.csv`);
     });
   });
 

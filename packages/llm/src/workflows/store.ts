@@ -690,6 +690,7 @@ export async function finishWorkflowRun(args: {
   status: string;
   summary?: string | null;
   error?: string | null;
+  resultArtifactPath?: string | null;
 }): Promise<void> {
   await db()
     .update(workflow_run)
@@ -697,6 +698,7 @@ export async function finishWorkflowRun(args: {
       status: args.status,
       summary: args.summary ?? null,
       error: args.error ?? null,
+      ...(args.resultArtifactPath ? { result_artifact_path: args.resultArtifactPath } : {}),
       finished_at: new Date(),
       updated_at: new Date(),
     })
