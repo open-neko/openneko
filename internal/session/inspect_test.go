@@ -80,6 +80,48 @@ func terminal() checkpoint {
 	s.Events = append(s.Events, agent.Event{Version: 1, RunID: "r", InputID: "i", Sequence: 4, Type: "run.finished", Result: s.Result})
 	return s
 }
+
+func TestInspectRejectsForgedRuntimeStateApplication(t *testing.T) {
+	makeState := func() checkpoint {
+		s := terminal()
+		update := agent.Event{Version: 1, RunID: "r", InputID: "i", Sequence: 4, Type: "runtime.state.updated", OperationID: 1,
+			StateUpdate: &agent.RuntimeStateUpdate{Target: "root/responder", State: json.RawMessage(`{"reference":"REF-42"}`)}}
+		applied := agent.Event{Version: 1, RunID: "r", InputID: "i", Sequence: 5, Type: "runtime.state.applied", OperationID: 1, Origin: "next-response"}
+		finished := s.Events[3]
+		finished.Sequence = 6
+		s.Events = append(s.Events[:3], update, applied, finished)
+		return s
+	}
+	valid := makeState()
+	root, _ := fixture(t, valid)
+	if _, err := Inspect(root, valid.Spec); err != nil {
+		t.Fatalf("valid state acknowledgement rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*checkpoint){
+		"wrong operation": func(s *checkpoint) { s.Events[4].OperationID = 2 },
+		"unknown timing":  func(s *checkpoint) { s.Events[4].Origin = "invented" },
+		"before update": func(s *checkpoint) {
+			s.Events[3], s.Events[4] = s.Events[4], s.Events[3]
+			s.Events[3].Sequence = 4
+			s.Events[4].Sequence = 5
+		},
+		"duplicate": func(s *checkpoint) {
+			copy := s.Events[4]
+			copy.Sequence = 6
+			s.Events = append(s.Events[:5], append([]agent.Event{copy}, s.Events[5:]...)...)
+			s.Events[6].Sequence = 7
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := makeState()
+			mutate(&s)
+			root, _ := fixture(t, s)
+			if _, err := Inspect(root, s.Spec); err == nil {
+				t.Fatal("accepted forged Ax application acknowledgement")
+			}
+		})
+	}
+}
 func TestInspectAndReplayRejectInconsistentCheckpoints(t *testing.T) {
 	for name, mutate := range map[string]func(*checkpoint){
 		"sequence":              func(s *checkpoint) { s.Events[1].Sequence = 9 },

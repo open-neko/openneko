@@ -995,9 +995,13 @@ snapshot without repeating the tool. The queued OpenNeko workflow adapter now
 derives a responder-only state update from the bound, broker-confirmed output
 receipt. A connected OpenShell/worker run records exactly one update after the
 committed output, and the synthetic model rejects its responder request unless
-that host state is present. Source-change and cron queue redelivery keep the
-checkpoint unchanged. Ax's separate applied-event acknowledgement under
-failure and connected crash/resume of this update remain open.
+that host state is present. The Harness now correlates Ax's queued control ID
+with its `applied` event, journals that acknowledgement, and rejects a completed
+run if a host update was never applied. Local fixtures cover both paths, and
+the connected source-change and cron worker checkpoints each record one Ax
+application acknowledgement before their verified terminal result. Queue
+redelivery keeps those checkpoints unchanged.
+Connected crash/resume of this update remains open.
 Ax's stage-option rate limiter did not override the already-bound outer client
 limiter in a no-key route fixture, so call-time stage labels remain unavailable
 from that hook. The Harness now emits a separate content-free

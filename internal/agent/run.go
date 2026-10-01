@@ -338,6 +338,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				escalation: routed.Stages.ExecutorEscalation, after: int32(routed.Stages.ExecutorAfterErrors), errors: &executorErrors}
 		}
 		control := ax.RunControl()
+		stateAcks := newStateAcknowledgements(control, events)
 		register := func(runtime *handoffRuntime, capability admittedTool, view *observationView) {
 			name := capability.Name
 			runtime.RegisterCallable(name, func(value ax.Value) (ax.Value, error) {
@@ -418,7 +419,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 						} else if update != nil {
 							events.send(Event{Type: "runtime.state.updated", OperationID: currentID, StateUpdate: update})
 							if !events.hasError() {
-								if err := control.Steer(string(update.State), update.Target); err != nil {
+								if err := stateAcks.steer(control, currentID, *update); err != nil {
 									events.failRuntimeState(currentID)
 								}
 							}
@@ -576,6 +577,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		}
 		if actorStepsExhausted(err) && !toolFailed {
 			result = finalizeSavedEvidence(ctx, attemptClient, spec, tools, terminalOperations(parentView.snapshot(), childView.snapshot()), events)
+		}
+		if result.Status == "completed" {
+			for _, id := range stateAcks.unapplied() {
+				events.failRuntimeState(id)
+			}
 		}
 		if events.modelTokenBudgetExceeded() {
 			result = Result{Status: "failed", Kind: "failure", Code: "model_token_budget_exceeded"}

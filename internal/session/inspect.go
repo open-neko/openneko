@@ -238,6 +238,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	executorErrors := map[uint64]bool{}
 	toolCosts := map[uint64]int64{}
 	stateUpdates := map[uint64]bool{}
+	stateApplied := map[uint64]bool{}
 	stateFailures := map[uint64]bool{}
 	var chargedCost int64
 	observedUsage := agent.ModelUsage{}
@@ -405,6 +406,12 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			stateUpdates[e.OperationID] = true
+		case "runtime.state.applied":
+			if !stateUpdates[e.OperationID] || stateApplied[e.OperationID] ||
+				(e.Origin != "next-response" && e.Origin != "native") {
+				return invalid()
+			}
+			stateApplied[e.OperationID] = true
 		case "runtime.state.failed":
 			if !ended[e.OperationID] || stateFailures[e.OperationID] || e.Error != "runtime_state_failed" {
 				return invalid()
