@@ -427,8 +427,48 @@ PY
     exit 0
   fi
   if [[ ${HARNESS_M6_COMPACTION_ONLY:-0} == 1 ]]; then
+    if [[ ${HARNESS_M6_COMPACTION_WEB:-0} == 1 ]]; then
+      if lsof -nP -iTCP:18121 -sTCP:LISTEN >/dev/null 2>&1; then
+        echo 'Port 18121 is already in use; refusing to test against an existing web server' >&2
+        exit 1
+      fi
+      [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/m6-next-dev-cache"
+      set -m
+      (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > "$HARNESS_STATE/m6-compaction-web.log" 2>&1 &
+      web_pid=$!
+      set +m
+      trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+      ready=0
+      for ((n=0; n<90; n++)); do
+        if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+        kill -0 "$web_pid" || exit 1
+        sleep 1
+      done
+      [[ "$ready" == 1 ]] || { echo 'Isolated M6 web server did not start' >&2; exit 1; }
+      export HARNESS_M6_COMPACTION_WEB=1
+    fi
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-live.ts)
+    if [[ ${HARNESS_M6_COMPACTION_WEB:-0} == 1 ]]; then
+      work_run=$(cat "$HARNESS_STATE/m6-compaction-work-run")
+      workflow_run=$(cat "$HARNESS_STATE/m6-compaction-workflow-run")
+      python3 - "$HARNESS_STATE/m6-compaction-expected.csv" <<'PY'
+import pathlib, sys
+pathlib.Path(sys.argv[1]).write_bytes(b'lead_id\n' + b'LEAD-42\n' * 6500)
+PY
+      [[ $(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "http://localhost:18121/api/work/files/runs/$work_run/artifacts/result.csv") == 404 ]]
+      workflow_status=$(curl -sS --max-time 30 -D "$HARNESS_STATE/m6-workflow-file.headers" -o "$HARNESS_STATE/m6-workflow-file.csv" -w '%{http_code}' "http://localhost:18121/api/workflow-runs/$workflow_run/artifact")
+      if [[ "$workflow_status" != 200 ]]; then
+        echo "M6 workflow artifact download returned HTTP $workflow_status" >&2
+        cat "$HARNESS_STATE/m6-workflow-file.csv" >&2
+        exit 1
+      fi
+      cmp -s "$HARNESS_STATE/m6-compaction-expected.csv" "$HARNESS_STATE/m6-workflow-file.csv"
+      rg -qi '^content-disposition: attachment; filename="result.csv"' "$HARNESS_STATE/m6-workflow-file.headers"
+      missing_run=$(python3 -c 'import uuid; print(uuid.uuid4())')
+      [[ $(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:18121/api/workflow-runs/$missing_run/artifact") == 404 ]]
+      echo M6_CONNECTED_COMPACTION_WEB_DOWNLOAD_PASS
+    fi
     echo M6_CONNECTED_WORKFLOW_COMPACTION_PASS
     exit 0
   fi

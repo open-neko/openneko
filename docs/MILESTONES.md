@@ -1092,8 +1092,12 @@ confirms queue redelivery adds no model call, broker effect, output or artifact
 change. Run the focused gate with
 `HARNESS_M5_FAST=1 HARNESS_M6_COMPACTION_ONLY=1`. This establishes connected
 constraint, saved-output and file-backed artifact retention across one
-compaction. A larger batch artifact and authorized web download still need
-qualification under the same context-pressure scenario.
+compaction. Add `HARNESS_M6_COMPACTION_WEB=1` to serve the isolated OpenNeko web
+app and verify an operator workflow-artifact download byte-for-byte against the
+52,008-byte CSV after the same run. The background workflow's personal Work-file
+URL returns 404, and a missing workflow-run URL returns 404. This gate passed
+with one artifact event and a canonical workflow result path. A larger batch
+artifact, other artifact kinds and tenant-isolation checks remain open.
 
 A second connected workflow API run now keeps a governed action request pending
 through Ax compaction. It uses a trusted priced OpenShell route, makes five

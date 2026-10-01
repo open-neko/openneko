@@ -352,6 +352,12 @@ commits one broker file output, forces Ax's trajectory summary and verifies the
 accepted constraint plus saved output and file path in the post-summary
 responder request. It checks the artifact's exact bytes, bounded provider
 request size and inert queue redelivery. The isolated stack is removed on exit.
+Set `HARNESS_M6_COMPACTION_WEB=1` with that gate to start an isolated web server
+on port 18121, then verify the same run's emitted CSV through the operator
+workflow download route. It compares exact bytes and attachment headers,
+requires 404 from the personal Work-file route for the background run and from
+a missing workflow-run URL, and removes the web server and test stack on exit.
+The gate refuses to start if port 18121 is already occupied.
 
 The focused M6 API pricing preflight runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_PRICING_PREFLIGHT_ONLY=1`. An unpriced
