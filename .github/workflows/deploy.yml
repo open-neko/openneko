@@ -16,11 +16,13 @@ concurrency:
 jobs:
   deploy:
     # Never expose deployment secrets to pull-request workflow runs.
+    # `workflow_run.name` includes the dynamic versioned run-name, so rely on
+    # the workflow trigger above and require a successful main-branch smoke.
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
         (github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.name == 'post-release smoke')
+          github.event.workflow_run.head_branch == 'main')
       }}
     runs-on: ubuntu-latest
     steps:
