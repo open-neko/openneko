@@ -828,6 +828,30 @@
   line-height: 1.4;
 }
 
+/* The answer chart shares the Briefing plot but sits in the answer's ruled
+   evidence language, with no second card or invented status color. */
+.work-chart {
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.work-chart-title {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-body);
+  font-weight: 700;
+  line-height: var(--leading-heading);
+}
+.work-chart-source {
+  margin-top: 8px;
+  color: var(--text3);
+  font-size: var(--type-caption);
+  line-height: var(--leading-compact);
+}
+
 /* In-thread KPI card. The dashboard's .icard is a standalone grid tile —
    heavy border, shadow, hover-lift, big "01" ordinal — which reads as a
    box-in-a-box once it sits inside an answer card. Re-skin it as a flat
@@ -1023,6 +1047,7 @@
 
 /* Rhythm: new body components sit on the same 14px grid as prose/cards. */
 .work-surface > .work-table-wrap,
+.work-surface > .work-chart,
 .work-surface > .work-section,
 .work-surface > .work-callout,
 .work-surface > .work-choice,

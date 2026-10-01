@@ -329,6 +329,42 @@ describe("web channel — Answer root (work/Ask vocabulary, not 'Briefing')", ()
     expect(html).toContain("$4.7M");
     expect(html).toContain("Revenue MTD");
   });
+
+  it("renders an agent chosen chart with a title, source, and accessible values", () => {
+    const surface = answerSurface({ title: "Orders", children: ["trend"] }, [
+      {
+        id: "trend",
+        component: "Chart",
+        title: "Orders by week",
+        type: "line",
+        valueLabel: "Orders",
+        source: "Orders database",
+        data: [{ d: "Sep 7", v: 42 }, { d: "Sep 14", v: 47 }],
+      } as A2UIComponent,
+    ]);
+    const html = renderHtml(surface.components.get("root")!, surface);
+    expect(html).toContain("work-chart");
+    expect(html).toContain("Orders by week");
+    expect(html).toContain("Source: Orders database");
+    expect(html).toContain("<caption>Orders by week values</caption>");
+    expect(html).toContain("<table class=\"sr-only\"");
+    expect(html).toContain("Sep 14");
+    expect(html).toContain("recharts-surface");
+    expect(html).not.toContain("Card actions");
+  });
+
+  it("resolves chart points from the A2UI data model", () => {
+    const surface = answerSurface({ title: "Orders", children: ["trend"] }, [
+      {
+        id: "trend", component: "Chart", title: "Orders by week", type: "bar",
+        valueLabel: "Orders", data: { path: "/series" },
+      } as A2UIComponent,
+    ]);
+    surface.dataModel = { series: [{ d: "Sep 7", v: 42 }, { d: "Sep 14", v: 47 }] };
+    const html = renderHtml(surface.components.get("root")!, surface);
+    expect(html).toContain("recharts-surface");
+    expect(html).toContain("<td>47</td>");
+  });
 });
 
 describe("web channel — A2UI v1.0 configuration form", () => {

@@ -105,6 +105,8 @@ Use \`tool_describe\` for this name if deferred; its messages schema carries the
 available components, example, and protocol. Compose an
 interface that fits the current request, using the smallest useful combination
 of narrative, data, layout, inputs, and actions.
+Choose a chart when verified multi-point data reveals a useful trend,
+comparison, or category mix. Do not chart a single value or invent points.
 The surface supports the conversation; it does not replace your assistant
 message. Give the operator a concise direct answer, interpretation, or focused
 question in natural prose. Do not recite every table row or figure again.

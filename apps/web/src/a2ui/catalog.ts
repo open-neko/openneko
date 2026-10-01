@@ -23,6 +23,7 @@ export const ComponentTypes = {
   Answer: "Answer",
   KeyFigures: "KeyFigures",
   MetricCard: "MetricCard",
+  Chart: "Chart",
   Confirmation: "Confirmation",
   Markdown: "Markdown",
   Table: "Table",
@@ -57,6 +58,18 @@ export interface ChartDataPoint {
   d: string;  // label (e.g. day name)
   v: number;  // primary value
   t?: number; // secondary/comparison value
+}
+
+/** An evidence-backed chart in an Ask answer, independent of a saved metric. */
+export interface ChartProps {
+  component: "Chart";
+  title: string;
+  type: Exclude<ChartType, "kpi">;
+  data: ChartDataPoint[];
+  valueLabel: string;
+  baselineLabel?: string;
+  source?: string;
+  asOf?: string;
 }
 
 // --- Component Property Schemas ---
@@ -257,6 +270,7 @@ export type ComponentProps =
   | AnswerProps
   | BriefingProps
   | MetricCardProps
+  | ChartProps
   | BriefingCardProps
   | ConfirmationProps
   | MarkdownProps

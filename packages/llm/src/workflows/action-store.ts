@@ -12,8 +12,8 @@ import {
   db,
   desc,
   eq,
-  work_run,
   pool,
+  work_run,
   sql,
   inArray,
 } from "@neko/db";
@@ -36,6 +36,8 @@ export type ActionExecutionStatus =
   | "pending"
   | "running"
   | "succeeded"
+  | "reconcile_required"
+  | "partially_applied"
   | "failed";
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
@@ -368,6 +370,7 @@ export type ActionRequestRecord = {
   approvedByUserId: string | null;
   approvedAt: Date | null;
   rejectionReason: string | null;
+  failureReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -403,6 +406,7 @@ function toRequestRecord(
     approvedByUserId: row.approved_by_user_id,
     approvedAt: row.approved_at,
     rejectionReason: row.rejection_reason,
+    failureReason: row.failure_reason,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -919,10 +923,101 @@ export async function markActionRequestFailed(
     .update(action_request)
     .set({
       status: "failed",
-      rejection_reason: error,
+      failure_reason: error,
+      rejection_reason: null,
       updated_at: new Date(),
     })
     .where(eq(action_request.id, id));
+}
+
+export class UnsafeActionRetryError extends Error {
+  constructor() {
+    super("This action cannot be retried safely. Check its change set before proposing another action.");
+    this.name = "UnsafeActionRetryError";
+  }
+}
+
+/** Only a single failed Magento change set with entirely unattempted rows is retryable. */
+export async function canRetryActionRequest(orgId: string, id: string): Promise<boolean> {
+  const result = await pool().query<{ eligible: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM action_request a
+      JOIN action_changeset c ON c.action_request_id = a.id
+      WHERE a.org_id = $1 AND a.id = $2 AND a.status = 'failed'
+        AND c.org_id = a.org_id AND c.status = 'failed' AND c.bulk_uuid IS NULL
+        AND (SELECT count(*) FROM action_changeset WHERE action_request_id = a.id) = 1
+        AND EXISTS (SELECT 1 FROM action_changeset_row WHERE changeset_id = c.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM action_changeset_row r WHERE r.changeset_id = c.id
+            AND (r.status <> 'failed' OR r.started_at IS NOT NULL OR r.external_ref IS NOT NULL)
+        )
+    ) AS eligible`, [orgId, id]);
+  return result.rows[0]?.eligible ?? false;
+}
+
+export async function retryActionRequest(args: {
+  id: string;
+  orgId: string;
+  actor: { userId: string | null; role: "admin" | "member" | "service" };
+}): Promise<ActionRequestRecord> {
+  const client = await pool().connect();
+  try {
+    await client.query("BEGIN");
+    const request = await client.query<{ status: ActionRequestStatus }>(
+      "SELECT status FROM action_request WHERE org_id = $1 AND id = $2 FOR UPDATE",
+      [args.orgId, args.id],
+    );
+    if (!request.rows[0]) throw new Error(`action_request ${args.id} not found`);
+    assertTransition(request.rows[0].status, "approved", ["failed"]);
+    const existing = await getActionRequest(args.orgId, args.id);
+    if (!existing) throw new Error(`action_request ${args.id} not found`);
+    await assertMayDecide(args.orgId, existing, args.actor);
+
+    const changesets = await client.query<{ id: string; status: string; bulk_uuid: string | null }>(
+      "SELECT id, status, bulk_uuid FROM action_changeset WHERE org_id = $1 AND action_request_id = $2 FOR UPDATE",
+      [args.orgId, args.id],
+    );
+    if (changesets.rows.length !== 1 || changesets.rows[0].status !== "failed" || changesets.rows[0].bulk_uuid !== null) {
+      throw new UnsafeActionRetryError();
+    }
+    const changesetId = changesets.rows[0].id;
+    const rows = await client.query<{ status: string; started_at: Date | null; external_ref: string | null }>(
+      "SELECT status, started_at, external_ref FROM action_changeset_row WHERE changeset_id = $1 FOR UPDATE",
+      [changesetId],
+    );
+    if (rows.rows.length === 0 || rows.rows.some((row) => row.status !== "failed" || row.started_at !== null || row.external_ref !== null)) {
+      throw new UnsafeActionRetryError();
+    }
+    await client.query(
+      "UPDATE action_changeset_row SET status = 'draft', error = NULL, finished_at = NULL, updated_at = now() WHERE changeset_id = $1",
+      [changesetId],
+    );
+    await client.query(
+      "UPDATE action_changeset SET status = 'approved', executed_at = NULL, reconciled_at = NULL, updated_at = now() WHERE id = $1",
+      [changesetId],
+    );
+    await client.query(
+      "UPDATE action_request SET status = 'approved', failure_reason = NULL, updated_at = now() WHERE org_id = $1 AND id = $2",
+      [args.orgId, args.id],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  const record = await getActionRequest(args.orgId, args.id);
+  if (!record) throw new Error(`action_request ${args.id} not found after retry`);
+  const { recordAuditEvent } = await import("./audit-chain");
+  await recordAuditEvent({
+    orgId: args.orgId,
+    entityKind: "action_request",
+    entityId: args.id,
+    event: "retried",
+    payload: { retriedBy: args.actor.userId, kind: record.kind },
+  });
+  return record;
 }
 
 export type ActionExecutionRecord = {
@@ -989,7 +1084,7 @@ export async function recordActionExecution(args: {
 
 export async function finishActionExecution(args: {
   id: string;
-  status: "succeeded" | "failed";
+  status: "succeeded" | "failed" | "reconcile_required" | "partially_applied";
   result?: Record<string, unknown> | null;
   externalRef?: string | null;
   changesetId?: string | null;

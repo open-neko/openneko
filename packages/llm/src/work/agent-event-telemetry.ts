@@ -235,7 +235,7 @@ export function createAgentEventTelemetry(input: {
         kind: "approval.decision",
         operationId: `${input.operationId}:action:${event.action_request_id}`,
         parentOperationId: input.operationId,
-        status: event.status === "failed" ? "error" : "ok",
+        status: event.status === "failed" || event.status === "partially_applied" || event.status === "reconcile_required" ? "error" : "ok",
         attributes: {
           "openneko.action.kind": event.kind,
           "openneko.action.status": event.status,

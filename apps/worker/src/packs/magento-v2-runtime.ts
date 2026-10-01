@@ -1202,9 +1202,10 @@ async function executeChangeset(request: ActionRequestRecord) {
         const bulkOperation = terminalBulkOperations[rowIndex];
         const bulkStatus = Number(bulkOperation?.status ?? bulkOperation?.operation_status ?? -1);
         if (bulkStatus !== 1) {
-          failed += 1;
+          // The bulk request was submitted, so this is never a safe retry.
+          reconcileRequired += 1;
           await db().update(action_changeset_row).set({
-            status: "failed",
+            status: "reconcile_required",
             error: `Magento bulk row failed with terminal status ${bulkStatus}`,
             finished_at: new Date(),
             updated_at: new Date(),
@@ -1310,13 +1311,13 @@ async function executeChangeset(request: ActionRequestRecord) {
       }).where(eq(action_changeset_row.id, row.id));
     }
   }
-  const status = failed > 0 && applied > 0
+  const status: "applied" | "partially_applied" | "failed" | "reconcile_required" = applied > 0 && (failed > 0 || reconcileRequired > 0)
     ? "partially_applied"
-    : failed > 0
-      ? "failed"
-      : reconcileRequired > 0
+    : reconcileRequired > 0
         ? "reconcile_required"
-        : "applied";
+        : failed > 0
+          ? "failed"
+          : "applied";
   await db().update(action_changeset).set({
     status,
     executed_at: new Date(),
@@ -1358,6 +1359,7 @@ async function executeChangeset(request: ActionRequestRecord) {
     );
   }
   return {
+    status: status === "applied" ? "succeeded" as const : status,
     commandOrOperation: changeset.operation_id,
     externalRef: sharedBulkUuid ?? changeset.id,
     changesetId: changeset.id,

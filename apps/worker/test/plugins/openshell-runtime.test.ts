@@ -41,7 +41,7 @@ const h = vi.hoisted(() => {
 
 vi.mock("node:child_process", () => ({ spawn: h.spawn }));
 
-const { OpenShellRuntime, buildPolicyUpdateArgs } = await import(
+const { OpenShellRuntime, buildPolicyUpdateCommands } = await import(
   "../../src/plugins/openshell-runtime"
 );
 
@@ -51,30 +51,23 @@ function execCall() {
   return h.calls.find((c) => c.args.includes("exec"));
 }
 
-describe("buildPolicyUpdateArgs", () => {
-  it("returns null when no hosts are declared (inherits default-deny)", () => {
-    expect(buildPolicyUpdateArgs("p1", [])).toBeNull();
+describe("buildPolicyUpdateCommands", () => {
+  it("returns no updates when no hosts are declared (inherits default-deny)", () => {
+    expect(buildPolicyUpdateCommands("p1", [])).toEqual([]);
   });
 
-  it("emits per-host endpoints scoped to node + all-path allows", () => {
-    expect(buildPolicyUpdateArgs("p1", ["slack.com", "api.slack.com"])).toEqual([
-      "policy",
-      "update",
-      "p1",
-      "--add-endpoint",
-      "slack.com:443:read-write:rest:enforce",
-      "--add-endpoint",
-      "api.slack.com:443:read-write:rest:enforce",
-      "--binary",
-      "/usr/local/bin/node",
-      "--add-allow",
-      "slack.com:443:*:/**",
-      "--add-allow",
-      "api.slack.com:443:*:/**",
-      "--wait",
-      "--timeout",
-      "60",
-    ]);
+  it("adds each endpoint before its named L7 allow rule", () => {
+    const commands = buildPolicyUpdateCommands("p1", ["slack.com", "api.slack.com"]);
+    expect(commands).toHaveLength(4);
+    for (const [index, host] of ["slack.com", "api.slack.com"].entries()) {
+      const endpoint = commands[index * 2]!;
+      const allow = commands[index * 2 + 1]!;
+      expect(endpoint).toContain(`${host}:443:read-write:rest:enforce`);
+      expect(allow).toContain(`${host}:443:*:/**`);
+      expect(endpoint[endpoint.indexOf("--rule-name") + 1]).toBe(allow[allow.indexOf("--rule-name") + 1]);
+      expect(endpoint).toContain("/usr/local/bin/node");
+      expect(allow).toContain("/usr/local/bin/node");
+    }
   });
 });
 
@@ -108,6 +101,7 @@ describe("OpenShellRuntime", () => {
       "p1",
       "--from",
       "ghcr.io/open-neko/plugin-base:node24",
+      "--detach",
       "--no-tty",
       "--no-auto-providers",
       "--",
@@ -121,7 +115,7 @@ describe("OpenShellRuntime", () => {
       "/tmp/bundles/p1/run.js",
       "/sandbox/run.js",
     ]);
-    expect(h.calls[2]?.args).toEqual(buildPolicyUpdateArgs("p1", ["slack.com"]));
+    expect(h.calls.slice(2).map((call) => call.args)).toEqual(buildPolicyUpdateCommands("p1", ["slack.com"]));
     expect(rt.hasPlugin("p1")).toBe(true);
   });
 
@@ -135,6 +129,19 @@ describe("OpenShellRuntime", () => {
     });
     expect(h.calls.map((c) => c.args[1])).toEqual(["create", "upload"]);
     expect(h.calls.some((c) => c.args[0] === "policy")).toBe(false);
+  });
+
+  it("keeps long plugin IDs within OpenShell's sandbox name limit", async () => {
+    const rt = make();
+    const id = "long-customer-plugin-identifier";
+    await rt.start({ id, hostWorkspacePath: `/tmp/bundles/${id}`, network: "none", hosts: [] });
+    const created = h.calls.find((c) => c.args[1] === "create")!.args;
+    const sandbox = created[created.indexOf("--name") + 1]!;
+    expect(sandbox).toMatch(/^neko-x-[0-9a-f]{12}$/);
+    expect(sandbox).toHaveLength(19);
+    expect(h.calls.find((c) => c.args[1] === "upload")?.args[2]).toBe(sandbox);
+    await rt.stop(id);
+    expect(h.calls.find((c) => c.args[1] === "delete")?.args[2]).toBe(sandbox);
   });
 
   it("replaces a stale gateway sandbox when create collides on the name", async () => {

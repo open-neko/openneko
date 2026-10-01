@@ -4,7 +4,7 @@ export type RiskLevel = "low" | "medium" | "high";
 
 export type AskKind = "approval" | "choice" | "freeform";
 
-export type ResolveStatus = "succeeded" | "failed" | "rejected";
+export type ResolveStatus = "succeeded" | "failed" | "rejected" | "partially_applied" | "reconcile_required";
 
 export type SeriesKind = "kpi" | "line" | "bar" | "area" | "donut";
 

@@ -21,6 +21,7 @@ describe("A2UI catalog", () => {
     expect(ComponentTypes).toMatchObject({
       Answer: "Answer",
       MetricCard: "MetricCard",
+      Chart: "Chart",
       Confirmation: "Confirmation",
       Markdown: "Markdown",
       Table: "Table",

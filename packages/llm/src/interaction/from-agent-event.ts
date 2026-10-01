@@ -122,6 +122,8 @@ const isRisk = (value: unknown): value is "low" | "medium" | "high" =>
 const resultSummary = (event: Extract<AgentEvent, { type: "action_request_result" }>): string => {
   if (event.status === "rejected") return event.rejection_reason ?? `${event.kind} rejected`;
   if (event.status === "failed") return event.error ?? `${event.kind} failed`;
+  if (event.status === "partially_applied") return `${event.kind} partly applied; review the action details`;
+  if (event.status === "reconcile_required") return `${event.kind} needs reconciliation before retry`;
   return event.outcome?.externalRef ? `${event.kind} → ${event.outcome.externalRef}` : `${event.kind} done`;
 };
 

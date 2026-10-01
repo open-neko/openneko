@@ -19,7 +19,7 @@ export async function runActionExecute(
   );
   if (!result.ok) {
     console.warn(
-      `[action-execute] action_request=${payload.actionRequestId} failed: ${result.error}`,
+      `[action-execute] action_request=${payload.actionRequestId} status=${result.outcome?.status ?? "failed"}: ${result.error ?? "see execution result"}`,
     );
   }
 
@@ -50,7 +50,7 @@ export async function runActionExecute(
       type: "action_request_result",
       action_request_id: request.id,
       kind: request.kind,
-      status: result.ok ? "succeeded" : "failed",
+      status: result.outcome?.status ?? (result.ok ? "succeeded" : "failed"),
       ...(result.outcome ? { outcome: result.outcome } : {}),
       ...(result.error ? { error: result.error } : {}),
     },

@@ -162,6 +162,7 @@ const {
   makeSandboxRunCore,
   prepareSandboxCapacity,
   closeSandboxPools,
+  reapStrandedSandboxes,
   makeSandboxJobRunCore,
   makeSandboxWorkflowRunCore,
   isMissingSandboxDelete,
@@ -182,6 +183,31 @@ it("accepts only a missing sandbox as completed-run cleanup", () => {
   expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 exited 1; stderr=sandbox 'h-1' does not exist"))).toBe(true);
   expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 exited 1; stderr=gateway server not found"))).toBe(false);
   expect(isMissingSandboxDelete(new Error("openshell sandbox delete h-1 timed out after 60000ms"))).toBe(false);
+});
+
+describe("reapStrandedSandboxes", () => {
+  it("deletes only sandboxes owned by a previous boot", async () => {
+    const deleted: string[] = [];
+    const run = async (args: string[]) => {
+      if (args.includes("list")) return JSON.stringify({ sandboxes: [
+        { name: "old", labels: { "openneko.owner": "openneko-web", "openneko.boot": "previous" } },
+        { name: "current", labels: { "openneko.owner": "openneko-web", "openneko.boot": "current" } },
+        { name: "retained", labels: { "openneko.owner": "openneko-web", "openneko.boot": "previous", "openneko.recovery": "retain" } },
+      ], next_page_token: "" });
+      deleted.push(args.at(-1)!);
+      return "";
+    };
+    expect(await reapStrandedSandboxes(run, "openneko-web", "current")).toEqual(["old"]);
+    expect(deleted).toEqual(["old"]);
+  });
+
+  it("reports failed deletion so the periodic pass can retry", async () => {
+    const run = async (args: string[]) => {
+      if (args.includes("list")) return JSON.stringify({ sandboxes: [{ name: "old", labels: { "openneko.boot": "previous" } }], next_page_token: "" });
+      throw new Error("gateway unavailable");
+    };
+    await expect(reapStrandedSandboxes(run, "openneko-web", "current")).rejects.toThrow("could not delete 1 stranded sandboxes");
+  });
 });
 
 describe("sandboxLauncherOptionsFromEnv", () => {
@@ -733,7 +759,7 @@ describe("makeSandboxRunCore", () => {
 
     const verbs = h.calls.map((c) => c.args.find((a) => ["create", "update", "upload", "exec", "download", "delete"].includes(a)));
     // artifacts are pulled back from the box (download) before it's deleted
-    expect(verbs).toEqual(["create", "exec", "download", "delete"]);
+    expect(verbs).toEqual(["create", "upload", "exec", "download", "delete"]);
     const download = h.calls.find((c) => c.args.includes("download"));
     expect(download?.args.at(-1)).toBe(fakeInput().workspace.artifactRoot);
     // streamed event reached emit:
@@ -746,10 +772,11 @@ describe("makeSandboxRunCore", () => {
     });
     // result parsed from the RESULT line:
     expect(result).toEqual({ status: "completed", finalText: "hi there", backendState: { t: 1 } });
-    // Creation does not boot Node; exec runs the standalone bundle:
+    // The detached main process keeps the box ready; exec runs the bundle:
     expect(h.calls[0]?.args).toContain("ghcr.io/open-neko/agent:test");
     expect(h.calls[0]?.args).toContain("--policy");
-    expect(h.calls[0]?.args).toContain("--upload");
+    expect(h.calls[0]?.args).not.toContain("--upload");
+    expect(h.calls[1]?.args).toEqual(expect.arrayContaining(["sandbox", "upload"]));
     const modelPolicy = Object.values(
       (jobCapture.policies.at(-1)?.network_policies ?? {}) as Record<
         string,
@@ -757,7 +784,8 @@ describe("makeSandboxRunCore", () => {
       >,
     ).find((policy) => policy.endpoints.some((endpoint) => endpoint.host === "m.example.com"));
     expect(modelPolicy?.binaries).toEqual([{ path: "/usr/bin/python3.11" }]);
-    expect(h.calls[0]?.args.at(-1)).toBe("true");
+    expect(h.calls[0]?.args.slice(-2)).toEqual(["sleep", "infinity"]);
+    expect(h.calls[0]?.args).toContain("--detach");
     expect(h.calls[0]?.args).toContain("--cpu");
     expect(h.calls[0]?.args).toContain("--memory");
     expect(h.calls[0]?.args).toContain("1Gi");
@@ -889,7 +917,7 @@ describe("makeSandboxRunCore", () => {
     await core({...fakeInput(async()=>{}),runId:"d77ff28f-25db-46cd-a69c-a545a9e318b5"});
     const create=h.calls.find(call=>call.args.includes("create"))!.args;
     const name=create[create.indexOf("--name")+1];
-    expect(name).toMatch(/^w-[0-9a-f]{16}$/);
+    expect(name).toMatch(/^neko-w-[0-9a-f]{12}$/);
     expect(h.calls.filter(call=>call.args.includes("delete")).some(call=>call.args.includes(name))).toBe(true);
   });
 
@@ -1415,11 +1443,15 @@ describe("makeSandboxRunCore", () => {
     });
     await runCore(fakeInput(async () => {}));
 
-    // The minimal workspace, job descriptor, and keyless Hermes config cross
-    // the boundary together in the create transaction.
-    expect(h.calls.filter((c) => c.args.includes("upload"))).toHaveLength(0);
+    // OpenShell 0.1.x uploads the staged workspace after the long-lived
+    // canonical process starts. The run descriptor and keyless config travel
+    // together in that upload.
+    expect(h.calls.filter((c) => c.args.includes("upload"))).toHaveLength(1);
     const create = h.calls.find((c) => c.args.includes("create"));
-    expect(create?.args).toContain("--upload");
+    expect(create?.args).not.toContain("--upload");
+    expect(create?.args).toContain("--detach");
+    expect(create?.args.slice(-2)).toEqual(["sleep", "infinity"]);
+    expect(create?.args[create.args.indexOf("--name") + 1]).toMatch(/^neko-w-[0-9a-f]{12}$/);
     // the box reads the mirror, not a host path:
     const execCall = h.calls.find((c) => c.args.includes("exec"));
     expect(execCall?.args.join(" ")).toContain(

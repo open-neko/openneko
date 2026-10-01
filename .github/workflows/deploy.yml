@@ -1,12 +1,11 @@
 name: Deploy to VM
 
-# Released application images still come from the latest smoked release. The
-# host-side Go supervisor can also deploy directly from main after its complete
-# cross-platform Go workflow succeeds; this lets Compose/installation fixes
-# reach the VM without publishing replacement application images.
+# Deploy only after the release images and post-release smoke pass. A main
+# supervisor can include Compose commands missing from the previous release's
+# images, which left web and worker stopped when the reaper was first added.
 on:
   workflow_run:
-    workflows: ["post-release smoke", "openneko (go)"]
+    workflows: ["post-release smoke"]
     types: [completed]
   workflow_dispatch:
 
@@ -16,83 +15,33 @@ concurrency:
 
 jobs:
   deploy:
-    # Never expose deployment secrets to pull-request workflow runs. Main
-    # supervisor deploys require the push-triggered Go workflow to pass; release
-    # deploys still require the post-release smoke to pass.
+    # Never expose deployment secrets to pull-request workflow runs.
+    # `workflow_run.name` includes the dynamic versioned run-name, so rely on
+    # the workflow trigger above and require a successful main-branch smoke.
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
         (github.event.workflow_run.conclusion == 'success' &&
-          (github.event.workflow_run.name == 'post-release smoke' ||
-            (github.event.workflow_run.name == 'openneko (go)' &&
-              github.event.workflow_run.event == 'push' &&
-              github.event.workflow_run.head_branch == 'main')))
+          github.event.workflow_run.head_branch == 'main')
       }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.name == 'openneko (go)' }}
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-
-      - uses: actions/setup-go@v6
-        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.name == 'openneko (go)' }}
-        with:
-          go-version: "1.25"
-          cache-dependency-path: apps/openneko/go.sum
-
-      - name: Build main supervisor against the latest released images
-        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.name == 'openneko (go)' }}
-        id: main_supervisor
-        working-directory: apps/openneko
+      - name: Resolve smoked release
+        id: release
+        env:
+          UPSTREAM_TITLE: ${{ github.event.workflow_run.display_title }}
         run: |
           set -euo pipefail
-          # The GitHub release becomes releases/latest the moment release-please
-          # publishes it — ~15 minutes before release-binaries has pushed that
-          # tag's images to ghcr. Deploying inside that window failed run #279
-          # with "records-graphjin:v2.28.1: not found". Walk stable releases
-          # newest-first and deploy the first tag whose release-versioned images
-          # (from the packaged compose files, plus the agent image the deploy's
-          # sandbox smoke pulls) all have ghcr manifests.
-          # shellcheck disable=SC2016
-          mapfile -t images < <(
-            {
-              sed -n 's/^[[:space:]]*image:[[:space:]]*//p' \
-                assets/compose/core.yml assets/compose/openshell.yml \
-              | grep -oE 'ghcr\.io/open-neko/[[:alnum:]_.-]+:\$\{OPENNEKO_VERSION[^}]*\}' \
-              | sed 's/:\${OPENNEKO_VERSION.*//'
-              echo ghcr.io/open-neko/agent
-            } | sort -u
-          )
-          mapfile -t candidates < <(
-            curl -fsSL "https://api.github.com/repos/open-neko/openneko/releases?per_page=10" \
-            | jq -r '[.[] | select(.prerelease == false and .draft == false)][:5] | .[].tag_name'
-          )
-          tag=""
-          for cand in "${candidates[@]}"; do
-            complete=true
-            for img in "${images[@]}"; do
-              if ! docker manifest inspect "${img}:${cand}" >/dev/null 2>&1; then
-                echo "::notice::${img}:${cand} is not on ghcr yet — skipping ${cand} (images still publishing)"
-                complete=false
-                break
-              fi
-            done
-            if [ "$complete" = true ]; then
-              tag="$cand"
-              break
-            fi
-          done
-          if [ -z "$tag" ]; then
-            echo "::error::no stable release has a complete ghcr image set (checked: ${candidates[*]:-none})"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | jq -r .tag_name)
+          elif [[ "$UPSTREAM_TITLE" =~ ^post-release\ smoke\ \((v[0-9]+\.[0-9]+\.[0-9]+)\)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+          else
+            echo "::error::post-release smoke did not identify an exact stable tag: $UPSTREAM_TITLE"
             exit 1
           fi
-          echo "deploying application images at $tag"
-          version="${tag#v}"
-          go build -trimpath \
-            -ldflags "-s -w -X github.com/open-neko/neko/apps/openneko/internal/version.Version=$version -X github.com/open-neko/neko/apps/openneko/internal/version.Commit=${{ github.event.workflow_run.head_sha }}" \
-            -o /tmp/openneko-main ./cmd/openneko
-          echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Configure SSH
         run: |
@@ -101,63 +50,30 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Upload main supervisor
-        if: ${{ steps.main_supervisor.outcome == 'success' }}
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-        run: |
-          scp -i ~/.ssh/id_ed25519 /tmp/openneko-main \
-            "$SSH_USER@$SSH_HOST:/tmp/openneko-main"
-          ssh -i ~/.ssh/id_ed25519 "$SSH_USER@$SSH_HOST" \
-            'sudo install -m 0755 /tmp/openneko-main /usr/local/bin/openneko && rm -f /tmp/openneko-main'
-
-      # Application containers always use the latest smoked release tag. A
-      # successful main Go run may replace only the host supervisor binary; a
-      # release/manual run refreshes that binary from the release asset.
+      # Keep the host CLI and service images on the same smoked release.
       - name: Refresh supervisor and deploy the released stack
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
-          SOURCE_DEPLOY: ${{ steps.main_supervisor.outcome == 'success' }}
-          SOURCE_IMAGE_TAG: ${{ steps.main_supervisor.outputs.image_tag }}
+          DEPLOY_IMAGE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           ssh -i ~/.ssh/id_ed25519 \
               "$SSH_USER@$SSH_HOST" \
-              "SOURCE_DEPLOY=$SOURCE_DEPLOY SOURCE_IMAGE_TAG=$SOURCE_IMAGE_TAG bash -se" <<'EOF'
+              "DEPLOY_IMAGE_TAG=$DEPLOY_IMAGE_TAG bash -se" <<'EOF'
             set -euo pipefail
-            if [ "$SOURCE_DEPLOY" = "true" ]; then
-              DEPLOY_IMAGE_TAG="$SOURCE_IMAGE_TAG"
-              echo "[deploy] main supervisor installed; application images stay at $DEPLOY_IMAGE_TAG"
-            else
-              # Non-fatal CLI refresh: a missing release asset must never block.
-              {
-                ARCH=$(uname -m)
-                case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
-                LATEST=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest \
-                  | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4 || true)
-                INSTALLED=$(openneko version --short 2>/dev/null || echo none)
-                if [ -n "${LATEST:-}" ] && [ "${LATEST#v}" != "$INSTALLED" ]; then
-                  TMP=$(mktemp -d)
-                  if curl -fsSL -o "$TMP/o.tgz" \
-                       "https://github.com/open-neko/openneko/releases/download/$LATEST/openneko_${LATEST#v}_linux_${GOARCH}.tar.gz" \
-                     && tar -xzf "$TMP/o.tgz" -C "$TMP" openneko; then
-                    sudo install -m 0755 "$TMP/openneko" /usr/local/bin/openneko
-                    echo "[deploy] openneko CLI updated to $LATEST (was $INSTALLED)"
-                  else
-                    echo "[deploy] WARNING: openneko $LATEST release binary missing; CLI stays at $INSTALLED"
-                  fi
-                  rm -rf "$TMP"
-                else
-                  echo "[deploy] openneko CLI already current ($INSTALLED)"
-                fi
-              } || echo "[deploy] openneko CLI refresh skipped (non-fatal)"
-              DEPLOY_IMAGE_TAG="${LATEST:-}"
-            fi
+            ARCH=$(uname -m)
+            case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
             if [ -z "${DEPLOY_IMAGE_TAG:-}" ]; then
               echo "[deploy] unable to resolve a released application image tag" >&2
               exit 1
             fi
+            TMP=$(mktemp -d)
+            curl -fsSL -o "$TMP/o.tgz" \
+              "https://github.com/open-neko/openneko/releases/download/$DEPLOY_IMAGE_TAG/openneko_${DEPLOY_IMAGE_TAG#v}_linux_${GOARCH}.tar.gz"
+            tar -xzf "$TMP/o.tgz" -C "$TMP" openneko
+            sudo install -m 0755 "$TMP/openneko" /usr/local/bin/openneko
+            rm -rf "$TMP"
+            echo "[deploy] installed released CLI $DEPLOY_IMAGE_TAG"
 
             cd ~/openneko
 
@@ -192,6 +108,12 @@ jobs:
             OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status
+
+            REAPER=$(docker ps -q \
+              --filter label=com.docker.compose.project=openneko-demo \
+              --filter label=com.docker.compose.service=reaper | head -1)
+            test -n "$REAPER"
+            test "$(docker inspect -f '{{.State.Health.Status}}' "$REAPER")" = healthy
 
             WORKER=$(docker ps -q \
               --filter label=com.docker.compose.project=openneko-demo \
@@ -233,42 +155,43 @@ jobs:
             # Exercise the path that ordinary HTTP health checks missed in
             # PR #208: a supervisor inside a fresh sandbox must call back to
             # the containerised gateway and reach Ready.
+            trap 'docker exec "$WORKER" openshell sandbox delete --gateway openneko neko-deploy-smoke >/dev/null 2>&1 || true' EXIT
             docker exec "$WORKER" openshell sandbox create \
-              --gateway openneko \
+              --gateway openneko --name neko-deploy-smoke \
               --from "ghcr.io/open-neko/agent:$DEPLOY_IMAGE_TAG" \
-              --no-keep --no-tty -- /bin/true
+              --detach --no-tty -- sleep infinity
+            docker exec "$WORKER" openshell sandbox exec \
+              --gateway openneko -n neko-deploy-smoke --no-tty -- \
+              node /app/entry.js --preflight
+            docker exec "$WORKER" openshell sandbox delete \
+              --gateway openneko neko-deploy-smoke
+            trap - EXIT
 
-            if [ "$SOURCE_DEPLOY" = true ]; then
-              # A main-only Go deploy deliberately retains the last released
-              # application images, which may predate this endpoint.
-              echo "[deploy] scheduler sentinel deferred to the released-image deploy"
-            else
-              # Process liveness used to pass while pg-boss's schedule polling
-              # had silently stopped. Require a successful durable scheduler DB
-              # transaction after this worker boot before accepting the deploy.
-              scheduler_ok=false
-              for attempt in 1 2 3 4 5 6 7 8 9 10; do
-                if docker exec "$WORKER" node -e '
-                  fetch("http://127.0.0.1:4100/health/scheduler")
-                    .then(async (response) => {
-                      const health = await response.json();
-                      if (!response.ok || health.status !== "ok" || !health.lastSuccessAt) {
-                        throw new Error(JSON.stringify(health));
-                      }
-                      console.log(`[deploy] scheduler healthy at ${health.lastSuccessAt}`);
-                    })
-                    .catch((error) => { console.error(error.message); process.exit(1); });
-                '; then
-                  scheduler_ok=true
-                  break
-                fi
-                echo "[deploy] scheduler not ready (attempt $attempt/10)"
-                sleep 3
-              done
-              if [ "$scheduler_ok" != true ]; then
-                echo "[deploy] durable workflow scheduler failed its progress sentinel" >&2
-                exit 1
+            # Process liveness used to pass while pg-boss's schedule polling
+            # had silently stopped. Require a successful durable scheduler DB
+            # transaction after this worker boot before accepting the deploy.
+            scheduler_ok=false
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if docker exec "$WORKER" node -e '
+                fetch("http://127.0.0.1:4100/health/scheduler")
+                  .then(async (response) => {
+                    const health = await response.json();
+                    if (!response.ok || health.status !== "ok" || !health.lastSuccessAt) {
+                      throw new Error(JSON.stringify(health));
+                    }
+                    console.log(`[deploy] scheduler healthy at ${health.lastSuccessAt}`);
+                  })
+                  .catch((error) => { console.error(error.message); process.exit(1); });
+              '; then
+                scheduler_ok=true
+                break
               fi
+              echo "[deploy] scheduler not ready (attempt $attempt/10)"
+              sleep 3
+            done
+            if [ "$scheduler_ok" != true ]; then
+              echo "[deploy] durable workflow scheduler failed its progress sentinel" >&2
+              exit 1
             fi
 
             # Sweep again: the release we just replaced is now idle and removable.

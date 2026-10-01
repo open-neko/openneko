@@ -1,19 +1,23 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { and, db, eq, pool } from "@neko/db";
-import { action_request } from "@neko/db";
+import { action_changeset, action_changeset_row, action_request } from "@neko/db";
 import { dbReachable, withTestOrg } from "@neko/db/test-helpers";
 import {
   approveActionRequest,
+  canRetryActionRequest,
   createActionPolicy,
   createActionRequest,
   executeApprovedActionRequest,
   getActionRequest,
   InvalidActionStatusTransitionError,
   listActionExecutions,
+  markActionRequestFailed,
   rejectActionRequest,
+  retryActionRequest,
   registerActionAdapter,
   registerActionRequestCreatedHook,
   RetryableActionAdapterError,
+  UnsafeActionRetryError,
   saveWorkflow,
   createWorkflowRun,
   updateActionRequestPayload,
@@ -156,7 +160,8 @@ describeIfDb("action stack — approve → execute → executed", () => {
           );
         expect(failed).toMatchObject({
           status: "failed",
-          rejection_reason: "action preflight failed: catalog unavailable",
+          rejection_reason: null,
+          failure_reason: "action preflight failed: catalog unavailable",
         });
       } finally {
         unregister();
@@ -293,4 +298,63 @@ describeIfDb("action stack — approve → execute → executed", () => {
       }
     });
   });
+
+  it("retries only change sets whose every row failed before any write", async () => {
+    await withTestOrg(async (orgId) => {
+      const request = await createActionRequest({
+        orgId, scope: "external", kind: "magento.manage_catalog",
+        payload: {}, status: "approved",
+      });
+      const [changeset] = await db().insert(action_changeset).values({
+        org_id: orgId, action_request_id: request.id, domain: "catalog",
+        operation_id: "magentoUpdateProduct", risk_class: 2,
+        idempotency_key: `retry-${request.id}`, status: "failed",
+      }).returning();
+      await db().insert(action_changeset_row).values({
+        changeset_id: changeset.id, row_index: 0, entity_ref: "SKU-1",
+        operation_id: "magentoUpdateProduct", status: "failed",
+        error: "Magento could not be reached before the write",
+      });
+      await markActionRequestFailed(request.id, "Magento could not be reached before the write");
+      expect(await canRetryActionRequest(orgId, request.id)).toBe(true);
+
+      const retried = await retryActionRequest({
+        orgId, id: request.id, actor: { role: "admin", userId: null },
+      });
+      expect(retried).toMatchObject({ status: "approved", failureReason: null, rejectionReason: null });
+      const [reset] = await db().select().from(action_changeset_row).where(eq(action_changeset_row.changeset_id, changeset.id));
+      expect(reset).toMatchObject({ status: "draft", error: null });
+      expect(await canRetryActionRequest(orgId, request.id)).toBe(false);
+      await expect(retryActionRequest({
+        orgId, id: request.id, actor: { role: "admin", userId: null },
+      })).rejects.toBeInstanceOf(InvalidActionStatusTransitionError);
+    });
+  });
+
+  it.each(["reconcile_required", "applied", "submitted"])(
+    "blocks a retry when a change-set row is %s", async (rowStatus) => {
+      await withTestOrg(async (orgId) => {
+        const request = await createActionRequest({
+          orgId, scope: "external", kind: "magento.manage_catalog",
+          payload: {}, status: "approved",
+        });
+        const [changeset] = await db().insert(action_changeset).values({
+          org_id: orgId, action_request_id: request.id, domain: "catalog",
+          operation_id: "magentoUpdateProduct", risk_class: 2,
+          idempotency_key: `retry-${request.id}`, status: "failed",
+        }).returning();
+        await db().insert(action_changeset_row).values({
+          changeset_id: changeset.id, row_index: 0, entity_ref: "SKU-1",
+          operation_id: "magentoUpdateProduct", status: rowStatus,
+          started_at: new Date(),
+        });
+        await markActionRequestFailed(request.id, "write outcome is uncertain");
+        expect(await canRetryActionRequest(orgId, request.id)).toBe(false);
+        await expect(retryActionRequest({
+          orgId, id: request.id, actor: { role: "admin", userId: null },
+        })).rejects.toBeInstanceOf(UnsafeActionRetryError);
+        expect((await getActionRequest(orgId, request.id))?.status).toBe("failed");
+      });
+    },
+  );
 });

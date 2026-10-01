@@ -93,7 +93,9 @@ def serve():
             server.settimeout(max(180, int(sys.argv[2])) if code == 75 else int(sys.argv[2]))
             try:
                 os.killpg(pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
+                # OpenShell 0.1.2 forbids cross-process-group signals even
+                # after the fork leader has already been reaped.
                 pass
             try:
                 conn.sendall(str(0 if code == 75 else code).encode())

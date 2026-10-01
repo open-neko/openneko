@@ -217,9 +217,13 @@ func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
-		`network_name = "%s"`,
-		`grpc_endpoint = "https://openshell-gateway:%s"`,
-		`host_gateway_ip = "%s"`,
+		`version = 2`,
+		`compute_driver = "docker"`,
+		`guest_tls_ca = "%s/pki/ca.crt"`,
+		`signing_key_path = "%s/pki/jwt/signing.pem"`,
+		`sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"`,
+		`supervisor_image = "ghcr.io/nvidia/openshell/supervisor:%s"`,
+		`grpc_endpoint = "https://127.0.0.1:%s"`,
 		`OPENNEKO_COMPOSE_NETWORK: "${COMPOSE_PROJECT_NAME}_runtime"`,
 		`OPENSHELL_GATEWAY_IP: "${OPENSHELL_GATEWAY_IP:-172.29.0.2}"`,
 		`ipv4_address: "${OPENSHELL_GATEWAY_IP:-172.29.0.2}"`,

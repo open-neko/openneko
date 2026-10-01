@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { grantItem, isItemType, revokeItem, whoHolds } from "@neko/db";
+import { grantItem, grantItems, isItemType, revokeItem, whoHolds } from "@neko/db";
 import { isDenied, requireAdminActor } from "@/lib/admin-auth";
 import { getOrgId } from "@/lib/db";
 import { groupErrorResponse, readJsonBody, scheduleGroupGrantsApply } from "@/lib/groups-admin";
@@ -20,13 +20,19 @@ async function change(request: Request, grant: boolean) {
   const actor = await requireAdminActor();
   if (isDenied(actor)) return actor;
   const body = await readJsonBody(request);
-  if (!body || typeof body.groupId !== "string" || !isItemType(body.itemType) || typeof body.itemId !== "string") {
-    return NextResponse.json({ error: "groupId, itemType and itemId are required" }, { status: 400 });
+  if (!body || typeof body.groupId !== "string" || !isItemType(body.itemType) || (
+    grant ? typeof body.itemId !== "string" && !Array.isArray(body.itemIds) : typeof body.itemId !== "string"
+  )) {
+    return NextResponse.json({ error: "groupId, itemType and itemId or itemIds are required" }, { status: 400 });
   }
   try {
-    const input = { groupId: body.groupId, itemType: body.itemType, itemId: body.itemId, actorUserId: actor.userId };
     const orgId = await getOrgId();
-    const result = grant ? await grantItem(orgId, input) : await revokeItem(orgId, input);
+    const input = { groupId: body.groupId, itemType: body.itemType, actorUserId: actor.userId };
+    const result = grant
+      ? Array.isArray(body.itemIds)
+        ? await grantItems(orgId, { ...input, itemIds: body.itemIds })
+        : await grantItem(orgId, { ...input, itemId: body.itemId as string })
+      : await revokeItem(orgId, { ...input, itemId: body.itemId as string });
     if (GRAPHJIN_TYPES.has(body.itemType)) await scheduleGroupGrantsApply();
     return NextResponse.json(result);
   } catch (error) {

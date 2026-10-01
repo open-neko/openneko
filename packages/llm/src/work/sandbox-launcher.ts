@@ -84,7 +84,8 @@ function harnessActionGrants(
 
 /** web or worker; each host deletes only boxes it owns. */
 function sandboxOwner(): string {
-  return process.env.OPENNEKO_SANDBOX_OWNER || "openneko";
+  return process.env.OPENNEKO_SANDBOX_OWNER ||
+    (process.env.OPENNEKO_BROKER_PORT ? `openneko-broker-${process.env.OPENNEKO_BROKER_PORT}` : "openneko");
 }
 
 /** Labels that let the next boot of this host find boxes a restart stranded. */
@@ -102,11 +103,34 @@ export async function reapStrandedSandboxes(
   owner = sandboxOwner(),
   boot = SANDBOX_BOOT_ID,
 ): Promise<string[]> {
-  const listed = JSON.parse(
-    await run(["sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`, "-o", "json", "--limit", "500"], 30_000),
-  ) as Array<{ name: string; labels?: Record<string, string> }>;
+  const listed: Array<{ name: string; labels?: Record<string, string> }> = [];
+  let pageToken = "";
+  do {
+    const response = JSON.parse(await run([
+      "sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`,
+      "-o", "json", "--page-size", "500",
+      ...(pageToken ? ["--page-token", pageToken] : []),
+    ], 30_000)) as {
+      sandboxes: Array<{ name: string; labels?: Record<string, string> }>;
+      next_page_token: string;
+    };
+    listed.push(...response.sandboxes);
+    if (response.next_page_token && response.next_page_token === pageToken) {
+      throw new Error("OpenShell repeated a sandbox list page token");
+    }
+    pageToken = response.next_page_token;
+  } while (pageToken);
   const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot && box.labels?.["openneko.recovery"] !== "retain").map((box) => box.name);
-  await Promise.allSettled(stranded.map((name) => run(["sandbox", "delete", name], 60_000)));
+  const outcomes = await Promise.allSettled(stranded.map(async (name) => {
+    try {
+      await run(["sandbox", "delete", name], 60_000);
+    } catch (error) {
+      // Another process or the gateway may have removed it after list.
+      if (!/\b(?:not found|does not exist)\b/i.test(describeError(error))) throw error;
+    }
+  }));
+  const failed = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+  if (failed.length) throw new AggregateError(failed.map((outcome) => outcome.reason), `could not delete ${failed.length} stranded sandboxes`);
   return stranded;
 }
 
@@ -114,7 +138,10 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const reapedGateways = new Set<string>();
+const reaperHost = globalThis as typeof globalThis & {
+  __opennekoStrandedReapers?: Map<string, { boot: string; timer: ReturnType<typeof setInterval> }>;
+};
+const strandedReapers = reaperHost.__opennekoStrandedReapers ??= new Map();
 
 export interface SandboxLauncherOptions {
   /** `openshell` binary; default resolves from PATH. */
@@ -565,6 +592,8 @@ export async function prepareSandboxCapacity(opts = sandboxLauncherOptionsFromEn
 
 /** Explicit shutdown hook for hosts/tests; sandbox-side idle expiry also survives host loss. */
 export async function closeSandboxPools(): Promise<void> {
+  for (const { timer } of strandedReapers.values()) clearInterval(timer);
+  strandedReapers.clear();
   await Promise.all([...warmPools.values()].map(pool => pool.close()));
   warmPools.clear();
   await clearStableSandboxInputs();
@@ -581,15 +610,26 @@ function getSandboxPool(opts: SandboxLauncherOptions, workspace?: StableWorkspac
   const poolKey = JSON.stringify([cli, gatewayArgs, opts.agentImage, cpu, memory, warmSize, idleMs, workspace?.orgRoot]);
   let pool = warmPools.get(poolKey);
   const gatewayKey = JSON.stringify([cli, gatewayArgs]);
-  if (!reapedGateways.has(gatewayKey)) {
-    reapedGateways.add(gatewayKey);
-    void reapStrandedSandboxes(runCleanup)
-      .then((names) => { if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`); })
-      .catch((error) => {
-        // A gateway that is down reaps nothing. Try again on the next pool.
-        reapedGateways.delete(gatewayKey);
+  if (strandedReapers.get(gatewayKey)?.boot !== SANDBOX_BOOT_ID) {
+    const previous = strandedReapers.get(gatewayKey);
+    if (previous) clearInterval(previous.timer);
+    let running = false;
+    const reap = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const names = await reapStrandedSandboxes(runCleanup);
+        if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`);
+      } catch (error) {
         (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
-      });
+      } finally {
+        running = false;
+      }
+    };
+    const timer = setInterval(() => { void reap(); }, 300_000);
+    timer.unref();
+    strandedReapers.set(gatewayKey, { boot: SANDBOX_BOOT_ID, timer });
+    void reap();
   }
   if (!pool) {
     pool = new SandboxPool({ size: warmSize, idleMs,
@@ -708,13 +748,9 @@ function makeSandboxCore(
       runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal, stdin);
     const inputPrompt = jobInput?.run.prompt ??
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
-    let name = `${isJob ? "job" : "work"}-${input.runId}`
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, "")
-      .slice(0, 60);
-    // 0.0.116 caps sandbox names at 19 bytes. Preserve existing short names.
-    if (name.length > 19) name = `${isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 16)}`;
-    if (input.backend.id === "harness") name = `h-${createHash("sha256").update(input.runId).digest("hex").slice(0, 16)}`;
+    // OpenShell 0.1.x limits sandbox names to 19 characters. Hash the full
+    // run ID so distinct IDs that share a prefix cannot collide.
+    let name = `neko-${input.backend.id === "harness" ? "h" : isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 12)}`;
 
     // The box is a separate filesystem; the host workspace path (~/.config/… or
     // /Users/…) can't be recreated under the sandbox user's home. Upload the
@@ -1085,10 +1121,10 @@ function makeSandboxCore(
             }));
             results.forEach((result, index) => startupEvent(`sandbox.${phases[index]}_delta`, result));
           };
-          // Wait for both even on failure: cleanup must not race an in-flight
-          // policy update or upload. No agent execution until both succeed.
-          const bound = await Promise.allSettled([bindPolicy(), syncInputs()]);
-          for (const result of bound) if (result.status === "rejected") throw result.reason;
+          // OpenShell 0.1.2 serializes sandbox mutations. Finish the policy
+          // update before uploading and reconciling inputs in this slot.
+          await bindPolicy();
+          await syncInputs();
         });
         log(JSON.stringify({ type: "sandbox_warm", runId: input.runId, sandboxName: name,
           mode: lease.reused ? "user" : lease.slot ? "generic" : "miss" }));
@@ -1104,6 +1140,7 @@ function makeSandboxCore(
           cpu,
           "--memory",
           memory,
+          "--detach",
           "--no-tty",
           "--no-auto-providers",
           ...sandboxOwnerLabelArgs(),
@@ -1111,53 +1148,64 @@ function makeSandboxCore(
           ...providers.flatMap(provider => ["--provider", provider]),
           "--policy",
           policyFile,
-          "--upload",
-          // OpenShell nests basename(LOCAL_PATH) under SANDBOX_PATH.
-          `${staged.orgRoot}:${path.posix.dirname(boxOrgRoot)}`,
-          "--no-git-ignore",
           "--",
-          "/bin/sh",
-          "-lc",
-          "true",
+          "sleep",
+          "infinity",
         ];
+        const uploadArgs = [
+          "sandbox", "upload", name, staged.orgRoot,
+          // OpenShell nests basename(LOCAL_PATH) under SANDBOX_PATH.
+          path.posix.dirname(boxOrgRoot), "--no-git-ignore",
+        ];
+        const createOnce = async () => {
+          await run(createArgs, 180_000);
+          sandboxCreated = true;
+        };
         const reclaimAndCreate = async () => {
-            if (admission) throw new Error("Harness launch outcome unknown: existing sandbox requires reconciliation");
+          if (admission) throw new Error("Harness launch outcome unknown: existing sandbox requires reconciliation");
           // Run names are deterministic so a durable queue retry can collide
           // with an OpenShell sandbox orphaned by a worker restart or deploy.
           // Replace only that exact run sandbox, then let the normal finally
           // path own cleanup for the newly created instance.
           log(`replacing stale agent sandbox after name collision: ${name}`);
           await runCleanup(["sandbox", "delete", name], 60_000);
-          await timed("create_upload", () => run(createArgs, 180_000));
+          await createOnce();
         };
-        try {
-          await timed("create_upload", () => run(createArgs, 180_000));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (message.includes("already exists")) {
-            await reclaimAndCreate();
-          } else {
-            // Not a name collision: a transient gateway hiccup (restart mid
-            // deploy) or a first-use image pull that outran the timeout — the
-            // gateway-side pull keeps going, so a second attempt usually rides
-            // its cache. Retry once before surfacing the real error; a timed-out
-            // first attempt may have half-registered the name, which the retry
-            // then reclaims.
-            log(
-              `agent sandbox create failed (${message.slice(0, 200)}); retrying once`,
-            );
-            await new Promise((resolve) => setTimeout(resolve, 3_000));
-            try {
-              await timed("create_upload", () => run(createArgs, 180_000));
-            } catch (retryError) {
-              const retryMessage =
-                retryError instanceof Error ? retryError.message : String(retryError);
-              if (!retryMessage.includes("already exists")) throw retryError;
+        await timed("create_upload", async () => {
+          try {
+            await createOnce();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes("already exists")) {
               await reclaimAndCreate();
+            } else {
+              // A gateway restart or first image pull can outlive the CLI.
+              // Retry once; a collision on retry is reconciled by run identity.
+              log(`agent sandbox create failed (${message.slice(0, 200)}); retrying once`);
+              await new Promise((resolve) => setTimeout(resolve, 3_000));
+              try {
+                await createOnce();
+              } catch (retryError) {
+                const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+                if (!retryMessage.includes("already exists")) throw retryError;
+                await reclaimAndCreate();
+              }
             }
           }
-        }
-        sandboxCreated = true;
+          // OpenShell 0.1.x forbids --upload with an initial command. Keep
+          // create and upload separately so the canonical sleep process stays
+          // alive for the later agent exec. A failed upload retains a Harness
+          // sandbox for reconciliation rather than redispatching the turn.
+          for (let attempt = 0; attempt < 30; attempt++) {
+            try {
+              await run(uploadArgs, 120_000);
+              break;
+            } catch (error) {
+              if (attempt === 29 || !describeError(error).includes("sandbox is not ready")) throw error;
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+        });
       }
 
       log(
@@ -1463,7 +1511,7 @@ credentials:
 - name: api_key
   description: model API key — proxy substitutes the placeholder on egress
   env_vars:
-  - MODEL_API_KEY
+  - api_key
   required: true
   auth_style: query
   header_name: ''
@@ -1868,20 +1916,20 @@ function abortError(): Error {
   return err;
 }
 
-/** Keep the creation command attached: --no-keep deletes the box when the
- * clean parent exits on its own idle timeout. */
+/** Keep the warm server attached for its lifetime. Closing the readiness
+ * reader disconnects the 0.1.x CLI and terminates the canonical process. */
 async function createWarmSandbox(o: {
   cli: string; gatewayArgs: string[]; image: string; cpu: string; memory: string; idleMs: number;
   runCleanup: (args: string[], timeout: number) => Promise<string>;
   workspace?: StableWorkspace;
 }): Promise<WarmSlot> {
-  const name = `wm-${createHash("sha256").update(randomUUID()).digest("hex").slice(0, 16)}`;
+  const name = `neko-p-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const dir = await mkdtemp(path.join(tmpdir(), "oss-warm-"));
   const policy = path.join(dir, "policy.json");
   await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));
   const child = spawn(o.cli, [...o.gatewayArgs, "sandbox", "create", "--name", name,
     "--from", o.image, "--cpu", o.cpu, "--memory", o.memory,
-    "--no-tty", "--no-keep", "--no-auto-providers", ...sandboxOwnerLabelArgs(), "--policy", policy,
+    "--no-tty", "--no-auto-providers", ...sandboxOwnerLabelArgs(), "--policy", policy,
     "--", "/usr/local/uv/tools/hermes-agent/bin/python", "/app/hermes-warm.py", "serve",
     String(Math.ceil(o.idleMs / 1000))], { stdio: ["ignore", "pipe", "pipe"] });
   let alive = true;
@@ -1902,12 +1950,19 @@ async function createWarmSandbox(o: {
       const lines = createInterface({ input: child.stdout });
       const timer = setTimeout(() => reject(new Error("warm sandbox readiness timeout")), 180_000);
       timer.unref();
-      const done = (error?: Error) => { clearTimeout(timer); lines.close(); error ? reject(error) : resolve(); };
+      let settled = false;
+      const done = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        // Keep the reader and stdout open while the warm server runs.
+        // OpenShell 0.1.x treats a closed attached stream as cancellation.
+        error ? reject(error) : resolve();
+      };
       lines.on("line", line => { if (line.trim() === "__openneko_warm_ready__") done(); });
       child.once("error", error => done(error));
       child.once("close", () => done(new Error("warm sandbox exited before readiness")));
     });
-    child.stdout.resume();
     let preloadedRevision: string | undefined;
     const preload = async () => {
       if (!o.workspace) return;

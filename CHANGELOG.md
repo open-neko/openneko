@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.11.1](https://github.com/open-neko/openneko/compare/v3.11.0...v3.11.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* continuously reap sandbox and image artifacts ([4970250](https://github.com/open-neko/openneko/commit/49702508c186ce8d77688ef06d783439645f316c))
+
+## [3.11.0](https://github.com/open-neko/openneko/compare/v3.10.0...v3.11.0) (2026-10-01)
+
+
+### Features
+
+* **work:** render agent-selected A2UI charts ([9cacd4c](https://github.com/open-neko/openneko/commit/9cacd4c0cef89b07259493a74a7b3ebd6785c863))
+
 ## [3.10.0](https://github.com/open-neko/openneko/compare/v3.9.5...v3.10.0) (2026-10-01)
 
 

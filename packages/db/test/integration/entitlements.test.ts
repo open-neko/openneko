@@ -11,6 +11,7 @@ import {
   filterHeld,
   GroupError,
   grantItem,
+  grantItems,
   heldItems,
   holds,
   builtinGroupId,
@@ -30,6 +31,29 @@ async function user(orgId: string, id: string, role = "member") {
 }
 
 describeIfDb("entitlements", () => {
+  it("grants multiple selected items once and audits only new grants", async () => {
+    await withTestOrg(async (orgId) => {
+      const group = await createUserGroup(orgId, { name: "Metric readers" });
+      expect(await grantItems(orgId, {
+        groupId: group.id, itemType: "metric", itemIds: ["alpha", "beta", "alpha"],
+      })).toEqual({ created: 2 });
+      expect(await grantItems(orgId, {
+        groupId: group.id, itemType: "metric", itemIds: ["beta", "gamma"],
+      })).toEqual({ created: 1 });
+      expect((await listGroupItemGrants(orgId, group.id))
+        .filter((grant) => grant.itemType === "metric")
+        .map((grant) => grant.itemId).sort()).toEqual(["alpha", "beta", "gamma"]);
+      const audit = await db().execute<{ item_id: string }>(
+        `select item_id from item_grant_audit where org_id = '${orgId}' and item_type = 'metric'`,
+      );
+      expect(audit.rows.map((row) => row.item_id).sort()).toEqual(["alpha", "beta", "gamma"]);
+      await expect(grantItems(orgId, {
+        groupId: group.id, itemType: "metric", itemIds: ["valid", ""],
+      })).rejects.toBeInstanceOf(GroupError);
+      expect((await listGroupItemGrants(orgId, group.id)).some((grant) => grant.itemId === "valid")).toBe(false);
+    }, "ent-bulk");
+  });
+
   it("gives Everyone every item type by default so no user loses access", async () => {
     await withTestOrg(async (orgId) => {
       const everyone = await builtinGroupId(orgId, "everyone");

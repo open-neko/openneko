@@ -19,14 +19,27 @@ function approved(kind: string) {
   } as Awaited<ReturnType<typeof store.getActionRequest>>);
 }
 
-it("fails unknown kinds without creating an execution or reporting success", async () => {
+it("records unknown kinds as failed executions without reporting success", async () => {
   approved("missing_connector");
   await expect(executeApprovedActionRequest("org", "request")).resolves.toEqual({
     ok: false, error: 'no adapter registered for kind "missing_connector"',
   });
   expect(store.markActionRequestFailed).toHaveBeenCalledWith("request", 'no adapter registered for kind "missing_connector"');
-  expect(store.recordActionExecution).not.toHaveBeenCalled();
+  expect(store.recordActionExecution).toHaveBeenCalledOnce();
+  expect(store.finishActionExecution).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", error: 'no adapter registered for kind "missing_connector"' }));
   expect(store.markActionRequestExecuted).not.toHaveBeenCalled();
+});
+
+it.each(["reconcile_required", "partially_applied"] as const)("persists the %s adapter outcome without claiming success", async (status) => {
+  approved(`test_${status}`);
+  registerActionAdapter(`test_${status}`, async () => ({ status, result: { status } }));
+  await expect(executeApprovedActionRequest("org", "request")).resolves.toMatchObject({
+    ok: false,
+    outcome: { status },
+  });
+  expect(store.finishActionExecution).toHaveBeenCalledWith(expect.objectContaining({ status }));
+  expect(store.markActionRequestExecuted).toHaveBeenCalledWith("request");
+  expect(store.markActionRequestFailed).not.toHaveBeenCalled();
 });
 
 it("executes a registered adapter and persists its actual outcome", async () => {

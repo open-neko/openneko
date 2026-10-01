@@ -229,6 +229,7 @@ export {
 } from "./cycle-detection";
 export {
   approveActionRequest,
+  canRetryActionRequest,
   hasHumanActionApproval,
   autoApprovePreparedActionRequest,
   createActionPolicy,
@@ -247,6 +248,8 @@ export {
   recordActionExecution,
   registerActionRequestCreatedHook,
   rejectActionRequest,
+  retryActionRequest,
+  UnsafeActionRetryError,
   updateActionRequestPayload,
   updateActionPolicy,
   upsertActionPolicyByName,

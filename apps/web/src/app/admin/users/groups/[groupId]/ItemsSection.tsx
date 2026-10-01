@@ -7,11 +7,12 @@ import { adminApi } from "@/components/admin/admin-api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Disclosure } from "@/components/ui/disclosure";
-import { NativeSelect } from "@/components/ui/field";
+import { SearchInput } from "@/components/ui/search-input";
 import { Spinner } from "@/components/ui/spinner";
 import type { ItemTypeView } from "./GroupDetailClient";
 
 type ItemOption = { id: string; label: string; detail?: string };
+const MAX_SELECTION = 500;
 
 function ItemTypeGrants({
   groupId,
@@ -26,19 +27,26 @@ function ItemTypeGrants({
 }) {
   const router = useRouter();
   const [options, setOptions] = useState<ItemOption[] | null>(null);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const all = grants.includes("*");
   const specific = grants.filter((id) => id !== "*");
   const labels = new Map((options ?? []).map((o) => [o.id, o]));
   const available = (options ?? []).filter((o) => !grants.includes(o.id));
+  const matches = available.filter((option) => `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const shown = matches.slice(0, 100);
 
   async function load() {
     if (options) return;
     const result = await adminApi<{ items: ItemOption[] }>(`/api/admin/items?type=${type.type}`);
-    const items = result.ok ? result.body.items : [];
-    setOptions(items);
-    setSelected(items.find((o) => !grants.includes(o.id))?.id ?? "");
+    if (!result.ok) {
+      setLoadError(result.error);
+      return;
+    }
+    setLoadError(null);
+    setOptions(result.body.items);
   }
 
   async function change(itemId: string, grant: boolean) {
@@ -47,6 +55,20 @@ function ItemTypeGrants({
     const result = await adminApi("/api/admin/item-grants", grant ? "POST" : "DELETE", { groupId, itemType: type.type, itemId });
     setBusy(false);
     if (!result.ok) return onError(result.error);
+    router.refresh();
+  }
+
+  async function grantSelected() {
+    const itemIds = selected.filter((id) => available.some((option) => option.id === id));
+    if (itemIds.length === 0) return;
+    setBusy(true);
+    onError(null);
+    const result = await adminApi("/api/admin/item-grants", "POST", {
+      groupId, itemType: type.type, itemIds,
+    });
+    setBusy(false);
+    if (!result.ok) return onError(result.error);
+    setSelected([]);
     router.refresh();
   }
 
@@ -80,18 +102,52 @@ function ItemTypeGrants({
             ))}
           </ul>
         )}
-        {options === null ? (
+        {all ? (
+          <p className="text-text2">Every {type.label.toLowerCase()} is already available to this group. Turn off the all-items grant to choose specific items.</p>
+        ) : loadError ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p role="alert" className="text-danger">Could not load {type.plural.toLowerCase()}: {loadError}</p>
+            <Button size="sm" onClick={() => void load()}>Try again</Button>
+          </div>
+        ) : options === null ? (
           <Spinner />
         ) : available.length === 0 ? (
           <p className="text-text3">{options.length === 0 ? `No ${type.plural.toLowerCase()} exist yet.` : `Every ${type.label.toLowerCase()} is granted.`}</p>
         ) : (
-          <div className="grid grid-cols-[minmax(200px,1fr)_auto] items-end gap-3 max-[520px]:grid-cols-1">
-            <NativeSelect aria-label={`Choose a ${type.label.toLowerCase()}`} value={selected} onChange={(e) => setSelected(e.target.value)}>
-              {available.map((o) => (
-                <option key={o.id} value={o.id}>{o.detail ? `${o.label} · ${o.detail}` : o.label}</option>
-              ))}
-            </NativeSelect>
-            <Button disabled={busy || !selected} onClick={() => void change(selected, true)}>Grant</Button>
+          <div className="flex flex-col gap-3">
+            <SearchInput
+              label={`Search ${type.plural.toLowerCase()} to grant`}
+              placeholder={`Search ${type.plural.toLowerCase()}`}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2 text-ui-caption text-text3" aria-live="polite">
+              <span>{matches.length} available{matches.length > shown.length ? ` · Showing first ${shown.length}` : ""} · {selected.length} selected{selected.length === MAX_SELECTION ? " (limit reached)" : ""}</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" disabled={busy || shown.length === 0 || selected.length === MAX_SELECTION} onClick={() => setSelected((current) => [...new Set([...current, ...shown.map((option) => option.id)])].slice(0, MAX_SELECTION))}>Select shown</Button>
+                <Button size="sm" variant="ghost" disabled={busy || selected.length === 0} onClick={() => setSelected([])}>Clear</Button>
+              </div>
+            </div>
+            {shown.length === 0 ? (
+              <p className="text-text3">No matches. Try a different search.</p>
+            ) : (
+              <ul className="max-h-72 overflow-y-auto rounded-inner border border-border">
+                {shown.map((option) => (
+                  <li key={option.id} className="border-b border-border px-3 py-2.5 last:border-0">
+                    <Checkbox
+                      className="w-full"
+                      checked={selected.includes(option.id)}
+                      disabled={busy || (selected.length === MAX_SELECTION && !selected.includes(option.id))}
+                      onCheckedChange={(checked) => setSelected((current) => checked === true
+                        ? [...new Set([...current, option.id])].slice(0, MAX_SELECTION)
+                        : current.filter((id) => id !== option.id))}
+                      label={<span className="block min-w-0"><span className="block font-semibold text-text">{option.label}</span>{option.detail ? <span className="block text-ui-caption text-text3">{option.detail}</span> : null}</span>}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button variant="primary" disabled={busy || selected.length === 0} onClick={() => void grantSelected()}>{busy ? "Granting…" : `Grant ${selected.length} selected`}</Button>
           </div>
         )}
       </div>

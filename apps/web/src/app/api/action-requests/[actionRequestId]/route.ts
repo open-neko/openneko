@@ -11,10 +11,13 @@ import {
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import {
   approveActionRequest,
+  canRetryActionRequest,
   getActionRequest,
   InvalidActionStatusTransitionError,
   listActionExecutions,
   rejectActionRequest,
+  retryActionRequest,
+  UnsafeActionRetryError,
 } from "@neko/llm/workflows";
 import { getOrgId } from "@/lib/db";
 import { actionRequestVisibility } from "@/lib/entitlements";
@@ -40,6 +43,7 @@ export async function GET(_req: Request, context: RouteContext) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const executions = await listActionExecutions(actionRequestId);
+  const canRetry = await canRetryActionRequest(orgId, actionRequestId);
 
   let workflow: { id: string; name: string } | null = null;
   if (request.workflowRunId) {
@@ -128,6 +132,7 @@ export async function GET(_req: Request, context: RouteContext) {
       approvedByUserId: request.approvedByUserId,
       approvedAt: request.approvedAt?.toISOString() ?? null,
       rejectionReason: request.rejectionReason,
+      failureReason: request.failureReason,
       createdAt: request.createdAt.toISOString(),
       updatedAt: request.updatedAt.toISOString(),
     },
@@ -148,6 +153,7 @@ export async function GET(_req: Request, context: RouteContext) {
     policy,
     upstreamOutput,
     approverKind,
+    canRetry,
   });
 }
 
@@ -155,9 +161,9 @@ export async function PATCH(req: Request, context: RouteContext) {
   const { actionRequestId } = await context.params;
   const body = await req.json().catch(() => ({}));
   const decision = body.decision as string | undefined;
-  if (decision !== "approve" && decision !== "reject") {
+  if (decision !== "approve" && decision !== "reject" && decision !== "retry") {
     return NextResponse.json(
-      { error: "decision must be 'approve' or 'reject'" },
+      { error: "decision must be 'approve', 'reject', or 'retry'" },
       { status: 400 },
     );
   }
@@ -188,6 +194,14 @@ export async function PATCH(req: Request, context: RouteContext) {
         actionRequestId: approved.id,
       });
       return NextResponse.json({ actionRequest: { id: approved.id, status: approved.status } });
+    } else if (decision === "retry") {
+      const retried = await retryActionRequest({
+        id: actionRequestId,
+        orgId,
+        actor,
+      });
+      await enqueue(QUEUE.ACTION_EXECUTE, { orgId, actionRequestId: retried.id });
+      return NextResponse.json({ actionRequest: { id: retried.id, status: retried.status } });
     } else {
       const rejected = await rejectActionRequest({
         approver: actor,
@@ -199,7 +213,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       return NextResponse.json({ actionRequest: { id: rejected.id, status: rejected.status } });
     }
   } catch (e) {
-    if (e instanceof InvalidActionStatusTransitionError) {
+    if (e instanceof InvalidActionStatusTransitionError || e instanceof UnsafeActionRetryError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
     throw e;

@@ -2512,6 +2512,7 @@ export const action_request = pgTable(
     ),
     approved_at: ts("approved_at"),
     rejection_reason: text("rejection_reason"),
+    failure_reason: text("failure_reason"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },

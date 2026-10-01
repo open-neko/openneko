@@ -13,6 +13,6 @@ export async function GET(request: Request) {
   try {
     return NextResponse.json({ items: await listItemOptions(await getOrgId(), type) });
   } catch (error) {
-    return NextResponse.json({ items: [], error: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

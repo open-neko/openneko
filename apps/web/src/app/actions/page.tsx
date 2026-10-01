@@ -53,6 +53,7 @@ type ActionRow = {
   approverKind: "operator" | "policy" | "auto" | null;
   approverLabel: string | null;
   rejectionReason: string | null;
+  failureReason: string | null;
   outcome: ActionOutcome;
   executionError: string | null;
   runAt: string;
@@ -321,7 +322,7 @@ function ActionsPageInner() {
                   id: r.id,
                   tone: rowToneFor(r),
                   headline: r.summary || r.kind,
-                  detail: describeOutcome(outcomeOf(r), r.executionError, systemForActionKind(r.kind)),
+                  detail: describeOutcome(outcomeOf(r), r.executionError ?? r.failureReason, systemForActionKind(r.kind)),
                   target: r.target,
                   kind: r.kind,
                   payload: r.payload,

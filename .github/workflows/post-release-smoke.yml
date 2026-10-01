@@ -1,4 +1,5 @@
 name: post-release smoke
+run-name: post-release smoke (${{ github.event.workflow_run.head_branch || inputs.version }})
 
 # Gate, not spectator. After a release builds, this actually installs the just-
 # published artifacts and asks `openneko status` whether the stack serves. If
@@ -354,7 +355,7 @@ jobs:
             exit 1
           fi
 
-      - name: OpenShell sandbox callback smoke
+      - name: OpenShell work sandbox lifecycle smoke
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
           OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
@@ -364,10 +365,15 @@ jobs:
             --filter label=com.docker.compose.project=openneko-demo \
             --filter label=com.docker.compose.service=worker | head -1)
           test -n "$worker"
+          sandbox="neko-smoke-$$"
+          trap 'docker exec "$worker" openshell --gateway openneko sandbox delete "$sandbox" >/dev/null 2>&1 || true' EXIT
           docker exec "$worker" openshell sandbox create \
             --gateway openneko \
+            --name "$sandbox" \
             --from "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
-            --no-keep --no-tty -- /bin/true
+            --detach --no-tty --no-auto-providers -- sleep infinity
+          docker exec "$worker" openshell --gateway openneko sandbox exec \
+            -n "$sandbox" --no-tty -- node /app/entry.js --preflight
 
       # Failed releases are demoted to prerelease by the failure path below.
       # A manual recovery must reverse that state before this workflow ends:

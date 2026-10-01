@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
       approvedByUserId: r.approvedByUserId,
       approvedAt: r.approvedAt?.toISOString() ?? null,
       rejectionReason: r.rejectionReason,
+      failureReason: r.failureReason,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     })),

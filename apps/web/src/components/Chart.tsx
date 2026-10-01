@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 import {
   AreaChart,
   Area,
@@ -70,6 +72,7 @@ export default function Chart({
   valueLabel?: string;
   baselineLabel?: string;
 }) {
+  const chartId = useId();
   if (!data || data.length === 0) return null;
 
   // Defensive: agents sometimes mis-classify chartType. Coerce to a sensible
@@ -156,7 +159,7 @@ export default function Chart({
   const yTickFormatter = (v: number) => formatCompact(v);
 
   if (resolvedType === "area") {
-    const gradientId = "chart-area-fill";
+    const gradientId = `chart-area-fill-${chartId.replace(/:/g, "")}`;
     return (
       <ChartContainer
         config={{}}

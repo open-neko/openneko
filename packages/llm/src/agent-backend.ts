@@ -194,7 +194,7 @@ export type AgentEvent =
       type: "action_request_result";
       action_request_id: string;
       kind: string;
-      status: "succeeded" | "failed" | "rejected";
+      status: "succeeded" | "failed" | "rejected" | "partially_applied" | "reconcile_required";
       outcome?: {
         result?: Record<string, unknown> | null;
         externalRef?: string | null;

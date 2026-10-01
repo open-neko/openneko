@@ -64,6 +64,7 @@ export {
   effectiveAccess,
   filterHeld,
   grantItem,
+  grantItems,
   groupHolds,
   heldItems,
   holds,

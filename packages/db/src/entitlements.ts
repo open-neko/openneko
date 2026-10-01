@@ -308,6 +308,32 @@ export async function grantItem(orgId: string, input: ItemGrantInput): Promise<{
   });
 }
 
+/** Grant a selection in one atomic write, with one audit row per new grant. */
+export async function grantItems(
+  orgId: string,
+  input: Omit<ItemGrantInput, "itemId"> & { itemIds: string[] },
+): Promise<{ created: number }> {
+  if (!isItemType(input.itemType)) throw new GroupError("invalid", `unknown item type ${String(input.itemType)}`);
+  if (!Array.isArray(input.itemIds) || input.itemIds.length < 1 || input.itemIds.length > 500) {
+    throw new GroupError("invalid", "select 1 to 500 items to grant");
+  }
+  const ids = [...new Set(input.itemIds.map((id) => typeof id === "string" ? id.trim() : ""))];
+  if (ids.some((id) => !id || id.length > 500)) throw new GroupError("invalid", "item id must be 1 to 500 characters");
+  const group = await requireGrantableGroup(orgId, input.groupId);
+  const inserted = rows<{ item_id: string }>(await db().execute(sql`
+    WITH created AS (
+      INSERT INTO item_grant (org_id, group_id, item_type, item_id, created_by_user_id, action_request_id)
+      SELECT ${orgId}, ${group.id}, ${input.itemType}, item_id, ${input.actorUserId ?? null}, ${input.actionRequestId ?? null}
+      FROM unnest(${pgTextArray(ids)}::text[]) AS selected(item_id)
+      ON CONFLICT DO NOTHING
+      RETURNING item_id
+    )
+    INSERT INTO item_grant_audit (org_id, actor_user_id, action, group_id, group_name, item_type, item_id, action_request_id)
+    SELECT ${orgId}, ${input.actorUserId ?? null}, 'grant', ${group.id}, ${group.name}, ${input.itemType}, item_id, ${input.actionRequestId ?? null}
+    FROM created RETURNING item_id`));
+  return { created: inserted.length };
+}
+
 export async function revokeItem(orgId: string, input: ItemGrantInput): Promise<{ removed: boolean }> {
   const group = await requireGrantableGroup(orgId, input.groupId);
   return db().transaction(async (tx) => {

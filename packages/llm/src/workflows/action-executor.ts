@@ -14,6 +14,7 @@ export type ActionExecutionInput = {
 };
 
 export type ActionExecutionOutcome = {
+  status?: "succeeded" | "reconcile_required" | "partially_applied";
   externalRef?: string | null;
   result?: Record<string, unknown> | null;
   commandOrOperation?: string | null;
@@ -117,18 +118,6 @@ export async function executeApprovedActionRequest(
   }
   if (request.status !== "approved") throw new ActionRequestNotApprovedError(request.status);
 
-  const adapter = adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined;
-  if (!adapter) {
-    await markActionRequestFailed(
-      request.id,
-      `no adapter registered for kind "${request.kind}"`,
-    );
-    return {
-      ok: false,
-      error: `no adapter registered for kind "${request.kind}"`,
-    };
-  }
-
   const exec = await recordActionExecution({
     orgId,
     actionRequestId: request.id,
@@ -137,17 +126,20 @@ export async function executeApprovedActionRequest(
   });
 
   try {
+    const adapter = adapters.get(request.kind) ?? await fallbackAdapterResolver?.(request) ?? undefined;
+    if (!adapter) throw new Error(`no adapter registered for kind "${request.kind}"`);
     const outcome = await adapter({ request });
+    const status = outcome.status ?? "succeeded";
     await finishActionExecution({
       id: exec.id,
-      status: "succeeded",
+      status,
       result: outcome.result ?? null,
       externalRef: outcome.externalRef ?? null,
       changesetId: outcome.changesetId ?? null,
       commandOrOperation: outcome.commandOrOperation ?? null,
     });
     await markActionRequestExecuted(request.id);
-    return { ok: true, outcome };
+    return { ok: status === "succeeded", outcome };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await finishActionExecution({

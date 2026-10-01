@@ -209,7 +209,7 @@ export type WorkEvent =
       type: "action_request_result";
       action_request_id: string;
       kind: string;
-      status: "succeeded" | "failed" | "rejected";
+      status: "succeeded" | "failed" | "rejected" | "partially_applied" | "reconcile_required";
       outcome?: {
         result?: Record<string, unknown> | null;
         externalRef?: string | null;
@@ -2009,7 +2009,7 @@ function isCanonicalAnswerSurface(messages: A2UIMessage[]): boolean {
     (component) => component.component === "Answer",
   );
   const carriesAnswer = [...components.values()].some((component) =>
-    ["Markdown", "Table", "KeyFigures", "MetricCard", "Callout"].includes(
+    ["Markdown", "Table", "Chart", "KeyFigures", "MetricCard", "Callout"].includes(
       String(component.component),
     ),
   );
@@ -3204,6 +3204,7 @@ async function fetchActionRequestSnapshot(
     actionRequest?: {
       status?: string;
       rejectionReason?: string | null;
+      failureReason?: string | null;
     };
     executions?: Array<{
       status?: string;
@@ -3214,14 +3215,16 @@ async function fetchActionRequestSnapshot(
     }>;
   };
   const status = body.actionRequest?.status ?? "pending_approval";
-  const execution = body.executions?.at(-1);
+  const execution = body.executions?.[0];
   let result: ApprovalItem["result"] = null;
   if (status === "executed") {
     result = {
       type: "action_request_result",
       action_request_id: actionRequestId,
       kind: actionKind,
-      status: "succeeded",
+      status: execution?.status === "partially_applied" || execution?.status === "reconcile_required"
+        ? execution.status
+        : "succeeded",
       outcome: {
         result: execution?.result ?? null,
         externalRef: execution?.externalRef ?? null,
@@ -3234,7 +3237,7 @@ async function fetchActionRequestSnapshot(
       action_request_id: actionRequestId,
       kind: actionKind,
       status: "failed",
-      error: execution?.error ?? "Action execution failed.",
+      error: body.actionRequest?.failureReason ?? execution?.error ?? "Action execution failed.",
     };
   } else if (status === "rejected") {
     result = {
@@ -3316,9 +3319,11 @@ function ActionApprovalRow({
       localDecision === "approve" ||
       localStatus === "approved");
   const failed = effectiveResult?.status === "failed";
+  const partlyApplied = effectiveResult?.status === "partially_applied";
+  const needsReconciliation = effectiveResult?.status === "reconcile_required";
   const rejected = effectiveResult?.status === "rejected";
   const succeeded = effectiveResult?.status === "succeeded";
-  const visualStatus = failed
+  const visualStatus = failed || partlyApplied || needsReconciliation
     ? "failed"
     : rejected
       ? "rejected"
@@ -3327,20 +3332,28 @@ function ActionApprovalRow({
         : processing
           ? "running"
           : "approval";
-  const stateLabel = failed
-    ? "Failed"
-    : rejected
-      ? "Rejected"
-      : succeeded
-        ? "Done"
-        : processing
-          ? "Running"
-          : "Approval required";
-  const summary = failed
-    ? (effectiveResult?.error ?? "The action failed.")
-    : rejected
-      ? (effectiveResult?.rejection_reason ?? "The request was rejected.")
-      : headline;
+  const stateLabel = partlyApplied
+    ? "Partly applied"
+    : needsReconciliation
+      ? "Needs checking"
+      : failed
+        ? "Failed"
+        : rejected
+          ? "Rejected"
+          : succeeded
+            ? "Done"
+            : processing
+              ? "Running"
+              : "Approval required";
+  const summary = partlyApplied
+    ? "Some changes were applied. Review the action details before retrying."
+    : needsReconciliation
+      ? "The outcome is uncertain. Review the action details before retrying."
+      : failed
+        ? (effectiveResult?.error ?? "The action failed.")
+        : rejected
+          ? (effectiveResult?.rejection_reason ?? "The request was rejected.")
+          : headline;
   const hasDetail =
     tool.input !== undefined ||
     tool.deltas.length > 0 ||
@@ -3416,7 +3429,7 @@ function ActionApprovalRow({
         >
           {processing ? (
             <Loader2 className="work-status-spin" size={12} />
-          ) : failed || rejected ? (
+          ) : failed || partlyApplied || needsReconciliation || rejected ? (
             <X size={12} />
           ) : succeeded ? (
             <Check size={12} />

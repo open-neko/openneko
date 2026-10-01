@@ -133,6 +133,7 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	if err != nil {
 		return err
 	}
+	reapBeforePull(ctx)
 
 	// Derive both the gateway URL and the dedicated role password before
 	// compose interpolates the one-shot migration service's environment.
@@ -333,11 +334,9 @@ const (
 	openShellGatewayIPEnv      = "OPENSHELL_GATEWAY_IP"
 )
 
-// configureOpenShellNetwork gives the containerised gateway a stable address
-// on the same private Docker network as its sandboxes. OpenShell's Docker
-// driver rewrites sandbox callbacks to host.openshell.internal and normally
-// maps that name to the host bridge gateway. The OpenNeko gateway does not run
-// on the host, so its address must be supplied as host_gateway_ip instead.
+// configureOpenShellNetwork keeps each installation's private Compose network
+// and gateway address stable. The host-networked Docker supervisor can route
+// to the private service and broker IPs on this network.
 //
 // Each stack mode gets a distinct /24 so prod/dev/demo can coexist. Operators
 // with an overlapping host route can override OPENNEKO_DOCKER_SUBNET; when the

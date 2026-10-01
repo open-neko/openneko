@@ -937,6 +937,14 @@ export class InProcessControlPlane implements AgentControlPlane {
 
       if (request.status === "executed") {
         const [execution] = await listActionExecutions(request.id);
+        if (execution?.status === "partially_applied" || execution?.status === "reconcile_required") {
+          return {
+            status: "failed",
+            error: execution.status === "partially_applied"
+              ? "The action was partly applied. Review its details before any retry."
+              : "The action outcome needs reconciliation. Review its details before any retry.",
+          };
+        }
         return {
           status: "succeeded",
           outcome: {

@@ -54,6 +54,7 @@ type ActionDetailPayload = {
     approvedByUserId: string | null;
     approvedAt: string | null;
     rejectionReason: string | null;
+    failureReason: string | null;
     createdAt: string;
     updatedAt: string;
   };
@@ -78,6 +79,7 @@ type ActionDetailPayload = {
     workflowRunId: string | null;
   } | null;
   approverKind: "operator" | "policy" | "auto" | null;
+  canRetry: boolean;
 };
 
 function backToActionsHref(outcome: ActionOutcome): string {
@@ -130,6 +132,7 @@ export default function ActionPage() {
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [showPayload, setShowPayload] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!actionRequestId) return;
@@ -170,16 +173,24 @@ export default function ActionPage() {
   }, [data?.actionRequest?.status, load]);
 
   const submitDecision = useCallback(
-    async (decision: "approve" | "reject", reason?: string) => {
+    async (decision: "approve" | "reject" | "retry", reason?: string) => {
       if (!actionRequestId) return;
       setBusy(true);
+      setDecisionError(null);
       try {
-        await fetch(`/api/action-requests/${actionRequestId}`, {
+        const response = await fetch(`/api/action-requests/${actionRequestId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decision, reason }),
         });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({})) as { error?: string };
+          setDecisionError(body.error ?? "Could not update this action. Refresh and try again.");
+          return;
+        }
         await load();
+      } catch {
+        setDecisionError("Could not update this action. Check your connection and try again.");
       } finally {
         setBusy(false);
       }
@@ -239,6 +250,7 @@ export default function ActionPage() {
     policy,
     upstreamOutput,
     approverKind,
+    canRetry,
   } = data;
   const isPending = ar.status === "pending_approval";
   const latestExecution = executions[0] ?? null;
@@ -249,7 +261,7 @@ export default function ActionPage() {
   const outcome = actionOutcome(ar.status, resultStatus ?? latestExecution?.status);
   const outcomeSentence = describeOutcome(
     outcome,
-    latestExecution?.error ?? ar.rejectionReason,
+    latestExecution?.error ?? ar.failureReason ?? ar.rejectionReason,
     systemForActionKind(ar.kind),
   );
   const recordUpdate = parseRecordUpdatePayload(ar.kind, ar.payload);
@@ -288,6 +300,8 @@ export default function ActionPage() {
             </Button>
           }
         />
+
+        {decisionError && <p role="alert" className="mb-4 text-ui-body-sm text-danger">{decisionError}</p>}
 
         {recordUpdate && (
           <Section title="Proposed change">
@@ -519,6 +533,13 @@ export default function ActionPage() {
                 </Button>
               </div>
             )}
+          </Section>
+        )}
+
+        {ar.status === "failed" && canRetry && (
+          <Section title="Try again">
+            <p className="mb-3 text-ui-body-sm text-text2">No change was sent. You can retry this approved action.</p>
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void submitDecision("retry")}>{busy ? "Queuing retry…" : "Retry action"}</Button>
           </Section>
         )}
       </div>

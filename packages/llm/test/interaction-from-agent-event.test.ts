@@ -108,9 +108,16 @@ describe("toInteractionEvents", () => {
       status: "rejected",
       rejection_reason: "not now",
     };
-    expect(toInteractionEvents([ok, rejected])).toEqual([
+    const uncertain: AgentEvent = {
+      type: "action_request_result",
+      action_request_id: "ar-4",
+      kind: "magento.manage_catalog",
+      status: "reconcile_required",
+    };
+    expect(toInteractionEvents([ok, rejected, uncertain])).toEqual([
       { kind: "resolve", id: "ar-1", ref: "ar-1", status: "succeeded", summary: "send_slack_message → 1718.42" },
       { kind: "resolve", id: "ar-3", ref: "ar-3", status: "rejected", summary: "not now" },
+      { kind: "resolve", id: "ar-4", ref: "ar-4", status: "reconcile_required", summary: "magento.manage_catalog needs reconciliation before retry" },
     ]);
   });
 

@@ -39,6 +39,7 @@ import type {
   BriefingCardProps,
   BriefingProps,
   CalloutProps,
+  ChartProps,
   ChoiceProps,
   ConfirmationProps,
   DividerProps,
@@ -58,6 +59,7 @@ import type {
   TextProps,
 } from "./catalog";
 import BriefingCard from "@/components/BriefingCard";
+import Chart from "@/components/Chart";
 
 // ─── Answer / Briefing root ───
 // The card frame for a conversational answer (Answer) and the dashboard's daily
@@ -266,6 +268,67 @@ const renderMetricCard = (comp: A2UIComponent, ctx: RenderContext) => {
 };
 registerComponent("MetricCard", renderMetricCard);
 registerComponent("BriefingCard", renderMetricCard);
+
+// An answer chart uses the Briefing visualization without the saved-metric
+// lifecycle, mood, or card actions. Exact values remain available to readers.
+registerComponent("Chart", (comp: A2UIComponent) => {
+  const props = comp as unknown as ChartProps & { id: string };
+  const data = Array.isArray(props.data) ? props.data : [];
+  const validPoints = data.every((point) =>
+    point && typeof point.d === "string" && point.d.trim() &&
+    typeof point.v === "number" && Number.isFinite(point.v) &&
+    (point.t === undefined || (typeof point.t === "number" && Number.isFinite(point.t))),
+  );
+  const validDonut = props.type !== "donut" ||
+    (validPoints && data.length <= 8 && data.every((point) => point.v >= 0) &&
+      data.reduce((sum, point) => sum + point.v, 0) > 0);
+  if (typeof props.title !== "string" || !props.title.trim() ||
+    typeof props.valueLabel !== "string" || !props.valueLabel.trim() ||
+    !["line", "bar", "area", "donut"].includes(props.type) ||
+    data.length < 2 || data.length > 60 || !validPoints || !validDonut) {
+    return null;
+  }
+  const hasBaseline = data.some((point) => point.t !== undefined);
+  return (
+    <figure key={props.id} className="work-chart" aria-label={props.title}>
+      <figcaption className="work-chart-title">{props.title}</figcaption>
+      <Chart
+        type={props.type}
+        data={data}
+        h={220}
+        valueLabel={props.valueLabel}
+        baselineLabel={props.baselineLabel}
+      />
+      <table className="sr-only">
+        <caption>{props.title} values</caption>
+        <thead>
+          <tr>
+            <th scope="col">Category</th>
+            <th scope="col">{props.valueLabel}</th>
+            {hasBaseline ? <th scope="col">{props.baselineLabel ?? "Prior"}</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((point, index) => (
+            <tr key={`${point.d}-${index}`}>
+              <th scope="row">{point.d}</th>
+              <td>{point.v}</td>
+              {hasBaseline ? <td>{point.t ?? ""}</td> : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {props.source || props.asOf ? (
+        <p className="work-chart-source">
+          {[
+            props.source ? `Source: ${props.source}` : null,
+            props.asOf ? `As of ${props.asOf}` : null,
+          ].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
+    </figure>
+  );
+});
 
 // ─── Table ───
 // Structured tabular data. Tables used to only exist as Markdown GFM, which

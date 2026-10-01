@@ -29,6 +29,8 @@ describe("render_cards catalog", () => {
     expect(messagesDescription).toContain("Button");
     expect(messagesDescription).toContain("OpenApiSpecInput");
     expect(messagesDescription).toContain("ManagedFileSourceInput");
+    expect(messagesDescription).toContain("Chart: standalone evidence chart");
+    expect(messagesDescription).toContain("Choose Chart only when");
     expect(messagesDescription).toContain("Example — editable source proposal:");
     expect(messagesDescription).toContain('"values":{"path":"/form"}');
     expect(messagesDescription).toContain('"label":"Files","value":"file"');

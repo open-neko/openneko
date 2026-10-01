@@ -132,6 +132,40 @@ function generatedSurfaceGraphIssues(
     }
     if (!components) return;
     components.forEach((component, componentIndex) => {
+      if (component.component === "Chart") {
+        const path = `messages.${index}.${location}.components.${componentIndex}`;
+        if (typeof component.title !== "string" || !component.title.trim() ||
+          typeof component.valueLabel !== "string" || !component.valueLabel.trim() ||
+          !["line", "bar", "area", "donut"].includes(String(component.type))) {
+          issues.push({
+            path,
+            code: "invalid_chart_properties",
+            message: "Chart requires a title, valueLabel, and type: line, bar, area, or donut.",
+          });
+        }
+        const data = component.data;
+        const boundData = data !== null && typeof data === "object" && !Array.isArray(data) &&
+          "path" in data && typeof data.path === "string" && data.path.startsWith("/");
+        if (!boundData && (!Array.isArray(data) || data.length < 2 || data.length > 60 ||
+          data.some((point) => !point || typeof point !== "object" || Array.isArray(point) ||
+            typeof point.d !== "string" || !point.d.trim() ||
+            typeof point.v !== "number" || !Number.isFinite(point.v) ||
+            (point.t !== undefined && (typeof point.t !== "number" || !Number.isFinite(point.t)))))) {
+          issues.push({
+            path: `${path}.data`,
+            code: "invalid_chart_data",
+            message: 'Chart needs 2–60 points [{d:"label",v:42,t?:40}] or a {path:"/series"} binding to that array.',
+          });
+        } else if (Array.isArray(data) && component.type === "donut" &&
+          (data.length > 8 || data.some((point) => (point as { v: number }).v < 0) ||
+            data.reduce((sum, point) => sum + (point as { v: number }).v, 0) <= 0)) {
+          issues.push({
+            path: `${path}.data`,
+            code: "invalid_donut_data",
+            message: "A donut needs 2–8 nonnegative category values with a positive total.",
+          });
+        }
+      }
       if (component.component !== "Table") return;
       const path = `messages.${index}.${location}.components.${componentIndex}`;
       if (!Array.isArray(component.columns) || component.columns.length === 0 ||

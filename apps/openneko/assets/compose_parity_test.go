@@ -27,6 +27,7 @@ type composeParityService struct {
 	CPUs        string                             `yaml:"cpus"`
 	MemLimit    string                             `yaml:"mem_limit"`
 	PidsLimit   int                                `yaml:"pids_limit"`
+	NetworkMode string                             `yaml:"network_mode"`
 	CapDrop     []string                           `yaml:"cap_drop"`
 	Tmpfs       []string                           `yaml:"tmpfs"`
 	Profiles    []string                           `yaml:"profiles"`
@@ -36,6 +37,40 @@ type composeParityService struct {
 	Ports       []string                           `yaml:"ports"`
 	Command     []string                           `yaml:"command"`
 	Healthcheck map[string]any                     `yaml:"healthcheck"`
+}
+
+func TestOpenShellReaperIsIsolatedAndPresentInBothComposeVariants(t *testing.T) {
+	rootRaw, err := os.ReadFile("../../../compose.openshell.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedRaw, err := ComposeFS.ReadFile("compose/openshell.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, document := range map[string]composeParityDocument{
+		"source":   loadComposeParityDocument(t, rootRaw),
+		"packaged": loadComposeParityDocument(t, packagedRaw),
+	} {
+		reaper, ok := document.Services["neko-reaper"]
+		if !ok {
+			t.Fatalf("%s OpenShell overlay has no reaper", label)
+		}
+		if reaper.Image != "ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}" ||
+			!reflect.DeepEqual(reaper.Command, []string{"reaper"}) ||
+			reaper.Restart != "unless-stopped" || !reaper.ReadOnly || reaper.NetworkMode != "none" ||
+			!reflect.DeepEqual(reaper.Volumes, []string{"/var/run/docker.sock:/var/run/docker.sock"}) {
+			t.Fatalf("%s reaper contract is incomplete: %+v", label, reaper)
+		}
+		if !strings.Contains(fmt.Sprint(reaper.Healthcheck["test"]), "reaper --check") {
+			t.Fatalf("%s reaper has no Docker socket healthcheck", label)
+		}
+		for _, consumer := range []string{"web", "worker"} {
+			if document.Services[consumer].DependsOn["neko-reaper"].Condition != "service_healthy" {
+				t.Fatalf("%s %s can start without a healthy reaper", label, consumer)
+			}
+		}
+	}
 }
 
 func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
@@ -592,6 +627,43 @@ func TestSourceAndPackagedComposeStateInventoryMatch(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("service %s state/recovery inventory drifted:\nsource:   %#v\npackaged: %#v", name, got, want)
+		}
+	}
+}
+
+func TestDevelopmentDatabasesRecycleWALWithoutArchiving(t *testing.T) {
+	root := repoRootForTest(t)
+	sourceCore, err := os.ReadFile(filepath.Join(root, "compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDev, err := os.ReadFile(filepath.Join(root, "compose.dev.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedCore, err := ComposeFS.ReadFile("compose/core.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedDev, err := ComposeFS.ReadFile("compose/dev.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, pair := range map[string]struct{ core, dev []byte }{
+		"source":   {sourceCore, sourceDev},
+		"packaged": {packagedCore, packagedDev},
+	} {
+		core := loadComposeParityDocument(t, pair.core)
+		dev := loadComposeParityDocument(t, pair.dev)
+		for _, name := range []string{"neko-db", "records-db"} {
+			production := strings.Join(core.Services[name].Command, " ")
+			development := strings.Join(dev.Services[name].Command, " ")
+			if !strings.Contains(production, "archive_mode=on") || !strings.Contains(production, "archive_timeout=60s") {
+				t.Errorf("%s %s lost its production archive policy: %s", label, name, production)
+			}
+			if !strings.Contains(development, "archive_mode=off") || strings.Contains(development, "archive_timeout") || strings.Contains(development, "archive_command") {
+				t.Errorf("%s %s development archive policy is unsafe: %s", label, name, development)
+			}
 		}
 	}
 }
