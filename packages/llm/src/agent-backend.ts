@@ -308,6 +308,8 @@ export type AgentRunOptions = {
   runId?: string;
   prompt: string;
   userMessage?: string;
+  /** Host-confirmed artifact intent for optional shadow budget triage. */
+  budgetTriageArtifactRequested?: boolean;
   timeoutMs?: number;
   retries?: number;
   debug?: boolean;

@@ -28,7 +28,7 @@ import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
 import { VENDORED_HERMES_MODEL_BINARY, VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
-import { boundedSkillQuery, parseHarnessRouting, type HarnessRouting } from "./harness-routing";
+import { boundedSkillQuery, harnessTriageSpec, parseHarnessRouting, type HarnessRouting } from "./harness-routing";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { copySkillOverrides } from "./workspace";
@@ -677,6 +677,7 @@ function makeSandboxCore(
     if (requestedCostMicros !== undefined && (!Number.isSafeInteger(requestedCostMicros) || requestedCostMicros < 1 || requestedCostMicros > 1_000_000_000_000)) {
       throw new Error("Invalid workflow cost ceiling");
     }
+    const triageShadowEnabled = input.backend.id === "harness" && process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1";
     const started = performance.now();
     const timed = async <T>(
       phase: string,
@@ -731,6 +732,9 @@ function makeSandboxCore(
       const spec = JSON.stringify({version: 1, run_id: input.runId, input_id: input.runId,
         max_operations: HARNESS_OPERATION_LIMIT, max_model_calls: harnessModelCallLimit, max_model_tokens: harnessModelTokenLimit,
         ...(requestedCostMicros ? {max_cost_micros: requestedCostMicros} : {}),
+        ...harnessTriageSpec({routingManifest: routing?.manifest, enabled: triageShadowEnabled,
+          maxCostMicros: requestedCostMicros, prompt, userMessage, mode: kind, lookupRead: kind !== "work" ||
+            (input as RunAgentBackendInput).dataSurface !== "records"}),
         ...(userMessage ? {skill_query: boundedSkillQuery(userMessage)} : {}),
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
@@ -1199,6 +1203,7 @@ function makeSandboxCore(
             ...(admission ? { HARNESS_RESUME: admission.resume ? "1" : "", OPENNEKO_HARNESS_ACTION_KINDS: actionGrants.length ? JSON.stringify(actionGrants.map(action => action.kind)) : "" } : {}),
             ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit), OPENNEKO_HARNESS_MAX_MODEL_TOKENS: String(harnessModelTokenLimit),
               ...(requestedCostMicros ? {OPENNEKO_HARNESS_MAX_COST_MICROS: String(requestedCostMicros)} : {}),
+              ...(triageShadowEnabled ? {OPENNEKO_HARNESS_TRIAGE_SHADOW: "1"} : {}),
               OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),

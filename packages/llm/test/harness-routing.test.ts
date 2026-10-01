@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundedSkillQuery, parseHarnessRouting } from "../src/work/harness-routing";
+import { boundedSkillQuery, harnessTriageSpec, parseHarnessRouting } from "../src/work/harness-routing";
 
 const routeConfig = {
   context: "cheap",
@@ -42,6 +42,30 @@ describe("Harness OpenShell route admission", () => {
     expect(() => parseHarnessRouting(JSON.stringify({...config, routes: [config.routes[0], routeConfig.routes[1]]}))).toThrow();
     expect(() => parseHarnessRouting(JSON.stringify({...config, pricing_version: undefined}))).toThrow();
     expect(() => parseHarnessRouting(JSON.stringify({...config, graphjin_price: {...price, output_micros_per_million: -1}}))).toThrow();
+  });
+
+  it("pins a dedicated priced Typesafe route and bounded shadow input", () => {
+    const price = {input_micros_per_million: 1_000_000, output_micros_per_million: 1_000_000};
+    const triage = {key: "triage", model: "jev-fixture", url: "https://triage.example/v1",
+      provider: "triage-provider", credential_env: "TRIAGE_API_KEY", api_key_env: "HARNESS_TRIAGE_KEY", price};
+    const config = {...routeConfig, triage: "triage", pricing_version: "triage-test-v1",
+      graphjin_price: price, routes: [...routeConfig.routes.map(route => ({...route, price})), triage]};
+    const parsed = parseHarnessRouting(JSON.stringify(config));
+    expect(JSON.parse(parsed.manifest).triage).toBe("triage");
+    expect(parsed.providers).toContain("triage-provider");
+    expect(parsed.keyAliases).toContainEqual({from: "TRIAGE_API_KEY", to: "HARNESS_TRIAGE_KEY"});
+    const summary = "🌱".repeat(600);
+    expect(harnessTriageSpec({routingManifest: parsed.manifest, enabled: true, maxCostMicros: 10_000,
+      prompt: "fallback", userMessage: summary, mode: "workflow", lookupRead: true, artifactRequested: true})).toEqual({
+      triage_summary: "🌱".repeat(512), triage_artifact_requested: true,
+      triage_tool_families: "file,graphjin,workflow", triage_input_bytes: 2400,
+    });
+    expect(harnessTriageSpec({routingManifest: parsed.manifest, enabled: false, maxCostMicros: 10_000,
+      prompt: "fallback", mode: "workflow", lookupRead: true})).toEqual({});
+    for (const invalid of [{...config, triage: "work"}, {...config, pricing_version: undefined},
+      {...config, fallbacks: [{from: "work", to: "triage"}]}]) {
+      expect(() => parseHarnessRouting(JSON.stringify(invalid))).toThrow();
+    }
   });
 
   it("passes an approved later executor route without changing other stages", () => {

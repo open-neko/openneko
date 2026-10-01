@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { parse } from "yaml";
 import type { AgentBackend, AgentEvent, AgentModelIdentity, AgentRunOptions, AgentRunResult, AgentTokenUsage } from "../agent-backend";
 import { VENDORED_HARNESS_MODEL_BINARY } from "../agent-runtime-contract";
-import { boundedSkillQuery } from "../work/harness-routing";
+import { boundedSkillQuery, harnessTriageSpec } from "../work/harness-routing";
 /** Opt-in read-only M3 backend. Hermes remains the default and keeps its warm pool. */
 export class HarnessBackend implements AgentBackend {
     readonly id = "harness" as const;
@@ -44,6 +44,10 @@ export class HarnessBackend implements AgentBackend {
             maxCostMicros !== undefined && (!Number.isSafeInteger(maxCostMicros) || maxCostMicros < 1 || maxCostMicros > 1_000_000_000_000))
             throw new Error("Invalid trusted Harness run budget");
         const workflowRunId = opts.mcpBridgeEnv?.OPENNEKO_HARNESS_WORKFLOW_RUN_ID;
+        const triageSpec = harnessTriageSpec({routingManifest: env.HARNESS_MODEL_ROUTES,
+            enabled: env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1", maxCostMicros,
+            prompt: opts.prompt, userMessage: opts.userMessage, mode: opts.mcpBridgeEnv?.OPENNEKO_MCP_MODE,
+            lookupRead, artifactRequested: opts.budgetTriageArtifactRequested});
         const childReads = opts.nativeDelegation === "disabled" ? "" : opts.mcpBridgeEnv?.OPENNEKO_MCP_MODE === "agent-job"
             ? lookupRead ? "lookup" : "" : workflowRunId ? "lookup" :
             (opts.mcpBridgeEnv?.OPENNEKO_HARNESS_MCP_MEMORY_READ ?? env.OPENNEKO_HARNESS_MCP_MEMORY_READ) === "1" &&
@@ -73,6 +77,7 @@ export class HarnessBackend implements AgentBackend {
         child.stdin.end(JSON.stringify({ version: 1, run_id: runId, input_id: runId,
             max_operations: maxOperations, max_model_calls: maxModelCalls, max_model_tokens: maxModelTokens,
             ...(maxCostMicros ? {max_cost_micros: maxCostMicros} : {}),
+            ...triageSpec,
             ...(opts.userMessage ? { skill_query: boundedSkillQuery(opts.userMessage) } : {}),
             prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
         try {

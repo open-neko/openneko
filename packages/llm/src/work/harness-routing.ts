@@ -6,13 +6,38 @@ export type HarnessRouting = {
   keyAliases: ReadonlyArray<{ from: string; to: string }>;
 };
 
-/** Keep the accepted skill query within Go's byte limit on every launch path. */
-export function boundedSkillQuery(value: string): string {
+function boundedUtf8(value: string, limit: number): string {
   const bytes = Buffer.from(value, "utf8");
-  if (bytes.length <= 8192) return value;
-  let end = 8192;
+  if (bytes.length <= limit) return value;
+  let end = limit;
   while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
   return bytes.subarray(0, end).toString("utf8");
+}
+
+/** Keep the accepted skill query within Go's byte limit on every launch path. */
+export function boundedSkillQuery(value: string): string { return boundedUtf8(value, 8192); }
+
+/** Build the same host-owned shadow input for launch and checkpoint recovery. */
+export function harnessTriageSpec(input: {
+  routingManifest?: string;
+  enabled: boolean;
+  maxCostMicros?: number;
+  prompt: string;
+  userMessage?: string;
+  mode?: string;
+  lookupRead: boolean;
+  artifactRequested?: boolean;
+}): Record<string, string | number | boolean> {
+  if (!input.enabled || !input.maxCostMicros || !input.routingManifest || !JSON.parse(input.routingManifest).triage) return {};
+  const summarySource = input.userMessage?.trim() || input.prompt.trim();
+  const summary = boundedUtf8(summarySource, 2048);
+  if (!summary) return {};
+  const families = ["file"];
+  if (input.lookupRead) families.push("graphjin");
+  if (input.mode === "workflow") families.push("workflow");
+  if (input.mode === "work") families.push("mcp");
+  return {triage_summary: summary, triage_artifact_requested: input.artifactRequested === true,
+    triage_tool_families: families.join(","), triage_input_bytes: Math.min(Buffer.byteLength(summarySource), 131072)};
 }
 
 const routeKey = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -46,7 +71,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     throw new Error("Invalid Harness routing configuration");
   }
   const value = config as Record<string, unknown>;
-  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "fallbacks", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
+  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "triage", "fallbacks", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
       !Array.isArray(value.routes) || value.routes.length < 1 || value.routes.length > 8) {
     throw new Error("Invalid Harness routing configuration");
   }
@@ -107,12 +132,16 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   if (value.skill !== undefined && (typeof value.skill !== "string" || !keys.has(value.skill))) {
     throw new Error("Harness skill stage has no approved route");
   }
+  if (value.triage !== undefined && (typeof value.triage !== "string" || !keys.has(value.triage) || !priced ||
+      value.triage === value.context || value.triage === value.executor || value.triage === value.responder || value.triage === value.skill)) {
+    throw new Error("Harness triage stage requires a dedicated priced route");
+  }
   const escalation = value.executor_escalation;
   const afterErrors = value.executor_after_errors;
   if ((escalation === undefined) !== (afterErrors === undefined) ||
       escalation !== undefined && (typeof escalation !== "string" || !keys.has(escalation) ||
         !Number.isInteger(afterErrors) || (afterErrors as number) < 1 || (afterErrors as number) > 8 ||
-        escalation === value.executor || value.executor === value.context ||
+        escalation === value.executor || escalation === value.triage || value.executor === value.context ||
         value.executor === value.responder || value.executor === value.skill)) {
     throw new Error("Invalid Harness executor escalation");
   }
@@ -128,7 +157,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     const pair = entry as Record<string, unknown>;
     if (Object.keys(pair).some(key => !["from", "to"].includes(key)) ||
         typeof pair.from !== "string" || !active.has(pair.from) || fallbackSources.has(pair.from) ||
-        typeof pair.to !== "string" || !keys.has(pair.to) || pair.from === pair.to) {
+        typeof pair.to !== "string" || !keys.has(pair.to) || pair.to === value.triage || pair.from === pair.to) {
       throw new Error("Invalid Harness fallback route");
     }
     fallbackSources.add(pair.from);
@@ -137,7 +166,8 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   return {
     manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder,
       ...(escalation ? {executor_escalation: escalation, executor_after_errors: afterErrors} : {}),
-      ...(value.skill ? { skill: value.skill } : {}), ...(fallbacks.length > 0 ? {fallbacks} : {}), routes,
+      ...(value.skill ? { skill: value.skill } : {}), ...(value.triage ? { triage: value.triage } : {}),
+      ...(fallbacks.length > 0 ? {fallbacks} : {}), routes,
       ...(priced ? {pricing_version: value.pricing_version} : {}),
       ...(graphjinPrice ? {graphjin_price: graphjinPrice} : {}) }),
     providers, modelHosts, keyAliases,

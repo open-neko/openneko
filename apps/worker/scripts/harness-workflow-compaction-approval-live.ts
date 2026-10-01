@@ -80,8 +80,10 @@ try {
   const counts = await (await fetch(control)).json() as Record<string, number>;
   const checkpoint = JSON.parse(await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id,
     ".harness", `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`), "utf8")) as {
-      result: { status: string; answer?: string; code?: string };
-      events: Array<{ type: string; terminal?: { accepted: boolean } }>;
+      result: { status: string; answer?: string; code?: string; cost?: { charged_micros: number } };
+      events: Array<{ type: string; stage?: string; origin?: string; name?: string; cost_micros?: number;
+        data?: { version?: string; choice?: string; suggested_profile?: string; probabilities?: Record<string, number> };
+        terminal?: { accepted: boolean } }>;
     };
   const operations = (await pool().query<{ operation_id: number; request: { tool?: string }; result: unknown }>(
     "select operation_id,request,result from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
@@ -115,6 +117,21 @@ try {
   assert.equal(executions, 0);
   assert.equal(effectCount, 0);
   assert.equal(checkpoint.events.find(event => event.type === "terminal.checked")?.terminal?.accepted, true);
+  if (process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1") {
+    const started = checkpoint.events.filter(event => event.type === "model.request.started" && event.stage === "budget_triage");
+    const finished = checkpoint.events.filter(event => event.type === "model.request.finished" && event.stage === "budget_triage");
+    assert.equal(counts["jev-fixture"], 1, "Typesafe route did not traverse the connected OpenShell gateway");
+    assert.equal(started.length, 1);
+    assert.equal(finished.length, 1);
+    assert.equal(started[0].origin, "triage");
+    assert.equal(started[0].name, "jev-fixture");
+    assert.equal(started[0].cost_micros, 512);
+    assert.equal(finished[0].data?.version, "budget-triage-v1");
+    assert.equal(finished[0].data?.choice, "multi_step");
+    assert.equal(finished[0].data?.suggested_profile, "multi_step");
+    assert.equal(finished[0].data?.probabilities?.multi_step, 0.8);
+    assert.ok((checkpoint.result.cost?.charged_micros ?? 0) >= 512);
+  }
   const [admission] = (await pool().query<{ id: string; attempts: number }>(
     "select id,attempts from workflow_api_admission where workflow_run_id=$1", [admitted.runId])).rows;
   await runWorkflowRunFire({ orgId, workflowId, triggerKind: "api", apiAdmissionId: admission.id,
