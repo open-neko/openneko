@@ -314,8 +314,8 @@ func main() {
 			return
 		}
 		if req.Model == "harness-compaction-output-fixture" && !compactionSummary && n == 8 &&
-			(!strings.Contains(string(req.Messages), "output_id") || !strings.Contains(string(req.Messages), "REF-42")) {
-			http.Error(w, "responder lost committed workflow output", 422)
+			(!strings.Contains(string(req.Messages), "output_id") || !strings.Contains(string(req.Messages), "REF-42") || !strings.Contains(string(req.Messages), "result.csv")) {
+			http.Error(w, "responder lost committed workflow file output", 422)
 			return
 		}
 		if compactionFixture &&
@@ -565,19 +565,19 @@ func main() {
 			}
 		} else if req.Model == "harness-compaction-output-fixture" {
 			if compactionSummary {
-				responses = []string{"Objective: Report the saved REF-42 finding after reading several references.\nCurrent state and artifacts: a workflow finding has been committed.\nEvidence: REF-42.\nUser constraints and preferences: Never execute a change without approval.\nNext step: verify the saved output receipt and report it."}
+				responses = []string{"Objective: Report the saved REF-42 CSV after reading several references.\nCurrent state and artifacts: result.csv has been written and a workflow file output has been committed.\nEvidence: REF-42.\nUser constraints and preferences: Never execute a change without approval.\nNext step: verify the saved file and output receipts and report them."}
 				n = 0
 			} else {
 				responses = []string{
-					`{"javascriptCode":"final('Read references and record one finding without executing changes',{})"}`,
+					`{"javascriptCode":"final('Read references, create a CSV, and record one file output without executing changes',{})"}`,
 					`{"javascriptCode":"const row=lookup('Find the seeded reference'); console.log('noise-'.repeat(3000),row);"}`,
-					`{"javascriptCode":"const out=workflow_output_emit({kind:'finding',title:'Compacted reference',body:'The source-change reference is REF-42.',payload:{reference:'REF-42'}}); console.log('noise-'.repeat(3000),out);"}`,
+					`{"javascriptCode":"const written=file_write({path:'result.csv',content:'lead_id\\n'+'LEAD-42\\n'.repeat(6500)}); console.log('noise-'.repeat(3000),written);"}`,
+					`{"javascriptCode":"const read=file_read({path:'result.csv'}); if(read.content.length!==52008||!read.content.endsWith('LEAD-42\\n')) throw Error('CSV content lost'); console.log('noise-'.repeat(3000),{path:read.path,version:read.version,length:read.content.length});"}`,
+					`{"javascriptCode":"const out=workflow_output_emit({kind:'file',title:'Compacted reference CSV',body:'The source-change reference is REF-42.',artifactPath:'result.csv',payload:{reference:'REF-42'}}); console.log('noise-'.repeat(3000),out);"}`,
 					`{"javascriptCode":"const row=lookup('Verify the seeded reference independently'); console.log('noise-'.repeat(3000),row);"}`,
 					`{"javascriptCode":"const row=lookup('Check reference evidence again'); console.log('noise-'.repeat(3000),row);"}`,
-					`{"javascriptCode":"const row=lookup('Recheck the reference'); console.log('noise-'.repeat(3000),row);"}`,
-					`{"javascriptCode":"const row=lookup('Confirm reference one last time'); console.log('noise-'.repeat(3000),row);"}`,
-					`{"javascriptCode":"const saved=harnessSavedOperation(2); if(!JSON.stringify(saved).includes('outputId')) throw Error('saved output receipt missing'); final('Report the committed finding',{saved});"}`,
-					`{"answer":"The committed workflow finding reports REF-42; no change was executed."}`,
+					`{"javascriptCode":"const row=lookup('Recheck the reference'); const saved=harnessSavedOperation(4); if(!JSON.stringify(saved).includes('outputId')||!JSON.stringify(saved).includes('result.csv')) throw Error('saved file output receipt missing'); console.log('noise-'.repeat(3000),row); final('Report the committed CSV',{saved});"}`,
+					`{"answer":"The REF-42 CSV is recorded as result.csv; no change was executed."}`,
 				}
 			}
 		} else if req.Model == "harness-finalizer-output-fixture" || req.Model == "harness-finalizer-empty-fixture" {

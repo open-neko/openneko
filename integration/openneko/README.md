@@ -347,9 +347,10 @@ redelivery. The test stack is removed on exit.
 
 The focused M6 compaction gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_COMPACTION_ONLY=1`. A queued source-change
-workflow makes five GraphJin lookups, commits one broker output, forces Ax's
-trajectory summary and verifies the accepted constraint plus saved output
-receipt in the post-summary responder request. It checks bounded provider
+workflow makes four GraphJin lookups, writes and rereads a 52,008-byte CSV,
+commits one broker file output, forces Ax's trajectory summary and verifies the
+accepted constraint plus saved output and file path in the post-summary
+responder request. It checks the artifact's exact bytes, bounded provider
 request size and inert queue redelivery. The isolated stack is removed on exit.
 
 The focused M6 API pricing preflight runs with
