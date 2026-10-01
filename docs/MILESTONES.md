@@ -848,7 +848,7 @@ An isolated OpenShell 0.0.116 consumer run observed the first chunk more than
 500 ms before the final answer, including the PostgreSQL notification, and
 verified that the checkpoint contained no draft chunks. A route test checked
 SSE tenant scoping and replay cursor behavior. This proves the connected
-transport and route contract; rendered-browser qualification remains open.
+transport and route contract; the subsequent 0.1.2 browser gates are below.
 The same connected streaming gate now passes with the 0.1.2 consumer. An
 additional Chromium gate now renders the isolated Work screen while the live
 OpenShell/Ax fixture runs: it sees the provisional answer before the canonical

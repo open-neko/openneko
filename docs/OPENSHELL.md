@@ -47,9 +47,11 @@ For our CLI-based path, these are the exact qualification surfaces:
 3. **Passed:** the standalone policy and built image run under 0.1.2,
    including streamed HTTP/HTTPS, cancellation and sandbox deletion. The
    connected consumer passes sandbox create/upload, policy, Ax routing and
-   fallback, streaming first content, and cold/warm/reused Hermes turns.
-4. **Remaining:** repeat the broader worker/queue, workflow and rendered-web
-   gates on 0.1.2 before calling the entire consumer suite qualified.
+   fallback, streaming first content, and cold/warm/reused Hermes turns. An
+   isolated Work queue and Chromium run also shows the streamed draft before
+   the final answer, removes it on completion, and omits it from durable replay.
+4. **Remaining:** complete the broader consumer matrix and held-out model and
+   data evaluations before calling the entire migration qualified.
 
 The connected crash-and-resume gate now uses `sandbox stop` followed by
 `sandbox start`. OpenShell 0.1.2 preserves the workspace across that process
