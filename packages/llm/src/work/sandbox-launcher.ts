@@ -1121,8 +1121,8 @@ function makeSandboxCore(
             }));
             results.forEach((result, index) => startupEvent(`sandbox.${phases[index]}_delta`, result));
           };
-          // OpenShell 0.1.2 serializes sandbox mutations. Finish the policy
-          // update before uploading and reconciling inputs in this slot.
+          // Finish the policy update before reconciling inputs in this slot;
+          // both operations change the same OpenShell sandbox.
           await bindPolicy();
           await syncInputs();
         });
