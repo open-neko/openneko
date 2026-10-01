@@ -7,7 +7,7 @@ oss=("$cli" --gateway harness-m2)
 name=harness-m6-routing
 cleanup() { "${oss[@]}" sandbox delete "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-for stage in context context-spare context-503 context-403 executor executor-base executor-strong responder; do
+for stage in context context-spare context-503 context-403 context-429 executor executor-base executor-strong responder; do
   upper=$(printf '%s' "$stage" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
   cat > "$state/m6-$stage-provider.yaml" <<YAML
 id: harness-m6-$stage
@@ -56,7 +56,7 @@ network_policies:
 YAML
 "${oss[@]}" sandbox create --name "$name" --from harness-openneko:m3 \
   --provider harness-m6-context --provider harness-m6-context-spare --provider harness-m6-context-503 \
-  --provider harness-m6-context-403 --provider harness-m6-executor --provider harness-m6-executor-base \
+  --provider harness-m6-context-403 --provider harness-m6-context-429 --provider harness-m6-executor --provider harness-m6-executor-base \
   --provider harness-m6-executor-strong --provider harness-m6-responder \
   --no-auto-providers --no-tty --detach --policy "$state/m6-policy.yaml" -- sleep infinity
 manifest='{"context":"context","executor":"executor","responder":"responder","routes":[{"key":"context","model":"harness-route-context","url":"http://host.docker.internal:18118/route/context/v1","api_key_env":"HARNESS_CONTEXT_KEY"},{"key":"executor","model":"harness-route-executor","url":"http://host.docker.internal:18118/route/executor/v1","api_key_env":"HARNESS_EXECUTOR_KEY"},{"key":"responder","model":"harness-route-responder","url":"http://host.docker.internal:18118/route/responder/v1","api_key_env":"HARNESS_RESPONDER_KEY"}]}'
@@ -86,7 +86,7 @@ for stage in ('context','executor','responder'):
 PY
 echo M6_CONNECTED_OPENSHELL_ROUTING_PASS
 
-for status in 503 403; do
+for status in 503 403 429; do
   curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
   manifest=$(python3 - "$status" <<'PY'
 import json,sys
@@ -101,13 +101,14 @@ print(json.dumps({'context':'primary','executor':'executor','responder':'respond
 PY
 )
   spec="{\"version\":1,\"run_id\":\"m6-route-$status\",\"input_id\":\"m6-route-$status-input\",\"prompt\":\"Answer the routing check\"}"
+  if [[ "$status" == 429 ]]; then spec="{\"version\":1,\"run_id\":\"m6-route-429\",\"input_id\":\"m6-route-429-input\",\"prompt\":\"Answer the routing check\",\"max_model_calls\":1}"; fi
   if "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
     export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
     printf "%s" "$2" | /usr/local/bin/harness-openneko
   ' sh "$manifest" "$spec" > "$state/m6-$status-events.jsonl"; then
-    [[ "$status" == 503 ]] || { echo '403 incorrectly admitted fallback' >&2; exit 1; }
+    [[ "$status" == 503 ]] || { echo "$status incorrectly admitted fallback" >&2; exit 1; }
   else
-    [[ "$status" == 403 ]] || { echo '503 failed to use approved fallback' >&2; exit 1; }
+    [[ "$status" != 503 ]] || { echo '503 failed to use approved fallback' >&2; exit 1; }
   fi
   python3 - "$state/m6-$status-events.jsonl" "$status" <<'PY'
 import json,sys
@@ -120,6 +121,9 @@ assert routes==want,routes
 done=[e for e in events if e.get('type')=='run.finished']
 assert len(done)==1,done
 assert done[0]['result']['status']==('completed' if status=='503' else 'failed'),done
+if status=='429':
+ assert done[0]['result'].get('code')=='model_budget_exceeded',done
+ assert len([e for e in events if e.get('type')=='model.route.fallback'])==1,events
 PY
   counts=$(curl -fsS http://127.0.0.1:18118/control)
   python3 - "$counts" "$status" <<'PY'

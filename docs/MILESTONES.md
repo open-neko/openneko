@@ -896,7 +896,9 @@ the wrong route model or bearer credential; context, executor and responder
 each ran once with complete usage and the expected answer. This qualifies
 connected route selection and broker key replacement. The same isolated
 gateway also proved one approved fallback after a content-free 503, while a
-403 stopped before any secondary request. A connected OpenNeko launcher run
+403 stopped before any secondary request. A 429 under a one-call ceiling
+journaled the fallback decision but denied the secondary dispatch before it
+could bypass the budget. A connected OpenNeko launcher run
 now passed the trusted manifest and distinct provider credentials through the
 worker path, recorded a completed answer, and downloaded its checkpoint and
 receipt. A separate connected run now confirms that an executor code error
@@ -907,8 +909,8 @@ the UI MCP server advertises a revised `render_cards` schema, so the pinned
 Harness admission snapshot was updated from the actual MCP `listTools`
 response; and OpenShell does not make late-attached provider credentials
 available to the running process, so the feature worktree now passes all
-approved providers at sandbox creation. Rate-limit behavior and streaming
-first-content qualification remain open. Run the route
+approved providers at sandbox creation. Broader rate-limit behavior and
+streaming first-content qualification remain open. Run the route
 check with `HARNESS_M5_FAST=1 HARNESS_M6_ROUTING_ONLY=1` through
 `integration/openneko/run.sh` using the pinned CLI and isolated OpenNeko worktree.
 Resume now projects saved operations into a bounded 32 KiB evidence index. The

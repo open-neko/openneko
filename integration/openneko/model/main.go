@@ -160,7 +160,7 @@ func main() {
 				"responder": `{"answer":"ROUTED-OK"}`,
 			}
 			response, ok := responses[stage]
-			if stage == "context-503" || stage == "context-403" { ok = true }
+			if stage == "context-503" || stage == "context-403" || stage == "context-429" { ok = true }
 			if !ok || r.URL.Path != "/route/"+stage+"/v1/chat/completions" ||
 				r.Header.Get("Authorization") != "Bearer synthetic-m6-"+stage {
 				http.Error(w, "route or broker credential mismatch", http.StatusForbidden)
@@ -180,6 +180,10 @@ func main() {
 			}
 			if stage == "context-403" {
 				http.Error(w, "synthetic policy denial", http.StatusForbidden)
+				return
+			}
+			if stage == "context-429" {
+				http.Error(w, "synthetic rate limit", http.StatusTooManyRequests)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -693,7 +697,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": responses[n]}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
 	}
 	http.HandleFunc("/v1/chat/completions", modelHandler)
-	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "executor", "executor-base", "executor-strong", "responder"} {
+	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "context-429", "executor", "executor-base", "executor-strong", "responder"} {
 		http.HandleFunc("/route/"+stage+"/v1/chat/completions", modelHandler)
 	}
 	panic(http.ListenAndServe(":8080", nil))
