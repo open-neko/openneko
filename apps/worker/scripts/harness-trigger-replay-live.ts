@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
@@ -12,6 +13,7 @@ import { getOrgAgentRoot, shutdownAgentBroker } from "@neko/llm/work";
 import { claimSourceChangeDelivery, claimWorkflowScheduleFiring, createSubscription, dispatchPendingSourceChangeDeliveries, handleSourceChangeMatch, materializeDueWorkflowFirings, prepareWorkflowRunForDelivery, reclaimQueuedSourceChangeDelivery, reclaimQueuedWorkflowScheduleFiring, recordSourceChangeDelivery, runWorkflowTurn, startSubscriptionManager } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runDurableWorkflowSchedulerTick } from "../src/workflow-scheduler.js";
+import { initializeWorkerTelemetry, shutdownWorkerTelemetry } from "../src/telemetry.js";
 
 if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119") {
   throw Error("isolated M3 environment required");
@@ -28,6 +30,21 @@ const [priorProvider]=await db().select().from(llm_provider_config)
 assert.ok(priorProvider,"isolated model configuration must be seeded");
 const configPath=join(process.env.OPENNEKO_AGENT_HERMES_HOME ?? "","config.yaml");
 const priorConfig=await readFile(configPath,"utf8");
+const exportedTraces:Buffer[]=[];
+const collector=createServer((request,response)=>{
+  const chunks:Buffer[]=[];
+  request.on("data",(chunk:Buffer)=>chunks.push(chunk));
+  request.on("end",()=>{
+    exportedTraces.push(Buffer.concat(chunks));
+    response.writeHead(200,{"content-type":"application/x-protobuf"});
+    response.end();
+  });
+});
+await new Promise<void>(resolve=>collector.listen(0,"127.0.0.1",resolve));
+const collectorAddress=collector.address();
+assert.ok(collectorAddress && typeof collectorAddress!=="string");
+process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=`http://127.0.0.1:${collectorAddress.port}/v1/traces`;
+assert.equal(initializeWorkerTelemetry(),true);
 
 async function waitForWorkflow(workflowId: string, jobId: string) {
   for (let n = 0; n < 180; n++) {
@@ -431,10 +448,22 @@ try {
   assert.equal(await claimWorkflowScheduleFiring({firingId:precisionFiring.id,
     orgId,workflowId:precisionWorkflow.id}),true);
   console.log("M5_CRON_TRIGGER_EXACT_REVISION_PASS",precisionWorkflow.id);
+  await shutdownWorkerTelemetry();
+  const traceBody=Buffer.concat(exportedTraces).toString("utf8");
+  assert.ok(traceBody.includes("model.stage_usage"),"OTLP must export stage attribution");
+  assert.ok(traceBody.includes("openneko.agent.stage"));
+  assert.ok(traceBody.includes("openneko.model.requests"));
+  assert.ok(traceBody.includes("executor"));
+  assert.ok(traceBody.includes(sourceRun.work_run_id));
+  assert.ok(!traceBody.includes("Find the seeded reference and report it once"),
+    "OTLP must not export workflow prompt content");
+  console.log("M6_CONNECTED_WORKER_OTLP_STAGE_USAGE_PASS",sourceRun.work_run_id);
 } finally {
   await subscriptionManager?.stop();
   await queue.stop({graceful:true,timeout:5_000});
   await shutdownAgentBroker();
+  await shutdownWorkerTelemetry();
+  await new Promise<void>(resolve=>collector.close(()=>resolve()));
   await writeFile(configPath,priorConfig);
   await db().update(llm_provider_config).set({model:priorProvider.model})
     .where(eq(llm_provider_config.id,priorProvider.id));
