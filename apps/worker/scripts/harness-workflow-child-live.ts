@@ -75,7 +75,7 @@ try {
   const actor = { userId: adminId, role: "admin" as const };
   const { token } = await enableWorkflowApiAccess({ orgId, workflowId: workflow.id, actor });
   await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor,
-    limits: { maxModelCalls: 12, maxTokensPerRun: 10_000, maxCostMicrosPerRun: 1_000_000 } });
+    limits: { maxModelCalls: 24, maxTokensPerRun: 55_000, maxCostMicrosPerRun: 1_000_000 } });
   const clientFingerprint = `harness-workflow-${orgId}`;
   const admitted = await admitWorkflowApiRun({ workflowId: workflow.id, token,
     idempotencyKey: "child-output-fixture", mode: "single", value: { reference: "REF-42" }, clientFingerprint });
@@ -130,9 +130,9 @@ try {
     return { id: request.id, status: request.status };
   } } }));
   await new Promise<void>(resolve => admin!.listen(18122, "127.0.0.1", resolve));
-  await db().update(llm_provider_config).set({ model: "harness-workflow-action-fixture" }).where(eq(llm_provider_config.id, prior.id));
-  await writeFile(configPath, "model:\n  provider: custom\n  default: harness-workflow-action-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
-  await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
+  // Host routing is captured when the worker imports its configuration; the
+  // synthetic provider switches this run's response sequence at the control endpoint.
+  assert.equal((await fetch("http://127.0.0.1:18118/control", { method: "POST", body: JSON.stringify({ proposal: true }) })).status, 204);
   await updateWorkflowApiLimits({ orgId, workflowId: workflow.id, actor, limits: { maxModelCalls: 12 } });
   const actionRun = await admitWorkflowApiRun({ workflowId: workflow.id, token,
     idempotencyKey: "workflow-pack-action-fixture", mode: "single", value: { reference: "REF-42" }, clientFingerprint });

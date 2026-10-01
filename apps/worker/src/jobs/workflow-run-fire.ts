@@ -4,6 +4,7 @@ import {
   ensureHostConfigProvisioned,
   normalizeGraphjinAgentUsage,
   registerAgentCanceller,
+  resolveAgentBackend,
   type AgentEvent,
 } from "@neko/llm";
 import {
@@ -506,6 +507,17 @@ async function runWorkflowRunFireTraced(
       }));
     } else {
       const agentRuntime = await startupPhase("config.provision", async () => ensureHostConfigProvisioned(payload.orgId));
+      if (apiClaim && (await resolveAgentBackend(payload.orgId)).id === "harness") {
+        // Harness reserves cost before each model and GraphJin dispatch. A
+        // priced API ceiling is unusable without a trusted complete profile;
+        // reject it before creating a sandbox or spending a model call.
+        const manifest = agentRuntime.harnessRouting?.manifest;
+        const pricing = manifest ? JSON.parse(manifest) as { pricing_version?: string; graphjin_price?: unknown } : null;
+        if (!pricing?.pricing_version || !pricing.graphjin_price) {
+          throw new WorkflowApiRunCeilingExceeded("harness_pricing_required",
+            "This Harness workflow API run requires an operator-configured priced model and GraphJin route.");
+        }
+      }
       const pluginActions = includeRecordActionDescriptors(
         getPluginRegistryInstance()?.getRegisteredActionDescriptors() ?? [],
       );
