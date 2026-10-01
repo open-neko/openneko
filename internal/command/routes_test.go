@@ -12,6 +12,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 func TestDedicatedTypesafeRouteUsesNativePathAndBrokerCredential(t *testing.T) {
@@ -34,6 +35,9 @@ func TestDedicatedTypesafeRouteUsesNativePathAndBrokerCredential(t *testing.T) {
 	defer server.Close()
 	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
 	raw, _ := json.Marshal(routeConfig{Context: "main", Executor: "main", Responder: "main", Triage: "triage", PricingVersion: "test-v1",
+		BudgetPolicy: &budgettriage.Policy{Version: "test-v1", Short: budgettriage.Limits{MaxModelCalls: 4, MaxModelTokens: 8_000, MaxCostMicros: 4_000},
+			MultiStep: budgettriage.Limits{MaxModelCalls: 8, MaxModelTokens: 40_000, MaxCostMicros: 20_000},
+			Artifact:  budgettriage.Limits{MaxModelCalls: 32, MaxModelTokens: 100_000, MaxCostMicros: 100_000}},
 		Routes: []modelRoute{
 			{Key: "main", Model: "fixture", URL: server.URL + "/v1", APIKeyEnv: "MAIN_KEY", Price: price},
 			{Key: "triage", Model: "jev-fixture", URL: server.URL + "/route/triage", APIKeyEnv: "TRIAGE_KEY", Price: price},

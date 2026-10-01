@@ -203,7 +203,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || spec.TriageSummary != "" && spec.MaxCostMicros == 0 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 || !spec.ValidTriage() {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || spec.TriageSummary != "" && (spec.MaxCostMicros == 0 || spec.MaxModelTokens == 0) || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 || !spec.ValidTriage() {
 		return invalid()
 	}
 	if len(s.Operations) > spec.OperationLimit() {
@@ -253,7 +253,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	finalizerAdmitted := false
 	finalizerCalls := 0
 	var finalizerEvidenceIDs []int
-	triageStarted, triageFinished, triageSkipped := false, false, false
+	triageStarted, triageFinished, triageSkipped, triageProposed := false, false, false, false
+	var triageObservation budgettriage.Observation
 	for i, e := range s.Events {
 		if terminalCheck != nil && e.Type != "run.finished" && e.Type != "run.resumed" {
 			return invalid()
@@ -314,7 +315,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 					return invalid()
 				}
 				triageStarted = true
-			} else if spec.TriageSummary != "" && !triageFinished && !triageSkipped {
+			} else if spec.TriageSummary != "" && !triageSkipped && (!triageFinished || !triageProposed) {
 				return invalid()
 			}
 			if e.Stage == "terminal_finalizer" {
@@ -341,6 +342,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 					return invalid()
 				}
 				triageFinished = true
+				triageObservation = observed
 			}
 			modelFinished[e.CallID] = true
 			modelFailed[e.CallID] = e.Error == "model_request_failed"
@@ -391,6 +393,17 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			triageSkipped = true
+		case "budget.profile.proposed":
+			var proposal budgettriage.Proposal
+			decoder := json.NewDecoder(bytes.NewReader(e.Data))
+			decoder.DisallowUnknownFields()
+			hard := budgettriage.Limits{MaxModelCalls: spec.ModelCallLimit(), MaxModelTokens: spec.MaxModelTokens, MaxCostMicros: spec.MaxCostMicros}
+			if !triageFinished || triageSkipped || triageProposed || len(e.Data) == 0 || len(e.Data) > 1024 ||
+				decoder.Decode(&proposal) != nil || decoder.Decode(new(any)) != io.EOF || !proposal.Valid(hard) ||
+				proposal.Profile != triageObservation.SuggestedProfile || e.Name != proposal.Profile {
+				return invalid()
+			}
+			triageProposed = true
 		case "run.resumed":
 			attempt++
 			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {
@@ -506,7 +519,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	if len(s.Operations) > len(started) {
 		return invalid()
 	}
-	if s.Result != nil && spec.TriageSummary != "" && !triageFinished && !triageSkipped {
+	if s.Result != nil && spec.TriageSummary != "" && !triageSkipped && (!triageFinished || !triageProposed) {
 		return invalid()
 	}
 	if s.Result != nil {

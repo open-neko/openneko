@@ -11,6 +11,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 type modelRoute struct {
@@ -27,17 +28,18 @@ type modelFallback struct {
 }
 
 type routeConfig struct {
-	Context             string            `json:"context"`
-	Executor            string            `json:"executor"`
-	ExecutorEscalation  string            `json:"executor_escalation,omitempty"`
-	ExecutorAfterErrors int               `json:"executor_after_errors,omitempty"`
-	Responder           string            `json:"responder"`
-	Skill               string            `json:"skill,omitempty"`
-	Triage              string            `json:"triage,omitempty"`
-	Fallbacks           []modelFallback   `json:"fallbacks,omitempty"`
-	Routes              []modelRoute      `json:"routes"`
-	PricingVersion      string            `json:"pricing_version,omitempty"`
-	GraphJinPrice       *agent.TokenPrice `json:"graphjin_price,omitempty"`
+	Context             string               `json:"context"`
+	Executor            string               `json:"executor"`
+	ExecutorEscalation  string               `json:"executor_escalation,omitempty"`
+	ExecutorAfterErrors int                  `json:"executor_after_errors,omitempty"`
+	Responder           string               `json:"responder"`
+	Skill               string               `json:"skill,omitempty"`
+	Triage              string               `json:"triage,omitempty"`
+	BudgetPolicy        *budgettriage.Policy `json:"budget_policy,omitempty"`
+	Fallbacks           []modelFallback      `json:"fallbacks,omitempty"`
+	Routes              []modelRoute         `json:"routes"`
+	PricingVersion      string               `json:"pricing_version,omitempty"`
+	GraphJinPrice       *agent.TokenPrice    `json:"graphjin_price,omitempty"`
 }
 
 // loadModelClient reads a host-owned allowlist. The run JSON cannot add a
@@ -126,7 +128,7 @@ func loadTriageClient(raw string, getenv func(string) string) (*agent.BudgetTria
 		if key == "" {
 			return nil, fmt.Errorf("budget triage route missing credential")
 		}
-		return &agent.BudgetTriage{Route: route.Key, Model: route.Model,
+		return &agent.BudgetTriage{Route: route.Key, Model: route.Model, Policy: *cfg.BudgetPolicy,
 			Client: ax.Typesafe(ax.Object("base_url", route.URL, "api_key", key, "model", route.Model,
 				"retry", ax.Object("maxRetries", 0)))}, nil
 	}
@@ -174,6 +176,9 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		cfg.ExecutorEscalation != "" && (cfg.ExecutorAfterErrors < 1 || cfg.ExecutorAfterErrors > 8 ||
 			cfg.ExecutorEscalation == cfg.Executor || cfg.Executor == cfg.Context || cfg.Executor == cfg.Responder || cfg.Executor == cfg.Skill) {
 		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES executor escalation")
+	}
+	if (cfg.Triage == "") != (cfg.BudgetPolicy == nil) || cfg.BudgetPolicy != nil && !cfg.BudgetPolicy.Valid() {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES budget policy")
 	}
 	if cfg.Triage != "" && (cfg.PricingVersion == "" || cfg.Triage == cfg.Context || cfg.Triage == cfg.Executor ||
 		cfg.Triage == cfg.Responder || cfg.Triage == cfg.Skill || cfg.Triage == cfg.ExecutorEscalation) {

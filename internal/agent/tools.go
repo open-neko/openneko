@@ -44,8 +44,9 @@ type Tools struct {
 
 type BudgetTriage struct {
 	Client budgettriage.SystemOneClient
-	Route  string // Approved priced route key, not a model-selected provider.
-	Model  string // Pinned Typesafe model at the approved route.
+	Route  string              // Approved priced route key, not a model-selected provider.
+	Model  string              // Pinned Typesafe model at the approved route.
+	Policy budgettriage.Policy // Operator-approved shadow budget caps.
 }
 
 func (t Tools) validStateHook() bool {
@@ -203,10 +204,12 @@ func (t Tools) CatalogHash() (string, error) {
 		bindings = append(bindings, "@finalizer-gate:"+t.FinalizerGateVersion)
 	}
 	if t.Triage != nil {
-		if t.Triage.Client == nil || t.Triage.Route == "" || t.Triage.Model == "" || len(t.Triage.Model) > 128 {
+		if t.Triage.Client == nil || t.Triage.Route == "" || t.Triage.Model == "" || len(t.Triage.Model) > 128 || !t.Triage.Policy.Valid() {
 			return "", fmt.Errorf("invalid budget triage route")
 		}
-		bindings = append(bindings, "@budget-triage:"+budgettriage.Version+":"+t.Triage.Route+":"+t.Triage.Model)
+		policy, _ := json.Marshal(t.Triage.Policy)
+		policyHash := sha256.Sum256(policy)
+		bindings = append(bindings, "@budget-triage:"+budgettriage.Version+":"+t.Triage.Route+":"+t.Triage.Model+":"+hex.EncodeToString(policyHash[:]))
 	}
 	sort.Strings(bindings)
 	child, err := t.childReads(admitted)

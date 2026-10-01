@@ -69,6 +69,10 @@ func (s Spec) ValidTriage() bool {
 	return ok
 }
 
+func (s Spec) triageHardLimits() budgettriage.Limits {
+	return budgettriage.Limits{MaxModelCalls: s.ModelCallLimit(), MaxModelTokens: s.MaxModelTokens, MaxCostMicros: s.MaxCostMicros}
+}
+
 type Result struct {
 	Proposals   []ProposalReceipt `json:"proposals,omitempty"`
 	Kind        string            `json:"kind,omitempty"`
@@ -103,6 +107,8 @@ type Continuation struct {
 	TriageStarted         bool
 	TriageFinished        bool
 	TriageSkipped         bool
+	TriageProposed        bool
+	TriageObservation     *budgettriage.Observation
 	StateUpdate           *RuntimeStateUpdate
 	Operations            []SavedOperation
 }
@@ -194,7 +200,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if !tools.validFinalizerGate() {
 		return Result{}, fmt.Errorf("invalid finalizer gate")
 	}
-	if spec.TriageSummary != "" && (tools.Triage == nil || tools.Triage.Client == nil || tools.Triage.Route == "" || tools.Triage.Model == "" || spec.MaxCostMicros == 0) {
+	if spec.TriageSummary != "" && (tools.Triage == nil || tools.Triage.Client == nil || tools.Triage.Route == "" || tools.Triage.Model == "" ||
+		!tools.Triage.Policy.Valid() || !spec.triageHardLimits().Valid()) {
 		return Result{}, fmt.Errorf("budget triage requires an approved priced route")
 	}
 	admitted, err := tools.admitted()
@@ -300,6 +307,14 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			if err := runBudgetTriage(ctx, events, tools.Triage, input); err != nil {
 				return Result{}, err
 			}
+		}
+	}
+	if spec.TriageSummary != "" && prior.TriageFinished && !prior.TriageProposed && !events.hasError() {
+		if prior.TriageObservation == nil {
+			return Result{}, fmt.Errorf("budget triage observation unavailable on resume")
+		}
+		if err := proposeBudgetProfile(events, tools.Triage.Policy, *prior.TriageObservation); err != nil {
+			return Result{}, err
 		}
 	}
 	if len(childReads) > 0 {

@@ -14,6 +14,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 func triageRunFixture(t *testing.T) (agent.Spec, *agent.RoutedClient, agent.Tools, *int, *int, func()) {
@@ -56,7 +57,10 @@ func triageRunFixture(t *testing.T) (agent.Spec, *agent.RoutedClient, agent.Tool
 	tools := agent.Tools{Scope: "org:triage-fixture", Triage: &agent.BudgetTriage{
 		Client: ax.Typesafe(ax.Object("api_key", "triage-secret", "base_url", triageServer.URL,
 			"model", "jev-fixture", "retry", ax.Object("maxRetries", 0))),
-		Route: "triage", Model: "jev-fixture"}}
+		Route: "triage", Model: "jev-fixture", Policy: budgettriage.Policy{Version: "triage-test-v1",
+			Short:     budgettriage.Limits{MaxModelCalls: 4, MaxModelTokens: 8_000, MaxCostMicros: 2_000},
+			MultiStep: budgettriage.Limits{MaxModelCalls: 8, MaxModelTokens: 40_000, MaxCostMicros: 5_000},
+			Artifact:  budgettriage.Limits{MaxModelCalls: 16, MaxModelTokens: 100_000, MaxCostMicros: 10_000}}}}
 	spec := agent.Spec{Version: 1, RunID: "triage-run", InputID: "input", Prompt: "Investigate and answer",
 		MaxModelCalls: 8, MaxModelTokens: 100_000, MaxCostMicros: 10_000,
 		TriageSummary: "Investigate a reference and answer", TriageToolFamilies: "graphjin",
@@ -83,6 +87,12 @@ func TestTriageCallIsChargedAndReplayedFromCheckpoint(t *testing.T) {
 		events[2].Type != "model.request.finished" || events[2].Stage != "budget_triage" {
 		t.Fatalf("triage did not lead the durable event stream: %+v", events[:3])
 	}
+	var proposed budgettriage.Proposal
+	if events[3].Type != "budget.profile.proposed" || json.Unmarshal(events[3].Data, &proposed) != nil ||
+		proposed.Version != "triage-test-v1" || proposed.Profile != "multi_step" ||
+		proposed.Limits.MaxModelCalls != 8 || proposed.Limits.MaxCostMicros != 5_000 {
+		t.Fatalf("invalid pinned shadow proposal: %+v %+v", events[3], proposed)
+	}
 	var replay []agent.Event
 	result, err = RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
 		replay = append(replay, e)
@@ -106,6 +116,16 @@ func TestTriageCallIsChargedAndReplayedFromCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	var saved checkpoint
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	saved.Events[3].Data = json.RawMessage(`{"version":"triage-test-v1","profile":"multi_step","limits":{"max_model_calls":9,"max_model_tokens":40000,"max_cost_micros":10001}}`)
+	if err := saveCheckpoint(root, path, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(root, spec); err == nil {
+		t.Fatal("shadow proposal above the hard cost cap passed checkpoint inspection")
+	}
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +164,13 @@ func TestInterruptedTriageReservationIsNotRedispatched(t *testing.T) {
 	if report, inspectErr := Inspect(root, spec); inspectErr != nil || !report.CanResume {
 		t.Fatalf("checkpoint report=%+v err=%v", report, inspectErr)
 	}
+	changedTools := tools
+	changedTriage := *tools.Triage
+	changedTriage.Policy.Version = "changed-policy-v1"
+	changedTools.Triage = &changedTriage
+	if _, err := ResumeWithTools(context.Background(), root, spec, client, changedTools, func(agent.Event) error { return nil }); err == nil {
+		t.Fatal("changed budget policy resumed an interrupted run")
+	}
 	var replay []agent.Event
 	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
 		replay = append(replay, e)
@@ -160,5 +187,40 @@ func TestInterruptedTriageReservationIsNotRedispatched(t *testing.T) {
 	}
 	if !seenSkip {
 		t.Fatal("interrupted classifier was not durably skipped")
+	}
+}
+
+func TestSettledTriageWithoutProposalResumesWithoutRedispatch(t *testing.T) {
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t)
+	defer closeServers()
+	root := t.TempDir()
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "model.request.finished" && e.Stage == "budget_triage" {
+			return errors.New("delivery interrupted after classifier settlement")
+		}
+		return nil
+	})
+	if err == nil || *triageCalls != 1 || *chatCalls != 0 {
+		t.Fatalf("interruption err=%v triage=%d chat=%d", err, *triageCalls, *chatCalls)
+	}
+	if report, inspectErr := Inspect(root, spec); inspectErr != nil || !report.CanResume {
+		t.Fatalf("checkpoint report=%+v err=%v", report, inspectErr)
+	}
+	var replay []agent.Event
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		replay = append(replay, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || *triageCalls != 1 || *chatCalls != 3 {
+		t.Fatalf("resume result=%+v err=%v triage=%d chat=%d", result, err, *triageCalls, *chatCalls)
+	}
+	proposals := 0
+	for _, e := range replay {
+		if e.Type == "budget.profile.proposed" {
+			proposals++
+		}
+	}
+	if proposals != 1 {
+		t.Fatalf("expected one resumed proposal, got %d", proposals)
 	}
 }

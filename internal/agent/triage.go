@@ -49,9 +49,27 @@ func runBudgetTriage(ctx context.Context, r *recorder, task *BudgetTriage, input
 	}
 	if observation.Reason == "budget_denied" {
 		r.send(Event{Type: "budget.triage.skipped", Name: "cost_budget"})
+	} else if err := proposeBudgetProfile(r, task.Policy, observation); err != nil {
+		return err
 	}
 	if r.hasError() {
 		return fmt.Errorf("budget triage event was not journaled")
+	}
+	return nil
+}
+
+func proposeBudgetProfile(r *recorder, policy budgettriage.Policy, observation budgettriage.Observation) error {
+	proposal, ok := policy.Propose(observation, r.spec.triageHardLimits())
+	if !ok {
+		return fmt.Errorf("invalid budget triage proposal")
+	}
+	data, err := json.Marshal(proposal)
+	if err != nil {
+		return err
+	}
+	r.send(Event{Type: "budget.profile.proposed", Name: proposal.Profile, Data: data})
+	if r.hasError() {
+		return fmt.Errorf("budget triage proposal was not journaled")
 	}
 	return nil
 }

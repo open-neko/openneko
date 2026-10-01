@@ -1187,9 +1187,15 @@ credentials, complete provider usage, a content-free probability receipt,
 approval persistence after compaction, and inert queue redelivery. The
 classifier's artifact signal now follows OpenNeko's validated workflow-native
 batch or query-to-file output contract through launch and recovery; other
-artifact requests without a typed contract may still be missed. Versioned fixed-cap profile mapping,
-checkpoint-time extension rules, and held-out outcome calibration remain
-required before enabling dynamic limits or a canary.
+artifact requests without a typed contract may still be missed. An operator-owned,
+versioned budget policy now maps a valid classifier distribution to a shadow
+short, multi-step, artifact or fixed proposal. Candidate call, token and cost
+limits are monotonic by class and clipped to the trusted run's hard caps; they
+never alter admission. The proposal is journaled separately from the model
+settlement, pinned in the tool catalog, and reconstructed after a crash between
+those two events without redispatching the classifier. Checkpoint-time
+extension rules and held-out outcome calibration remain required before
+enabling dynamic limits or a canary.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
 Measure admitted-tool schema cost and selection errors. If they are material,
