@@ -23,7 +23,8 @@ validation. This executor must be bound to a workflow definition and
 `workflow_run`; its eligibility does not depend on skill grants. Skill files
 and scripts must never call a model provider directly:
 model routing, budgets and telemetry belong to Harness/Ax. The isolated fixture
-passes with OpenShell 0.0.116. Web and worker read the same trusted,
+passed with OpenShell 0.0.116; the current consumer gate targets 0.1.2.
+Web and worker read the same trusted,
 read-only `HARNESS_BATCH_EXECUTOR_REGISTRY` JSON file. Its `version: 1`
 document has an `executors` array; each entry binds a `workflowId`, `revision`,
 and `active` flag to `binary`, `binarySha256`, `openshellBin`,
@@ -136,7 +137,7 @@ must supply `HARNESS_PROCESS_RUN_ID`, `HARNESS_PROCESS_OPERATION_ID`,
 Its connected test invokes the executable itself. Do not install it in the
 agent image or pass the broker token to the process compartment.
 
-## Implemented: OpenShell cold-launch compatibility
+## Historical OpenShell 0.0.116 cold-launch adapter
 
 From the repository root:
 
@@ -145,6 +146,9 @@ go build -o bin/openshell ./adapters/openneko/cmd/openshell-compat
 OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.0.116 ./integration/run.sh adapters/openneko/integration.sh
 ```
 
+This command is for the historical 0.0.116 gate only. The current 0.1.2
+consumer uses its matched CLI directly; see
+[OpenNeko consumer acceptance](../../integration/openneko/README.md).
 Set `HARNESS_OPENSHELL_BIN` to the absolute path of the real 0.0.116 CLI. A worker
 packaging configuration can put this adapter on its PATH as `openshell`; nothing
 here installs it globally or changes an active gateway. The gateway must use the

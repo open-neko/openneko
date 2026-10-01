@@ -17,7 +17,9 @@ pack-action proposal slice, with the other mutation families still open. A
 separate OpenNeko v3.5.6 demo instance was started and verified locally on the
 Mac, then stopped to respect the host's 4 GB Docker memory limit; its volumes
 remain. Onboarding was skipped, so no admin password or model key was configured.
-The released worker still uses Hermes and OpenShell 0.0.54.
+At this historical checkpoint, the released worker used Hermes and OpenShell
+0.0.54. OpenNeko main has since upgraded to OpenShell 0.1.2; the current
+Harness migration gate is recorded below.
 The first M5b memory and library search slices passed through the feature worker,
 Harness image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
 The records-only catalog turn passed the same path with GraphJin lookup and customer

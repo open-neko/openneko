@@ -8,7 +8,7 @@ if [[ ${HARNESS_M6_ARTIFACT_SCOPE_ONLY:-0} == 1 ]]; then
   echo M6_WORKFLOW_ARTIFACT_ORG_SCOPE_PASS
   exit 0
 fi
-if [[ ${HARNESS_OPENSHELL_VERSION:-0.0.116} == 0.0.116 ]]; then
+if [[ ${HARNESS_OPENSHELL_VERSION:-0.1.2} == 0.0.116 ]]; then
   go build -o "$HARNESS_STATE/openshell-compat" ./adapters/openneko/cmd/openshell-compat
   export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$HARNESS_STATE/openshell-compat"
 else

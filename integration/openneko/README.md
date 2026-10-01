@@ -24,6 +24,10 @@ OPENSHELL_TEST_CLI=/absolute/openshell-0.1.2 \
 ./integration/openneko/run.sh
 ```
 
+Omitting `HARNESS_OPENSHELL_VERSION` also selects 0.1.2 for both the outer
+transport suite and the nested consumer. A focused Hermes cold/warm/reuse run
+passed with no version override on 2026-10-02; the test stack was removed.
+
 This builds the Go/Node integration image, starts isolated metadata Postgres,
 seeded business Postgres, real GraphJin and a deterministic external model service,
 then exercises the real product launcher/broker and pg-boss production work handler.
