@@ -861,8 +861,12 @@ model name, and the Work summary treated the whole Harness turn as one model
 request. The Go journal now fills the name from its host-pinned route; the
 OpenNeko adapter projects bounded, content-free per-call model receipts into
 worker observations only. The connected queued gate now counts three model
-calls and reports the actual resolved fixture model while leaving aggregate
-token usage charged once. The distinct-route, cost, fallback and executor
+calls and reports the actual resolved fixture model. Individual content-free
+model observations now carry stage, provider, duration, usage coverage, token
+counts and admitted charge; the terminal receipt still owns the run total.
+The connected gate confirms 40 aggregate tokens after three model calls, with
+partial coverage, so per-call usage is not added twice. The distinct-route,
+cost, fallback and executor
 escalation gates pass on 0.1.2 after this change.
 
 **OpenShell target change (2026-10-02):** OpenNeko main upgraded to 0.1.2.

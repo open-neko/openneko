@@ -48,6 +48,9 @@ The queued gate also verifies that the worker summary counts actual Ax calls,
 reports the resolved model from the trusted Go route, and does not persist
 internal per-call metadata as Work events. The fixture intentionally has
 partial provider token usage, which remains labelled partial in the summary.
+Per-call model observations carry bounded token and cost metadata while the
+terminal receipt owns the aggregate; the connected gate asserts that the
+40-token total is not duplicated.
 
 The connected `HARNESS_M6_TRIAGE_ONLY=1` workflow and budget evaluator pass
 on 0.1.2. `HARNESS_M6_STATE_CRASH_ONLY=1` passes using OpenShell's
