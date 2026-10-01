@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 consumer_checks=${1:-}
 [[ $# -le 1 && ( -z "$consumer_checks" || -f "$consumer_checks" ) ]] || { echo "Usage: $0 [consumer-check-script]" >&2; exit 1; }
-version=${HARNESS_OPENSHELL_VERSION:-0.0.116}
+version=${HARNESS_OPENSHELL_VERSION:-0.1.2}
 [[ "$version" == '0.0.116' || "$version" == '0.1.2' ]] || { echo 'Only explicitly qualified OpenShell versions are supported' >&2; exit 1; }
 cli=${OPENSHELL_TEST_CLI:?Set OPENSHELL_TEST_CLI to a verified OpenShell CLI binary}
 [[ "$("$cli" --version)" == "openshell $version" ]] || { echo "OpenShell $version required" >&2; exit 1; }

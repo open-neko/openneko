@@ -1,12 +1,12 @@
 # Isolated qualification only. HARNESS_STATE must be an absolute host-shared path.
 services:
   certgen:
-    image: ghcr.io/nvidia/openshell/gateway:${HARNESS_OPENSHELL_VERSION:-0.0.116}
+    image: ghcr.io/nvidia/openshell/gateway:${HARNESS_OPENSHELL_VERSION:-0.1.2}
     command: [generate-certs, --output-dir, "${HARNESS_STATE:?}/pki", --server-san, openshell-gateway, --server-san, host.openshell.internal, --server-san, localhost, --server-san, 127.0.0.1]
     volumes:
       - ${HARNESS_STATE}:${HARNESS_STATE}
   openshell-gateway:
-    image: ghcr.io/nvidia/openshell/gateway:${HARNESS_OPENSHELL_VERSION:-0.0.116}
+    image: ghcr.io/nvidia/openshell/gateway:${HARNESS_OPENSHELL_VERSION:-0.1.2}
     user: "0:0"
     command: [--config, "${HARNESS_STATE}/gateway.toml", --bind-address, 0.0.0.0, --port, "18116", --name, harness-m2]
     environment:
