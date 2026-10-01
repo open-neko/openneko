@@ -44,6 +44,10 @@ directly. Set `HARNESS_M6_QUEUE_BROWSER_STREAM=1` instead to exercise the
 production Work queue handler with the same browser assertion and confirm
 that provisional text never enters the durable run log. Both gates pass on
 the isolated 0.1.2 gateway.
+The queued gate also verifies that the worker summary counts actual Ax calls,
+reports the resolved model from the trusted Go route, and does not persist
+internal per-call metadata as Work events. The fixture intentionally has
+partial provider token usage, which remains labelled partial in the summary.
 
 The connected `HARNESS_M6_TRIAGE_ONLY=1` workflow and budget evaluator pass
 on 0.1.2. `HARNESS_M6_STATE_CRASH_ONLY=1` passes using OpenShell's

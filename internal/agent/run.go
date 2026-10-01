@@ -289,6 +289,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	defer cancel()
 	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens, pricing: pricing, costMicros: prior.CostMicros,
 		shadowProfile: prior.TriageProfile, shadowLastExtensionOp: prior.TriageLastExtensionOp}
+	if routed, ok := client.(*RoutedClient); ok {
+		events.modelNames = routed.ModelNames
+	}
 	events.usage.Requests = prior.ModelCalls
 	for _, op := range prior.Operations {
 		if op.Name() == "lookup" {
@@ -858,6 +861,7 @@ type recorder struct {
 	maxReportedCallTokens int64
 	remoteTokens          int64
 	pricing               *RoutedClient
+	modelNames            map[string]string
 	costMicros            int64
 	shadowMu              sync.Mutex
 	shadowProfile         *budgettriage.Proposal
@@ -938,7 +942,11 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 	r.usage.Requests++
 	id := uint64(r.modelCalls)
 	r.seq++
-	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: info.Model, Origin: info.Provider, Stage: stage}
+	modelName := info.Model
+	if modelName == "" {
+		modelName = r.modelNames[info.Provider]
+	}
+	e := Event{Version: 1, RunID: r.spec.RunID, InputID: r.spec.InputID, Sequence: r.seq, Type: "model.request.started", CallID: id, Name: modelName, Origin: info.Provider, Stage: stage}
 	if r.spec.MaxCostMicros > 0 {
 		e.CostMicros = &costReservation
 	}
@@ -952,7 +960,7 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 	r.mu.Unlock()
 	started := time.Now()
 	response, err := next()
-	finished := Event{Type: "model.request.finished", CallID: id, Name: info.Model, Origin: info.Provider, Stage: stage, DurationMS: time.Since(started).Milliseconds()}
+	finished := Event{Type: "model.request.finished", CallID: id, Name: modelName, Origin: info.Provider, Stage: stage, DurationMS: time.Since(started).Milliseconds()}
 	if err != nil {
 		finished.Error = "model_request_failed"
 	}

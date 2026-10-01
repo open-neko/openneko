@@ -24,7 +24,10 @@ type StageModels struct {
 // only the stage profile; capability admission remains entirely in Tools.
 type RoutedClient struct {
 	ax.AIClient
-	Stages         StageModels
+	Stages StageModels
+	// ModelNames comes only from the trusted host route configuration. Ax's
+	// OpenAI-compatible rate-limit callback can omit the actual model name.
+	ModelNames     map[string]string
 	Fallbacks      map[string]string
 	PricingVersion string
 	Prices         map[string]TokenPrice

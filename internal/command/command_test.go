@@ -80,6 +80,11 @@ func TestRunHTTP(t *testing.T) {
 	}
 	raw := out.String()
 	es := events(t, &out)
+	for _, e := range es {
+		if (e.Type == "model.request.started" || e.Type == "model.request.finished") && e.Name != "fixture" {
+			t.Fatalf("model receipt lost host-pinned identity: %+v", e)
+		}
+	}
 	if calls != 3 || es[len(es)-1].Result.Answer != "REF-42" {
 		t.Fatalf("calls=%d events=%+v", calls, es)
 	}

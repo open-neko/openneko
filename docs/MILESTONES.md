@@ -856,6 +856,14 @@ answer, observes draft removal, and confirms that reload shows only the final
 answer. The direct-sandbox gate isolates the browser and SSE projection. A
 second 0.1.2 gate exercises the production Work queue handler and verifies the
 same rendering plus absence of draft events from the durable run log.
+That gate exposed a telemetry gap: Ax's OpenAI-compatible callback omitted the
+model name, and the Work summary treated the whole Harness turn as one model
+request. The Go journal now fills the name from its host-pinned route; the
+OpenNeko adapter projects bounded, content-free per-call model receipts into
+worker observations only. The connected queued gate now counts three model
+calls and reports the actual resolved fixture model while leaving aggregate
+token usage charged once. The distinct-route, cost, fallback and executor
+escalation gates pass on 0.1.2 after this change.
 
 **OpenShell target change (2026-10-02):** OpenNeko main upgraded to 0.1.2.
 An isolated matched CLI/gateway/supervisor transport suite passes, including

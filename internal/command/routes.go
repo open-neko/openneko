@@ -52,7 +52,8 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		if err := validModelURL(base); err != nil || model == "" || key == "" {
 			return nil, "", fmt.Errorf("configure HARNESS_MODEL_URL, HARNESS_MODEL and HARNESS_MODEL_API_KEY")
 		}
-		return ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model)), "", nil
+		return &agent.RoutedClient{AIClient: ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model)),
+			ModelNames: map[string]string{"openai-compatible": model}}, "", nil
 	}
 	cfg, digest, err := parseRouteConfig(raw)
 	if err != nil {
@@ -75,8 +76,10 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		return nil, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES: %w", err)
 	}
 	prices := make(map[string]agent.TokenPrice, len(cfg.Routes))
+	modelNames := make(map[string]string, len(cfg.Routes))
 	fallbacks := make(map[string]string, len(cfg.Fallbacks))
 	for _, route := range cfg.Routes {
+		modelNames[route.Key] = route.Model
 		if route.Price != nil {
 			prices[route.Key] = *route.Price
 		}
@@ -87,7 +90,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
 		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder, Skill: cfg.Skill,
 		ExecutorEscalation: cfg.ExecutorEscalation, ExecutorAfterErrors: cfg.ExecutorAfterErrors,
-	}, Fallbacks: fallbacks, PricingVersion: cfg.PricingVersion, Prices: prices, GraphJinPrice: cfg.GraphJinPrice}, digest, nil
+	}, ModelNames: modelNames, Fallbacks: fallbacks, PricingVersion: cfg.PricingVersion, Prices: prices, GraphJinPrice: cfg.GraphJinPrice}, digest, nil
 }
 
 // RoutingDigest validates the host route manifest without resolving any keys.
