@@ -302,7 +302,7 @@ const [largeProcessJob]=await db().insert(processing_job).values({org_id:orgId,k
 await enqueue(QUEUE.WORK_RUN,{processingJobId:largeProcessJob.id,orgId,runId:largeProcessRun.id,threadId:largeProcessThread.id,message:'Create the large isolated CSV artifact.'},{retryLimit:0});
 await waitForJob(largeProcessJob.id,largeProcessRun.id);
 const largeBytes=await readFile(join(largeProcessWorkspace.artifactRoot,'process-1','large.bin'));
-assert.equal(largeBytes.length,2<<20);
+assert.equal(largeBytes.length,8<<20);
 assert.ok(largeBytes.every(byte=>byte===65));
 const largeReceipt=(await pool().query('SELECT result FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,largeProcessRun.id])).rows[0].result;
 assert.equal(largeReceipt.ok,true);
