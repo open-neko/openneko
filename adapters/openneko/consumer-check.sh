@@ -31,6 +31,30 @@ binaries: [/usr/local/bin/harness-openneko]
 YAML
 "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m3-provider.yaml"
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
+workflow_child_priced_route() {
+  export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","pricing_version":"m5-workflow-fixture-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-workflow-child-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m5-workflow-priced","credential_env":"HARNESS_WORKFLOW_SOURCE_KEY","api_key_env":"HARNESS_WORKFLOW_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
+}
+register_workflow_priced_provider() {
+  cat > "$HARNESS_STATE/m5-workflow-priced-provider.yaml" <<'YAML'
+id: harness-m5-workflow-priced
+category: agent
+display_name: Harness workflow priced fixture
+credentials:
+  - name: HARNESS_WORKFLOW_SOURCE_KEY
+    env_vars: [HARNESS_WORKFLOW_SOURCE_KEY]
+    required: true
+endpoints:
+  - host: host.docker.internal
+    port: 18118
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+    path: /v1/**
+binaries: [/usr/local/bin/harness-openneko]
+YAML
+  "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m5-workflow-priced-provider.yaml"
+  "$cli" --gateway harness-m2 provider create --name harness-m5-workflow-priced --type harness-m5-workflow-priced --credential HARNESS_WORKFLOW_SOURCE_KEY=synthetic-workflow
+}
 if [[ ${HARNESS_M6_ROUTING_ONLY:-0} == 1 ]]; then
   bash ./integration/openneko/routing-check.sh
   if [[ ${HARNESS_M6_DIRECT_ONLY:-0} == 1 ]]; then exit 0; fi
@@ -317,6 +341,23 @@ fi
     echo M5_CONNECTED_TRIGGER_REPLAY_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M6_PRICING_PREFLIGHT_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-api-pricing-live.ts)
+    echo M6_CONNECTED_API_PRICING_PREFLIGHT_PASS
+    exit 0
+  fi
+  if [[ ${HARNESS_M5_WORKFLOW_CHILD_ONLY:-0} == 1 ]]; then
+    register_workflow_priced_provider
+    workflow_child_priced_route
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    if ! (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-child-live.ts); then
+      docker compose -p harness-m3 -f integration/openneko/compose.yml logs --tail=80 model >&2 || true
+      exit 1
+    fi
+    echo M5_CONNECTED_WORKFLOW_CHILD_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M6_APPROVAL_COMPACTION_ONLY:-0} == 1 ]]; then
     cat > "$HARNESS_STATE/m6-approval-provider.yaml" <<'YAML'
 id: harness-m6-approval
@@ -398,7 +439,10 @@ YAML
     echo "M5_WEB_PROCESS_LARGE_PASS $large_run"
   fi
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
+  register_workflow_priced_provider
+  workflow_child_priced_route
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-child-live.ts)
+  unset OPENNEKO_HARNESS_ROUTING
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
   (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-agent-job-child-live.ts)
 if [[ ${HARNESS_M3_WEB:-0} == 1 ]]; then

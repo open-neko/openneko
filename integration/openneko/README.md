@@ -352,6 +352,15 @@ trajectory summary and verifies the accepted constraint plus saved output
 receipt in the post-summary responder request. It checks bounded provider
 request size and inert queue redelivery. The isolated stack is removed on exit.
 
+The focused M6 API pricing preflight runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_PRICING_PREFLIGHT_ONLY=1`. An unpriced
+cost-capped Harness API run must fail with `harness_pricing_required` before
+sandbox creation or model dispatch. The existing child-workflow acceptance
+path can be run in isolation with
+`HARNESS_M5_FAST=1 HARNESS_M5_WORKFLOW_CHILD_ONLY=1`; it provisions a priced
+synthetic route and verifies the manual, API, model-cap and governed-action
+phases. Both isolated stacks are removed on exit.
+
 The focused M6 approval-compaction gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_APPROVAL_COMPACTION_ONLY=1`. A priced routed
 workflow API run proposes a governed action, commits one output, and forces

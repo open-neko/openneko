@@ -336,14 +336,6 @@ func main() {
 			http.Error(w, "missing second child evidence", 422)
 			return
 		}
-		if n == 4 && req.Model == "harness-workflow-child-fixture" && !strings.Contains(string(req.Messages), "REF-42") {
-			http.Error(w, "missing first workflow child evidence", 422)
-			return
-		}
-		if n == 7 && req.Model == "harness-workflow-child-fixture" && !strings.Contains(string(req.Messages), "REF-42") {
-			http.Error(w, "missing second workflow child evidence", 422)
-			return
-		}
 		if n == 8 && req.Model == "harness-workflow-child-fixture" && !strings.Contains(string(req.Messages), "outputId") {
 			http.Error(w, "missing workflow output receipt", 422)
 			return
@@ -534,16 +526,24 @@ func main() {
 				`{"answer":"The policy is memory-1 and the exception is memory-2."}`,
 			}
 		} else if req.Model == "harness-workflow-child-fixture" {
-			responses = []string{
-				`{"javascriptCode":"final('Check two references and emit the finding',{})"}`,
-				`{"javascriptCode":"const one=team.researcher({question:'Find the first seeded reference'}); const two=team.researcher({question:'Independently verify the seeded reference'}); if(!JSON.stringify(one).includes('REF-42')||!JSON.stringify(two).includes('REF-42')) throw Error('child evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Two reference checks',body:'Both independent checks found REF-42.',payload:{reference:'REF-42'}}); final('Report recorded workflow finding',{receipt});"}`,
-				`{"javascriptCode":"final('Find the first reference',{})"}`,
-				`{"javascriptCode":"const evidence=lookup('Find the first seeded reference'); final('Report first reference',{evidence});"}`,
-				`{"answer":"First reference REF-42."}`,
-				`{"javascriptCode":"final('Verify the second reference',{})"}`,
-				`{"javascriptCode":"const evidence=lookup('Independently verify the seeded reference'); final('Report second reference',{evidence});"}`,
-				`{"answer":"Second reference REF-42."}`,
-				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
+			if propose {
+				responses = []string{
+					`{"javascriptCode":"final('Propose the installed action and emit a finding',{})"}`,
+					`{"javascriptCode":"const request=propose({action:'harness_workflow_effect_fixture',arguments:{value:42},summary:'Update the synthetic reference'}); if(request.status!=='pending_approval') throw Error('approval missing'); const output=workflow_output_emit({kind:'finding',title:'Action proposed',body:'The synthetic action awaits approval.'}); final('Report the pending action and finding',{request,output});"}`,
+					`{"answer":"Recorded one finding and one action request pending approval."}`,
+				}
+			} else {
+				responses = []string{
+					`{"javascriptCode":"final('Check two references and emit the finding',{})"}`,
+					`{"javascriptCode":"const one=team.researcher({question:'Find the first seeded reference'}); const two=team.researcher({question:'Independently verify the seeded reference'}); if(!JSON.stringify(one).includes('REF-42')||!JSON.stringify(two).includes('REF-42')) throw Error('child evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Two reference checks',body:'Both independent checks found REF-42.',payload:{reference:'REF-42'}}); final('Report recorded workflow finding',{receipt});"}`,
+					`{"javascriptCode":"final('Find the first reference',{})"}`,
+					`{"javascriptCode":"const evidence=lookup('Find the first seeded reference'); final('Report first reference',{evidence});"}`,
+					`{"answer":"First reference REF-42."}`,
+					`{"javascriptCode":"final('Verify the second reference',{})"}`,
+					`{"javascriptCode":"const evidence=lookup('Independently verify the seeded reference'); final('Report second reference',{evidence});"}`,
+					`{"answer":"Second reference REF-42."}`,
+					`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
+				}
 			}
 		} else if req.Model == "harness-compaction-approval-fixture" {
 			if compactionSummary {

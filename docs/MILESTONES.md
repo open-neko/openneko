@@ -1044,7 +1044,18 @@ and telemetry fixtures pass. A connected OpenShell run now charges three
 distinct priced outer routes at 15, 30 and 45 micro-units, producing a 90-unit
 terminal total under the pinned price version. A budget below the first
 reservation denied dispatch with zero new upstream calls. A real priced
-GraphJin server profile remains to be qualified.
+GraphJin server profile remains to be qualified. A connected queued workflow
+API run now rejects an unpriced Harness route with the typed
+`harness_pricing_required` code before creating a sandbox or calling a model.
+The existing M5 child-workflow acceptance path now provisions a synthetic
+versioned route and GraphJin price for its cost-capped API runs. Its manual,
+API, model-call-ceiling and governed-action phases pass on the current Ax
+runtime. This also corrected a stale fixture check that expected raw GraphJin
+evidence inside a child model request: the acceptance assertion now uses the
+committed GraphJin receipts and final broker output instead. The price
+profile is an operator configuration requirement for cost-capped Harness API
+runs; it must not be inferred from an untrusted prompt or hidden by dropping
+the API's cost ceiling.
 An ordinary-run fixture exposed a context-pressure gap in Ax's default Goja
 diagnostics: three read turns with 14 KiB console observations grew an executor
 request past 80 KiB and triggered an extra summary request. The Harness now
