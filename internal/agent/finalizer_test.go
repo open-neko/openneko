@@ -48,7 +48,15 @@ func TestActorExhaustionFinalizesOnlyCommittedEvidence(t *testing.T) {
 			defer server.Close()
 			client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
 			reads, finalizerChecks, terminalChecks := 0, 0, 0
-			tools := Tools{FinalizerGateVersion: "evidence-v1", FinalizerGate: func(_ context.Context, ops []SavedOperation) (TerminalDecision, error) {
+			tools := Tools{StateHookVersion: "finalizer-state-v1", AfterTool: func(_ context.Context, op SavedOperation) (*RuntimeStateUpdate, error) {
+				if !useReceipt {
+					return nil, nil
+				}
+				if op.Name() != "read" || op.Error != "" {
+					t.Fatalf("invalid state hook receipt: %+v", op)
+				}
+				return &RuntimeStateUpdate{Target: "root/responder", State: json.RawMessage(`{"receipt":"R-42"}`)}, nil
+			}, FinalizerGateVersion: "evidence-v1", FinalizerGate: func(_ context.Context, ops []SavedOperation) (TerminalDecision, error) {
 				finalizerChecks++
 				if useReceipt && len(ops) == 1 && string(ops[0].Result) == `{"receipt":"R-42"}` {
 					return TerminalDecision{Accepted: true, EvidenceIDs: []int{1}}, nil
@@ -75,13 +83,15 @@ func TestActorExhaustionFinalizesOnlyCommittedEvidence(t *testing.T) {
 					!strings.Contains(finalizerRequest, "R-42") || strings.Contains(finalizerRequest, "Available JavaScript function") {
 					t.Fatalf("finalizer did not use bounded evidence: result=%+v calls=%d terminal=%d request=%s", result, calls, terminalChecks, finalizerRequest)
 				}
-				var admitted, model, terminal bool
+				var admitted, model, terminal, superseded, applied bool
 				for _, e := range events {
 					admitted = admitted || e.Type == "finalizer.admitted"
 					model = model || e.Type == "model.request.started" && e.Stage == "terminal_finalizer"
 					terminal = terminal || e.Type == "terminal.checked"
+					superseded = superseded || e.Type == "runtime.state.superseded" && e.OperationID == 1 && e.Origin == "terminal_finalizer"
+					applied = applied || e.Type == "runtime.state.applied"
 				}
-				if !admitted || !model || !terminal {
+				if !admitted || !model || !terminal || !superseded || applied {
 					t.Fatalf("missing finalizer lifecycle events: %+v", events)
 				}
 			} else if result.Status != "failed" || result.Code != "actor_steps_exhausted" || calls != 9 || terminalChecks != 0 {

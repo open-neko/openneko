@@ -251,6 +251,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	finalizerEvent := false
 	finalizerAdmitted := false
 	finalizerCalls := 0
+	var finalizerEvidenceIDs []int
 	for i, e := range s.Events {
 		if terminalCheck != nil && e.Type != "run.finished" && e.Type != "run.resumed" {
 			return invalid()
@@ -369,6 +370,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			finalizerEvent = false
 			finalizerAdmitted = false
 			finalizerCalls = 0
+			finalizerEvidenceIDs = nil
 		case "tool.reused":
 			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()
@@ -412,6 +414,22 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			stateApplied[e.OperationID] = true
+		case "runtime.state.superseded":
+			if !finalizerAdmitted || !stateUpdates[e.OperationID] || stateApplied[e.OperationID] ||
+				e.Origin != "terminal_finalizer" {
+				return invalid()
+			}
+			admitted := false
+			for _, id := range finalizerEvidenceIDs {
+				if uint64(id) == e.OperationID {
+					admitted = true
+					break
+				}
+			}
+			if !admitted {
+				return invalid()
+			}
+			stateApplied[e.OperationID] = true
 		case "runtime.state.failed":
 			if !ended[e.OperationID] || stateFailures[e.OperationID] || e.Error != "runtime_state_failed" {
 				return invalid()
@@ -424,6 +442,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			}
 			finalizerEvent = true
 			finalizerAdmitted = true
+			finalizerEvidenceIDs = append([]int(nil), e.Terminal.EvidenceIDs...)
 		case "finalizer.denied":
 			if finalizerEvent || e.Terminal != nil || e.Origin == "" || len(e.Origin) > 128 ||
 				e.Error != "insufficient_evidence" && e.Error != "evidence_unavailable" && e.Error != "evidence_too_large" {

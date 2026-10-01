@@ -16,24 +16,24 @@ func actorStepsExhausted(err error) bool {
 
 // The finalizer never receives capabilities. A trusted host first selects
 // committed receipts; the normal terminal gate checks the answer afterward.
-func finalizeSavedEvidence(ctx context.Context, client ax.AIClient, spec Spec, tools Tools, operations []SavedOperation, events *recorder) Result {
+func finalizeSavedEvidence(ctx context.Context, client ax.AIClient, spec Spec, tools Tools, operations []SavedOperation, events *recorder) (Result, []int) {
 	failure := Result{Status: "failed", Kind: "failure", Code: "actor_steps_exhausted"}
 	if tools.FinalizerGate == nil || ctx.Err() != nil {
-		return failure
+		return failure, nil
 	}
 	decision, err := tools.FinalizerGate(ctx, operations)
 	if err != nil {
 		events.send(Event{Type: "finalizer.denied", Origin: tools.FinalizerGateVersion, Error: "evidence_unavailable"})
-		return failure
+		return failure, nil
 	}
 	if !decision.Accepted || len(decision.EvidenceIDs) == 0 || !decision.Valid(operations) {
 		events.send(Event{Type: "finalizer.denied", Origin: tools.FinalizerGateVersion, Error: "insufficient_evidence"})
-		return failure
+		return failure, nil
 	}
 	evidence, ok := finalizerProjection(operations, decision.EvidenceIDs)
 	if !ok {
 		events.send(Event{Type: "finalizer.denied", Origin: tools.FinalizerGateVersion, Error: "evidence_too_large"})
-		return failure
+		return failure, nil
 	}
 	events.send(Event{Type: "finalizer.admitted", Origin: tools.FinalizerGateVersion, Terminal: &decision})
 	before := events.usageSnapshot()
@@ -61,19 +61,19 @@ func finalizeSavedEvidence(ctx context.Context, client ax.AIClient, spec Spec, t
 	}
 	if modelErr != nil {
 		failure.Code = "finalizer_failed"
-		return failure
+		return failure, nil
 	}
 	object, ok := output.(map[string]ax.Value)
 	if !ok {
 		failure.Code = "finalizer_invalid"
-		return failure
+		return failure, nil
 	}
 	answer, ok := object["answer"].(string)
 	if !ok || strings.TrimSpace(answer) == "" || len(answer) > 65536 {
 		failure.Code = "finalizer_invalid"
-		return failure
+		return failure, nil
 	}
-	return Result{Status: "completed", Kind: "answer", Answer: answer}
+	return Result{Status: "completed", Kind: "answer", Answer: answer}, decision.EvidenceIDs
 }
 
 func finalizerProjection(operations []SavedOperation, ids []int) (string, bool) {

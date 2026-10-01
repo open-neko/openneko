@@ -1148,6 +1148,19 @@ compaction next; edit-and-verify and cheaper-model log reduction only when measu
 benefit justifies them. Include summarization/retrieval costs and deterministic
 validation/fallback. No autonomous production harness evolution.
 
+The queued source-change finalizer gate is connected to the actual OpenShell
+worker. A synthetic actor exhausts eight executor steps after committing one
+broker-verified `workflow_output_emit` receipt: the host admits one tool-less
+finalizer, supersedes only the pending responder state associated with that
+admitted receipt, applies the normal terminal output gate, and completes in
+10 model calls. The same run without a committed output fails at nine calls
+with `actor_steps_exhausted`; no finalizer model call or output is published.
+Both cases prove source-change queue redelivery is inert. The fixture is
+`HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1` and exits with
+`M6_CONNECTED_WORKFLOW_FINALIZER_PASS`. Unit coverage also protects the
+ordinary path from accepting an unapplied Ax state update. A supersession is
+journaled separately from Ax's own `runtime.state.applied` acknowledgement.
+
 **Verify:** one connected parent run uses the approved cheap route for semantic
 skill selection, the server-owned strong GraphJin route for a lookup, and a
 separately selected outer executor/responder route. Record actual model/profile,

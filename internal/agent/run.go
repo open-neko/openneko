@@ -576,7 +576,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 		if actorStepsExhausted(err) && !toolFailed {
-			result = finalizeSavedEvidence(ctx, attemptClient, spec, tools, terminalOperations(parentView.snapshot(), childView.snapshot()), events)
+			var finalizerEvidence []int
+			result, finalizerEvidence = finalizeSavedEvidence(ctx, attemptClient, spec, tools, terminalOperations(parentView.snapshot(), childView.snapshot()), events)
+			if result.Status == "completed" {
+				stateAcks.supersedeForFinalizer(finalizerEvidence, events)
+			}
 		}
 		if result.Status == "completed" {
 			for _, id := range stateAcks.unapplied() {

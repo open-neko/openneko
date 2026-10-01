@@ -345,6 +345,14 @@ and resumes the accepted run once; the test checks unchanged broker operations,
 one output, restored host state, terminal verification and inert queue
 redelivery. The test stack is removed on exit.
 
+The focused M6 actor-exhaustion gate runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued
+source-change workflows through the real worker and OpenShell sandbox. One
+commits a broker output and may use one bounded, tool-less finalizer after
+actor exhaustion; the other has no saved evidence and must fail without a
+finalizer model call. Both terminal queue redeliveries must do no new work.
+The isolated stack is removed on exit.
+
 The governed-action gate includes real broker/DB proposal validation, exclusive
 execution claims, process death and provider-status reconciliation. With
 `HARNESS_M3_WEB=1`, the queue driver leaves a pending approval and prints

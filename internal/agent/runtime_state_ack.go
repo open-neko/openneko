@@ -85,3 +85,26 @@ func (a *stateAcknowledgements) unapplied() []uint64 {
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
 }
+
+// A tool-less finalizer cannot consume an Ax responder update. It may only
+// supersede pending updates from the exact committed receipts admitted as
+// finalizer evidence. Other pending updates remain a terminal failure.
+func (a *stateAcknowledgements) supersedeForFinalizer(evidenceIDs []int, events *recorder) {
+	allowed := make(map[uint64]bool, len(evidenceIDs))
+	for _, id := range evidenceIDs {
+		allowed[uint64(id)] = true
+	}
+	a.mu.Lock()
+	ids := make([]uint64, 0, len(a.queued))
+	for key, entry := range a.queued {
+		if allowed[entry.operationID] {
+			ids = append(ids, entry.operationID)
+			delete(a.queued, key)
+		}
+	}
+	a.mu.Unlock()
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		events.send(Event{Type: "runtime.state.superseded", OperationID: id, Origin: "terminal_finalizer"})
+	}
+}
