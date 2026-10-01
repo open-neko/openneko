@@ -69,12 +69,19 @@ try {
   const outputId=(before[1].result as {outputId:string}).outputId;
   assert.ok(outputId);
   const callsBefore=await (await fetch(control)).json() as Record<string,number>;
-  const sandboxName=`h-${createHash("sha256").update(run.work_run_id).digest("hex").slice(0,16)}`;
-  const containers=execFileSync("docker",["ps","--filter",`label=openshell.ai/sandbox-name=${sandboxName}`,
-    "--filter","network=harness-m2","--format","{{.ID}}"],{encoding:"utf8"}).trim().split("\n").filter(Boolean);
-  assert.equal(containers.length,1);
-  execFileSync("docker",["exec","--user","0",containers[0],"/bin/sh","-c",
-    'killed=0; for comm in /proc/[0-9]*/comm; do read -r name < "$comm" || continue; case "$name" in harness-opennek|harness-openneko) pid=${comm#/proc/}; pid=${pid%/comm}; kill -KILL "$pid" || exit 1; killed=1;; esac; done; test "$killed" = 1'],{timeout:15_000});
+  const sandboxName=`neko-h-${createHash("sha256").update(run.work_run_id).digest("hex").slice(0,12)}`;
+  const openshell=process.env.HARNESS_M3_CLI!;
+  const sandbox=(...args:string[])=>execFileSync(openshell,["--gateway","harness-m2","sandbox",...args],
+    {encoding:"utf8",timeout:30_000});
+  const beforeStop=JSON.parse(sandbox("get",sandboxName,"-o","json")) as {name:string;phase:string;labels:Record<string,string>};
+  assert.equal(beforeStop.name,sandboxName);
+  assert.equal(beforeStop.phase,"Ready");
+  assert.equal(beforeStop.labels["openneko.recovery"],"retain");
+  // 0.1.2 denies in-sandbox kill and a disconnected CLI does not stop its
+  // remote exec. Stop/start is the supported process crash with workspace
+  // preservation; the checkpoint remains available for reconciliation.
+  sandbox("stop",sandboxName);
+  sandbox("start",sandboxName);
   assert.equal((await fetch(control,{method:"POST",body:JSON.stringify({continue:true})})).status,204);
   let jobState:string|undefined;
   for(let n=0;n<180;n++){
