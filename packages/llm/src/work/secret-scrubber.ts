@@ -103,6 +103,11 @@ export function scrubAgentEvent<T>(scrubber: Scrubber, event: T): T {
         ...e,
         content: typeof e.content === "string" ? scrubber(e.content) : e.content,
       } as T;
+    case "provisional_answer":
+      return {
+        ...e,
+        text: typeof e.text === "string" ? scrubber(e.text) : e.text,
+      } as T;
     case "tool_start":
       return {
         ...e,

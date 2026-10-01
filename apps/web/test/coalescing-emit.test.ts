@@ -42,6 +42,16 @@ describe("createCoalescingEmit", () => {
     vi.useRealTimers();
   });
 
+  it("previews responder text without writing it to the run log or advancing the cursor", async () => {
+    const h = makeHarness();
+    await h.emit({type: "provisional_answer", version: 0, index: 0, text: "Draft"});
+    expect(h.persisted).toHaveLength(0);
+    expect(h.notified).toEqual([{id: 0, event: {type: "provisional_answer", version: 0, index: 0, text: "Draft"}}]);
+    await h.emit({type: "message", role: "assistant", content: "Verified"});
+    await h.finalize();
+    expect(h.persisted.map((row) => row.event)).toEqual([{type: "message", role: "assistant", content: "Verified"}]);
+  });
+
   it("coalesces consecutive message deltas into one row on flush", async () => {
     const h = makeHarness();
 

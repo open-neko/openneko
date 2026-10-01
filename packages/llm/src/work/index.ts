@@ -79,6 +79,7 @@ export {
 export * from "./memory";
 export * from "./library";
 export * from "./store";
+export { PROVISIONAL_RUN_CHANNEL, parseProvisionalNotification, publishProvisionalRunAnswer } from "./provisional-events";
 export { listPackActionDescriptors } from "./pack-action-descriptors";
 export {
   detectSkillUse,

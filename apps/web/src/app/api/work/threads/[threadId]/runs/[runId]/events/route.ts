@@ -5,6 +5,7 @@ import { createNotifyClient, type NotifyClient } from "@neko/db";
 import { getOrgId } from "@/lib/db";
 import { subscribeToRun } from "@/lib/neko-run-registry";
 import { getWorkRun, getWorkRunEventsAfter } from "@/lib/work-store";
+import { PROVISIONAL_RUN_CHANNEL, parseProvisionalNotification } from "@neko/llm/work";
 import { getAuthorizedWorkThread } from "@/lib/work-thread-auth";
 
 type RouteContext = {
@@ -83,6 +84,12 @@ async function getEvents(request: NextRequest, context: RouteContext) {
       };
 
       const sendIfNew = (event: AgentEvent, id: number): void => {
+        if (id === 0 && event.type === "provisional_answer") {
+          if (closed) return;
+          safeEnqueue(frame(event));
+          if (firstOutput) { firstOutput = false; startupEvent("sse.first_output", { durationMs: performance.now() - started, afterId }); }
+          return;
+        }
         if (id <= afterId) return;
         if (sentIds.has(id)) return;
         sentIds.add(id);
@@ -116,10 +123,14 @@ async function getEvents(request: NextRequest, context: RouteContext) {
 
       let listenClient: NotifyClient | null = null;
       try {
-        listenClient = await startupPhase("sse.listen", () => createNotifyClient("work_run_event"));
+        listenClient = await startupPhase("sse.listen", () => createNotifyClient(["work_run_event", PROVISIONAL_RUN_CHANNEL]));
         listenClient.on((channel, payload) => {
           if (channel === "work_run_event" && payload === runId) {
             wakeFromNotify();
+          } else if (channel === PROVISIONAL_RUN_CHANNEL) {
+            const progress = parseProvisionalNotification(payload);
+            if (progress?.runId === runId && progress.orgId === orgId)
+              sendIfNew(progress.event, 0);
           }
         });
       } catch (err) {

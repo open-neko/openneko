@@ -89,6 +89,8 @@ export type AgentEvent =
   // structured-output payloads (a2ui fences, tool-call JSON, etc.) here — use
   // the `surface` event for cards.
   | { type: "message"; role: "user" | "assistant"; content: string }
+  /** Live responder text only. It is discarded on replay and never becomes a stored answer. */
+  | { type: "provisional_answer"; version: number; index: 0; text: string }
   /** Hermes ACP's provider-neutral, model-authored mid-turn commentary. */
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
   | {

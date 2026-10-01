@@ -9,6 +9,7 @@ import {
 } from "@neko/llm";
 import {
   appendWorkRunEvent,
+  publishProvisionalRunAnswer,
   ensureAgentBroker,
   registerAgentBrokerEventSink,
   scrubAgentEvent,
@@ -431,11 +432,16 @@ async function runWorkflowRunFireTraced(
 
     const scrubber = getCurrentScrubber();
     emit = async (event: AgentEvent): Promise<void> => {
+      const scrubbed = scrubAgentEvent(scrubber, event);
+      if (scrubbed.type === "provisional_answer") {
+        await publishProvisionalRunAnswer(payload.orgId, prepared!.workRunId, scrubbed).catch(() => undefined);
+        return;
+      }
       await appendWorkRunEvent({
         orgId: payload.orgId,
         threadId: prepared!.threadId,
         runId: prepared!.workRunId,
-        event: scrubAgentEvent(scrubber, event),
+        event: scrubbed,
       });
     };
 

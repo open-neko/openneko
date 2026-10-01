@@ -682,6 +682,7 @@ function makeSandboxCore(
       throw new Error("Invalid workflow cost ceiling");
     }
     const triageShadowEnabled = input.backend.id === "harness" && process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1";
+    const streamResponses = input.backend.id === "harness" && process.env.OPENNEKO_HARNESS_STREAM_RESPONSES === "1";
     const started = performance.now();
     const timed = async <T>(
       phase: string,
@@ -1210,6 +1211,7 @@ function makeSandboxCore(
             ...(input.backend.id === "harness" ? { OPENNEKO_HARNESS_MAX_OPERATIONS: String(HARNESS_OPERATION_LIMIT), OPENNEKO_HARNESS_MAX_MODEL_CALLS: String(harnessModelCallLimit), OPENNEKO_HARNESS_MAX_MODEL_TOKENS: String(harnessModelTokenLimit),
               ...(requestedCostMicros ? {OPENNEKO_HARNESS_MAX_COST_MICROS: String(requestedCostMicros)} : {}),
               ...(triageShadowEnabled ? {OPENNEKO_HARNESS_TRIAGE_SHADOW: "1"} : {}),
+              ...(streamResponses ? {OPENNEKO_HARNESS_STREAM_RESPONSES: "1"} : {}),
               OPENNEKO_HARNESS_PROCESS_RUN: processBinding ? "1" : "" } : {}),
             ...(pool ? { OPENNEKO_HERMES_WARM: "1", HOME: sandboxHermesHome, HERMES_HOME: sandboxHermesHome } : {}),
             ...(hermesStage ? { HERMES_HOME: sandboxHermesHome } : {}),

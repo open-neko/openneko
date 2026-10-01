@@ -320,6 +320,7 @@ async function runChatTurnTraced(
     if (
       needsInputEvent &&
       (event.type === "message" ||
+        event.type === "provisional_answer" ||
         event.type === "surface" ||
         event.type === "vitals" ||
         event.type === "followups" ||
@@ -338,7 +339,7 @@ async function runChatTurnTraced(
     toolRecorder.observe(event);
     await eventTelemetry.observeEvent(event);
     await emit(event);
-    if (((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") && !firstOutputLogged) {
+    if (((event.type === "message" && event.role === "assistant" && event.content) || event.type === "provisional_answer" || event.type === "surface") && !firstOutputLogged) {
       firstOutputLogged = true;
       startupEvent("run.first_assistant_output", {});
     }

@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
-import { harnessCost, harnessRemoteUsage, harnessResult, harnessStageUsage, harnessUsage } from "../src/agent-backends/harness";
+import { harnessCost, harnessProvisionalAnswer, harnessRemoteUsage, harnessResult, harnessStageUsage, harnessUsage } from "../src/agent-backends/harness";
+
+it("accepts only bounded responder deltas as provisional output", () => {
+  expect(harnessProvisionalAnswer({version: 0, index: 0, text: "Hel"})).toEqual({type: "provisional_answer", version: 0, index: 0, text: "Hel"});
+  expect(harnessProvisionalAnswer({version: 0, index: 1, text: "hidden"})).toBeUndefined();
+  expect(harnessProvisionalAnswer({version: 0, index: 0, text: ""})).toBeUndefined();
+  expect(harnessProvisionalAnswer({version: 0, index: 0, text: "x".repeat(65537)})).toBeUndefined();
+});
 
 it("projects Harness model usage without claiming delegated usage", () => {
   const usage = { requests: 3, reported: 3, input_tokens: 60, output_tokens: 12, total_tokens: 72, coverage: "complete" };

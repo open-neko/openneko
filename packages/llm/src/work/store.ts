@@ -539,6 +539,8 @@ export async function appendWorkRunEvent(args: {
   runId: string;
   event: AgentEvent;
 }): Promise<number> {
+  if (args.event.type === "provisional_answer")
+    throw new Error("Provisional answer must not be persisted");
   const [row] = await db()
     .insert(work_run_event)
     .values({

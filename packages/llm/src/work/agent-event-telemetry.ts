@@ -65,6 +65,7 @@ export function createAgentEventTelemetry(input: {
     if (
       !firstOutputObserved &&
       ((event.type === "message" && event.role === "assistant") ||
+        event.type === "provisional_answer" ||
         event.type === "surface")
     ) {
       firstOutputObserved = true;

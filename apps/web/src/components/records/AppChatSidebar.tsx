@@ -249,7 +249,7 @@ export function AppChatSidebar({
         }
         if (event.type === "hello") return;
         markWorkStartup(runId, "firstEventMs");
-        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
+        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "provisional_answer" || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
         if (event.type === "done") markWorkStartup(runId, "doneMs");
         if (
           event.type === "message" &&
@@ -284,11 +284,18 @@ export function AppChatSidebar({
         }
         setBundle((current) => {
           if (!current || current.thread.id !== threadId) return current;
+          const previous = current.eventsByRun[runId] ?? [];
+          if (event.type === "provisional_answer" && previous.some((item) => item.type === "done" || item.type === "message" && item.role === "assistant")) return current;
+          const retained = event.type === "message" && event.role === "assistant" || event.type === "done" || event.type === "error"
+            ? previous.filter((item) => item.type !== "provisional_answer")
+            : event.type === "provisional_answer"
+              ? previous.filter((item) => item.type !== "provisional_answer" || item.version === event.version)
+              : previous;
           return {
             ...current,
             eventsByRun: {
               ...current.eventsByRun,
-              [runId]: [...(current.eventsByRun[runId] ?? []), event],
+              [runId]: [...retained, event],
             },
           };
         });
@@ -667,6 +674,11 @@ export function AppChatSidebar({
               const actions = message.runId
                 ? actionRequests(bundle.eventsByRun[message.runId] ?? [])
                 : [];
+              const draftText = message.runId
+                ? (bundle.eventsByRun[message.runId] ?? [])
+                    .filter((event) => event.type === "provisional_answer" && typeof event.text === "string")
+                    .map((event) => event.text as string).join("")
+                : "";
               return (
                 <article
                   className={`app-chat-message is-${message.role}`}
@@ -678,6 +690,8 @@ export function AppChatSidebar({
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {message.content}
                         </ReactMarkdown>
+                      ) : sending && draftText ? (
+                        <p className="whitespace-pre-wrap break-words"><span className="text-xs text-muted-foreground">Draft answer</span><br />{draftText}</p>
                       ) : sending ? (
                         <span className="app-chat-thinking">
                           <i />

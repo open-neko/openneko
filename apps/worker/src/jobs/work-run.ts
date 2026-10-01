@@ -5,6 +5,7 @@ import { db, eq, pool, skill_usage } from "@neko/db";
 import {
   agentRuntimeDepsFromConfig,
   appendWorkRunEvent,
+  publishProvisionalRunAnswer,
   ensureAgentBroker,
   getWorkRun,
   registerAgentBrokerEventSink,
@@ -90,6 +91,11 @@ async function runWorkRunTraced(
   let vitals: { label: string; value: string; sub?: string }[] = [];
   const emit = async (event: AgentEvent): Promise<void> => {
     const scrubbed = scrubAgentEvent(scrubber, event);
+    if (scrubbed.type === "provisional_answer") {
+      // Preview transport is best-effort and must not affect the run outcome.
+      await publishProvisionalRunAnswer(orgId, runId, scrubbed).catch(() => undefined);
+      return;
+    }
     if (scrubbed.type === "surface" && Array.isArray(scrubbed.messages)) {
       surfaces.push(...scrubbed.messages);
     }

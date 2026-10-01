@@ -101,6 +101,11 @@ export function createCoalescingEmit(
   };
 
   const emit = async (event: AgentEvent): Promise<void> => {
+    if (event.type === "provisional_answer") {
+      // Same-process subscribers may preview it, but it never enters the DB.
+      notify(runId, event, 0);
+      return;
+    }
     if (event.type === "message") {
       const role = event.role;
       if (role !== "assistant" && role !== "user") {

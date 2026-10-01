@@ -170,6 +170,7 @@ export type WorkEvent =
   // reconstructs the full assistant text. Mirrors `AgentEvent.message` in
   // packages/llm/src/agent-backend.ts.
   | { type: "message"; role: "user" | "assistant"; content: string }
+  | { type: "provisional_answer"; version: number; index: 0; text: string }
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
   | { type: "tool_start"; id: string; name: string; input?: unknown }
   | { type: "tool_delta"; id: string; delta: unknown }
@@ -1054,7 +1055,7 @@ export default function WorkScreen() {
         if (event.type === "hello") return;
         applyIncomingEvent(runId, event);
         markWorkStartup(runId, "firstEventMs");
-        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
+        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "provisional_answer" || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
         if (event.type === "done") markWorkStartup(runId, "doneMs");
         if (event.type === "done") settle("done");
       };
@@ -1085,10 +1086,14 @@ export default function WorkScreen() {
     setBundle((prev) => {
       if (!prev) return prev;
       const currentEvents = prev.eventsByRun[runId] ?? [];
-      const nextEvents =
-        event.type === "done"
-          ? [...currentEvents, event]
-          : [...currentEvents, event];
+      if (event.type === "provisional_answer" && currentEvents.some((item) =>
+        item.type === "done" || item.type === "message" && item.role === "assistant")) return prev;
+      const retained = event.type === "message" && event.role === "assistant" || event.type === "done" || event.type === "error"
+        ? currentEvents.filter((item) => item.type !== "provisional_answer")
+        : event.type === "provisional_answer"
+          ? currentEvents.filter((item) => item.type !== "provisional_answer" || item.version === event.version)
+          : currentEvents;
+      const nextEvents = [...retained, event];
       const nextRuns = prev.runs.map((run) =>
         run.id === runId
           ? {
@@ -1943,6 +1948,7 @@ type ApprovalItem = {
 
 type TimelineItem =
   | { kind: "text"; content: string }
+  | { kind: "provisional"; content: string }
   | { kind: "interim"; id: string; content: string }
   | { kind: "progress"; id: string; content: string }
   | { kind: "tools"; tools: ToolItem[] }
@@ -2312,6 +2318,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
   let vitals: AnswerVital[] = [];
   let followups: string[] = [];
   let pendingText = "";
+  let provisionalItem: Extract<TimelineItem, {kind: "provisional"}> | null = null;
   let lastStatus: string | null = null;
   let isDone = false;
 
@@ -2327,6 +2334,15 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       case "message": {
         if (event.role !== "assistant") break;
         pendingText += event.content;
+        break;
+      }
+      case "provisional_answer": {
+        flushTextSegment();
+        if (!provisionalItem) {
+          provisionalItem = {kind: "provisional", content: ""};
+          items.push(provisionalItem);
+        }
+        provisionalItem.content += event.text;
         break;
       }
       case "interim": {
@@ -2838,6 +2854,9 @@ function RunTimeline({
   return (
     <div className="work-timeline flex flex-col gap-2.5 mt-1">
       {presentation.items.map((item, index) => {
+        if (item.kind === "provisional") {
+          return <div key={`draft-${index}`} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground whitespace-pre-wrap break-words"><span className="block text-xs font-medium mb-1">Draft answer</span>{item.content}</div>;
+        }
         if (item.kind === "text") {
           const failure = presentWorkFailure(item.content);
           if (failure.technical) {

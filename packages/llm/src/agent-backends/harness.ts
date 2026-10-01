@@ -78,6 +78,7 @@ export class HarnessBackend implements AgentBackend {
             max_operations: maxOperations, max_model_calls: maxModelCalls, max_model_tokens: maxModelTokens,
             ...(maxCostMicros ? {max_cost_micros: maxCostMicros} : {}),
             ...triageSpec,
+            ...(env.OPENNEKO_HARNESS_STREAM_RESPONSES === "1" ? {stream_responses: true} : {}),
             ...(opts.userMessage ? { skill_query: boundedSkillQuery(opts.userMessage) } : {}),
             prompt: opts.userMessage ? `${opts.prompt}\n\nUser request:\n${opts.userMessage}` : opts.prompt }));
         try {
@@ -85,7 +86,17 @@ export class HarnessBackend implements AgentBackend {
                 if (line.length > 3 * 1024 * 1024)
                     throw new Error("Harness event exceeds limit");
                 const event = JSON.parse(line);
-                if (event.version !== 1 || event.run_id !== runId || event.sequence !== ++sequence || result)
+                if (event.version !== 1 || event.run_id !== runId || result)
+                    throw new Error("Invalid harness event sequence");
+                if (event.type === "answer.delta") {
+                    if (event.sequence !== 0 || env.OPENNEKO_HARNESS_STREAM_RESPONSES !== "1")
+                        throw new Error("Invalid harness provisional event");
+                    const progress = harnessProvisionalAnswer(event.data);
+                    if (!progress) throw new Error("Invalid harness provisional answer");
+                    await opts.onEvent?.(progress);
+                    continue;
+                }
+                if (event.sequence !== ++sequence)
                     throw new Error("Invalid harness event sequence");
                 if (event.type === "run.finished") {
                     if (!["completed", "failed", "cancelled"].includes(event.result?.status))
@@ -142,6 +153,16 @@ export class HarnessBackend implements AgentBackend {
 }
 
 const HARNESS_STAGES = new Set(["distiller", "executor", "responder", "child.distiller", "child.executor", "child.responder", "unattributed"]);
+
+/** Parse only the bounded, non-durable Ax responder projection. */
+export function harnessProvisionalAnswer(raw: unknown): Extract<AgentEvent, {type: "provisional_answer"}> | undefined {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const data = raw as Record<string, unknown>;
+    if (!Number.isSafeInteger(data.version) || (data.version as number) < 0 || (data.version as number) > 1_000_000 ||
+        data.index !== 0 || typeof data.text !== "string" || !data.text || Buffer.byteLength(data.text, "utf8") > 65536)
+        return undefined;
+    return {type: "provisional_answer", version: data.version as number, index: 0, text: data.text};
+}
 
 /** A diagnostic projection of Ax stage usage. It never feeds spend admission. */
 export function harnessStageUsage(raw: unknown): Extract<AgentEvent, { type: "stage_usage" }> | undefined {
