@@ -78,12 +78,14 @@ try {
     "select work_run_id,status,error from workflow_run where id=$1", [admitted.runId])).rows;
   assert.ok(run);
   const counts = await (await fetch(control)).json() as Record<string, number>;
-  const checkpoint = JSON.parse(await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id,
-    ".harness", `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`), "utf8")) as {
+  const checkpointRoot = join(getOrgAgentRoot(orgId), "runs", run.work_run_id, ".harness");
+  const checkpointBytes = await readFile(join(checkpointRoot,
+    `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`));
+  const checkpoint = JSON.parse(checkpointBytes.toString("utf8")) as {
       result: { status: string; answer?: string; code?: string; cost?: { charged_micros: number } };
-      events: Array<{ type: string; stage?: string; origin?: string; name?: string; operation_id?: number; cost_micros?: number;
+      events: Array<{ type: string; stage?: string; origin?: string; name?: string; operation_id?: number; call_id?: number; cost_micros?: number;
         data?: { version?: string; choice?: string; suggested_profile?: string; probabilities?: Record<string, number>;
-          profile?: string; from?: string; to?: string; operation_id?: number;
+          profile?: string; from?: string; to?: string; operation_id?: number; call_id?: number; reason?: string;
           limits?: {max_model_calls: number; max_model_tokens: number; max_cost_micros: number} };
         terminal?: { accepted: boolean } }>;
     };
@@ -138,11 +140,17 @@ try {
     assert.equal(proposals[0].data?.version, "m6-shadow-v1");
     assert.equal(proposals[0].data?.profile, "multi_step");
     assert.deepEqual(proposals[0].data?.limits, {max_model_calls: 3, max_model_tokens: 40_000, max_cost_micros: 20_000});
-    assert.equal(extensions.length, 1, "a durable tool result did not extend the shadow profile");
+    assert.equal(extensions.length, 1, "a durable model result did not extend before GraphJin preflight");
     assert.equal(extensions[0].data?.from, "multi_step");
     assert.equal(extensions[0].data?.to, "artifact");
-    assert.equal(extensions[0].data?.operation_id, extensions[0].operation_id);
-    assert.ok(operations.some(operation => operation.operation_id === extensions[0].operation_id));
+    assert.equal(extensions[0].data?.reason, "remote_lookup_preflight");
+    assert.equal(extensions[0].data?.call_id, extensions[0].call_id);
+    assert.ok((extensions[0].call_id ?? 0) > 1);
+    const extensionAt = checkpoint.events.indexOf(extensions[0]);
+    const lookupProposalAt = checkpoint.events.findIndex(event => event.type === "tool.proposed" && event.name === "lookup");
+    const firstLookupAt = checkpoint.events.findIndex(event => event.type === "tool.started" && event.name === "lookup");
+    assert.ok(lookupProposalAt >= 0 && lookupProposalAt < extensionAt && extensionAt < firstLookupAt,
+      "GraphJin lookup started before its intent and shadow preflight extension were journaled");
     assert.ok((checkpoint.result.cost?.charged_micros ?? 0) >= 512);
   }
   const [admission] = (await pool().query<{ id: string; attempts: number }>(
@@ -153,6 +161,15 @@ try {
   assert.equal((await pool().query("select count(*)::int as n from action_request where workflow_run_id=$1", [admitted.runId])).rows[0].n, 1);
   assert.equal((await pool().query("select count(*)::int as n from workflow_output where workflow_run_id=$1", [admitted.runId])).rows[0].n, 1);
   assert.equal(effectCount, 0);
+  if (process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1") {
+    assert.ok(process.env.HARNESS_BUDGET_EVAL_MANIFEST);
+    await writeFile(process.env.HARNESS_BUDGET_EVAL_MANIFEST, JSON.stringify({version: 1, cases: [{
+      id: "connected-approval-compaction", root: checkpointRoot, run_id: run.work_run_id,
+      checkpoint_sha256: createHash("sha256").update(checkpointBytes).digest("hex"),
+      split: "calibration", source: "synthetic",
+      label: {task_class: "investigation", outcome: "verified_success", wall_ms: 0},
+    }]}));
+  }
   console.log("M6_CONNECTED_WORKFLOW_APPROVAL_COMPACTION_PASS", run.work_run_id);
 } finally {
   await queue.stop({ graceful: true, timeout: 5_000 });
