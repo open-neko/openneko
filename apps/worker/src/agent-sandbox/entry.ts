@@ -88,6 +88,7 @@ interface SandboxJob {
     | "wantsCards"
     | "reasoningEffort"
     | "maxToolIterations"
+    | "budgetTriageArtifactRequested"
   >;
 }
 
@@ -294,6 +295,7 @@ async function runJob(
       steps: job.steps ?? [],
       input: job.input ?? {},
       maxContinuations: job.maxContinuations ?? 0,
+      budgetTriageArtifactRequested: job.agentRun?.budgetTriageArtifactRequested,
       ...(job.allowedSkills ? { allowedSkills: job.allowedSkills } : {}),
       ...(job.agentRun?.reasoningEffort
         ? { reasoningEffort: job.agentRun.reasoningEffort }

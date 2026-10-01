@@ -1187,7 +1187,8 @@ describe("makeSandboxRunCore", () => {
     const root = await mkdtemp(join(tmpdir(), "harness-workflow-budget-"));
     try {
       const backend = {id:"harness",capabilities:{mcpTools:false,sessionResume:false}} as RunWorkflowAgentBackendInput["backend"];
-      const input = {...fakeWorkflowInput(async()=>{}, backend, fullWorkspace(root)), maxModelCalls:4, maxModelTokens:5_000, maxCostMicros:17_000};
+      const input = {...fakeWorkflowInput(async()=>{}, backend, fullWorkspace(root)), maxModelCalls:4, maxModelTokens:5_000, maxCostMicros:17_000,
+        budgetTriageArtifactRequested: true};
       const runCore = makeSandboxWorkflowRunCore({agentImage:"test",onLog:()=>{},warmPoolSize:0});
       h.state.execLines = [];
       await expect(runCore(input)).rejects.toThrow("without a result");
@@ -1196,12 +1197,46 @@ describe("makeSandboxRunCore", () => {
       expect(command).toContain("5000");
       expect(command).toContain("OPENNEKO_HARNESS_MAX_COST_MICROS");
       expect(command).toContain("17000");
+      expect(jobCapture.jobs.at(-1)).toMatchObject({agentRun: {budgetTriageArtifactRequested: true}});
       h.state.inspections = [JSON.stringify({version:1,run_id:input.runId,outcome:"outcome_unknown",can_resume:false,operations:[]})];
       await expect(runCore(input)).rejects.toThrow();
       const inspection = h.calls.find(call=>call.args.includes("/usr/local/bin/harness-inspect") || call.args.some(arg=>arg.includes("harness-inspect")));
       expect(inspection?.stdin).toContain('"max_model_tokens":5000');
       expect(inspection?.stdin).toContain('"max_cost_micros":17000');
     } finally { await rm(root,{recursive:true,force:true}); }
+  });
+
+  it("pins a trusted workflow artifact signal in launch and recovery triage input", async () => {
+    const root = await mkdtemp(join(tmpdir(), "harness-triage-artifact-"));
+    const previous = process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW;
+    process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW = "1";
+    try {
+      const price = {input_micros_per_million: 1_000_000, output_micros_per_million: 1_000_000};
+      const routing = parseHarnessRouting(JSON.stringify({context: "work", executor: "work", responder: "work",
+        triage: "triage", pricing_version: "artifact-test-v1", routes: [
+          {key: "work", model: "fixture", url: "https://work.example/v1", provider: "work-provider",
+            credential_env: "WORK_API_KEY", api_key_env: "HARNESS_WORK_KEY", price},
+          {key: "triage", model: "jev-fixture", url: "https://triage.example", provider: "triage-provider",
+            credential_env: "TRIAGE_API_KEY", api_key_env: "HARNESS_TRIAGE_KEY", price},
+        ]}));
+      const backend = {id: "harness", capabilities: {mcpTools: false, sessionResume: false}} as RunWorkflowAgentBackendInput["backend"];
+      const input = {...fakeWorkflowInput(async () => {}, backend, fullWorkspace(root)), maxCostMicros: 17_000,
+        budgetTriageArtifactRequested: true};
+      const core = makeSandboxWorkflowRunCore({agentImage: "test", onLog: () => {}, warmPoolSize: 0,
+        harnessRouting: routing});
+      h.state.execLines = [];
+      await expect(core(input)).rejects.toThrow("without a result");
+      expect(jobCapture.jobs.at(-1)).toMatchObject({agentRun: {budgetTriageArtifactRequested: true}});
+      h.state.inspections = [JSON.stringify({version: 1, run_id: input.runId, outcome: "outcome_unknown",
+        can_resume: false, operations: []})];
+      await expect(core(input)).rejects.toThrow();
+      const inspect = h.calls.find(call => call.args.some(arg => arg.includes("harness-inspect")) && call.stdin?.includes('"triage_artifact_requested":true'));
+      expect(inspect?.stdin).toContain('"triage_tool_families":"file,graphjin,workflow"');
+    } finally {
+      if (previous === undefined) delete process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW;
+      else process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW = previous;
+      await rm(root, {recursive: true, force: true});
+    }
   });
 
   it("adds pack-declared workflow hosts to the OpenShell policy", async () => {

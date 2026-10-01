@@ -227,6 +227,7 @@ type SerializableAgentRunOptions = Pick<
   | "wantsCards"
   | "reasoningEffort"
   | "maxToolIterations"
+  | "budgetTriageArtifactRequested"
 >;
 
 function serializableAgentRunOptions(
@@ -249,6 +250,9 @@ function serializableAgentRunOptions(
       : {}),
     ...(run.maxToolIterations !== undefined
       ? { maxToolIterations: run.maxToolIterations }
+      : {}),
+    ...(run.budgetTriageArtifactRequested !== undefined
+      ? { budgetTriageArtifactRequested: run.budgetTriageArtifactRequested }
       : {}),
   };
 }
@@ -734,7 +738,8 @@ function makeSandboxCore(
         ...(requestedCostMicros ? {max_cost_micros: requestedCostMicros} : {}),
         ...harnessTriageSpec({routingManifest: routing?.manifest, enabled: triageShadowEnabled,
           maxCostMicros: requestedCostMicros, prompt, userMessage, mode: kind, lookupRead: kind !== "work" ||
-            (input as RunAgentBackendInput).dataSurface !== "records"}),
+            (input as RunAgentBackendInput).dataSurface !== "records",
+          artifactRequested: kind === "workflow" && (input as RunWorkflowAgentBackendInput).budgetTriageArtifactRequested === true}),
         ...(userMessage ? {skill_query: boundedSkillQuery(userMessage)} : {}),
         prompt: userMessage ? `${prompt}\n\nUser request:\n${userMessage}` : prompt});
       const state = path.join(input.workspace.runRoot, ".harness");
@@ -930,6 +935,7 @@ function makeSandboxCore(
               timeoutMs: (input as RunWorkflowAgentBackendInput).timeoutMs,
               reasoningEffort: (input as RunWorkflowAgentBackendInput).reasoningEffort,
               maxToolIterations: (input as RunWorkflowAgentBackendInput).maxToolIterations,
+              budgetTriageArtifactRequested: (input as RunWorkflowAgentBackendInput).budgetTriageArtifactRequested,
             }),
             }
           : {

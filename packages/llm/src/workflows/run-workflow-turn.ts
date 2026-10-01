@@ -42,6 +42,7 @@ import {
 import { spendCapFromSignal } from "../spend/run-guard";
 import { admitRunSpend, recordBudgetBlocked } from "../spend/admission";
 import { recordAuditEvent } from "./audit-chain";
+import { parseCompiledWorkflowBatchContract, parseQueryToFileContract } from "./api-contract";
 
 export class WorkflowNeedsInputError extends Error {
   constructor(message = "Workflow paused awaiting operator input") {
@@ -492,6 +493,9 @@ async function runWorkflowTurnTraced(
       maxModelCalls: opts.maxModelCalls,
       maxModelTokens: opts.maxModelTokens,
       maxCostMicros: opts.maxCostMicros,
+      ...(backend.id === "harness" ? {budgetTriageArtifactRequested:
+        parseCompiledWorkflowBatchContract(workflow.outputContract) !== null ||
+        parseQueryToFileContract(workflow.outputContract) !== null} : {}),
     };
     let coreResult;
     try {

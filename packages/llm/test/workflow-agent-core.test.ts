@@ -29,8 +29,9 @@ describe("runWorkflowAgentBackend", () => {
     };
     await runWorkflowAgentBackend({ backend, prompt: "prompt", userMessage: "begin", orgId: "org-1",
       threadId: "thread-1", runId: "run-1", workflowRunId: "workflow-run-1", mode: "headless",
-      networkHosts: [], workspace, controlPlane, emit: async () => {} });
+      networkHosts: [], workspace, controlPlane, emit: async () => {}, budgetTriageArtifactRequested: true });
     expect(captured).toMatchObject({ runId: "run-1", nativeDelegation: "enabled", mcpServers: undefined,
+      budgetTriageArtifactRequested: true,
       mcpBridgeEnv: { OPENNEKO_MCP_MODE: "workflow", OPENNEKO_MCP_RUN_ID: "run-1",
         OPENNEKO_HARNESS_WORKFLOW_RUN_ID: "workflow-run-1" } });
   });

@@ -45,6 +45,8 @@ export interface RunWorkflowAgentBackendInput {
   maxModelCalls?: number;
   maxModelTokens?: number;
   maxCostMicros?: number;
+  /** Trusted workflow output contract requires a durable file artifact. */
+  budgetTriageArtifactRequested?: boolean;
   tag?: string;
   /** Steps with a script run in order before the agent turn. */
   steps?: readonly WorkflowStep[];
@@ -194,6 +196,7 @@ export async function runWorkflowAgentBackend(
       tag,
       signal,
       timeoutMs,
+      budgetTriageArtifactRequested: input.budgetTriageArtifactRequested,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(maxToolIterations ? { maxToolIterations } : {}),
     });
