@@ -155,6 +155,8 @@ func main() {
 				"context":  `{"javascriptCode":"final('Use the approved executor route',{})"}`,
 				"context-spare": `{"javascriptCode":"final('Use the approved executor route',{})"}`,
 				"executor": `{"javascriptCode":"final('Answer the routing check',{})"}`,
+				"executor-base": `{"javascriptCode":"throw new Error('retry this actor step');"}`,
+				"executor-strong": `{"javascriptCode":"final('Answer the routing check',{})"}`,
 				"responder": `{"answer":"ROUTED-OK"}`,
 			}
 			response, ok := responses[stage]
@@ -691,7 +693,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": responses[n]}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
 	}
 	http.HandleFunc("/v1/chat/completions", modelHandler)
-	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "executor", "responder"} {
+	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "executor", "executor-base", "executor-strong", "responder"} {
 		http.HandleFunc("/route/"+stage+"/v1/chat/completions", modelHandler)
 	}
 	panic(http.ListenAndServe(":8080", nil))

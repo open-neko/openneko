@@ -7,7 +7,7 @@ oss=("$cli" --gateway harness-m2)
 name=harness-m6-routing
 cleanup() { "${oss[@]}" sandbox delete "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-for stage in context context-spare context-503 context-403 executor responder; do
+for stage in context context-spare context-503 context-403 executor executor-base executor-strong responder; do
   upper=$(printf '%s' "$stage" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
   cat > "$state/m6-$stage-provider.yaml" <<YAML
 id: harness-m6-$stage
@@ -56,7 +56,8 @@ network_policies:
 YAML
 "${oss[@]}" sandbox create --name "$name" --from harness-openneko:m3 \
   --provider harness-m6-context --provider harness-m6-context-spare --provider harness-m6-context-503 \
-  --provider harness-m6-context-403 --provider harness-m6-executor --provider harness-m6-responder \
+  --provider harness-m6-context-403 --provider harness-m6-executor --provider harness-m6-executor-base \
+  --provider harness-m6-executor-strong --provider harness-m6-responder \
   --no-auto-providers --no-tty --detach --policy "$state/m6-policy.yaml" -- sleep infinity
 manifest='{"context":"context","executor":"executor","responder":"responder","routes":[{"key":"context","model":"harness-route-context","url":"http://host.docker.internal:18118/route/context/v1","api_key_env":"HARNESS_CONTEXT_KEY"},{"key":"executor","model":"harness-route-executor","url":"http://host.docker.internal:18118/route/executor/v1","api_key_env":"HARNESS_EXECUTOR_KEY"},{"key":"responder","model":"harness-route-responder","url":"http://host.docker.internal:18118/route/responder/v1","api_key_env":"HARNESS_RESPONDER_KEY"}]}'
 spec='{"version":1,"run_id":"m6-routing","input_id":"m6-routing-input","prompt":"Answer the routing check"}'
@@ -133,3 +134,39 @@ else:
 PY
 done
 echo M6_CONNECTED_OPENSHELL_FALLBACK_PASS
+
+curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
+manifest=$(python3 - <<'PY'
+import json
+routes=[]
+for key,stage in [('context','context'),('base','executor-base'),('strong','executor-strong'),('responder','responder')]:
+ routes.append({'key':key,'model':'harness-route-'+stage,
+                'url':'http://host.docker.internal:18118/route/'+stage+'/v1',
+                'api_key_env':'HARNESS_'+stage.upper().replace('-','_')+'_KEY'})
+print(json.dumps({'context':'context','executor':'base','executor_escalation':'strong',
+                  'executor_after_errors':1,'responder':'responder','routes':routes},separators=(',',':')))
+PY
+)
+spec='{"version":1,"run_id":"m6-escalation","input_id":"m6-escalation-input","prompt":"Answer the routing check"}'
+"${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  printf "%s" "$2" | /usr/local/bin/harness-openneko
+' sh "$manifest" "$spec" > "$state/m6-escalation-events.jsonl"
+python3 - "$state/m6-escalation-events.jsonl" <<'PY'
+import json,sys
+events=[json.loads(line) for line in open(sys.argv[1]) if line.startswith('{')]
+routes=[e.get('name') for e in events if e.get('type')=='model.request.started']
+assert routes==['harness-route-context','harness-route-executor-base','harness-route-executor-strong','harness-route-responder'],routes
+failed=[e for e in events if e.get('type')=='executor.step.failed']
+assert len(failed)==1 and failed[0].get('error')=='actor_code_error',failed
+done=[e for e in events if e.get('type')=='run.finished']
+assert len(done)==1 and done[0]['result']['status']=='completed',done
+PY
+counts=$(curl -fsS http://127.0.0.1:18118/control)
+python3 - "$counts" <<'PY'
+import json,sys
+counts=json.loads(sys.argv[1])
+for stage in ('context','executor-base','executor-strong','responder'):
+ assert counts.get('harness-route-'+stage)==1,counts
+PY
+echo M6_CONNECTED_OPENSHELL_EXECUTOR_ESCALATION_PASS
