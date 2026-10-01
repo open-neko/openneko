@@ -345,6 +345,13 @@ and resumes the accepted run once; the test checks unchanged broker operations,
 one output, restored host state, terminal verification and inert queue
 redelivery. The test stack is removed on exit.
 
+The focused M6 compaction gate runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_COMPACTION_ONLY=1`. A queued source-change
+workflow makes five GraphJin lookups, commits one broker output, forces Ax's
+trajectory summary and verifies the accepted constraint plus saved output
+receipt in the post-summary responder request. It checks bounded provider
+request size and inert queue redelivery. The isolated stack is removed on exit.
+
 The focused M6 actor-exhaustion gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued
 source-change workflows through the real worker and OpenShell sandbox. One

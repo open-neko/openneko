@@ -317,6 +317,12 @@ fi
     echo M5_CONNECTED_TRIGGER_REPLAY_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M6_COMPACTION_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-live.ts)
+    echo M6_CONNECTED_WORKFLOW_COMPACTION_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M6_FINALIZER_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-finalizer-live.ts)

@@ -1067,6 +1067,20 @@ requests, the constraint in every provider request, the pending approval still
 visible later, and a largest request below 31 KiB. This proves the forced
 checkpoint path locally, including accounting; connected artifact-evidence and
 multi-route OpenShell checks remain open.
+A connected queued source-change run now forces Ax's trajectory summary after
+eight ordinary outer requests, then sends a responder request through the
+OpenShell worker. Five GraphJin lookups and one committed workflow output
+precede the summary. The synthetic model rejects any request, including the
+summary request, that loses the accepted no-execution constraint, and rejects
+the post-summary responder unless the committed output ID and REF-42 evidence
+are present. The run completes in nine ordinary plus one summary call; the
+largest provider request was 37,576 bytes. It publishes exactly one output,
+passes the broker-backed terminal gate, and source-change queue redelivery
+adds no model call or broker effect. Run the focused gate with
+`HARNESS_M5_FAST=1 HARNESS_M6_COMPACTION_ONLY=1`. This establishes connected
+constraint and saved-output retention across one compaction; a connected
+pending-approval trajectory and large file-backed artifact remain open.
+
 Use the [Ax Go development guide](AX-DEVELOPMENT.md) to select the relevant
 published skill for each M6 change. Verify its APIs against the pinned generated
 Go package and a no-key fixture. The process-wide Ax usage observer is
