@@ -66,12 +66,15 @@ type Extension struct {
 	From        string `json:"from"`
 	To          string `json:"to"`
 	OperationID uint64 `json:"operation_id"`
+	CallID      uint64 `json:"call_id,omitempty"`
 	Limits      Limits `json:"limits"`
 	Reason      string `json:"reason"`
 }
 
 func (e Extension) Valid(previous Proposal, hard Limits) bool {
-	if e.Version != previous.Version || e.OperationID == 0 || e.Reason != "next_call_exceeds_profile" ||
+	if e.Version != previous.Version ||
+		!(e.OperationID > 0 && e.CallID == 0 && e.Reason == "next_call_exceeds_profile" ||
+			e.CallID > 0 && e.OperationID == 0 && e.Reason == "remote_lookup_preflight") ||
 		!e.Limits.within(hard) || e.Limits == previous.Limits || e.From != previous.Profile ||
 		e.Limits.MaxModelCalls < previous.Limits.MaxModelCalls ||
 		e.Limits.MaxModelTokens < previous.Limits.MaxModelTokens ||
@@ -107,6 +110,22 @@ func (p Policy) Extend(previous Proposal, hard Limits, operationID uint64) (Exte
 		return Extension{}, false
 	}
 	return extension, extension.Valid(previous, hard) && extension.Limits != previous.Limits
+}
+
+// ExtendForRemote records one tier of shadow growth at the durable model
+// result that selected a GraphJin lookup, before its remote preflight.
+func (p Policy) ExtendForRemote(previous Proposal, hard Limits, callID uint64) (Extension, bool) {
+	if callID == 0 {
+		return Extension{}, false
+	}
+	extension, ok := p.Extend(previous, hard, callID)
+	if !ok {
+		return Extension{}, false
+	}
+	extension.OperationID = 0
+	extension.CallID = callID
+	extension.Reason = "remote_lookup_preflight"
+	return extension, extension.Valid(previous, hard)
 }
 
 func (p Proposal) Valid(hard Limits) bool {

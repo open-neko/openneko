@@ -454,6 +454,17 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					toolFailed = true
 					return ax.Object("error", name+"_limit_exceeded"), nil
 				}
+				if name == "lookup" && tools.Triage != nil && !events.hasError() {
+					callID := uint64(events.modelCallCount())
+					events.send(Event{Type: "tool.proposed", Name: "lookup", CallID: callID})
+					if events.hasError() {
+						return nil, fmt.Errorf("remote tool intent was not journaled")
+					}
+					events.maybeExtendForRemoteLookup(tools.Triage.Policy, callID)
+					if events.hasError() {
+						return nil, fmt.Errorf("budget extension was not journaled")
+					}
+				}
 				if name == "lookup" && !events.admitRemoteLookup() {
 					toolFailed = true
 					return ax.Object("error", "model_budget_exceeded"), nil

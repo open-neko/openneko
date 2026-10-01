@@ -67,4 +67,9 @@ func TestBudgetExtensionFollowsPinnedLadderAndOperation(t *testing.T) {
 	if _, ok := policy.Extend(clipped, clipped.Limits, 1); ok {
 		t.Fatal("profile already at hard cap extended")
 	}
+	remote, ok := policy.ExtendForRemote(budgettriage.Proposal{Version: policy.Version, Profile: "multi_step", Limits: policy.MultiStep}, hard, 3)
+	if !ok || remote.From != "multi_step" || remote.To != "artifact" || remote.CallID != 3 || remote.OperationID != 0 ||
+		remote.Reason != "remote_lookup_preflight" {
+		t.Fatalf("remote extension=%+v ok=%t", remote, ok)
+	}
 }

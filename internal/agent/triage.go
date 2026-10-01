@@ -109,6 +109,41 @@ func (r *recorder) maybeExtendBudgetProfile(policy budgettriage.Policy, triageRo
 	r.mu.Unlock()
 }
 
+// A GraphJin request is known after Ax has durably finished the model call,
+// but before the remote reservation is admitted. Walk the pinned shadow ladder
+// one tier per event until that specific lookup would fit or the hard cap wins.
+func (r *recorder) maybeExtendForRemoteLookup(policy budgettriage.Policy, callID uint64) {
+	r.shadowMu.Lock()
+	defer r.shadowMu.Unlock()
+	for step := 0; step < 3; step++ {
+		r.mu.Lock()
+		current := r.shadowProfile
+		if current == nil || r.err != nil || r.pricing == nil || r.pricing.GraphJinPrice == nil {
+			r.mu.Unlock()
+			return
+		}
+		due := r.chargedTokens()+remoteLookupReservation > current.Limits.MaxModelTokens ||
+			r.costMicros+r.pricing.GraphJinPrice.Reservation(remoteLookupReservation) > current.Limits.MaxCostMicros
+		r.mu.Unlock()
+		if !due {
+			return
+		}
+		extension, ok := policy.ExtendForRemote(*current, r.spec.triageHardLimits(), callID)
+		if !ok {
+			return
+		}
+		data, _ := json.Marshal(extension)
+		r.send(Event{Type: "budget.profile.extended", Name: extension.To, CallID: callID, Data: data})
+		if r.hasError() {
+			return
+		}
+		updated := budgettriage.Proposal{Version: extension.Version, Profile: extension.To, Limits: extension.Limits}
+		r.mu.Lock()
+		r.shadowProfile = &updated
+		r.mu.Unlock()
+	}
+}
+
 // The classifier is a one-time request charged before the proposal. Future
 // context, executor and responder calls can use any other approved route.
 func mainRouteReservation(pricing *RoutedClient, triageRoute string, tokens int64) int64 {

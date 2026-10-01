@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -142,6 +143,18 @@ func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 	if replayedExtensions != 1 {
 		t.Fatalf("terminal replay contained %d extensions", replayedExtensions)
 	}
+	trace, err := ReadBudgetTrace(root, spec.RunID)
+	if err != nil || trace.Status != "completed" || len(trace.Events) == 0 {
+		t.Fatalf("validated budget trace=%+v err=%v", trace, err)
+	}
+	traceJSON, err := json.Marshal(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(traceJSON, []byte("Verified answer")) || bytes.Contains(traceJSON, []byte(`"value":"ok"`)) ||
+		bytes.Contains(traceJSON, []byte(spec.Prompt)) {
+		t.Fatal("budget trace exported an answer, tool result, or accepted prompt")
+	}
 	sum := sha256.Sum256([]byte(spec.RunID))
 	path := filepath.Join(root, hex.EncodeToString(sum[:]))
 	data, err := os.ReadFile(path + ".json")
@@ -163,6 +176,169 @@ func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 	}
 	if _, err := Inspect(root, spec); err == nil {
 		t.Fatal("extension bound to a different operation passed checkpoint inspection")
+	}
+	if _, err := ReadBudgetTrace(root, spec.RunID); err == nil {
+		t.Fatal("tampered budget checkpoint was exported")
+	}
+}
+
+func TestGraphJinShadowExtensionPrecedesRemoteAdmission(t *testing.T) {
+	answers := []string{`{"javascriptCode":"final('Look up the reference',{})"}`,
+		`{"javascriptCode":"const value=lookup('reference'); final('Done',{value});"}`,
+		`{"answer":"Verified answer."}`}
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t, answers...)
+	defer closeServers()
+	lookups := 0
+	tools.Lookup = func(context.Context, string) (json.RawMessage, error) {
+		lookups++
+		return json.RawMessage(`{"response":{"answer":"REF-42"}}`), nil
+	}
+	remotePrice := agent.TokenPrice{InputMicrosPerMillion: 1000, OutputMicrosPerMillion: 1000}
+	client.GraphJinPrice = &remotePrice
+	var events []agent.Event
+	result, err := RunWithTools(context.Background(), t.TempDir(), spec, client, tools, func(e agent.Event) error {
+		events = append(events, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || lookups != 1 || *triageCalls != 1 || *chatCalls != 3 {
+		t.Fatalf("result=%+v err=%v lookups=%d triage=%d chat=%d", result, err, lookups, *triageCalls, *chatCalls)
+	}
+	proposalAt, extensionAt, lookupAt := -1, -1, -1
+	for i, e := range events {
+		if e.Type == "tool.proposed" && e.Name == "lookup" {
+			proposalAt = i
+		}
+		if e.Type == "budget.profile.extended" {
+			extensionAt = i
+			var extension budgettriage.Extension
+			if json.Unmarshal(e.Data, &extension) != nil || extension.Reason != "remote_lookup_preflight" ||
+				extension.CallID != 3 || extension.OperationID != 0 || extension.From != "multi_step" || extension.To != "artifact" {
+				t.Fatalf("invalid remote extension: %+v %+v", e, extension)
+			}
+		}
+		if e.Type == "tool.started" && e.Name == "lookup" {
+			lookupAt = i
+		}
+	}
+	if proposalAt < 0 || extensionAt < 0 || lookupAt < 0 || proposalAt >= extensionAt || extensionAt >= lookupAt {
+		t.Fatalf("remote intent and extension were not journaled before lookup: proposal=%d extension=%d lookup=%d", proposalAt, extensionAt, lookupAt)
+	}
+}
+
+func TestRemotePreflightJournalFailureStopsLookupAndResumes(t *testing.T) {
+	answers := []string{`{"javascriptCode":"final('Look up the reference',{})"}`,
+		`{"javascriptCode":"const value=lookup('reference'); final('Done',{value});"}`,
+		`{"javascriptCode":"final('Look up the reference',{})"}`,
+		`{"javascriptCode":"const value=lookup('reference'); final('Done',{value});"}`,
+		`{"answer":"Verified answer."}`}
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t, answers...)
+	defer closeServers()
+	lookups := 0
+	tools.Lookup = func(context.Context, string) (json.RawMessage, error) {
+		lookups++
+		return json.RawMessage(`{"response":{"answer":"REF-42"}}`), nil
+	}
+	remotePrice := agent.TokenPrice{InputMicrosPerMillion: 1000, OutputMicrosPerMillion: 1000}
+	client.GraphJinPrice = &remotePrice
+	root := t.TempDir()
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "budget.profile.extended" && e.CallID > 0 {
+			return errors.New("delivery interrupted after extension checkpoint")
+		}
+		return nil
+	})
+	if err == nil || lookups != 0 || *triageCalls != 1 || *chatCalls != 2 {
+		t.Fatalf("interrupted err=%v lookups=%d triage=%d chat=%d", err, lookups, *triageCalls, *chatCalls)
+	}
+	if report, inspectErr := Inspect(root, spec); inspectErr != nil || !report.CanResume || len(report.Operations) != 0 {
+		t.Fatalf("checkpoint report=%+v err=%v", report, inspectErr)
+	}
+	var replay []agent.Event
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		replay = append(replay, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || lookups != 1 || *triageCalls != 1 || *chatCalls != 5 {
+		t.Fatalf("resume result=%+v err=%v lookups=%d triage=%d chat=%d", result, err, lookups, *triageCalls, *chatCalls)
+	}
+	extensions := 0
+	for _, e := range replay {
+		if e.Type == "budget.profile.extended" {
+			extensions++
+		}
+	}
+	if extensions != 1 {
+		t.Fatalf("remote extension repeated %d times", extensions)
+	}
+	sum := sha256.Sum256([]byte(spec.RunID))
+	path := filepath.Join(root, hex.EncodeToString(sum[:]))
+	data, err := os.ReadFile(path + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved checkpoint
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	for i := range saved.Events {
+		if saved.Events[i].Type == "tool.proposed" {
+			saved.Events[i].CallID = 2 // A different completed model call cannot justify call 3's extension.
+			break
+		}
+	}
+	if err := saveCheckpoint(root, path, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(root, spec); err == nil {
+		t.Fatal("remote extension without matching durable lookup intent passed inspection")
+	}
+}
+
+func TestRemotePreflightCanJournalTwoOrderedTiersAtOneModelReceipt(t *testing.T) {
+	answers := []string{`{"javascriptCode":"final('Look up the reference',{})"}`,
+		`{"javascriptCode":"const value=lookup('reference'); final('Done',{value});"}`,
+		`{"answer":"Verified answer."}`}
+	spec, client, tools, _, _, closeServers := triageRunFixture(t, answers...)
+	defer closeServers()
+	tools.Triage.Policy.Artifact.MaxModelTokens = 45_000 // Still below GraphJin's 49,152-token reservation.
+	lookups := 0
+	tools.Lookup = func(context.Context, string) (json.RawMessage, error) {
+		lookups++
+		return json.RawMessage(`{"response":{"answer":"REF-42"}}`), nil
+	}
+	remotePrice := agent.TokenPrice{InputMicrosPerMillion: 1000, OutputMicrosPerMillion: 1000}
+	client.GraphJinPrice = &remotePrice
+	root := t.TempDir()
+	var events []agent.Event
+	result, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		events = append(events, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || lookups != 1 {
+		t.Fatalf("result=%+v err=%v lookups=%d", result, err, lookups)
+	}
+	var tiers []string
+	lookupAt := -1
+	for i, e := range events {
+		if e.Type == "budget.profile.extended" {
+			var extension budgettriage.Extension
+			if json.Unmarshal(e.Data, &extension) != nil || e.CallID != 3 || extension.CallID != 3 || e.OperationID != 0 {
+				t.Fatalf("invalid ordered extension: %+v %+v", e, extension)
+			}
+			tiers = append(tiers, extension.To)
+		}
+		if e.Type == "tool.started" && e.Name == "lookup" {
+			lookupAt = i
+			if len(tiers) != 2 {
+				t.Fatalf("lookup started after %d extensions", len(tiers))
+			}
+		}
+	}
+	if lookupAt < 0 || len(tiers) != 2 || tiers[0] != "artifact" || tiers[1] != "fixed" {
+		t.Fatalf("ordered tiers=%v lookupAt=%d", tiers, lookupAt)
+	}
+	if _, err := Inspect(root, spec); err != nil {
+		t.Fatalf("ordered extension checkpoint rejected: %v", err)
 	}
 }
 

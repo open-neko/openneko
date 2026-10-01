@@ -400,12 +400,26 @@ YAML
       "$cli" --gateway harness-m2 provider create --name harness-m6-triage --type harness-m6-triage --credential HARNESS_TRIAGE_SOURCE_KEY=synthetic-m6-triage
       export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","triage":"triage","budget_policy":{"version":"m6-shadow-v1","short":{"max_model_calls":2,"max_model_tokens":8000,"max_cost_micros":2000},"multi_step":{"max_model_calls":3,"max_model_tokens":40000,"max_cost_micros":20000},"artifact":{"max_model_calls":48,"max_model_tokens":100000,"max_cost_micros":1000000}},"pricing_version":"m6-triage-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-compaction-approval-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m6-approval","credential_env":"HARNESS_APPROVAL_SOURCE_KEY","api_key_env":"HARNESS_FIXTURE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}},{"key":"triage","model":"jev-fixture","url":"http://host.docker.internal:18118/route/triage","provider":"harness-m6-triage","credential_env":"HARNESS_TRIAGE_SOURCE_KEY","api_key_env":"HARNESS_TRIAGE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
       export OPENNEKO_HARNESS_TRIAGE_SHADOW=1
+      export HARNESS_BUDGET_EVAL_MANIFEST="$HARNESS_STATE/m6-budget-eval-manifest.json"
+      go build -o "$HARNESS_STATE/harness-budget-eval" ./cmd/harness-budget-eval
     else
       export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","pricing_version":"m6-approval-compaction-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-compaction-approval-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m6-approval","credential_env":"HARNESS_APPROVAL_SOURCE_KEY","api_key_env":"HARNESS_FIXTURE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
     fi
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-approval-live.ts)
     if [[ ${HARNESS_M6_TRIAGE_ONLY:-0} == 1 ]]; then
+      "$HARNESS_STATE/harness-budget-eval" < "$HARNESS_BUDGET_EVAL_MANIFEST" > "$HARNESS_STATE/m6-budget-eval-report.json"
+      python3 - "$HARNESS_STATE/m6-budget-eval-report.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    report = json.load(f)
+assert report["summary"]["verified_success"] == 1
+assert report["summary"]["premature_budget_failures"] == 0
+assert report["summary"]["incomplete_usage"] == 0
+assert report["cases"][0]["budget"]["final_profile"] == "artifact"
+assert report["summary"]["canary_ready"] is False
+PY
+      echo M6_CONNECTED_BUDGET_EVAL_PASS
       echo M6_CONNECTED_WORKFLOW_TRIAGE_PASS
     else
       echo M6_CONNECTED_WORKFLOW_APPROVAL_COMPACTION_PASS

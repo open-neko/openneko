@@ -235,6 +235,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	modelCosts := map[uint64]int64{}
 	modelProviders := map[uint64]string{}
 	modelFailed := map[uint64]bool{}
+	lookupProposals := map[uint64]bool{}
 	fallbacks := map[uint64]bool{}
 	executorErrors := map[uint64]bool{}
 	toolCosts := map[uint64]int64{}
@@ -412,21 +413,29 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			decoder := json.NewDecoder(bytes.NewReader(e.Data))
 			decoder.DisallowUnknownFields()
 			hard := budgettriage.Limits{MaxModelCalls: spec.ModelCallLimit(), MaxModelTokens: spec.MaxModelTokens, MaxCostMicros: spec.MaxCostMicros}
-			if !triageProposed || shadowProfile == nil || e.OperationID == 0 || e.OperationID <= lastShadowExtensionOp ||
-				!ended[e.OperationID] || e.OperationID > uint64(len(s.Operations)) || e.Name == "" ||
+			if !triageProposed || shadowProfile == nil || e.Name == "" ||
 				len(e.Data) == 0 || len(e.Data) > 1024 || decoder.Decode(&extension) != nil || decoder.Decode(new(any)) != io.EOF ||
-				e.OperationID != extension.OperationID || e.Name != extension.To || !extension.Valid(*shadowProfile, hard) {
+				e.OperationID != extension.OperationID || e.CallID != extension.CallID ||
+				e.Name != extension.To || !extension.Valid(*shadowProfile, hard) {
 				return invalid()
 			}
-			op := s.Operations[e.OperationID-1]
-			var resultStatus struct {
-				IsError bool `json:"is_error"`
-			}
-			if op.Error != "" || len(op.Result) == 0 || json.Unmarshal(op.Result, &resultStatus) != nil || resultStatus.IsError {
+			if e.OperationID > 0 {
+				if e.OperationID <= lastShadowExtensionOp || !ended[e.OperationID] || e.OperationID > uint64(len(s.Operations)) {
+					return invalid()
+				}
+				op := s.Operations[e.OperationID-1]
+				var resultStatus struct {
+					IsError bool `json:"is_error"`
+				}
+				if op.Error != "" || len(op.Result) == 0 || json.Unmarshal(op.Result, &resultStatus) != nil || resultStatus.IsError {
+					return invalid()
+				}
+				lastShadowExtensionOp = e.OperationID
+			} else if e.CallID != uint64(modelCalls) || !modelFinished[e.CallID] || modelFailed[e.CallID] ||
+				modelStages[e.CallID] == "budget_triage" || !lookupProposals[e.CallID] {
 				return invalid()
 			}
 			shadowProfile = &budgettriage.Proposal{Version: extension.Version, Profile: extension.To, Limits: extension.Limits}
-			lastShadowExtensionOp = e.OperationID
 		case "run.resumed":
 			attempt++
 			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {
@@ -437,10 +446,18 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			finalizerAdmitted = false
 			finalizerCalls = 0
 			finalizerEvidenceIDs = nil
+			lookupProposals = map[uint64]bool{}
 		case "tool.reused":
 			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()
 			}
+		case "tool.proposed":
+			if !triageProposed || e.Name != "lookup" || e.CallID == 0 || e.CallID != uint64(modelCalls) ||
+				e.OperationID != 0 || !modelFinished[e.CallID] || modelFailed[e.CallID] || modelStages[e.CallID] == "budget_triage" ||
+				len(e.Data) != 0 {
+				return invalid()
+			}
+			lookupProposals[e.CallID] = true
 		case "tool.started":
 			if e.OperationID != uint64(len(started)+1) || e.OperationID > uint64(spec.OperationLimit()) || !agent.ValidToolName(e.Name) {
 				return invalid()

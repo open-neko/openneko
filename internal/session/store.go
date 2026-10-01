@@ -326,7 +326,9 @@ func continuation(state checkpoint) (agent.Continuation, error) {
 				return agent.Continuation{}, fmt.Errorf("invalid saved budget extension")
 			}
 			prior.TriageProfile = &budgettriage.Proposal{Version: extension.Version, Profile: extension.To, Limits: extension.Limits}
-			prior.TriageLastExtensionOp = extension.OperationID
+			if extension.OperationID > 0 {
+				prior.TriageLastExtensionOp = extension.OperationID
+			}
 		}
 		if event.Type == "model.request.finished" && event.Usage != nil {
 			prior.Usage.AddReported(*event.Usage)

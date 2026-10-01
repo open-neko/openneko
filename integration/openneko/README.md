@@ -375,10 +375,14 @@ The focused M6 shadow budget-triage gate runs with
 approval-compaction scenario and adds a dedicated priced Typesafe route through
 OpenShell. The worker checks one brokered classifier request, complete usage and
 cost accounting, a content-free probability receipt, one versioned budget
-proposal bounded by the run's hard caps, one extension after a durable tool
-receipt would exceed the proposed next-call allowance, pending approval after
-compaction, and inert API queue redelivery. The classifier recommendation does
-not change the run's limits. Ax Typesafe appends `/v1/systemone` to its base
+proposal bounded by the run's hard caps, one extension before a requested
+GraphJin lookup would exceed the shadow remote allowance, pending approval
+after compaction, and inert API queue redelivery. The same fixture binds an
+independently checked synthetic outcome to the final checkpoint hash and
+passes the metadata-only evaluator (`M6_CONNECTED_BUDGET_EVAL_PASS`). It is a
+calibration fixture, not held-out evidence for a canary. The classifier
+recommendation does not change the run's limits. Ax Typesafe appends
+`/v1/systemone` to its base
 URL, so the trusted route base ends before `/v1`. The isolated stack is removed
 on exit.
 

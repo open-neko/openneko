@@ -1199,8 +1199,19 @@ tool receipt when the next model reservation would exceed the current proposed
 call, token or cost allowance. Extensions advance one policy tier at a time,
 are clipped to the original hard caps, and recover from a crash after the tool
 receipt without redispatching the tool or resetting spend. They remain
-observational; held-out outcome calibration remains required before enabling
+observational. A GraphJin lookup exposed that waiting for its result was too
+late: the proposed multi-step token cap could reject its 49,152-token remote
+reservation. The shadow policy now journals one or more tier steps against the
+completed Ax model call and a content-free `tool.proposed` intent for the
+requested lookup, before remote admission;
+journal failure prevents dispatch, and resume keeps the accepted tier without
+repeating the classifier. Held-out outcome calibration remains required before enabling
 dynamic limits or a canary.
+The [budget evaluation protocol](M6-BUDGET-EVAL.md) now reads only validated,
+stopped checkpoints and compares shadow admission against independently labelled
+outcomes. It records the first counterfactual block, class false-lows, classifier
+overhead and usage coverage. Its report cannot authorize a canary: changed-model
+behavior and savings still require a controlled live comparison.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
 Measure admitted-tool schema cost and selection errors. If they are material,
