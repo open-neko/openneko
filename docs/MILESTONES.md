@@ -883,8 +883,13 @@ exact bytes and authorization through the isolated web download on 0.1.2.
 The actor-exhaustion finalizer, API pricing preflight, pending-approval
 compaction, and organization-scoped artifact route gates also pass on 0.1.2.
 The host-only dynamic-budget canary mechanism now has local admission and
-checkpoint tests, but is disabled by default. Held-out quality and connected
-canary outcome evidence remain open. The
+checkpoint tests, but is disabled by default. A focused queued workflow with
+synthetic model/data fixtures passed its connected 0.1.2 canary path,
+including a GraphJin preflight extension before dispatch and inert redelivery.
+A paired fixed-budget run in the same isolated stack verified the same output
+and approval state, 12 model requests and 1,332 charged micros; the canary was
+slower in this single pair. Held-out quality and a controlled multi-case
+fixed-versus-canary comparison remain open. The
 migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 

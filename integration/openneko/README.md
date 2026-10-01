@@ -437,8 +437,18 @@ recommendation does not change the run's limits. Ax Typesafe appends
 `/v1/systemone` to its base
 URL, so the trusted route base ends before `/v1`. The isolated stack is removed
 on exit. The separate host-only budget canary is disabled by default and has
-local admission/recovery tests; this connected fixture has not yet qualified
-its outcome against the fixed-budget control.
+local admission/recovery tests. The focused connected gate runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_CANARY_ONLY=1` on the matched OpenShell 0.1.2
+tuple. It passed the queued API workflow, GraphJin preflight extension,
+compaction, pending approval, checkpoint mode pin, and inert queue redelivery
+with synthetic model and data fixtures on 2026-10-02. The isolated stack was
+removed on exit. A second run in the same stack used fixed budgets with the
+same deterministic fixture and verified outcome. Both completed with 12
+recorded model requests, 10 ordinary fixture calls, one classifier call, one
+pending approval, no executed effect, and 1,332 charged micros. Measured wall
+times were 10,885 ms for canary and 9,995 ms for fixed, without a performance
+claim from this single synthetic pair. This verifies transport and workflow
+parity, not a held-out cost-per-success improvement or a production decision.
 
 The focused M6 actor-exhaustion gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued
