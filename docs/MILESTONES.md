@@ -856,8 +856,14 @@ An isolated matched CLI/gateway/supervisor transport suite passes, including
 Ax streaming, credential lifecycle, OTLP, HTTPS trust and cancellation. The
 feature-branch consumer now passes connected streaming, route selection,
 cost gates, fallback, executor escalation, route launch, and cold/warm/reused
-Hermes turns on 0.1.2. The broader workflow and rendered-web gates still
-need rerunning against the merged OpenNeko branch. The migration details are in
+Hermes turns on 0.1.2. The connected shadow-budget workflow and its evaluator
+also pass. A source-change workflow interrupted through OpenShell's
+workspace-preserving stop/start resumes its saved checkpoint without another
+GraphJin call or broker effect, then survives queue redelivery. The broader
+compaction gate also publishes a large CSV after one summary turn and proves
+exact bytes and authorization through the isolated web download on 0.1.2.
+Other workflow and rendered-browser gates still need rerunning against the
+merged OpenNeko branch. The migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a

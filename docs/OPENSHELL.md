@@ -51,6 +51,15 @@ For our CLI-based path, these are the exact qualification surfaces:
 4. **Remaining:** repeat the broader worker/queue, workflow and rendered-web
    gates on 0.1.2 before calling the entire consumer suite qualified.
 
+The connected crash-and-resume gate now uses `sandbox stop` followed by
+`sandbox start`. OpenShell 0.1.2 preserves the workspace across that process
+interruption, so the host can inspect the interrupted checkpoint and resume
+without repeating broker effects. Killing the whole Docker sandbox container
+loses that workspace; disconnecting the CLI leaves its remote exec running.
+Neither is an equivalent recovery test. The stop/start gate passed with one
+saved GraphJin lookup and one saved workflow-output receipt, one resumed run,
+and inert queue redelivery.
+
 The connected migration found three concrete differences: OpenShell 0.1.2
 rejects `sandbox create --upload` with a command, provider profile `env_vars`
 must name the workload destination (`api_key`), and the warm Hermes server

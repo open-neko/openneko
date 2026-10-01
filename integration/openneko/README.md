@@ -39,6 +39,19 @@ OpenNeko `hermes-warm.py` onto the test image so this regression exercises
 the worktree code. Full worker/queue and rendered-web qualification on
 0.1.2 remains to be run.
 
+The connected `HARNESS_M6_TRIAGE_ONLY=1` workflow and budget evaluator pass
+on 0.1.2. `HARNESS_M6_STATE_CRASH_ONLY=1` passes using OpenShell's
+workspace-preserving `sandbox stop`/`sandbox start` lifecycle to interrupt
+the running turn. The test verifies checkpoint resume, unchanged broker
+receipts, and inert queue redelivery. For repeated local runs, point
+`AGENT_TEST_BASE_IMAGE` at an independent OpenNeko agent image; the builder
+rejects `harness-openneko:m3` as its own base.
+
+`HARNESS_M6_COMPACTION_ONLY=1 HARNESS_M6_COMPACTION_WEB=1` also passes on
+0.1.2: one forced summary retains the workflow receipt, publishes the exact
+large CSV, and the isolated web route serves it while refusing the unrelated
+Work-file URL.
+
 The connected queue fixture also exercises the opt-in customer Work
 `workflow_save` tool. It creates a cron-triggered workflow with a batch output
 contract, obtains its version from the MCP workflow list, edits the definition,

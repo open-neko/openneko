@@ -3,6 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 product=${1:?Usage: build-image.sh /absolute/OpenNeko/checkout [base-image]}
 base=${2:-openneko-agent:dev}
+if [[ "$base" == harness-openneko:m3 ]]; then
+  echo 'Use an independent OpenNeko agent base image; the test image cannot be its own base.' >&2
+  exit 1
+fi
 state=$(mktemp -d)
 trap 'rm -rf "$state"' EXIT
 arch=$(docker info --format '{{.Architecture}}')
