@@ -1,4 +1,4 @@
-// Connected M6 compaction: broker receipts and source constraint survive an Ax summary.
+// Connected M6 compaction: a file artifact, broker receipt and source constraint survive an Ax summary.
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -29,7 +29,7 @@ try {
   });
   const [workflow] = await db().insert(workflow_definition).values({
     org_id: orgId, name: `Compacted evidence ${randomUUID()}`,
-    goal: "Read the seeded reference repeatedly, emit a finding, then verify the saved output receipt. Never execute a change without approval.",
+    goal: "Read the seeded reference, create a CSV artifact, emit a file output, then verify the saved output receipt. Never execute a change without approval.",
   }).returning({ id: workflow_definition.id });
   workflowId = workflow.id;
   const [source] = await db().select({ id: data_source.id }).from(data_source).where(eq(data_source.org_id, orgId)).limit(1);
@@ -67,8 +67,10 @@ try {
   const operations = (await pool().query<{ operation_id: number; request: { tool?: string }; result: unknown }>(
     "select operation_id,request,result from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
     [orgId, run.work_run_id])).rows;
-  const outputs = (await pool().query<{ id: string }>(
-    "select id from workflow_output where workflow_run_id=$1", [run.id])).rows;
+  const outputs = (await pool().query<{ id: string; kind: string; artifact_path: string | null }>(
+    "select id,kind,artifact_path from workflow_output where workflow_run_id=$1", [run.id])).rows;
+  const artifact = await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id, "artifacts", "result.csv"));
+  const expectedArtifact = Buffer.from(`lead_id\n${"LEAD-42\n".repeat(6500)}`);
   console.log("M6_CONNECTED_COMPACTION_DIAGNOSTIC", JSON.stringify({ run, jobState, result: { status: checkpoint.result.status, code: checkpoint.result.code, answer: checkpoint.result.answer },
     calls: counts[model], ordinary: counts[`ordinary:${model}`], summaries: counts[`summary:${model}`], summaryAt: counts[`summary-at:${model}`],
     largestRequest: counts[`max-request:${model}`], operations: operations.map(op => op.request.tool), outputs: outputs.length }));
@@ -76,12 +78,21 @@ try {
   assert.equal(run.status, "completed");
   assert.equal(checkpoint.result.status, "completed");
   assert.match(checkpoint.result.answer ?? "", /REF-42/);
-  assert.ok((counts[`summary:${model}`] ?? 0) >= 1, "Ax did not compact the mixed-tool trajectory");
+  assert.equal(counts[`summary:${model}`], 1, "Ax did not compact the mixed-tool trajectory exactly once");
   assert.equal(counts[`ordinary:${model}`], 9);
   assert.ok((counts[`summary-at:${model}`] ?? Infinity) <= 8, "summary occurred after the responder");
-  assert.ok((counts[`max-request:${model}`] ?? Infinity) < 100_000, "model context grew without bound");
-  assert.equal(operations.length, 6);
+  assert.ok((counts[`max-request:${model}`] ?? Infinity) < 50_000, "file content entered model context");
+  assert.equal(operations.length, 5);
+  assert.equal(checkpoint.operations.length, 7);
+  assert.equal(checkpoint.operations[1]?.tool, "file_write");
+  assert.equal(checkpoint.operations[2]?.tool, "file_read");
+  assert.equal(checkpoint.operations[3]?.tool, "workflow_output_emit");
+  assert.equal(artifact.length, expectedArtifact.length);
+  assert.equal(createHash("sha256").update(artifact).digest("hex"),
+    createHash("sha256").update(expectedArtifact).digest("hex"));
   assert.equal(outputs.length, 1);
+  assert.equal(outputs[0].kind, "file");
+  assert.equal(outputs[0].artifact_path, "result.csv");
   assert.equal((operations[1].result as { outputId?: string }).outputId, outputs[0].id);
   assert.equal(checkpoint.events.find(event => event.type === "terminal.checked")?.terminal?.accepted, true);
   const before = JSON.stringify({ counts, operations, outputs });
@@ -90,8 +101,10 @@ try {
   await runWorkflowRunFire(replay.data as WorkflowRunFirePayload);
   const after = JSON.stringify({ counts: await (await fetch(control)).json(),
     operations: (await pool().query("select operation_id,request,result from harness_operation where org_id=$1 and run_id=$2 order by operation_id", [orgId, run.work_run_id])).rows,
-    outputs: (await pool().query("select id from workflow_output where workflow_run_id=$1", [run.id])).rows });
+    outputs: (await pool().query("select id,kind,artifact_path from workflow_output where workflow_run_id=$1", [run.id])).rows });
   assert.equal(after, before, "completed queue redelivery repeated model or broker work");
+  assert.equal(createHash("sha256").update(await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id,
+    "artifacts", "result.csv"))).digest("hex"), createHash("sha256").update(expectedArtifact).digest("hex"));
   console.log("M6_CONNECTED_WORKFLOW_COMPACTION_PASS", run.work_run_id);
 } finally {
   await queue.stop({ graceful: true, timeout: 5_000 });
