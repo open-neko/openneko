@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { db, organization, data_source, work_thread, work_run, eq, pool } from "@neko/db";
@@ -46,6 +46,57 @@ live("launches trusted Ax routes through distinct OpenShell providers", async ()
     expect(result.finalText).toContain("ROUTED-OK");
     const counts=await (await fetch("http://127.0.0.1:18118/control")).json() as Record<string,number>;
     for(const stage of ["context","executor","responder"]) expect(counts[`harness-route-${stage}`]).toBe(1);
+
+    await fetch("http://127.0.0.1:18118/control",{method:"POST",body:"{}"});
+    const skillDir=join(workspace.skillsRoot,"reference-check");
+    await mkdir(skillDir,{recursive:true});
+    await writeFile(join(skillDir,"SKILL.md"),
+      "---\nname: reference-check\ndescription: Verify a seeded reference using GraphJin\n---\nUse the governed lookup capability and report its evidence.\n");
+    const lookupRunId=randomUUID();
+    const lookupWorkspace={...workspace,runRoot:join(workspace.runsRoot,lookupRunId),
+      artifactRoot:join(workspace.runsRoot,lookupRunId,"artifacts"),binRoot:join(workspace.runsRoot,lookupRunId,"bin")};
+    for(const dir of [lookupWorkspace.runRoot,lookupWorkspace.artifactRoot,lookupWorkspace.binRoot]) await mkdir(dir,{recursive:true});
+    await db().insert(work_run).values({id:lookupRunId,org_id:orgId,thread_id:threadId,backend:"harness",actor_role:"service"});
+    const routeStages=["skill","context-lookup","executor-lookup","responder-lookup"];
+    const lookupRoutes=parseHarnessRouting(JSON.stringify({skill:"skill",context:"context",executor:"executor",responder:"responder",
+      routes:routeStages.map((stage,index)=>({key:["skill","context","executor","responder"][index],
+        model:`harness-route-${stage}`,url:`http://host.docker.internal:18118/route/${stage}/v1`,
+        provider:`harness-m6-${stage}`,credential_env:`HARNESS_${stage.toUpperCase().replaceAll("-","_")}_KEY`,
+        api_key_env:`HARNESS_MODEL_${stage.toUpperCase().replaceAll("-","_")}_KEY`}))}));
+    const lookupCore=makeSandboxRunCore({cli:process.env.HARNESS_M3_CLI!,gatewayName:"harness-m2",
+      agentImage:"harness-openneko:m3",modelProvider:"harness-m3",modelHosts:[{host:"host.docker.internal",port:18118}],
+      hermesHomeHostPath:hermesHome,warmPoolSize:0,brokerUrl:broker.url,brokerTokenFor:broker.tokenFor,
+      brokerRelease:broker.release,harnessRouting:lookupRoutes,onLog:()=>{}});
+    const lookupResult=await lookupCore({backend:makeAgentBackend({id:"harness"}),orgId,threadId,runId:lookupRunId,
+      workspace:lookupWorkspace,prompt:"Find the seeded reference using the appropriate staged skill and GraphJin.",
+      userMessage:"Verify the seeded reference and report it with evidence.",allowedSkills:["reference-check"],
+      pluginActions:[],emit:async()=>{}});
+    expect(lookupResult.status,JSON.stringify(lookupResult)).toBe("completed");
+    expect(lookupResult.finalText).toContain("REF-42");
+    const routedCalls=await (await fetch("http://127.0.0.1:18118/control")).json() as Record<string,number>;
+    for(const stage of routeStages) expect(routedCalls[`harness-route-${stage}`],stage).toBeGreaterThan(0);
+    expect(routedCalls["graphjin-fixture"]).toBeGreaterThan(0);
+    const operations=(await pool().query("select result from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
+      [orgId,lookupRunId])).rows;
+    expect(operations).toHaveLength(1);
+    expect(operations[0].result.agentStatus.model).toBe("graphjin-fixture");
+    const snapshot=JSON.parse(await readFile(join(lookupWorkspace.runRoot,".harness",
+      `${createHash("sha256").update(lookupRunId).digest("hex")}.json`),"utf8"));
+    const skill=snapshot.events.filter((event:{type:string})=>event.type==="skill.selected");
+    expect(skill).toMatchObject([{name:"reference-check",origin:"semantic"}]);
+    const calls=snapshot.events.filter((event:{type:string})=>event.type==="model.request.started");
+    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-skill");
+    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-context-lookup");
+    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-executor-lookup");
+    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-responder-lookup");
+    const remote=snapshot.events.filter((event:{type:string;name?:string})=>event.type==="tool.finished"&&event.name==="lookup");
+    expect(remote).toHaveLength(1);
+    expect(remote[0].remote_usage).toMatchObject({reported:true});
+    expect(remote[0].remote_usage.total_tokens).toBeGreaterThan(0);
+    const outerTokens=snapshot.events.filter((event:{type:string})=>event.type==="model.request.finished")
+      .reduce((sum:number,event:{usage?:{total_tokens?:number}})=>sum+(event.usage?.total_tokens??0),0);
+    expect(snapshot.result.usage.total_tokens).toBe(outerTokens);
+    broker.release(lookupRunId);
   } finally {
     broker.release(runId);
     await broker.close();
