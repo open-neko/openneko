@@ -1,4 +1,5 @@
 name: post-release smoke
+run-name: post-release smoke (${{ github.event.workflow_run.head_branch || inputs.version }})
 
 # Gate, not spectator. After a release builds, this actually installs the just-
 # published artifacts and asks `openneko status` whether the stack serves. If

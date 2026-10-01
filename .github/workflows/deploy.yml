@@ -24,6 +24,23 @@ jobs:
       }}
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve smoked release
+        id: release
+        env:
+          UPSTREAM_TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | jq -r .tag_name)
+          elif [[ "$UPSTREAM_TITLE" =~ ^post-release\ smoke\ \((v[0-9]+\.[0-9]+\.[0-9]+)\)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+          else
+            echo "::error::post-release smoke did not identify an exact stable tag: $UPSTREAM_TITLE"
+            exit 1
+          fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
@@ -36,15 +53,14 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_IMAGE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           ssh -i ~/.ssh/id_ed25519 \
               "$SSH_USER@$SSH_HOST" \
-              "bash -se" <<'EOF'
+              "DEPLOY_IMAGE_TAG=$DEPLOY_IMAGE_TAG bash -se" <<'EOF'
             set -euo pipefail
             ARCH=$(uname -m)
             case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
-            DEPLOY_IMAGE_TAG=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest \
-              | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
             if [ -z "${DEPLOY_IMAGE_TAG:-}" ]; then
               echo "[deploy] unable to resolve a released application image tag" >&2
               exit 1
