@@ -358,6 +358,12 @@ workflow download route. It compares exact bytes and attachment headers,
 requires 404 from the personal Work-file route for the background run and from
 a missing workflow-run URL, and removes the web server and test stack on exit.
 The gate refuses to start if port 18121 is already occupied.
+The focused organization-scope gate runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`. Against isolated
+Postgres, it serves a recorded workflow artifact under its owning org and
+returns 404 for the same run ID under another org. It isolates the artifact
+route's organization boundary; OpenNeko's current web server resolves one org,
+so it is not a multi-tenant browser qualification.
 
 The focused M6 API pricing preflight runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_PRICING_PREFLIGHT_ONLY=1`. An unpriced

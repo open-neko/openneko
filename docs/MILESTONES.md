@@ -1097,7 +1097,10 @@ app and verify an operator workflow-artifact download byte-for-byte against the
 52,008-byte CSV after the same run. The background workflow's personal Work-file
 URL returns 404, and a missing workflow-run URL returns 404. This gate passed
 with one artifact event and a canonical workflow result path. A larger batch
-artifact, other artifact kinds and tenant-isolation checks remain open.
+artifact and other artifact kinds remain open. A separate Postgres-backed
+route gate verifies the same recorded artifact returns 404 when the request
+resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). This checks the
+artifact route's org scope; a multi-tenant browser deployment remains open.
 
 A second connected workflow API run now keeps a governed action request pending
 through Ax compaction. It uses a trusted priced OpenShell route, makes five

@@ -2,6 +2,12 @@
 set -euo pipefail
 product=${OPENNEKO_TEST_SOURCE:?}
 cli=${OPENSHELL_TEST_CLI:?}
+if [[ ${HARNESS_M6_ARTIFACT_SCOPE_ONLY:-0} == 1 ]]; then
+  export OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+  (cd "$product" && pnpm --filter @neko/web exec vitest run test/api/workflow-artifact-org-scope.test.ts)
+  echo M6_WORKFLOW_ARTIFACT_ORG_SCOPE_PASS
+  exit 0
+fi
 go build -o "$HARNESS_STATE/openshell-compat" ./adapters/openneko/cmd/openshell-compat
 go build -o "$HARNESS_STATE/harness-inspect" ./cmd/harness-inspect
 go build -o "$HARNESS_STATE/harness-batch" ./adapters/openneko/cmd/batch
