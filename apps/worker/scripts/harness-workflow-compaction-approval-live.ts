@@ -81,9 +81,10 @@ try {
   const checkpoint = JSON.parse(await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id,
     ".harness", `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`), "utf8")) as {
       result: { status: string; answer?: string; code?: string; cost?: { charged_micros: number } };
-      events: Array<{ type: string; stage?: string; origin?: string; name?: string; cost_micros?: number;
+      events: Array<{ type: string; stage?: string; origin?: string; name?: string; operation_id?: number; cost_micros?: number;
         data?: { version?: string; choice?: string; suggested_profile?: string; probabilities?: Record<string, number>;
-          profile?: string; limits?: {max_model_calls: number; max_model_tokens: number; max_cost_micros: number} };
+          profile?: string; from?: string; to?: string; operation_id?: number;
+          limits?: {max_model_calls: number; max_model_tokens: number; max_cost_micros: number} };
         terminal?: { accepted: boolean } }>;
     };
   const operations = (await pool().query<{ operation_id: number; request: { tool?: string }; result: unknown }>(
@@ -122,6 +123,7 @@ try {
     const started = checkpoint.events.filter(event => event.type === "model.request.started" && event.stage === "budget_triage");
     const finished = checkpoint.events.filter(event => event.type === "model.request.finished" && event.stage === "budget_triage");
     const proposals = checkpoint.events.filter(event => event.type === "budget.profile.proposed");
+    const extensions = checkpoint.events.filter(event => event.type === "budget.profile.extended");
     assert.equal(counts["jev-fixture"], 1, "Typesafe route did not traverse the connected OpenShell gateway");
     assert.equal(started.length, 1);
     assert.equal(finished.length, 1);
@@ -135,7 +137,12 @@ try {
     assert.equal(proposals.length, 1);
     assert.equal(proposals[0].data?.version, "m6-shadow-v1");
     assert.equal(proposals[0].data?.profile, "multi_step");
-    assert.deepEqual(proposals[0].data?.limits, {max_model_calls: 16, max_model_tokens: 40_000, max_cost_micros: 20_000});
+    assert.deepEqual(proposals[0].data?.limits, {max_model_calls: 3, max_model_tokens: 40_000, max_cost_micros: 20_000});
+    assert.equal(extensions.length, 1, "a durable tool result did not extend the shadow profile");
+    assert.equal(extensions[0].data?.from, "multi_step");
+    assert.equal(extensions[0].data?.to, "artifact");
+    assert.equal(extensions[0].data?.operation_id, extensions[0].operation_id);
+    assert.ok(operations.some(operation => operation.operation_id === extensions[0].operation_id));
     assert.ok((checkpoint.result.cost?.charged_micros ?? 0) >= 512);
   }
   const [admission] = (await pool().query<{ id: string; attempts: number }>(
