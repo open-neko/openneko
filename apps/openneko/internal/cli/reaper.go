@@ -279,9 +279,7 @@ func (r *dockerReaper) sweep(ctx context.Context, now time.Time) (int, int, erro
 		return 0, 0, err
 	}
 	var images []dockerImageSummary
-	if _, err := r.request(ctx, http.MethodGet, "/images/json?all=1", &images); err != nil {
-		return 0, 0, err
-	}
+	_, imageErr := r.request(ctx, http.MethodGet, "/images/json?all=1", &images)
 	pluginImages := openNekoPluginImageIDs(images)
 	referenced := make(map[string]bool, len(containers))
 	removedContainers := 0
@@ -327,6 +325,9 @@ func (r *dockerReaper) sweep(ctx context.Context, now time.Time) (int, int, erro
 			continue
 		}
 		removedContainers++
+	}
+	if imageErr != nil {
+		return removedContainers, 0, errors.Join(append(failures, imageErr)...)
 	}
 	removedImages := 0
 	currentAgent := currentAgentImageRef()

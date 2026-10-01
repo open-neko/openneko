@@ -107,6 +107,12 @@ jobs:
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status
 
+            REAPER=$(docker ps -q \
+              --filter label=com.docker.compose.project=openneko-demo \
+              --filter label=com.docker.compose.service=reaper | head -1)
+            test -n "$REAPER"
+            test "$(docker inspect -f '{{.State.Health.Status}}' "$REAPER")" = healthy
+
             WORKER=$(docker ps -q \
               --filter label=com.docker.compose.project=openneko-demo \
               --filter label=com.docker.compose.service=worker | head -1)
@@ -147,10 +153,17 @@ jobs:
             # Exercise the path that ordinary HTTP health checks missed in
             # PR #208: a supervisor inside a fresh sandbox must call back to
             # the containerised gateway and reach Ready.
+            trap 'docker exec "$WORKER" openshell sandbox delete --gateway openneko neko-deploy-smoke >/dev/null 2>&1 || true' EXIT
             docker exec "$WORKER" openshell sandbox create \
-              --gateway openneko \
+              --gateway openneko --name neko-deploy-smoke \
               --from "ghcr.io/open-neko/agent:$DEPLOY_IMAGE_TAG" \
-              --no-keep --no-tty -- /bin/true
+              --detach --no-tty -- sleep infinity
+            docker exec "$WORKER" openshell sandbox exec \
+              --gateway openneko -n neko-deploy-smoke --no-tty -- \
+              node /app/entry.js --preflight
+            docker exec "$WORKER" openshell sandbox delete \
+              --gateway openneko neko-deploy-smoke
+            trap - EXIT
 
             # Process liveness used to pass while pg-boss's schedule polling
             # had silently stopped. Require a successful durable scheduler DB
