@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.0](https://github.com/open-neko/openneko/compare/v3.11.1...v3.12.0) (2026-10-01)
+
+
+### Features
+
+* enforce OpenShell version parity in releases ([#392](https://github.com/open-neko/openneko/issues/392)) ([cbbccbc](https://github.com/open-neko/openneko/commit/cbbccbcd8d4d5e666388b394717f115a31e08f3a))
+
 ## [3.11.1](https://github.com/open-neko/openneko/compare/v3.11.0...v3.11.1) (2026-10-01)
 
 
