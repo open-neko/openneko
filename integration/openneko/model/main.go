@@ -470,7 +470,7 @@ func main() {
 			return
 		}
 		if n == 2 && req.Model == "harness-fixture" && runLargeProcess &&
-			(!strings.Contains(string(req.Messages), "process-1/large.bin") || !strings.Contains(string(req.Messages), "2097152")) {
+			(!strings.Contains(string(req.Messages), "process-1/large.bin") || !strings.Contains(string(req.Messages), "8388608")) {
 			http.Error(w, "missing large process artifact receipt", 422)
 			return
 		}
@@ -754,7 +754,7 @@ func main() {
 				responses = []string{`{"javascriptCode":"final('Run the bounded stdout fixture', {})"}`, string(encoded), `{"answer":"The log was bounded and the CSV was published."}`}
 			}
 			if runLargeProcess {
-				script := "from pathlib import Path\nPath('large.bin').write_bytes(b'A' * (2 << 20))\n"
+				script := "from pathlib import Path\nPath('large.bin').write_bytes(b'A' * (8 << 20))\n"
 				call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['large.bin']}); final('Report the large process artifact',{result});", script)
 				encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
 				responses = []string{`{"javascriptCode":"final('Create a large isolated artifact', {})"}`, string(encoded), `{"answer":"Created large.bin."}`}

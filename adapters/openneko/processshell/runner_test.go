@@ -2,6 +2,7 @@ package processshell
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,96 @@ func TestOutputCaptureBounded(t *testing.T) {
 	_, _ = buffer.Write([]byte("cdef"))
 	if buffer.String() != "abcd" || !buffer.truncated {
 		t.Fatalf("unexpected bounded output: %q truncated=%v", buffer.String(), buffer.truncated)
+	}
+}
+
+func TestInventoryUsesCurrentFlagAndFallsBackOnlyForLegacyCLI(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "current", true: "legacy"}[legacy], func(t *testing.T) {
+			opts, marker := fixture(t)
+			cli := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + marker + "'\n"
+			if legacy {
+				cli += "case \" $* \" in *' --page-size '*) echo \"error: unexpected argument '--page-size'\" >&2; exit 2;; esac\n"
+			}
+			if legacy {
+				cli += "printf '[]'\n"
+			} else {
+				cli += "printf '{\"sandboxes\":[],\"next_page_token\":\"\"}'\n"
+			}
+			if err := os.WriteFile(opts.CLI, []byte(cli), 0700); err != nil {
+				t.Fatal(err)
+			}
+			runner, err := New(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runner.Close()
+			if err := runner.reap(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			calls, err := os.ReadFile(marker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(calls), "--page-size 500") {
+				t.Fatalf("current inventory flag missing: %s", calls)
+			}
+			if strings.Contains(string(calls), "--limit 500") != legacy {
+				t.Fatalf("unexpected legacy inventory fallback: %s", calls)
+			}
+		})
+	}
+}
+
+func TestRejectsIncompleteCurrentInventory(t *testing.T) {
+	opts, _ := fixture(t)
+	if err := os.WriteFile(opts.CLI, []byte("#!/bin/sh\nprintf '{\"sandboxes\":[],\"next_page_token\":\"more\"}'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Close()
+	if err := runner.reap(context.Background()); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("accepted incomplete inventory: %v", err)
+	}
+}
+
+func TestCurrentInventoryReapsOnlyOwnedSandbox(t *testing.T) {
+	for _, owned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "foreign", true: "owned"}[owned], func(t *testing.T) {
+			opts, marker := fixture(t)
+			runner, err := New(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runner.Close()
+			runLabel := "another-run"
+			if owned {
+				runLabel = opts.RunID
+			}
+			cli := fmt.Sprintf(`#!/bin/sh
+case " $* " in
+  *" sandbox list "*) printf '{"sandboxes":[{"name":"%s","labels":{"openneko.process_run":"%s","openneko.process_operation":"1"}}],"next_page_token":""}' ;;
+  *" sandbox delete "*) printf deleted > '%s' ;;
+esac
+`, runner.name, runLabel, marker)
+			if err := os.WriteFile(opts.CLI, []byte(cli), 0700); err != nil {
+				t.Fatal(err)
+			}
+			err = runner.reap(context.Background())
+			if owned && err != nil {
+				t.Fatal(err)
+			}
+			if !owned && (err == nil || !strings.Contains(err.Error(), "ownership mismatch")) {
+				t.Fatalf("foreign sandbox reaped or accepted: %v", err)
+			}
+			_, markerErr := os.Stat(marker)
+			if owned && markerErr != nil || !owned && !os.IsNotExist(markerErr) {
+				t.Fatalf("unexpected sandbox deletion state: %v", markerErr)
+			}
+		})
 	}
 }
 

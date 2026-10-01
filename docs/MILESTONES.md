@@ -890,6 +890,10 @@ compaction gate also publishes a large CSV after one summary turn and proves
 exact bytes and authorization through the isolated web download on 0.1.2.
 The actor-exhaustion finalizer, API pricing preflight, pending-approval
 compaction, and organization-scoped artifact route gates also pass on 0.1.2.
+The isolated queued process gate now publishes an 8 MiB file and verifies its
+checksum, single Work artifact event, exact HTTP download and unissued-path
+denial. OpenShell 0.1.2's changed sandbox-list flag and paginated JSON response
+required a process-executor migration; the focused 0.1.2 gate passes.
 The host-only dynamic-budget canary mechanism now has local admission and
 checkpoint tests, but is disabled by default. A focused queued workflow with
 synthetic model/data fixtures passed its connected 0.1.2 canary path,

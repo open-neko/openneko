@@ -64,6 +64,17 @@ receipts, and inert queue redelivery. For repeated local runs, point
 `AGENT_TEST_BASE_IMAGE` at an independent OpenNeko agent image; the builder
 rejects `harness-openneko:m3` as its own base.
 
+`HARNESS_M5_FAST=1 HARNESS_M6_LARGE_ARTIFACT_ONLY=1` passes the queued
+`process_run` path on 0.1.2: the no-provider sandbox creates an 8 MiB binary,
+the host saves its checksum and one artifact event, and the isolated Work API
+returns the exact bytes while rejecting an unissued path. This gate also
+exercises the 0.1.2 sandbox-list `--page-size` and paginated JSON contract;
+the historical 0.0.116 inventory format remains covered locally.
+The broader `HARNESS_M3_API_HTTP=1` queue fixture remains unqualified against
+the merged 3.12.0 branch: its first seeded lookup received a deterministic
+model HTTP 422 before reaching the process artifact case. The focused gate
+above verifies the 8 MiB path independently; the broad fixture needs diagnosis.
+
 `HARNESS_M6_COMPACTION_ONLY=1 HARNESS_M6_COMPACTION_WEB=1` also passes on
 0.1.2: one forced summary retains the workflow receipt, publishes the exact
 large CSV, and the isolated web route serves it while refusing the unrelated

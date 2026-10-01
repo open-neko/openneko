@@ -14,7 +14,7 @@ if [[ ${HARNESS_OPENSHELL_VERSION:-0.1.2} == 0.0.116 ]]; then
 else
   # OpenNeko main now invokes the 0.1.x CLI contract directly. The legacy
   # 0.0.116 adapter deliberately rejects this breaking release.
-  export HARNESS_M3_CLI="$cli"
+  export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$cli"
 fi
 go build -o "$HARNESS_STATE/harness-inspect" ./cmd/harness-inspect
 go build -o "$HARNESS_STATE/harness-batch" ./adapters/openneko/cmd/batch
@@ -401,6 +401,31 @@ fi
     echo M5_CONNECTED_PROCESS_OUTPUT_LIMITS_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M6_LARGE_ARTIFACT_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-process-large-live.ts)
+    [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"
+    set -m
+    (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > /tmp/harness-m6-large-web.log 2>&1 &
+    web_pid=$!
+    set +m
+    trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+    ready=0
+    for ((n=0; n<90; n++)); do
+      if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+      kill -0 "$web_pid" || exit 1
+      sleep 1
+    done
+    [[ "$ready" == 1 ]] || { echo 'Isolated large artifact web server did not start' >&2; exit 1; }
+    large_run=$(cat "$HARNESS_STATE/m6-large-process-run")
+    large_url="http://localhost:18121/api/work/files/runs/$large_run/artifacts/process-1/large.bin"
+    curl -fsS --max-time 30 -D "$HARNESS_STATE/process-large.headers" -o "$HARNESS_STATE/process-large.bin" "$large_url"
+    python3 -c 'import pathlib,sys; data=pathlib.Path(sys.argv[1]).read_bytes(); assert len(data)==8<<20 and data==b"A"*(8<<20)' "$HARNESS_STATE/process-large.bin"
+    rg -qi '^content-disposition: attachment; filename="large.bin"' "$HARNESS_STATE/process-large.headers"
+    [[ $(curl -sS -o /dev/null -w '%{http_code}' "${large_url%large.bin}unissued.bin") == 404 ]]
+    echo "M6_WEB_LARGE_ARTIFACT_PASS $large_run"
+    exit 0
+  fi
   if [[ ${HARNESS_M5_TRIGGER_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-trigger-replay-live.ts)
@@ -610,7 +635,7 @@ PY
     large_run=$(cat "$HARNESS_STATE/m5-large-process-run")
     large_url="http://localhost:18121/api/work/files/runs/$large_run/artifacts/process-1/large.bin"
     curl -fsS --max-time 30 -D "$HARNESS_STATE/process-large.headers" -o "$HARNESS_STATE/process-large.bin" "$large_url"
-    python3 -c 'import pathlib,sys; data=pathlib.Path(sys.argv[1]).read_bytes(); assert len(data)==2<<20 and data==b"A"*(2<<20)' "$HARNESS_STATE/process-large.bin"
+    python3 -c 'import pathlib,sys; data=pathlib.Path(sys.argv[1]).read_bytes(); assert len(data)==8<<20 and data==b"A"*(8<<20)' "$HARNESS_STATE/process-large.bin"
     rg -qi '^content-disposition: attachment; filename="large.bin"' "$HARNESS_STATE/process-large.headers"
     echo "M5_WEB_PROCESS_LARGE_PASS $large_run"
   fi

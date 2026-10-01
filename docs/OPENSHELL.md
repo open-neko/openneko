@@ -73,6 +73,14 @@ delete must be reconciled using the same request identity rather than blindly
 reissued. See the [0.1.0 upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)
 for the exact contract.
 
+The later isolated process gate found an additional CLI migration: `sandbox
+list` accepts `--page-size` instead of `--limit` and returns
+`{sandboxes,next_page_token}` instead of a bare array. The host process
+executor now parses both qualified versions and refuses an incomplete page
+before checking ownership labels or reaping a stale sandbox. A live 0.1.2
+inventory confirmed the expected labels, and the queued 8 MiB artifact gate
+passed through the process sandbox and Work download route.
+
 ## 1. Recommendation
 
 Run AxAgent and its Goja actor runtime inside an OpenShell sandbox. Keep the consumer's trusted control plane, persistence, authorization and broker outside. Let Ax select approved native provider routes, and let OpenShell substitute provider credentials on inspected outbound HTTP traffic.

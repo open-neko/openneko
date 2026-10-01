@@ -240,19 +240,35 @@ func (r *Runner) Run(ctx context.Context, req Request) (result Result, err error
 // A retry may remove only a sandbox with the exact run and operation labels.
 // The caller must hold the run's durable lease before creating this runner.
 func (r *Runner) reap(ctx context.Context) error {
-	raw, truncated, err := r.call(ctx, 1<<20, "sandbox", "list", "-o", "json", "--limit", "500")
+	raw, truncated, err := r.call(ctx, 1<<20, "sandbox", "list", "-o", "json", "--page-size", "500")
+	if err != nil && strings.Contains(err.Error(), "--page-size") &&
+		(strings.Contains(err.Error(), "unexpected argument") || strings.Contains(err.Error(), "unknown option")) {
+		// OpenShell 0.0.116 used --limit; 0.1.2 uses --page-size. Only
+		// downgrade this read-only inventory call on a CLI flag error.
+		raw, truncated, err = r.call(ctx, 1<<20, "sandbox", "list", "-o", "json", "--limit", "500")
+	}
 	if err != nil {
 		return fmt.Errorf("process sandbox inventory unavailable: %w", err)
 	}
 	if truncated {
 		return fmt.Errorf("process sandbox inventory exceeded limit")
 	}
-	var boxes []struct {
+	type sandboxEntry struct {
 		Name   string            `json:"name"`
 		Labels map[string]string `json:"labels"`
 	}
-	if json.Unmarshal([]byte(raw), &boxes) != nil {
-		return fmt.Errorf("invalid process sandbox inventory")
+	var boxes []sandboxEntry
+	if err := json.Unmarshal([]byte(raw), &boxes); err != nil {
+		// OpenShell 0.1.2 wraps a page in {sandboxes,next_page_token};
+		// 0.0.116 returned a bare array. Never reap from an incomplete page.
+		var page struct {
+			Sandboxes     []sandboxEntry `json:"sandboxes"`
+			NextPageToken string         `json:"next_page_token"`
+		}
+		if json.Unmarshal([]byte(raw), &page) != nil || page.Sandboxes == nil || page.NextPageToken != "" {
+			return fmt.Errorf("invalid or incomplete process sandbox inventory")
+		}
+		boxes = page.Sandboxes
 	}
 	for _, box := range boxes {
 		if box.Name != r.name {
