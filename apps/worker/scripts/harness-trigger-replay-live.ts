@@ -77,7 +77,9 @@ async function verifiedOutputCheckpoint(workRunId:string):Promise<string> {
   const contents=await readFile(file,"utf8");
   const checkpoint=JSON.parse(contents) as {
     result?:{status:string};
-    events:Array<{type:string;origin?:string;terminal?:{accepted:boolean;evidence_ids?:number[]}}>;
+    events:Array<{type:string;origin?:string;operation_id?:number;
+      state_update?:{target:string;state:{operation_id:number;output_id:string;kind:string}};
+      terminal?:{accepted:boolean;evidence_ids?:number[]}}>;
     operations:Array<{id:number;tool?:string;binding?:string;finished:boolean;error?:string;result?:{ok?:boolean;outputId?:string;kind?:string}}>;
   };
   assert.equal(checkpoint.result?.status,"completed");
@@ -100,6 +102,11 @@ async function verifiedOutputCheckpoint(workRunId:string):Promise<string> {
       `select result from harness_operation where org_id=$1 and run_id=$2 and operation_id=$3
          and request->>'tool'='workflow_output'`,[orgId,workRunId,id])).rows;
     assert.deepEqual(receipt?.result,operation.result);
+    const updates=checkpoint.events.filter(event=>event.type==="runtime.state.updated" && event.operation_id===id);
+    assert.equal(updates.length,1,"committed output must update responder state exactly once");
+    assert.equal(updates[0].state_update?.target,"root/responder");
+    assert.deepEqual(updates[0].state_update?.state,
+      {operation_id:id,output_id:receipt.result.outputId,kind:receipt.result.kind});
   }
   return contents;
 }
@@ -226,6 +233,7 @@ try {
   assert.equal(await verifiedOutputCheckpoint(cronRun.work_run_id),cronCheckpoint,
     "cron redelivery changed the terminal checkpoint");
   console.log("M6_CONNECTED_WORKFLOW_TERMINAL_REPLAY_PASS",sourceRun.work_run_id,cronRun.work_run_id);
+  console.log("M6_CONNECTED_WORKFLOW_STATE_HOOK_PASS",sourceRun.work_run_id,cronRun.work_run_id);
   assert.equal((await pool().query(
     "select count(*)::int as n from workflow_run where org_id=$1 and workflow_id=$2",
     [orgId,cronWorkflow.id])).rows[0].n,1);
