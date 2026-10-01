@@ -876,8 +876,9 @@ workspace-preserving stop/start resumes its saved checkpoint without another
 GraphJin call or broker effect, then survives queue redelivery. The broader
 compaction gate also publishes a large CSV after one summary turn and proves
 exact bytes and authorization through the isolated web download on 0.1.2.
-The actor-exhaustion finalizer and API pricing preflight gates also pass on
-0.1.2. Held-out quality and dynamic-budget canary evidence remain open. The
+The actor-exhaustion finalizer, API pricing preflight, pending-approval
+compaction, and organization-scoped artifact route gates also pass on 0.1.2.
+Held-out quality and dynamic-budget canary evidence remain open. The
 migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 

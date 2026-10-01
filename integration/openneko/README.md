@@ -63,6 +63,9 @@ large CSV, and the isolated web route serves it while refusing the unrelated
 Work-file URL.
 `HARNESS_M6_FINALIZER_ONLY=1` and `HARNESS_M6_PRICING_PREFLIGHT_ONLY=1` pass
 on the same connected gateway.
+`HARNESS_M6_APPROVAL_COMPACTION_ONLY=1` also passes there; the pending action
+is not executed after compaction or duplicate queue delivery. The isolated
+Postgres `HARNESS_M6_ARTIFACT_SCOPE_ONLY=1` route gate rejects another org.
 
 The connected queue fixture also exercises the opt-in customer Work
 `workflow_save` tool. It creates a cron-triggered workflow with a batch output
