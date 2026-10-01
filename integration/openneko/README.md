@@ -449,6 +449,9 @@ pending approval, no executed effect, and 1,332 charged micros. Measured wall
 times were 10,885 ms for canary and 9,995 ms for fixed, without a performance
 claim from this single synthetic pair. This verifies transport and workflow
 parity, not a held-out cost-per-success improvement or a production decision.
+A subsequent rerun asserted the persisted telemetry summary for both runs:
+`provider=fixture` and the outer work model, rather than the classifier route;
+per-call classifier usage and cost remained in the aggregate once.
 
 The focused M6 actor-exhaustion gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued

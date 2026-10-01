@@ -868,6 +868,12 @@ The connected gate confirms 40 aggregate tokens after three model calls, with
 partial coverage, so per-call usage is not added twice. The distinct-route,
 cost, fallback and executor
 escalation gates pass on 0.1.2 after this change.
+The paired canary/fixed workflow later exposed a misleading aggregate model
+label: its classifier ran first, so the summary reported the triage route for
+the whole turn. The summary now excludes `budget_triage` from outer-model
+selection and uses the ordinary outer response when Ax leaves its stage empty.
+The connected 0.1.2 rerun persisted the work-route provider and model for
+both paired runs while retaining the classifier's separate call and cost.
 
 **OpenShell target change (2026-10-02):** OpenNeko main upgraded to 0.1.2.
 An isolated matched CLI/gateway/supervisor transport suite passes, including
