@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -16,6 +17,35 @@ import (
 type composeParityDocument struct {
 	Services map[string]composeParityService `yaml:"services"`
 	Volumes  map[string]any                  `yaml:"volumes"`
+}
+
+func TestOpenShellReleaseUsesOneVersion(t *testing.T) {
+	root := repoRootForTest(t)
+	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionMatch := regexp.MustCompile(`(?m)^ARG OPENSHELL_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$`).FindSubmatch(dockerfile)
+	if len(versionMatch) != 2 {
+		t.Fatal("Dockerfile must pin an OpenShell client version")
+	}
+	want := string(versionMatch[1])
+	defaultPattern := regexp.MustCompile(`\$\{OPENSHELL_VERSION:-([^}]+)\}`)
+	for _, name := range []string{"compose.openshell.yml", "apps/openneko/assets/compose/openshell.yml", ".github/workflows/release-binaries.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		matches := defaultPattern.FindAllSubmatch(raw, -1)
+		if len(matches) == 0 {
+			t.Fatalf("%s does not pin an OpenShell default", name)
+		}
+		for _, match := range matches {
+			if string(match[1]) != want {
+				t.Fatalf("%s defaults to OpenShell %s; Dockerfile CLI uses %s", name, match[1], want)
+			}
+		}
+	}
 }
 
 type composeParityService struct {
