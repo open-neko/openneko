@@ -1078,8 +1078,24 @@ largest provider request was 37,576 bytes. It publishes exactly one output,
 passes the broker-backed terminal gate, and source-change queue redelivery
 adds no model call or broker effect. Run the focused gate with
 `HARNESS_M5_FAST=1 HARNESS_M6_COMPACTION_ONLY=1`. This establishes connected
-constraint and saved-output retention across one compaction; a connected
-pending-approval trajectory and large file-backed artifact remain open.
+constraint and saved-output retention across one compaction. A large
+file-backed artifact remains open.
+
+A second connected workflow API run now keeps a governed action request pending
+through Ax compaction. It uses a trusted priced OpenShell route, makes five
+GraphJin lookups, records one broker output and one `pending_approval` action
+request, then reaches the responder after one trajectory-summary call. The
+synthetic provider rejects any request that loses the accepted no-execution
+constraint and rejects the post-summary responder unless both the saved output
+ID and pending-approval evidence remain visible. The run completes in ten
+ordinary plus one summary call; the largest provider request was under 39 KiB.
+The action adapter records zero executions, and API queue redelivery makes no
+new model call or effect. This test exposed that Harness's terminal gate was
+previously skipped for successful approval results. It now verifies approval
+outcomes as well as answers, so a pending proposal cannot bypass a workflow's
+independent broker-output contract; a no-output approval fails a local
+regression with `verification_failed`. Run the focused connected gate with
+`HARNESS_M5_FAST=1 HARNESS_M6_APPROVAL_COMPACTION_ONLY=1`.
 
 Use the [Ax Go development guide](AX-DEVELOPMENT.md) to select the relevant
 published skill for each M6 change. Verify its APIs against the pinned generated

@@ -317,6 +317,32 @@ fi
     echo M5_CONNECTED_TRIGGER_REPLAY_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M6_APPROVAL_COMPACTION_ONLY:-0} == 1 ]]; then
+    cat > "$HARNESS_STATE/m6-approval-provider.yaml" <<'YAML'
+id: harness-m6-approval
+category: agent
+display_name: Harness M6 approval fixture
+credentials:
+  - name: HARNESS_APPROVAL_SOURCE_KEY
+    env_vars: [HARNESS_APPROVAL_SOURCE_KEY]
+    required: true
+endpoints:
+  - host: host.docker.internal
+    port: 18118
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+    path: /v1/**
+binaries: [/usr/local/bin/harness-openneko]
+YAML
+    "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m6-approval-provider.yaml"
+    "$cli" --gateway harness-m2 provider create --name harness-m6-approval --type harness-m6-approval --credential HARNESS_APPROVAL_SOURCE_KEY=synthetic-m6-approval
+    export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","pricing_version":"m6-approval-compaction-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-compaction-approval-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m6-approval","credential_env":"HARNESS_APPROVAL_SOURCE_KEY","api_key_env":"HARNESS_FIXTURE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-approval-live.ts)
+    echo M6_CONNECTED_WORKFLOW_APPROVAL_COMPACTION_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M6_COMPACTION_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-live.ts)

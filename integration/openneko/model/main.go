@@ -248,9 +248,10 @@ func main() {
 		followSkill := skill
 		answerQuestion := answerClarification
 		resume := continuation
-		compactionSummary := req.Model == "harness-compaction-output-fixture" && strings.Contains(string(req.Messages), "You are an internal AxAgent trajectory summarizer")
+		compactionFixture := req.Model == "harness-compaction-output-fixture" || req.Model == "harness-compaction-approval-fixture"
+		compactionSummary := compactionFixture && strings.Contains(string(req.Messages), "You are an internal AxAgent trajectory summarizer")
 		n := counts[req.Model]
-		if req.Model == "harness-compaction-output-fixture" {
+		if compactionFixture {
 			if len(req.Messages) > counts["max-request:"+req.Model] {
 				counts["max-request:"+req.Model] = len(req.Messages)
 			}
@@ -305,12 +306,19 @@ func main() {
 		if req.Model == "graphjin-fixture" {
 			n %= 3 // Each server-side lookup is an independent three-step agent run.
 		}
+		if req.Model == "harness-compaction-approval-fixture" && !compactionSummary && n == 9 &&
+			(!strings.Contains(string(req.Messages), "output_id") ||
+				!strings.Contains(string(req.Messages), "pending_approval") ||
+				!strings.Contains(string(req.Messages), "REF-42")) {
+			http.Error(w, "responder lost pending approval or committed output", 422)
+			return
+		}
 		if req.Model == "harness-compaction-output-fixture" && !compactionSummary && n == 8 &&
 			(!strings.Contains(string(req.Messages), "output_id") || !strings.Contains(string(req.Messages), "REF-42")) {
 			http.Error(w, "responder lost committed workflow output", 422)
 			return
 		}
-		if req.Model == "harness-compaction-output-fixture" &&
+		if compactionFixture &&
 			!strings.Contains(string(req.Messages), "Never execute a change without approval") {
 			http.Error(w, "lost accepted no-execution constraint", 422)
 			return
@@ -500,7 +508,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -536,6 +544,24 @@ func main() {
 				`{"javascriptCode":"const evidence=lookup('Independently verify the seeded reference'); final('Report second reference',{evidence});"}`,
 				`{"answer":"Second reference REF-42."}`,
 				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
+			}
+		} else if req.Model == "harness-compaction-approval-fixture" {
+			if compactionSummary {
+				responses = []string{"Objective: Report the saved REF-42 finding and pending action request.\nCurrent state and artifacts: a workflow finding is committed and an action request awaits approval.\nEvidence: REF-42; pending_approval.\nUser constraints and preferences: Never execute a change without approval.\nNext step: report the saved output and pending approval without executing it."}
+				n = 0
+			} else {
+				responses = []string{
+					`{"javascriptCode":"final('Inspect the reference, propose a governed update, and report the pending request',{})"}`,
+					`{"javascriptCode":"const row=lookup('Find the seeded reference'); console.log('noise-'.repeat(3000),row);"}`,
+					`{"javascriptCode":"const approval=propose({action:'harness_workflow_effect_fixture',arguments:{value:42},summary:'Update the synthetic reference'}); if(approval.status!=='pending_approval') throw Error('approval missing'); console.log('noise-'.repeat(3000),approval);"}`,
+					`{"javascriptCode":"const out=workflow_output_emit({kind:'finding',title:'Compacted pending reference',body:'The source-change reference is REF-42; proposed update awaits approval.',payload:{reference:'REF-42'}}); console.log('noise-'.repeat(3000),out);"}`,
+					`{"javascriptCode":"const row=lookup('Verify the seeded reference independently'); console.log('noise-'.repeat(3000),row);"}`,
+					`{"javascriptCode":"const row=lookup('Check reference evidence again'); console.log('noise-'.repeat(3000),row);"}`,
+					`{"javascriptCode":"const row=lookup('Recheck the reference'); console.log('noise-'.repeat(3000),row);"}`,
+					`{"javascriptCode":"const row=lookup('Confirm reference one last time'); console.log('noise-'.repeat(3000),row);"}`,
+					`{"javascriptCode":"const approval=harnessSavedOperation(2),out=harnessSavedOperation(3); if(!JSON.stringify(approval).includes('pending_approval')||!JSON.stringify(out).includes('outputId')) throw Error('saved approval or output missing'); final('Report both committed receipts',{approval,out});"}`,
+					`{"answer":"The REF-42 finding is recorded. The proposed update remains pending approval; it was not executed."}`,
+				}
 			}
 		} else if req.Model == "harness-compaction-output-fixture" {
 			if compactionSummary {
