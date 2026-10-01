@@ -79,9 +79,12 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
         expect(result.finalText).toContain("REF-42");
         expect(events.some(e => e.type === "tool_start")).toBe(true);
         expect(JSON.stringify(result.backendState)).toContain("REF-42");
+        const downloaded = JSON.parse(await readFile(join(recoveredWorkspace.runRoot, ".harness", `${createHash("sha256").update(runId).digest("hex")}.json`), "utf8"));
+        expect(downloaded.spec.run_id).toBe(runId);
+        expect(downloaded.spec.prompt).toContain("Return the seeded reference.");
         const inspected = JSON.parse(execFileSync(process.env.HARNESS_INSPECT_BIN!, [], {
             env: { HARNESS_STATE_DIR: join(recoveredWorkspace.runRoot, ".harness") },
-            input: JSON.stringify({ version: 1, run_id: runId, input_id: runId, max_operations: 12, max_model_calls: 24, prompt: `${input.prompt.replaceAll(orgRoot,"/sandbox/workspace")}\n\nUser request:\n${input.userMessage}` }),
+            input: JSON.stringify(downloaded.spec),
             encoding: "utf8",
         }));
         expect(inspected.outcome).toBe("terminal");
@@ -154,12 +157,12 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
         expect(crashOperations).toHaveLength(1);
         expect(crashOperations[0].result).not.toBeNull();
         const beforeKill = await (await fetch("http://127.0.0.1:18118/control")).json();
-        const crashName = "h-"+createHash("sha256").update(crashRunId).digest("hex").slice(0,16);
+        const crashName = "neko-h-"+createHash("sha256").update(crashRunId).digest("hex").slice(0,12);
         // Inject the fault from Docker, outside the sandbox process restrictions.
-        // Both the exact random run name and isolated network must match.
-        const containers = execFileSync("docker",["ps","--filter",`label=openshell.ai/sandbox-name=${crashName}`,"--filter","network=harness-m2","--format","{{.ID}}"],{encoding:"utf8"}).trim().split("\n").filter(Boolean);
+        // Match the exact run and workload image; OpenShell also starts a supervisor container.
+        const containers = execFileSync("docker",["ps","--filter",`label=openshell.ai/sandbox-name=${crashName}`,"--filter","ancestor=harness-openneko:m3","--format","{{.ID}}"],{encoding:"utf8"}).trim().split("\n").filter(Boolean);
         expect(containers).toHaveLength(1);
-        execFileSync("docker",["exec","--user","0",containers[0],"/bin/sh","-c",
+        execFileSync("docker",["exec","--user","sandbox",containers[0],"/bin/sh","-c",
           'killed=0; for comm in /proc/[0-9]*/comm; do read -r name < "$comm" || continue; case "$name" in harness-opennek|harness-openneko) pid=${comm#/proc/}; pid=${pid%/comm}; kill -KILL "$pid" || exit 1; killed=1;; esac; done; test "$killed" = 1'],{timeout:15_000});
         expect(await interrupted).toBeInstanceOf(Error);
         const crashSnapshot = join(crashWorkspace.runRoot,".harness",createHash("sha256").update(crashRunId).digest("hex")+".json");
@@ -215,14 +218,17 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
           },{timeout:20_000}).toBe(3);
           const callsBeforeHostDeath=await (await fetch("http://127.0.0.1:18118/control")).json();
           const exit=once(child,"exit"); child.kill("SIGKILL"); await exit;
+          // 0.1.2 may cancel the orphaned model transport. A bounded resumed
+          // Ax attempt must still use the committed GraphJin receipt.
+          await fetch("http://127.0.0.1:18118/control",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({continue:true})});
           await expect.poll(async()=>{
             try {return await withHarnessRunJournal({orgId,runId:hostRunId},async()=>"released");}
             catch {return "owned";}
           }).toBe("released");
-          const hostName="h-"+createHash("sha256").update(hostRunId).digest("hex").slice(0,16);
-          const hostContainers=execFileSync("docker",["ps","--filter",`label=openshell.ai/sandbox-name=${hostName}`,"--filter","network=harness-m2","--format","{{.ID}}"],{encoding:"utf8"}).trim().split("\n").filter(Boolean);
+          const hostName="neko-h-"+createHash("sha256").update(hostRunId).digest("hex").slice(0,12);
+          const hostContainers=execFileSync("docker",["ps","--filter",`label=openshell.ai/sandbox-name=${hostName}`,"--filter","ancestor=harness-openneko:m3","--format","{{.ID}}"],{encoding:"utf8"}).trim().split("\n").filter(Boolean);
           expect(hostContainers).toHaveLength(1);
-          const assertRemoteRunning=()=>execFileSync("docker",["exec","--user","0",hostContainers[0],"/bin/sh","-c",
+          const assertRemoteRunning=()=>execFileSync("docker",["exec","--user","sandbox",hostContainers[0],"/bin/sh","-c",
             'for comm in /proc/[0-9]*/comm; do read -r name < "$comm" || continue; case "$name" in harness-opennek|harness-openneko) exit 0;; esac; done; exit 1'],{timeout:5000});
           assertRemoteRunning();
           // Database ownership is free, but remote execution is not. This must
@@ -240,9 +246,11 @@ exec '${process.env.HARNESS_M3_CLI!}' "$@"
           },{timeout:45_000,interval:1000}).toBe("completed");
           expect(adopted!.finalText).toContain("REF-42");
           const hostSnapshot=JSON.parse(await readFile(join(hostWorkspace.runRoot,".harness",createHash("sha256").update(hostRunId).digest("hex")+".json"),"utf8"));
-          expect(hostSnapshot.events.filter((event:{type:string})=>event.type==="run.resumed")).toHaveLength(0);
+          expect(hostSnapshot.events.filter((event:{type:string})=>event.type==="run.resumed").length).toBeLessThanOrEqual(1);
           const afterAdoption=await (await fetch("http://127.0.0.1:18118/control")).json();
-          for(const model of ["harness-fixture","graphjin-fixture"]) expect(afterAdoption[model]).toBe(callsBeforeHostDeath[model]);
+          expect(afterAdoption["harness-fixture"]).toBeGreaterThanOrEqual(callsBeforeHostDeath["harness-fixture"]);
+          expect(afterAdoption["harness-fixture"]).toBeLessThanOrEqual(callsBeforeHostDeath["harness-fixture"]+3);
+          expect(afterAdoption["graphjin-fixture"]).toBe(callsBeforeHostDeath["graphjin-fixture"]);
           expect((await pool().query("SELECT operation_id,result FROM harness_operation WHERE org_id=$1 AND run_id=$2",[orgId,hostRunId])).rows).toMatchObject([{operation_id:1,result:expect.anything()}]);
         } finally {
           // Only this detached test-owned process group, including orphaned CLI.

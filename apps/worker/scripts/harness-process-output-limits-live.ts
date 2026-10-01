@@ -2,20 +2,18 @@
 // command output is bounded in the model-visible receipt and durable journal.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db, eq, getOrgId, getOrCreateSoloAdmin, pool, processing_job } from "@neko/db";
 import { boss, enqueue, QUEUE, type WorkRunPayload } from "@neko/db/jobs";
 import { createWorkRun, createWorkThread, ensureWorkWorkspace, shutdownAgentBroker } from "@neko/llm/work";
 import { runWorkRun } from "../src/jobs/work-run.js";
+import { sandboxExists } from "./harness-openshell-inventory.js";
 
 if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119") {
   throw Error("isolated M3 environment required");
 }
 
-const runCommand = promisify(execFile);
 const orgId = await getOrgId();
 const actor = await getOrCreateSoloAdmin(orgId);
 assert.ok(actor);
@@ -33,10 +31,7 @@ async function waitFor(condition: () => Promise<boolean>, label: string): Promis
 }
 
 async function sandboxGone(name: string): Promise<boolean> {
-  const { stdout } = await runCommand(cli!, ["--gateway", "harness-m2", "sandbox", "list",
-    "-o", "json", "--limit", "500"], { timeout: 5000 });
-  const boxes = JSON.parse(stdout) as Array<{ name: string }>;
-  return !boxes.some(box => box.name === name);
+  return !await sandboxExists(cli!, name);
 }
 
 async function runCase(flag: "process_oversize" | "process_flood") {

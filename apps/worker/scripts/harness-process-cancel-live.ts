@@ -11,6 +11,7 @@ import { boss, enqueue, QUEUE, type WorkRunPayload } from "@neko/db/jobs";
 import { cancelWorkRunIfActive, createWorkRun, createWorkThread,
   ensureWorkWorkspace, markWorkRunRunning, shutdownAgentBroker } from "@neko/llm/work";
 import { runWorkRun } from "../src/jobs/work-run.js";
+import { sandboxExists, sandboxWorkloadContainer } from "./harness-openshell-inventory.js";
 
 if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119") {
   throw Error("isolated M3 environment required");
@@ -22,16 +23,8 @@ const cli=process.env.HARNESS_OPENSHELL_BIN;
 assert.ok(cli,"pinned OpenShell CLI required");
 const control="http://127.0.0.1:18118/control";
 
-async function sandboxExists(name:string):Promise<boolean> {
-  const {stdout}=await runCommand(cli!,["--gateway","harness-m2","sandbox","list","-o","json","--limit","500"],
-    {timeout:5000});
-  const boxes=JSON.parse(stdout) as Array<{name:string}>;
-  return boxes.some(box=>box.name===name);
-}
-
 async function sandboxContainer(name:string):Promise<string|null> {
-  const {stdout}=await runCommand("docker",["ps","--format","{{.Names}}"],{timeout:5000});
-  return stdout.split("\n").find(row=>row.startsWith(`openshell-default--${name}-`)) ?? null;
+  return sandboxWorkloadContainer(name,process.env.HARNESS_PROCESS_IMAGE || "harness-openneko:m3");
 }
 
 async function assertProcessLimits(container:string):Promise<void> {
@@ -107,7 +100,7 @@ try {
   } else {
     assert.equal(await cancelWorkRunIfActive(run.id,"Stopped by connected cancellation fixture"),true);
   }
-  await waitFor(async()=>!await sandboxExists(name) && !await sandboxContainer(name),
+  await waitFor(async()=>!await sandboxExists(cli!,name) && !await sandboxContainer(name),
     "process sandbox teardown");
   await waitFor(async()=>{
     const current=await queue.getJobById(QUEUE.WORK_RUN,jobId);
