@@ -66,9 +66,23 @@ export async function reapStrandedSandboxes(
   owner = sandboxOwner(),
   boot = SANDBOX_BOOT_ID,
 ): Promise<string[]> {
-  const listed = JSON.parse(
-    await run(["sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`, "-o", "json", "--limit", "500"], 30_000),
-  ) as Array<{ name: string; labels?: Record<string, string> }>;
+  const listed: Array<{ name: string; labels?: Record<string, string> }> = [];
+  let pageToken = "";
+  do {
+    const response = JSON.parse(await run([
+      "sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`,
+      "-o", "json", "--page-size", "500",
+      ...(pageToken ? ["--page-token", pageToken] : []),
+    ], 30_000)) as {
+      sandboxes: Array<{ name: string; labels?: Record<string, string> }>;
+      next_page_token: string;
+    };
+    listed.push(...response.sandboxes);
+    if (response.next_page_token && response.next_page_token === pageToken) {
+      throw new Error("OpenShell repeated a sandbox list page token");
+    }
+    pageToken = response.next_page_token;
+  } while (pageToken);
   const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot).map((box) => box.name);
   const outcomes = await Promise.allSettled(stranded.map(async (name) => {
     try {
@@ -905,6 +919,7 @@ function makeSandboxCore(
           cpu,
           "--memory",
           memory,
+          "--detach",
           "--no-tty",
           "--no-auto-providers",
           ...sandboxOwnerLabelArgs(),
@@ -916,9 +931,8 @@ function makeSandboxCore(
           `${staged.orgRoot}:${path.posix.dirname(boxOrgRoot)}`,
           "--no-git-ignore",
           "--",
-          "/bin/sh",
-          "-lc",
-          "true",
+          "sleep",
+          "infinity",
         ];
         const reclaimAndCreate = async () => {
           // Run names are deterministic so a durable queue retry can collide

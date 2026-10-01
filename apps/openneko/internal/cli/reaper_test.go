@@ -16,6 +16,7 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	t.Setenv("OPENNEKO_VERSION", "v3")
 	t.Setenv("OPENNEKO_AGENT_IMAGE", "")
+	t.Setenv("OPENSHELL_VERSION", "0.1.2")
 	var mu sync.Mutex
 	var deleted []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +51,8 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 				{ID: "recent", Names: []string{"/openshell-work-recent"}, Image: "ghcr.io/open-neko/agent:v3", ImageID: "sha256:agent", State: "exited"},
 				{ID: "foreign", Names: []string{"/openshell-warm-foreign"}, Image: "other/agent:v1", ImageID: "sha256:foreign", State: "exited"},
 				{ID: "running", Names: []string{"/openshell-warm-running"}, Image: "ghcr.io/open-neko/agent:v3", ImageID: "sha256:agent", State: "running"},
+				{ID: "plugin", Names: []string{"/openshell-default--neko-x-123456789abc"}, Image: "sha256:plugin", ImageID: "sha256:plugin", State: "exited"},
+				{ID: "foreign-plugin", Names: []string{"/openshell-default--h-foreign"}, Image: "sha256:other", ImageID: "sha256:other", State: "exited"},
 				{ID: "librarian", Names: []string{"/openneko-librarian"}, Image: librarianRepo + ":v3", ImageID: "sha256:current", State: "running"},
 			})
 		case "/containers/old/json", "/containers/recent/json":
@@ -68,6 +71,16 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 				"Config": map[string]any{"Image": "sha256:new-agent", "Labels": map[string]string{managedByOpenShell: "openshell", "openshell.ai/sandbox-name": "neko-p-123456789abc"}},
 				"State":  map[string]any{"Status": "exited", "FinishedAt": now.Add(-time.Hour)},
 			})
+		case "/containers/plugin/json", "/containers/foreign-plugin/json":
+			image := "sha256:plugin"
+			if r.URL.Path == "/containers/foreign-plugin/json" {
+				image = "sha256:other"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Name":   "/openshell-default--neko-x-123456789abc",
+				"Config": map[string]any{"Image": image, "Labels": map[string]string{managedByOpenShell: "openshell"}},
+				"State":  map[string]any{"Status": "exited", "FinishedAt": now.Add(-time.Hour)},
+			})
 		case "/containers/running/json":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"Name":       "/openshell-warm-running",
@@ -83,6 +96,9 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 				{ID: "sha256:recent-image", RepoDigests: []string{librarianRepo + "@sha256:recent"}, Created: now.Add(-time.Hour).Unix()},
 				{ID: "sha256:current", RepoTags: []string{librarianRepo + ":v3"}, RepoDigests: []string{librarianRepo + "@sha256:current"}, Created: now.Add(-48 * time.Hour).Unix()},
 				{ID: "sha256:foreign-image", RepoDigests: []string{"foreign/librarian@sha256:old"}, Created: now.Add(-48 * time.Hour).Unix()},
+				{ID: "sha256:old-supervisor", RepoTags: []string{"ghcr.io/nvidia/openshell/supervisor:0.0.54"}, Created: now.Add(-48 * time.Hour).Unix()},
+				{ID: "sha256:current-supervisor", RepoTags: []string{"ghcr.io/nvidia/openshell/supervisor:0.1.2"}, Created: now.Add(-48 * time.Hour).Unix()},
+				{ID: "sha256:plugin", RepoTags: []string{pluginBaseRepo + ":v3"}, Created: now.Add(-48 * time.Hour).Unix()},
 			})
 		default:
 			http.NotFound(w, r)
@@ -95,14 +111,14 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 	if err != nil {
 		t.Fatal(err)
 	}
-	if containers != 2 || images != 2 {
-		t.Fatalf("removed containers=%d images=%d, want 2 and 2", containers, images)
+	if containers != 3 || images != 3 {
+		t.Fatalf("removed containers=%d images=%d, want 3 and 3", containers, images)
 	}
 	mu.Lock()
 	sort.Strings(deleted)
 	got := append([]string(nil), deleted...)
 	mu.Unlock()
-	want := []string{"/containers/new", "/containers/old", "/containers/running/update", "/images/ghcr.io/open-neko/agent:v2", "/images/ghcr.io/open-neko/neko-librarian@sha256:old"}
+	want := []string{"/containers/new", "/containers/old", "/containers/plugin", "/containers/running/update", "/images/ghcr.io/nvidia/openshell/supervisor:0.0.54", "/images/ghcr.io/open-neko/agent:v2", "/images/ghcr.io/open-neko/neko-librarian@sha256:old"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("deleted %v, want %v", got, want)
 	}

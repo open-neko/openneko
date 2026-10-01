@@ -23,6 +23,7 @@ const (
 	imageGrace         = 24 * time.Hour
 	dockerSocketPath   = "/var/run/docker.sock"
 	librarianRepo      = "ghcr.io/open-neko/neko-librarian"
+	pluginBaseRepo     = "ghcr.io/open-neko/plugin-base"
 	managedByOpenShell = "openshell.ai/managed-by"
 )
 
@@ -176,6 +177,26 @@ func openNekoAgentSandbox(name, image, sandboxName string) bool {
 	return false
 }
 
+func openNekoPluginSandbox(name, image, imageID string, ownedImages map[string]bool) bool {
+	if !strings.HasPrefix(name, "/openshell-") {
+		return false
+	}
+	return strings.HasPrefix(image, pluginBaseRepo+":") ||
+		strings.HasPrefix(image, pluginBaseRepo+"@") || ownedImages[imageID]
+}
+
+func openNekoPluginImageIDs(images []dockerImageSummary) map[string]bool {
+	owned := make(map[string]bool)
+	for _, image := range images {
+		for _, ref := range append(append([]string{}, image.RepoTags...), image.RepoDigests...) {
+			if strings.HasPrefix(ref, pluginBaseRepo+":") || strings.HasPrefix(ref, pluginBaseRepo+"@") {
+				owned[image.ID] = true
+			}
+		}
+	}
+	return owned
+}
+
 func oldLibrarianDigest(image dockerImageSummary, referenced map[string]bool, now time.Time) bool {
 	if image.ID == "" || referenced[image.ID] || now.Sub(time.Unix(image.Created, 0)) < imageGrace || len(image.RepoDigests) == 0 {
 		return false
@@ -197,6 +218,10 @@ func oldLibrarianDigest(image dockerImageSummary, referenced map[string]bool, no
 }
 
 func oldAgentImage(image dockerImageSummary, referenced map[string]bool, now time.Time, currentRef string) bool {
+	return oldVersionedImage(image, referenced, now, "ghcr.io/open-neko/agent", currentRef)
+}
+
+func oldVersionedImage(image dockerImageSummary, referenced map[string]bool, now time.Time, repo, currentRef string) bool {
 	if currentRef == "" || image.ID == "" || referenced[image.ID] || now.Sub(time.Unix(image.Created, 0)) < imageGrace {
 		return false
 	}
@@ -205,7 +230,7 @@ func oldAgentImage(image dockerImageSummary, referenced map[string]bool, now tim
 		if tag == currentRef || strings.HasPrefix(tag, currentRef+"@sha256:") {
 			return false
 		}
-		if strings.HasPrefix(tag, "ghcr.io/open-neko/agent:") || strings.HasPrefix(tag, "ghcr.io/open-neko/agent@sha256:") {
+		if strings.HasPrefix(tag, repo+":") || strings.HasPrefix(tag, repo+"@sha256:") {
 			found = true
 			continue
 		}
@@ -214,12 +239,28 @@ func oldAgentImage(image dockerImageSummary, referenced map[string]bool, now tim
 		}
 	}
 	for _, digest := range image.RepoDigests {
-		if !strings.HasPrefix(digest, "ghcr.io/open-neko/agent@sha256:") {
+		if !strings.HasPrefix(digest, repo+"@sha256:") {
 			return false
 		}
 		found = true
 	}
 	return found
+}
+
+func oldOpenShellImage(image dockerImageSummary, referenced map[string]bool, now time.Time, currentVersion string) bool {
+	if currentVersion == "" {
+		return false
+	}
+	for _, repo := range []string{
+		"ghcr.io/nvidia/openshell/gateway",
+		"ghcr.io/nvidia/openshell/sandbox",
+		"ghcr.io/nvidia/openshell/supervisor",
+	} {
+		if oldVersionedImage(image, referenced, now, repo, repo+":"+currentVersion) {
+			return true
+		}
+	}
+	return false
 }
 
 func currentAgentImageRef() string {
@@ -237,6 +278,11 @@ func (r *dockerReaper) sweep(ctx context.Context, now time.Time) (int, int, erro
 	if _, err := r.request(ctx, http.MethodGet, "/containers/json?all=1", &containers); err != nil {
 		return 0, 0, err
 	}
+	var images []dockerImageSummary
+	if _, err := r.request(ctx, http.MethodGet, "/images/json?all=1", &images); err != nil {
+		return 0, 0, err
+	}
+	pluginImages := openNekoPluginImageIDs(images)
 	referenced := make(map[string]bool, len(containers))
 	removedContainers := 0
 	var failures []error
@@ -255,7 +301,8 @@ func (r *dockerReaper) sweep(ctx context.Context, now time.Time) (int, int, erro
 			continue
 		}
 		if detail.Config.Labels[managedByOpenShell] != "openshell" ||
-			!openNekoAgentSandbox(detail.Name, detail.Config.Image, detail.Config.Labels["openshell.ai/sandbox-name"]) {
+			(!openNekoAgentSandbox(detail.Name, detail.Config.Image, detail.Config.Labels["openshell.ai/sandbox-name"]) &&
+				!openNekoPluginSandbox(detail.Name, detail.Config.Image, container.ImageID, pluginImages)) {
 			continue
 		}
 		if detail.State.Status != "exited" && detail.HostConfig.RestartPolicy.Name != "no" && detail.HostConfig.RestartPolicy.Name != "" {
@@ -281,14 +328,12 @@ func (r *dockerReaper) sweep(ctx context.Context, now time.Time) (int, int, erro
 		}
 		removedContainers++
 	}
-	var images []dockerImageSummary
-	if _, err := r.request(ctx, http.MethodGet, "/images/json?all=1", &images); err != nil {
-		return removedContainers, 0, errors.Join(append(failures, err)...)
-	}
 	removedImages := 0
 	currentAgent := currentAgentImageRef()
+	currentOpenShell := strings.TrimSpace(os.Getenv("OPENSHELL_VERSION"))
 	for _, image := range images {
-		if !oldLibrarianDigest(image, referenced, now) && !oldAgentImage(image, referenced, now, currentAgent) {
+		if !oldLibrarianDigest(image, referenced, now) && !oldAgentImage(image, referenced, now, currentAgent) &&
+			!oldOpenShellImage(image, referenced, now, currentOpenShell) {
 			continue
 		}
 		// Delete references individually. Docker can reject deletion by image ID

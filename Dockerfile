@@ -108,9 +108,9 @@ CMD ["serve"]
 # Pinned static OpenShell client shared by control planes and the readiness
 # one-shot without pulling a Node/worker filesystem into the latter.
 FROM debian:bookworm-slim AS openshell-bin
-ARG OPENSHELL_VERSION=0.0.54
-ARG OPENSHELL_ASSET_AMD64=436365845
-ARG OPENSHELL_ASSET_ARM64=436365844
+ARG OPENSHELL_VERSION=0.1.2
+ARG OPENSHELL_ASSET_AMD64=594438336
+ARG OPENSHELL_ASSET_ARM64=594438335
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && OPENSHELL_ASSET_ID="$(case "${TARGETARCH}" in amd64) echo "${OPENSHELL_ASSET_AMD64}" ;; arm64) echo "${OPENSHELL_ASSET_ARM64}" ;; *) exit 1 ;; esac)" \
@@ -120,7 +120,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && tar -xzf /tmp/openshell.tgz -C /usr/local/bin openshell \
     && rm /tmp/openshell.tgz \
     && rm -rf /var/lib/apt/lists/* \
-    && openshell --version
+    && test "$(openshell --version)" = "openshell ${OPENSHELL_VERSION}"
 
 FROM alpine:3.22 AS openshell-ready
 RUN apk add --no-cache ca-certificates
@@ -564,6 +564,7 @@ RUN cd /app && node entry.js --preflight \
     && node --input-type=module -e "await import('./mcp-bridge.js')"
 WORKDIR /sandbox
 # Supervisor-replaced; launcher runs: cd /app && node /app/entry.js
+USER sandbox
 CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────

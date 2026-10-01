@@ -76,6 +76,11 @@ const EGRESS_PORT = 443;
 // ships node here. Bare "node" does not match → the CONNECT is denied (403).
 const PLUGIN_NODE_BINARY = "/usr/local/bin/node";
 
+function pluginSandboxName(id: string): string {
+  if (id.length <= 19 && /^[a-z0-9][a-z0-9-]*$/u.test(id)) return id;
+  return `neko-x-${createHash("sha256").update(id).digest("hex").slice(0, 12)}`;
+}
+
 export interface OpenShellRuntimeOptions {
   /** Shared lean base image: node + iproute2/nftables + a `sandbox` user. */
   image: string;
@@ -100,6 +105,7 @@ export interface OpenShellRuntimeOptions {
 
 interface Entry {
   spec: PluginVmSpec;
+  sandboxName: string;
   /** sha256 of the last env file uploaded to this sandbox — skip re-upload when unchanged. */
   envHash?: string;
   /** Manifest `inject:"egress"` keys — provider-injected, aliased from the
@@ -123,6 +129,7 @@ export class OpenShellRuntime implements PluginRuntime {
 
   async start(spec: PluginVmSpec): Promise<void> {
     if (this.entries.has(spec.id)) return;
+    const sandboxName = pluginSandboxName(spec.id);
     const egress = spec.egressSecrets ?? [];
     // Hold the egress secrets gateway-side first (one credential slot each), so
     // the box that references them only ever sees the placeholders.
@@ -137,20 +144,22 @@ export class OpenShellRuntime implements PluginRuntime {
       // the name registered on the gateway, so every retry collides forever —
       // replace the stale sandbox instead.
       if (!formatError(err).includes("already exists")) throw err;
-      await this.run(["sandbox", "delete", spec.id], DELETE_TIMEOUT_MS);
+      await this.run(["sandbox", "delete", sandboxName], DELETE_TIMEOUT_MS);
       await this.createSandbox(spec, providerName);
     }
     await this.run([
       "sandbox",
       "upload",
-      spec.id,
+      sandboxName,
       `${this.options.bundleDir}/${spec.id}/run.js`,
       PLUGIN_RUNNER_PATH,
     ], UPLOAD_TIMEOUT_MS);
-    const policy = buildPolicyUpdateArgs(spec.id, spec.hosts ?? []);
-    if (policy) await this.run(policy, (POLICY_LOAD_TIMEOUT_S + 15) * 1000);
+    for (const command of buildPolicyUpdateCommands(sandboxName, spec.hosts ?? [])) {
+      await this.run(command, (POLICY_LOAD_TIMEOUT_S + 15) * 1000);
+    }
     this.entries.set(spec.id, {
       spec,
+      sandboxName,
       ...(egress.length > 0
         ? { egressKeys: egress.map((e) => e.key), egressValueHash: hashEgress(egress) }
         : {}),
@@ -193,21 +202,22 @@ export class OpenShellRuntime implements PluginRuntime {
   }
 
   private createSandbox(spec: PluginVmSpec, providerName?: string): Promise<string> {
-    // `-- node --version` is a cheap initial command; the supervisor
-    // replaces it and (without --no-keep) the sandbox stays Ready.
+    // OpenShell 0.1.x completes a sandbox when its main process exits. Keep
+    // the canonical process alive until stop() deletes the sandbox.
     return this.run([
       "sandbox",
       "create",
       "--name",
-      spec.id,
+      pluginSandboxName(spec.id),
       "--from",
       this.options.image,
+      "--detach",
       "--no-tty",
       "--no-auto-providers",
       ...(providerName ? ["--provider", providerName] : []),
       "--",
-      "node",
-      "--version",
+      "sleep",
+      "infinity",
     ], CREATE_TIMEOUT_MS);
   }
 
@@ -258,7 +268,7 @@ export class OpenShellRuntime implements PluginRuntime {
         "sandbox",
         "exec",
         "-n",
-        pluginId,
+        entry!.sandboxName,
         "--no-tty",
         "--timeout",
         String(timeoutSec),
@@ -288,7 +298,7 @@ export class OpenShellRuntime implements PluginRuntime {
       const file = path.join(dir, "plugin-env");
       await writeFile(file, content, { mode: 0o600 });
       await this.run(
-        ["sandbox", "upload", pluginId, file, PLUGIN_ENV_FILE_PATH],
+        ["sandbox", "upload", entry.sandboxName, file, PLUGIN_ENV_FILE_PATH],
         UPLOAD_TIMEOUT_MS,
       );
       entry.envHash = hash;
@@ -302,7 +312,7 @@ export class OpenShellRuntime implements PluginRuntime {
     if (!entry) return;
     this.entries.delete(pluginId);
     try {
-      await this.run(["sandbox", "delete", pluginId], DELETE_TIMEOUT_MS);
+      await this.run(["sandbox", "delete", entry.sandboxName], DELETE_TIMEOUT_MS);
     } catch (err) {
       this.log(`plugin sandbox stop error ${pluginId}: ${formatError(err)}`);
     }
@@ -341,21 +351,21 @@ export class OpenShellRuntime implements PluginRuntime {
  * binary path, so bare "node" is denied. Empty host list → no rules added,
  * leaving the sandbox's inherited default-deny in place.
  */
-export function buildPolicyUpdateArgs(
+export function buildPolicyUpdateCommands(
   id: string,
   hosts: readonly string[],
-): string[] | null {
-  if (hosts.length === 0) return null;
-  const args = ["policy", "update", id];
-  for (const host of hosts) {
-    args.push("--add-endpoint", `${host}:${EGRESS_PORT}:read-write:rest:enforce`);
-  }
-  args.push("--binary", PLUGIN_NODE_BINARY);
-  for (const host of hosts) {
-    args.push("--add-allow", `${host}:${EGRESS_PORT}:*:/**`);
-  }
-  args.push("--wait", "--timeout", String(POLICY_LOAD_TIMEOUT_S));
-  return args;
+): string[][] {
+  // OpenShell 0.1.x requires endpoint and L7 allow updates separately. Each
+  // allow update names the exact endpoint rule and its complete binary list.
+  return hosts.flatMap((host) => {
+    const rule = `plugin_${createHash("sha256").update(host).digest("hex").slice(0, 12)}`;
+    const base = ["policy", "update", id, "--rule-name", rule, "--binary", PLUGIN_NODE_BINARY];
+    const wait = ["--wait", "--timeout", String(POLICY_LOAD_TIMEOUT_S)];
+    return [
+      [...base, "--add-endpoint", `${host}:${EGRESS_PORT}:read-write:rest:enforce`, ...wait],
+      [...base, "--add-allow", `${host}:${EGRESS_PORT}:*:/**`, ...wait],
+    ];
+  });
 }
 
 function runProcessOnce(

@@ -164,10 +164,10 @@ describe("reapStrandedSandboxes", () => {
   it("deletes only sandboxes owned by a previous boot", async () => {
     const deleted: string[] = [];
     const run = async (args: string[]) => {
-      if (args.includes("list")) return JSON.stringify([
+      if (args.includes("list")) return JSON.stringify({ sandboxes: [
         { name: "old", labels: { "openneko.owner": "openneko-web", "openneko.boot": "previous" } },
         { name: "current", labels: { "openneko.owner": "openneko-web", "openneko.boot": "current" } },
-      ]);
+      ], next_page_token: "" });
       deleted.push(args.at(-1)!);
       return "";
     };
@@ -177,7 +177,7 @@ describe("reapStrandedSandboxes", () => {
 
   it("reports failed deletion so the periodic pass can retry", async () => {
     const run = async (args: string[]) => {
-      if (args.includes("list")) return JSON.stringify([{ name: "old", labels: { "openneko.boot": "previous" } }]);
+      if (args.includes("list")) return JSON.stringify({ sandboxes: [{ name: "old", labels: { "openneko.boot": "previous" } }], next_page_token: "" });
       throw new Error("gateway unavailable");
     };
     await expect(reapStrandedSandboxes(run, "openneko-web", "current")).rejects.toThrow("could not delete 1 stranded sandboxes");
@@ -743,7 +743,7 @@ describe("makeSandboxRunCore", () => {
     });
     // result parsed from the RESULT line:
     expect(result).toEqual({ status: "completed", finalText: "hi there", backendState: { t: 1 } });
-    // Creation does not boot Node; exec runs the standalone bundle:
+    // The detached main process keeps the box ready; exec runs the bundle:
     expect(h.calls[0]?.args).toContain("ghcr.io/open-neko/agent:test");
     expect(h.calls[0]?.args).toContain("--policy");
     expect(h.calls[0]?.args).toContain("--upload");
@@ -754,7 +754,8 @@ describe("makeSandboxRunCore", () => {
       >,
     ).find((policy) => policy.endpoints.some((endpoint) => endpoint.host === "m.example.com"));
     expect(modelPolicy?.binaries).toEqual([{ path: "/usr/bin/python3.11" }]);
-    expect(h.calls[0]?.args.at(-1)).toBe("true");
+    expect(h.calls[0]?.args.slice(-2)).toEqual(["sleep", "infinity"]);
+    expect(h.calls[0]?.args).toContain("--detach");
     expect(h.calls[0]?.args).toContain("--cpu");
     expect(h.calls[0]?.args).toContain("--memory");
     expect(h.calls[0]?.args).toContain("1Gi");
@@ -1211,6 +1212,8 @@ describe("makeSandboxRunCore", () => {
     expect(h.calls.filter((c) => c.args.includes("upload"))).toHaveLength(0);
     const create = h.calls.find((c) => c.args.includes("create"));
     expect(create?.args).toContain("--upload");
+    expect(create?.args).toContain("--detach");
+    expect(create?.args.slice(-2)).toEqual(["sleep", "infinity"]);
     expect(create?.args[create.args.indexOf("--name") + 1]).toMatch(/^neko-w-[0-9a-f]{12}$/);
     // the box reads the mirror, not a host path:
     const execCall = h.calls.find((c) => c.args.includes("exec"));
