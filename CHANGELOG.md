@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.10.0](https://github.com/open-neko/openneko/compare/v3.9.5...v3.10.0) (2026-10-01)
+
+
+### Features
+
+* **packs:** support API-key auth for custom API sources ([8be79ea](https://github.com/open-neko/openneko/commit/8be79ea4b633e837947b83dd08fe838a48054248))
+
 ## [3.9.5](https://github.com/open-neko/openneko/compare/v3.9.4...v3.9.5) (2026-10-01)
 
 
