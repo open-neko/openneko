@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${OPENNEKO_TEST_SOURCE:?Point to the optional OpenNeko integration checkout}"
-: "${OPENSHELL_TEST_CLI:?Point to OpenShell 0.0.116}"
+: "${OPENSHELL_TEST_CLI:?Point to a matched OpenShell CLI}"
 arch=$(docker info --format '{{.Architecture}}')
 case "$arch" in aarch64|arm64) arch=arm64;; x86_64|amd64) arch=amd64;; *) exit 1;; esac
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o integration/openneko/model-bin ./integration/openneko/model

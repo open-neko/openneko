@@ -848,17 +848,16 @@ An isolated OpenShell 0.0.116 consumer run observed the first chunk more than
 500 ms before the final answer, including the PostgreSQL notification, and
 verified that the checkpoint contained no draft chunks. A route test checked
 SSE tenant scoping and replay cursor behavior. This proves the connected
-transport and route contract; rendered-browser qualification and the OpenShell
-0.1.2 consumer migration remain open.
+transport and route contract; rendered-browser qualification remains open.
+The same connected streaming gate now passes with the 0.1.2 consumer.
 
-**OpenShell target change (2026-10-02):** OpenNeko main is expected to upgrade
-from the qualified 0.0.116 release to 0.1.2. The Harness compatibility CLI
-rejects 0.1.2 by design. An isolated matched 0.1.2 CLI/gateway/supervisor
-transport suite now passes, including Ax streaming, credential lifecycle,
-OTLP, HTTPS trust and cancellation. This is not a connected consumer pass.
-Before M6's remaining connected gates are accepted, migrate and qualify the
-OpenNeko consumer in its feature worktree. The concrete migration and
-regression checks are in
+**OpenShell target change (2026-10-02):** OpenNeko main upgraded to 0.1.2.
+An isolated matched CLI/gateway/supervisor transport suite passes, including
+Ax streaming, credential lifecycle, OTLP, HTTPS trust and cancellation. The
+feature-branch consumer now passes connected streaming, route selection,
+cost gates, fallback, executor escalation, route launch, and cold/warm/reused
+Hermes turns on 0.1.2. The broader workflow and rendered-web gates still
+need rerunning against the merged OpenNeko branch. The migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a

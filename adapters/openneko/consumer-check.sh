@@ -8,7 +8,14 @@ if [[ ${HARNESS_M6_ARTIFACT_SCOPE_ONLY:-0} == 1 ]]; then
   echo M6_WORKFLOW_ARTIFACT_ORG_SCOPE_PASS
   exit 0
 fi
-go build -o "$HARNESS_STATE/openshell-compat" ./adapters/openneko/cmd/openshell-compat
+if [[ ${HARNESS_OPENSHELL_VERSION:-0.0.116} == 0.0.116 ]]; then
+  go build -o "$HARNESS_STATE/openshell-compat" ./adapters/openneko/cmd/openshell-compat
+  export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$HARNESS_STATE/openshell-compat"
+else
+  # OpenNeko main now invokes the 0.1.x CLI contract directly. The legacy
+  # 0.0.116 adapter deliberately rejects this breaking release.
+  export HARNESS_M3_CLI="$cli"
+fi
 go build -o "$HARNESS_STATE/harness-inspect" ./cmd/harness-inspect
 go build -o "$HARNESS_STATE/harness-batch" ./adapters/openneko/cmd/batch
 go build -o "$HARNESS_STATE/harness-process" ./adapters/openneko/cmd/process
@@ -17,14 +24,13 @@ mkdir -p "$HARNESS_STATE/workflow-bundle"
 cp integration/batch/workflow-fixture.py "$HARNESS_STATE/workflow-bundle/run.py"
 export HARNESS_M3_BATCH_BIN="$HARNESS_STATE/harness-batch" HARNESS_M3_BATCH_SCRIPT="$HARNESS_STATE/workflow-bundle/run.py"
 export HARNESS_BATCH_EXECUTOR_REGISTRY="$HARNESS_STATE/batch-registry.json"
-export HARNESS_OPENSHELL_BIN="$cli" HARNESS_M3_CLI="$HARNESS_STATE/openshell-compat"
 cat > "$HARNESS_STATE/m3-provider.yaml" <<'YAML'
 id: harness-m3
 category: agent
 display_name: Harness M3 fixture
 credentials:
   - name: api_key
-    env_vars: [MODEL_API_KEY]
+    env_vars: [api_key]
     required: true
 endpoints:
   - host: host.docker.internal
@@ -37,6 +43,15 @@ binaries: [/usr/local/bin/harness-openneko]
 YAML
 "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m3-provider.yaml"
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
+if [[ ${HARNESS_M6_HERMES_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  sed -e 's/harness-m3/harness-hermes/g' -e 's|/usr/local/bin/harness-openneko|/usr/bin/python3.11|g' "$HARNESS_STATE/m3-provider.yaml" > "$HARNESS_STATE/hermes-provider.yaml"
+  "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/hermes-provider.yaml"
+  "$cli" --gateway harness-m2 provider create --name harness-hermes --type harness-hermes --credential api_key=synthetic-m3
+  export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/hermes-live.test.ts)
+  echo M6_CONNECTED_OPENSHELL_HERMES_PASS
+  exit 0
+fi
 workflow_child_priced_route() {
   export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","pricing_version":"m5-workflow-fixture-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-workflow-child-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m5-workflow-priced","credential_env":"HARNESS_WORKFLOW_SOURCE_KEY","api_key_env":"HARNESS_WORKFLOW_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
 }

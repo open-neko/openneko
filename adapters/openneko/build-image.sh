@@ -11,6 +11,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$state/harness-openneko" ./
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$state/harness-inspect" ./cmd/harness-inspect
 (cd "$product/apps/worker" && pnpm exec esbuild src/agent-sandbox/entry.ts --bundle --platform=node --format=esm --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="$state/entry.js")
 (cd "$product/apps/worker" && pnpm exec esbuild src/agent-sandbox/mcp-bridge.ts --bundle --platform=node --format=esm --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="$state/mcp-bridge.js")
+cp "$product/apps/worker/src/agent-sandbox/hermes-warm.py" "$state/hermes-warm.py"
 cat > "$state/Dockerfile" <<'DOCKER'
 ARG BASE=openneko-agent:dev
 FROM ${BASE}
@@ -19,5 +20,6 @@ COPY harness-openneko /usr/local/bin/harness-openneko
 COPY harness-inspect /usr/local/bin/harness-inspect
 COPY entry.js /app/entry.js
 COPY mcp-bridge.js /app/mcp-bridge.js
+COPY hermes-warm.py /app/hermes-warm.py
 DOCKER
 docker build --build-arg "BASE=$base" -t harness-openneko:m3 "$state"

@@ -18,13 +18,11 @@ Research below is supplemented by [M2's initial live compatibility results](../i
 
 ### OpenShell 0.1.2 migration gate (2026-10-02)
 
-OpenNeko main is expected to move to 0.1.2. The standalone transport suite
+OpenNeko main now uses 0.1.2. The standalone transport suite
 now qualifies a matched 0.1.2 CLI/gateway/supervisor tuple, as recorded in
 [integration/README.md](../integration/README.md#isolated-012-qualification-2026-10-02).
-The OpenNeko consumer remains pinned to 0.0.116:
-`adapters/openneko/cmd/openshell-compat` explicitly rejects another CLI
-version and the consumer binding hashes that CLI. Do not widen that check
-until its connected gates pass.
+The feature-branch consumer uses the 0.1.2 CLI directly. The legacy
+`adapters/openneko/cmd/openshell-compat` remains restricted to 0.0.116.
 
 The breaking boundary is primarily 0.1.0, which 0.1.2 includes. The
 [official upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)
@@ -44,22 +42,21 @@ For our CLI-based path, these are the exact qualification surfaces:
 2. **Passed with a synthetic profile:** explicitly import profiles, create and
    attach providers, and prove `openshell:resolve:env:…` replacement at the
    intended destination plus denial elsewhere. Rotation, detach/reattach,
-   managed refresh, and two provider slots passed. OpenNeko's actual profile
-   remains to be tested.
-3. **Partially passed:** the standalone policy and built image run under
-   0.1.2, including streamed HTTP/HTTPS, cancellation and sandbox deletion.
-   Validate OpenNeko's generated run policy, image, upload/download, and
-   observed-absence reconciliation in the consumer gate.
-4. **Open:** run the isolated Harness worker/queue and web gates, including multi-route
-   Ax credentials, streaming first content, workflow output publication,
-   replay, and unchanged Hermes behavior. Keep 0.0.116 coverage until the
-   0.1.2 gate passes, then replace the compatibility shim or keep it as an
-   explicit legacy adapter.
+   managed refresh, and two provider slots passed. The connected OpenNeko
+   profile and credential replacement now pass as well.
+3. **Passed:** the standalone policy and built image run under 0.1.2,
+   including streamed HTTP/HTTPS, cancellation and sandbox deletion. The
+   connected consumer passes sandbox create/upload, policy, Ax routing and
+   fallback, streaming first content, and cold/warm/reused Hermes turns.
+4. **Remaining:** repeat the broader worker/queue, workflow and rendered-web
+   gates on 0.1.2 before calling the entire consumer suite qualified.
 
-OpenNeko's existing sandbox creation already supplies `--provider` and a
-prebuilt image, so those two migration rules appear aligned on source review.
-Its live CLI behavior, generated policy, provider profile, gateway config and
-process cleanup remain unqualified on 0.1.2. The official guide also changes mutation
+The connected migration found three concrete differences: OpenShell 0.1.2
+rejects `sandbox create --upload` with a command, provider profile `env_vars`
+must name the workload destination (`api_key`), and the warm Hermes server
+must tolerate denied process-group cleanup after a fork exits. The warm
+launcher keeps its attached stream open and serializes policy and input
+binding. The official guide also changes mutation
 retry semantics: admitted work can outlive cancellation, so a failed exec or
 delete must be reconciled using the same request identity rather than blindly
 reissued. See the [0.1.0 upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)

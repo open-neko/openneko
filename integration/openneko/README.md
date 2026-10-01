@@ -9,7 +9,7 @@ OpenNeko checkout, installed CLI, or active gateway.
 
 ## Reproduce
 
-Requires Docker, Go, the pinned OpenShell **0.0.116** CLI, an OpenNeko checkout with
+Requires Docker, Go, an OpenShell **0.1.2** CLI matched to the isolated gateway, an OpenNeko checkout with
 this adapter and installed worker/web dependencies, a built OpenNeko agent base
 image, and a GraphJin image supporting the server agent. The checked local GraphJin
 image was `sha256:ec6ca55bee6ced8e4c5f75ec0183a337ead74d0317cbc5b29d4afadeac5e3f64`.
@@ -19,7 +19,8 @@ not build GraphJin itself.
 
 ```sh
 OPENNEKO_TEST_SOURCE=/absolute/OpenNeko-integration-checkout \
-OPENSHELL_TEST_CLI=/absolute/openshell-0.0.116 \
+HARNESS_OPENSHELL_VERSION=0.1.2 \
+OPENSHELL_TEST_CLI=/absolute/openshell-0.1.2 \
 ./integration/openneko/run.sh
 ```
 
@@ -29,6 +30,14 @@ then exercises the real product launcher/broker and pg-boss production work hand
 The outer M2 suite reports the accepted idle-stream cancellation defect as a
 warning, and still requires sandbox deletion to close upstream work. No real
 model keys or paid inference are used.
+
+The 0.1.2 focused gates passed with synthetic credentials on 2026-10-02:
+`HARNESS_M5_FAST=1` with `HARNESS_M6_STREAMING_ONLY=1` and
+`HARNESS_M6_ROUTING_ONLY=1`, plus `HARNESS_M6_HERMES_ONLY=1` for cold,
+warm and reused Hermes turns. The image builder overlays the current
+OpenNeko `hermes-warm.py` onto the test image so this regression exercises
+the worktree code. Full worker/queue and rendered-web qualification on
+0.1.2 remains to be run.
 
 The connected queue fixture also exercises the opt-in customer Work
 `workflow_save` tool. It creates a cron-triggered workflow with a batch output
