@@ -943,9 +943,15 @@ Ax call before the main agent. Exact-name matching uses no model. Go tests
 verified the cheap selection route, catalog-validated hint, shared model-call
 admission, replay without a second request, and rejection when the accepted
 skill query changes. OpenNeko passes the bounded current request into the run
-and its recovery inspector; launcher tests cover the field. This remains local
-coverage until a connected multi-provider OpenShell run verifies credential
-replacement and the actual GraphJin server model profile.
+and its recovery inspector; launcher tests cover the field. A connected
+OpenNeko worker run now selects a staged skill through its own approved
+OpenShell provider, performs a brokered GraphJin lookup, and completes through
+separate context, executor and responder routes. The durable checkpoint records
+the semantic selection, each outer model route, one GraphJin receipt and
+separate outer versus remote token totals. The server reports its own pinned
+fixture model despite the Harness route manifest. This proves the routing
+ownership boundary with synthetic models; the production GraphJin `hard`
+profile and its pricing still require deployment qualification.
 An outer Ax token-admission ceiling now reserves before every model call,
 including skill selection and child turns. It charges missing usage
 conservatively, uses the largest reported call as the next reservation, and

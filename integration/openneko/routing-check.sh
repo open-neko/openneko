@@ -7,7 +7,7 @@ oss=("$cli" --gateway harness-m2)
 name=harness-m6-routing
 cleanup() { "${oss[@]}" sandbox delete "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-for stage in context context-spare context-503 context-403 context-429 executor executor-base executor-strong responder; do
+for stage in context context-spare context-503 context-403 context-429 skill context-lookup executor executor-base executor-strong executor-lookup responder responder-lookup; do
   upper=$(printf '%s' "$stage" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
   cat > "$state/m6-$stage-provider.yaml" <<YAML
 id: harness-m6-$stage

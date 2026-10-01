@@ -154,10 +154,14 @@ func main() {
 			responses := map[string]string{
 				"context":  `{"javascriptCode":"final('Use the approved executor route',{})"}`,
 				"context-spare": `{"javascriptCode":"final('Use the approved executor route',{})"}`,
+				"skill": `{"selected":"reference-check"}`,
+				"context-lookup": `{"javascriptCode":"final('Find the seeded reference',{})"}`,
 				"executor": `{"javascriptCode":"final('Answer the routing check',{})"}`,
+				"executor-lookup": "",
 				"executor-base": `{"javascriptCode":"throw new Error('retry this actor step');"}`,
 				"executor-strong": `{"javascriptCode":"final('Answer the routing check',{})"}`,
 				"responder": `{"answer":"ROUTED-OK"}`,
+				"responder-lookup": `{"answer":"The seeded reference is REF-42."}`,
 			}
 			response, ok := responses[stage]
 			if stage == "context-503" || stage == "context-403" || stage == "context-429" { ok = true }
@@ -172,8 +176,16 @@ func main() {
 				return
 			}
 			mu.Lock()
+			n := counts[req.Model]
 			counts[req.Model]++
 			mu.Unlock()
+			if stage == "executor-lookup" {
+				if n == 0 {
+					response = `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Verify the reference',{evidence});"}`
+				} else {
+					response = `{"javascriptCode":"const evidence=harnessSavedOperation(1); if(!JSON.stringify(evidence).includes('REF-42')) throw Error('lookup evidence missing'); final('Report the reference',{reference:'REF-42'});"}`
+				}
+			}
 			if stage == "context-503" {
 				http.Error(w, "synthetic transient failure", http.StatusServiceUnavailable)
 				return
@@ -697,7 +709,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": responses[n]}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
 	}
 	http.HandleFunc("/v1/chat/completions", modelHandler)
-	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "context-429", "executor", "executor-base", "executor-strong", "responder"} {
+	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "context-429", "skill", "context-lookup", "executor", "executor-base", "executor-strong", "executor-lookup", "responder", "responder-lookup"} {
 		http.HandleFunc("/route/"+stage+"/v1/chat/completions", modelHandler)
 	}
 	panic(http.ListenAndServe(":8080", nil))
