@@ -133,6 +133,35 @@ services:
       - ${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}:${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}
       - openshell-config:/config/openshell
 
+  # The OpenShell Docker driver can retain exited agent containers and their
+  # unbounded JSON logs after a host restart. This socket-only service reaps
+  # those containers promptly and removes old, unreferenced librarian digests.
+  # It never removes a running container, a database volume, or a tagged image.
+  neko-reaper:
+    image: ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}
+    command: ["reaper"]
+    environment:
+      OPENNEKO_VERSION: ${OPENNEKO_VERSION:-latest}
+      OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-}
+    restart: unless-stopped
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    mem_limit: 128m
+    pids_limit: 32
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    healthcheck:
+      test: ["CMD", "/openneko", "reaper", "--check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
   openshell-gateway:
     image: ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.0.54}
     restart: unless-stopped
@@ -205,6 +234,7 @@ services:
   # Worker: channel-triggered agent runs + plugins, both in OpenShell sandboxes.
   worker:
     environment:
+      OPENNEKO_SANDBOX_OWNER: openneko-worker
       OPENNEKO_PLUGIN_BASE_IMAGE: ${OPENNEKO_PLUGIN_BASE_IMAGE:-ghcr.io/open-neko/plugin-base:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_CPUS: ${OPENNEKO_AGENT_CPUS:-2}
@@ -221,6 +251,8 @@ services:
     volumes:
       - openshell-config:/config/openshell
     depends_on:
+      neko-reaper:
+        condition: service_healthy
       openshell-ready:
         condition: service_completed_successfully
       # openshell-ready's exit-0 is a historical fact; the direct edge keeps
@@ -234,6 +266,7 @@ services:
   # self-derives on the first settings save (provisionHostConfig).
   web:
     environment:
+      OPENNEKO_SANDBOX_OWNER: openneko-web
       OPENNEKO_AGENT_IMAGE: ${OPENNEKO_AGENT_IMAGE:-ghcr.io/open-neko/agent:${OPENNEKO_VERSION:-latest}}
       OPENNEKO_AGENT_CPUS: ${OPENNEKO_AGENT_CPUS:-2}
       OPENNEKO_AGENT_MEMORY: ${OPENNEKO_AGENT_MEMORY:-1Gi}
@@ -245,6 +278,8 @@ services:
     volumes:
       - openshell-config:/config/openshell
     depends_on:
+      neko-reaper:
+        condition: service_healthy
       openshell-ready:
         condition: service_completed_successfully
       # openshell-ready's exit-0 is a historical fact; the direct edge keeps

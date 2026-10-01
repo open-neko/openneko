@@ -52,7 +52,7 @@ and specialized deployment workflows.`,
 	}
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Stack mode to upgrade: auto|prod|dev|demo")
 	cmd.Flags().StringVar(&imageVersion, "version", "", "Exact OpenNeko release to install (default: latest stable; accepts 1.2.3 or v1.2.3)")
-	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Keep old OpenNeko image tags after the upgrade")
+	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Skip immediate post-upgrade image pruning (unused old agent images are still reaped after 24 hours)")
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
 	return cmd
@@ -136,6 +136,7 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 		return err
 	}
 	fmt.Fprintf(out, "Upgrading OpenNeko %s stack to image tag %s\n", m, target)
+	reapBeforePull(ctx)
 	fmt.Fprintln(out, "Pulling stack images...")
 	if code, err := sup.Run(ctx, project, files, []string{"pull"}, os.Stdout, os.Stderr); err != nil {
 		return err

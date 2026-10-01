@@ -47,7 +47,8 @@ const SANDBOX_BOOT_ID = randomUUID();
 
 /** web or worker; each host deletes only boxes it owns. */
 function sandboxOwner(): string {
-  return process.env.OPENNEKO_SANDBOX_OWNER || "openneko";
+  return process.env.OPENNEKO_SANDBOX_OWNER ||
+    (process.env.OPENNEKO_BROKER_PORT ? `openneko-broker-${process.env.OPENNEKO_BROKER_PORT}` : "openneko");
 }
 
 /** Labels that let the next boot of this host find boxes a restart stranded. */
@@ -69,7 +70,16 @@ export async function reapStrandedSandboxes(
     await run(["sandbox", "list", "--selector", `${SANDBOX_OWNER_LABEL}=${owner}`, "-o", "json", "--limit", "500"], 30_000),
   ) as Array<{ name: string; labels?: Record<string, string> }>;
   const stranded = listed.filter((box) => box.labels?.[SANDBOX_BOOT_LABEL] !== boot).map((box) => box.name);
-  await Promise.allSettled(stranded.map((name) => run(["sandbox", "delete", name], 60_000)));
+  const outcomes = await Promise.allSettled(stranded.map(async (name) => {
+    try {
+      await run(["sandbox", "delete", name], 60_000);
+    } catch (error) {
+      // Another process or the gateway may have removed it after list.
+      if (!/\b(?:not found|does not exist)\b/i.test(describeError(error))) throw error;
+    }
+  }));
+  const failed = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+  if (failed.length) throw new AggregateError(failed.map((outcome) => outcome.reason), `could not delete ${failed.length} stranded sandboxes`);
   return stranded;
 }
 
@@ -77,7 +87,10 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const reapedGateways = new Set<string>();
+const reaperHost = globalThis as typeof globalThis & {
+  __opennekoStrandedReapers?: Map<string, { boot: string; timer: ReturnType<typeof setInterval> }>;
+};
+const strandedReapers = reaperHost.__opennekoStrandedReapers ??= new Map();
 
 export interface SandboxLauncherOptions {
   /** `openshell` binary; default resolves from PATH. */
@@ -522,6 +535,8 @@ export async function prepareSandboxCapacity(opts = sandboxLauncherOptionsFromEn
 
 /** Explicit shutdown hook for hosts/tests; sandbox-side idle expiry also survives host loss. */
 export async function closeSandboxPools(): Promise<void> {
+  for (const { timer } of strandedReapers.values()) clearInterval(timer);
+  strandedReapers.clear();
   await Promise.all([...warmPools.values()].map(pool => pool.close()));
   warmPools.clear();
   await clearStableSandboxInputs();
@@ -538,15 +553,26 @@ function getSandboxPool(opts: SandboxLauncherOptions, workspace?: StableWorkspac
   const poolKey = JSON.stringify([cli, gatewayArgs, opts.agentImage, cpu, memory, warmSize, idleMs, workspace?.orgRoot]);
   let pool = warmPools.get(poolKey);
   const gatewayKey = JSON.stringify([cli, gatewayArgs]);
-  if (!reapedGateways.has(gatewayKey)) {
-    reapedGateways.add(gatewayKey);
-    void reapStrandedSandboxes(runCleanup)
-      .then((names) => { if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`); })
-      .catch((error) => {
-        // A gateway that is down reaps nothing. Try again on the next pool.
-        reapedGateways.delete(gatewayKey);
+  if (strandedReapers.get(gatewayKey)?.boot !== SANDBOX_BOOT_ID) {
+    const previous = strandedReapers.get(gatewayKey);
+    if (previous) clearInterval(previous.timer);
+    let running = false;
+    const reap = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const names = await reapStrandedSandboxes(runCleanup);
+        if (names.length) (opts.onLog ?? console.log)(`deleted ${names.length} sandboxes left by an earlier start`);
+      } catch (error) {
         (opts.onLog ?? console.error)(`could not delete sandboxes left by an earlier start: ${describeError(error)}`);
-      });
+      } finally {
+        running = false;
+      }
+    };
+    const timer = setInterval(() => { void reap(); }, 300_000);
+    timer.unref();
+    strandedReapers.set(gatewayKey, { boot: SANDBOX_BOOT_ID, timer });
+    void reap();
   }
   if (!pool) {
     pool = new SandboxPool({ size: warmSize, idleMs,
@@ -626,7 +652,7 @@ function makeSandboxCore(
       runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal, stdin);
     const inputPrompt = jobInput?.run.prompt ??
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
-    let name = `${isJob ? "job" : "work"}-${input.runId}`
+    let name = `openneko-${isJob ? "job" : "work"}-${input.runId}`
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "")
       .slice(0, 60);
@@ -1584,7 +1610,7 @@ async function createWarmSandbox(o: {
   runCleanup: (args: string[], timeout: number) => Promise<string>;
   workspace?: StableWorkspace;
 }): Promise<WarmSlot> {
-  const name = `warm-${randomUUID()}`;
+  const name = `openneko-warm-${randomUUID()}`;
   const dir = await mkdtemp(path.join(tmpdir(), "oss-warm-"));
   const policy = path.join(dir, "policy.json");
   await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));

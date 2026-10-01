@@ -133,6 +133,7 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	if err != nil {
 		return err
 	}
+	reapBeforePull(ctx)
 
 	// Derive both the gateway URL and the dedicated role password before
 	// compose interpolates the one-shot migration service's environment.

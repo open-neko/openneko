@@ -145,6 +145,7 @@ const {
   makeSandboxRunCore,
   prepareSandboxCapacity,
   closeSandboxPools,
+  reapStrandedSandboxes,
   makeSandboxJobRunCore,
   makeSandboxWorkflowRunCore,
   buildModelEgressArgs,
@@ -158,6 +159,30 @@ const {
   verifyOpenShellGateway,
   workflowExecBudgetMs,
 } = await import("../src/work/sandbox-launcher");
+
+describe("reapStrandedSandboxes", () => {
+  it("deletes only sandboxes owned by a previous boot", async () => {
+    const deleted: string[] = [];
+    const run = async (args: string[]) => {
+      if (args.includes("list")) return JSON.stringify([
+        { name: "old", labels: { "openneko.owner": "openneko-web", "openneko.boot": "previous" } },
+        { name: "current", labels: { "openneko.owner": "openneko-web", "openneko.boot": "current" } },
+      ]);
+      deleted.push(args.at(-1)!);
+      return "";
+    };
+    expect(await reapStrandedSandboxes(run, "openneko-web", "current")).toEqual(["old"]);
+    expect(deleted).toEqual(["old"]);
+  });
+
+  it("reports failed deletion so the periodic pass can retry", async () => {
+    const run = async (args: string[]) => {
+      if (args.includes("list")) return JSON.stringify([{ name: "old", labels: { "openneko.boot": "previous" } }]);
+      throw new Error("gateway unavailable");
+    };
+    await expect(reapStrandedSandboxes(run, "openneko-web", "current")).rejects.toThrow("could not delete 1 stranded sandboxes");
+  });
+});
 
 describe("sandboxLauncherOptionsFromEnv", () => {
   it("ignores a persisted operator binary and exposes only model hosts", () => {

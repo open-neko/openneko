@@ -27,6 +27,7 @@ type composeParityService struct {
 	CPUs        string                             `yaml:"cpus"`
 	MemLimit    string                             `yaml:"mem_limit"`
 	PidsLimit   int                                `yaml:"pids_limit"`
+	NetworkMode string                             `yaml:"network_mode"`
 	CapDrop     []string                           `yaml:"cap_drop"`
 	Tmpfs       []string                           `yaml:"tmpfs"`
 	Profiles    []string                           `yaml:"profiles"`
@@ -36,6 +37,40 @@ type composeParityService struct {
 	Ports       []string                           `yaml:"ports"`
 	Command     []string                           `yaml:"command"`
 	Healthcheck map[string]any                     `yaml:"healthcheck"`
+}
+
+func TestOpenShellReaperIsIsolatedAndPresentInBothComposeVariants(t *testing.T) {
+	rootRaw, err := os.ReadFile("../../../compose.openshell.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedRaw, err := ComposeFS.ReadFile("compose/openshell.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, document := range map[string]composeParityDocument{
+		"source":   loadComposeParityDocument(t, rootRaw),
+		"packaged": loadComposeParityDocument(t, packagedRaw),
+	} {
+		reaper, ok := document.Services["neko-reaper"]
+		if !ok {
+			t.Fatalf("%s OpenShell overlay has no reaper", label)
+		}
+		if reaper.Image != "ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}" ||
+			!reflect.DeepEqual(reaper.Command, []string{"reaper"}) ||
+			reaper.Restart != "unless-stopped" || !reaper.ReadOnly || reaper.NetworkMode != "none" ||
+			!reflect.DeepEqual(reaper.Volumes, []string{"/var/run/docker.sock:/var/run/docker.sock"}) {
+			t.Fatalf("%s reaper contract is incomplete: %+v", label, reaper)
+		}
+		if !strings.Contains(fmt.Sprint(reaper.Healthcheck["test"]), "reaper --check") {
+			t.Fatalf("%s reaper has no Docker socket healthcheck", label)
+		}
+		for _, consumer := range []string{"web", "worker"} {
+			if document.Services[consumer].DependsOn["neko-reaper"].Condition != "service_healthy" {
+				t.Fatalf("%s %s can start without a healthy reaper", label, consumer)
+			}
+		}
+	}
 }
 
 func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
