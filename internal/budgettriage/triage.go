@@ -49,6 +49,14 @@ type SystemOneClient interface {
 	SystemOne(context.Context, ax.TypesafeRequest, map[string]ax.Value) (*ax.TypesafeResponse, error)
 }
 
+// Journal is the host-owned durable accounting boundary. Reserve must commit
+// before transport; Settle must commit the observed result or unavailable
+// coverage before the surrounding run may continue.
+type Journal interface {
+	Reserve(context.Context, Observation) error
+	Settle(context.Context, Observation) error
+}
+
 // Observation is safe to emit as content-free telemetry. ChargedMicros is an
 // upper-bound estimate; a missing usage report retains the pre-call reserve.
 type Observation struct {
@@ -66,11 +74,11 @@ type Observation struct {
 	LatencyMS        int64              `json:"latency_ms"`
 }
 
-// Evaluate is shadow-only. The caller must journal the reservation before
-// dispatch and deduct ChargedMicros from the authoritative run budget before
-// enabling this in live admission. An unavailable decision keeps fixed limits.
-func Evaluate(ctx context.Context, client SystemOneClient, model string, in Input, price agent.TokenPrice, remainingMicros int64) (Observation, error) {
-	if client == nil || model == "" || len(model) > 128 || !in.valid() || !price.Valid() || remainingMicros < 0 {
+// Evaluate is shadow-only. A successful recommendation never changes the hard
+// run limit. The caller's Journal must persist both accounting transitions;
+// an unavailable decision keeps fixed limits.
+func Evaluate(ctx context.Context, client SystemOneClient, model string, in Input, price agent.TokenPrice, remainingMicros int64, journal Journal) (Observation, error) {
+	if client == nil || journal == nil || model == "" || len(model) > 128 || !in.valid() || !price.Valid() || remainingMicros < 0 {
 		return Observation{}, errors.New("invalid budget triage configuration")
 	}
 	result := Observation{Version: Version, RequestedModel: model, SuggestedProfile: "fixed", Reason: "classifier_unavailable", Coverage: "unavailable"}
@@ -80,6 +88,15 @@ func Evaluate(ctx context.Context, client SystemOneClient, model string, in Inpu
 		return result, nil
 	}
 	result.ChargedMicros = reserve
+	if err := journal.Reserve(ctx, result); err != nil {
+		return Observation{}, err
+	}
+	settle := func() (Observation, error) {
+		if err := journal.Settle(ctx, result); err != nil {
+			return Observation{}, err
+		}
+		return result, nil
+	}
 	families := append([]string(nil), in.ToolFamilies...)
 	sort.Strings(families)
 	request := ax.TypesafeRequest{
@@ -101,13 +118,13 @@ func Evaluate(ctx context.Context, client SystemOneClient, model string, in Inpu
 	response, err := client.SystemOne(callCtx, request, nil)
 	result.LatencyMS = time.Since(start).Milliseconds()
 	if err != nil || response == nil {
-		return result, nil
+		return settle()
 	}
 	result.ActualModel = response.Model
 	if response.Usage.InputTokens > 0 || response.Usage.OutputTokens > 0 {
 		if response.Usage.InputTokens < 0 || response.Usage.OutputTokens < 0 || response.Usage.InputTokens > 1_000_000_000_000 || response.Usage.OutputTokens > 1_000_000_000_000 {
 			result.Reason = "invalid_usage"
-			return result, nil
+			return settle()
 		}
 		result.InputTokens = response.Usage.InputTokens
 		result.OutputTokens = response.Usage.OutputTokens
@@ -120,7 +137,7 @@ func Evaluate(ctx context.Context, client SystemOneClient, model string, in Inpu
 	answer, ok := response.Answers["workload"]
 	if !ok || response.Model != model || answer.Type != "choice" || !validDistribution(answer) {
 		result.Reason = "invalid_result"
-		return result, nil
+		return settle()
 	}
 	result.Choice = answer.Choice
 	result.Probabilities = make(map[string]float64, len(classes))
@@ -128,7 +145,7 @@ func Evaluate(ctx context.Context, client SystemOneClient, model string, in Inpu
 		result.Probabilities[class] = answer.Probabilities[class]
 	}
 	result.SuggestedProfile, result.Reason = chooseProfile(result.Probabilities)
-	return result, nil
+	return settle()
 }
 
 func validDistribution(answer ax.TypesafeAnswer) bool {

@@ -1178,8 +1178,13 @@ signals, a three-second deadline, a priced pre-call reserve and content-free
 observations. No-key HTTP fixtures cover clear short and artifact work,
 misleading short prompts, split probabilities, uncertainty, provider failure
 and pre-dispatch cost denial. Its recommendation is not applied to live run
-limits. Live admission still needs an OpenShell-authorized Typesafe route,
-durable reservation/charge in the run checkpoint, fixed-cap profile mapping,
+limits. The classifier transport now requires a host journal to commit its
+priced reservation before `SystemOne` and its settlement afterward. A failed
+reservation prevents dispatch, and a failed settlement propagates as an error
+instead of masquerading as an unavailable fixed-budget fallback. Local HTTP
+fixtures verify both failure windows and that the reservation precedes the
+request. Live admission still needs an OpenShell-authorized Typesafe route,
+the journal implementation in the run checkpoint, fixed-cap profile mapping,
 and held-out outcome calibration before any canary.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
