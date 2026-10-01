@@ -19,6 +19,7 @@ import (
 type BudgetTrace struct {
 	RunID            string              `json:"run_id"`
 	CheckpointSHA256 string              `json:"checkpoint_sha256"`
+	Mode             string              `json:"mode"` // fixed or canary, from the validated host spec.
 	Hard             budgettriage.Limits `json:"hard"`
 	Status           string              `json:"status"`
 	Events           []agent.Event       `json:"events"`
@@ -62,7 +63,11 @@ func ReadBudgetTrace(root, runID string) (BudgetTrace, error) {
 		return BudgetTrace{}, err
 	}
 	digest := sha256.Sum256(data)
-	trace := BudgetTrace{RunID: runID, CheckpointSHA256: hex.EncodeToString(digest[:]), Hard: budgettriage.Limits{MaxModelCalls: header.Spec.ModelCallLimit(),
+	mode := "fixed"
+	if header.Spec.HostBudgetMode == "canary" {
+		mode = "canary"
+	}
+	trace := BudgetTrace{RunID: runID, CheckpointSHA256: hex.EncodeToString(digest[:]), Mode: mode, Hard: budgettriage.Limits{MaxModelCalls: header.Spec.ModelCallLimit(),
 		MaxModelTokens: header.Spec.MaxModelTokens, MaxCostMicros: header.Spec.MaxCostMicros}, Status: "interrupted"}
 	if state.Result != nil {
 		trace.Status = state.Result.Status

@@ -73,6 +73,9 @@ func Evaluate(trace session.BudgetTrace, label Label) (Report, error) {
 	if !label.Valid() || trace.RunID == "" || !trace.Hard.Valid() || trace.Status == "" {
 		return Report{}, fmt.Errorf("invalid budget evaluation input")
 	}
+	if trace.Mode != "" && trace.Mode != "fixed" {
+		return Report{}, fmt.Errorf("shadow counterfactual requires a fixed-budget run")
+	}
 	if label.Outcome == "verified_success" && trace.Status != "completed" {
 		return Report{}, fmt.Errorf("verified success requires a completed run")
 	}

@@ -86,6 +86,9 @@ func TestCanaryBudgetBlocksUnjustifiedModelCall(t *testing.T) {
 	if report, err := Inspect(root, spec); err != nil || report.Outcome != "terminal" {
 		t.Fatalf("canary checkpoint=%+v err=%v", report, err)
 	}
+	if trace, err := ReadBudgetTrace(root, spec.RunID); err != nil || trace.Mode != "canary" {
+		t.Fatalf("canary trace mode=%q err=%v", trace.Mode, err)
+	}
 	shadow := spec
 	shadow.HostBudgetMode = ""
 	if _, err := Inspect(root, shadow); err == nil {

@@ -120,3 +120,13 @@ func TestUnverifiedOutcomeCannotBeCountedAsSuccess(t *testing.T) {
 		t.Fatal("failed run accepted as independently verified success")
 	}
 }
+
+func TestCanaryTraceCannotMasqueradeAsFixedControl(t *testing.T) {
+	proposal := budgettriage.Proposal{Version: "fixture-v1", Profile: "short",
+		Limits: budgettriage.Limits{MaxModelCalls: 4, MaxModelTokens: 8_000, MaxCostMicros: 10_000}}
+	trace := fixtureTrace(t, proposal, false, false)
+	trace.Mode = "canary"
+	if _, err := budgeteval.Evaluate(trace, budgeteval.Label{TaskClass: "short", Outcome: "verified_success"}); err == nil {
+		t.Fatal("canary trace used as a fixed-budget counterfactual")
+	}
+}

@@ -7,7 +7,9 @@ still apply. The mode is pinned in the checkpoint, so it cannot be changed for
 an in-flight run or during recovery. If classification is skipped or uncertain,
 the fixed hard caps remain in force. A candidate denial returns
 `dynamic_budget_exceeded` before dispatching another model or GraphJin request.
-`harness-budget-eval` scores stopped, validated checkpoints against
+The exported budget trace identifies fixed versus canary mode. The
+counterfactual evaluator refuses canary traces because they cannot serve as
+fixed-budget controls. `harness-budget-eval` scores stopped, validated checkpoints against
 independently verified outcomes. It exports only budget events, route/model
 metadata, usage, prices, and the classifier's content-free distribution. It
 does not export prompts, tool arguments/results, runtime state, or answers.
