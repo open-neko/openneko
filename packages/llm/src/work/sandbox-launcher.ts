@@ -1097,7 +1097,7 @@ function makeSandboxCore(
           "--no-auto-providers",
           ...sandboxOwnerLabelArgs(),
           ...(admission ? ["--label", "openneko.recovery=retain"] : []),
-          ...(providers[0] ? ["--provider", providers[0]] : []),
+          ...providers.flatMap(provider => ["--provider", provider]),
           "--policy",
           policyFile,
           "--upload",
@@ -1147,9 +1147,6 @@ function makeSandboxCore(
           }
         }
         sandboxCreated = true;
-        for (const provider of providers.slice(1)) {
-          await timed("attach_route_provider", () => run(["sandbox", "provider", "attach", name, provider], 60_000));
-        }
       }
 
       log(

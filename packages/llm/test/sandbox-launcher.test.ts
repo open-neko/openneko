@@ -938,7 +938,7 @@ describe("makeSandboxRunCore", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("attaches only Harness route providers before execution and leaves Hermes on its primary route", async () => {
+  it("creates Harness with its route providers and leaves Hermes on its primary route", async () => {
     const root = await mkdtemp(join(tmpdir(), "harness-routes-test-"));
     try {
       const routing = parseHarnessRouting(JSON.stringify({context:"cheap",executor:"work",responder:"work",skill:"cheap",routes:[
@@ -953,10 +953,9 @@ describe("makeSandboxRunCore", () => {
       const create = h.calls.find(call=>call.args.includes("create"))!.args;
       expect(create.slice(create.indexOf("--provider"),create.indexOf("--provider")+2)).toEqual(["--provider","cheap-provider"]);
       expect(create).not.toContain("legacy-provider");
-      const attachIndex = h.calls.findIndex(call=>call.args.includes("attach") && call.args.includes("work-provider"));
+      expect(create).toContain("work-provider");
       const execIndex = h.calls.findIndex(call=>call.args.includes("exec") && !call.args.includes("/usr/local/bin/harness-inspect"));
-      expect(attachIndex).toBeGreaterThan(h.calls.findIndex(call=>call.args.includes("create")));
-      expect(attachIndex).toBeLessThan(execIndex);
+      expect(execIndex).toBeGreaterThan(h.calls.findIndex(call=>call.args.includes("create")));
       const command = h.calls[execIndex]!.args.join(" ");
       expect(command).toContain("HARNESS_MODEL_ROUTES");
       expect(command).toContain('HARNESS_CHEAP_KEY="$CHEAP_API_KEY"');
