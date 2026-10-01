@@ -900,8 +900,14 @@ script accepted 0.1.2's connect-time network denial. The broader queued gate
 now passes worker-death recovery and approval restart: a canceled in-flight
 model request leaves an interrupted checkpoint, and redelivery uses the saved
 GraphJin receipt without repeating the operation. The focused agent-job child
-crash/recovery gate also passes on 0.1.2. The complete broad suite has not yet
-been rerun after its child fixture updates.
+crash/recovery gate also passes on 0.1.2. The complete isolated broad suite
+subsequently passed after the child fixture updates, including queue recovery,
+workflow API and Work-file downloads. Its owned containers and networks were
+removed.
+The focused process cancellation and output-limit gates also passed on 0.1.2.
+The focused live launcher/checkpoint gate passed in isolation after updating
+its sandbox selection and accepting one bounded model continuation after host
+death; GraphJin receipts remained single-use.
 The host-only dynamic-budget canary mechanism now has local admission and
 checkpoint tests, but is disabled by default. A focused queued workflow with
 synthetic model/data fixtures passed its connected 0.1.2 canary path,

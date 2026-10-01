@@ -96,6 +96,11 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
   bash ./integration/batch/batch-check.sh
 fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+if [[ ${HARNESS_M3_LIVE_ONLY:-0} == 1 ]]; then
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts)
+  echo M3_CONNECTED_HARNESS_LIVE_PASS
+  exit 0
+fi
 if [[ ( ${HARNESS_M6_BROWSER_STREAM:-0} == 1 || ${HARNESS_M6_QUEUE_BROWSER_STREAM:-0} == 1 ) && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   if lsof -nP -iTCP:18121 -sTCP:LISTEN >/dev/null 2>&1; then
     echo 'Port 18121 is already in use; refusing to test against an existing web server' >&2

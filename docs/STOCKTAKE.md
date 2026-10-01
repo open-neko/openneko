@@ -22,8 +22,13 @@ transport after a GraphJin receipt was committed. A bounded Harness
 continuation now retains that receipt and retries only the model turn. The
 connected queue gate passed worker-death redelivery, one restored answer and
 approval restart on 0.1.2. The focused agent-job child crash/recovery gate
-also passes; the complete broad suite has not yet been rerun after its fixture
-updates.
+also passes. The full isolated 0.1.2 queue/API suite subsequently passed,
+including the child gate and Work-file downloads; its owned containers and
+networks were removed.
+The focused process cancellation, output-limit, and live launcher/checkpoint
+gates also passed on 0.1.2. The host-death test now permits a bounded model
+continuation if OpenShell cancels the orphaned transport, while requiring the
+GraphJin receipt to be reused.
 
 The cumulative live suite has passed the consumer checks. Its previous exit 1
 was solely the raw idle-proxy cancellation check. On 2026-09-20 the user accepted

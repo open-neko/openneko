@@ -79,8 +79,16 @@ request on 0.1.2; Harness now records an interrupted checkpoint after a
 committed operation, and redelivery resumes without repeating that operation.
 The focused `HARNESS_M5_FAST=1 HARNESS_M5_AGENT_JOB_CHILD_ONLY=1` gate also
 passes normal child delegation, disabled delegation, child process crash and
-resume, and model-only access on 0.1.2. The entire broad suite has not yet
-been rerun after the child fixture updates.
+resume, and model-only access on 0.1.2. The full isolated
+`HARNESS_M3_API_HTTP=1` suite then passed after those fixture updates,
+including queue recovery, workflow API and Work-file downloads. Its owned
+containers and networks were removed.
+The focused `HARNESS_M5_PROCESS_CANCEL_ONLY=1`,
+`HARNESS_M5_PROCESS_OUTPUT_LIMITS_ONLY=1`, and
+`HARNESS_M3_LIVE_ONLY=1` gates also pass on 0.1.2. The live gate checks
+checkpoint recovery after both a sandbox process kill and a host launcher
+kill, with one bounded model continuation allowed and no repeated GraphJin
+operation. Each gate tears down its isolated containers and networks.
 
 `HARNESS_M6_COMPACTION_ONLY=1 HARNESS_M6_COMPACTION_WEB=1` also passes on
 0.1.2: one forced summary retains the workflow receipt, publishes the exact
