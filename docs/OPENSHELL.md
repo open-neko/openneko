@@ -80,6 +80,11 @@ executor now parses both qualified versions and refuses an incomplete page
 before checking ownership labels or reaping a stale sandbox. A live 0.1.2
 inventory confirmed the expected labels, and the queued 8 MiB artifact gate
 passed through the process sandbox and Work download route.
+The file-backed batch executor needed the same inventory update. In 0.1.2,
+ungranted model egress can fail at connect time with `PermissionError` rather
+than returning an HTTP 403; the isolated batch and process fixtures now accept
+only those blocked outcomes. The queued GraphJin batch and public workflow API
+pass on the matched 0.1.2 stack.
 
 ## 1. Recommendation
 

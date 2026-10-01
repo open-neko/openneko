@@ -704,7 +704,7 @@ func main() {
 		} else if req.Model == "harness-installed-plugin-fixture" {
 			responses = []string{`{"javascriptCode":"final('Propose the installed plugin effect', {})"}`, `{"javascriptCode":"const receipt=propose({action:'fixture_plugin_effect',arguments:{value:42},summary:'Apply the installed plugin effect'}); if(receipt.status!=='pending_approval') throw Error('approval missing'); final('Report the pending plugin effect',{receipt});"}`, `{"answer":"The installed plugin effect is pending human approval."}`}
 		} else {
-			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference', {evidence});"}`, `{"answer":"The reference is REF-42."}`}
+			responses = []string{`{"javascriptCode":"final('Find the seeded reference', {})"}`, `{"javascriptCode":"const result=lookup('Find the seeded reference'); const evidence=result.reference?harnessSavedOperation(1).result:result; const reply=evidence.response||evidence; final('Report the reference',{answer:reply.answer,trace_id:reply.trace_id,data:reply.data});"}`, `{"answer":"The reference is REF-42."}`}
 			if answerQuestion {
 				responses = []string{`{"javascriptCode":"final('Use the answered day', {})"}`, `{"javascriptCode":"final('The selected day is 2026-09-15', {})"}`, `{"answer":"The selected day is 2026-09-15."}`}
 			}

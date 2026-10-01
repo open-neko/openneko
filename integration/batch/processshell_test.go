@@ -32,7 +32,7 @@ try:
 except urllib.error.HTTPError as denied:
     assert denied.code == 403, denied.code
 except urllib.error.URLError as denied:
-    assert isinstance(denied.reason, socket.gaierror), denied.reason
+    assert isinstance(denied.reason, (socket.gaierror, PermissionError)), denied.reason
 try:
     socket.create_connection(('1.1.1.1', 80), timeout=3)
     raise AssertionError('ungranted direct network access')

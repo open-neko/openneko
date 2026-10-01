@@ -14,7 +14,7 @@ import (
 	"github.com/open-neko/harness/internal/batch"
 )
 
-const batchScript = `import argparse, csv, hashlib, json, os, pathlib, sys, urllib.error, urllib.request
+const batchScript = `import argparse, csv, hashlib, json, os, pathlib, socket, sys, urllib.error, urllib.request
 p = argparse.ArgumentParser()
 for name in ('target-day','work-dir','output','summary','max-runtime'):
     p.add_argument('--' + name, required=True)
@@ -25,6 +25,8 @@ try:
     raise AssertionError('ungranted model network access')
 except urllib.error.HTTPError as denied:
     assert denied.code == 403, denied.code
+except urllib.error.URLError as denied:
+    assert isinstance(denied.reason, (socket.gaierror, PermissionError)), denied.reason
 cache = pathlib.Path(os.environ['OPENNEKO_QUERY_CACHE_DIR'])
 query = 'query { fixture }'
 id = hashlib.sha256(query.encode()).hexdigest()

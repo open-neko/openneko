@@ -166,15 +166,31 @@ func (r *Runner) Step(ctx context.Context, cfg batch.Config, output io.Writer) e
 // saved query responses. The caller must hold the run's database ownership.
 func (r *Runner) reap(ctx context.Context) error {
 	var raw bytes.Buffer
-	if err := r.call(ctx, &raw, "sandbox", "list", "-o", "json", "--limit", "500"); err != nil {
+	err := r.call(ctx, &raw, "sandbox", "list", "-o", "json", "--page-size", "500")
+	if err != nil && strings.Contains(raw.String(), "--page-size") &&
+		(strings.Contains(raw.String(), "unexpected argument") || strings.Contains(raw.String(), "unknown option")) {
+		// 0.0.116 used --limit; 0.1.2 uses --page-size. Retry only a
+		// read-only inventory rejected for this exact CLI flag.
+		raw.Reset()
+		err = r.call(ctx, &raw, "sandbox", "list", "-o", "json", "--limit", "500")
+	}
+	if err != nil {
 		return err
 	}
-	var boxes []struct {
+	type sandboxEntry struct {
 		Name   string            `json:"name"`
 		Labels map[string]string `json:"labels"`
 	}
-	if json.Unmarshal(raw.Bytes(), &boxes) != nil {
-		return fmt.Errorf("invalid batch sandbox inventory")
+	var boxes []sandboxEntry
+	if err := json.Unmarshal(raw.Bytes(), &boxes); err != nil {
+		var page struct {
+			Sandboxes     []sandboxEntry `json:"sandboxes"`
+			NextPageToken string         `json:"next_page_token"`
+		}
+		if json.Unmarshal(raw.Bytes(), &page) != nil || page.Sandboxes == nil || page.NextPageToken != "" {
+			return fmt.Errorf("invalid or incomplete batch sandbox inventory")
+		}
+		boxes = page.Sandboxes
 	}
 	for _, box := range boxes {
 		if box.Name != r.name {

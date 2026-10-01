@@ -55,7 +55,7 @@ func TestReapOnlyMatchingOwnedSandbox(t *testing.T) {
 	cli, marker := filepath.Join(root, "openshell"), filepath.Join(root, "deleted")
 	script := fmt.Sprintf(`#!/bin/sh
 case "$*" in
-  *"sandbox list"*) printf '%%s\n' '[{"name":"hb-fixture","labels":{"openneko.batch_run":"run-1"}}]' ;;
+  *"sandbox list"*) printf '%%s\n' '{"sandboxes":[{"name":"hb-fixture","labels":{"openneko.batch_run":"run-1"}}],"next_page_token":""}' ;;
   *"sandbox delete hb-fixture"*) touch '%s' ;;
   *) exit 1 ;;
 esac
@@ -75,7 +75,8 @@ esac
 	}
 	script = fmt.Sprintf(`#!/bin/sh
 case "$*" in
-  *"sandbox list"*) printf '%%s\n' '[{"name":"hb-fixture","labels":{"openneko.batch_run":"another-run"}}]' ;;
+  *"sandbox list"*"--page-size"*) echo "error: unexpected argument '--page-size'" >&2; exit 2 ;;
+  *"sandbox list"*"--limit"*) printf '%%s\n' '[{"name":"hb-fixture","labels":{"openneko.batch_run":"another-run"}}]' ;;
   *"sandbox delete hb-fixture"*) touch '%s' ;;
   *) exit 1 ;;
 esac
@@ -88,5 +89,17 @@ esac
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("foreign sandbox delete marker: %v", err)
+	}
+}
+
+func TestReapRejectsIncompleteCurrentInventory(t *testing.T) {
+	root := t.TempDir()
+	cli := filepath.Join(root, "openshell")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\nprintf '{\"sandboxes\":[],\"next_page_token\":\"more\"}'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{opts: Options{CLI: cli, Gateway: "fixture", RunID: "run-1"}, name: "hb-fixture"}
+	if err := runner.reap(context.Background()); err == nil {
+		t.Fatal("accepted incomplete sandbox inventory")
 	}
 }

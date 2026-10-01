@@ -70,10 +70,13 @@ the host saves its checksum and one artifact event, and the isolated Work API
 returns the exact bytes while rejecting an unissued path. This gate also
 exercises the 0.1.2 sandbox-list `--page-size` and paginated JSON contract;
 the historical 0.0.116 inventory format remains covered locally.
-The broader `HARNESS_M3_API_HTTP=1` queue fixture remains unqualified against
-the merged 3.12.0 branch: its first seeded lookup received a deterministic
-model HTTP 422 before reaching the process artifact case. The focused gate
-above verifies the 8 MiB path independently; the broad fixture needs diagnosis.
+The broader `HARNESS_M3_API_HTTP=1` queue fixture reached the GraphJin-backed
+batch and public workflow API successfully on the merged 3.12.0 branch. Its
+old synthetic model had to retrieve the large saved GraphJin result through
+`harnessSavedOperation(1)`; passing only the bounded reference had caused an
+HTTP 422. The fixture still fails later in its worker-death recovery case with
+`model_failed` after queue lease expiry, so the entire broad suite is not yet
+qualified on 0.1.2. The focused 8 MiB gate passes independently.
 
 `HARNESS_M6_COMPACTION_ONLY=1 HARNESS_M6_COMPACTION_WEB=1` also passes on
 0.1.2: one forced summary retains the workflow receipt, publishes the exact

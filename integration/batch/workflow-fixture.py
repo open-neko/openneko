@@ -5,8 +5,9 @@ import csv
 import hashlib
 import json
 import os
+import socket
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 parser = argparse.ArgumentParser()
@@ -21,6 +22,8 @@ try:
     raise AssertionError("model egress must be denied")
 except HTTPError as denied:
     assert denied.code == 403
+except URLError as denied:
+    assert isinstance(denied.reason, (socket.gaierror, PermissionError)), denied.reason
 
 query = "query { references { id label } }"
 query_id = hashlib.sha256(query.encode()).hexdigest()
