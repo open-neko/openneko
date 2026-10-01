@@ -31,6 +31,10 @@ binaries: [/usr/local/bin/harness-openneko]
 YAML
 "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m3-provider.yaml"
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
+if [[ ${HARNESS_M6_ROUTING_ONLY:-0} == 1 ]]; then
+  bash ./integration/openneko/routing-check.sh
+  exit 0
+fi
 mkdir -p "$HARNESS_STATE/provider-config"
 cat > "$HARNESS_STATE/provider-config/config.yaml" <<'YAML'
 model:

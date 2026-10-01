@@ -148,7 +148,32 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": "Xenova/all-MiniLM-L6-v2", "dimensions": 384, "vector": vector})
 	})
-	http.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+	modelHandler := func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/route/") {
+			stage := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/route/"), "/v1/chat/completions")
+			responses := map[string]string{
+				"context":  `{"javascriptCode":"final('Use the approved executor route',{})"}`,
+				"executor": `{"javascriptCode":"final('Answer the routing check',{})"}`,
+				"responder": `{"answer":"ROUTED-OK"}`,
+			}
+			response, ok := responses[stage]
+			if !ok || r.URL.Path != "/route/"+stage+"/v1/chat/completions" ||
+				r.Header.Get("Authorization") != "Bearer synthetic-m6-"+stage {
+				http.Error(w, "route or broker credential mismatch", http.StatusForbidden)
+				return
+			}
+			var req struct { Model string `json:"model"` }
+			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Model != "harness-route-"+stage {
+				http.Error(w, "model route mismatch", http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			counts[req.Model]++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role":"assistant", "content":response}, "finish_reason":"stop"}}, "usage":map[string]int{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}})
+			return
+		}
 		var req struct {
 			Model    string          `json:"model"`
 			Stream   bool            `json:"stream"`
@@ -654,6 +679,10 @@ func main() {
 		fmt.Printf("model=%s step=%d\n", req.Model, n)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": responses[n]}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
-	})
+	}
+	http.HandleFunc("/v1/chat/completions", modelHandler)
+	for _, stage := range []string{"context", "executor", "responder"} {
+		http.HandleFunc("/route/"+stage+"/v1/chat/completions", modelHandler)
+	}
 	panic(http.ListenAndServe(":8080", nil))
 }

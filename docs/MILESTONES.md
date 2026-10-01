@@ -890,8 +890,15 @@ one-step fallback pairs. No-key fixtures confirm a content-free 503 moves to
 the secondary route, with both attempts charged; 403 stays on the original
 route; a 429 cannot bypass the model-call ceiling; and a journal failure stops
 secondary dispatch. The OpenNeko parser includes fallback-only providers and
-credential aliases. Connected OpenShell credential replacement, rate-limit
-behavior and streaming first-content qualification remain open.
+credential aliases. An isolated OpenShell 0.0.116 run now exercises three Ax
+stage routes through separate provider profiles. The upstream fixture rejects
+the wrong route model or bearer credential; context, executor and responder
+each ran once with complete usage and the expected answer. This qualifies
+connected route selection and broker key replacement. The OpenNeko worker's
+trusted manifest launch, executor escalation, transient fallback, rate-limit
+behavior and streaming first-content qualification remain open. Run the route
+check with `HARNESS_M5_FAST=1 HARNESS_M6_ROUTING_ONLY=1` through
+`integration/openneko/run.sh` using the pinned CLI and isolated OpenNeko worktree.
 Resume now projects saved operations into a bounded 32 KiB evidence index. The
 executor can retrieve a full prior operation by ID from the validated checkpoint
 without redispatch. A fixture reconciled a 200 KB result, proved the resumed
