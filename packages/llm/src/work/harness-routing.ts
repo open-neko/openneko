@@ -45,6 +45,35 @@ const envName = /^[A-Z][A-Z0-9_]{1,127}$/;
 const harnessKeyEnv = /^HARNESS_[A-Z0-9_]+_KEY$/;
 const providerName = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 type HarnessPrice = { input_micros_per_million: number; output_micros_per_million: number };
+type HarnessBudgetLimits = { max_model_calls: number; max_model_tokens: number; max_cost_micros: number };
+
+function parseBudgetLimits(value: unknown): HarnessBudgetLimits {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Harness budget limits");
+  const limits = value as Record<string, unknown>;
+  if (Object.keys(limits).some(key => !["max_model_calls", "max_model_tokens", "max_cost_micros"].includes(key)) ||
+      !Number.isSafeInteger(limits.max_model_calls) || (limits.max_model_calls as number) < 1 || (limits.max_model_calls as number) > 64 ||
+      !Number.isSafeInteger(limits.max_model_tokens) || (limits.max_model_tokens as number) < 1 || (limits.max_model_tokens as number) > 10_000_000 ||
+      !Number.isSafeInteger(limits.max_cost_micros) || (limits.max_cost_micros as number) < 1 || (limits.max_cost_micros as number) > 1_000_000_000_000) {
+    throw new Error("Invalid Harness budget limits");
+  }
+  return limits as HarnessBudgetLimits;
+}
+
+function parseBudgetPolicy(value: unknown): {version: string; short: HarnessBudgetLimits; multi_step: HarnessBudgetLimits; artifact: HarnessBudgetLimits} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Harness budget policy");
+  const policy = value as Record<string, unknown>;
+  if (Object.keys(policy).some(key => !["version", "short", "multi_step", "artifact"].includes(key)) ||
+      typeof policy.version !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(policy.version)) {
+    throw new Error("Invalid Harness budget policy");
+  }
+  const short = parseBudgetLimits(policy.short);
+  const multi_step = parseBudgetLimits(policy.multi_step);
+  const artifact = parseBudgetLimits(policy.artifact);
+  for (const key of ["max_model_calls", "max_model_tokens", "max_cost_micros"] as const) {
+    if (short[key] > multi_step[key] || multi_step[key] > artifact[key]) throw new Error("Invalid Harness budget policy order");
+  }
+  return {version: policy.version, short, multi_step, artifact};
+}
 
 function parsePrice(value: unknown): HarnessPrice {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Harness price");
@@ -71,7 +100,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     throw new Error("Invalid Harness routing configuration");
   }
   const value = config as Record<string, unknown>;
-  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "triage", "fallbacks", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
+  if (Object.keys(value).some(key => !["context", "executor", "executor_escalation", "executor_after_errors", "responder", "skill", "triage", "budget_policy", "fallbacks", "routes", "pricing_version", "graphjin_price"].includes(key)) ||
       !Array.isArray(value.routes) || value.routes.length < 1 || value.routes.length > 8) {
     throw new Error("Invalid Harness routing configuration");
   }
@@ -136,6 +165,10 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
       value.triage === value.context || value.triage === value.executor || value.triage === value.responder || value.triage === value.skill)) {
     throw new Error("Harness triage stage requires a dedicated priced route");
   }
+  if ((value.triage === undefined) !== (value.budget_policy === undefined)) {
+    throw new Error("Harness triage requires a pinned budget policy");
+  }
+  const budgetPolicy = value.budget_policy === undefined ? undefined : parseBudgetPolicy(value.budget_policy);
   const escalation = value.executor_escalation;
   const afterErrors = value.executor_after_errors;
   if ((escalation === undefined) !== (afterErrors === undefined) ||
@@ -166,7 +199,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   return {
     manifest: JSON.stringify({ context: value.context, executor: value.executor, responder: value.responder,
       ...(escalation ? {executor_escalation: escalation, executor_after_errors: afterErrors} : {}),
-      ...(value.skill ? { skill: value.skill } : {}), ...(value.triage ? { triage: value.triage } : {}),
+      ...(value.skill ? { skill: value.skill } : {}), ...(value.triage ? { triage: value.triage, budget_policy: budgetPolicy } : {}),
       ...(fallbacks.length > 0 ? {fallbacks} : {}), routes,
       ...(priced ? {pricing_version: value.pricing_version} : {}),
       ...(graphjinPrice ? {graphjin_price: graphjinPrice} : {}) }),

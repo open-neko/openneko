@@ -1213,7 +1213,11 @@ describe("makeSandboxRunCore", () => {
     try {
       const price = {input_micros_per_million: 1_000_000, output_micros_per_million: 1_000_000};
       const routing = parseHarnessRouting(JSON.stringify({context: "work", executor: "work", responder: "work",
-        triage: "triage", pricing_version: "artifact-test-v1", routes: [
+        triage: "triage", pricing_version: "artifact-test-v1", budget_policy: {
+          version: "artifact-test-v1",
+          short: {max_model_calls: 4, max_model_tokens: 8_000, max_cost_micros: 2_000},
+          multi_step: {max_model_calls: 16, max_model_tokens: 40_000, max_cost_micros: 20_000},
+          artifact: {max_model_calls: 48, max_model_tokens: 100_000, max_cost_micros: 100_000}}, routes: [
           {key: "work", model: "fixture", url: "https://work.example/v1", provider: "work-provider",
             credential_env: "WORK_API_KEY", api_key_env: "HARNESS_WORK_KEY", price},
           {key: "triage", model: "jev-fixture", url: "https://triage.example", provider: "triage-provider",

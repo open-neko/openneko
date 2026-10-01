@@ -82,7 +82,8 @@ try {
     ".harness", `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`), "utf8")) as {
       result: { status: string; answer?: string; code?: string; cost?: { charged_micros: number } };
       events: Array<{ type: string; stage?: string; origin?: string; name?: string; cost_micros?: number;
-        data?: { version?: string; choice?: string; suggested_profile?: string; probabilities?: Record<string, number> };
+        data?: { version?: string; choice?: string; suggested_profile?: string; probabilities?: Record<string, number>;
+          profile?: string; limits?: {max_model_calls: number; max_model_tokens: number; max_cost_micros: number} };
         terminal?: { accepted: boolean } }>;
     };
   const operations = (await pool().query<{ operation_id: number; request: { tool?: string }; result: unknown }>(
@@ -120,6 +121,7 @@ try {
   if (process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW === "1") {
     const started = checkpoint.events.filter(event => event.type === "model.request.started" && event.stage === "budget_triage");
     const finished = checkpoint.events.filter(event => event.type === "model.request.finished" && event.stage === "budget_triage");
+    const proposals = checkpoint.events.filter(event => event.type === "budget.profile.proposed");
     assert.equal(counts["jev-fixture"], 1, "Typesafe route did not traverse the connected OpenShell gateway");
     assert.equal(started.length, 1);
     assert.equal(finished.length, 1);
@@ -130,6 +132,10 @@ try {
     assert.equal(finished[0].data?.choice, "multi_step");
     assert.equal(finished[0].data?.suggested_profile, "multi_step");
     assert.equal(finished[0].data?.probabilities?.multi_step, 0.8);
+    assert.equal(proposals.length, 1);
+    assert.equal(proposals[0].data?.version, "m6-shadow-v1");
+    assert.equal(proposals[0].data?.profile, "multi_step");
+    assert.deepEqual(proposals[0].data?.limits, {max_model_calls: 16, max_model_tokens: 40_000, max_cost_micros: 20_000});
     assert.ok((checkpoint.result.cost?.charged_micros ?? 0) >= 512);
   }
   const [admission] = (await pool().query<{ id: string; attempts: number }>(

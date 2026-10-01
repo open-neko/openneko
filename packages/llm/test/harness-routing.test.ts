@@ -10,6 +10,10 @@ const routeConfig = {
     { key: "work", model: "gemini-3.8-flash", url: "https://models.example/v1", provider: "work-provider", credential_env: "WORK_API_KEY", api_key_env: "HARNESS_WORK_KEY" },
   ],
 };
+const budgetPolicy = {version: "operator-2026-10",
+  short: {max_model_calls: 5, max_model_tokens: 8_000, max_cost_micros: 2_000},
+  multi_step: {max_model_calls: 16, max_model_tokens: 40_000, max_cost_micros: 20_000},
+  artifact: {max_model_calls: 48, max_model_tokens: 100_000, max_cost_micros: 100_000}};
 
 describe("Harness OpenShell route admission", () => {
   it("bounds multibyte skill queries by bytes without splitting characters", () => {
@@ -48,10 +52,11 @@ describe("Harness OpenShell route admission", () => {
     const price = {input_micros_per_million: 1_000_000, output_micros_per_million: 1_000_000};
     const triage = {key: "triage", model: "jev-fixture", url: "https://triage.example/v1",
       provider: "triage-provider", credential_env: "TRIAGE_API_KEY", api_key_env: "HARNESS_TRIAGE_KEY", price};
-    const config = {...routeConfig, triage: "triage", pricing_version: "triage-test-v1",
+    const config = {...routeConfig, triage: "triage", budget_policy: budgetPolicy, pricing_version: "triage-test-v1",
       graphjin_price: price, routes: [...routeConfig.routes.map(route => ({...route, price})), triage]};
     const parsed = parseHarnessRouting(JSON.stringify(config));
     expect(JSON.parse(parsed.manifest).triage).toBe("triage");
+    expect(JSON.parse(parsed.manifest).budget_policy).toEqual(budgetPolicy);
     expect(parsed.providers).toContain("triage-provider");
     expect(parsed.keyAliases).toContainEqual({from: "TRIAGE_API_KEY", to: "HARNESS_TRIAGE_KEY"});
     const summary = "🌱".repeat(600);
@@ -63,7 +68,8 @@ describe("Harness OpenShell route admission", () => {
     expect(harnessTriageSpec({routingManifest: parsed.manifest, enabled: false, maxCostMicros: 10_000,
       prompt: "fallback", mode: "workflow", lookupRead: true})).toEqual({});
     for (const invalid of [{...config, triage: "work"}, {...config, pricing_version: undefined},
-      {...config, fallbacks: [{from: "work", to: "triage"}]}]) {
+      {...config, budget_policy: {...budgetPolicy, multi_step: {...budgetPolicy.multi_step, max_model_calls: 4}}},
+      {...config, budget_policy: undefined}, {...config, fallbacks: [{from: "work", to: "triage"}]}]) {
       expect(() => parseHarnessRouting(JSON.stringify(invalid))).toThrow();
     }
   });
