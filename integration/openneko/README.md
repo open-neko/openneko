@@ -370,6 +370,16 @@ pending approval, saved output and accepted no-execution constraint. The
 worker verifies no action execution and inert API queue redelivery. The
 isolated stack is removed on exit.
 
+The focused M6 shadow budget-triage gate runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_TRIAGE_ONLY=1`. It reuses the queued workflow
+approval-compaction scenario and adds a dedicated priced Typesafe route through
+OpenShell. The worker checks one brokered classifier request, complete usage and
+cost accounting, a content-free probability receipt, pending approval after
+compaction, and inert API queue redelivery. The classifier recommendation does
+not change the run's limits. Ax Typesafe appends `/v1/systemone` to its base
+URL, so the trusted route base ends before `/v1`. The isolated stack is removed
+on exit.
+
 The focused M6 actor-exhaustion gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued
 source-change workflows through the real worker and OpenShell sandbox. One

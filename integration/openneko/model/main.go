@@ -148,6 +148,34 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": "Xenova/all-MiniLM-L6-v2", "dimensions": 384, "vector": vector})
 	})
+	http.HandleFunc("/route/triage/v1/systemone", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer synthetic-m6-triage" {
+			http.Error(w, "triage credential mismatch", http.StatusForbidden)
+			return
+		}
+		var request struct {
+			Model string `json:"model"`
+			State struct {
+				TaskSummary string `json:"task_summary"`
+			} `json:"state"`
+			Questions map[string]struct {
+				Type string `json:"type"`
+			} `json:"questions"`
+		}
+		if json.NewDecoder(r.Body).Decode(&request) != nil || request.Model != "jev-fixture" ||
+			request.Questions["workload"].Type != "choice" || request.State.TaskSummary == "" || len(request.State.TaskSummary) > 2048 {
+			http.Error(w, "invalid bounded Typesafe request", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		counts["jev-fixture"]++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "jev-fixture", "answers": map[string]any{"workload": map[string]any{
+			"type": "choice", "choice": "multi_step", "confidence": 0.8,
+			"probabilities": map[string]float64{"short_answer": 0.05, "multi_step": 0.8, "artifact_pipeline": 0.1, "uncertain": 0.05}}},
+			"usage": map[string]int{"input_tokens": 10, "output_tokens": 5}})
+	})
 	modelHandler := func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/route/") {
 			stage := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/route/"), "/v1/chat/completions")

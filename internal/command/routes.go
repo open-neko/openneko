@@ -33,6 +33,7 @@ type routeConfig struct {
 	ExecutorAfterErrors int               `json:"executor_after_errors,omitempty"`
 	Responder           string            `json:"responder"`
 	Skill               string            `json:"skill,omitempty"`
+	Triage              string            `json:"triage,omitempty"`
 	Fallbacks           []modelFallback   `json:"fallbacks,omitempty"`
 	Routes              []modelRoute      `json:"routes"`
 	PricingVersion      string            `json:"pricing_version,omitempty"`
@@ -107,6 +108,31 @@ func RouteHasSkill(raw string) (bool, error) {
 	return cfg.Skill != "", err
 }
 
+// loadTriageClient binds native Typesafe to one dedicated operator-approved
+// OpenShell route. The run cannot choose its endpoint, model or credential.
+func loadTriageClient(raw string, getenv func(string) string) (*agent.BudgetTriage, error) {
+	if raw == "" {
+		return nil, fmt.Errorf("budget triage requires trusted routed configuration")
+	}
+	cfg, _, err := parseRouteConfig(raw)
+	if err != nil || cfg.Triage == "" {
+		return nil, fmt.Errorf("budget triage route unavailable")
+	}
+	for _, route := range cfg.Routes {
+		if route.Key != cfg.Triage {
+			continue
+		}
+		key := getenv(route.APIKeyEnv)
+		if key == "" {
+			return nil, fmt.Errorf("budget triage route missing credential")
+		}
+		return &agent.BudgetTriage{Route: route.Key, Model: route.Model,
+			Client: ax.Typesafe(ax.Object("base_url", route.URL, "api_key", key, "model", route.Model,
+				"retry", ax.Object("maxRetries", 0)))}, nil
+	}
+	return nil, fmt.Errorf("budget triage route unavailable")
+}
+
 func parseRouteConfig(raw string) (routeConfig, string, error) {
 	if len(raw) > 65536 {
 		return routeConfig{}, "", fmt.Errorf("HARNESS_MODEL_ROUTES exceeds limit")
@@ -136,7 +162,7 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		}
 		known[route.Key] = true
 	}
-	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.Skill, cfg.ExecutorEscalation} {
+	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.Skill, cfg.ExecutorEscalation, cfg.Triage} {
 		if model == "" {
 			continue
 		}
@@ -148,6 +174,10 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 		cfg.ExecutorEscalation != "" && (cfg.ExecutorAfterErrors < 1 || cfg.ExecutorAfterErrors > 8 ||
 			cfg.ExecutorEscalation == cfg.Executor || cfg.Executor == cfg.Context || cfg.Executor == cfg.Responder || cfg.Executor == cfg.Skill) {
 		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES executor escalation")
+	}
+	if cfg.Triage != "" && (cfg.PricingVersion == "" || cfg.Triage == cfg.Context || cfg.Triage == cfg.Executor ||
+		cfg.Triage == cfg.Responder || cfg.Triage == cfg.Skill || cfg.Triage == cfg.ExecutorEscalation) {
+		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES triage stage")
 	}
 	if len(cfg.Fallbacks) > len(cfg.Routes) {
 		return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES fallback profile")
@@ -161,7 +191,7 @@ func parseRouteConfig(raw string) (routeConfig, string, error) {
 	}
 	fallbackSources := map[string]bool{}
 	for _, fallback := range cfg.Fallbacks {
-		if !active[fallback.From] || !known[fallback.To] || fallback.From == fallback.To || fallbackSources[fallback.From] {
+		if !active[fallback.From] || !known[fallback.To] || fallback.To == cfg.Triage || fallback.From == fallback.To || fallbackSources[fallback.From] {
 			return routeConfig{}, "", fmt.Errorf("invalid HARNESS_MODEL_ROUTES fallback profile")
 		}
 		fallbackSources[fallback.From] = true

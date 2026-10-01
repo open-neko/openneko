@@ -68,6 +68,12 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 	if err != nil {
 		return 2, err
 	}
+	if spec.TriageSummary != "" {
+		tools.Triage, err = loadTriageClient(os.Getenv("HARNESS_MODEL_ROUTES"), os.Getenv)
+		if err != nil {
+			return 2, err
+		}
+	}
 	spec.HostRoutingDigest = digest
 	encoder := json.NewEncoder(output)
 	emit := func(e agent.Event) error { return encoder.Encode(e) }
@@ -86,7 +92,7 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 		if resume != "" {
 			return 2, fmt.Errorf("continuation requires HARNESS_STATE_DIR")
 		}
-		if tools.Lookup != nil || tools.Propose != nil || len(tools.Capabilities) != 0 {
+		if tools.Lookup != nil || tools.Propose != nil || len(tools.Capabilities) != 0 || spec.TriageSummary != "" {
 			return 2, fmt.Errorf("tool execution requires HARNESS_STATE_DIR")
 		}
 		result, err = agent.RunWithTools(ctx, spec, client, tools, emit)

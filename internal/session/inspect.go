@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 // Recovery is evidence, not authorization to repeat an operation. Inspect never
@@ -202,7 +203,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || spec.TriageSummary != "" && spec.MaxCostMicros == 0 || spec.RunID == "" || spec.InputID == "" || spec.Prompt == "" || len(spec.SkillQuery) > 8192 || !spec.ValidTriage() {
 		return invalid()
 	}
 	if len(s.Operations) > spec.OperationLimit() {
@@ -252,6 +253,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	finalizerAdmitted := false
 	finalizerCalls := 0
 	var finalizerEvidenceIDs []int
+	triageStarted, triageFinished, triageSkipped := false, false, false
 	for i, e := range s.Events {
 		if terminalCheck != nil && e.Type != "run.finished" && e.Type != "run.resumed" {
 			return invalid()
@@ -302,8 +304,17 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		case "model.request.started":
 			modelCalls++
 			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) ||
-				e.Stage != "" && e.Stage != "skill_selection" && e.Stage != "terminal_finalizer" ||
+				e.Stage != "" && e.Stage != "skill_selection" && e.Stage != "terminal_finalizer" && e.Stage != "budget_triage" ||
 				e.Stage == "terminal_finalizer" && (!finalizerAdmitted || finalizerCalls > 0) {
+				return invalid()
+			}
+			if e.Stage == "budget_triage" {
+				if spec.TriageSummary == "" || triageStarted || triageSkipped || modelCalls != 1 || e.Name == "" || e.Origin == "" ||
+					e.CostMicros == nil || *e.CostMicros < 1 {
+					return invalid()
+				}
+				triageStarted = true
+			} else if spec.TriageSummary != "" && !triageFinished && !triageSkipped {
 				return invalid()
 			}
 			if e.Stage == "terminal_finalizer" {
@@ -318,6 +329,18 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		case "model.request.finished":
 			if e.CallID == 0 || e.CallID > uint64(modelCalls) || modelFinished[e.CallID] || e.Stage != modelStages[e.CallID] {
 				return invalid()
+			}
+			if e.Stage == "budget_triage" {
+				var observed budgettriage.Observation
+				decoder := json.NewDecoder(bytes.NewReader(e.Data))
+				decoder.DisallowUnknownFields()
+				if e.CostMicros == nil || len(e.Data) == 0 || len(e.Data) > 4096 || decoder.Decode(&observed) != nil || decoder.Decode(new(any)) != io.EOF ||
+					!observed.Valid() || observed.RequestedModel != e.Name || observed.ChargedMicros != *e.CostMicros ||
+					observed.Coverage == "complete" && (e.Usage == nil || e.Usage.InputTokens != observed.InputTokens || e.Usage.OutputTokens != observed.OutputTokens) ||
+					observed.Coverage == "unavailable" && e.Usage != nil {
+					return invalid()
+				}
+				triageFinished = true
 			}
 			modelFinished[e.CallID] = true
 			modelFailed[e.CallID] = e.Error == "model_request_failed"
@@ -361,6 +384,13 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				e.Error != "" && e.Error != "selection_unavailable" && e.Error != "invalid_selection" {
 				return invalid()
 			}
+		case "budget.triage.skipped":
+			if spec.TriageSummary == "" || triageFinished || triageSkipped ||
+				triageStarted && (attempt == 1 || e.Name != "interrupted") ||
+				!triageStarted && e.Name != "call_budget" && e.Name != "token_budget" && e.Name != "cost_budget" {
+				return invalid()
+			}
+			triageSkipped = true
 		case "run.resumed":
 			attempt++
 			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {
@@ -474,6 +504,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 	}
 	if len(s.Operations) > len(started) {
+		return invalid()
+	}
+	if s.Result != nil && spec.TriageSummary != "" && !triageFinished && !triageSkipped {
 		return invalid()
 	}
 	if s.Result != nil {

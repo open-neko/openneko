@@ -10,8 +10,49 @@ import (
 	"strings"
 	"testing"
 
+	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/harness/internal/agent"
 )
+
+func TestDedicatedTypesafeRouteUsesNativePathAndBrokerCredential(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/route/triage/v1/systemone" || r.Header.Get("Authorization") != "Bearer broker-alias" {
+			t.Errorf("native route path or credential mismatch: path=%q", r.URL.Path)
+		}
+		var request ax.TypesafeRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "jev-fixture" {
+			t.Errorf("native request mismatch: %+v %v", request, err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "jev-fixture", "answers": map[string]any{"workload": map[string]any{
+			"type": "choice", "choice": "multi_step", "confidence": 0.8,
+			"probabilities": map[string]float64{"short_answer": .05, "multi_step": .8, "artifact_pipeline": .1, "uncertain": .05}}},
+			"usage": map[string]int{"input_tokens": 10, "output_tokens": 5}})
+	}))
+	defer server.Close()
+	price := &agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
+	raw, _ := json.Marshal(routeConfig{Context: "main", Executor: "main", Responder: "main", Triage: "triage", PricingVersion: "test-v1",
+		Routes: []modelRoute{
+			{Key: "main", Model: "fixture", URL: server.URL + "/v1", APIKeyEnv: "MAIN_KEY", Price: price},
+			{Key: "triage", Model: "jev-fixture", URL: server.URL + "/route/triage", APIKeyEnv: "TRIAGE_KEY", Price: price},
+		}})
+	triage, err := loadTriageClient(string(raw), func(name string) string {
+		if name == "TRIAGE_KEY" {
+			return "broker-alias"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := triage.Client.SystemOne(context.Background(), ax.TypesafeRequest{Model: "jev-fixture", State: ax.Object("task_summary", "Find a result"),
+		Questions: map[string]ax.TypesafeQuestion{"workload": {Type: "choice", Criteria: ax.Object("short_answer", "short", "multi_step", "steps", "artifact_pipeline", "artifact", "uncertain", "unknown")}}}, nil)
+	if err != nil || response == nil || response.Model != "jev-fixture" || calls != 1 {
+		t.Fatalf("native Typesafe route response=%+v err=%v calls=%d", response, err, calls)
+	}
+}
 
 func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	t.Setenv("HARNESS_STATE_DIR", t.TempDir())

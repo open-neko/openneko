@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 // Tools are host-installed capabilities. Propose only creates an approval request;
@@ -38,6 +39,13 @@ type Tools struct {
 	ChildReads           []string        // Exact host-admitted read tools for one owned child agent.
 	SkillCatalog         []SkillMetadata // Host-staged catalog hints; never capability grants.
 	Scope                string          // Trusted run-scoped admission context, never model input.
+	Triage               *BudgetTriage   // Optional host-installed Typesafe shadow classifier.
+}
+
+type BudgetTriage struct {
+	Client budgettriage.SystemOneClient
+	Route  string // Approved priced route key, not a model-selected provider.
+	Model  string // Pinned Typesafe model at the approved route.
 }
 
 func (t Tools) validStateHook() bool {
@@ -193,6 +201,12 @@ func (t Tools) CatalogHash() (string, error) {
 	}
 	if t.FinalizerGate != nil {
 		bindings = append(bindings, "@finalizer-gate:"+t.FinalizerGateVersion)
+	}
+	if t.Triage != nil {
+		if t.Triage.Client == nil || t.Triage.Route == "" || t.Triage.Model == "" || len(t.Triage.Model) > 128 {
+			return "", fmt.Errorf("invalid budget triage route")
+		}
+		bindings = append(bindings, "@budget-triage:"+budgettriage.Version+":"+t.Triage.Route+":"+t.Triage.Model)
 	}
 	sort.Strings(bindings)
 	child, err := t.childReads(admitted)

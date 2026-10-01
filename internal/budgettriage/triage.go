@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	ax "github.com/ax-llm/ax/packages/go"
-	"github.com/open-neko/harness/internal/agent"
 )
 
 const Version = "budget-triage-v1"
@@ -25,13 +24,13 @@ var classes = []string{"short_answer", "multi_step", "artifact_pipeline", "uncer
 // Input contains a host-approved bounded summary and trusted run metadata.
 // It is sent to the classifier but never copied into Observation telemetry.
 type Input struct {
-	Summary           string
-	ArtifactRequested bool
-	ToolFamilies      []string
-	InputBytes        int
+	Summary           string   `json:"summary"`
+	ArtifactRequested bool     `json:"artifact_requested"`
+	ToolFamilies      []string `json:"tool_families"`
+	InputBytes        int      `json:"input_bytes"`
 }
 
-func (in Input) valid() bool {
+func (in Input) Valid() bool {
 	if strings.TrimSpace(in.Summary) == "" || len(in.Summary) > 2048 || !utf8.ValidString(in.Summary) || in.InputBytes < 0 || in.InputBytes > 131072 || len(in.ToolFamilies) > 16 {
 		return false
 	}
@@ -47,6 +46,14 @@ func (in Input) valid() bool {
 
 type SystemOneClient interface {
 	SystemOne(context.Context, ax.TypesafeRequest, map[string]ax.Value) (*ax.TypesafeResponse, error)
+}
+
+// Price is supplied by the host's pinned model route profile. Keeping this
+// narrow avoids coupling the classifier to the agent runtime.
+type Price interface {
+	Valid() bool
+	Reservation(int64) int64
+	Observed(int64, int64, int64) int64
 }
 
 // Journal is the host-owned durable accounting boundary. Reserve must commit
@@ -74,11 +81,54 @@ type Observation struct {
 	LatencyMS        int64              `json:"latency_ms"`
 }
 
+// Valid checks the durable, content-free observation shape on checkpoint
+// recovery. A malformed classifier response must not become trusted budget
+// evidence merely because it was serialized by a prior process.
+func (o Observation) Valid() bool {
+	if o.Version != Version || o.RequestedModel == "" || len(o.RequestedModel) > 128 ||
+		o.ChargedMicros < 1 || o.ChargedMicros > 8_000_000_000_000_000 ||
+		o.LatencyMS < 0 || o.LatencyMS > 120_000 ||
+		o.InputTokens < 0 || o.OutputTokens < 0 || o.InputTokens > 1_000_000_000_000 || o.OutputTokens > 1_000_000_000_000 {
+		return false
+	}
+	if o.Coverage != "complete" && o.Coverage != "unavailable" ||
+		o.Coverage == "unavailable" && (o.InputTokens != 0 || o.OutputTokens != 0) {
+		return false
+	}
+	switch o.Reason {
+	case "classified", "uncertain", "low_confidence", "invalid_result", "invalid_usage", "classifier_unavailable":
+	default:
+		return false
+	}
+	switch o.SuggestedProfile {
+	case "fixed", "short", "multi_step", "artifact":
+	default:
+		return false
+	}
+	if o.Choice == "" {
+		return len(o.Probabilities) == 0 && o.SuggestedProfile == "fixed"
+	}
+	if len(o.Probabilities) != len(classes) {
+		return false
+	}
+	sum, chosen := 0.0, false
+	for _, class := range classes {
+		p, ok := o.Probabilities[class]
+		if !ok || math.IsNaN(p) || math.IsInf(p, 0) || p < 0 || p > 1 {
+			return false
+		}
+		sum += p
+		chosen = chosen || class == o.Choice
+	}
+	profile, reason := chooseProfile(o.Probabilities)
+	return chosen && sum >= .98 && sum <= 1.02 && o.SuggestedProfile == profile && o.Reason == reason
+}
+
 // Evaluate is shadow-only. A successful recommendation never changes the hard
 // run limit. The caller's Journal must persist both accounting transitions;
 // an unavailable decision keeps fixed limits.
-func Evaluate(ctx context.Context, client SystemOneClient, model string, in Input, price agent.TokenPrice, remainingMicros int64, journal Journal) (Observation, error) {
-	if client == nil || journal == nil || model == "" || len(model) > 128 || !in.valid() || !price.Valid() || remainingMicros < 0 {
+func Evaluate(ctx context.Context, client SystemOneClient, model string, in Input, price Price, remainingMicros int64, journal Journal) (Observation, error) {
+	if client == nil || journal == nil || price == nil || model == "" || len(model) > 128 || !in.Valid() || !price.Valid() || remainingMicros < 0 {
 		return Observation{}, errors.New("invalid budget triage configuration")
 	}
 	result := Observation{Version: Version, RequestedModel: model, SuggestedProfile: "fixed", Reason: "classifier_unavailable", Coverage: "unavailable"}

@@ -1,4 +1,4 @@
-package budgettriage
+package budgettriage_test
 
 import (
 	"context"
@@ -11,18 +11,19 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 type testJournal struct {
-	reserve func(context.Context, Observation) error
-	settle  func(context.Context, Observation) error
+	reserve func(context.Context, budgettriage.Observation) error
+	settle  func(context.Context, budgettriage.Observation) error
 }
 
-func (j testJournal) Reserve(ctx context.Context, observation Observation) error {
+func (j testJournal) Reserve(ctx context.Context, observation budgettriage.Observation) error {
 	return j.reserve(ctx, observation)
 }
 
-func (j testJournal) Settle(ctx context.Context, observation Observation) error {
+func (j testJournal) Settle(ctx context.Context, observation budgettriage.Observation) error {
 	return j.settle(ctx, observation)
 }
 
@@ -58,21 +59,21 @@ func TestNativeTypesafeShadowTriageUsesFullDistribution(t *testing.T) {
 			}))
 			defer server.Close()
 			client := ax.Typesafe(ax.Object("api_key", "synthetic", "base_url", server.URL, "model", "jev-fixture", "retry", ax.Object("maxRetries", 0)))
-			input := Input{Summary: "Produce the requested result", ArtifactRequested: tc.name == "misleading short prompt", ToolFamilies: []string{"graphjin", "file"}, InputBytes: 180}
-			journal := testJournal{reserve: func(_ context.Context, observation Observation) error {
+			input := budgettriage.Input{Summary: "Produce the requested result", ArtifactRequested: tc.name == "misleading short prompt", ToolFamilies: []string{"graphjin", "file"}, InputBytes: 180}
+			journal := testJournal{reserve: func(_ context.Context, observation budgettriage.Observation) error {
 				if observation.ChargedMicros != 512 || observation.Coverage != "unavailable" || reserved {
 					t.Errorf("invalid reservation: %+v", observation)
 				}
 				reserved = true
 				return nil
-			}, settle: func(_ context.Context, observation Observation) error {
+			}, settle: func(_ context.Context, observation budgettriage.Observation) error {
 				if !reserved || settled || observation.Coverage != "complete" || observation.ChargedMicros != 512 {
 					t.Errorf("invalid settlement: %+v", observation)
 				}
 				settled = true
 				return nil
 			}}
-			observed, err := Evaluate(context.Background(), client, "jev-fixture", input,
+			observed, err := budgettriage.Evaluate(context.Background(), client, "jev-fixture", input,
 				agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}, 10_000, journal)
 			if err != nil || calls != 1 || !reserved || !settled || observed.SuggestedProfile != tc.wantProfile || observed.Reason != tc.wantReason ||
 				observed.InputTokens != 100 || observed.OutputTokens != 20 || observed.Coverage != "complete" ||
@@ -95,26 +96,26 @@ func TestTriagePreflightAndUnavailableFallback(t *testing.T) {
 	}))
 	defer server.Close()
 	client := ax.Typesafe(ax.Object("api_key", "synthetic", "base_url", server.URL, "model", "jev-fixture", "retry", ax.Object("maxRetries", 0)))
-	input := Input{Summary: "Investigate and report", ToolFamilies: []string{"graphjin"}, InputBytes: 300}
+	input := budgettriage.Input{Summary: "Investigate and report", ToolFamilies: []string{"graphjin"}, InputBytes: 300}
 	price := agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
 	reservations, settlements := 0, 0
-	journal := testJournal{reserve: func(_ context.Context, observation Observation) error {
+	journal := testJournal{reserve: func(_ context.Context, observation budgettriage.Observation) error {
 		reservations++
 		return nil
-	}, settle: func(_ context.Context, observation Observation) error {
+	}, settle: func(_ context.Context, observation budgettriage.Observation) error {
 		settlements++
 		return nil
 	}}
-	denied, err := Evaluate(context.Background(), client, "jev-fixture", input, price, 511, journal)
+	denied, err := budgettriage.Evaluate(context.Background(), client, "jev-fixture", input, price, 511, journal)
 	if err != nil || calls != 0 || denied.SuggestedProfile != "fixed" || denied.Reason != "budget_denied" || denied.ChargedMicros != 0 {
 		t.Fatalf("preflight=%+v err=%v calls=%d", denied, err, calls)
 	}
-	unavailable, err := Evaluate(context.Background(), client, "jev-fixture", input, price, 1_000, journal)
+	unavailable, err := budgettriage.Evaluate(context.Background(), client, "jev-fixture", input, price, 1_000, journal)
 	if err != nil || calls != 1 || unavailable.SuggestedProfile != "fixed" || unavailable.Reason != "classifier_unavailable" ||
 		unavailable.ChargedMicros != 512 || unavailable.Coverage != "unavailable" || reservations != 1 || settlements != 1 {
 		t.Fatalf("fallback=%+v err=%v calls=%d", unavailable, err, calls)
 	}
-	if _, err = Evaluate(context.Background(), client, "jev-fixture", Input{Summary: strings.Repeat("x", 2049)}, price, 1_000, journal); err == nil || calls != 1 {
+	if _, err = budgettriage.Evaluate(context.Background(), client, "jev-fixture", budgettriage.Input{Summary: strings.Repeat("x", 2049)}, price, 1_000, journal); err == nil || calls != 1 {
 		t.Fatal("unbounded classifier state was dispatched")
 	}
 }
@@ -128,19 +129,19 @@ func TestTriageJournalFailureStopsOrFailsTheRun(t *testing.T) {
 	}))
 	defer server.Close()
 	client := ax.Typesafe(ax.Object("api_key", "synthetic", "base_url", server.URL, "model", "jev-fixture", "retry", ax.Object("maxRetries", 0)))
-	input := Input{Summary: "Investigate and report", InputBytes: 100}
+	input := budgettriage.Input{Summary: "Investigate and report", InputBytes: 100}
 	price := agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
 	fail := errors.New("journal unavailable")
-	_, err := Evaluate(context.Background(), client, "jev-fixture", input, price, 1_000, testJournal{
-		reserve: func(context.Context, Observation) error { return fail },
-		settle:  func(context.Context, Observation) error { t.Fatal("unexpected settlement"); return nil },
+	_, err := budgettriage.Evaluate(context.Background(), client, "jev-fixture", input, price, 1_000, testJournal{
+		reserve: func(context.Context, budgettriage.Observation) error { return fail },
+		settle:  func(context.Context, budgettriage.Observation) error { t.Fatal("unexpected settlement"); return nil },
 	})
 	if !errors.Is(err, fail) || calls != 0 {
 		t.Fatalf("reservation failure dispatched classifier: err=%v calls=%d", err, calls)
 	}
-	_, err = Evaluate(context.Background(), client, "jev-fixture", input, price, 1_000, testJournal{
-		reserve: func(context.Context, Observation) error { return nil },
-		settle:  func(context.Context, Observation) error { return fail },
+	_, err = budgettriage.Evaluate(context.Background(), client, "jev-fixture", input, price, 1_000, testJournal{
+		reserve: func(context.Context, budgettriage.Observation) error { return nil },
+		settle:  func(context.Context, budgettriage.Observation) error { return fail },
 	})
 	if !errors.Is(err, fail) || calls != 1 {
 		t.Fatalf("settlement failure was hidden as fixed budget: err=%v calls=%d", err, calls)

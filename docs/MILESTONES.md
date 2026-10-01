@@ -1178,14 +1178,17 @@ signals, a three-second deadline, a priced pre-call reserve and content-free
 observations. No-key HTTP fixtures cover clear short and artifact work,
 misleading short prompts, split probabilities, uncertainty, provider failure
 and pre-dispatch cost denial. Its recommendation is not applied to live run
-limits. The classifier transport now requires a host journal to commit its
-priced reservation before `SystemOne` and its settlement afterward. A failed
-reservation prevents dispatch, and a failed settlement propagates as an error
-instead of masquerading as an unavailable fixed-budget fallback. Local HTTP
-fixtures verify both failure windows and that the reservation precedes the
-request. Live admission still needs an OpenShell-authorized Typesafe route,
-the journal implementation in the run checkpoint, fixed-cap profile mapping,
-and held-out outcome calibration before any canary.
+limits. The host journal commits the priced reservation before `SystemOne`
+and its settlement afterward; both transitions are checkpointed, and a crash
+after reservation never silently redispatches the classifier. Failed
+reservation or settlement propagates an error. The opt-in OpenNeko workflow
+gate now traverses a dedicated OpenShell Typesafe route with broker-replaced
+credentials, complete provider usage, a content-free probability receipt,
+approval persistence after compaction, and inert queue redelivery. The
+classifier's artifact signal is currently supplied only when the host knows
+it, so false negatives remain possible. Versioned fixed-cap profile mapping,
+checkpoint-time extension rules, and held-out outcome calibration remain
+required before enabling dynamic limits or a canary.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
 Measure admitted-tool schema cost and selection errors. If they are material,

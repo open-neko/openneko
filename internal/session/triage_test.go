@@ -1,0 +1,164 @@
+package session
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	ax "github.com/ax-llm/ax/packages/go"
+	"github.com/open-neko/harness/internal/agent"
+)
+
+func triageRunFixture(t *testing.T) (agent.Spec, *agent.RoutedClient, agent.Tools, *int, *int, func()) {
+	t.Helper()
+	triageCalls, chatCalls := 0, 0
+	triageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		triageCalls++
+		if r.URL.Path != "/v1/systemone" || r.Header.Get("Authorization") != "Bearer triage-secret" {
+			t.Errorf("wrong Typesafe route: %s %s", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"model":"jev-fixture","answers":{"workload":{"type":"choice","choice":"multi_step","confidence":0.8,"probabilities":{"short_answer":0.05,"multi_step":0.8,"artifact_pipeline":0.1,"uncertain":0.05}}},"usage":{"input_tokens":10,"output_tokens":5}}`))
+	}))
+	chatServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chatCalls++
+		if r.Header.Get("Authorization") != "Bearer work-secret" {
+			t.Errorf("wrong work-route credential: %s", r.Header.Get("Authorization"))
+		}
+		answers := []string{`{"javascriptCode":"final('Answer the question',{})"}`,
+			`{"javascriptCode":"final('Report the result',{})"}`, `{"answer":"Verified answer."}`}
+		if chatCalls > len(answers) {
+			http.Error(w, "too many model calls", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message",
+			ax.Object("role", "assistant", "content", answers[chatCalls-1]), "finish_reason", "stop")),
+			"usage", ax.Object("prompt_tokens", 10, "completion_tokens", 5, "total_tokens", 15)))
+	}))
+	service := ax.NewOpenAICompatibleClient(ax.Object("base_url", chatServer.URL, "api_key", "work-secret", "model", "work-fixture"))
+	service.Name = "work"
+	router, err := ax.NewMultiServiceRouter([]ax.Value{ax.RouterServiceEntry{Key: "work", Service: service}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	price := agent.TokenPrice{InputMicrosPerMillion: 1_000_000, OutputMicrosPerMillion: 1_000_000}
+	client := &agent.RoutedClient{AIClient: router,
+		Stages:         agent.StageModels{Context: "work", Executor: "work", Responder: "work"},
+		PricingVersion: "triage-test-v1", Prices: map[string]agent.TokenPrice{"work": price, "triage": price}}
+	tools := agent.Tools{Scope: "org:triage-fixture", Triage: &agent.BudgetTriage{
+		Client: ax.Typesafe(ax.Object("api_key", "triage-secret", "base_url", triageServer.URL,
+			"model", "jev-fixture", "retry", ax.Object("maxRetries", 0))),
+		Route: "triage", Model: "jev-fixture"}}
+	spec := agent.Spec{Version: 1, RunID: "triage-run", InputID: "input", Prompt: "Investigate and answer",
+		MaxModelCalls: 8, MaxModelTokens: 100_000, MaxCostMicros: 10_000,
+		TriageSummary: "Investigate a reference and answer", TriageToolFamilies: "graphjin",
+		TriageInputBytes: 200}
+	return spec, client, tools, &triageCalls, &chatCalls, func() { triageServer.Close(); chatServer.Close() }
+}
+
+func TestTriageCallIsChargedAndReplayedFromCheckpoint(t *testing.T) {
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t)
+	defer closeServers()
+	root := t.TempDir()
+	var events []agent.Event
+	result, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		events = append(events, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || *triageCalls != 1 || *chatCalls != 3 ||
+		result.Cost == nil || result.Cost.ChargedMicros != 557 || result.Usage == nil ||
+		result.Usage.Requests != 4 || result.Usage.Reported != 4 {
+		t.Fatalf("result=%+v err=%v triage=%d chat=%d", result, err, *triageCalls, *chatCalls)
+	}
+	if len(events) < 3 || events[0].Type != "run.started" || events[1].Type != "model.request.started" ||
+		events[1].Stage != "budget_triage" || events[1].CostMicros == nil || *events[1].CostMicros != 512 ||
+		events[2].Type != "model.request.finished" || events[2].Stage != "budget_triage" {
+		t.Fatalf("triage did not lead the durable event stream: %+v", events[:3])
+	}
+	var replay []agent.Event
+	result, err = RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		replay = append(replay, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || *triageCalls != 1 || *chatCalls != 3 || len(replay) != len(events) {
+		t.Fatalf("replay result=%+v err=%v triage=%d chat=%d", result, err, *triageCalls, *chatCalls)
+	}
+	if _, err := Inspect(root, spec); err != nil {
+		t.Fatalf("triage checkpoint rejected: %v", err)
+	}
+	changed := spec
+	changed.TriageSummary = "A different approved summary"
+	if _, err := Inspect(root, changed); err == nil {
+		t.Fatal("a changed approved triage summary replayed")
+	}
+	sum := sha256.Sum256([]byte(spec.RunID))
+	path := filepath.Join(root, hex.EncodeToString(sum[:]))
+	data, err := os.ReadFile(path + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved checkpoint
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	saved.Events[2].CostMicros = nil
+	if err := saveCheckpoint(root, path, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(root, spec); err == nil {
+		t.Fatal("classifier settlement without a cost passed checkpoint inspection")
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	saved.Events[2].Data = json.RawMessage(`{"version":"budget-triage-v1","requested_model":"jev-fixture","suggested_profile":"short","reason":"classified","coverage":"complete","charged_micros":512,"latency_ms":1,"input_tokens":10,"output_tokens":5,"choice":"short_answer","probabilities":{"short_answer":0.2,"multi_step":0.8,"artifact_pipeline":0,"uncertain":0}}`)
+	if err := saveCheckpoint(root, path, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(root, spec); err == nil {
+		t.Fatal("forged classifier distribution passed checkpoint inspection")
+	}
+}
+
+func TestInterruptedTriageReservationIsNotRedispatched(t *testing.T) {
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t)
+	defer closeServers()
+	root := t.TempDir()
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "model.request.started" && e.Stage == "budget_triage" {
+			return errors.New("delivery interrupted after checkpoint")
+		}
+		return nil
+	})
+	if err == nil || *triageCalls != 0 || *chatCalls != 0 {
+		t.Fatalf("interruption err=%v triage=%d chat=%d", err, *triageCalls, *chatCalls)
+	}
+	if report, inspectErr := Inspect(root, spec); inspectErr != nil || !report.CanResume {
+		t.Fatalf("checkpoint report=%+v err=%v", report, inspectErr)
+	}
+	var replay []agent.Event
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		replay = append(replay, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || *triageCalls != 0 || *chatCalls != 3 ||
+		result.Cost == nil || result.Cost.ChargedMicros != 557 || result.Usage == nil ||
+		result.Usage.Requests != 4 || result.Usage.Reported != 3 || result.Usage.Coverage != "partial" {
+		t.Fatalf("resume result=%+v err=%v triage=%d chat=%d", result, err, *triageCalls, *chatCalls)
+	}
+	seenSkip := false
+	for _, e := range replay {
+		seenSkip = seenSkip || e.Type == "budget.triage.skipped" && e.Name == "interrupted"
+	}
+	if !seenSkip {
+		t.Fatal("interrupted classifier was not durably skipped")
+	}
+}

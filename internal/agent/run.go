@@ -13,6 +13,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
+	"github.com/open-neko/harness/internal/budgettriage"
 )
 
 // Spec is trusted host input. It cannot select credentials, endpoints or capabilities.
@@ -26,6 +27,12 @@ type Spec struct {
 	MaxModelCalls  int    `json:"max_model_calls,omitempty"`
 	MaxModelTokens int64  `json:"max_model_tokens,omitempty"` // Host ceiling for outer Ax plus GraphJin lookup tokens.
 	MaxCostMicros  int64  `json:"max_cost_micros,omitempty"`  // Host ceiling against the pinned route price profile.
+	// These host-owned signals are pinned by the checkpoint. An empty summary
+	// disables optional shadow classification; no task skill can dispatch it.
+	TriageSummary           string `json:"triage_summary,omitempty"`
+	TriageArtifactRequested bool   `json:"triage_artifact_requested,omitempty"`
+	TriageToolFamilies      string `json:"triage_tool_families,omitempty"`
+	TriageInputBytes        int    `json:"triage_input_bytes,omitempty"`
 	// Set by the host after decoding input, then pinned by the checkpoint.
 	HostRoutingDigest string `json:"host_routing_digest,omitempty"`
 }
@@ -42,6 +49,24 @@ func (s Spec) ModelCallLimit() int {
 		return 16
 	}
 	return s.MaxModelCalls
+}
+
+func (s Spec) triageInput() (budgettriage.Input, bool) {
+	if s.TriageSummary == "" {
+		return budgettriage.Input{}, !s.TriageArtifactRequested && s.TriageToolFamilies == "" && s.TriageInputBytes == 0
+	}
+	families := []string(nil)
+	if s.TriageToolFamilies != "" {
+		families = strings.Split(s.TriageToolFamilies, ",")
+	}
+	in := budgettriage.Input{Summary: s.TriageSummary, ArtifactRequested: s.TriageArtifactRequested,
+		ToolFamilies: families, InputBytes: s.TriageInputBytes}
+	return in, in.Valid()
+}
+
+func (s Spec) ValidTriage() bool {
+	_, ok := s.triageInput()
+	return ok
 }
 
 type Result struct {
@@ -75,6 +100,9 @@ type Continuation struct {
 	MaxReportedCallTokens int64
 	CostMicros            int64
 	ExecutorErrorTurns    int
+	TriageStarted         bool
+	TriageFinished        bool
+	TriageSkipped         bool
 	StateUpdate           *RuntimeStateUpdate
 	Operations            []SavedOperation
 }
@@ -166,6 +194,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if !tools.validFinalizerGate() {
 		return Result{}, fmt.Errorf("invalid finalizer gate")
 	}
+	if spec.TriageSummary != "" && (tools.Triage == nil || tools.Triage.Client == nil || tools.Triage.Route == "" || tools.Triage.Model == "" || spec.MaxCostMicros == 0) {
+		return Result{}, fmt.Errorf("budget triage requires an approved priced route")
+	}
 	admitted, err := tools.admitted()
 	if err != nil {
 		return Result{}, err
@@ -213,7 +244,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 	}
-	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || client == nil || emit == nil {
+	if spec.Version != 1 || spec.OperationLimit() < 1 || spec.OperationLimit() > 32 || spec.ModelCallLimit() < 1 || spec.ModelCallLimit() > 64 || spec.MaxModelTokens < 0 || spec.MaxModelTokens > 10_000_000 || spec.MaxCostMicros < 0 || spec.MaxCostMicros > 1_000_000_000_000 || strings.TrimSpace(spec.RunID) == "" || len(spec.RunID) > 128 || strings.TrimSpace(spec.InputID) == "" || len(spec.InputID) > 128 || strings.TrimSpace(spec.Prompt) == "" || len(spec.Prompt) > 65536 || len(spec.SkillQuery) > 8192 || !spec.ValidTriage() || client == nil || emit == nil {
 		return Result{}, fmt.Errorf("invalid run specification")
 	}
 	if routed, ok := client.(*RoutedClient); ok {
@@ -232,6 +263,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			(available["lookup"].Name != "" && (pricing.GraphJinPrice == nil || !pricing.GraphJinPrice.Valid())) ||
 			prior.CostMicros < 0 || prior.CostMicros > 8_000_000_000_000_000 {
 			return Result{}, fmt.Errorf("trusted cost budget requires complete route pricing")
+		}
+	}
+	if spec.TriageSummary != "" {
+		if price, ok := pricing.Prices[tools.Triage.Route]; !ok || !price.Valid() {
+			return Result{}, fmt.Errorf("budget triage route has no approved price")
 		}
 	}
 	if prior.Attempt > 1 && tools.OnResume != nil {
@@ -255,6 +291,16 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		events.send(Event{Type: "run.started"})
 	} else {
 		events.send(Event{Type: "run.resumed", Attempt: prior.Attempt})
+	}
+	if spec.TriageSummary != "" && !prior.TriageFinished && !prior.TriageSkipped && !events.hasError() {
+		if prior.TriageStarted {
+			events.send(Event{Type: "budget.triage.skipped", Name: "interrupted"})
+		} else {
+			input, _ := spec.triageInput()
+			if err := runBudgetTriage(ctx, events, tools.Triage, input); err != nil {
+				return Result{}, err
+			}
+		}
 	}
 	if len(childReads) > 0 {
 		events.send(Event{Type: "child.admitted", Name: "team.researcher"})
