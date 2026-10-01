@@ -83,7 +83,7 @@ func TestWorkflowCompletionNeedsBrokerConfirmedOutput(t *testing.T) {
 				!strings.HasPrefix(events[len(events)-2].Origin, "openneko-workflow-output-") {
 				t.Fatalf("missing durable terminal check: %+v", events)
 			}
-			updates := 0
+			updates, applied := 0, 0
 			for _, event := range events {
 				if event.Type == "runtime.state.updated" {
 					updates++
@@ -91,9 +91,15 @@ func TestWorkflowCompletionNeedsBrokerConfirmedOutput(t *testing.T) {
 						t.Fatalf("incorrect state update: %+v", event)
 					}
 				}
+				if event.Type == "runtime.state.applied" {
+					applied++
+					if event.OperationID != 1 || event.Origin != "next-response" {
+						t.Fatalf("incorrect Ax application acknowledgement: %+v", event)
+					}
+				}
 			}
-			if updates != boolInt(emitOutput) || emitOutput && (strings.Contains(modelRequests[0], "operation_id") || strings.Contains(modelRequests[1], "operation_id") || strings.Count(modelRequests[2], "operation_id") != 1) {
-				t.Fatalf("workflow state not confined to responder: updates=%d occurrences=%d,%d,%d", updates,
+			if updates != boolInt(emitOutput) || applied != boolInt(emitOutput) || emitOutput && (strings.Contains(modelRequests[0], "operation_id") || strings.Contains(modelRequests[1], "operation_id") || strings.Count(modelRequests[2], "operation_id") != 1) {
+				t.Fatalf("workflow state not confined to responder: updates=%d applied=%d occurrences=%d,%d,%d", updates, applied,
 					strings.Count(modelRequests[0], "operation_id"), strings.Count(modelRequests[1], "operation_id"), strings.Count(modelRequests[2], "operation_id"))
 			}
 		})
