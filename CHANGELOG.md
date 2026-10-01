@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.11.0](https://github.com/open-neko/openneko/compare/v3.10.0...v3.11.0) (2026-10-01)
+
+
+### Features
+
+* **work:** render agent-selected A2UI charts ([9cacd4c](https://github.com/open-neko/openneko/commit/9cacd4c0cef89b07259493a74a7b3ebd6785c863))
+
 ## [3.10.0](https://github.com/open-neko/openneko/compare/v3.9.5...v3.10.0) (2026-10-01)
 
 
