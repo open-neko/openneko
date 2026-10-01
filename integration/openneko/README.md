@@ -40,7 +40,10 @@ the worktree code. Set `HARNESS_M6_BROWSER_STREAM=1` with `HARNESS_M5_FAST=1`
 to run the isolated Next/Chromium gate. It uses a live OpenShell/Ax sandbox
 and Work SSE connection, checks that the draft precedes the final answer,
 then reloads to prove the draft is absent. This test invokes the sandbox core
-directly; the queued-worker streaming path remains to be qualified.
+directly. Set `HARNESS_M6_QUEUE_BROWSER_STREAM=1` instead to exercise the
+production Work queue handler with the same browser assertion and confirm
+that provisional text never enters the durable run log. Both gates pass on
+the isolated 0.1.2 gateway.
 
 The connected `HARNESS_M6_TRIAGE_ONLY=1` workflow and budget evaluator pass
 on 0.1.2. `HARNESS_M6_STATE_CRASH_ONLY=1` passes using OpenShell's

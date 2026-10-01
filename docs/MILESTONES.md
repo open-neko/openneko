@@ -853,8 +853,9 @@ The same connected streaming gate now passes with the 0.1.2 consumer. An
 additional Chromium gate now renders the isolated Work screen while the live
 OpenShell/Ax fixture runs: it sees the provisional answer before the canonical
 answer, observes draft removal, and confirms that reload shows only the final
-answer. This exercises the browser and SSE projection with a direct sandbox
-run; the production queued-worker path remains a separate qualification gate.
+answer. The direct-sandbox gate isolates the browser and SSE projection. A
+second 0.1.2 gate exercises the production Work queue handler and verifies the
+same rendering plus absence of draft events from the durable run log.
 
 **OpenShell target change (2026-10-02):** OpenNeko main upgraded to 0.1.2.
 An isolated matched CLI/gateway/supervisor transport suite passes, including
@@ -868,8 +869,8 @@ GraphJin call or broker effect, then survives queue redelivery. The broader
 compaction gate also publishes a large CSV after one summary turn and proves
 exact bytes and authorization through the isolated web download on 0.1.2.
 The actor-exhaustion finalizer and API pricing preflight gates also pass on
-0.1.2. The production queued-worker streaming path and held-out quality gates
-remain open. The migration details are in
+0.1.2. Held-out quality and dynamic-budget canary evidence remain open. The
+migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a

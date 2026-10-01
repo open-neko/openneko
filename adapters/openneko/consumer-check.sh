@@ -96,7 +96,7 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
   bash ./integration/batch/batch-check.sh
 fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
-if [[ ${HARNESS_M6_BROWSER_STREAM:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+if [[ ( ${HARNESS_M6_BROWSER_STREAM:-0} == 1 || ${HARNESS_M6_QUEUE_BROWSER_STREAM:-0} == 1 ) && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   if lsof -nP -iTCP:18121 -sTCP:LISTEN >/dev/null 2>&1; then
     echo 'Port 18121 is already in use; refusing to test against an existing web server' >&2
     exit 1
@@ -116,8 +116,24 @@ if [[ ${HARNESS_M6_BROWSER_STREAM:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; the
   done
   [[ "$ready" == 1 ]] || { echo 'Isolated M6 web server did not start' >&2; exit 1; }
   export OPENNEKO_HARNESS_STREAM_RESPONSES=1
-  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-streaming-browser-live.test.ts)
-  echo M6_CONNECTED_BROWSER_STREAMING_PASS
+  if [[ ${HARNESS_M6_QUEUE_BROWSER_STREAM:-0} == 1 ]]; then
+    cat > "$HARNESS_STATE/provider-config/config.yaml" <<'YAML'
+model:
+  provider: custom
+  default: harness-stream-fixture
+  base_url: http://host.docker.internal:18118/v1
+YAML
+    mkdir -p "$HARNESS_STATE/bin"
+    ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+    export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
+    export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m3 OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST=http://host.docker.internal:18118
+    export OPENNEKO_HOST_WEB_DEV=1 OPENNEKO_AGENT_HOME="$HARNESS_STATE/stream-agent-home" OPENNEKO_BROKER_PORT=18123
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-streaming-queue-browser-live.ts)
+    echo M6_CONNECTED_QUEUE_BROWSER_STREAMING_PASS
+  else
+    (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-streaming-browser-live.test.ts)
+    echo M6_CONNECTED_BROWSER_STREAMING_PASS
+  fi
   exit 0
 fi
 if [[ ${HARNESS_M6_STREAMING_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
