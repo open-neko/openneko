@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.9.5](https://github.com/open-neko/openneko/compare/v3.9.4...v3.9.5) (2026-10-01)
+
+
+### Bug Fixes
+
+* **docker:** install pinned pgBackRest from the PostgreSQL archive ([e1ebc99](https://github.com/open-neko/openneko/commit/e1ebc992827039e440409071f8dadc2a38e11b8b))
+* **docker:** install pinned pgBackRest from the PostgreSQL archive ([d83792e](https://github.com/open-neko/openneko/commit/d83792edf66ffd504dd75ce4380edb181255405c))
+
 ## [3.9.4](https://github.com/open-neko/openneko/compare/v3.9.3...v3.9.4) (2026-09-30)
 
 
