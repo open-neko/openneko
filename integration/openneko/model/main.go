@@ -292,7 +292,13 @@ func main() {
 			}
 		}
 		if pauseResponder && ((req.Model == "harness-fixture" && n == 2) || (req.Model == "harness-job-child-crash-fixture" && n == 4) || (req.Model == "harness-trigger-crash-fixture" && n == 3)) {
-			wait = 30
+			// Keep the ordinary worker-death request in flight for fault injection,
+			// but finish well before the 60-second queue lease expires.
+			if req.Model == "harness-fixture" {
+				wait = 10
+			} else {
+				wait = 30
+			}
 		}
 		counts[req.Model]++
 		mu.Unlock()
@@ -644,12 +650,16 @@ func main() {
 				`{"javascriptCode":"const request=propose({action:'harness_workflow_effect_fixture',arguments:{value:42},summary:'Update the synthetic reference'}); if(request.status!=='pending_approval') throw Error('approval missing'); const output=workflow_output_emit({kind:'finding',title:'Action proposed',body:'The synthetic action awaits approval.'}); final('Report the pending action and finding',{request,output});"}`,
 				`{"answer":"Recorded one finding and one action request pending approval."}`,
 			}
-		} else if req.Model == "harness-job-child-fixture" || req.Model == "harness-job-child-crash-fixture" {
+		} else if req.Model == "harness-job-child-fixture" || req.Model == "harness-job-child-crash-fixture" || req.Model == "harness-job-child-disabled-fixture" {
+			if req.Model == "harness-job-child-disabled-fixture" && n >= 2 {
+				http.Error(w, "disabled child fixture has no permitted continuation", http.StatusForbidden)
+				return
+			}
 			responses = []string{
 				`{"javascriptCode":"final('Delegate the seeded reference check',{})"}`,
 				`{"javascriptCode":"const child=team.researcher({question:'Find the seeded reference'}); if(!JSON.stringify(child).includes('REF-42')) throw Error('child evidence missing'); final('Report the reference',{child});"}`,
 				`{"javascriptCode":"final('Find the reference',{})"}`,
-				`{"javascriptCode":"const evidence=lookup('Find the seeded reference'); final('Report the reference',{evidence});"}`,
+				`{"javascriptCode":"const result=lookup('Find the seeded reference'); const evidence=result.reference?harnessSavedOperation(1).result:result; const reply=evidence.response||evidence; final('Report the reference',{answer:reply.answer,trace_id:reply.trace_id,data:reply.data});"}`,
 				`{"answer":"Child verified REF-42."}`,
 				`{"answer":"Verified REF-42 through the child investigation."}`,
 			}

@@ -232,6 +232,12 @@ fi
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18119 RECORDS_PG_USER=neko RECORDS_PG_PASSWORD=synthetic-m3 RECORDS_PG_DATABASE=neko
   export OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development OPENNEKO_AGENT_HOME="$HARNESS_STATE/user" WORKER_ADMIN_URL=http://127.0.0.1:18122 OPENNEKO_BROKER_PORT=18123
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
+  if [[ ${HARNESS_M5_AGENT_JOB_CHILD_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-agent-job-child-live.ts)
+    echo M5_CONNECTED_AGENT_JOB_CHILD_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M5_ADMIN_GROUPED:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     for fixture in user-admin group-admin data-source-admin; do

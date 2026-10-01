@@ -390,6 +390,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if priorPaused {
 		events.pause()
 	}
+	var modelStreamErr error
 	if events.err == nil && ctx.Err() == nil && !priorPaused {
 		// Each executor turn can replay several recent observations. Keep a
 		// single turn's diagnostics below Ax's default 16 KiB so ordinary
@@ -656,6 +657,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		answer, streamErr := streamAnswer(ctx, engine, streamClient, values,
 			ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0,
 				"runtimeHooks", ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)}), events, spec.StreamResponses)
+		modelStreamErr = streamErr
 		var output ax.Value = ax.Object("answer", answer)
 		err := streamErr
 		projectedCalls := 0
@@ -792,6 +794,17 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			result.Code = code
 			result.Answer = "The result did not pass host verification."
 		}
+	}
+	// Ax can wrap a transport cancellation as an opaque model failure when the
+	// host worker dies while an OpenShell model stream is in flight.
+	// Leave the checkpoint interrupted so the next authorized delivery can
+	// resume from the durable operation receipt. This deliberately covers other
+	// opaque model failures after committed work, but the attempt and model-call
+	// limits bound them. Explicit run cancellation, HTTP provider denials, and
+	// budget failures remain terminal.
+	if modelStreamErr != nil && ctx.Err() == nil && prior.Attempt < 3 &&
+		result.Code == "model_failed" && len(parentView.snapshot())+len(childView.snapshot()) > 0 {
+		return Result{}, fmt.Errorf("model stream interrupted after durable operation: %w", modelStreamErr)
 	}
 	events.send(Event{Type: "run.finished", Result: &result})
 	events.mu.Lock()

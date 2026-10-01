@@ -70,13 +70,17 @@ the host saves its checksum and one artifact event, and the isolated Work API
 returns the exact bytes while rejecting an unissued path. This gate also
 exercises the 0.1.2 sandbox-list `--page-size` and paginated JSON contract;
 the historical 0.0.116 inventory format remains covered locally.
-The broader `HARNESS_M3_API_HTTP=1` queue fixture reached the GraphJin-backed
-batch and public workflow API successfully on the merged 3.12.0 branch. Its
-old synthetic model had to retrieve the large saved GraphJin result through
-`harnessSavedOperation(1)`; passing only the bounded reference had caused an
-HTTP 422. The fixture still fails later in its worker-death recovery case with
-`model_failed` after queue lease expiry, so the entire broad suite is not yet
-qualified on 0.1.2. The focused 8 MiB gate passes independently.
+The broader `HARNESS_M3_API_HTTP=1` queue fixture passes GraphJin-backed batch,
+public workflow API, worker-death redelivery, approval restart, and the 8 MiB
+Work-file download on the merged 3.12.0 branch. Its synthetic model retrieves
+large saved GraphJin results with `harnessSavedOperation(1)` instead of passing
+bounded references as answers. Worker death can cancel an in-flight model
+request on 0.1.2; Harness now records an interrupted checkpoint after a
+committed operation, and redelivery resumes without repeating that operation.
+The focused `HARNESS_M5_FAST=1 HARNESS_M5_AGENT_JOB_CHILD_ONLY=1` gate also
+passes normal child delegation, disabled delegation, child process crash and
+resume, and model-only access on 0.1.2. The entire broad suite has not yet
+been rerun after the child fixture updates.
 
 `HARNESS_M6_COMPACTION_ONLY=1 HARNESS_M6_COMPACTION_WEB=1` also passes on
 0.1.2: one forced summary retains the workflow receipt, publishes the exact

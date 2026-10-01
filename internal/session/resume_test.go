@@ -16,6 +16,69 @@ import (
 	"github.com/open-neko/harness/internal/agent"
 )
 
+type cancelThirdModelClient struct {
+	ax.AIClient
+	calls atomic.Int32
+}
+
+func (c *cancelThirdModelClient) GetFeatures(model string) map[string]ax.Value {
+	if provider, ok := c.AIClient.(interface {
+		GetFeatures(string) map[string]ax.Value
+	}); ok {
+		return provider.GetFeatures(model)
+	}
+	return nil
+}
+
+func (c *cancelThirdModelClient) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
+	if c.calls.Add(1) == 3 {
+		return nil, context.Canceled // Provider stream lost while the run context remains live.
+	}
+	return c.AIClient.Chat(ctx, request, options)
+}
+
+func TestCancelledModelAfterDurableLookupResumesWithoutRedispatch(t *testing.T) {
+	root := t.TempDir()
+	spec := agent.Spec{Version: 1, RunID: "cancelled-model", InputID: "accepted", Prompt: "Find REF-42"}
+	var modelCalls, lookups atomic.Int32
+	answers := []string{
+		`{"javascriptCode":"final('Find the reference',{});"}`,
+		`{"javascriptCode":"const row=lookup('read'); final('Report the reference',{row});"}`,
+		`{"javascriptCode":"final('Use the saved reference',{});"}`,
+		`{"javascriptCode":"const row=harnessSavedOperation(1); final('Report the reference',{row});"}`,
+		`{"answer":"REF-42"}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(modelCalls.Add(1)) - 1
+		if index >= len(answers) {
+			t.Error("unexpected model call")
+			http.Error(w, "unexpected", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	base := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	lookup := func(context.Context, string) (json.RawMessage, error) {
+		lookups.Add(1)
+		return json.RawMessage(`{"response":{"answer":"REF-42"}}`), nil
+	}
+	interrupted := &cancelThirdModelClient{AIClient: base}
+	first, err := Run(context.Background(), root, spec, interrupted, lookup, func(agent.Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "model stream interrupted") || lookups.Load() != 1 {
+		t.Fatalf("expected resumable model interruption after one lookup: result=%+v err=%v lookups=%d model=%d attempted=%d", first, err, lookups.Load(), modelCalls.Load(), interrupted.calls.Load())
+	}
+	report, err := Inspect(root, spec)
+	if err != nil || report.Outcome != "interrupted" || !report.CanResume || report.NextAttempt != 2 || len(report.Operations) != 1 || !report.Operations[0].Finished {
+		t.Fatalf("saved lookup did not admit continuation: %+v %v", report, err)
+	}
+	result, err := Resume(context.Background(), root, spec, base, lookup, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "completed" || result.Answer != "REF-42" || lookups.Load() != 1 {
+		t.Fatalf("resume result=%+v err=%v lookups=%d", result, err, lookups.Load())
+	}
+}
+
 func resolvedPrefix(t *testing.T) (string, agent.Spec) {
 	s := prefix()
 	root, _ := fixture(t, s)

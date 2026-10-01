@@ -16,12 +16,14 @@ governed action proposals; Hermes remains the default backend.
 | M4 recovery | Host/session ownership, durable operation receipts, bounded continuation, sandbox/host terminal reconciliation, worker-death redelivery and one restored answer | [Recovery record](M4-RECOVERY.md) |
 | M4 effects | Frozen human approvals, fresh authorization before dispatch, durable execution claims, optional provider-status recovery and explicit unknown outcomes without redispatch | Real process-kill, queue, controlled HTTP effect and browser approval/reload checks in the recovery record |
 
-The historical M4 worker-death gate passed on 0.0.116. After merging OpenNeko
-3.12.0, the broad 0.1.2 queue fixture passes its GraphJin lookup, 8 MiB
-process artifact and query-to-file API, but later fails that worker-death case
-with `model_failed` after lease expiry. The separate 0.1.2 stop/start workflow
-recovery gate passes; the broad worker-death case needs diagnosis before
-claiming its 0.1.2 parity.
+The historical M4 worker-death gate passed on 0.0.116. On OpenShell 0.1.2,
+worker death during an in-flight model request can cancel the sandbox's model
+transport after a GraphJin receipt was committed. A bounded Harness
+continuation now retains that receipt and retries only the model turn. The
+connected queue gate passed worker-death redelivery, one restored answer and
+approval restart on 0.1.2. The focused agent-job child crash/recovery gate
+also passes; the complete broad suite has not yet been rerun after its fixture
+updates.
 
 The cumulative live suite has passed the consumer checks. Its previous exit 1
 was solely the raw idle-proxy cancellation check. On 2026-09-20 the user accepted

@@ -896,9 +896,12 @@ denial. OpenShell 0.1.2's changed sandbox-list flag and paginated JSON response
 required a process-executor migration; the focused 0.1.2 gate passes.
 The batch executor needed the same inventory migration. Its connected
 GraphJin query-to-file run and public workflow API passed after the synthetic
-script accepted 0.1.2's connect-time network denial. The broader queued
-regression still fails in its later worker-death recovery case and needs a
-separate diagnosis; it does not qualify the whole suite.
+script accepted 0.1.2's connect-time network denial. The broader queued gate
+now passes worker-death recovery and approval restart: a canceled in-flight
+model request leaves an interrupted checkpoint, and redelivery uses the saved
+GraphJin receipt without repeating the operation. The focused agent-job child
+crash/recovery gate also passes on 0.1.2. The complete broad suite has not yet
+been rerun after its child fixture updates.
 The host-only dynamic-budget canary mechanism now has local admission and
 checkpoint tests, but is disabled by default. A focused queued workflow with
 synthetic model/data fixtures passed its connected 0.1.2 canary path,
