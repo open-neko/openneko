@@ -1185,8 +1185,9 @@ reservation or settlement propagates an error. The opt-in OpenNeko workflow
 gate now traverses a dedicated OpenShell Typesafe route with broker-replaced
 credentials, complete provider usage, a content-free probability receipt,
 approval persistence after compaction, and inert queue redelivery. The
-classifier's artifact signal is currently supplied only when the host knows
-it, so false negatives remain possible. Versioned fixed-cap profile mapping,
+classifier's artifact signal now follows OpenNeko's validated workflow-native
+batch or query-to-file output contract through launch and recovery; other
+artifact requests without a typed contract may still be missed. Versioned fixed-cap profile mapping,
 checkpoint-time extension rules, and held-out outcome calibration remain
 required before enabling dynamic limits or a canary.
 
