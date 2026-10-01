@@ -36,8 +36,11 @@ The 0.1.2 focused gates passed with synthetic credentials on 2026-10-02:
 `HARNESS_M6_ROUTING_ONLY=1`, plus `HARNESS_M6_HERMES_ONLY=1` for cold,
 warm and reused Hermes turns. The image builder overlays the current
 OpenNeko `hermes-warm.py` onto the test image so this regression exercises
-the worktree code. Full worker/queue and rendered-web qualification on
-0.1.2 remains to be run.
+the worktree code. Set `HARNESS_M6_BROWSER_STREAM=1` with `HARNESS_M5_FAST=1`
+to run the isolated Next/Chromium gate. It uses a live OpenShell/Ax sandbox
+and Work SSE connection, checks that the draft precedes the final answer,
+then reloads to prove the draft is absent. This test invokes the sandbox core
+directly; the queued-worker streaming path remains to be qualified.
 
 The connected `HARNESS_M6_TRIAGE_ONLY=1` workflow and budget evaluator pass
 on 0.1.2. `HARNESS_M6_STATE_CRASH_ONLY=1` passes using OpenShell's
@@ -51,6 +54,8 @@ rejects `harness-openneko:m3` as its own base.
 0.1.2: one forced summary retains the workflow receipt, publishes the exact
 large CSV, and the isolated web route serves it while refusing the unrelated
 Work-file URL.
+`HARNESS_M6_FINALIZER_ONLY=1` and `HARNESS_M6_PRICING_PREFLIGHT_ONLY=1` pass
+on the same connected gateway.
 
 The connected queue fixture also exercises the opt-in customer Work
 `workflow_save` tool. It creates a cron-triggered workflow with a batch output
