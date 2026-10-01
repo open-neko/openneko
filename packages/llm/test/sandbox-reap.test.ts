@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { reapStrandedSandboxes, sandboxOwnerLabelArgs } from "../src/work/sandbox-launcher";
+import { reapStrandedSandboxes, sandboxExistsInInventory, sandboxOwnerLabelArgs } from "../src/work/sandbox-launcher";
+
+describe("recovery sandbox inventory", () => {
+  it("finds the exact sandbox on a later OpenShell 0.1.2 page", async () => {
+    const calls: string[][] = [];
+    const run = async (args: string[]) => {
+      calls.push(args);
+      return JSON.stringify(args.includes("page-2")
+        ? {sandboxes: [{name: "wanted"}], next_page_token: ""}
+        : {sandboxes: [{name: "other"}], next_page_token: "page-2"});
+    };
+    expect(await sandboxExistsInInventory(run, "wanted")).toBe(true);
+    expect(calls).toEqual([
+      ["sandbox", "list", "-o", "json", "--page-size", "500"],
+      ["sandbox", "list", "-o", "json", "--page-size", "500", "--page-token", "page-2"],
+    ]);
+  });
+
+  it("does not infer absence from an incomplete inventory", async () => {
+    const run = async () => JSON.stringify({sandboxes: [{name: "other"}], next_page_token: "repeat"});
+    await expect(sandboxExistsInInventory(run, "wanted")).rejects.toThrow("pagination incomplete");
+    await expect(sandboxExistsInInventory(async () => "[]", "wanted")).rejects.toThrow("invalid sandbox inventory");
+  });
+});
 
 describe("stranded sandbox cleanup", () => {
   it("labels boxes with the owning host and its boot", () => {

@@ -31,7 +31,7 @@ const h = vi.hoisted(() => {
   const state = {
     inspections: [] as Array<string>,
     operations: [] as Array<{id:number;instruction:string;result:unknown}>,
-    inventory: "[]",
+    inventory: JSON.stringify({sandboxes:[],next_page_token:""}),
     holdExec: false,
     failPolicy: false,
     failReconcile: false,
@@ -549,7 +549,7 @@ describe("makeSandboxRunCore", () => {
     h.calls.length = 0;
     h.state.inspections = [];
     h.state.operations = [];
-    h.state.inventory = "[]";
+    h.state.inventory = JSON.stringify({sandboxes:[],next_page_token:""});
     h.state.holdExec = false;
     h.state.failPolicy = false;
     h.state.failReconcile = false;
@@ -1027,11 +1027,11 @@ describe("makeSandboxRunCore", () => {
         const state = join(input.workspace.runRoot,".harness");
         await mkdir(state,{recursive:true});
         await writeFile(join(state,createHash("sha256").update(input.runId).digest("hex")+".json"),"{}");
-        if (mode === "inventory-full") h.state.inventory = JSON.stringify(Array.from({length:500},(_,i)=>({name:`other-${i}`})));
+        if (mode === "inventory-full") h.state.inventory = JSON.stringify({sandboxes:Array.from({length:500},(_,i)=>({name:`other-${i}`})),next_page_token:"repeat"});
         if (mode === "inventory-invalid") h.state.inventory = "invalid";
         if (mode === "stale-active") {
           const create = h.calls.find(c=>c.args.includes("create"))!.args;
-          h.state.inventory = JSON.stringify([{name:create[create.indexOf("--name")+1]}]);
+          h.state.inventory = JSON.stringify({sandboxes:[{name:create[create.indexOf("--name")+1]}],next_page_token:""});
           h.state.inspections = [evidence,"busy"];
         }
       }

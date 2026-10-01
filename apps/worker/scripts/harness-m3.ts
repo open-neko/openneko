@@ -110,10 +110,16 @@ const thread = await createWorkThread(orgId, 'M3 queued lookup');
 const run = await createWorkRun(orgId, thread.id, 'harness', { userId: null, role: 'service' });
 const [job] = await db().insert(processing_job).values({ org_id: orgId, kind: QUEUE.WORK_RUN, trigger: 'test' }).returning();
 await enqueue(QUEUE.WORK_RUN, { processingJobId: job.id, orgId, runId: run.id, threadId: thread.id, message: 'Find the seeded reference using lookup.' }, { retryLimit: 0 });
+let crashRunIdForDiagnostics='';
 async function waitForJob(jobId:string, runId=run.id, expected='completed') {
 for (let n = 0; n < 120; n++) {
     const current = await getWorkRun(orgId, runId);
     if (current && ['completed', 'failed', 'cancelled', 'needs_input'].includes(current.status)) {
+        if (current.status !== expected && runId === crashRunIdForDiagnostics) {
+            const journal=(await pool().query("SELECT result->>'status' AS status,result->>'error' AS error FROM harness_run_journal WHERE org_id=$1 AND run_id=$2",[orgId,runId])).rows[0];
+            const events=(await pool().query('SELECT kind FROM work_run_event WHERE org_id=$1 AND run_id=$2 ORDER BY id DESC LIMIT 12',[orgId,runId])).rows;
+            console.error('M4_WORKER_DEATH_DIAGNOSTIC',JSON.stringify({journal,events,model:await (await fetch('http://127.0.0.1:18118/control')).json()}));
+        }
         assert.equal(current.status, expected, JSON.stringify(current));
         const [finished] = await db().select().from(processing_job).where(eq(processing_job.id, jobId));
         if (finished.status !== 'succeeded' && !(expected === 'failed' && finished.status === 'failed')) {
@@ -823,6 +829,7 @@ await shutdownAgentBroker();
 await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pause_responder:true})});
 const crashThread=await createWorkThread(orgId,'M4 worker death');
 const crashRun=await createWorkRun(orgId,crashThread.id,'harness',{userId:null,role:'service'});
+crashRunIdForDiagnostics=crashRun.id;
 await createWorkMessage({orgId,threadId:crashThread.id,runId:crashRun.id,role:'user',content:'Find the seeded reference using lookup.'});
 const [crashJob]=await db().insert(processing_job).values({org_id:orgId,kind:QUEUE.WORK_RUN,trigger:'test-worker-death'}).returning();
 const queueId=await enqueue(QUEUE.WORK_RUN,{processingJobId:crashJob.id,orgId,runId:crashRun.id,threadId:crashThread.id,message:'Find the seeded reference using lookup.'},{retryLimit:1,retryDelay:0,expireInSeconds:60});
@@ -857,7 +864,7 @@ try {
     assert.equal((await queue.getJobById(QUEUE.WORK_RUN,queueId))?.state,'active');
     // Exercise pg-boss's real expiry/retry transition, without editing queue rows
     // or enqueueing a replacement accepted input. The 60s lease also outlasts
-    // the fixture's 30s responder pause.
+    // the fixture's paused responder request.
     let expired=false;
     for(let n=0;n<90;n++) {
         await queue.maintain();
@@ -867,6 +874,9 @@ try {
         await new Promise(r=>setTimeout(r,1000));
     }
     assert.ok(expired,'abandoned queue job did not become retryable');
+    // Keep model counters while allowing a bounded continuation after the
+    // canceled responder stream. The committed lookup must never run again.
+    await fetch('http://127.0.0.1:18118/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({continue:true})});
     await startWorker();
     await waitForJob(crashJob.id,crashRun.id);
     const recovered=(await pool().query('SELECT accepted_context,result FROM harness_run_journal WHERE org_id=$1 AND run_id=$2',[orgId,crashRun.id])).rows[0];
@@ -874,7 +884,9 @@ try {
     assert.equal(recovered.result.status,'completed');
     assert.match(recovered.result.finalText,/REF-42/);
     const afterCalls=await (await fetch('http://127.0.0.1:18118/control')).json();
-    for(const model of ['harness-fixture','graphjin-fixture']) assert.equal(afterCalls[model],crashCalls[model]);
+    assert.equal(afterCalls['graphjin-fixture'],crashCalls['graphjin-fixture'],'recovery must not repeat GraphJin work');
+    assert.ok(afterCalls['harness-fixture']===crashCalls['harness-fixture'] ||
+      afterCalls['harness-fixture']===crashCalls['harness-fixture']+3,'recovery may repeat only one bounded model turn');
     assert.deepEqual((await pool().query('SELECT operation_id,request,result,finished_at FROM harness_operation WHERE org_id=$1 AND run_id=$2',[orgId,crashRun.id])).rows,crashOperations);
     for(const role of ['user','assistant']) assert.equal((await pool().query('SELECT count(*)::int AS n FROM work_message WHERE org_id=$1 AND run_id=$2 AND role=$3',[orgId,crashRun.id,role])).rows[0].n,1);
     let redelivered=await queue.getJobById(QUEUE.WORK_RUN,queueId);

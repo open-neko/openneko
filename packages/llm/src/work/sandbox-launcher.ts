@@ -93,6 +93,34 @@ export function sandboxOwnerLabelArgs(owner = sandboxOwner(), boot = SANDBOX_BOO
   return ["--label", `${SANDBOX_OWNER_LABEL}=${owner}`, "--label", `${SANDBOX_BOOT_LABEL}=${boot}`];
 }
 
+/** A missing sandbox is evidence only after every OpenShell inventory page was read. */
+export async function sandboxExistsInInventory(
+  run: (args: string[], timeoutMs: number) => Promise<string>,
+  name: string,
+): Promise<boolean> {
+  let pageToken = "";
+  const seen = new Set<string>();
+  do {
+    let page: unknown;
+    try { page = JSON.parse(await run(["sandbox", "list", "-o", "json", "--page-size", "500",
+      ...(pageToken ? ["--page-token", pageToken] : [])], 30_000)); }
+    catch { throw new Error("Harness launch outcome unknown: invalid sandbox inventory"); }
+    if (!page || typeof page !== "object" || !Array.isArray((page as {sandboxes?: unknown}).sandboxes) ||
+        typeof (page as {next_page_token?: unknown}).next_page_token !== "string" ||
+        !(page as {sandboxes: unknown[]}).sandboxes.every(box => box && typeof box === "object" &&
+          typeof (box as {name?: unknown}).name === "string")) {
+      throw new Error("Harness launch outcome unknown: invalid sandbox inventory");
+    }
+    if ((page as {sandboxes: Array<{name: string}>}).sandboxes.some(box => box.name === name)) return true;
+    pageToken = (page as {next_page_token: string}).next_page_token;
+    if (pageToken && (seen.has(pageToken) || seen.size >= 1000)) {
+      throw new Error("Harness launch outcome unknown: sandbox inventory pagination incomplete");
+    }
+    if (pageToken) seen.add(pageToken);
+  } while (pageToken);
+  return false;
+}
+
 /**
  * Deletes this host's sandboxes from earlier boots. The create command that
  * would delete a warm or job box dies with its host process, so without this
@@ -807,14 +835,7 @@ function makeSandboxCore(
       if (local && evidence.outcome !== "terminal") {
         // A local lock cannot fence a live remote process. Obtain remote evidence
         // first when the exact run sandbox remains registered in this workspace.
-        const boxes = JSON.parse(await run(["sandbox", "list", "-o", "json", "--limit", "500"], 30_000));
-        if (!Array.isArray(boxes) || boxes.some(box => typeof box?.name !== "string")) {
-          throw new Error("Harness launch outcome unknown: invalid sandbox inventory");
-        }
-        remoteExists = boxes.some(box => box.name === name);
-        // ponytail: one bounded inventory page; add an exact structured lookup if
-        // a workspace reaches 500 sandboxes. Never infer absence from truncation.
-        if (!remoteExists && boxes.length >= 500) throw new Error("Harness launch outcome unknown: sandbox inventory incomplete");
+        remoteExists = await sandboxExistsInInventory(run, name);
         if (remoteExists) {
           local = false;
           evidence = JSON.parse(await inspect([], spec));

@@ -42,6 +42,8 @@ try {
 
   await fetch("http://127.0.0.1:18118/control", { method: "POST", body: "{}" });
   disabled = await ensureIsolatedJobWorkspace("harness-child-disabled-check");
+  await db().update(llm_provider_config).set({ model: "harness-job-child-disabled-fixture" }).where(eq(llm_provider_config.id, prior.id));
+  await writeFile(configPath, "model:\n  provider: custom\n  default: harness-job-child-disabled-fixture\n  base_url: http://host.docker.internal:18118/v1\n");
   const disabledRunId = randomUUID();
   const disabledBackend = await sandboxAgentBackendForJob({ backend: makeAgentBackend({ id: "harness" }), orgId,
     runId: disabledRunId, workspace: disabled.workspace, access: { graphjinAgent: true } });
@@ -72,11 +74,14 @@ try {
   assert.equal(firstOperations.length, 1);
   assert.ok(firstOperations[0].result);
   const graphjinBefore = (await (await fetch("http://127.0.0.1:18118/control")).json())["graphjin-fixture"];
-  const sandboxName = `h-${createHash("sha256").update(interruptedRunId).digest("hex").slice(0, 16)}`;
+  const sandboxName = `neko-h-${createHash("sha256").update(interruptedRunId).digest("hex").slice(0, 12)}`;
+  // OpenShell 0.1.2 uses host networking and labels both the workload and
+  // supervisor. Select only this fixture's workload image for fault injection.
   const containers = execFileSync("docker", ["ps", "--filter", `label=openshell.ai/sandbox-name=${sandboxName}`,
-    "--filter", "network=harness-m2", "--format", "{{.ID}}"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+    "--filter", `ancestor=${process.env.OPENNEKO_AGENT_IMAGE}`,
+    "--format", "{{.ID}}"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
   assert.equal(containers.length, 1);
-  execFileSync("docker", ["exec", "--user", "0", containers[0], "/bin/sh", "-c",
+  execFileSync("docker", ["exec", "--user", "sandbox", containers[0], "/bin/sh", "-c",
     'killed=0; for comm in /proc/[0-9]*/comm; do read -r name < "$comm" || continue; case "$name" in harness-opennek|harness-openneko) pid=${comm#/proc/}; pid=${pid%/comm}; kill -KILL "$pid" || exit 1; killed=1;; esac; done; test "$killed" = 1'], { timeout: 15_000 });
   assert.ok((await firstAttempt) instanceof Error, "child process survived the injected crash");
   await fetch("http://127.0.0.1:18118/control", { method: "POST", body: JSON.stringify({ continue: true }) });
