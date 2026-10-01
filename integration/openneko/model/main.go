@@ -528,7 +528,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-stream-fixture" && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -618,6 +618,12 @@ func main() {
 				responses = append(responses, code)
 			}
 			responses = append(responses, `{"answer":"Recorded the committed REF-42 workflow finding."}`)
+		} else if req.Model == "harness-stream-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Answer the streaming check',{})"}`,
+				`{"javascriptCode":"final('No tools needed',{})"}`,
+				`{"answer":"STREAM-OK"}`,
+			}
 		} else if req.Model == "harness-trigger-fixture" || req.Model == "harness-trigger-crash-fixture" {
 			responses = []string{
 				`{"javascriptCode":"final('Find the seeded reference and record a finding',{})"}`,
@@ -828,6 +834,29 @@ func main() {
 		}
 		if n >= len(responses) {
 			http.Error(w, "fixture exhausted", 400)
+			return
+		}
+		if req.Model == "harness-stream-fixture" && n == 2 && req.Stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "streaming unavailable", 500)
+				return
+			}
+			for index, part := range []string{"Answer: STREAM-", "OK"} {
+				chunk, _ := json.Marshal(map[string]any{"id": "harness-stream", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"content": part}, "finish_reason": nil}}})
+				fmt.Fprintf(w, "data: %s\n\n", chunk)
+				flusher.Flush()
+				if index == 0 {
+					select {
+					case <-time.After(time.Second):
+					case <-r.Context().Done():
+						return
+					}
+				}
+			}
+			fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+			flusher.Flush()
 			return
 		}
 		fmt.Printf("model=%s step=%d\n", req.Model, n)

@@ -839,7 +839,17 @@ provider finishes, and a checkpoint fixture proves terminal replay omits those
 provisional chunks. The final answer remains subject to the existing terminal
 gate. The OpenNeko adapter still needs a provisional-text projection and a
 connected OpenShell first-content test before it enables incremental provider
-transport for operator runs.
+transport for operator runs. The OpenNeko feature worktree now has that
+opt-in projection: the worker scrubs and publishes bounded provisional chunks
+over an org/run-scoped PostgreSQL notification, the Work SSE route sends them
+without a durable event ID, and both Work surfaces replace the draft when the
+canonical answer arrives. The draft is never a run event or checkpoint entry.
+An isolated OpenShell 0.0.116 consumer run observed the first chunk more than
+500 ms before the final answer, including the PostgreSQL notification, and
+verified that the checkpoint contained no draft chunks. A route test checked
+SSE tenant scoping and replay cursor behavior. This proves the connected
+transport and route contract; rendered-browser qualification and the OpenShell
+0.1.2 consumer migration remain open.
 
 **OpenShell target change (2026-10-02):** OpenNeko main is expected to upgrade
 from the qualified 0.0.116 release to 0.1.2. The Harness compatibility CLI

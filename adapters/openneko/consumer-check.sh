@@ -81,6 +81,11 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
   bash ./integration/batch/batch-check.sh
 fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+if [[ ${HARNESS_M6_STREAMING_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-streaming-live.test.ts)
+  echo M6_CONNECTED_OPENSHELL_STREAMING_PASS
+  exit 0
+fi
 if [[ ${HARNESS_M5_PACK_EFFECT_ONLY:-0} == 1 && ${HARNESS_M5_FAST:-0} == 1 ]]; then
   (cd "$product" && pnpm --filter @neko/worker exec vitest run test/declarative-pack-effect-live.test.ts)
   echo M5_CONNECTED_PACK_EFFECT_PASS
