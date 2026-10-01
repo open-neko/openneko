@@ -107,6 +107,10 @@ async function verifiedOutputCheckpoint(workRunId:string):Promise<string> {
     assert.equal(updates[0].state_update?.target,"root/responder");
     assert.deepEqual(updates[0].state_update?.state,
       {operation_id:id,output_id:receipt.result.outputId,kind:receipt.result.kind});
+    const applied=checkpoint.events.filter(event=>event.type==="runtime.state.applied" && event.operation_id===id);
+    assert.equal(applied.length,1,"Ax must acknowledge application at the responder boundary");
+    assert.equal(applied[0].origin,"next-response");
+    assert.ok(checkpoint.events.indexOf(applied[0])>checkpoint.events.indexOf(updates[0]));
   }
   return contents;
 }
