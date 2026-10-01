@@ -558,13 +558,17 @@ RUN groupadd -g 1000660000 sandbox \
 # Only the two bundles and built-in skills enter the agent filesystem.
 COPY --from=agent-deploy --chown=1000660000:1000660000 /out/agent-app /app
 COPY --chown=1000660000:1000660000 apps/worker/src/agent-sandbox/hermes-warm.py /app/hermes-warm.py
-# Fail the image build if bundles or filesystem assets cannot boot without
-# workspace node_modules. These checks also run on each release architecture.
+# OpenShell may execute as a remapped non-root UID. Build output can inherit
+# restrictive source modes, so every runtime bundle and parent directory must
+# be readable regardless of the sandbox's assigned UID.
+RUN chmod -R a+rX /app
+USER sandbox
+# Fail the image build if the non-root sandbox cannot read and boot the
+# bundled runtime without workspace node_modules.
 RUN cd /app && node entry.js --preflight \
     && node --input-type=module -e "await import('./mcp-bridge.js')"
 WORKDIR /sandbox
 # Supervisor-replaced; launcher runs: cd /app && node /app/entry.js
-USER sandbox
 CMD ["node", "--version"]
 
 # ─── 5c. neko-cli runtime ──────────────────────────────────────────────
