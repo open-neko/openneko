@@ -33,6 +33,10 @@ YAML
 "$cli" --gateway harness-m2 provider create --name harness-m3 --type harness-m3 --credential api_key=synthetic-m3
 if [[ ${HARNESS_M6_ROUTING_ONLY:-0} == 1 ]]; then
   bash ./integration/openneko/routing-check.sh
+  curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
+  export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+  (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-routing-live.test.ts)
+  echo M6_CONNECTED_OPENNEKO_ROUTE_LAUNCH_PASS
   exit 0
 fi
 mkdir -p "$HARNESS_STATE/provider-config"

@@ -8,14 +8,13 @@ name=harness-m6-routing
 cleanup() { "${oss[@]}" sandbox delete "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 for stage in context context-spare context-503 context-403 executor responder; do
-  cred=${stage//-/_}
-  upper=$(printf '%s' "$cred" | tr '[:lower:]' '[:upper:]')
+  upper=$(printf '%s' "$stage" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
   cat > "$state/m6-$stage-provider.yaml" <<YAML
 id: harness-m6-$stage
 category: agent
 display_name: Harness M6 $stage fixture
 credentials:
-  - name: ${cred}_key
+  - name: HARNESS_${upper}_KEY
     env_vars: [HARNESS_${upper}_KEY]
     required: true
 endpoints:
@@ -28,8 +27,9 @@ endpoints:
 binaries: [/usr/local/bin/harness-openneko]
 YAML
   "${oss[@]}" provider profile import --file "$state/m6-$stage-provider.yaml"
-  "${oss[@]}" provider create --name "harness-m6-$stage" --type "harness-m6-$stage" --credential "${cred}_key=synthetic-m6-$stage"
+  "${oss[@]}" provider create --name "harness-m6-$stage" --type "harness-m6-$stage" --credential "HARNESS_${upper}_KEY=synthetic-m6-$stage"
 done
+if [[ ${HARNESS_M6_ROUTING_WORKER_ONLY:-0} == 1 ]]; then exit 0; fi
 cat > "$state/m6-policy.yaml" <<'YAML'
 version: 1
 filesystem_policy:
@@ -61,7 +61,6 @@ YAML
 manifest='{"context":"context","executor":"executor","responder":"responder","routes":[{"key":"context","model":"harness-route-context","url":"http://host.docker.internal:18118/route/context/v1","api_key_env":"HARNESS_CONTEXT_KEY"},{"key":"executor","model":"harness-route-executor","url":"http://host.docker.internal:18118/route/executor/v1","api_key_env":"HARNESS_EXECUTOR_KEY"},{"key":"responder","model":"harness-route-responder","url":"http://host.docker.internal:18118/route/responder/v1","api_key_env":"HARNESS_RESPONDER_KEY"}]}'
 spec='{"version":1,"run_id":"m6-routing","input_id":"m6-routing-input","prompt":"Answer the routing check"}'
 "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-  export HARNESS_CONTEXT_KEY="$context_key" HARNESS_EXECUTOR_KEY="$executor_key" HARNESS_RESPONDER_KEY="$responder_key"
   export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
   printf "%s" "$2" | /usr/local/bin/harness-openneko
 ' sh "$manifest" "$spec" > "$state/m6-routing-events.jsonl"
@@ -102,8 +101,6 @@ PY
 )
   spec="{\"version\":1,\"run_id\":\"m6-route-$status\",\"input_id\":\"m6-route-$status-input\",\"prompt\":\"Answer the routing check\"}"
   if "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-    export HARNESS_CONTEXT_503_KEY="$context_503_key" HARNESS_CONTEXT_403_KEY="$context_403_key"
-    export HARNESS_CONTEXT_SPARE_KEY="$context_spare_key" HARNESS_EXECUTOR_KEY="$executor_key" HARNESS_RESPONDER_KEY="$responder_key"
     export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
     printf "%s" "$2" | /usr/local/bin/harness-openneko
   ' sh "$manifest" "$spec" > "$state/m6-$status-events.jsonl"; then
