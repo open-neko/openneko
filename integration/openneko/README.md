@@ -337,6 +337,14 @@ The broker runs in the killed process; the remote sandbox is left to complete it
 30-second delayed responder before queue redelivery. This adds about one minute
 to the suite. It covers terminal adoption after worker death, not all crash windows.
 
+The focused M6 workflow state crash gate runs with
+`HARNESS_M5_FAST=1 HARNESS_M6_STATE_CRASH_ONLY=1`. It kills the in-box Harness
+process after a source-change workflow has committed its lookup and output
+receipts and while its responder request is pending. The same worker reconciles
+and resumes the accepted run once; the test checks unchanged broker operations,
+one output, restored host state, terminal verification and inert queue
+redelivery. The test stack is removed on exit.
+
 The governed-action gate includes real broker/DB proposal validation, exclusive
 execution claims, process death and provider-status reconciliation. With
 `HARNESS_M3_WEB=1`, the queue driver leaves a pending approval and prints

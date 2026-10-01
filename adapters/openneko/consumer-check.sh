@@ -317,6 +317,12 @@ fi
     echo M5_CONNECTED_TRIGGER_REPLAY_PASS
     exit 0
   fi
+  if [[ ${HARNESS_M6_STATE_CRASH_ONLY:-0} == 1 ]]; then
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-state-crash-live.ts)
+    echo M6_CONNECTED_WORKFLOW_STATE_CRASH_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M3_API_HTTP:-0} == 1 ]]; then
     export HARNESS_M3_WORKFLOW_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
     [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/next-dev-cache"

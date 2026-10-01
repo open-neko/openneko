@@ -249,7 +249,7 @@ func main() {
 		answerQuestion := answerClarification
 		resume := continuation
 		n := counts[req.Model]
-		if pauseResponder && ((req.Model == "harness-fixture" && n == 2) || (req.Model == "harness-job-child-crash-fixture" && n == 4)) {
+		if pauseResponder && ((req.Model == "harness-fixture" && n == 2) || (req.Model == "harness-job-child-crash-fixture" && n == 4) || (req.Model == "harness-trigger-crash-fixture" && n == 3)) {
 			wait = 30
 		}
 		counts[req.Model]++
@@ -285,6 +285,9 @@ func main() {
 		}
 		if resume && req.Model == "harness-job-child-crash-fixture" && n >= 5 && n < 11 {
 			n -= 5 // New Ax attempt after the child read was journaled.
+		}
+		if resume && req.Model == "harness-trigger-crash-fixture" && n >= 4 && n < 7 {
+			n -= 4 // New Ax attempt after the broker committed workflow output.
 		}
 		if req.Model == "graphjin-fixture" {
 			n %= 3 // Each server-side lookup is an independent three-step agent run.
@@ -466,11 +469,15 @@ func main() {
 			http.Error(w, "missing host-committed workflow state at responder", 422)
 			return
 		}
+		if resume && n == 0 && req.Model == "harness-trigger-crash-fixture" && (!strings.Contains(string(req.Messages), "hostState") || !strings.Contains(string(req.Messages), "output_id")) {
+			http.Error(w, "missing resumed host workflow state", 422)
+			return
+		}
 		if n == 2 && req.Model == "harness-fixture" && (createRule || editRule) && !strings.Contains(string(req.Messages), "ruleId") {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -507,12 +514,19 @@ func main() {
 				`{"answer":"Second reference REF-42."}`,
 				`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
 			}
-		} else if req.Model == "harness-trigger-fixture" {
+		} else if req.Model == "harness-trigger-fixture" || req.Model == "harness-trigger-crash-fixture" {
 			responses = []string{
 				`{"javascriptCode":"final('Find the seeded reference and record a finding',{})"}`,
 				`{"javascriptCode":"const evidence=lookup('Find the seeded reference'); if(!JSON.stringify(evidence).includes('REF-42')) throw Error('lookup evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Trigger reference',body:'The seeded reference is REF-42.',payload:{reference:'REF-42'}}); final('Report the finding',{evidence,receipt});"}`,
 				`{"javascriptCode":"const evidence=harnessSavedOperation(1); if(!JSON.stringify(evidence).includes('REF-42')) throw Error('saved lookup evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Trigger reference',body:'The seeded reference is REF-42.',payload:{reference:'REF-42'}}); final('Report the finding',{receipt});"}`,
 				`{"answer":"Recorded the trigger finding for REF-42."}`,
+			}
+			if resume && req.Model == "harness-trigger-crash-fixture" {
+				responses = []string{
+					`{"javascriptCode":"final('Report the saved workflow finding',{})"}`,
+					`{"javascriptCode":"const receipt=harnessSavedOperation(2); if(!JSON.stringify(receipt).includes('outputId')) throw Error('saved output missing'); final('Report saved finding',{receipt});"}`,
+					`{"answer":"Recovered the recorded trigger finding for REF-42."}`,
+				}
 			}
 		} else if req.Model == "harness-workflow-action-fixture" {
 			responses = []string{
