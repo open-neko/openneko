@@ -1,4 +1,4 @@
-import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
+import { startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { heldItems, pool, resolveUserGroups } from "@neko/db";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { listPackActionDescriptors } from "../work/pack-action-descriptors";
@@ -463,7 +463,7 @@ async function runWorkflowTurnTraced(
     const [allowedSkills, allowedLibrary] = await startupPhase("identity.entitlements", () =>
       Promise.all([runHeldItemIds(runActor, "skill"), runAllowedLibrary(runActor)]));
     const budget = workflowTurnBudget();
-    const coreResult = await runCore({
+    const coreInput = {
       ...(allowedSkills ? { allowedSkills } : {}),
       ...(allowedLibrary ? { allowedLibrary } : {}),
       backend,
@@ -492,7 +492,19 @@ async function runWorkflowTurnTraced(
       maxModelCalls: opts.maxModelCalls,
       maxModelTokens: opts.maxModelTokens,
       maxCostMicros: opts.maxCostMicros,
-    });
+    };
+    let coreResult;
+    try {
+      coreResult = await runCore(coreInput);
+    } catch (error) {
+      if (backend.id !== "harness" || signal?.aborted || spendCapFromSignal(signal)) throw error;
+      // Re-enter only the same run's launcher. Its persisted admission and
+      // checkpoint inspector either adopt a terminal receipt, resume a fully
+      // reconciled attempt, or deny dispatch when the prior outcome is unknown.
+      // The workflow remains running across this one bounded recovery attempt.
+      startupEvent("workflow.harness_reconcile_retry", {runId:workRunId});
+      coreResult = await runCore(coreInput);
+    }
     const spendStop = spendCapFromSignal(signal);
     let result = spendStop
       ? { ...coreResult, status: "failed" as const, error: spendStop.message }

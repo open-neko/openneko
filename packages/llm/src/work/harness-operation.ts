@@ -61,5 +61,10 @@ export async function recordHarnessOperation(
 export async function loadHarnessOperations(scope:{orgId:string;runId:string}) {
   const rows=(await pool().query(`SELECT operation_id,request,result FROM harness_operation
     WHERE org_id=$1 AND run_id=$2 ORDER BY operation_id LIMIT 32`,[scope.orgId,scope.runId])).rows;
-  return rows.map(row=>({id:row.operation_id,...(row.request.tool ? {tool:row.request.tool} : {}),...(row.request.binding ? {binding:row.request.binding} : {}),instruction:row.request.instruction,result:row.result}));
+  return rows.map(row=>({id:row.operation_id,
+    // The host journal names its effect class workflow_output; the Harness
+    // checkpoint names the admitted callable workflow_output_emit. Recovery
+    // must compare the same capability identity as the original dispatch.
+    ...(row.request.tool ? {tool:row.request.tool==="workflow_output" ? "workflow_output_emit" : row.request.tool} : {}),
+    ...(row.request.binding ? {binding:row.request.binding} : {}),instruction:row.request.instruction,result:row.result}));
 }
