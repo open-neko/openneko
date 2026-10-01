@@ -864,8 +864,11 @@ bounded, tool-less Ax finalizer call. The ordinary terminal gate checks its
 answer afterward. No-key fixtures prove the evidenced case completes, the
 no-evidence case fails without a finalizer call, and a completed finalizer
 replays from a validated checkpoint on queue redelivery without contacting the
-model or tool. The host still needs to supply artifact-specific verification;
-connected OpenShell/worker redelivery with this gate remains open. The
+model or tool. Connected source-change and cron worker runs now prove that
+`terminal.checked` accepts a broker-confirmed `workflow_output_emit` receipt
+before `run.finished`, and that queue redelivery leaves the terminal checkpoint
+and upstream model-call counts unchanged. Other artifact kinds still need
+host-specific verification. The
 standalone OpenNeko adapter now installs these gates only for queued workflow
 runs: the selected evidence must be a bound, broker-confirmed
 `workflow_output_emit` receipt. A no-key integration fixture runs the model,
