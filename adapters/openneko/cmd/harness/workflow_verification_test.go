@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,7 +55,10 @@ func TestWorkflowCompletionNeedsBrokerConfirmedOutput(t *testing.T) {
 			encoded, _ := json.Marshal(code)
 			answers := []string{`{"javascriptCode":"final('Produce output',{})"}`, `{"javascriptCode":` + string(encoded) + `}`, `{"answer":"Workflow completed."}`}
 			modelCalls := 0
-			modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			var modelRequests []string
+			modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				modelRequests = append(modelRequests, string(body))
 				if modelCalls >= len(answers) {
 					http.Error(w, "unexpected model call", http.StatusBadRequest)
 					return
@@ -78,6 +82,19 @@ func TestWorkflowCompletionNeedsBrokerConfirmedOutput(t *testing.T) {
 			if len(events) < 2 || events[len(events)-2].Type != "terminal.checked" || events[len(events)-1].Type != "run.finished" ||
 				!strings.HasPrefix(events[len(events)-2].Origin, "openneko-workflow-output-") {
 				t.Fatalf("missing durable terminal check: %+v", events)
+			}
+			updates := 0
+			for _, event := range events {
+				if event.Type == "runtime.state.updated" {
+					updates++
+					if event.StateUpdate == nil || event.StateUpdate.Target != "root/responder" || !strings.Contains(string(event.StateUpdate.State), `"output_id":"output-1"`) {
+						t.Fatalf("incorrect state update: %+v", event)
+					}
+				}
+			}
+			if updates != boolInt(emitOutput) || emitOutput && (strings.Contains(modelRequests[0], "operation_id") || strings.Contains(modelRequests[1], "operation_id") || strings.Count(modelRequests[2], "operation_id") != 1) {
+				t.Fatalf("workflow state not confined to responder: updates=%d occurrences=%d,%d,%d", updates,
+					strings.Count(modelRequests[0], "operation_id"), strings.Count(modelRequests[1], "operation_id"), strings.Count(modelRequests[2], "operation_id"))
 			}
 		})
 	}

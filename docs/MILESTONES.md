@@ -991,8 +991,13 @@ stage. Resume reconstructs the latest snapshot from the checkpoint and sends
 it as data to the new attempt; a changed hook version is rejected before
 model dispatch. Local no-key fixtures verify the responder sees an update
 once after a tool result and the resumed distiller sees the same committed
-snapshot without repeating the tool. This does not yet prove a connected
-OpenNeko state hook or Ax's applied-event acknowledgement under failures.
+snapshot without repeating the tool. The queued OpenNeko workflow adapter now
+derives a responder-only state update from the bound, broker-confirmed output
+receipt. A connected OpenShell/worker run records exactly one update after the
+committed output, and the synthetic model rejects its responder request unless
+that host state is present. Source-change and cron queue redelivery keep the
+checkpoint unchanged. Ax's separate applied-event acknowledgement under
+failure and connected crash/resume of this update remain open.
 Ax's stage-option rate limiter did not override the already-bound outer client
 limiter in a no-key route fixture, so call-time stage labels remain unavailable
 from that hook. The Harness now emits a separate content-free

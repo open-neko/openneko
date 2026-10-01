@@ -152,25 +152,29 @@ func main() {
 		if strings.HasPrefix(r.URL.Path, "/route/") {
 			stage := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/route/"), "/v1/chat/completions")
 			responses := map[string]string{
-				"context":  `{"javascriptCode":"final('Use the approved executor route',{})"}`,
-				"context-spare": `{"javascriptCode":"final('Use the approved executor route',{})"}`,
-				"skill": `{"selected":"reference-check"}`,
-				"context-lookup": `{"javascriptCode":"final('Find the seeded reference',{})"}`,
-				"executor": `{"javascriptCode":"final('Answer the routing check',{})"}`,
-				"executor-lookup": "",
-				"executor-base": `{"javascriptCode":"throw new Error('retry this actor step');"}`,
-				"executor-strong": `{"javascriptCode":"final('Answer the routing check',{})"}`,
-				"responder": `{"answer":"ROUTED-OK"}`,
+				"context":          `{"javascriptCode":"final('Use the approved executor route',{})"}`,
+				"context-spare":    `{"javascriptCode":"final('Use the approved executor route',{})"}`,
+				"skill":            `{"selected":"reference-check"}`,
+				"context-lookup":   `{"javascriptCode":"final('Find the seeded reference',{})"}`,
+				"executor":         `{"javascriptCode":"final('Answer the routing check',{})"}`,
+				"executor-lookup":  "",
+				"executor-base":    `{"javascriptCode":"throw new Error('retry this actor step');"}`,
+				"executor-strong":  `{"javascriptCode":"final('Answer the routing check',{})"}`,
+				"responder":        `{"answer":"ROUTED-OK"}`,
 				"responder-lookup": `{"answer":"The seeded reference is REF-42."}`,
 			}
 			response, ok := responses[stage]
-			if stage == "context-503" || stage == "context-403" || stage == "context-429" { ok = true }
+			if stage == "context-503" || stage == "context-403" || stage == "context-429" {
+				ok = true
+			}
 			if !ok || r.URL.Path != "/route/"+stage+"/v1/chat/completions" ||
 				r.Header.Get("Authorization") != "Bearer synthetic-m6-"+stage {
 				http.Error(w, "route or broker credential mismatch", http.StatusForbidden)
 				return
 			}
-			var req struct { Model string `json:"model"` }
+			var req struct {
+				Model string `json:"model"`
+			}
 			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Model != "harness-route-"+stage {
 				http.Error(w, "model route mismatch", http.StatusBadRequest)
 				return
@@ -199,7 +203,7 @@ func main() {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role":"assistant", "content":response}, "finish_reason":"stop"}}, "usage":map[string]int{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": response}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
 			return
 		}
 		var req struct {
@@ -456,6 +460,10 @@ func main() {
 		}
 		if n == 2 && req.Model == "harness-fixture" && denyWorkflowDelete && !strings.Contains(string(req.Messages), "confirmation_required") {
 			http.Error(w, "missing workflow delete confirmation denial", 422)
+			return
+		}
+		if n == 3 && req.Model == "harness-trigger-fixture" && (!strings.Contains(string(req.Messages), "operation_id") || !strings.Contains(string(req.Messages), "output_id")) {
+			http.Error(w, "missing host-committed workflow state at responder", 422)
 			return
 		}
 		if n == 2 && req.Model == "harness-fixture" && (createRule || editRule) && !strings.Contains(string(req.Messages), "ruleId") {
