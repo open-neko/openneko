@@ -109,6 +109,8 @@ type Continuation struct {
 	TriageSkipped         bool
 	TriageProposed        bool
 	TriageObservation     *budgettriage.Observation
+	TriageProfile         *budgettriage.Proposal
+	TriageLastExtensionOp uint64
 	StateUpdate           *RuntimeStateUpdate
 	Operations            []SavedOperation
 }
@@ -284,7 +286,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens, pricing: pricing, costMicros: prior.CostMicros}
+	events := &recorder{spec: spec, emit: emit, cancel: cancel, seq: prior.Sequence, spans: prior.SpanID, modelCalls: prior.ModelCalls, usage: prior.Usage, maxReportedCallTokens: prior.MaxReportedCallTokens, pricing: pricing, costMicros: prior.CostMicros,
+		shadowProfile: prior.TriageProfile, shadowLastExtensionOp: prior.TriageLastExtensionOp}
 	events.usage.Requests = prior.ModelCalls
 	for _, op := range prior.Operations {
 		if op.Name() == "lookup" {
@@ -315,6 +318,15 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		}
 		if err := proposeBudgetProfile(events, tools.Triage.Policy, *prior.TriageObservation); err != nil {
 			return Result{}, err
+		}
+	}
+	if tools.Triage != nil && len(prior.Operations) > 0 && !events.hasError() {
+		for i := len(prior.Operations) - 1; i >= 0; i-- {
+			op := prior.Operations[i]
+			if op.Finished && op.Error == "" && len(op.Result) > 0 && !toolResultFailed(op.Result) {
+				events.maybeExtendBudgetProfile(tools.Triage.Policy, tools.Triage.Route, uint64(op.ID))
+				break
+			}
 		}
 	}
 	if len(childReads) > 0 {
@@ -473,6 +485,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 					view.remember(saved)
 					finished.DurationMS = time.Since(startedAt).Milliseconds()
 					events.send(finished)
+					if tools.Triage != nil && !events.hasError() && finished.Error == "" && len(finished.Data) > 0 && !toolResultFailed(finished.Data) {
+						events.maybeExtendBudgetProfile(tools.Triage.Policy, tools.Triage.Route, currentID)
+					}
 					if tools.AfterTool != nil && !events.hasError() {
 						update, err := tools.AfterTool(ctx, saved)
 						if err != nil || update != nil && !update.Valid() {
@@ -763,6 +778,9 @@ type recorder struct {
 	remoteTokens          int64
 	pricing               *RoutedClient
 	costMicros            int64
+	shadowMu              sync.Mutex
+	shadowProfile         *budgettriage.Proposal
+	shadowLastExtensionOp uint64
 	costDenied            bool
 	costOverspent         bool
 	stateFailed           bool

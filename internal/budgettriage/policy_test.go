@@ -43,3 +43,28 @@ func TestHostBudgetPolicyProducesOnlyCappedShadowProposals(t *testing.T) {
 		t.Fatal("non-monotonic policy accepted")
 	}
 }
+
+func TestBudgetExtensionFollowsPinnedLadderAndOperation(t *testing.T) {
+	policy := testBudgetPolicy()
+	hard := budgettriage.Limits{MaxModelCalls: 64, MaxModelTokens: 200_000, MaxCostMicros: 200_000}
+	current := budgettriage.Proposal{Version: policy.Version, Profile: "short", Limits: policy.Short}
+	for _, want := range []string{"multi_step", "artifact", "fixed"} {
+		extension, ok := policy.Extend(current, hard, uint64(len(want)))
+		if !ok || extension.To != want || !extension.Valid(current, hard) {
+			t.Fatalf("extension=%+v ok=%t want=%s", extension, ok, want)
+		}
+		current = budgettriage.Proposal{Version: extension.Version, Profile: extension.To, Limits: extension.Limits}
+	}
+	if _, ok := policy.Extend(current, hard, 99); ok {
+		t.Fatal("fixed hard cap extended")
+	}
+	forged := budgettriage.Extension{Version: policy.Version, From: "short", To: "artifact", OperationID: 1,
+		Limits: hard, Reason: "next_call_exceeds_profile"}
+	if forged.Valid(budgettriage.Proposal{Version: policy.Version, Profile: "short", Limits: policy.Short}, hard) {
+		t.Fatal("extension skipped a profile")
+	}
+	clipped := budgettriage.Proposal{Version: policy.Version, Profile: "artifact", Limits: budgettriage.Limits{MaxModelCalls: 24, MaxModelTokens: 60_000, MaxCostMicros: 30_000}}
+	if _, ok := policy.Extend(clipped, clipped.Limits, 1); ok {
+		t.Fatal("profile already at hard cap extended")
+	}
+}

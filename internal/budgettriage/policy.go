@@ -59,6 +59,56 @@ type Proposal struct {
 	Limits  Limits `json:"limits"`
 }
 
+// Extension records one possible next allowance after a successful durable
+// operation. It is observational until dynamic admission is explicitly enabled.
+type Extension struct {
+	Version     string `json:"version"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+	OperationID uint64 `json:"operation_id"`
+	Limits      Limits `json:"limits"`
+	Reason      string `json:"reason"`
+}
+
+func (e Extension) Valid(previous Proposal, hard Limits) bool {
+	if e.Version != previous.Version || e.OperationID == 0 || e.Reason != "next_call_exceeds_profile" ||
+		!e.Limits.within(hard) || e.Limits == previous.Limits || e.From != previous.Profile ||
+		e.Limits.MaxModelCalls < previous.Limits.MaxModelCalls ||
+		e.Limits.MaxModelTokens < previous.Limits.MaxModelTokens ||
+		e.Limits.MaxCostMicros < previous.Limits.MaxCostMicros {
+		return false
+	}
+	switch e.From {
+	case "short":
+		return e.To == "multi_step"
+	case "multi_step":
+		return e.To == "artifact"
+	case "artifact":
+		return e.To == "fixed" && e.Limits == hard
+	default:
+		return false
+	}
+}
+
+func (p Policy) Extend(previous Proposal, hard Limits, operationID uint64) (Extension, bool) {
+	if !p.Valid() || !previous.Valid(hard) || previous.Version != p.Version || operationID == 0 {
+		return Extension{}, false
+	}
+	extension := Extension{Version: p.Version, From: previous.Profile, OperationID: operationID,
+		Reason: "next_call_exceeds_profile"}
+	switch previous.Profile {
+	case "short":
+		extension.To, extension.Limits = "multi_step", minLimits(p.MultiStep, hard)
+	case "multi_step":
+		extension.To, extension.Limits = "artifact", minLimits(p.Artifact, hard)
+	case "artifact":
+		extension.To, extension.Limits = "fixed", hard
+	default:
+		return Extension{}, false
+	}
+	return extension, extension.Valid(previous, hard) && extension.Limits != previous.Limits
+}
+
 func (p Proposal) Valid(hard Limits) bool {
 	if !policyVersion.MatchString(p.Version) || !p.Limits.within(hard) {
 		return false

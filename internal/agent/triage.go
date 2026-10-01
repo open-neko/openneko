@@ -23,12 +23,7 @@ func runBudgetTriage(ctx context.Context, r *recorder, task *BudgetTriage, input
 	case r.spec.MaxModelTokens > 0 && r.chargedTokens()+missingModelUsageCharge+r.nextModelReservation() > r.spec.MaxModelTokens:
 		reason = "token_budget"
 	default:
-		mainReserve := int64(0)
-		for _, routePrice := range r.pricing.Prices {
-			if charge := routePrice.Reservation(r.nextModelReservation()); charge > mainReserve {
-				mainReserve = charge
-			}
-		}
+		mainReserve := mainRouteReservation(r.pricing, task.Route, r.nextModelReservation())
 		if r.costMicros+reserve+mainReserve > r.spec.MaxCostMicros {
 			reason = "cost_budget"
 		}
@@ -71,7 +66,61 @@ func proposeBudgetProfile(r *recorder, policy budgettriage.Policy, observation b
 	if r.hasError() {
 		return fmt.Errorf("budget triage proposal was not journaled")
 	}
+	r.mu.Lock()
+	r.shadowProfile = &proposal
+	r.mu.Unlock()
 	return nil
+}
+
+// Reconsider a shadow allowance only after a successful, durable operation.
+// The actual run still uses its original hard caps. A single operation may
+// justify at most one step up the ordered policy ladder.
+func (r *recorder) maybeExtendBudgetProfile(policy budgettriage.Policy, triageRoute string, operationID uint64) {
+	r.shadowMu.Lock()
+	defer r.shadowMu.Unlock()
+	r.mu.Lock()
+	current := r.shadowProfile
+	if current == nil || operationID <= r.shadowLastExtensionOp || r.err != nil {
+		r.mu.Unlock()
+		return
+	}
+	nextTokens := r.nextModelReservation()
+	mainCostReserve := mainRouteReservation(r.pricing, triageRoute, nextTokens)
+	due := r.modelCalls+1 > current.Limits.MaxModelCalls ||
+		r.chargedTokens()+nextTokens > current.Limits.MaxModelTokens ||
+		r.costMicros+mainCostReserve > current.Limits.MaxCostMicros
+	r.mu.Unlock()
+	if !due {
+		return
+	}
+	extension, ok := policy.Extend(*current, r.spec.triageHardLimits(), operationID)
+	if !ok {
+		return
+	}
+	data, _ := json.Marshal(extension)
+	r.send(Event{Type: "budget.profile.extended", Name: extension.To, OperationID: operationID, Data: data})
+	if r.hasError() {
+		return
+	}
+	updated := budgettriage.Proposal{Version: extension.Version, Profile: extension.To, Limits: extension.Limits}
+	r.mu.Lock()
+	r.shadowProfile = &updated
+	r.shadowLastExtensionOp = operationID
+	r.mu.Unlock()
+}
+
+// The classifier is a one-time request charged before the proposal. Future
+// context, executor and responder calls can use any other approved route.
+func mainRouteReservation(pricing *RoutedClient, triageRoute string, tokens int64) int64 {
+	reserve := int64(0)
+	for route, price := range pricing.Prices {
+		if route != triageRoute {
+			if charge := price.Reservation(tokens); charge > reserve {
+				reserve = charge
+			}
+		}
+	}
+	return reserve
 }
 
 type triageJournal struct {

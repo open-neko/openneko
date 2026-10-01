@@ -255,6 +255,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	var finalizerEvidenceIDs []int
 	triageStarted, triageFinished, triageSkipped, triageProposed := false, false, false, false
 	var triageObservation budgettriage.Observation
+	var shadowProfile *budgettriage.Proposal
+	var lastShadowExtensionOp uint64
 	for i, e := range s.Events {
 		if terminalCheck != nil && e.Type != "run.finished" && e.Type != "run.resumed" {
 			return invalid()
@@ -404,6 +406,27 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 				return invalid()
 			}
 			triageProposed = true
+			shadowProfile = &proposal
+		case "budget.profile.extended":
+			var extension budgettriage.Extension
+			decoder := json.NewDecoder(bytes.NewReader(e.Data))
+			decoder.DisallowUnknownFields()
+			hard := budgettriage.Limits{MaxModelCalls: spec.ModelCallLimit(), MaxModelTokens: spec.MaxModelTokens, MaxCostMicros: spec.MaxCostMicros}
+			if !triageProposed || shadowProfile == nil || e.OperationID == 0 || e.OperationID <= lastShadowExtensionOp ||
+				!ended[e.OperationID] || e.OperationID > uint64(len(s.Operations)) || e.Name == "" ||
+				len(e.Data) == 0 || len(e.Data) > 1024 || decoder.Decode(&extension) != nil || decoder.Decode(new(any)) != io.EOF ||
+				e.OperationID != extension.OperationID || e.Name != extension.To || !extension.Valid(*shadowProfile, hard) {
+				return invalid()
+			}
+			op := s.Operations[e.OperationID-1]
+			var resultStatus struct {
+				IsError bool `json:"is_error"`
+			}
+			if op.Error != "" || len(op.Result) == 0 || json.Unmarshal(op.Result, &resultStatus) != nil || resultStatus.IsError {
+				return invalid()
+			}
+			shadowProfile = &budgettriage.Proposal{Version: extension.Version, Profile: extension.To, Limits: extension.Limits}
+			lastShadowExtensionOp = e.OperationID
 		case "run.resumed":
 			attempt++
 			if attempt > 3 || e.Attempt != attempt || len(started) != len(ended) {

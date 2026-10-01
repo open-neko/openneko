@@ -17,7 +17,7 @@ import (
 	"github.com/open-neko/harness/internal/budgettriage"
 )
 
-func triageRunFixture(t *testing.T) (agent.Spec, *agent.RoutedClient, agent.Tools, *int, *int, func()) {
+func triageRunFixture(t *testing.T, customAnswers ...string) (agent.Spec, *agent.RoutedClient, agent.Tools, *int, *int, func()) {
 	t.Helper()
 	triageCalls, chatCalls := 0, 0
 	triageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +35,9 @@ func triageRunFixture(t *testing.T) (agent.Spec, *agent.RoutedClient, agent.Tool
 		}
 		answers := []string{`{"javascriptCode":"final('Answer the question',{})"}`,
 			`{"javascriptCode":"final('Report the result',{})"}`, `{"answer":"Verified answer."}`}
+		if len(customAnswers) > 0 {
+			answers = customAnswers
+		}
 		if chatCalls > len(answers) {
 			http.Error(w, "too many model calls", 400)
 			return
@@ -66,6 +69,101 @@ func triageRunFixture(t *testing.T) (agent.Spec, *agent.RoutedClient, agent.Tool
 		TriageSummary: "Investigate a reference and answer", TriageToolFamilies: "graphjin",
 		TriageInputBytes: 200}
 	return spec, client, tools, &triageCalls, &chatCalls, func() { triageServer.Close(); chatServer.Close() }
+}
+
+func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
+	answers := []string{`{"javascriptCode":"final('Read the fixture',{})"}`,
+		`{"javascriptCode":"const value=native_read({}); final('Done',{value});"}`,
+		`{"javascriptCode":"final('Read the fixture',{})"}`,
+		`{"javascriptCode":"const value=native_read({}); final('Done',{value});"}`,
+		`{"answer":"Verified answer."}`}
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t, answers...)
+	defer closeServers()
+	tools.Triage.Policy.Short.MaxModelCalls = 1
+	tools.Triage.Policy.MultiStep.MaxModelCalls = 2
+	reads := 0
+	tools.Capabilities = []agent.Capability{{Name: "native_read", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a fixture.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads++
+			return json.RawMessage(`{"value":"ok"}`), nil
+		}}}
+	root := t.TempDir()
+	_, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "tool.finished" {
+			return errors.New("delivery interrupted after durable tool receipt")
+		}
+		return nil
+	})
+	if err == nil || reads != 1 || *triageCalls != 1 || *chatCalls != 2 {
+		t.Fatalf("first attempt err=%v reads=%d triage=%d chat=%d", err, reads, *triageCalls, *chatCalls)
+	}
+	if report, inspectErr := Inspect(root, spec); inspectErr != nil || !report.CanResume {
+		t.Fatalf("checkpoint report=%+v err=%v", report, inspectErr)
+	}
+	var events []agent.Event
+	result, err := ResumeWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		events = append(events, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || reads != 1 || *triageCalls != 1 || *chatCalls != 5 {
+		t.Fatalf("resume result=%+v err=%v reads=%d triage=%d chat=%d", result, err, reads, *triageCalls, *chatCalls)
+	}
+	extensions := 0
+	for _, e := range events {
+		if e.Type != "budget.profile.extended" {
+			continue
+		}
+		extensions++
+		var extension budgettriage.Extension
+		if e.OperationID != 1 || json.Unmarshal(e.Data, &extension) != nil || extension.From != "multi_step" || extension.To != "artifact" {
+			t.Fatalf("invalid resumed extension: %+v %+v", e, extension)
+		}
+	}
+	if extensions != 1 {
+		t.Fatalf("expected one resumed extension, got %d", extensions)
+	}
+	if report, inspectErr := Inspect(root, spec); inspectErr != nil || report.Outcome != "terminal" {
+		t.Fatalf("terminal report=%+v err=%v", report, inspectErr)
+	}
+	var replay []agent.Event
+	if _, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		replay = append(replay, e)
+		return nil
+	}); err != nil || reads != 1 || *triageCalls != 1 || *chatCalls != 5 {
+		t.Fatalf("terminal replay err=%v reads=%d triage=%d chat=%d", err, reads, *triageCalls, *chatCalls)
+	}
+	replayedExtensions := 0
+	for _, e := range replay {
+		if e.Type == "budget.profile.extended" {
+			replayedExtensions++
+		}
+	}
+	if replayedExtensions != 1 {
+		t.Fatalf("terminal replay contained %d extensions", replayedExtensions)
+	}
+	sum := sha256.Sum256([]byte(spec.RunID))
+	path := filepath.Join(root, hex.EncodeToString(sum[:]))
+	data, err := os.ReadFile(path + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved checkpoint
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	for i := range saved.Events {
+		if saved.Events[i].Type == "budget.profile.extended" {
+			saved.Events[i].OperationID++
+			break
+		}
+	}
+	if err := saveCheckpoint(root, path, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(root, spec); err == nil {
+		t.Fatal("extension bound to a different operation passed checkpoint inspection")
+	}
 }
 
 func TestTriageCallIsChargedAndReplayedFromCheckpoint(t *testing.T) {

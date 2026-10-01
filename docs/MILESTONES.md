@@ -1194,8 +1194,13 @@ limits are monotonic by class and clipped to the trusted run's hard caps; they
 never alter admission. The proposal is journaled separately from the model
 settlement, pinned in the tool catalog, and reconstructed after a crash between
 those two events without redispatching the classifier. Checkpoint-time
-extension rules and held-out outcome calibration remain required before
-enabling dynamic limits or a canary.
+extension rules now emit a second shadow event after a successful, durable
+tool receipt when the next model reservation would exceed the current proposed
+call, token or cost allowance. Extensions advance one policy tier at a time,
+are clipped to the original hard caps, and recover from a crash after the tool
+receipt without redispatching the tool or resetting spend. They remain
+observational; held-out outcome calibration remains required before enabling
+dynamic limits or a canary.
 
 Persist large observations with scoped retrievable references and bounded excerpts.
 Measure admitted-tool schema cost and selection errors. If they are material,
