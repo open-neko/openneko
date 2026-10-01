@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - "apps/openneko/**"
-      - "apps/agent-harness/**"
       - "db/migrations/**"
       - "Dockerfile"
       - "compose.yml"
@@ -15,7 +14,6 @@ on:
   pull_request:
     paths:
       - "apps/openneko/**"
-      - "apps/agent-harness/**"
       - "db/migrations/**"
       - "Dockerfile"
       - "compose.yml"
@@ -24,25 +22,6 @@ on:
       - ".github/workflows/go.yml"
 
 jobs:
-  harness-compat:
-    name: harness compatibility (HTTP and Goja)
-    runs-on: ubuntu-22.04
-    defaults:
-      run:
-        working-directory: apps/agent-harness
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: apps/agent-harness/go.mod
-          cache-dependency-path: apps/agent-harness/go.sum
-      - name: Check formatting
-        run: test -z "$(gofmt -l .)"
-      - name: Vet
-        run: go vet ./...
-      - name: Integration contract tests
-        run: go test -race -count=1 -v -timeout 60s ./...
-
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

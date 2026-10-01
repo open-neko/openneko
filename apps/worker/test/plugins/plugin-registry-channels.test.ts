@@ -3,9 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RPC_PROTOCOL_VERSION, rpcOk, type RpcResponse } from "@open-neko/plugin-types";
-import {
-} from "@neko/llm/workflows";
-import { PluginRegistry } from "../../src/plugins/plugin-registry";
+import { PluginRegistry, pluginIdFromName } from "../../src/plugins/plugin-registry";
 import type {
   PluginRuntime,
   PluginVmSpec,
@@ -150,7 +148,7 @@ describe("PluginRegistry — channel capability", () => {
       ingress: "webhook",
     });
     expect(reg.status().channels).toEqual([
-      { pluginId: "open-neko-channel-telegram", providerLabel: "Telegram" },
+      { pluginId: pluginIdFromName(CHANNEL_NAME), providerLabel: "Telegram" },
     ]);
     await reg.stop();
   });
