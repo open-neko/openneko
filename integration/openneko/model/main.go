@@ -153,10 +153,12 @@ func main() {
 			stage := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/route/"), "/v1/chat/completions")
 			responses := map[string]string{
 				"context":  `{"javascriptCode":"final('Use the approved executor route',{})"}`,
+				"context-spare": `{"javascriptCode":"final('Use the approved executor route',{})"}`,
 				"executor": `{"javascriptCode":"final('Answer the routing check',{})"}`,
 				"responder": `{"answer":"ROUTED-OK"}`,
 			}
 			response, ok := responses[stage]
+			if stage == "context-503" || stage == "context-403" { ok = true }
 			if !ok || r.URL.Path != "/route/"+stage+"/v1/chat/completions" ||
 				r.Header.Get("Authorization") != "Bearer synthetic-m6-"+stage {
 				http.Error(w, "route or broker credential mismatch", http.StatusForbidden)
@@ -170,6 +172,14 @@ func main() {
 			mu.Lock()
 			counts[req.Model]++
 			mu.Unlock()
+			if stage == "context-503" {
+				http.Error(w, "synthetic transient failure", http.StatusServiceUnavailable)
+				return
+			}
+			if stage == "context-403" {
+				http.Error(w, "synthetic policy denial", http.StatusForbidden)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role":"assistant", "content":response}, "finish_reason":"stop"}}, "usage":map[string]int{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}})
 			return
@@ -681,7 +691,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": responses[n]}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
 	}
 	http.HandleFunc("/v1/chat/completions", modelHandler)
-	for _, stage := range []string{"context", "executor", "responder"} {
+	for _, stage := range []string{"context", "context-spare", "context-503", "context-403", "executor", "responder"} {
 		http.HandleFunc("/route/"+stage+"/v1/chat/completions", modelHandler)
 	}
 	panic(http.ListenAndServe(":8080", nil))

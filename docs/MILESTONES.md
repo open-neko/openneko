@@ -894,9 +894,11 @@ credential aliases. An isolated OpenShell 0.0.116 run now exercises three Ax
 stage routes through separate provider profiles. The upstream fixture rejects
 the wrong route model or bearer credential; context, executor and responder
 each ran once with complete usage and the expected answer. This qualifies
-connected route selection and broker key replacement. The OpenNeko worker's
-trusted manifest launch, executor escalation, transient fallback, rate-limit
-behavior and streaming first-content qualification remain open. Run the route
+connected route selection and broker key replacement. The same isolated
+gateway also proved one approved fallback after a content-free 503, while a
+403 stopped before any secondary request. The OpenNeko worker's trusted
+manifest launch, executor escalation, rate-limit behavior and streaming
+first-content qualification remain open. Run the route
 check with `HARNESS_M5_FAST=1 HARNESS_M6_ROUTING_ONLY=1` through
 `integration/openneko/run.sh` using the pinned CLI and isolated OpenNeko worktree.
 Resume now projects saved operations into a bounded 32 KiB evidence index. The
