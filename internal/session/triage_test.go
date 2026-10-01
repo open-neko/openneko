@@ -72,6 +72,90 @@ func triageRunFixture(t *testing.T, customAnswers ...string) (agent.Spec, *agent
 	return spec, client, tools, &triageCalls, &chatCalls, func() { triageServer.Close(); chatServer.Close() }
 }
 
+func TestCanaryBudgetBlocksUnjustifiedModelCall(t *testing.T) {
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t)
+	defer closeServers()
+	spec.HostBudgetMode = "canary"
+	tools.Triage.Policy.Short.MaxModelCalls = 2
+	tools.Triage.Policy.MultiStep.MaxModelCalls = 2
+	root := t.TempDir()
+	result, err := RunWithTools(context.Background(), root, spec, client, tools, func(agent.Event) error { return nil })
+	if err != nil || result.Status != "failed" || result.Code != "dynamic_budget_exceeded" || *triageCalls != 1 || *chatCalls != 1 {
+		t.Fatalf("canary result=%+v err=%v triage=%d chat=%d", result, err, *triageCalls, *chatCalls)
+	}
+	if report, err := Inspect(root, spec); err != nil || report.Outcome != "terminal" {
+		t.Fatalf("canary checkpoint=%+v err=%v", report, err)
+	}
+	shadow := spec
+	shadow.HostBudgetMode = ""
+	if _, err := Inspect(root, shadow); err == nil {
+		t.Fatal("canary checkpoint replayed as shadow mode")
+	}
+}
+
+func TestCanaryBudgetExtendsAfterDurableRead(t *testing.T) {
+	answers := []string{`{"javascriptCode":"final('Read the fixture',{})"}`,
+		`{"javascriptCode":"const value=native_read({}); final('Done',{value});"}`,
+		`{"answer":"Verified answer."}`}
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t, answers...)
+	defer closeServers()
+	spec.HostBudgetMode = "canary"
+	tools.Triage.Policy.Short.MaxModelCalls = 3
+	tools.Triage.Policy.MultiStep.MaxModelCalls = 3
+	reads := 0
+	tools.Capabilities = []agent.Capability{{Name: "native_read", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a fixture.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			reads++
+			return json.RawMessage(`{"value":"ok"}`), nil
+		}}}
+	root := t.TempDir()
+	var events []agent.Event
+	result, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		events = append(events, e)
+		return nil
+	})
+	if err != nil || result.Status != "completed" || reads != 1 || *triageCalls != 1 || *chatCalls != 3 {
+		t.Fatalf("extended canary result=%+v err=%v reads=%d triage=%d chat=%d", result, err, reads, *triageCalls, *chatCalls)
+	}
+	extended, responder := -1, -1
+	for i, e := range events {
+		if e.Type == "budget.profile.extended" && e.OperationID == 1 {
+			extended = i
+		}
+		if e.Type == "model.request.started" && e.CallID == 4 {
+			responder = i
+		}
+	}
+	if extended < 0 || responder <= extended {
+		t.Fatalf("extension was not durable before responder: extension=%d responder=%d", extended, responder)
+	}
+	if report, err := Inspect(root, spec); err != nil || report.Outcome != "terminal" {
+		t.Fatalf("extended canary checkpoint=%+v err=%v", report, err)
+	}
+}
+
+func TestCanaryFallsBackToHardBudgetWhenTriageIsSkipped(t *testing.T) {
+	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t)
+	defer closeServers()
+	spec.HostBudgetMode = "canary"
+	spec.MaxModelCalls = 3 // Triage refuses to consume room needed for the ordinary turn.
+	root := t.TempDir()
+	var skipped bool
+	result, err := RunWithTools(context.Background(), root, spec, client, tools, func(e agent.Event) error {
+		if e.Type == "budget.triage.skipped" && e.Name == "call_budget" {
+			skipped = true
+		}
+		return nil
+	})
+	if err != nil || result.Status != "completed" || !skipped || *triageCalls != 0 || *chatCalls != 3 {
+		t.Fatalf("fallback result=%+v err=%v skipped=%v triage=%d chat=%d", result, err, skipped, *triageCalls, *chatCalls)
+	}
+	if report, err := Inspect(root, spec); err != nil || report.Outcome != "terminal" {
+		t.Fatalf("fallback checkpoint=%+v err=%v", report, err)
+	}
+}
+
 func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 	answers := []string{`{"javascriptCode":"final('Read the fixture',{})"}`,
 		`{"javascriptCode":"const value=native_read({}); final('Done',{value});"}`,
@@ -294,12 +378,13 @@ func TestRemotePreflightJournalFailureStopsLookupAndResumes(t *testing.T) {
 	}
 }
 
-func TestRemotePreflightCanJournalTwoOrderedTiersAtOneModelReceipt(t *testing.T) {
+func TestCanaryRemotePreflightCanJournalTwoOrderedTiersAtOneModelReceipt(t *testing.T) {
 	answers := []string{`{"javascriptCode":"final('Look up the reference',{})"}`,
 		`{"javascriptCode":"const value=lookup('reference'); final('Done',{value});"}`,
 		`{"answer":"Verified answer."}`}
 	spec, client, tools, _, _, closeServers := triageRunFixture(t, answers...)
 	defer closeServers()
+	spec.HostBudgetMode = "canary"
 	tools.Triage.Policy.Artifact.MaxModelTokens = 45_000 // Still below GraphJin's 49,152-token reservation.
 	lookups := 0
 	tools.Lookup = func(context.Context, string) (json.RawMessage, error) {

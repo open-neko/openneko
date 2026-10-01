@@ -61,8 +61,12 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return 2, fmt.Errorf("expected exactly one run specification")
 	}
-	if spec.HostRoutingDigest != "" {
-		return 2, fmt.Errorf("host routing digest cannot be selected by run input")
+	if spec.HostRoutingDigest != "" || spec.HostBudgetMode != "" {
+		return 2, fmt.Errorf("host routing or budget mode cannot be selected by run input")
+	}
+	spec.HostBudgetMode = os.Getenv("HARNESS_BUDGET_MODE")
+	if !spec.ValidBudgetMode() {
+		return 2, fmt.Errorf("HARNESS_BUDGET_MODE requires approved triage and hard budgets")
 	}
 	client, digest, err := loadModelClient(os.Getenv)
 	if err != nil {

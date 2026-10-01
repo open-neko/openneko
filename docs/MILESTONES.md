@@ -882,7 +882,9 @@ compaction gate also publishes a large CSV after one summary turn and proves
 exact bytes and authorization through the isolated web download on 0.1.2.
 The actor-exhaustion finalizer, API pricing preflight, pending-approval
 compaction, and organization-scoped artifact route gates also pass on 0.1.2.
-Held-out quality and dynamic-budget canary evidence remain open. The
+The host-only dynamic-budget canary mechanism now has local admission and
+checkpoint tests, but is disabled by default. Held-out quality and connected
+canary outcome evidence remain open. The
 migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 
@@ -1253,7 +1255,7 @@ artifact requests without a typed contract may still be missed. An operator-owne
 versioned budget policy now maps a valid classifier distribution to a shadow
 short, multi-step, artifact or fixed proposal. Candidate call, token and cost
 limits are monotonic by class and clipped to the trusted run's hard caps; they
-never alter admission. The proposal is journaled separately from the model
+do not alter admission in the default shadow mode. The proposal is journaled separately from the model
 settlement, pinned in the tool catalog, and reconstructed after a crash between
 those two events without redispatching the classifier. Checkpoint-time
 extension rules now emit a second shadow event after a successful, durable
@@ -1267,8 +1269,11 @@ reservation. The shadow policy now journals one or more tier steps against the
 completed Ax model call and a content-free `tool.proposed` intent for the
 requested lookup, before remote admission;
 journal failure prevents dispatch, and resume keeps the accepted tier without
-repeating the classifier. Held-out outcome calibration remains required before enabling
-dynamic limits or a canary.
+repeating the classifier. A host-only, disabled-by-default canary mode now
+applies the pinned proposal to model and remote admission, returning a distinct
+failure before any over-budget dispatch. Local tests cover denial, a durable
+read-triggered extension, skipped-classifier fallback, and mode-pinned recovery.
+Held-out outcome calibration remains required before enabling a production canary.
 The [budget evaluation protocol](M6-BUDGET-EVAL.md) now reads only validated,
 stopped checkpoints and compares shadow admission against independently labelled
 outcomes. It records the first counterfactual block, class false-lows, classifier

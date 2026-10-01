@@ -4,8 +4,8 @@ import "regexp"
 
 var policyVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
-// Limits are a host-approved candidate allowance. A proposal is telemetry
-// until held-out evidence permits a separately gated admission policy.
+// Limits are a host-approved candidate allowance. A proposal is telemetry by
+// default and an admission ceiling only in an explicit host canary.
 type Limits struct {
 	MaxModelCalls  int   `json:"max_model_calls"`
 	MaxModelTokens int64 `json:"max_model_tokens"`
@@ -52,7 +52,7 @@ func (p Policy) Valid() bool {
 		p.Short.MaxCostMicros <= p.MultiStep.MaxCostMicros && p.MultiStep.MaxCostMicros <= p.Artifact.MaxCostMicros
 }
 
-// Proposal is content-free and never changes the active admission limits.
+// Proposal is content-free; the host-pinned run mode decides whether it is enforced.
 type Proposal struct {
 	Version string `json:"version"`
 	Profile string `json:"profile"`
@@ -60,7 +60,7 @@ type Proposal struct {
 }
 
 // Extension records one possible next allowance after a successful durable
-// operation. It is observational until dynamic admission is explicitly enabled.
+// operation. It is observational except in the host-only canary mode.
 type Extension struct {
 	Version     string `json:"version"`
 	From        string `json:"from"`

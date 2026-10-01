@@ -36,6 +36,14 @@ type Spec struct {
 	TriageInputBytes        int    `json:"triage_input_bytes,omitempty"`
 	// Set by the host after decoding input, then pinned by the checkpoint.
 	HostRoutingDigest string `json:"host_routing_digest,omitempty"`
+	HostBudgetMode    string `json:"host_budget_mode,omitempty"` // Empty (shadow) or opt-in canary.
+}
+
+func (s Spec) ValidBudgetMode() bool {
+	if s.HostBudgetMode == "" {
+		return true
+	}
+	return s.HostBudgetMode == "canary" && s.TriageSummary != "" && s.MaxModelTokens > 0 && s.MaxCostMicros > 0
 }
 
 func (s Spec) OperationLimit() int {
@@ -194,6 +202,9 @@ func RunWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tool
 }
 
 func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, tools Tools, emit func(Event) error, prior Continuation) (Result, error) {
+	if !spec.ValidBudgetMode() {
+		return Result{}, fmt.Errorf("invalid host budget mode")
+	}
 	if !tools.validStateHook() {
 		return Result{}, fmt.Errorf("invalid runtime state hook")
 	}
@@ -471,6 +482,9 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				}
 				if name == "lookup" && !events.admitRemoteLookup() {
 					toolFailed = true
+					if events.canaryBudgetExceeded() {
+						return ax.Object("error", "dynamic_budget_exceeded"), nil
+					}
 					return ax.Object("error", "model_budget_exceeded"), nil
 				}
 				operationID++
@@ -691,6 +705,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			result = Result{Status: "failed", Kind: "failure", Code: "model_token_budget_exceeded"}
 		} else if events.costBudgetExceeded() {
 			result = Result{Status: "failed", Kind: "failure", Code: "cost_budget_exceeded"}
+		} else if events.canaryBudgetExceeded() {
+			result = Result{Status: "failed", Kind: "failure", Code: "dynamic_budget_exceeded"}
 		} else if events.runtimeStateFailed() {
 			result = Result{Status: "failed", Kind: "failure", Code: "runtime_state_failed"}
 		} else if events.modelBudgetExceeded() {
@@ -872,6 +888,7 @@ type recorder struct {
 	modelDenied           bool
 	modelTokenDenied      bool
 	modelTokenOverspent   bool
+	canaryDenied          bool
 	paused                bool
 	err                   error
 }
@@ -936,6 +953,14 @@ func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimi
 			r.costDenied = true
 			r.mu.Unlock()
 			return nil, fmt.Errorf("model cost admission budget exhausted")
+		}
+	}
+	if r.spec.HostBudgetMode == "canary" && r.shadowProfile != nil {
+		limits := r.shadowProfile.Limits
+		if r.modelCalls >= limits.MaxModelCalls || r.chargedTokens()+reservation > limits.MaxModelTokens || r.costMicros+costReservation > limits.MaxCostMicros {
+			r.canaryDenied = true
+			r.mu.Unlock()
+			return nil, fmt.Errorf("dynamic model budget exhausted")
 		}
 	}
 	r.modelCalls++
@@ -1034,16 +1059,30 @@ func (r *recorder) admitRemoteLookup() bool {
 		r.modelTokenDenied = true
 		return false
 	}
+	charge := int64(0)
 	if r.spec.MaxCostMicros > 0 {
-		charge := r.pricing.GraphJinPrice.Reservation(remoteLookupReservation)
+		charge = r.pricing.GraphJinPrice.Reservation(remoteLookupReservation)
 		if r.costDenied || r.costOverspent || r.costMicros+charge > r.spec.MaxCostMicros {
 			r.costDenied = true
 			return false
 		}
-		r.costMicros += charge
 	}
+	if r.spec.HostBudgetMode == "canary" && r.shadowProfile != nil {
+		limits := r.shadowProfile.Limits
+		if r.chargedTokens()+remoteLookupReservation > limits.MaxModelTokens || r.costMicros+charge > limits.MaxCostMicros {
+			r.canaryDenied = true
+			return false
+		}
+	}
+	r.costMicros += charge
 	r.remoteTokens += remoteLookupReservation
 	return true
+}
+
+func (r *recorder) canaryBudgetExceeded() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.canaryDenied
 }
 
 func (r *recorder) finishRemoteCost(observed int64) {

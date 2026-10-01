@@ -4,15 +4,16 @@ The standalone suite qualifies OpenShell transport and credential lifecycle.
 The optional [OpenNeko consumer suite](openneko/README.md) also covers the real broker and queue worker.
 
 Prerequisites: local Docker with host-shared home paths, Go, Bash, OpenSSL, Python 3, and a separately
-installed, checksum-verified OpenShell **0.0.116 or 0.1.2** CLI. Do not upgrade the active
+installed, checksum-verified OpenShell **0.1.2** CLI (or **0.0.116** for a historical
+regression). Do not upgrade the active
 CLI/gateway to run this check. The Docker build installs packages from Debian;
 the fixture and sandbox contain no real provider credentials.
 
 From the standalone Harness root:
 
 ```sh
-OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.0.116 ./integration/run.sh
-HARNESS_OPENSHELL_VERSION=0.1.2 OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.1.2 ./integration/run.sh
+OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.1.2 ./integration/run.sh
+HARNESS_OPENSHELL_VERSION=0.0.116 OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.0.116 ./integration/run.sh
 ```
 
 The runner cross-compiles the probe for the Docker daemon architecture and creates
@@ -42,9 +43,9 @@ OAuth refresh, restart recovery, actual OTLP collector delivery, interception
 CA rejection, local cancellation, and sandbox-deletion stream closure. This
 time the idle HTTPS upstream also observed context cancellation within the
 bounded window (`upstream_idle_cancellation_observed:true`), unlike 0.0.116.
-The suite cleaned its own containers and `harness-m2` network. This does not
-yet qualify the OpenNeko worker, broker, web projection, or the Harness
-`openshell-compat` shim on 0.1.2; those connected gates remain separate.
+The suite cleaned its own containers and `harness-m2` network. The separate
+[OpenNeko consumer gates](openneko/README.md) subsequently passed the worker,
+broker, browser streaming, and recovery paths on 0.1.2.
 The same modified suite then passed again with the checksum-verified 0.0.116
 CLI (`e582f2374053bebac8e6aaeb4a369931b7d4bb97bd55055e2c02e85502627e22`),
 retaining its known `upstream_idle_cancellation_observed:false` warning.

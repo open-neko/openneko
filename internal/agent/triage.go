@@ -9,8 +9,9 @@ import (
 	"github.com/open-neko/harness/internal/budgettriage"
 )
 
-// runBudgetTriage is shadow-only: it charges one optional Typesafe request but
-// never changes the accepted hard caps or grants a capability. Leave room for
+// runBudgetTriage charges one optional Typesafe request. Its proposal only
+// narrows admission in the host-only canary; it never raises the accepted hard
+// caps or grants a capability. Leave room for
 // the ordinary Ax context/executor/responder calls before spending on triage.
 func runBudgetTriage(ctx context.Context, r *recorder, task *BudgetTriage, input budgettriage.Input) error {
 	price := r.pricing.Prices[task.Route]
@@ -72,8 +73,8 @@ func proposeBudgetProfile(r *recorder, policy budgettriage.Policy, observation b
 	return nil
 }
 
-// Reconsider a shadow allowance only after a successful, durable operation.
-// The actual run still uses its original hard caps. A single operation may
+// Reconsider a proposed allowance only after a successful, durable operation.
+// The original hard caps still apply. A single operation may
 // justify at most one step up the ordered policy ladder.
 func (r *recorder) maybeExtendBudgetProfile(policy budgettriage.Policy, triageRoute string, operationID uint64) {
 	r.shadowMu.Lock()

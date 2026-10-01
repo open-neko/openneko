@@ -1,7 +1,13 @@
 # M6 budget evaluation
 
-The shadow classifier and its extensions do not change a live run's hard
-limits. `harness-budget-eval` scores stopped, validated checkpoints against
+The default shadow classifier and its extensions do not change a live run's
+admission limits. An experimental host-only `HARNESS_BUDGET_MODE=canary` makes
+the proposed profile an additional admission ceiling; the original hard caps
+still apply. The mode is pinned in the checkpoint, so it cannot be changed for
+an in-flight run or during recovery. If classification is skipped or uncertain,
+the fixed hard caps remain in force. A candidate denial returns
+`dynamic_budget_exceeded` before dispatching another model or GraphJin request.
+`harness-budget-eval` scores stopped, validated checkpoints against
 independently verified outcomes. It exports only budget events, route/model
 metadata, usage, prices, and the classifier's content-free distribution. It
 does not export prompts, tool arguments/results, runtime state, or answers.
@@ -52,7 +58,15 @@ point cannot rescue it. The replay uses the actual fixed-run route reservation
 as a conservative cost bound. It cannot predict changed model behavior or
 actual savings from a smaller cap.
 
-Before a canary, collect held-out short, investigation, and Daily Lead-style
+The canary mechanism is implemented but **not qualified for production**.
+OpenNeko exposes it only when the operator sets both
+`OPENNEKO_HARNESS_TRIAGE_SHADOW=1` and
+`OPENNEKO_HARNESS_BUDGET_CANARY=1` for a workflow with a pinned cost ceiling.
+Keep those settings stable until admitted canary runs have finished or been
+reconciled; changing mode while a run is in flight intentionally fails its
+checkpoint identity check. The default remains shadow mode.
+
+Before enabling a canary, collect held-out short, investigation, and Daily Lead-style
 artifact runs with the same model and task fixtures under the fixed budget.
 Include misleading short prompts, uncertain/failed classifier calls, missing
 usage, crash/resume, and extension cases. Report false-lows and premature
@@ -60,7 +74,6 @@ budget failures per class, verified completion, token/cost coverage, latency,
 and classifier overhead separately for calibration and held-out splits.
 Confirm that a GraphJin intent and preflight extension are both journaled
 before the remote reservation when a candidate cap is too small.
-Then compare a
-small, switchable dynamic-budget canary against fixed-budget runs using cost
+Then compare a small, switchable dynamic-budget canary against fixed-budget runs using cost
 per verified success and false-low rates. This offline evaluator deliberately
 never marks a canary ready or changes admission.

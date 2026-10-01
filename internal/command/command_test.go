@@ -18,6 +18,20 @@ import (
 
 const request = `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference"}`
 
+func TestBudgetCanaryIsHostOnly(t *testing.T) {
+	var output bytes.Buffer
+	injected := `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference","host_budget_mode":"canary"}`
+	code, err := run(context.Background(), strings.NewReader(injected), &output)
+	if code != 2 || err == nil || !strings.Contains(err.Error(), "cannot be selected") || output.Len() != 0 {
+		t.Fatalf("run input selected canary: code=%d err=%v output=%s", code, err, output.String())
+	}
+	t.Setenv("HARNESS_BUDGET_MODE", "canary")
+	code, err = run(context.Background(), strings.NewReader(request), &output)
+	if code != 2 || err == nil || !strings.Contains(err.Error(), "requires approved triage") || output.Len() != 0 {
+		t.Fatalf("unpriced canary accepted: code=%d err=%v output=%s", code, err, output.String())
+	}
+}
+
 func configure(t *testing.T, url string) {
 	t.Helper()
 	t.Setenv("HARNESS_MODEL_URL", url)

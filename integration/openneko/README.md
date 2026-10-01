@@ -436,7 +436,9 @@ calibration fixture, not held-out evidence for a canary. The classifier
 recommendation does not change the run's limits. Ax Typesafe appends
 `/v1/systemone` to its base
 URL, so the trusted route base ends before `/v1`. The isolated stack is removed
-on exit.
+on exit. The separate host-only budget canary is disabled by default and has
+local admission/recovery tests; this connected fixture has not yet qualified
+its outcome against the fixed-budget control.
 
 The focused M6 actor-exhaustion gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued

@@ -77,16 +77,19 @@ func inspect() error {
 	if err != nil {
 		return err
 	}
+	budgetMode := os.Getenv("HARNESS_BUDGET_MODE")
 	if reconcile {
-		if request.Spec.HostRoutingDigest != "" {
-			return fmt.Errorf("host routing digest cannot be selected by recovery input")
+		if request.Spec.HostRoutingDigest != "" || request.Spec.HostBudgetMode != "" {
+			return fmt.Errorf("host routing or budget mode cannot be selected by recovery input")
 		}
 		request.Spec.HostRoutingDigest = digest
+		request.Spec.HostBudgetMode = budgetMode
 	} else {
-		if spec.HostRoutingDigest != "" {
-			return fmt.Errorf("host routing digest cannot be selected by recovery input")
+		if spec.HostRoutingDigest != "" || spec.HostBudgetMode != "" {
+			return fmt.Errorf("host routing or budget mode cannot be selected by recovery input")
 		}
 		spec.HostRoutingDigest = digest
+		spec.HostBudgetMode = budgetMode
 	}
 	var result session.Recovery
 	if reconcile {
