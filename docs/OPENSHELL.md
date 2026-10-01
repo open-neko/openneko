@@ -18,11 +18,13 @@ Research below is supplemented by [M2's initial live compatibility results](../i
 
 ### OpenShell 0.1.2 migration gate (2026-10-02)
 
-OpenNeko main is expected to move to 0.1.2. Harness currently qualifies only
-0.0.116: `adapters/openneko/cmd/openshell-compat` explicitly rejects another
-CLI version, the isolated gateway image and scripts pin 0.0.116, and the
-OpenNeko consumer binding hashes that CLI. Do not widen the shim's version
-check or repoint the suite at 0.1.2 and call it compatible.
+OpenNeko main is expected to move to 0.1.2. The standalone transport suite
+now qualifies a matched 0.1.2 CLI/gateway/supervisor tuple, as recorded in
+[integration/README.md](../integration/README.md#isolated-012-qualification-2026-10-02).
+The OpenNeko consumer remains pinned to 0.0.116:
+`adapters/openneko/cmd/openshell-compat` explicitly rejects another CLI
+version and the consumer binding hashes that CLI. Do not widen that check
+until its connected gates pass.
 
 The breaking boundary is primarily 0.1.0, which 0.1.2 includes. The
 [official upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)
@@ -34,20 +36,21 @@ provider attachment, and updates to authored policy and SDK contracts. The
 adds fixes on top of that boundary; its short release notes are not a migration
 guide.
 
-For our CLI-based path, verify these exact surfaces against a disposable 0.1.2
-gateway and CLI before updating the OpenNeko branch:
+For our CLI-based path, these are the exact qualification surfaces:
 
-1. Generate certificates and start the gateway with schema-v2 configuration;
-   check readiness and telemetry without touching an existing gateway.
-2. Import the OpenNeko credential-only profile explicitly, create and attach
-   a synthetic provider, and prove `openshell:resolve:env:…` replacement at the
-   intended destination, plus denial at a different destination. Confirm
-   rotation and late attachment semantics for a **new** process.
-3. Validate the generated run policy and built image under 0.1.2's stricter
-   policy and image rules. Create, upload, exec, download, cancel, and delete
-   one sandbox; reconcile deletion by observed absence, not the initial
-   accepted response.
-4. Run the isolated Harness worker/queue and web gates, including multi-route
+1. **Passed standalone:** generate certificates and start the gateway with
+   schema-v2 configuration; check readiness and telemetry without touching an
+   existing gateway.
+2. **Passed with a synthetic profile:** explicitly import profiles, create and
+   attach providers, and prove `openshell:resolve:env:…` replacement at the
+   intended destination plus denial elsewhere. Rotation, detach/reattach,
+   managed refresh, and two provider slots passed. OpenNeko's actual profile
+   remains to be tested.
+3. **Partially passed:** the standalone policy and built image run under
+   0.1.2, including streamed HTTP/HTTPS, cancellation and sandbox deletion.
+   Validate OpenNeko's generated run policy, image, upload/download, and
+   observed-absence reconciliation in the consumer gate.
+4. **Open:** run the isolated Harness worker/queue and web gates, including multi-route
    Ax credentials, streaming first content, workflow output publication,
    replay, and unchanged Hermes behavior. Keep 0.0.116 coverage until the
    0.1.2 gate passes, then replace the compatibility shim or keep it as an
@@ -55,8 +58,8 @@ gateway and CLI before updating the OpenNeko branch:
 
 OpenNeko's existing sandbox creation already supplies `--provider` and a
 prebuilt image, so those two migration rules appear aligned on source review.
-The live CLI behavior, generated policy, provider profile, gateway config and
-process cleanup remain unqualified. The official guide also changes mutation
+Its live CLI behavior, generated policy, provider profile, gateway config and
+process cleanup remain unqualified on 0.1.2. The official guide also changes mutation
 retry semantics: admitted work can outlive cancellation, so a failed exec or
 delete must be reconciled using the same request identity rather than blindly
 reissued. See the [0.1.0 upgrade guide](https://docs.nvidia.com/openshell/upgrade/0-1-0)

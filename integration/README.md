@@ -4,7 +4,7 @@ The standalone suite qualifies OpenShell transport and credential lifecycle.
 The optional [OpenNeko consumer suite](openneko/README.md) also covers the real broker and queue worker.
 
 Prerequisites: local Docker with host-shared home paths, Go, Bash, OpenSSL, Python 3, and a separately
-installed, checksum-verified OpenShell **0.0.116** CLI. Do not upgrade the active
+installed, checksum-verified OpenShell **0.0.116 or 0.1.2** CLI. Do not upgrade the active
 CLI/gateway to run this check. The Docker build installs packages from Debian;
 the fixture and sandbox contain no real provider credentials.
 
@@ -12,6 +12,7 @@ From the standalone Harness root:
 
 ```sh
 OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.0.116 ./integration/run.sh
+HARNESS_OPENSHELL_VERSION=0.1.2 OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.1.2 ./integration/run.sh
 ```
 
 The runner cross-compiles the probe for the Docker daemon architecture and creates
@@ -21,6 +22,32 @@ to reuse an existing test network. Do not run concurrent instances. Its exit tra
 deletes test sandboxes and Compose services/network; temporary state is removed
 only after network cleanup succeeds. No active OpenNeko services are restarted.
 The probe image and downloaded OpenShell images remain cached locally.
+
+## Isolated 0.1.2 qualification, 2026-10-02
+
+The full standalone suite passed on macOS arm64 against a matched 0.1.2 CLI,
+gateway, supervisor, and sandbox runtime. The CLI release archive was checked
+against NVIDIA's published SHA256 list (`cdde7e92bd7eac664031cf171cfe80d29e7f122a6674917b25a4ce0bcbc33466`).
+This test used schema-v2 gateway configuration, explicit provider profiles and
+attachments, and the new `MODEL_API_KEY` credential slot. The 0.1.2 supervisor
+uses host networking, so its model fixture is exposed on loopback ports
+`18080` and `18443` through `host.openshell.internal`. Its separate TLS client
+needs the fixture's private CA in a **test-only** supervisor image; certificate
+verification stays enabled. This is a test-fixture trust requirement, not a
+recommendation to customize the production supervisor for public providers.
+
+The run passed Ax streamed HTTP and HTTPS calls, destination-bound credential
+denial, query substitution, rotation, two providers, detach/reattach, managed
+OAuth refresh, restart recovery, actual OTLP collector delivery, interception
+CA rejection, local cancellation, and sandbox-deletion stream closure. This
+time the idle HTTPS upstream also observed context cancellation within the
+bounded window (`upstream_idle_cancellation_observed:true`), unlike 0.0.116.
+The suite cleaned its own containers and `harness-m2` network. This does not
+yet qualify the OpenNeko worker, broker, web projection, or the Harness
+`openshell-compat` shim on 0.1.2; those connected gates remain separate.
+The same modified suite then passed again with the checksum-verified 0.0.116
+CLI (`e582f2374053bebac8e6aaeb4a369931b7d4bb97bd55055e2c02e85502627e22`),
+retaining its known `upstream_idle_cancellation_observed:false` warning.
 
 ## Verified locally, 2026-09-19
 

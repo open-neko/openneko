@@ -843,10 +843,13 @@ transport for operator runs.
 
 **OpenShell target change (2026-10-02):** OpenNeko main is expected to upgrade
 from the qualified 0.0.116 release to 0.1.2. The Harness compatibility CLI
-rejects 0.1.2 by design. Before M6's remaining connected gates are accepted,
-qualify the 0.1.2 CLI/gateway as a matched pair and migrate the OpenNeko
-consumer in its feature worktree. The concrete migration and regression checks
-are in [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
+rejects 0.1.2 by design. An isolated matched 0.1.2 CLI/gateway/supervisor
+transport suite now passes, including Ax streaming, credential lifecycle,
+OTLP, HTTPS trust and cancellation. This is not a connected consumer pass.
+Before M6's remaining connected gates are accepted, migrate and qualify the
+OpenNeko consumer in its feature worktree. The concrete migration and
+regression checks are in
+[OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
 
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably
