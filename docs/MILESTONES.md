@@ -1002,11 +1002,18 @@ model request, visible truncation, and a largest request below 45 KiB. This
 is a bounded-observation regression, not proof that Ax compaction preserves
 pending approvals or durable evidence across a longer mixed-tool run; that
 exit gate remains open.
-An additional no-key nine-request fixture combines five read receipts with a
-pending approval. Every ordinary request retained the original no-execution
-constraint, a later request still contained the pending approval, and the
-largest request was 12.3 KiB. Ax did not invoke its summarizer in this fixture,
-so this is ordinary-turn preservation evidence, not a compaction pass.
+An additional no-key mixed-tool fixture combines five read receipts with a
+pending approval and deliberately large executor diagnostics. Ax invoked its
+trajectory summarizer on the tenth HTTP request. That internal request
+originally omitted the accepted no-execution constraint even though ordinary
+executor requests retained it. Harness now checks each Ax model request at
+the client boundary and restores the accepted prompt when missing; it also
+supplies the approved context route when Ax's summarizer omits a model key.
+The routed fixture completed with one summarizer call, ten admitted model
+requests, the constraint in every provider request, the pending approval still
+visible later, and a largest request below 31 KiB. This proves the forced
+checkpoint path locally, including accounting; connected artifact-evidence and
+multi-route OpenShell checks remain open.
 Use the [Ax Go development guide](AX-DEVELOPMENT.md) to select the relevant
 published skill for each M6 change. Verify its APIs against the pinned generated
 Go package and a no-key fixture. The process-wide Ax usage observer is

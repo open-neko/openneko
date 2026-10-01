@@ -538,7 +538,11 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			engine.AddChildAgent("team", "researcher", childAgent)
 		}
 		stageStartCalls := events.modelCallCount()
-		output, err := engine.ForwardWithHooks(ctx, attemptClient, values, ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
+		anchoredClient := &contextAnchorClient{AIClient: attemptClient, request: spec.Prompt}
+		if routed, ok := client.(*RoutedClient); ok {
+			anchoredClient.contextRoute = routed.Stages.Context
+		}
+		output, err := engine.ForwardWithHooks(ctx, anchoredClient, values, ax.Object("control", control, "max_actor_steps", 8, "validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{Tracer: events, RateLimiter: ax.AxRateLimiterFunc(events.admitModel)})
 		projectedCalls := 0
 		for _, stage := range stageUsageProjection(engine.GetChatLog(), "") {
 			usage := stage.Usage

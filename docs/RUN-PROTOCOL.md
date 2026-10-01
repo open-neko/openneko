@@ -147,6 +147,12 @@ Executor code can call `harnessSavedOperation(id)` to retrieve one full operatio
 from the validated checkpoint for that run. This reads saved evidence without
 another broker dispatch or authorization grant. The original prompt and saved
 operations remain authoritative; the index is only a context projection.
+Ax's internal trajectory summarizer may receive only compacted working code.
+Before an Ax execution-loop model dispatch, the Harness restores the accepted prompt if that
+request omitted it and supplies the approved context route when a summarizer
+request has no model key. The restored prompt is sent to the provider but never
+written to ordinary telemetry. Summarizer calls pass the same model admission
+and usage receipts as executor calls.
 
 SIGINT/SIGTERM cancel admission and ignore late results. Broken sinks cancel work;
 a terminal event cannot be delivered to a broken sink. Sinks must return promptly.
