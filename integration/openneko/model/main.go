@@ -450,6 +450,7 @@ func main() {
 			responses = []string{
 				`{"javascriptCode":"final('Find the seeded reference and record a finding',{})"}`,
 				`{"javascriptCode":"const evidence=lookup('Find the seeded reference'); if(!JSON.stringify(evidence).includes('REF-42')) throw Error('lookup evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Trigger reference',body:'The seeded reference is REF-42.',payload:{reference:'REF-42'}}); final('Report the finding',{evidence,receipt});"}`,
+				`{"javascriptCode":"const evidence=harnessSavedOperation(1); if(!JSON.stringify(evidence).includes('REF-42')) throw Error('saved lookup evidence missing'); const receipt=workflow_output_emit({kind:'finding',title:'Trigger reference',body:'The seeded reference is REF-42.',payload:{reference:'REF-42'}}); final('Report the finding',{receipt});"}`,
 				`{"answer":"Recorded the trigger finding for REF-42."}`,
 			}
 		} else if req.Model == "harness-workflow-action-fixture" {
