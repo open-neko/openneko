@@ -158,7 +158,7 @@ func openNekoAgentSandbox(name, image, sandboxName string) bool {
 	// Recent OpenShell Docker drivers create from an image ID. OpenNeko's
 	// distinct sandbox name identifies those containers without relying on a
 	// human-readable image reference in Docker's inspect response.
-	for _, prefix := range []string{"openneko-warm-", "openneko-work-", "openneko-job-"} {
+	for _, prefix := range []string{"openneko-warm-", "openneko-work-", "openneko-job-", "neko-p-", "neko-w-", "neko-j-"} {
 		if strings.HasPrefix(sandboxName, prefix) {
 			return true
 		}

@@ -46,7 +46,7 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 		case "/containers/json":
 			_ = json.NewEncoder(w).Encode([]dockerContainerSummary{
 				{ID: "old", Names: []string{"/openshell-warm-old"}, Image: "ghcr.io/open-neko/agent:v2", ImageID: "sha256:agent", State: "exited"},
-				{ID: "new", Names: []string{"/openshell-default--openneko-warm-new"}, Image: "sha256:new-agent", ImageID: "sha256:new-agent", State: "exited"},
+				{ID: "new", Names: []string{"/openshell-default--neko-p-123456789abc"}, Image: "sha256:new-agent", ImageID: "sha256:new-agent", State: "exited"},
 				{ID: "recent", Names: []string{"/openshell-work-recent"}, Image: "ghcr.io/open-neko/agent:v3", ImageID: "sha256:agent", State: "exited"},
 				{ID: "foreign", Names: []string{"/openshell-warm-foreign"}, Image: "other/agent:v1", ImageID: "sha256:foreign", State: "exited"},
 				{ID: "running", Names: []string{"/openshell-warm-running"}, Image: "ghcr.io/open-neko/agent:v3", ImageID: "sha256:agent", State: "running"},
@@ -64,8 +64,8 @@ func TestDockerReaperOnlyRemovesExitedOpenNekoSandboxesAndOldUnreferencedDigests
 			})
 		case "/containers/new/json":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"Name":   "/openshell-default--openneko-warm-new",
-				"Config": map[string]any{"Image": "sha256:new-agent", "Labels": map[string]string{managedByOpenShell: "openshell", "openshell.ai/sandbox-name": "openneko-warm-new"}},
+				"Name":   "/openshell-default--neko-p-123456789abc",
+				"Config": map[string]any{"Image": "sha256:new-agent", "Labels": map[string]string{managedByOpenShell: "openshell", "openshell.ai/sandbox-name": "neko-p-123456789abc"}},
 				"State":  map[string]any{"Status": "exited", "FinishedAt": now.Add(-time.Hour)},
 			})
 		case "/containers/running/json":

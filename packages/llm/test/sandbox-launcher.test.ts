@@ -1211,6 +1211,7 @@ describe("makeSandboxRunCore", () => {
     expect(h.calls.filter((c) => c.args.includes("upload"))).toHaveLength(0);
     const create = h.calls.find((c) => c.args.includes("create"));
     expect(create?.args).toContain("--upload");
+    expect(create?.args[create.args.indexOf("--name") + 1]).toMatch(/^neko-w-[0-9a-f]{12}$/);
     // the box reads the mirror, not a host path:
     const execCall = h.calls.find((c) => c.args.includes("exec"));
     expect(execCall?.args.join(" ")).toContain(

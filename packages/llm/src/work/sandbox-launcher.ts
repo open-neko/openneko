@@ -652,10 +652,9 @@ function makeSandboxCore(
       runProcessOnce(cli, [...gatewayArgs, ...args], timeoutMs, signal, stdin);
     const inputPrompt = jobInput?.run.prompt ??
       (input as RunAgentBackendInput | RunWorkflowAgentBackendInput).prompt;
-    let name = `openneko-${isJob ? "job" : "work"}-${input.runId}`
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, "")
-      .slice(0, 60);
+    // OpenShell 0.1.x limits sandbox names to 19 characters. Hash the full
+    // run ID so distinct IDs that share a prefix cannot collide.
+    let name = `neko-${isJob ? "j" : "w"}-${createHash("sha256").update(input.runId).digest("hex").slice(0, 12)}`;
 
     // The box is a separate filesystem; the host workspace path (~/.config/… or
     // /Users/…) can't be recreated under the sandbox user's home. Upload the
@@ -1610,7 +1609,7 @@ async function createWarmSandbox(o: {
   runCleanup: (args: string[], timeout: number) => Promise<string>;
   workspace?: StableWorkspace;
 }): Promise<WarmSlot> {
-  const name = `openneko-warm-${randomUUID()}`;
+  const name = `neko-p-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const dir = await mkdtemp(path.join(tmpdir(), "oss-warm-"));
   const policy = path.join(dir, "policy.json");
   await writeFile(policy, JSON.stringify(buildSandboxPolicy([])));
