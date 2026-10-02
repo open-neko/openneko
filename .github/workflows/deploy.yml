@@ -111,7 +111,7 @@ jobs:
 
             REAPER=$(docker ps -q \
               --filter label=com.docker.compose.project=openneko-demo \
-              --filter label=com.docker.compose.service=reaper | head -1)
+              --filter label=com.docker.compose.service=neko-reaper | head -1)
             test -n "$REAPER"
             test "$(docker inspect -f '{{.State.Health.Status}}' "$REAPER")" = healthy
 
