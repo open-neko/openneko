@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 
 	"github.com/open-neko/harness/internal/agent"
 	"github.com/open-neko/harness/internal/budgeteval"
@@ -41,34 +42,52 @@ type manifest struct {
 }
 
 type runReport struct {
-	RunID                 string `json:"run_id"`
-	Outcome               string `json:"outcome"`
-	Status                string `json:"status"`
-	WallMS                int64  `json:"wall_ms"`
-	ModelCalls            int    `json:"model_calls"`
-	ModelInputTokens      int64  `json:"model_input_tokens"`
-	ModelOutputTokens     int64  `json:"model_output_tokens"`
-	CacheReadTokens       int64  `json:"cache_read_tokens"`
-	CacheWriteTokens      int64  `json:"cache_write_tokens"`
-	ReasoningTokens       int64  `json:"reasoning_tokens"`
-	GraphJinCalls         int    `json:"graphjin_calls"`
-	GraphJinPromptTokens  int64  `json:"graphjin_prompt_tokens"`
-	GraphJinOutputTokens  int64  `json:"graphjin_output_tokens"`
-	TriageCalls           int    `json:"triage_calls"`
-	TriageCostMicros      int64  `json:"triage_cost_micros"`
-	TriageDurationMS      int64  `json:"triage_duration_ms"`
-	ToolResultBytes       int64  `json:"tool_result_bytes"`
-	ReferencedResultBytes int64  `json:"referenced_result_bytes"`
-	ObservationReadCalls  int    `json:"observation_read_calls"`
-	ObservationReadBytes  int64  `json:"observation_read_bytes"`
-	ParentSchemaBytes     int    `json:"parent_schema_bytes"`
-	ParentDescriptorBytes int    `json:"parent_descriptor_bytes"`
-	ChildSchemaBytes      int    `json:"child_schema_bytes"`
-	ChildDescriptorBytes  int    `json:"child_descriptor_bytes"`
-	InvalidToolInputs     int    `json:"invalid_tool_inputs"`
-	ChargedMicros         int64  `json:"charged_micros"`
-	CostCoverage          string `json:"cost_coverage"`
-	UsageCoverage         string `json:"usage_coverage"`
+	RunID                 string                `json:"run_id"`
+	Outcome               string                `json:"outcome"`
+	Status                string                `json:"status"`
+	WallMS                int64                 `json:"wall_ms"`
+	ModelCalls            int                   `json:"model_calls"`
+	ModelRequests         []modelRequestProfile `json:"model_requests"`
+	ModelInputTokens      int64                 `json:"model_input_tokens"`
+	ModelOutputTokens     int64                 `json:"model_output_tokens"`
+	CacheReadTokens       int64                 `json:"cache_read_tokens"`
+	CacheWriteTokens      int64                 `json:"cache_write_tokens"`
+	ReasoningTokens       int64                 `json:"reasoning_tokens"`
+	GraphJinCalls         int                   `json:"graphjin_calls"`
+	GraphJinPromptTokens  int64                 `json:"graphjin_prompt_tokens"`
+	GraphJinOutputTokens  int64                 `json:"graphjin_output_tokens"`
+	TriageCalls           int                   `json:"triage_calls"`
+	TriageCostMicros      int64                 `json:"triage_cost_micros"`
+	TriageDurationMS      int64                 `json:"triage_duration_ms"`
+	ToolResultBytes       int64                 `json:"tool_result_bytes"`
+	ReferencedResultBytes int64                 `json:"referenced_result_bytes"`
+	ObservationReadCalls  int                   `json:"observation_read_calls"`
+	ObservationReadBytes  int64                 `json:"observation_read_bytes"`
+	ParentSchemaBytes     int                   `json:"parent_schema_bytes"`
+	ParentDescriptorBytes int                   `json:"parent_descriptor_bytes"`
+	ChildSchemaBytes      int                   `json:"child_schema_bytes"`
+	ChildDescriptorBytes  int                   `json:"child_descriptor_bytes"`
+	InvalidToolInputs     int                   `json:"invalid_tool_inputs"`
+	ChargedMicros         int64                 `json:"charged_micros"`
+	CostCoverage          string                `json:"cost_coverage"`
+	UsageCoverage         string                `json:"usage_coverage"`
+}
+
+// modelRequestProfile preserves the order of reported provider usage without
+// exporting model input, response text, or tool content. A missing receipt is
+// explicit; zero tokens must not be mistaken for a measured empty request.
+type modelRequestProfile struct {
+	CallID           uint64 `json:"call_id"`
+	Stage            string `json:"stage,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	UsageReported    bool   `json:"usage_reported"`
+	InputTokens      int64  `json:"input_tokens,omitempty"`
+	OutputTokens     int64  `json:"output_tokens,omitempty"`
+	CacheReadTokens  int64  `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64  `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int64  `json:"reasoning_tokens,omitempty"`
+	DurationMS       int64  `json:"duration_ms,omitempty"`
 }
 
 type pairReport struct {
@@ -170,7 +189,8 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 		(c.Outcome == "verified_success" && trace.Status != "completed") {
 		return runReport{}, session.BudgetTrace{}, fmt.Errorf("run %s: checkpoint identity, mode or outcome changed", c.RunID)
 	}
-	r := runReport{RunID: c.RunID, Outcome: c.Outcome, Status: trace.Status, WallMS: c.WallMS, CostCoverage: "complete", UsageCoverage: "complete"}
+	r := runReport{RunID: c.RunID, Outcome: c.Outcome, Status: trace.Status, WallMS: c.WallMS, CostCoverage: "complete", UsageCoverage: "complete",
+		ModelRequests: []modelRequestProfile{}}
 	modelCosts, toolCosts := map[uint64]int64{}, map[uint64]int64{}
 	modelStarted, modelFinished, lookupStarted, lookupFinished := 0, 0, 0, 0
 	for _, e := range trace.Events {
@@ -205,15 +225,24 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 			}
 		case "model.request.finished":
 			modelFinished++
+			profile := modelRequestProfile{CallID: e.CallID, Stage: e.Stage, Provider: e.Origin,
+				Model: e.Name, DurationMS: e.DurationMS}
 			if e.Usage == nil {
 				r.UsageCoverage = "partial"
 			} else {
+				profile.UsageReported = true
+				profile.InputTokens = e.Usage.InputTokens
+				profile.OutputTokens = e.Usage.OutputTokens
+				profile.CacheReadTokens = e.Usage.CacheReadTokens
+				profile.CacheWriteTokens = e.Usage.CacheWriteTokens
+				profile.ReasoningTokens = e.Usage.ReasoningTokens
 				r.ModelInputTokens += e.Usage.InputTokens
 				r.ModelOutputTokens += e.Usage.OutputTokens
 				r.CacheReadTokens += e.Usage.CacheReadTokens
 				r.CacheWriteTokens += e.Usage.CacheWriteTokens
 				r.ReasoningTokens += e.Usage.ReasoningTokens
 			}
+			r.ModelRequests = append(r.ModelRequests, profile)
 			if e.Stage == "budget_triage" {
 				r.TriageDurationMS += e.DurationMS
 			}
@@ -268,6 +297,7 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 		r.UsageCoverage = "partial"
 		r.CostCoverage = "partial"
 	}
+	sort.Slice(r.ModelRequests, func(i, j int) bool { return r.ModelRequests[i].CallID < r.ModelRequests[j].CallID })
 	return r, trace, nil
 }
 

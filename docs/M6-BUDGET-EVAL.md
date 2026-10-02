@@ -145,6 +145,17 @@ Retrieval receipts are checked against the saved operation and contain no
 result content. These byte counts do not establish how many bytes the provider
 received again; repeated model input and compaction cost still need live
 measurement before choosing an optimization.
+The paired report includes a `model_requests` sequence for each run, ordered by
+durable call ID. It records only provider-reported input, output, cache and
+reasoning tokens, stage, route, duration and whether usage was reported. Compare
+successive input-token counts around a compaction event and compare cache reads
+separately; a missing usage receipt is marked rather than treated as zero.
+This makes the held-out repeated-input measurement possible without exporting
+model context. Synthetic provider counters do not establish real token savings.
+The isolated 0.1.2 paired gate checks that all six synthetic runs have one
+usage-bearing profile per model call, contiguous durable call IDs, and per-call
+input totals equal to the aggregate. The gate passed with three fixed/canary
+calibration pairs; it does not replace real-provider measurements.
 
 The OpenShell 0.1.2 calibration gate now exercises three synthetic paired API
 workflows: a short finding, an investigation with a pending approval, and a

@@ -664,6 +664,17 @@ assert report["summary"]["incomplete_usage_pairs"] == 0
 assert {p["task_class"] for p in report["pairs"]} == {"short", "investigation", "artifact"}
 for p in report["pairs"]:
     assert p["fixed"]["charged_micros"] == p["canary"]["charged_micros"]
+    for mode in ("fixed", "canary"):
+        run = p[mode]
+        requests = run["model_requests"]
+        assert len(requests) == run["model_calls"]
+        assert [item["call_id"] for item in requests] == list(range(1, len(requests) + 1))
+        assert all(item["usage_reported"] for item in requests)
+        assert sum(item.get("input_tokens", 0) for item in requests) == run["model_input_tokens"]
+        assert all(set(item) <= {"call_id", "stage", "provider", "model", "usage_reported",
+                                 "input_tokens", "output_tokens", "cache_read_tokens",
+                                 "cache_write_tokens", "reasoning_tokens", "duration_ms"}
+                   for item in requests)
     assert p["fixed"]["parent_schema_bytes"] > 0 and p["canary"]["parent_schema_bytes"] > 0
     assert p["fixed"]["parent_descriptor_bytes"] >= p["fixed"]["parent_schema_bytes"]
     assert p["canary"]["parent_descriptor_bytes"] >= p["canary"]["parent_schema_bytes"]

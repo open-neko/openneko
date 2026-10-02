@@ -40,6 +40,28 @@ func TestMeasuredRunSeparatesCacheTriageAndGraphJinUsage(t *testing.T) {
 		r.ChargedMicros != 71 || r.CostCoverage != "complete" || r.UsageCoverage != "complete" {
 		t.Fatalf("usage breakdown = %+v, err = %v", r, err)
 	}
+	if len(r.ModelRequests) != 2 || r.ModelRequests[0].CallID != 1 ||
+		r.ModelRequests[0].Stage != "budget_triage" || r.ModelRequests[0].InputTokens != 10 ||
+		r.ModelRequests[0].CacheReadTokens != 3 || !r.ModelRequests[0].UsageReported ||
+		r.ModelRequests[1].CallID != 2 || r.ModelRequests[1].InputTokens != 20 ||
+		r.ModelRequests[1].CacheWriteTokens != 4 || r.ModelRequests[1].ReasoningTokens != 2 {
+		t.Fatalf("model request profiles = %+v", r.ModelRequests)
+	}
+}
+
+func TestMeasuredRunMarksMissingPerCallUsage(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	trace := session.BudgetTrace{RunID: "run", CheckpointSHA256: hash, Mode: "fixed", Status: "completed",
+		Events: []agent.Event{
+			{Type: "model.request.started", CallID: 1},
+			{Type: "model.request.finished", CallID: 1},
+		}}
+	r, _, err := measuredRun(runCase{RunID: "run", CheckpointSHA256: hash, Outcome: "verified_success"}, "fixed",
+		func(_, _ string) (session.BudgetTrace, error) { return trace, nil })
+	if err != nil || r.UsageCoverage != "partial" || len(r.ModelRequests) != 1 ||
+		r.ModelRequests[0].UsageReported {
+		t.Fatalf("missing usage looked measured: %+v, err = %v", r, err)
+	}
 }
 
 func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
