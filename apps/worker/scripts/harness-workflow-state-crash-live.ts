@@ -64,7 +64,7 @@ try {
   const before=(await pool().query<{operation_id:number;request:unknown;result:unknown}>(
     "select operation_id,request,result from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
     [orgId,run.work_run_id])).rows;
-  assert.deepEqual(before.map(row=>row.operation_id),[1,2]);
+  assert.deepEqual(before.map(row=>row.operation_id),[1,4]);
   assert.ok(before[1].result,"broker output receipt must commit before the crash");
   const outputId=(before[1].result as {outputId:string}).outputId;
   assert.ok(outputId);
@@ -96,7 +96,20 @@ try {
       "select status,error from work_run where id=$1",[run?.work_run_id])).rows;
     const [workflow]=(await pool().query<{status:string;error:string|null}>(
       "select status,error from workflow_run where id=$1",[run?.id])).rows;
-    console.error("M6_STATE_CRASH_DIAGNOSTIC",JSON.stringify({jobState,work,workflow}));
+    let checkpointDiagnostic:unknown;
+    try {
+      const raw=JSON.parse(await readFile(join(getOrgAgentRoot(orgId),"runs",run!.work_run_id,".harness",
+        `${createHash("sha256").update(run!.work_run_id).digest("hex")}.json`),"utf8")) as {
+          result?:{status?:string;code?:string};operations?:Array<{tool?:string;error?:string;finished?:boolean}>;
+          events?:Array<{type?:string;error?:string;name?:string;operation_id?:number;data?:unknown}>;
+        };
+      checkpointDiagnostic={result:raw.result&&{status:raw.result.status,code:raw.result.code},operations:raw.operations?.map(op=>({tool:op.tool,error:op.error,finished:op.finished})),
+        executionEvents:raw.events?.filter(event=>["executor.step.failed","tool.failed","tool.started","tool.finished","run.finished"].includes(event.type??""))
+          .map(event=>({type:event.type,error:event.error,name:event.name,operationId:event.operation_id,
+            detail:event.type==="tool.failed"?event.data:undefined})),
+        recentEvents:raw.events?.slice(-8).map(event=>({type:event.type,error:event.error,name:event.name}))};
+    } catch { checkpointDiagnostic="checkpoint unavailable"; }
+    console.error("M6_STATE_CRASH_DIAGNOSTIC",JSON.stringify({jobState,work,workflow,modelCounts:await (await fetch(control)).json(),checkpointDiagnostic}));
   }
   assert.equal(jobState,"completed");
   assert.equal(run?.status,"completed");
@@ -105,16 +118,32 @@ try {
   assert.equal((await pool().query("select count(*)::int as n from workflow_output where id=$1",[outputId])).rows[0].n,1);
   const calls=await (await fetch(control)).json() as Record<string,number>;
   assert.equal(calls["harness-trigger-crash-fixture"],7);
+  assert.ok((calls["max-request:harness-trigger-crash-fixture"]??Infinity)<50_000,
+    "large saved read inflated a provider request after restart");
+  assert.ok((calls["max-csv-markers:harness-trigger-crash-fixture"]??Infinity)<=150,
+    "large saved read body entered provider context after restart");
   assert.equal(calls["graphjin-fixture"],callsBefore["graphjin-fixture"],
     "crash recovery re-ran GraphJin");
   const checkpoint=JSON.parse(await readFile(join(getOrgAgentRoot(orgId),"runs",run.work_run_id,".harness",
     `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`),"utf8")) as {
-      result:{status:string};events:Array<{type:string;operation_id?:number;terminal?:{accepted:boolean}}>;
+      result:{status:string};operations:Array<{tool:string;result?:{content?:string}}>;
+      events:Array<{type:string;operation_id?:number;observation_read?:{result_bytes?:number};terminal?:{accepted:boolean}}>;
     };
   assert.equal(checkpoint.result.status,"completed");
+  assert.equal(checkpoint.operations[2]?.tool,"file_read");
+  const expectedLargeRead=Buffer.from(`lead_id\n${"LEAD-42\n".repeat(6500)}`);
+  assert.equal(checkpoint.operations[2]?.result?.content?.length,expectedLargeRead.length);
+  assert.equal(createHash("sha256").update(checkpoint.operations[2].result!.content!).digest("hex"),
+    createHash("sha256").update(expectedLargeRead).digest("hex"));
+  assert.equal(checkpoint.events.filter(event=>event.type==="observation.retrieved" && event.operation_id===3 &&
+    (event.observation_read?.result_bytes??0)>=expectedLargeRead.length).length,1,
+    "resumed actor did not retrieve the full saved read by ID");
+  const artifact=await readFile(join(getOrgAgentRoot(orgId),"runs",run.work_run_id,"artifacts","large.csv"));
+  assert.equal(createHash("sha256").update(artifact).digest("hex"),
+    createHash("sha256").update(expectedLargeRead).digest("hex"));
   assert.equal(checkpoint.events.filter(event=>event.type==="run.resumed").length,1);
-  assert.equal(checkpoint.events.filter(event=>event.type==="runtime.state.updated" && event.operation_id===2).length,1);
-  assert.equal(checkpoint.events.filter(event=>event.type==="runtime.state.applied" && event.operation_id===2).length,1);
+  assert.equal(checkpoint.events.filter(event=>event.type==="runtime.state.updated" && event.operation_id===4).length,1);
+  assert.equal(checkpoint.events.filter(event=>event.type==="runtime.state.applied" && event.operation_id===4).length,1);
   assert.equal(checkpoint.events.find(event=>event.type==="terminal.checked")?.terminal?.accepted,true);
   const replay=await queue.getJobById(QUEUE.WORKFLOW_RUN_FIRE,queued.queue_job_id);
   assert.ok(replay);
