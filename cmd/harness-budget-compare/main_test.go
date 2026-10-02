@@ -66,13 +66,15 @@ func TestMeasuredRunMarksMissingPerCallUsage(t *testing.T) {
 
 func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	a, b, c, d := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64)
+	graphjin := graphJinEnvironment{Provider: "google-gemini", Model: "approved-strong-model", Reasoning: "high",
+		DataSnapshotSHA256: strings.Repeat("e", 64)}
 	m := manifest{Version: 1, Pairs: []pair{
 		{ID: "short-1", Split: "held_out", Source: "live", TaskClass: "short",
 			Fixed:  runCase{Root: "/fixture", RunID: "short-fixed", CheckpointSHA256: a, Outcome: "verified_success", WallMS: 100},
 			Canary: runCase{Root: "/fixture", RunID: "short-canary", CheckpointSHA256: b, Outcome: "verified_failure", WallMS: 50}},
-		{ID: "artifact-1", Split: "calibration", Source: "synthetic", TaskClass: "artifact",
-			Fixed:  runCase{Root: "/fixture", RunID: "artifact-fixed", CheckpointSHA256: c, Outcome: "verified_success", WallMS: 200},
-			Canary: runCase{Root: "/fixture", RunID: "artifact-canary", CheckpointSHA256: d, Outcome: "verified_success", WallMS: 220}},
+		{ID: "artifact-1", Split: "calibration", Source: "live", TaskClass: "artifact",
+			Fixed:  runCase{Root: "/fixture", RunID: "artifact-fixed", CheckpointSHA256: c, Outcome: "verified_success", WallMS: 200, GraphJin: &graphjin},
+			Canary: runCase{Root: "/fixture", RunID: "artifact-canary", CheckpointSHA256: d, Outcome: "verified_success", WallMS: 220, GraphJin: &graphjin}},
 	}}
 	encode := func() []byte {
 		data, err := json.Marshal(m)
@@ -106,6 +108,13 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 			events = append(events, agent.Event{Sequence: uint64(len(events) + 1), Type: "model.request.finished", CallID: id,
 				Usage: &agent.ModelUsage{TotalTokens: 10}, CostMicros: &price})
 		}
+		if strings.HasPrefix(runID, "artifact-") {
+			zero := int64(0)
+			events = append(events, agent.Event{Sequence: uint64(len(events) + 1), Type: "tool.started", OperationID: 1,
+				Name: "lookup", CostMicros: &zero})
+			events = append(events, agent.Event{Sequence: uint64(len(events) + 1), Type: "tool.finished", OperationID: 1,
+				Name: "lookup", CostMicros: &zero, RemoteUsage: &agent.RemoteUsage{Reported: true}})
+		}
 		return session.BudgetTrace{RunID: runID, CheckpointSHA256: hash, Mode: mode, Status: status,
 			TaskFingerprint: strings.Repeat("0", 64), RoutingDigest: strings.Repeat("e", 64),
 			CatalogFingerprint: strings.Repeat("1", 64), MaxOperations: 4,
@@ -119,7 +128,8 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 		out.Summary.CanaryCostPerSuccess == nil || *out.Summary.CanaryCostPerSuccess != 30 ||
 		out.Pairs[0].FixedShadowFirstBlock != "model_calls" ||
 		out.Pairs[0].Fixed.ParentSchemaBytes != 27 || out.Pairs[0].Fixed.ParentDescriptorBytes != 120 ||
-		out.Pairs[0].Canary.InvalidToolInputs != 1 {
+		out.Pairs[0].Canary.InvalidToolInputs != 1 || out.Pairs[1].GraphJin == nil ||
+		*out.Pairs[1].GraphJin != graphjin {
 		t.Fatalf("output=%+v err=%v", out, err)
 	}
 	m.Pairs[0].Canary.CheckpointSHA256 = a
@@ -178,6 +188,23 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	if _, err := compareWithTrace(encode(), missingCatalog); err == nil {
 		t.Fatal("accepted checkpoints without comparable catalogs")
 	}
+	m.Pairs[1].Canary.GraphJin = nil
+	if _, err := compareWithTrace(encode(), read); err == nil {
+		t.Fatal("accepted live GraphJin pair without server and data attestation")
+	}
+	changedGraphJin := graphjin
+	changedGraphJin.Reasoning = "low"
+	m.Pairs[1].Canary.GraphJin = &changedGraphJin
+	if _, err := compareWithTrace(encode(), read); err == nil {
+		t.Fatal("accepted live GraphJin pair with different server reasoning")
+	}
+	changedGraphJin = graphjin
+	changedGraphJin.DataSnapshotSHA256 = strings.Repeat("f", 64)
+	m.Pairs[1].Canary.GraphJin = &changedGraphJin
+	if _, err := compareWithTrace(encode(), read); err == nil {
+		t.Fatal("accepted live GraphJin pair with different data snapshot")
+	}
+	m.Pairs[1].Canary.GraphJin = &graphjin
 	wrongHardLimit := func(root, runID string) (session.BudgetTrace, error) {
 		trace, err := read(root, runID)
 		if trace.Mode == "canary" {

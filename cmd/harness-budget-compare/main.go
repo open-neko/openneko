@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/open-neko/harness/internal/agent"
 	"github.com/open-neko/harness/internal/budgeteval"
@@ -20,11 +21,27 @@ var pairID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 var digest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type runCase struct {
-	Root             string `json:"root"`
-	RunID            string `json:"run_id"`
-	CheckpointSHA256 string `json:"checkpoint_sha256"`
-	Outcome          string `json:"outcome"`
-	WallMS           int64  `json:"wall_ms"`
+	Root             string               `json:"root"`
+	RunID            string               `json:"run_id"`
+	CheckpointSHA256 string               `json:"checkpoint_sha256"`
+	Outcome          string               `json:"outcome"`
+	WallMS           int64                `json:"wall_ms"`
+	GraphJin         *graphJinEnvironment `json:"graphjin_environment,omitempty"`
+}
+
+// The evaluator compares reviewer-attested, non-secret deployment facts. It
+// does not inspect the GraphJin process or prove the dataset digest itself.
+type graphJinEnvironment struct {
+	Provider           string `json:"provider"`
+	Model              string `json:"model"`
+	Reasoning          string `json:"reasoning"`
+	DataSnapshotSHA256 string `json:"data_snapshot_sha256"`
+}
+
+func (g *graphJinEnvironment) valid() bool {
+	return g != nil && strings.TrimSpace(g.Provider) != "" && strings.TrimSpace(g.Model) != "" &&
+		strings.TrimSpace(g.Reasoning) != "" &&
+		digest.MatchString(g.DataSnapshotSHA256)
 }
 
 type pair struct {
@@ -91,14 +108,15 @@ type modelRequestProfile struct {
 }
 
 type pairReport struct {
-	ID                    string    `json:"id"`
-	Split                 string    `json:"split"`
-	Source                string    `json:"source"`
-	TaskClass             string    `json:"task_class"`
-	Fixed                 runReport `json:"fixed"`
-	Canary                runReport `json:"canary"`
-	FixedShadowFirstBlock string    `json:"fixed_shadow_first_block,omitempty"`
-	CanaryRegression      bool      `json:"canary_regression"`
+	ID                    string               `json:"id"`
+	Split                 string               `json:"split"`
+	Source                string               `json:"source"`
+	TaskClass             string               `json:"task_class"`
+	GraphJin              *graphJinEnvironment `json:"graphjin_environment,omitempty"`
+	Fixed                 runReport            `json:"fixed"`
+	Canary                runReport            `json:"canary"`
+	FixedShadowFirstBlock string               `json:"fixed_shadow_first_block,omitempty"`
+	CanaryRegression      bool                 `json:"canary_regression"`
 }
 
 type summary struct {
@@ -333,12 +351,21 @@ func compareWithTrace(input []byte, readTrace func(string, string) (session.Budg
 			fixedTrace.MaxOperations != canaryTrace.MaxOperations {
 			return output{}, fmt.Errorf("pair %s: accepted task, admitted catalog, approved route or hard admission limits differ", p.ID)
 		}
+		if p.Source == "live" && (fixed.GraphJinCalls > 0 || canary.GraphJinCalls > 0) {
+			if !p.Fixed.GraphJin.valid() || !p.Canary.GraphJin.valid() || *p.Fixed.GraphJin != *p.Canary.GraphJin {
+				return output{}, fmt.Errorf("pair %s: live GraphJin profile or data snapshot attestation missing or different", p.ID)
+			}
+		}
 		shadow, err := budgeteval.Evaluate(fixedTrace, budgeteval.Label{TaskClass: p.TaskClass, Outcome: p.Fixed.Outcome, WallMS: p.Fixed.WallMS})
 		if err != nil {
 			return output{}, fmt.Errorf("pair %s fixed shadow: %w", p.ID, err)
 		}
 		report := pairReport{ID: p.ID, Split: p.Split, Source: p.Source, TaskClass: p.TaskClass, Fixed: fixed, Canary: canary,
 			CanaryRegression: p.Fixed.Outcome == "verified_success" && p.Canary.Outcome != "verified_success"}
+		if p.Source == "live" && (fixed.GraphJinCalls > 0 || canary.GraphJinCalls > 0) {
+			profile := *p.Fixed.GraphJin
+			report.GraphJin = &profile
+		}
 		if shadow.FirstBlock != nil {
 			report.FixedShadowFirstBlock = shadow.FirstBlock.Kind
 		}
