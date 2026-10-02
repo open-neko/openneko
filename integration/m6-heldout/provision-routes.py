@@ -20,6 +20,20 @@ def endpoint(raw: str) -> tuple[str, dict]:
                                "access": "read-write", "path": path + "/**"}
 
 
+def typesafe_endpoint(raw: str) -> tuple[str, dict]:
+    """Ax's native Typesafe client appends /v1/systemone to its base URL."""
+    url = urlparse(raw)
+    if (url.scheme != "https" or not url.hostname or url.username or url.password
+            or url.query or url.fragment or ".." in url.path):
+        raise ValueError("Typesafe route must use a clean HTTPS base URL")
+    prefix = url.path.rstrip("/")
+    if prefix.endswith(("/v1", "/v1/systemone")):
+        raise ValueError("Typesafe base URL must omit Ax's /v1/systemone operation path")
+    return raw.rstrip("/"), {"host": url.hostname, "port": url.port or 443,
+                               "protocol": "rest", "enforcement": "enforce",
+                               "access": "read-write", "path": prefix + "/v1/**"}
+
+
 def price(input_micros: int, output_micros: int) -> dict[str, int]:
     if input_micros <= 0 or output_micros <= 0:
         raise ValueError("all real route prices must be positive")
@@ -48,7 +62,7 @@ def main() -> None:
     parser.add_argument("--graphjin-output-price", required=True, type=int)
     args = parser.parse_args()
     model_url, model_endpoint = endpoint(args.model_url)
-    triage_url, triage_endpoint = endpoint(args.triage_url)
+    triage_url, triage_endpoint = typesafe_endpoint(args.triage_url)
     if not args.model_name or not args.triage_model:
         raise ValueError("model names are required")
     model_price = price(args.model_input_price, args.model_output_price)

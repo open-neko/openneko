@@ -958,6 +958,11 @@ manifest builder requires an explicit matching source and refuses known fixture
 profiles for live evidence. The comparator reports synthetic held-out pairs
 separately from its live held-out aggregate. The complete eight-run 0.1.2
 queue gate passed again after this provenance change.
+The live route preflight now uses the Typesafe service root as Ax's native
+base URL and grants its appended `/v1/systemone` path in the OpenShell profile.
+The previous `/v1` base would have sent the classifier to
+`/v1/v1/systemone`. No-key route generation and pinned Ax request-path tests
+pass; the credentialed held-out run remains pending.
 The review-manifest builder requires all eight manually labelled outcomes,
 rehashes persisted checkpoints, and rejects a changed GraphJin environment
 across runs or a claimed successful CSV without oracle verification.

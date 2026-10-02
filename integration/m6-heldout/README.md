@@ -102,7 +102,7 @@ stay out of command arguments, route JSON, and Git:
 | `HARNESS_M6_TRIAGE_SOURCE_KEY` | Separate Ax Typesafe `SystemOne` classifier key; Gemini alone does not exercise this classifier. |
 | `GRAPHJIN_AGENT_API_KEY` | Server-side GraphJin agent key, passed only to the isolated GraphJin container. |
 | `HARNESS_M6_MODEL_URL`, `HARNESS_M6_MODEL_NAME` | HTTPS OpenAI-compatible model base URL and model code. |
-| `HARNESS_M6_TRIAGE_URL`, `HARNESS_M6_TRIAGE_MODEL` | HTTPS Typesafe base URL and classifier model code. |
+| `HARNESS_M6_TRIAGE_URL`, `HARNESS_M6_TRIAGE_MODEL` | HTTPS Typesafe base URL and classifier model code. Use `https://api.typesafe.ai` for the native service; Ax appends `/v1/systemone`. Do not include that operation path in the base URL. |
 | `GRAPHJIN_AGENT_PROVIDER`, `GRAPHJIN_AGENT_MODEL`, `GRAPHJIN_AGENT_REASONING`, `GRAPHJIN_AGENT_BASE_URL` | Approved strong, server-owned GraphJin profile. Use a real endpoint, not the fixture model. |
 | `HARNESS_M6_MODEL_INPUT_PRICE`, `HARNESS_M6_MODEL_OUTPUT_PRICE`, `HARNESS_M6_TRIAGE_INPUT_PRICE`, `HARNESS_M6_TRIAGE_OUTPUT_PRICE`, `HARNESS_M6_GRAPHJIN_INPUT_PRICE`, `HARNESS_M6_GRAPHJIN_OUTPUT_PRICE` | Positive integer microcurrency per million tokens for admission and comparison. Pin the same values across all eight runs. |
 | `HARNESS_M6_OUTPUT_DIR` | New absolute directory outside the temporary Harness state; it retains local receipts and downloaded artifacts. |
