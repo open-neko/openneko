@@ -18,8 +18,9 @@ separate OpenNeko v3.5.6 demo instance was started and verified locally on the
 Mac, then stopped to respect the host's 4 GB Docker memory limit; its volumes
 remain. Onboarding was skipped, so no admin password or model key was configured.
 At this historical checkpoint, the released worker used Hermes and OpenShell
-0.0.54. OpenNeko main has since upgraded to OpenShell 0.1.2; the current
-Harness migration gate is recorded below.
+0.0.54. The Harness feature worktree targets OpenShell 0.1.2 and has passed
+the migration gates below. The separate OpenNeko main checkout still defaults
+to 0.0.54 as of 2026-10-02; its planned upgrade is a separate change.
 The first M5b memory and library search slices passed through the feature worker,
 Harness image, OpenShell 0.0.116, real MCP bridge, scoped broker, Ax and checkpoint.
 The records-only catalog turn passed the same path with GraphJin lookup and customer
@@ -877,7 +878,8 @@ selection and uses the ordinary outer response when Ax leaves its stage empty.
 The connected 0.1.2 rerun persisted the work-route provider and model for
 both paired runs while retaining the classifier's separate call and cost.
 
-**OpenShell target change (2026-10-02):** OpenNeko main upgraded to 0.1.2.
+**OpenShell target change (2026-10-02):** The OpenNeko Harness feature worktree
+targets 0.1.2 ahead of the planned main upgrade.
 An isolated matched CLI/gateway/supervisor transport suite passes, including
 Ax streaming, credential lifecycle, OTLP, HTTPS trust and cancellation. The
 feature-branch consumer now passes connected streaming, route selection,
@@ -945,6 +947,12 @@ API admission, the worker, OpenShell, Ax shadow triage, a durable checkpoint
 and the independent GraphJin status/snapshot preflight. It exposed and fixed
 missing solo-admin initialization and agent-home scoping in the held-out
 runner. The fixture answer is deliberately not a held-out quality result.
+The same isolated 0.1.2 stack then completed all eight fixed/canary queued
+combinations across four frozen cases. It verified checkpoints, GraphJin
+attestation, triage events, API status and the offline comparator path. The
+synthetic model deliberately returned the wrong finding for every case, so
+all eight reviews are labelled verified failures and the manifest is marked
+synthetic. This proves test plumbing, not task quality.
 The review-manifest builder requires all eight manually labelled outcomes,
 rehashes persisted checkpoints, and rejects a changed GraphJin environment
 across runs or a claimed successful CSV without oracle verification.

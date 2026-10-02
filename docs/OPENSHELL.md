@@ -26,7 +26,9 @@ until closure or sandbox teardown.
 
 ### OpenShell 0.1.2 migration gate (2026-10-02)
 
-OpenNeko main now uses 0.1.2. The standalone transport suite
+The OpenNeko Harness feature worktree targets 0.1.2; the separate main
+checkout still defaults to 0.0.54 as of 2026-10-02 and its upgrade is planned.
+The standalone transport suite
 now qualifies a matched 0.1.2 CLI/gateway/supervisor tuple, as recorded in
 [integration/README.md](../integration/README.md#isolated-012-qualification-2026-10-02).
 The feature-branch consumer uses the 0.1.2 CLI directly. The legacy
@@ -123,7 +125,7 @@ credential endpoint binding and rotation behavior from the older implementation.
 
 **Historical recommendation (superseded by 0.1.2):** On 2026-09-19 the
 candidate was v0.0.116 rather than 0.0.54, based on tagged source review.
-OpenNeko main and the harness feature branch now target 0.1.2; use the migration
+The Harness feature worktree targets 0.1.2 ahead of main; use the migration
 gate above and the connected acceptance record, not this old recommendation,
 for implementation and rollout decisions.
 

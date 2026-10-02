@@ -80,6 +80,17 @@ deterministic short-finding model and asserts the API, checkpoint, triage and
 GraphJin attestation path. Its answer is deliberately a fixture answer and
 must never be counted as held-out quality evidence.
 
+Set `HARNESS_M6_HELDOUT_SMOKE_ALL=1` for the full no-key plumbing gate. It
+submits all four cases in fixed and canary modes through the queued API,
+checks each checkpoint and GraphJin attestation, and runs the offline
+comparator on all four pairs. It resets the model fixture between runs so its
+response sequence is independent for each case. The fixture intentionally
+answers every case incorrectly; the generated reviews are verified failures,
+and `build-manifest.py --source synthetic` marks the manifest accordingly.
+The connected eight-run gate passed with a matched OpenShell 0.1.2 tuple on
+2026-10-02. `integration/run.sh` rejects a CLI whose reported version differs
+from the selected gateway version.
+
 Supply these settings in the invocation environment; the secret values must
 stay out of command arguments, route JSON, and Git:
 

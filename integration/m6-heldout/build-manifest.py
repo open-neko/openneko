@@ -57,7 +57,9 @@ def entry(data: dict, verdict: dict, case_id: str) -> dict:
             "wall_ms": data["wall_ms"], "graphjin_environment": data["graphjin_environment"]}
 
 
-def build(receipts: Path, review: dict) -> dict:
+def build(receipts: Path, review: dict, source: str = "live") -> dict:
+    if source not in ("live", "synthetic"):
+        raise ValueError("invalid held-out run source")
     if review.get("version") != 1 or set(review.get("cases", {})) != set(CASES):
         raise ValueError("review must cover exactly the four frozen cases")
     pairs = []
@@ -77,7 +79,7 @@ def build(receipts: Path, review: dict) -> dict:
             environment = runs["fixed"]["graphjin_environment"]
         elif runs["fixed"]["graphjin_environment"] != environment:
             raise ValueError(f"GraphJin profile or snapshot changed across cases: {case_id}")
-        pairs.append({"id": case_id, "split": "held_out", "source": "live",
+        pairs.append({"id": case_id, "split": "held_out", "source": source,
                       "task_class": task_class, **runs})
     return {"version": 1, "pairs": pairs}
 
@@ -87,9 +89,10 @@ def main() -> None:
     parser.add_argument("--receipts", required=True, type=Path)
     parser.add_argument("--review", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--source", choices=("live", "synthetic"), default="live")
     args = parser.parse_args()
     review = json.loads(args.review.read_text(encoding="utf-8"))
-    manifest = build(args.receipts, review)
+    manifest = build(args.receipts, review, source=args.source)
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(manifest, output, indent=2)
         output.write("\n")
