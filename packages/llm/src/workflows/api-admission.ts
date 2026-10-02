@@ -8,7 +8,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pool } from "@neko/db";
 import type { HarnessRunSummary } from "@neko/telemetry";
 import type { PoolClient } from "pg";
@@ -1380,6 +1380,30 @@ export type WorkflowApiArtifact = {
   bytes: number;
 };
 
+const ARTIFACT_CONTENT_TYPES: Record<string, string> = {
+  ".csv": "text/csv; charset=utf-8",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".json": "application/json; charset=utf-8",
+  ".markdown": "text/markdown; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain; charset=utf-8",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+function workflowApiArtifactMetadata(runId: string, artifactPath: string) {
+  const extension = extname(artifactPath).toLowerCase();
+  const recognized = ARTIFACT_CONTENT_TYPES[extension];
+  return {
+    fileName: `workflow-${runId}${recognized ? extension : ".bin"}`,
+    contentType: recognized ?? "application/octet-stream",
+  };
+}
+
 export async function getWorkflowApiArtifact(input: {
   workflowId: string;
   runId: string;
@@ -1431,8 +1455,7 @@ export async function getWorkflowApiArtifact(input: {
   }
   return {
     absolutePath,
-    fileName: `workflow-${input.runId}.csv`,
-    contentType: "text/csv; charset=utf-8",
+    ...workflowApiArtifactMetadata(input.runId, row.result_artifact_path),
     bytes: info.size,
   };
 }
@@ -1495,8 +1518,7 @@ export async function getWorkflowApiArtifactForOperator(input: {
   }
   return {
     absolutePath,
-    fileName: `workflow-${input.runId}.csv`,
-    contentType: "text/csv; charset=utf-8",
+    ...workflowApiArtifactMetadata(input.runId, row.result_artifact_path),
     bytes: info.size,
   };
 }

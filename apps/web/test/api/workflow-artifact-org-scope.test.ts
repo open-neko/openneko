@@ -67,7 +67,10 @@ describeIfDb("workflow artifact organization scope", () => {
     });
   });
 
-  it("accepts the owner's API token and rejects a valid token from another organization", async () => {
+  it.each([
+    ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+    ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ])("serves a .%s file with its media type to the owner and rejects another organization's token", async (extension, contentType) => {
     await withTestOrg(async ownerOrgId => {
       await withTestOrg(async otherOrgId => {
         const [{ workflow: ownerWorkflow }, { workflow: otherWorkflow }] = await Promise.all([
@@ -85,10 +88,11 @@ describeIfDb("workflow artifact organization scope", () => {
           orgId: ownerOrgId, workflowId: ownerWorkflow.id, threadId: thread.id,
           workRunId: work.id, triggerKind: "api", executionMode: "single",
         });
-        const path = `runs/${work.id}/artifacts/result.csv`;
+        const path = `runs/${work.id}/artifacts/result.${extension}`;
         const artifactRoot = join(getOrgAgentRoot(ownerOrgId), "runs", work.id, "artifacts");
         await mkdir(artifactRoot, { recursive: true });
-        await writeFile(join(artifactRoot, "result.csv"), "id\n42\n");
+        const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x42, 0x7f]);
+        await writeFile(join(artifactRoot, `result.${extension}`), bytes);
         try {
           await finishWorkflowRun({ workflowRunId: run.id, status: "completed", resultArtifactPath: path });
           await db().update(workflow_run).set({ result_expires_at: new Date(Date.now() + 60_000) })
@@ -99,7 +103,18 @@ describeIfDb("workflow artifact organization scope", () => {
             headers: { authorization: `Bearer ${ownerToken}` },
           }), context);
           expect(owner.status).toBe(200);
-          expect(await owner.text()).toBe("id\n42\n");
+          expect(owner.headers.get("content-type")).toBe(contentType);
+          expect(owner.headers.get("content-disposition")).toBe(`attachment; filename="workflow-${run.id}.${extension}"`);
+          expect(Buffer.from(await owner.arrayBuffer())).toEqual(bytes);
+
+          mockGetOrgId.mockResolvedValue(ownerOrgId);
+          const operator = await GET(new Request("http://localhost/artifact"), {
+            params: Promise.resolve({ workflowRunId: run.id }),
+          });
+          expect(operator.status).toBe(200);
+          expect(operator.headers.get("content-type")).toBe(contentType);
+          expect(operator.headers.get("content-disposition")).toBe(`attachment; filename="workflow-${run.id}.${extension}"`);
+          expect(Buffer.from(await operator.arrayBuffer())).toEqual(bytes);
 
           const stranger = await getPublicArtifact(new NextRequest(url, {
             headers: { authorization: `Bearer ${otherToken}` },

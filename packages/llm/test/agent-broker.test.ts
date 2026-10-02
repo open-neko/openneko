@@ -210,7 +210,7 @@ describe("startAgentBroker token registry", () => {
     } finally { await handle.close(); }
   });
 
-  it("admits an isolated process only for its exact Work-run grant", async () => {
+  it("admits an isolated process only for its exact Work or workflow run grant", async () => {
     const handle = await startAgentBroker({controlPlane: stubControlPlane(), port: 0});
     try {
       const processRun = {binary: "/tmp/harness-process", binarySha256: "a".repeat(64),
@@ -221,7 +221,13 @@ describe("startAgentBroker token registry", () => {
         kind: "work", profile: "harness-read-only", processRun};
       const allowed = handle.tokenFor(binding);
       expect(() => handle.tokenFor({...binding, processRun: {...processRun, image: "changed"}})).toThrow("conflicts");
-      expect(() => handle.tokenFor({...binding, runId: "work-2", kind: "workflow"})).toThrow("Invalid broker isolated process grant");
+      const workflowRun = { ...processRun, runRoot: "/tmp/org/runs/work-2",
+        artifactRoot: "/tmp/org/runs/work-2/artifacts" };
+      const workflowAllowed = handle.tokenFor({...binding, runId: "work-2", kind: "workflow",
+        workflowRunId: "workflow-2", workflowOutput: true, processRun: workflowRun});
+      expect(() => handle.tokenFor({...binding, runId: "work-2", kind: "workflow",
+        workflowRunId: "workflow-2", workflowOutput: true, processRun: {...workflowRun, image: "changed"}})).toThrow("conflicts");
+      expect(() => handle.tokenFor({...binding, runId: "work-5", kind: "agent-job"})).toThrow("Invalid broker isolated process grant");
       expect(() => handle.tokenFor({...binding, runId: "work-3", processRun: {...processRun, artifactRoot: "/tmp/foreign"}})).toThrow("Invalid broker isolated process grant");
       const denied = handle.tokenFor({runId: "work-4", orgId: "org", threadId: "thread-1",
         kind: "work", profile: "harness-read-only"});
@@ -231,6 +237,7 @@ describe("startAgentBroker token registry", () => {
       });
       expect((await post(denied)).status).toBe(403);
       expect((await post(allowed)).status).toBe(400);
+      expect((await post(workflowAllowed)).status).toBe(400);
     } finally { await handle.close(); }
   });
 

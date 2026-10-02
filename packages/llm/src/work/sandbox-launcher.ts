@@ -712,8 +712,8 @@ function makeSandboxCore(
     const credentialAliases = routing?.keyAliases ?? opts.keyAliases;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
-    const processEligible = input.backend.id === "harness" && kind === "work" &&
-      (input as RunAgentBackendInput).dataSurface !== "records";
+    const processEligible = input.backend.id === "harness" &&
+      (kind === "workflow" || kind === "work" && (input as RunAgentBackendInput).dataSurface !== "records");
     const processBinary = process.env.HARNESS_PROCESS_BIN?.trim();
     const processHash = process.env.HARNESS_PROCESS_BIN_SHA256?.trim();
     const processCLI = process.env.HARNESS_OPENSHELL_BIN?.trim();

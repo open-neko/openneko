@@ -199,7 +199,7 @@ async function handle(
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
 
-  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && !!binding.actionGrants?.length && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.skillRoot && (path === "/v1/harness/skill/create" || path === "/v1/harness/skill/inspect" || path === "/v1/harness/skill/update") && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && binding.kind === "work" && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
+  if (binding.profile && !(binding.lookupRead !== false && path === "/v1/harness/lookup") && !(binding.profile === "harness-governed" && !!binding.actionGrants?.length && (binding.kind === "work" || binding.kind === "workflow" && binding.workflowAction === true) && path === "/v1/harness/propose") && !(binding.memoryRead === true && path === "/v1/memory/search") && !(binding.memoryWrite === true && path === "/v1/harness/memory/save" && binding.kind === "work") && !(binding.skillRoot && (path === "/v1/harness/skill/create" || path === "/v1/harness/skill/inspect" || path === "/v1/harness/skill/update") && binding.kind === "work") && !(binding.workflowWrite === true && binding.kind === "work" && (path === "/v1/harness/workflow/save" || path === "/v1/harness/workflow/delete")) && !(binding.ruleWrite === true && binding.kind === "work" && path === "/v1/harness/rule/save") && !(binding.libraryRead === true && path === "/v1/library/search") && !(binding.workflowRead === true && binding.kind === "work" && path === "/v1/workflow/list") && !(binding.managementRead === true && binding.kind === "work" && harnessManagementReadPaths.has(path)) && !(binding.auditRead === true && binding.kind === "work" && path === "/v1/audit/list") && !(binding.sourceConfigRead === true && binding.kind === "work" && harnessSourceConfigReadPaths.has(path)) && !(binding.recordsRead === true && binding.kind === "work" && harnessRecordsReadPaths.has(path)) && !(binding.batchRead === true && binding.kind === "work" && path === "/v1/graphjin/query") && !(binding.workflowOutput === true && binding.kind === "workflow" && path === "/v1/harness/workflow-output/emit") && !(binding.processRun && (binding.kind === "work" || binding.kind === "workflow") && path === "/v1/harness/process/run") && !((binding.interactionEvents || binding.cardEvents) && path === "/v1/events")) {
     startupEvent("harness.broker_capability", {
       runId: binding.runId, outcome: "denied", profile: binding.profile,
     });
@@ -482,7 +482,7 @@ async function handle(
         })));
     }
     case "/v1/harness/process/run": {
-      if (!binding.profile || binding.kind !== "work" || !binding.threadId || !binding.processRun ||
+      if (!binding.profile || (binding.kind !== "work" && binding.kind !== "workflow") || !binding.threadId || !binding.processRun ||
           typeof body.instruction !== "string" || typeof body.binding !== "string" ||
           !/^[a-f0-9]{64}$/.test(body.binding)) {
         return send(res, 403, {error: "Isolated process capability denied"});
@@ -1150,7 +1150,7 @@ export async function startAgentBroker(
       if (binding.workflowAction && (binding.profile !== "harness-governed" || binding.kind !== "workflow" || !binding.workflowRunId)) {
         throw new Error("Invalid broker workflow action grant");
       }
-      if (binding.processRun && (!binding.profile || binding.kind !== "work" || !binding.threadId ||
+      if (binding.processRun && (!binding.profile || (binding.kind !== "work" && binding.kind !== "workflow") || !binding.threadId ||
           !validHarnessProcessBinding(binding.processRun))) {
         throw new Error("Invalid broker isolated process grant");
       }
