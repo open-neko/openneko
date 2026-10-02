@@ -1239,7 +1239,9 @@ route gate verifies the same recorded artifact returns 404 when the request
 resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). The Postgres-backed
 public API route also accepts the owner's valid token and returns 401 for a
 different organization's valid token. This checks both artifact route scopes;
-a multi-tenant browser deployment remains open.
+a multi-tenant browser deployment belongs to M7 because the current web app
+resolves one organization per process. M6's cross-organization artifact
+boundary is covered by the database-backed route tests.
 After the workflow process grant, the full isolated
 `HARNESS_M3_API_HTTP=1` suite passed again on OpenShell 0.1.2 without the fast
 shortcut. It covered Hermes, the real broker and GraphJin fixture, queued Work
@@ -1290,6 +1292,12 @@ GraphJin's `GJ_AGENT_REASONING` in development and packaged Compose, alongside
 the existing provider/model settings. Its default remains empty to preserve
 existing deployments; M6 live qualification must explicitly pin and attest the
 approved strong provider, model and reasoning level before comparing runs.
+A focused Postgres-backed broker regression sends forged `model`, `provider`,
+`reasoning`, organization and `maxSteps` fields through the Harness lookup
+endpoint. The host delegates only its bound organization/run, instruction and
+fixed step ceiling, and the operation journal contains none of the caller's
+route fields. This proves the caller cannot change GraphJin's route through the
+broker; it does not attest a live GraphJin deployment's effective model.
 Use deterministic skill metadata/exact-name lookup first; route any semantic
 skill selection through an approved cheap Ax stage, never a model call from a
 skill file. Give the outer distiller, executor and responder separate approved
