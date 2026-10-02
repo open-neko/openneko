@@ -2,9 +2,10 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { dbReachable, withTestOrg } from "@neko/db/test-helpers";
-import { pool } from "@neko/db";
+import { db, eq, pool, workflow_run } from "@neko/db";
+import { NextRequest } from "next/server";
 import { createWorkRun, createWorkThread, appendWorkRunEvent } from "@neko/llm/work";
-import { createWorkflowRun, finishWorkflowRun, saveWorkflow } from "@neko/llm/workflows";
+import { createWorkflowRun, enableWorkflowApiAccess, finishWorkflowRun, saveWorkflow } from "@neko/llm/workflows";
 import { getOrgAgentRoot } from "@neko/llm/work";
 
 const { mockGetOrgId } = vi.hoisted(() => ({ mockGetOrgId: vi.fn() }));
@@ -17,6 +18,7 @@ vi.mock("@/lib/db", async () => ({
 vi.mock("@/lib/entitlements", () => ({ requireWorkflowRun: async () => null }));
 
 import { GET } from "@/app/api/workflow-runs/[workflowRunId]/artifact/route";
+import { GET as getPublicArtifact } from "@/app/api/v1/workflows/[workflowId]/runs/[runId]/artifact/route";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -58,6 +60,52 @@ describeIfDb("workflow artifact organization scope", () => {
           const stranger = await GET(new Request("http://localhost/artifact"), context);
           expect(stranger.status).toBe(404);
           expect(await stranger.json()).toMatchObject({ error: { code: "run_not_found" } });
+        } finally {
+          await rm(join(getOrgAgentRoot(ownerOrgId), "runs", work.id), { recursive: true, force: true });
+        }
+      });
+    });
+  });
+
+  it("accepts the owner's API token and rejects a valid token from another organization", async () => {
+    await withTestOrg(async ownerOrgId => {
+      await withTestOrg(async otherOrgId => {
+        const [{ workflow: ownerWorkflow }, { workflow: otherWorkflow }] = await Promise.all([
+          saveWorkflow({ orgId: ownerOrgId, name: "owner file", steps: [{ id: "s1", description: "file" }] }),
+          saveWorkflow({ orgId: otherOrgId, name: "other file", steps: [{ id: "s1", description: "file" }] }),
+        ]);
+        const actor = { userId: null, role: "admin" };
+        const [{ token: ownerToken }, { token: otherToken }] = await Promise.all([
+          enableWorkflowApiAccess({ orgId: ownerOrgId, workflowId: ownerWorkflow.id, actor }),
+          enableWorkflowApiAccess({ orgId: otherOrgId, workflowId: otherWorkflow.id, actor }),
+        ]);
+        const thread = await createWorkThread(ownerOrgId, ownerWorkflow.name, "workflow");
+        const work = await createWorkRun(ownerOrgId, thread.id, "harness");
+        const run = await createWorkflowRun({
+          orgId: ownerOrgId, workflowId: ownerWorkflow.id, threadId: thread.id,
+          workRunId: work.id, triggerKind: "api", executionMode: "single",
+        });
+        const path = `runs/${work.id}/artifacts/result.csv`;
+        const artifactRoot = join(getOrgAgentRoot(ownerOrgId), "runs", work.id, "artifacts");
+        await mkdir(artifactRoot, { recursive: true });
+        await writeFile(join(artifactRoot, "result.csv"), "id\n42\n");
+        try {
+          await finishWorkflowRun({ workflowRunId: run.id, status: "completed", resultArtifactPath: path });
+          await db().update(workflow_run).set({ result_expires_at: new Date(Date.now() + 60_000) })
+            .where(eq(workflow_run.id, run.id));
+          const url = `http://localhost/api/v1/workflows/${ownerWorkflow.id}/runs/${run.id}/artifact`;
+          const context = { params: Promise.resolve({ workflowId: ownerWorkflow.id, runId: run.id }) };
+          const owner = await getPublicArtifact(new NextRequest(url, {
+            headers: { authorization: `Bearer ${ownerToken}` },
+          }), context);
+          expect(owner.status).toBe(200);
+          expect(await owner.text()).toBe("id\n42\n");
+
+          const stranger = await getPublicArtifact(new NextRequest(url, {
+            headers: { authorization: `Bearer ${otherToken}` },
+          }), context);
+          expect(stranger.status).toBe(401);
+          expect(await stranger.json()).toMatchObject({ error: { code: "invalid_credentials" } });
         } finally {
           await rm(join(getOrgAgentRoot(ownerOrgId), "runs", work.id), { recursive: true, force: true });
         }
