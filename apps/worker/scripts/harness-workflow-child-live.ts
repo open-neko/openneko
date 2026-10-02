@@ -1,12 +1,12 @@
 // Isolated acceptance: a queued workflow owns two Ax child investigations and one durable output.
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { action_policy, db, pool, getOrgId, llm_provider_config, pack_action_definition, workflow_definition, workflow_run, eq } from "@neko/db";
 import { boss, enqueue, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
-import { shutdownAgentBroker } from "@neko/llm/work";
+import { getOrgAgentRoot, shutdownAgentBroker } from "@neko/llm/work";
 import { admitWorkflowApiRun, approveActionRequest, createActionRequest, enableWorkflowApiAccess, executeApprovedActionRequest, getWorkflowApiRunStatus, registerActionAdapter, updateWorkflowApiLimits } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
 import { runWorkflowApiDispatcherTick } from "../src/workflow-api-dispatcher.js";
@@ -54,6 +54,19 @@ try {
   }
   assert.equal(run?.status, "completed", JSON.stringify(run));
   assert.equal((await queue.getJobById(QUEUE.WORKFLOW_RUN_FIRE, jobId))?.state, "completed");
+  const checkpointPath = join(getOrgAgentRoot(orgId), "runs", run.work_run_id, ".harness",
+    `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`);
+  const checkpoint = JSON.parse(await readFile(checkpointPath, "utf8")) as {
+    events: Array<{ type: string; stage?: string }>;
+  };
+  const callStages = checkpoint.events.filter(event => event.type === "model.request.started")
+    .map(event => event.stage);
+  assert.ok(callStages.length >= 9, JSON.stringify(callStages));
+  assert.ok(callStages.every(stage => stage && stage !== "unattributed"), JSON.stringify(callStages));
+  for (const stage of ["distiller", "executor", "responder",
+    "child.distiller", "child.executor", "child.responder"]) {
+    assert.ok(callStages.includes(stage), `${stage} missing from ${JSON.stringify(callStages)}`);
+  }
   const outputs = (await pool().query("SELECT id,kind,body FROM workflow_output WHERE org_id=$1 AND workflow_run_id=$2", [orgId,run.id])).rows;
   assert.equal(outputs.length, 1);
   assert.equal(outputs[0].kind, "finding");
