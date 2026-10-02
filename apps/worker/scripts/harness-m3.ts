@@ -740,17 +740,20 @@ try {
     console.log('M5_QUEUE_BATCH_GRAPHJIN_PASS',realRun.id);
     const {token}=await enableWorkflowApiAccess({orgId,workflowId:realWorkflow.id,actor:{userId:soloAdmin.id,role:'admin'}});
     const httpApi=process.env.HARNESS_M3_API_HTTP==='1';
+    const largeBatch=httpApi && process.env.HARNESS_M6_LARGE_BATCH==='1';
+    const apiTargetDay=largeBatch?'2026-09-16':'2026-09-15';
+    const expectedApiBytes=Buffer.from(`reference\r\n${'REF-42\r\n'.repeat(largeBatch?1_000_000:1)}`);
     const apiBase='http://localhost:18121';
     const admitted=httpApi
       ? await (async()=>{
           const response=await fetch(`${apiBase}/api/v1/workflows/${realWorkflow.id}/runs`,{
             method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`,
-              'idempotency-key':'m5-graphjin-api-batch'},body:JSON.stringify({targetDay:'2026-09-15'})});
+              'idempotency-key':'m5-graphjin-api-batch'},body:JSON.stringify({targetDay:apiTargetDay})});
           if(response.status!==202) throw new Error(`Workflow HTTP admission returned ${response.status}: ${await response.text()}`);
           return response.json() as Promise<{runId:string;statusUrl:string}>;
         })()
       : await admitWorkflowApiRun({workflowId:realWorkflow.id,token,idempotencyKey:'m5-graphjin-api-batch',
-          mode:'single',value:{targetDay:'2026-09-15'},clientFingerprint:`m5-${orgId}`});
+          mode:'single',value:{targetDay:apiTargetDay},clientFingerprint:`m5-${orgId}`});
     await db().update(workflow_definition).set({name:'Renamed after API admission',
       output_contract:{harnessBatch:{...realContract,artifactName:'later.csv',columns:['later']}}})
       .where(eq(workflow_definition.id,realWorkflow.id));
@@ -766,7 +769,14 @@ try {
     assert.equal(apiRow?.status,'completed');
     assert.equal(apiRow.result_artifact_path,`runs/${apiRow.work_run_id}/artifacts/references.csv`);
     const apiWorkspace=await ensureWorkWorkspace(orgId,(await pool().query('SELECT thread_id FROM workflow_run WHERE id=$1',[admitted.runId])).rows[0].thread_id,apiRow.work_run_id);
-    assert.equal((await readFile(join(apiWorkspace.artifactRoot,'references.csv'),'utf8')).replaceAll('\r\n','\n'),'reference\nREF-42\n');
+    const savedApiBytes=await readFile(join(apiWorkspace.artifactRoot,'references.csv'));
+    assert.equal(savedApiBytes.length,expectedApiBytes.length);
+    assert.equal(createHash('sha256').update(savedApiBytes).digest('hex'),
+      createHash('sha256').update(expectedApiBytes).digest('hex'));
+    const [apiProgress]=(await db().select({progress:workflow_run.progress}).from(workflow_run)
+      .where(eq(workflow_run.id,admitted.runId)));
+    assert.deepEqual(apiProgress?.progress,{stage:'completed',rows:largeBatch?1_000_000:1,queries:1,
+      artifactBytes:expectedApiBytes.length});
     const apiEvents=(await pool().query("SELECT count(*)::int AS n FROM work_run_event WHERE org_id=$1 AND run_id=$2 AND kind='artifact'",[orgId,apiRow.work_run_id])).rows[0].n;
     assert.equal(apiEvents,1);
     console.log('M5_API_BATCH_GRAPHJIN_PASS',admitted.runId);
@@ -780,9 +790,15 @@ try {
       const download=await fetch(new URL(outcome.artifact.url,apiBase),{headers});
       assert.equal(download.status,200);
       assert.match(download.headers.get('content-type')??'',/text\/csv/);
+      assert.equal(download.headers.get('content-length'),String(expectedApiBytes.length));
       assert.equal(download.headers.get('content-disposition'),`attachment; filename="workflow-${admitted.runId}.csv"`);
-      assert.equal((await download.text()).replaceAll('\r\n','\n'),'reference\nREF-42\n');
+      const downloaded=Buffer.from(await download.arrayBuffer());
+      assert.equal(downloaded.length,expectedApiBytes.length);
+      assert.equal(createHash('sha256').update(downloaded).digest('hex'),
+        createHash('sha256').update(expectedApiBytes).digest('hex'));
       console.log('M5_HTTP_API_BATCH_GRAPHJIN_PASS',admitted.runId);
+      if(largeBatch)console.log('M6_HTTP_API_BATCH_LARGE_PASS',JSON.stringify({runId:admitted.runId,
+        bytes:downloaded.length,rows:1_000_000,queries:1}));
     }
     if (process.env.HARNESS_M3_WEB === '1')
         await writeFile(join(process.env.HARNESS_STATE!,'m5-batch-workflow-run'),realWorkflowRun.id);
