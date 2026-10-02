@@ -63,6 +63,29 @@ func readComposeForTest(t *testing.T, name string) (composeFileForTest, string) 
 	return doc, string(raw)
 }
 
+func TestGraphJinReasoningCanBePinnedByDeployment(t *testing.T) {
+	const want = "${GRAPHJIN_AGENT_REASONING:-}"
+	for _, name := range []string{"core.yml", "demo.yml"} {
+		compose, _ := readComposeForTest(t, name)
+		if got := compose.Services["graphjin"].Environment["GJ_AGENT_REASONING"]; got != want {
+			t.Errorf("%s GraphJin reasoning = %q, want %q", name, got, want)
+		}
+	}
+	for _, name := range []string{"compose.yml", "compose.dev.yml", "compose.graphjin-agent.yml"} {
+		raw, err := os.ReadFile(filepath.Join(repoRootForTest(t), name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var compose composeFileForTest
+		if err := yaml.Unmarshal(raw, &compose); err != nil {
+			t.Fatal(err)
+		}
+		if got := compose.Services["graphjin"].Environment["GJ_AGENT_REASONING"]; got != want {
+			t.Errorf("%s GraphJin reasoning = %q, want %q", name, got, want)
+		}
+	}
+}
+
 // repoRootForTest walks up from the test's working directory until it finds the
 // directory holding the top-level compose.yml.
 func repoRootForTest(t *testing.T) string {

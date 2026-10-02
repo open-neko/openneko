@@ -108,6 +108,7 @@ services:
       GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
       GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-openai}
       GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gpt-4.1-mini}
+      GJ_AGENT_REASONING: ${GRAPHJIN_AGENT_REASONING:-}
       # No GJ_DATABASE_* here: in sources mode those are a FATAL boot error
       # ("database is legacy database-only config") — the connection lives in
       # the seeded /config/dev.yml. This crash-looped every fresh demo boot.
