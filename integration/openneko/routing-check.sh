@@ -62,7 +62,7 @@ YAML
 manifest='{"context":"context","executor":"executor","responder":"responder","pricing_version":"m6-test-v1","routes":[{"key":"context","model":"harness-route-context","url":"http://host.docker.internal:18118/route/context/v1","api_key_env":"HARNESS_CONTEXT_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}},{"key":"executor","model":"harness-route-executor","url":"http://host.docker.internal:18118/route/executor/v1","api_key_env":"HARNESS_EXECUTOR_KEY","price":{"input_micros_per_million":2000000,"output_micros_per_million":2000000}},{"key":"responder","model":"harness-route-responder","url":"http://host.docker.internal:18118/route/responder/v1","api_key_env":"HARNESS_RESPONDER_KEY","price":{"input_micros_per_million":3000000,"output_micros_per_million":3000000}}]}'
 spec='{"version":1,"run_id":"m6-routing","input_id":"m6-routing-input","prompt":"Answer the routing check","max_cost_micros":50000}'
 "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0 OPENNEKO_MCP_ORG_ID=harness-m6-fixture OPENNEKO_MCP_THREAD_ID=harness-m6-routing
   printf "%s" "$2" | /usr/local/bin/harness-openneko
 ' sh "$manifest" "$spec" > "$state/m6-routing-events.jsonl"
 python3 - "$state/m6-routing-events.jsonl" <<'PY'
@@ -91,7 +91,7 @@ echo M6_CONNECTED_OPENSHELL_ROUTING_PASS
 
 spec='{"version":1,"run_id":"m6-cost-denied","input_id":"m6-cost-denied-input","prompt":"Answer the routing check","max_cost_micros":4095}'
 if "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0 OPENNEKO_MCP_ORG_ID=harness-m6-fixture OPENNEKO_MCP_THREAD_ID=harness-m6-routing
   printf "%s" "$2" | /usr/local/bin/harness-openneko
 ' sh "$manifest" "$spec" > "$state/m6-cost-denied-events.jsonl"; then
   echo 'cost gate admitted a model request' >&2
@@ -130,7 +130,7 @@ PY
   spec="{\"version\":1,\"run_id\":\"m6-route-$status\",\"input_id\":\"m6-route-$status-input\",\"prompt\":\"Answer the routing check\"}"
   if [[ "$status" == 429 ]]; then spec="{\"version\":1,\"run_id\":\"m6-route-429\",\"input_id\":\"m6-route-429-input\",\"prompt\":\"Answer the routing check\",\"max_model_calls\":1}"; fi
   if "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-    export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+    export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0 OPENNEKO_MCP_ORG_ID=harness-m6-fixture OPENNEKO_MCP_THREAD_ID=harness-m6-routing
     printf "%s" "$2" | /usr/local/bin/harness-openneko
   ' sh "$manifest" "$spec" > "$state/m6-$status-events.jsonl"; then
     [[ "$status" == 503 ]] || { echo "$status incorrectly admitted fallback" >&2; exit 1; }
@@ -169,7 +169,7 @@ done
 curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
 spec='{"version":1,"run_id":"m6-route-429-approved","input_id":"m6-route-429-approved-input","prompt":"Answer the routing check","max_model_calls":4}'
 "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0 OPENNEKO_MCP_ORG_ID=harness-m6-fixture OPENNEKO_MCP_THREAD_ID=harness-m6-routing
   printf "%s" "$2" | /usr/local/bin/harness-openneko
 ' sh "$manifest" "$spec" > "$state/m6-429-approved-events.jsonl"
 python3 - "$state/m6-429-approved-events.jsonl" <<'PY'
@@ -209,7 +209,7 @@ PY
 )
 spec='{"version":1,"run_id":"m6-escalation","input_id":"m6-escalation-input","prompt":"Answer the routing check"}'
 "${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
-  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0 OPENNEKO_MCP_ORG_ID=harness-m6-fixture OPENNEKO_MCP_THREAD_ID=harness-m6-routing
   printf "%s" "$2" | /usr/local/bin/harness-openneko
 ' sh "$manifest" "$spec" > "$state/m6-escalation-events.jsonl"
 python3 - "$state/m6-escalation-events.jsonl" <<'PY'

@@ -25,6 +25,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "invalid lookup binding")
 		os.Exit(2)
 	}
+	scope, err := admissionScope(os.Getenv("OPENNEKO_MCP_ORG_ID"), os.Getenv("OPENNEKO_MCP_THREAD_ID"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	var lookup func(context.Context, string) (json.RawMessage, error)
 	if recordsOnly != "1" && lookupRead != "0" {
 		var err error
@@ -34,13 +39,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	tools := agent.Tools{Lookup: lookup}
-	if orgID := os.Getenv("OPENNEKO_MCP_ORG_ID"); orgID != "" {
-		tools.Scope = "org:" + orgID
-	}
-	if threadID := os.Getenv("OPENNEKO_MCP_THREAD_ID"); threadID != "" {
-		tools.Scope += "\nthread:" + threadID
-	}
+	tools := agent.Tools{Lookup: lookup, Scope: scope}
 	if child := os.Getenv("OPENNEKO_HARNESS_CHILD_READS"); child != "" {
 		tools.ChildReads = strings.Split(child, ",")
 	}
@@ -351,6 +350,17 @@ func main() {
 		return first
 	}
 	command.MainWithToolsAndCleanup(tools, cleanup)
+}
+
+func admissionScope(orgID, threadID string) (string, error) {
+	valid := func(id string) bool {
+		return id != "" && len(id) <= 128 && strings.TrimSpace(id) == id &&
+			!strings.ContainsAny(id, "\r\n\x00")
+	}
+	if !valid(orgID) || !valid(threadID) {
+		return "", fmt.Errorf("missing or invalid OpenNeko admission scope")
+	}
+	return "org:" + orgID + "\nthread:" + threadID, nil
 }
 
 // This narrows the model-visible proposal tool to the host's run-scoped

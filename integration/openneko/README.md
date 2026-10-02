@@ -52,6 +52,12 @@ directly. Set `HARNESS_M6_QUEUE_BROWSER_STREAM=1` instead to exercise the
 production Work queue handler with the same browser assertion and confirm
 that provisional text never enters the durable run log. Both gates pass on
 the isolated 0.1.2 gateway.
+
+The routing gate was rerun after the OpenNeko adapter began requiring explicit
+organization and thread bindings. Its direct sandbox fixture supplies synthetic
+IDs; direct routing, cost denial, fallback, executor escalation and connected
+worker launch all pass.
+
 The queued gate also verifies that the worker summary counts actual Ax calls,
 reports the resolved model from the trusted Go route, and does not persist
 internal per-call metadata as Work events. The fixture intentionally has

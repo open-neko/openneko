@@ -1098,6 +1098,10 @@ and replaying its actual checkpoint under that foreign scope is denied before
 any event, model call or tool call. The same gate retrieves a 52,008-byte
 file-backed read by ID twice. The 200 KiB interrupted-result fixture remains
 local evidence; cross-host interrupted-reference isolation is not yet qualified.
+The OpenNeko adapter also rejects a missing or ambiguous organization/thread
+binding before configuring a model or tool. The direct 0.1.2 multi-route,
+fallback, cost and executor-escalation gates pass with an explicit synthetic
+scope, and the connected worker route launch still passes.
 The OpenNeko branch now has an opt-in trusted route manifest for Harness-only
 multi-provider OpenShell launches. Local launcher tests check provider order,
 distinct credential aliases, route-specific egress, recovery manifest
