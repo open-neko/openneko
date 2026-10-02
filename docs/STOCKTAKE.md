@@ -80,6 +80,10 @@ evidence or proof of savings.
 An isolated Postgres-backed route gate also accepted the owner's workflow API
 token and denied a valid token issued to a second organization. This proves
 the public route's token boundary, not a multi-tenant browser deployment.
+The file-backed API batch gate also produced and downloaded an exact
+8,000,011-byte CSV from one seeded GraphJin lookup, with one million output
+rows and no model credential in the executor. This verifies the large-file
+transport, not customer Daily Lead Union correctness.
 
 The 2026-09-28 M5c user-administration slice adds a run-bound internal
 `user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,

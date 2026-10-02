@@ -118,6 +118,11 @@ fixtures.
 Set `HARNESS_M3_API_HTTP=1` on the command above to add the public HTTP
 submission, status-poll and download check through the Go/OpenShell/GraphJin
 batch worker. It starts one temporary Next dev process and cleans it up.
+Add `HARNESS_M6_LARGE_BATCH=1` to make the API-admitted batch emit one million
+synthetic rows from the same brokered GraphJin reference. The connected 0.1.2
+gate verified one query, a pinned executor with no model credential or egress,
+one 8,000,011-byte artifact receipt, and an exact public HTTP download with
+matching length and SHA-256. The ordinary 19-byte batch case remains the default.
 
 For the focused cron and source-change replay gate, use the cached release
 agent image and run:

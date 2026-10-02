@@ -1207,8 +1207,11 @@ compaction. Add `HARNESS_M6_COMPACTION_WEB=1` to serve the isolated OpenNeko web
 app and verify an operator workflow-artifact download byte-for-byte against the
 52,008-byte CSV after the same run. The background workflow's personal Work-file
 URL returns 404, and a missing workflow-run URL returns 404. This gate passed
-with one artifact event and a canonical workflow result path. A larger batch
-artifact and other artifact kinds remain open. A separate Postgres-backed
+with one artifact event and a canonical workflow result path. The connected
+query-to-file API gate now also publishes an 8,000,011-byte CSV with 1,000,000
+rows after one brokered GraphJin query; its pinned executor has no model
+credential or egress, and the public route returns the exact bytes and length.
+Other artifact kinds remain open. A separate Postgres-backed
 route gate verifies the same recorded artifact returns 404 when the request
 resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). The Postgres-backed
 public API route also accepts the owner's valid token and returns 401 for a

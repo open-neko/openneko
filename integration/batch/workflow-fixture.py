@@ -42,12 +42,14 @@ if not response.exists():
 
 rows = json.loads(response.read_text())["data"]["references"]
 assert rows == [{"id": 42, "label": "REF-42"}]
+output_rows = 1_000_000 if args["target_day"] == "2026-09-16" else 1
 with open(args["output"], "w", newline="") as output:
     writer = csv.writer(output)
     writer.writerow(["reference"])
-    writer.writerow([rows[0]["label"]])
+    for _ in range(output_rows):
+        writer.writerow([rows[0]["label"]])
 Path(args["summary"]).write_text(json.dumps({
     "status": "completed",
     "target_day": args["target_day"],
-    "merge": {"final_rows": 1},
+    "merge": {"final_rows": output_rows},
 }))
