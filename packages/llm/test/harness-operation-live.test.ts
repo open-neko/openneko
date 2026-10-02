@@ -12,6 +12,45 @@ import { inProcessControlPlane } from "../src/work/control-plane";
 import { recordHarnessLookup } from "../src/work/harness-operation";
 
 const live = process.env.HARNESS_M3_LIVE === "1" ? it : it.skip;
+live("Harness lookup cannot override the server-owned GraphJin model profile", async () => {
+  if (process.env.NEKO_PG_PORT !== "18119") throw Error("isolated M3 database required");
+  const orgId = `profile-${randomUUID()}`, runId = randomUUID(), threadId = randomUUID();
+  await db().insert(organization).values({id: orgId, name: "GraphJin profile boundary"});
+  await db().insert(work_thread).values({id: threadId, org_id: orgId, title: "Profile boundary"});
+  await db().insert(work_run).values({id: runId, org_id: orgId, thread_id: threadId, backend: "harness", actor_role: "service"});
+  await pool().query("INSERT INTO harness_run_journal (org_id,run_id,fingerprint) VALUES ($1,$2,$3)",
+    [orgId, runId, "0".repeat(64)]);
+  const delegated: unknown[] = [];
+  const broker = await startAgentBroker({port: 0, controlPlane: {
+    ...inProcessControlPlane,
+    async askGraphjinDataAgent(input) {
+      delegated.push(input);
+      return {response: {status: "success", answer: "REF-42"}};
+    },
+  }});
+  try {
+    const token = broker.tokenFor({orgId, runId, threadId, kind: "work"});
+    const response = await fetch(`http://127.0.0.1:${broker.port}/v1/harness/lookup`, {
+      method: "POST",
+      headers: {authorization: `Bearer ${token}`, "content-type": "application/json"},
+      body: JSON.stringify({operationId: 1, instruction: "Find REF-42", model: "cheap-fixture",
+        provider: "caller-provider", reasoning: "none", maxSteps: 1, orgId: "forged-org"}),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({response: {answer: "REF-42"}});
+    expect(delegated).toHaveLength(1);
+    expect(delegated[0]).toMatchObject({orgId, runId, instruction: "Find REF-42", maxSteps: 12});
+    for (const key of ["model", "provider", "reasoning"]) expect(delegated[0]).not.toHaveProperty(key);
+    const [operation] = (await pool().query<{request: Record<string, unknown>}>(
+      "SELECT request FROM harness_operation WHERE org_id=$1 AND run_id=$2", [orgId, runId])).rows;
+    expect(operation.request).toEqual({instruction: "Find REF-42", maxSteps: 12});
+  } finally {
+    await broker.close();
+    await db().delete(organization).where(eq(organization.id, orgId));
+    await pool().end();
+  }
+}, 20_000);
+
 live("queued Harness workflow output binds the run and does not redispatch", async () => {
   if (process.env.NEKO_PG_PORT !== "18119") throw Error("isolated M3 database required");
   const orgId = `workflow-output-${randomUUID()}`;
