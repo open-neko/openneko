@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.2](https://github.com/open-neko/openneko/compare/v3.12.1...v3.12.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* apply Work filesystem policy in OpenShell smoke ([#397](https://github.com/open-neko/openneko/issues/397)) ([e3212fb](https://github.com/open-neko/openneko/commit/e3212fbaef9cb7b6f7e2ef7440e8e6846693edac))
+
 ## [3.12.1](https://github.com/open-neko/openneko/compare/v3.12.0...v3.12.1) (2026-10-01)
 
 
