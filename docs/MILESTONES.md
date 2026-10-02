@@ -1227,6 +1227,11 @@ resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). The Postgres-backed
 public API route also accepts the owner's valid token and returns 401 for a
 different organization's valid token. This checks both artifact route scopes;
 a multi-tenant browser deployment remains open.
+After the workflow process grant, the full isolated
+`HARNESS_M3_API_HTTP=1` suite passed again on OpenShell 0.1.2 without the fast
+shortcut. It covered Hermes, the real broker and GraphJin fixture, queued Work
+and API workflows, child recovery, browser process downloads, and the public
+query-to-file API. The runner removed its owned containers and networks.
 
 A second connected workflow API run now keeps a governed action request pending
 through Ax compaction. It uses a trusted priced OpenShell route, makes five

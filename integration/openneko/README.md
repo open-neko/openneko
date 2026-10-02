@@ -450,6 +450,9 @@ The separate connected Office gate uses
 DOCX packages through two API-queued workflow runs. It verifies ZIP/XML
 contents, durable file outputs, exact public and operator HTTP responses,
 and idempotent queue redelivery under OpenShell 0.1.2.
+The full `HARNESS_M3_API_HTTP=1` suite was rerun after granting workflow
+`process_run`; it passed without `HARNESS_M5_FAST` and removed its isolated
+containers and networks.
 
 The focused M6 API pricing preflight runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_PRICING_PREFLIGHT_ONLY=1`. An unpriced
