@@ -411,7 +411,7 @@ async function runWorkflowTurnTraced(
       needsInput = true;
     }
     await eventTelemetry.observeEvent(event);
-    if (event.type === "model_call") return;
+    if (event.type === "model_call" || event.type === "tool_catalog_profile" || event.type === "tool_selection_error") return;
     await emit(event);
   };
 

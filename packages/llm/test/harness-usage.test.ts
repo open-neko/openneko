@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { harnessCost, harnessModelCall, harnessProvisionalAnswer, harnessRemoteUsage, harnessResult, harnessStageUsage, harnessUsage } from "../src/agent-backends/harness";
+import { harnessCost, harnessModelCall, harnessProvisionalAnswer, harnessRemoteUsage, harnessResult, harnessStageUsage,
+  harnessToolCatalogProfile, harnessToolSelectionError, harnessUsage } from "../src/agent-backends/harness";
 
 it("accepts only bounded content-free model route receipts", () => {
   const started={type:"model.request.started",call_id:2,name:"gemini-3.8-flash",origin:"google",stage:"responder"};
@@ -64,4 +65,17 @@ it("accepts only bounded stage usage as diagnostic telemetry", () => {
   expect(harnessStageUsage({ ...stage, stage_usage: { ...stage.stage_usage, requests: 1000 } })).toBeUndefined();
   expect(harnessStageUsage({ ...stage, stage_usage: { ...stage.stage_usage, total_tokens: -1 } })).toBeUndefined();
   expect(harnessStageUsage({ ...stage, stage_usage: { ...stage.stage_usage, coverage: "unavailable" } })).toBeUndefined();
+});
+
+it("projects only bounded tool-catalog and invalid-selection metadata", () => {
+  const catalog={type:"tool.catalog.configured",name:"parent",tool_catalog:{count:2,schema_bytes:85,descriptor_bytes:220},
+    data:{private:"never forward"}};
+  expect(harnessToolCatalogProfile(catalog)).toEqual({type:"tool_catalog_profile",actor:"parent",count:2,
+    schemaBytes:85,descriptorBytes:220});
+  expect(harnessToolCatalogProfile({...catalog,tool_catalog:{count:2,schema_bytes:85,descriptor_bytes:84}})).toBeUndefined();
+  expect(harnessToolCatalogProfile({...catalog,name:"untrusted"})).toBeUndefined();
+  expect(harnessToolSelectionError({type:"tool.input.rejected",name:"lookup",error:"invalid_input",
+    data:{private:"never forward"}})).toEqual({type:"tool_selection_error",name:"lookup",reason:"invalid_input"});
+  expect(harnessToolSelectionError({type:"tool.input.rejected",name:"lookup",error:"database password"})).toBeUndefined();
+  expect(harnessToolSelectionError({type:"tool.input.rejected",name:"bad\nname",error:"invalid_input"})).toBeUndefined();
 });

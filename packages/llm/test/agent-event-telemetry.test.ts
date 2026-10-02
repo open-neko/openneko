@@ -36,6 +36,25 @@ describe("agent event telemetry", () => {
     });
     expect(summary.snapshot().usage.totalTokens).toBe(80);
   });
+  it("exports catalog size and invalid selections without counting a tool execution", async () => {
+    const sink = new MemoryObservationSink();
+    const summary = new HarnessRunSummaryAccumulator("catalog-run");
+    const telemetry = createAgentEventTelemetry({observer:createHarnessObserver({runId:"catalog-run",sinks:[sink,summary]}),
+      operationId:"work:catalog-run"});
+    await telemetry.startAgent({backend:"harness"});
+    await telemetry.observeEvent({type:"tool_catalog_profile",actor:"parent",count:3,schemaBytes:96,descriptorBytes:340});
+    await telemetry.observeEvent({type:"tool_selection_error",name:"lookup",reason:"invalid_input"});
+    await telemetry.finishAgent({status:"ok",outputBytes:1});
+    expect(sink.observations.find(item=>item.kind==="tool.catalog")).toMatchObject({
+      attributes:{"openneko.tool.catalog.actor":"parent","openneko.tool.catalog.schema_bytes":96,
+        "openneko.tool.catalog.descriptor_bytes":340},
+    });
+    expect(sink.observations.find(item=>item.kind==="tool.selection_error")).toMatchObject({
+      attributes:{"gen_ai.tool.name":"lookup","openneko.tool.selection_error":"invalid_input"},
+    });
+    expect(summary.snapshot().counts.tools).toBe(0);
+    expect(JSON.stringify(sink.observations)).not.toContain("private");
+  });
   it("uses only the Harness remote usage projection for a lookup", async () => {
     const sink = new MemoryObservationSink();
     const telemetry = createAgentEventTelemetry({ observer: createHarnessObserver({ runId: "remote-run", sinks: [sink] }), operationId: "work:remote-run" });

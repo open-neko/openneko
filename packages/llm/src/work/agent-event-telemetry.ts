@@ -229,6 +229,29 @@ export function createAgentEventTelemetry(input: {
       });
       return;
     }
+    if (event.type === "tool_catalog_profile") {
+      await observe({
+        kind: "tool.catalog",
+        operationId: `${input.operationId}:tool-catalog:${event.actor}`,
+        parentOperationId: stageOperationId,
+        attributes: {
+          "openneko.tool.catalog.actor": event.actor,
+          "openneko.tool.catalog.count": event.count,
+          "openneko.tool.catalog.schema_bytes": event.schemaBytes,
+          "openneko.tool.catalog.descriptor_bytes": event.descriptorBytes,
+        },
+      });
+      return;
+    }
+    if (event.type === "tool_selection_error") {
+      await observe({
+        kind: "tool.selection_error",
+        operationId: `${input.operationId}:tool-selection`,
+        parentOperationId: stageOperationId,
+        attributes: {"gen_ai.tool.name": event.name, "openneko.tool.selection_error": event.reason},
+      });
+      return;
+    }
     if (
       event.type === "status" &&
       event.message === "Hermes returned no output; retrying…"

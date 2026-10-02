@@ -158,6 +158,11 @@ export type AgentEvent =
       reported: number;
       usage: AgentTokenUsage;
     }
+  /** Metadata-only Harness catalog size for one configured Ax actor. */
+  | { type: "tool_catalog_profile"; actor: "parent" | "child.team.researcher";
+      count: number; schemaBytes: number; descriptorBytes: number }
+  /** A model-selected call failed host schema validation before dispatch. */
+  | { type: "tool_selection_error"; name: string; reason: "invalid_input" }
   /** Content-free operational summary persisted for clients and operators. */
   | { type: "telemetry"; summary: HarnessRunSummary }
   | { type: "error"; message: string }

@@ -465,6 +465,9 @@ try {
   assert.ok(traceBody.includes("model.stage_usage"),"OTLP must export stage attribution");
   assert.ok(traceBody.includes("openneko.agent.stage"));
   assert.ok(traceBody.includes("openneko.model.requests"));
+  assert.ok(traceBody.includes("tool.catalog"),"OTLP must export Harness catalog size");
+  assert.ok(traceBody.includes("openneko.tool.catalog.schema_bytes"));
+  assert.ok(traceBody.includes("openneko.tool.catalog.descriptor_bytes"));
   assert.ok(traceBody.includes("executor"));
   assert.ok(traceBody.includes(sourceRun.work_run_id));
   assert.ok(!traceBody.includes("Find the seeded reference and report it once"),

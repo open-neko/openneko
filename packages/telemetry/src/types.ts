@@ -13,6 +13,8 @@ export const OBSERVATION_KINDS = [
   "model.stage_usage",
   "tool.start",
   "tool.end",
+  "tool.catalog",
+  "tool.selection_error",
   "delegation.start",
   "delegation.end",
   "memory.start",

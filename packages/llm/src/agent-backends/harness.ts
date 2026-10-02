@@ -110,6 +110,14 @@ export class HarnessBackend implements AgentBackend {
                     const stage = harnessStageUsage(event);
                     if (stage) await opts.onEvent?.(stage);
                 }
+                else if (event.type === "tool.catalog.configured") {
+                    const profile = harnessToolCatalogProfile(event);
+                    if (profile) await opts.onEvent?.(profile);
+                }
+                else if (event.type === "tool.input.rejected") {
+                    const selection = harnessToolSelectionError(event);
+                    if (selection) await opts.onEvent?.(selection);
+                }
                 else if (event.type === "model.request.started" || event.type === "model.request.finished") {
                     const call = harnessModelCall(event);
                     // Telemetry must never fail an otherwise valid agent run.
@@ -212,6 +220,32 @@ export function harnessStageUsage(raw: unknown): Extract<AgentEvent, { type: "st
     if (usage.coverage !== coverage || usage.missingReasons?.some(reason => reason.startsWith("Harness "))) return undefined;
     return { type: "stage_usage", source: "harness", stage: event.name as Extract<AgentEvent, { type: "stage_usage" }>["stage"],
         requests: requests as number, reported: reported as number, usage };
+}
+
+/** Project only the bounded byte counts; tool schemas and descriptions stay in the sandbox. */
+export function harnessToolCatalogProfile(raw: unknown): Extract<AgentEvent, {type: "tool_catalog_profile"}> | undefined {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const event = raw as Record<string, unknown>;
+    if (event.type !== "tool.catalog.configured" ||
+        event.name !== "parent" && event.name !== "child.team.researcher" ||
+        !event.tool_catalog || typeof event.tool_catalog !== "object" || Array.isArray(event.tool_catalog)) return undefined;
+    const profile = event.tool_catalog as Record<string, unknown>;
+    const count = profile.count, schemaBytes = profile.schema_bytes, descriptorBytes = profile.descriptor_bytes;
+    if (!Number.isSafeInteger(count) || (count as number) < 0 || (count as number) > 4096 ||
+        !Number.isSafeInteger(schemaBytes) || (schemaBytes as number) < (count as number) || (schemaBytes as number) > (64 << 20) ||
+        !Number.isSafeInteger(descriptorBytes) || (descriptorBytes as number) < (schemaBytes as number) || (descriptorBytes as number) > (100 << 20) ||
+        event.name === "child.team.researcher" && count === 0) return undefined;
+    return {type:"tool_catalog_profile",actor:event.name,count:count as number,
+        schemaBytes:schemaBytes as number,descriptorBytes:descriptorBytes as number};
+}
+
+/** Never forward invalid arguments or an arbitrary runtime exception string. */
+export function harnessToolSelectionError(raw: unknown): Extract<AgentEvent, {type: "tool_selection_error"}> | undefined {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const event = raw as Record<string, unknown>;
+    if (event.type !== "tool.input.rejected" || event.error !== "invalid_input" ||
+        typeof event.name !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(event.name)) return undefined;
+    return {type:"tool_selection_error",name:event.name,reason:"invalid_input"};
 }
 
 /** Accept only the content-free Go receipt; malformed or older events charge conservatively. */
