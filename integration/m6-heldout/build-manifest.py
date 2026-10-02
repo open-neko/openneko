@@ -18,12 +18,15 @@ OUTCOMES = {"verified_success", "verified_failure", "unverified"}
 CLASSES = {"short", "investigation", "artifact"}
 
 
-def receipt(path: Path, case_id: str, mode: str) -> dict:
+def receipt(path: Path, case_id: str, mode: str, source: str) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     if (data.get("version") != 1 or data.get("dataset") != "daily-lead-union-v1"
             or data.get("cases_sha256") != SHA256 or data.get("case_id") != case_id
-            or data.get("mode") != mode):
+            or data.get("mode") != mode or data.get("source") != source):
         raise ValueError(f"invalid frozen receipt identity: {path.name}")
+    model_name = data.get("model_name")
+    if not isinstance(model_name, str) or not model_name:
+        raise ValueError(f"missing model identity: {path.name}")
     root = Path(data.get("root", ""))
     run_id = data.get("run_id")
     digest = data.get("checkpoint_sha256")
@@ -41,6 +44,9 @@ def receipt(path: Path, case_id: str, mode: str) -> dict:
         raise ValueError(f"missing GraphJin attestation: {path.name}")
     if not isinstance(data.get("wall_ms"), int) or data["wall_ms"] <= 0:
         raise ValueError(f"missing wall time: {path.name}")
+    if source == "live" and ("fixture" in model_name.lower()
+                             or "fixture" in environment["model"].lower()):
+        raise ValueError(f"fixture profile cannot support live outcome: {path.name}")
     return data
 
 
@@ -57,7 +63,7 @@ def entry(data: dict, verdict: dict, case_id: str) -> dict:
             "wall_ms": data["wall_ms"], "graphjin_environment": data["graphjin_environment"]}
 
 
-def build(receipts: Path, review: dict, source: str = "live") -> dict:
+def build(receipts: Path, review: dict, source: str) -> dict:
     if source not in ("live", "synthetic"):
         raise ValueError("invalid held-out run source")
     if review.get("version") != 1 or set(review.get("cases", {})) != set(CASES):
@@ -71,7 +77,7 @@ def build(receipts: Path, review: dict, source: str = "live") -> dict:
             raise ValueError(f"incomplete reviewed pair: {case_id}")
         runs = {}
         for mode in MODES:
-            data = receipt(receipts / f"{case_id}-{mode}.json", case_id, mode)
+            data = receipt(receipts / f"{case_id}-{mode}.json", case_id, mode, source)
             runs[mode] = entry(data, case_review["runs"][mode], case_id)
         if runs["fixed"]["graphjin_environment"] != runs["canary"]["graphjin_environment"]:
             raise ValueError(f"GraphJin profile or snapshot changed across pair: {case_id}")
@@ -89,7 +95,7 @@ def main() -> None:
     parser.add_argument("--receipts", required=True, type=Path)
     parser.add_argument("--review", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--source", choices=("live", "synthetic"), default="live")
+    parser.add_argument("--source", choices=("live", "synthetic"), required=True)
     args = parser.parse_args()
     review = json.loads(args.review.read_text(encoding="utf-8"))
     manifest = build(args.receipts, review, source=args.source)

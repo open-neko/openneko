@@ -87,6 +87,8 @@ comparator on all four pairs. It resets the model fixture between runs so its
 response sequence is independent for each case. The fixture intentionally
 answers every case incorrectly; the generated reviews are verified failures,
 and `build-manifest.py --source synthetic` marks the manifest accordingly.
+The builder requires an explicit source, checks that every receipt records the
+same source, and refuses known fixture model profiles for a live manifest.
 The connected eight-run gate passed with a matched OpenShell 0.1.2 tuple on
 2026-10-02. `integration/run.sh` rejects a CLI whose reported version differs
 from the selected gateway version.
@@ -144,6 +146,7 @@ reviewed work class, not the classifier's suggestion. Use `verified_failure` or
 ```sh
 python3 integration/m6-heldout/build-manifest.py \
   --receipts /absolute/heldout-output --review /absolute/review.json \
+  --source live \
   --output /absolute/heldout-manifest.json
 go run ./cmd/harness-budget-compare < /absolute/heldout-manifest.json
 ```

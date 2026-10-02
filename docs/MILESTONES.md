@@ -953,6 +953,11 @@ attestation, triage events, API status and the offline comparator path. The
 synthetic model deliberately returned the wrong finding for every case, so
 all eight reviews are labelled verified failures and the manifest is marked
 synthetic. This proves test plumbing, not task quality.
+The receipt now records its live or synthetic source and model identity; the
+manifest builder requires an explicit matching source and refuses known fixture
+profiles for live evidence. The comparator reports synthetic held-out pairs
+separately from its live held-out aggregate. The complete eight-run 0.1.2
+queue gate passed again after this provenance change.
 The review-manifest builder requires all eight manually labelled outcomes,
 rehashes persisted checkpoints, and rejects a changed GraphJin environment
 across runs or a claimed successful CSV without oracle verification.

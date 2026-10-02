@@ -97,6 +97,10 @@ milliseconds. Both runs must use the same task, data snapshot, approved model
 routes, tool grants, and terminal acceptance check; the budget mode is the
 experimental difference. A manifest has this shape:
 
+The `held_out` aggregate counts only live-provider held-out pairs.
+Synthetic runs against the frozen held-out dataset are reported separately as
+`synthetic_held_out`; they qualify plumbing, not model quality.
+
 ```json
 {
   "version": 1,

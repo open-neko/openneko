@@ -143,12 +143,13 @@ type summary struct {
 }
 
 type output struct {
-	Version     int          `json:"version"`
-	Pairs       []pairReport `json:"pairs"`
-	Summary     summary      `json:"summary"`
-	HeldOut     summary      `json:"held_out"`
-	Calibration summary      `json:"calibration"`
-	Limitation  string       `json:"limitation"`
+	Version          int          `json:"version"`
+	Pairs            []pairReport `json:"pairs"`
+	Summary          summary      `json:"summary"`
+	HeldOut          summary      `json:"held_out"`
+	SyntheticHeldOut summary      `json:"synthetic_held_out"`
+	Calibration      summary      `json:"calibration"`
+	Limitation       string       `json:"limitation"`
 }
 
 func newSummary() summary { return summary{RegressionsByTaskClass: map[string]int{}} }
@@ -327,7 +328,7 @@ func compareWithTrace(input []byte, readTrace func(string, string) (session.Budg
 	if d.Decode(&m) != nil || d.Decode(new(any)) != io.EOF || m.Version != 1 || len(m.Pairs) == 0 || len(m.Pairs) > 1000 {
 		return output{}, fmt.Errorf("invalid budget comparison manifest")
 	}
-	out := output{Version: 1, Summary: newSummary(), HeldOut: newSummary(), Calibration: newSummary(),
+	out := output{Version: 1, Summary: newSummary(), HeldOut: newSummary(), SyntheticHeldOut: newSummary(), Calibration: newSummary(),
 		Limitation: "Paired outcomes require independent verification and comparable tasks, models, data and conditions; this report does not authorize a canary."}
 	seenID, seenRun := map[string]bool{}, map[string]bool{}
 	for _, p := range m.Pairs {
@@ -372,14 +373,17 @@ func compareWithTrace(input []byte, readTrace func(string, string) (session.Budg
 		}
 		out.Pairs = append(out.Pairs, report)
 		out.Summary.add(report)
-		if p.Split == "held_out" {
+		if p.Split == "held_out" && p.Source == "live" {
 			out.HeldOut.add(report)
+		} else if p.Split == "held_out" {
+			out.SyntheticHeldOut.add(report)
 		} else {
 			out.Calibration.add(report)
 		}
 	}
 	out.Summary.finish()
 	out.HeldOut.finish()
+	out.SyntheticHeldOut.finish()
 	out.Calibration.finish()
 	return out, nil
 }

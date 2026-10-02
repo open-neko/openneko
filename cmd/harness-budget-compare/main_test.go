@@ -132,6 +132,13 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 		*out.Pairs[1].GraphJin != graphjin {
 		t.Fatalf("output=%+v err=%v", out, err)
 	}
+	m.Pairs[0].Source = "synthetic"
+	synthetic, err := compareWithTrace(encode(), read)
+	if err != nil || synthetic.HeldOut.Pairs != 0 || synthetic.SyntheticHeldOut.Pairs != 1 ||
+		synthetic.SyntheticHeldOut.CanaryRegressions != 1 {
+		t.Fatalf("synthetic held-out runs counted as live evidence: %+v err=%v", synthetic, err)
+	}
+	m.Pairs[0].Source = "live"
 	m.Pairs[0].Canary.CheckpointSHA256 = a
 	if _, err := compareWithTrace(encode(), read); err == nil {
 		t.Fatal("accepted relabelled checkpoint")

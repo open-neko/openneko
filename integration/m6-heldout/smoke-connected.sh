@@ -38,6 +38,7 @@ export HARNESS_M6_GJ_STATUS_URL=http://127.0.0.1:18117/api/v1/agent/status
 export HARNESS_M6_GJ_PROVIDER=openai-compatible HARNESS_M6_GJ_MODEL=graphjin-fixture HARNESS_M6_GJ_REASONING=high
 export PGHOST=127.0.0.1 PGPORT=18120 PGUSER=fixture PGPASSWORD=fixture PGDATABASE=fixture
 export HARNESS_M6_MODEL_NAME=harness-budget-short-fixture
+export HARNESS_M6_RUN_SOURCE=synthetic
 cases=(reference-short-001)
 modes=(fixed)
 if [[ ${HARNESS_M6_HELDOUT_SMOKE_ALL:-0} == 1 ]]; then
@@ -83,6 +84,7 @@ for case_id in cases:
         report = json.loads((root / f"{case_id}-{mode}.json").read_text(encoding="utf-8"))
         assert report["api_status"] == report["checkpoint_status"] and report["api_status"] in ("completed", "failed"), report
         assert report["case_id"] == case_id and report["mode"] == mode
+        assert report["source"] == "synthetic" and "fixture" in report["model_name"]
         if report["api_status"] == "completed":
             assert report["answer"] == "Recorded the short check finding."
         else:
@@ -111,6 +113,7 @@ import json, sys
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 assert len(report["pairs"]) == 4
 assert all(pair["source"] == "synthetic" and pair["split"] == "held_out" for pair in report["pairs"])
+assert report["held_out"]["pairs"] == 0 and report["synthetic_held_out"]["pairs"] == 4
 PY
   echo M6_HELDOUT_PAIRED_SMOKE_PASS
 else
