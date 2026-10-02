@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
-import { db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
+import { db, eq, getOrgId, getOrCreateSoloAdmin, llm_provider_config, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { getOrgAgentRoot, shutdownAgentBroker } from "@neko/llm/work";
 import { admitWorkflowApiRun, enableWorkflowApiAccess, getWorkflowApiArtifact,
@@ -50,6 +50,10 @@ if (!selected || !selected.prompt || !["answer_fact", "answer_facts", "csv_oracl
 }
 const reportPath = requiredPath("HARNESS_M6_RUN_REPORT");
 const outputDir = dirname(reportPath);
+const agentHome = requiredPath("OPENNEKO_AGENT_HOME");
+if (process.env.OPENNEKO_HOST_WEB_DEV !== "1" || process.env.NODE_ENV !== "development") {
+  throw new Error("held-out agent home requires isolated development-mode scoping");
+}
 await mkdir(outputDir, { recursive: true, mode: 0o700 });
 const attestationArgs = [requiredPath("HARNESS_M6_ATTEST_SCRIPT"),
   "--url", process.env.HARNESS_M6_GJ_STATUS_URL ?? "",
@@ -69,6 +73,10 @@ assert.equal(graphjinEnvironment.model, process.env.HARNESS_M6_GJ_MODEL);
 assert.equal(graphjinEnvironment.reasoning, process.env.HARNESS_M6_GJ_REASONING);
 
 const orgId = await getOrgId();
+const orgRoot = getOrgAgentRoot(orgId);
+if (relative(agentHome, orgRoot).startsWith("..") || !relative(agentHome, orgRoot)) {
+  throw new Error("held-out agent root escaped the isolated output directory");
+}
 const modelName = process.env.HARNESS_M6_MODEL_NAME;
 if (!modelName) throw new Error("HARNESS_M6_MODEL_NAME is required");
 const queue = await boss();
@@ -88,10 +96,9 @@ try {
     org_id: orgId, name: `M6 held-out ${selected.id}`, goal: selected.prompt,
   }).returning({ id: workflow_definition.id });
   workflowId = workflow.id;
-  const [org] = (await pool().query<{ solo_admin_user_id: string | null }>(
-    "select solo_admin_user_id from organization where id=$1", [orgId])).rows;
-  assert.ok(org?.solo_admin_user_id, "isolated organization has no admin");
-  const actor = { userId: org.solo_admin_user_id, role: "admin" as const };
+  const soloAdmin = await getOrCreateSoloAdmin(orgId);
+  assert.ok(soloAdmin, "isolated organization has no active solo admin");
+  const actor = { userId: soloAdmin.id, role: "admin" as const };
   const { token } = await enableWorkflowApiAccess({ orgId, workflowId, actor });
   await updateWorkflowApiLimits({ orgId, workflowId, actor,
     limits: { maxModelCalls: 64, maxTokensPerRun: 250_000,
@@ -114,9 +121,20 @@ try {
     "select work_run_id from workflow_run where id=$1", [admitted.runId])).rows;
   assert.ok(run?.work_run_id);
   const workRunId = run.work_run_id;
-  const checkpointRoot = join(getOrgAgentRoot(orgId), "runs", workRunId, ".harness");
-  const checkpointBytes = await readFile(join(checkpointRoot,
-    `${createHash("sha256").update(workRunId).digest("hex")}.json`));
+  const checkpointRoot = join(orgRoot, "runs", workRunId, ".harness");
+  const checkpointPath = join(checkpointRoot,
+    `${createHash("sha256").update(workRunId).digest("hex")}.json`);
+  const checkpointBytes = await readFile(checkpointPath).catch(async (error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await writeFile(reportPath, JSON.stringify({
+      version: 1, dataset: cases.dataset, cases_sha256: frozenCasesSha256,
+      case_id: selected.id, mode, workflow_run_id: admitted.runId, run_id: workRunId,
+      api_status: status.status, api_error_code: status.error?.code ?? null,
+      checkpoint_missing: true, graphjin_environment: graphjinEnvironment,
+      wall_ms: Date.now() - startedAt,
+    }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+    throw new Error(`terminal ${status.status} workflow has no Harness checkpoint; see ${reportPath}`);
+  });
   const checkpoint = JSON.parse(checkpointBytes.toString("utf8")) as {
     result?: { status?: string; answer?: string }; spec?: { host_budget_mode?: string };
   };
