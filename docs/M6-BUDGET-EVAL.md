@@ -70,6 +70,14 @@ checkpoint identity check. The default remains shadow mode.
 
 Before enabling a canary, collect held-out short, investigation, and Daily Lead-style
 artifact runs with the same model and task fixtures under the fixed budget.
+For the database-backed GraphJin cases, pin the server's approved strong
+`agent.provider`, `agent.model`, and `agent.reasoning` in the deployment and
+record their effective non-secret values alongside the case manifest. OpenNeko's
+Compose surfaces these as `GRAPHJIN_AGENT_PROVIDER`, `GRAPHJIN_AGENT_MODEL`, and
+`GRAPHJIN_AGENT_REASONING`; the last one has an empty default. Verify the
+effective server configuration before each fixed/canary pair, and reject a
+pair if the profile or data snapshot changed. A caller's request or Harness
+budget classification must not change GraphJin's server-owned profile.
 Include misleading short prompts, uncertain/failed classifier calls, missing
 usage, crash/resume, and extension cases. Report false-lows and premature
 budget failures per class, verified completion, token/cost coverage, latency,

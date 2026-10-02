@@ -1285,6 +1285,11 @@ one lookup will need difficult discovery, and GraphJin currently owns
 `agent.provider`, `agent.model` and `agent.reasoning` server-side rather than
 accepting a caller-selected model per lookup. The Harness accounts for the
 remote call; it does not route individual GraphJin agent turns.
+The OpenNeko consumer branch now passes `GRAPHJIN_AGENT_REASONING` through to
+GraphJin's `GJ_AGENT_REASONING` in development and packaged Compose, alongside
+the existing provider/model settings. Its default remains empty to preserve
+existing deployments; M6 live qualification must explicitly pin and attest the
+approved strong provider, model and reasoning level before comparing runs.
 Use deterministic skill metadata/exact-name lookup first; route any semantic
 skill selection through an approved cheap Ax stage, never a model call from a
 skill file. Give the outer distiller, executor and responder separate approved
