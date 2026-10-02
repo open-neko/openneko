@@ -78,14 +78,17 @@ describe("Harness OpenShell route admission", () => {
     const price = {input_micros_per_million: 750_000, output_micros_per_million: 3_750_000};
     const triage = {key: "triage", model: "gemini-3.8-flash", url: "https://models.example/v1beta/openai",
       provider: "gemini-triage", credential_env: "GEMINI_TRIAGE_KEY", api_key_env: "HARNESS_TRIAGE_KEY",
-      classifier: "ax-chat-json", price};
+      classifier: "ax-chat-json", reasoning_effort: "low", price};
     const config = {...routeConfig, triage: "triage", budget_policy: budgetPolicy, pricing_version: "gemini-triage-v1",
       graphjin_price: price, routes: [...routeConfig.routes.map(route => ({...route, price})), triage]};
     const parsed = parseHarnessRouting(JSON.stringify(config));
     expect(JSON.parse(parsed.manifest).routes[2].classifier).toBe("ax-chat-json");
+    expect(JSON.parse(parsed.manifest).routes[2].reasoning_effort).toBe("low");
     expect(parsed.keyAliases).toContainEqual({from: "GEMINI_TRIAGE_KEY", to: "HARNESS_TRIAGE_KEY"});
     expect(() => parseHarnessRouting(JSON.stringify({...config,
       routes: [...config.routes.slice(0, 2), {...triage, classifier: "unapproved"}]}))).toThrow();
+    expect(() => parseHarnessRouting(JSON.stringify({...config,
+      routes: [...config.routes.slice(0, 2), {...triage, reasoning_effort: "minimal"}]}))).toThrow();
   });
 
   it("passes an approved later executor route without changing other stages", () => {
