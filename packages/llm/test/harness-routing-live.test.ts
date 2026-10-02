@@ -85,10 +85,12 @@ live("launches trusted Ax routes through distinct OpenShell providers", async ()
     const skill=snapshot.events.filter((event:{type:string})=>event.type==="skill.selected");
     expect(skill).toMatchObject([{name:"reference-check",origin:"semantic"}]);
     const calls=snapshot.events.filter((event:{type:string})=>event.type==="model.request.started");
-    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-skill");
-    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-context-lookup");
-    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-executor-lookup");
-    expect(calls.map((event:{name:string})=>event.name)).toContain("harness-route-responder-lookup");
+    expect(calls.map((event:{name:string;stage?:string})=>[event.name,event.stage])).toEqual([
+      ["harness-route-skill","skill_selection"],
+      ["harness-route-context-lookup","distiller"],
+      ["harness-route-executor-lookup","executor"],
+      ["harness-route-responder-lookup","responder"],
+    ]);
     const remote=snapshot.events.filter((event:{type:string;name?:string})=>event.type==="tool.finished"&&event.name==="lookup");
     expect(remote).toHaveLength(1);
     expect(remote[0].remote_usage).toMatchObject({reported:true});
