@@ -34,10 +34,10 @@ type RoutedClient struct {
 	GraphJinPrice  *TokenPrice
 }
 
-// uniqueRouteStages labels only aliases that the host assigned to one Ax
-// stage. A shared alias has no reliable per-call stage at the rate limiter;
-// leave it unattributed instead of guessing from request order. Approved
-// fallback targets inherit the source stage only when that source is unique.
+// uniqueRouteStages is a fallback when Ax emits no usable stage lifecycle.
+// A shared alias has no reliable stage from its provider name alone; leave it
+// unattributed rather than guessing from request order. Approved alternate
+// routes inherit a source stage only when that source is unique.
 func uniqueRouteStages(stages StageModels, fallbacks map[string]string) map[string]string {
 	labels := map[string]string{}
 	ambiguous := map[string]bool{}

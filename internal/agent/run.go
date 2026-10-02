@@ -454,6 +454,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				escalation: routed.Stages.ExecutorEscalation, after: int32(routed.Stages.ExecutorAfterErrors), errors: &executorErrors}
 		}
 		control := ax.RunControl()
+		control.OnEvent(events.observeStageLifecycle)
 		stateAcks := newStateAcknowledgements(control, events)
 		register := func(runtime *handoffRuntime, capability admittedTool, view *observationView) {
 			name := capability.Name
@@ -931,6 +932,7 @@ type recorder struct {
 	pricing               *RoutedClient
 	modelNames            map[string]string
 	modelStages           map[string]string
+	activeStages          map[string]string
 	costMicros            int64
 	shadowMu              sync.Mutex
 	shadowProfile         *budgettriage.Proposal
@@ -965,7 +967,11 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimitInfo, stage string) (ax.Value, error) {
 	r.mu.Lock()
 	if stage == "" {
-		stage = r.modelStages[info.Provider]
+		var observed bool
+		stage, observed = r.activeModelStage()
+		if !observed {
+			stage = r.modelStages[info.Provider]
+		}
 	}
 	if r.paused {
 		r.mu.Unlock()

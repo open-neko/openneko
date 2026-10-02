@@ -129,7 +129,7 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	if got := strings.Join(modelEvents, ","); got != "cheap:fixture,work:fixture,work:fixture" {
 		t.Fatalf("model receipts=%s", got)
 	}
-	if got := strings.Join(modelStages, ","); got != "distiller,," {
+	if got := strings.Join(modelStages, ","); got != "distiller,executor,responder" {
 		t.Fatalf("model stages=%q", modelStages)
 	}
 	if got := strings.Join(stageUsage, ","); got != "distiller,executor,responder" {
@@ -386,8 +386,8 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 		terminal.Cost == nil || terminal.Cost.ChargedMicros != 4186 || terminal.Usage == nil || terminal.Usage.Coverage != "partial" {
 		t.Fatalf("admission/cost receipts: starts=%v decisions=%d result=%+v", starts, decisions, terminal)
 	}
-	if got := strings.Join(stages, ","); got != ",,executor," {
-		t.Fatalf("shared-route stages must remain unattributed: %q", stages)
+	if got := strings.Join(stages, ","); got != "distiller,distiller,executor,responder" {
+		t.Fatalf("Ax lifecycle did not attribute shared-route calls: %q", stages)
 	}
 	var replay bytes.Buffer
 	code, err = run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Finish","max_cost_micros":50000}`), &replay)

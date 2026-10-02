@@ -468,6 +468,9 @@ path can be run in isolation with
 `HARNESS_M5_FAST=1 HARNESS_M5_WORKFLOW_CHILD_ONLY=1`; it provisions a priced
 synthetic route and verifies the manual, API, model-cap and governed-action
 phases. Both isolated stacks are removed on exit.
+The same OpenShell 0.1.2 child gate checks the durable Harness checkpoint:
+each model request has a parent or child stage despite the shared outer
+provider route, and the child distiller, executor and responder all appear.
 
 The focused M6 approval-compaction gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_APPROVAL_COMPACTION_ONLY=1`. A priced routed

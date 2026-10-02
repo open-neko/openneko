@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -156,15 +157,26 @@ func TestChildLargeResultReferenceStaysInChildRuntime(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
 	}))
 	defer model.Close()
-	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	client := &RoutedClient{AIClient: ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture")),
+		Stages: StageModels{Context: "fixture", Executor: "fixture", Responder: "fixture"}}
 	read := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read", Description: "Read a large receipt.",
 		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
 			reads.Add(1)
 			return json.Marshal(ax.Object("label", "REF-42", "noise", strings.Repeat("X", 200_000)))
 		}}
+	var modelStages []string
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-reference", InputID: "input", Prompt: "Verify receipt", MaxOperations: 4, MaxModelCalls: 8}, client,
-		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(Event) error { return nil })
+		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(event Event) error {
+			if event.Type == "model.request.started" {
+				modelStages = append(modelStages, event.Stage)
+			}
+			return nil
+		})
 	if err != nil || result.Status != "completed" || reads.Load() != 1 || calls.Load() != int32(len(answers)) {
 		t.Fatalf("result=%+v err=%v reads=%d calls=%d", result, err, reads.Load(), calls.Load())
+	}
+	wantStages := []string{"distiller", "executor", "child.distiller", "child.executor", "child.responder", "responder"}
+	if !reflect.DeepEqual(modelStages, wantStages) {
+		t.Fatalf("model call stages = %v, want %v", modelStages, wantStages)
 	}
 }

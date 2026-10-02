@@ -345,6 +345,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			modelCalls++
 			if modelCalls > spec.ModelCallLimit() || e.CallID != 0 && e.CallID != uint64(modelCalls) ||
 				e.Stage != "" && e.Stage != "distiller" && e.Stage != "executor" && e.Stage != "responder" &&
+					e.Stage != "child.distiller" && e.Stage != "child.executor" && e.Stage != "child.responder" &&
 					e.Stage != "skill_selection" && e.Stage != "terminal_finalizer" && e.Stage != "budget_triage" ||
 				e.Stage == "terminal_finalizer" && (!finalizerAdmitted || finalizerCalls > 0) {
 				return invalid()
