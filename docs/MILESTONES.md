@@ -940,6 +940,11 @@ checkpoint and API artifact, and verifies CSV bytes against the independent
 database oracle while the isolated stack is up. Its OpenShell 0.1.2 route
 profiles imported and resolved synthetic environment-key credentials in a
 focused connected preflight; the generated route also passed OpenNeko's parser.
+The connected no-key queue smoke then completed a frozen short case through
+API admission, the worker, OpenShell, Ax shadow triage, a durable checkpoint
+and the independent GraphJin status/snapshot preflight. It exposed and fixed
+missing solo-admin initialization and agent-home scoping in the held-out
+runner. The fixture answer is deliberately not a held-out quality result.
 The review-manifest builder requires all eight manually labelled outcomes,
 rehashes persisted checkpoints, and rejects a changed GraphJin environment
 across runs or a claimed successful CSV without oracle verification.

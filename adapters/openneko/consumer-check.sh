@@ -96,6 +96,10 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
   bash ./integration/batch/batch-check.sh
 fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+if [[ ${HARNESS_M6_HELDOUT_SMOKE_ONLY:-0} == 1 ]]; then
+  bash integration/m6-heldout/smoke-connected.sh
+  exit 0
+fi
 if [[ ${HARNESS_M6_HELDOUT_ONLY:-0} == 1 ]]; then
   [[ ${HARNESS_M5_FAST:-0} == 1 ]] || { echo 'Held-out gate requires HARNESS_M5_FAST=1' >&2; exit 1; }
   [[ ${HARNESS_M6_BUSINESS_SEED:-} == "$PWD/integration/m6-heldout/seed.sql" ]] || { echo 'Held-out gate requires the frozen absolute seed path' >&2; exit 1; }
@@ -123,7 +127,7 @@ if [[ ${HARNESS_M6_HELDOUT_ONLY:-0} == 1 ]]; then
   ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
   export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
   export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m6-model OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST="$HARNESS_M6_MODEL_URL"
-  export OPENNEKO_AGENT_HOME="$HARNESS_M6_OUTPUT_DIR/agent-home" OPENNEKO_BROKER_PORT=18123
+  export OPENNEKO_AGENT_HOME="$HARNESS_M6_OUTPUT_DIR/agent-home" OPENNEKO_BROKER_PORT=18123 OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development
   python3 - "$HARNESS_STATE/provider-config/config.yaml" <<'PY'
 import json, os, sys
 with open(sys.argv[1], 'w', encoding='utf-8') as out:

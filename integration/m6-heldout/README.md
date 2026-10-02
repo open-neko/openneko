@@ -72,6 +72,13 @@ Do not treat a recorded receipt as a verified outcome.
 The broker profile preflight can be rerun without real keys:
 `HARNESS_M5_FAST=1 OPENSHELL_TEST_CLI=/absolute/openshell-0.1.2
 ./integration/run.sh integration/m6-heldout/profile-check.sh`.
+For a full no-key queue smoke, set `HARNESS_M5_FAST=1`,
+`HARNESS_M6_HELDOUT_SMOKE_ONLY=1`, `GRAPHJIN_AGENT_REASONING=high`, the frozen
+absolute `HARNESS_M6_BUSINESS_SEED`, `OPENNEKO_TEST_SOURCE`, and the matched
+`OPENSHELL_TEST_CLI`, then run `./integration/openneko/run.sh`. It uses the
+deterministic short-finding model and asserts the API, checkpoint, triage and
+GraphJin attestation path. Its answer is deliberately a fixture answer and
+must never be counted as held-out quality evidence.
 
 Supply these settings in the invocation environment; the secret values must
 stay out of command arguments, route JSON, and Git:
