@@ -1,7 +1,7 @@
 # Go Harness
 
-Status: revised architecture and roadmap, 2026-09-20. M1–M4 are locally qualified
-at their implemented scope; broad tool support and Hermes parity remain planned.
+Status: revised architecture and roadmap, 2026-10-02. M1–M5 are qualified at
+their implemented scope; M6 still needs held-out model and data evaluation.
 
 **Integration boundary:** build and package the harness independently. OpenNeko is the first consumer. Prefer its existing launch, policy, event and result contracts; keep compatibility in the adapter. A small, justified product integration change may be preferable to a permanent workaround and should be reviewed explicitly. Worker/web operation has evidence for the implemented slice; each additional capability needs its own acceptance gate.
 
@@ -13,7 +13,13 @@ harness responsibilities, consumer adapters and currently qualified slices.
 
 Detailed integration research: [OpenShell, broker and Ax compatibility](OPENSHELL.md). This covers the checked-in OpenShell version, credential replacement, transport requirements, multi-provider routing, broker recovery, sandbox lifecycle and required integration tests.
 
-OpenShell **v0.0.116** has local qualification against the checked-in **0.0.54** baseline, with delayed upstream cancellation accepted as nonblocking. Released endpoint binding, managed-refresh handles and Docker OTLP tracing better support this design. Retain the existing host launcher initially: the new Go SDK has useful control/streaming APIs, but its tagged default file-transfer transport is unimplemented. See the companion document for release evidence, static-versus-managed rotation limits and rollout gates. No runtime upgrade has been performed.
+OpenShell **0.1.2** is the current target for the standalone transport and optional
+OpenNeko consumer. Its 0.1.x gateway, provider-profile, sandbox and CLI contracts
+are breaking relative to 0.0.x; mixed-version peers are unsupported. The isolated
+0.1.2 transport and connected worker gates have passed, while held-out model and
+data evaluation remains open. See the [migration gate](OPENSHELL.md#openshell-012-migration-gate-2026-10-02)
+for the tested surface and remaining qualification work. The earlier 0.0.x
+research is retained there only as historical evidence.
 
 ## 1. Scope and agreed direction
 

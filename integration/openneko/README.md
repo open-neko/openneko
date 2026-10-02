@@ -141,6 +141,8 @@ the host GraphJin broker, and OpenShell with synthetic source data. It expects
 exit. The source-change event enters through a real GraphJin websocket;
 after a GraphJin restart, the manager reconnects and the delivery ledger
 drops the repeated snapshot without a second workflow or model call.
+This focused gate passed again on 2026-10-02 with the verified 0.1.2 CLI and
+matched gateway; its isolated containers, networks and volumes were removed.
 
 For the focused org-skill write gate, replace `HARNESS_M5_TRIGGER_ONLY=1`
 with `HARNESS_M5_SKILL_QUEUE_ONLY=1`. Real pg-boss Work jobs create, read,
