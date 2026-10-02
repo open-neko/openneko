@@ -68,13 +68,14 @@ spec='{"version":1,"run_id":"m6-routing","input_id":"m6-routing-input","prompt":
 python3 - "$state/m6-routing-events.jsonl" <<'PY'
 import json, sys
 events=[json.loads(line) for line in open(sys.argv[1]) if line.startswith('{')]
-routes=[(e.get('origin'),e.get('name')) for e in events if e.get('type')=='model.request.started']
-assert routes == [('context','harness-route-context'),('executor','harness-route-executor'),('responder','harness-route-responder')], routes
+routes=[(e.get('origin'),e.get('name'),e.get('stage')) for e in events if e.get('type')=='model.request.started']
+assert routes == [('context','harness-route-context','distiller'),('executor','harness-route-executor','executor'),('responder','harness-route-responder','responder')], routes
 done=[e for e in events if e.get('type')=='run.finished']
 assert len(done)==1 and done[0]['result']['status']=='completed' and done[0]['result']['answer']=='ROUTED-OK',done
 assert done[0]['result']['cost']=={'pricing_version':'m6-test-v1','charged_micros':90,'budget_micros':50000},done
 usage=[e for e in events if e.get('type')=='model.request.finished']
 assert len(usage)==3 and all(e.get('usage',{}).get('reported')==1 and e['usage'].get('total_tokens')==15 for e in usage),usage
+assert [e.get('stage') for e in usage]==['distiller','executor','responder'],usage
 assert [e.get('cost_micros') for e in usage]==[15,30,45],usage
 stages=[e for e in events if e.get('type')=='model.stage_usage']
 assert {e['name'] for e in stages}=={'distiller','executor','responder'} and all(e.get('stage_usage',{}).get('coverage')=='complete' for e in stages),stages
@@ -144,6 +145,8 @@ routes=[e.get('name') for e in events if e.get('type')=='model.request.started']
 want=['harness-route-context-'+status]
 if status=='503': want+=['harness-route-context-spare','harness-route-executor','harness-route-responder']
 assert routes==want,routes
+stages=[e.get('stage') for e in events if e.get('type')=='model.request.started']
+assert stages==(['distiller','distiller','executor','responder'] if status=='503' else ['distiller']),stages
 done=[e for e in events if e.get('type')=='run.finished']
 assert len(done)==1,done
 assert done[0]['result']['status']==('completed' if status=='503' else 'failed'),done
@@ -175,6 +178,8 @@ events=[json.loads(line) for line in open(sys.argv[1]) if line.startswith('{')]
 routes=[e.get('name') for e in events if e.get('type')=='model.request.started']
 assert routes==['harness-route-context-429','harness-route-context-spare',
                 'harness-route-executor','harness-route-responder'],routes
+assert [e.get('stage') for e in events if e.get('type')=='model.request.started']==[
+    'distiller','distiller','executor','responder'],events
 fallback=[e for e in events if e.get('type')=='model.route.fallback']
 assert len(fallback)==1 and fallback[0].get('error')=='transient_provider_failure',fallback
 done=[e for e in events if e.get('type')=='run.finished']

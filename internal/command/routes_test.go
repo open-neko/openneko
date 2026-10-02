@@ -112,10 +112,12 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	rawEvents := out.String()
 	copyOfEvents := bytes.NewBufferString(rawEvents)
 	var modelEvents []string
+	var modelStages []string
 	var stageUsage []string
 	for _, event := range events(t, copyOfEvents) {
 		if event.Type == "model.request.started" {
 			modelEvents = append(modelEvents, event.Origin+":"+event.Name)
+			modelStages = append(modelStages, event.Stage)
 		}
 		if event.Type == "model.stage_usage" {
 			if event.StageUsage == nil || event.StageUsage.Requests != 1 || event.StageUsage.Reported != 1 || event.StageUsage.TotalTokens != 15 || event.StageUsage.Coverage != "complete" {
@@ -126,6 +128,9 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	}
 	if got := strings.Join(modelEvents, ","); got != "cheap:fixture,work:fixture,work:fixture" {
 		t.Fatalf("model receipts=%s", got)
+	}
+	if got := strings.Join(modelStages, ","); got != "distiller,," {
+		t.Fatalf("model stages=%q", modelStages)
 	}
 	if got := strings.Join(stageUsage, ","); got != "distiller,executor,responder" {
 		t.Fatalf("stage usage=%s", got)
@@ -359,11 +364,13 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 	}
 	rawEvents := out.String()
 	var starts []string
+	var stages []string
 	var decisions int
 	var terminal *agent.Result
 	for _, e := range events(t, &out) {
 		if e.Type == "model.request.started" {
 			starts = append(starts, e.Origin)
+			stages = append(stages, e.Stage)
 		}
 		if e.Type == "model.route.fallback" {
 			decisions++
@@ -378,6 +385,9 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 	if strings.Join(starts, ",") != "primary,secondary,executor,primary" || decisions != 1 || terminal == nil ||
 		terminal.Cost == nil || terminal.Cost.ChargedMicros != 4186 || terminal.Usage == nil || terminal.Usage.Coverage != "partial" {
 		t.Fatalf("admission/cost receipts: starts=%v decisions=%d result=%+v", starts, decisions, terminal)
+	}
+	if got := strings.Join(stages, ","); got != ",,executor," {
+		t.Fatalf("shared-route stages must remain unattributed: %q", stages)
 	}
 	var replay bytes.Buffer
 	code, err = run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Finish","max_cost_micros":50000}`), &replay)

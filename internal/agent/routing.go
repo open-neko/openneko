@@ -34,6 +34,37 @@ type RoutedClient struct {
 	GraphJinPrice  *TokenPrice
 }
 
+// uniqueRouteStages labels only aliases that the host assigned to one Ax
+// stage. A shared alias has no reliable per-call stage at the rate limiter;
+// leave it unattributed instead of guessing from request order. Approved
+// fallback targets inherit the source stage only when that source is unique.
+func uniqueRouteStages(stages StageModels, fallbacks map[string]string) map[string]string {
+	labels := map[string]string{}
+	ambiguous := map[string]bool{}
+	add := func(route, stage string) {
+		if route == "" || ambiguous[route] {
+			return
+		}
+		if current, ok := labels[route]; ok && current != stage {
+			delete(labels, route)
+			ambiguous[route] = true
+			return
+		}
+		labels[route] = stage
+	}
+	add(stages.Context, "distiller")
+	add(stages.Executor, "executor")
+	add(stages.Responder, "responder")
+	add(stages.Skill, "skill_selection")
+	add(stages.ExecutorEscalation, "executor")
+	for from, to := range fallbacks {
+		if stage, ok := labels[from]; ok {
+			add(to, stage)
+		}
+	}
+	return labels
+}
+
 // transientRouteFallback changes only a failed model-generation request. Ax
 // classifies provider errors; a nonretryable denial, cancellation, or a call
 // that returned content never reaches the alternate route. The second call

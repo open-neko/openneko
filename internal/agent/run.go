@@ -302,6 +302,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		shadowProfile: prior.TriageProfile, shadowLastExtensionOp: prior.TriageLastExtensionOp}
 	if routed, ok := client.(*RoutedClient); ok {
 		events.modelNames = routed.ModelNames
+		events.modelStages = uniqueRouteStages(routed.Stages, routed.Fallbacks)
 	}
 	events.usage.Requests = prior.ModelCalls
 	for _, op := range prior.Operations {
@@ -891,6 +892,7 @@ type recorder struct {
 	remoteTokens          int64
 	pricing               *RoutedClient
 	modelNames            map[string]string
+	modelStages           map[string]string
 	costMicros            int64
 	shadowMu              sync.Mutex
 	shadowProfile         *budgettriage.Proposal
@@ -924,6 +926,9 @@ func (r *recorder) admitModel(next ax.AxRequestExecutor, info ax.AxRateLimitInfo
 
 func (r *recorder) admitModelStage(next ax.AxRequestExecutor, info ax.AxRateLimitInfo, stage string) (ax.Value, error) {
 	r.mu.Lock()
+	if stage == "" {
+		stage = r.modelStages[info.Provider]
+	}
 	if r.paused {
 		r.mu.Unlock()
 		return nil, fmt.Errorf("turn is awaiting operator input")

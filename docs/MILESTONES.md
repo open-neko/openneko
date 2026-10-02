@@ -1131,15 +1131,19 @@ Local route and child-agent fixtures prove distiller, executor, responder and
 child request counts with reported usage, while ordinary model request events
 remain the only admission and total-usage receipts. Extra model calls omitted
 from Ax's stage log are marked `unattributed`; this telemetry does not expose
-prompts or double-count tokens. Per-call stage attribution and cost accounting
-remain open for connected qualification.
+prompts or double-count tokens. The harness now labels each outer model request
+when the host assigns its OpenShell route to exactly one Ax stage, including an
+approved alternate route. Shared routes remain unattributed because the pinned
+Ax rate limiter does not identify the stage of an individual call. The label
+is recorded on the durable request and cost receipt; local replay checks and
+direct OpenShell 0.1.2 routing, fallback and cost gates pass.
 The OpenNeko feature branch now validates and forwards that projection as a
 metadata-only `model.stage_usage` observation. Its summary accumulator excludes
 the attribution view from additive run usage; focused LLM/telemetry tests and
 worker typecheck pass. A connected queued worker run now exports
 `model.stage_usage`, the stage label and request count through a local OTLP
 receiver; the export contains the run ID and excludes the workflow prompt.
-Exact per-call stage/cost attribution remains open.
+Exact attribution for shared routes and child-agent calls remains open.
 The Go route manifest now accepts a versioned, complete per-route upper-bound
 price profile and an optional GraphJin server-agent price. Price changes alter
 the trusted route digest, so a resumed run cannot silently switch accounting
