@@ -4,10 +4,16 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${OPENNEKO_TEST_SOURCE:?Point to the optional OpenNeko integration checkout}"
 : "${OPENSHELL_TEST_CLI:?Point to a matched OpenShell CLI}"
+base_image=${AGENT_TEST_BASE_IMAGE:-openneko-agent:dev}
+if ! docker image inspect "$base_image" >/dev/null 2>&1; then
+  echo "OpenNeko agent base image is unavailable locally: $base_image" >&2
+  echo "Build it from the selected OpenNeko checkout with: docker build --target agent -t openneko-agent:dev '$OPENNEKO_TEST_SOURCE'" >&2
+  exit 1
+fi
 arch=$(docker info --format '{{.Architecture}}')
 case "$arch" in aarch64|arm64) arch=arm64;; x86_64|amd64) arch=amd64;; *) exit 1;; esac
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o integration/openneko/model-bin ./integration/openneko/model
-./adapters/openneko/build-image.sh "$OPENNEKO_TEST_SOURCE" "${AGENT_TEST_BASE_IMAGE:-openneko-agent:dev}"
+./adapters/openneko/build-image.sh "$OPENNEKO_TEST_SOURCE" "$base_image"
 compose=(docker compose -p harness-m3 -f integration/openneko/compose.yml)
 trap '"${compose[@]}" down --volumes --remove-orphans' EXIT
 "${compose[@]}" up -d

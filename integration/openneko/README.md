@@ -16,6 +16,10 @@ image was `sha256:ec6ca55bee6ced8e4c5f75ec0183a337ead74d0317cbc5b29d4afadeac5e3f
 The default is `ghcr.io/open-neko/neko-graphjin:v3.5.6`; set
 `GRAPHJIN_TEST_IMAGE` to another available build if needed. This fixture does
 not build GraphJin itself.
+The runner checks that `AGENT_TEST_BASE_IMAGE` (default `openneko-agent:dev`)
+exists locally before building test bundles or starting containers. If it was
+pruned, build the `agent` target from the selected OpenNeko checkout or supply
+another independent local agent base image.
 
 ```sh
 OPENNEKO_TEST_SOURCE=/absolute/OpenNeko-integration-checkout \
