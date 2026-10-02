@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Owns only the isolated OpenNeko consumer test services. No real provider credentials are used.
+# Owns only the isolated OpenNeko consumer test services. The opt-in M6
+# held-out gate accepts real credentials through its environment preflight.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${OPENNEKO_TEST_SOURCE:?Point to the optional OpenNeko integration checkout}"
 : "${OPENSHELL_TEST_CLI:?Point to a matched OpenShell CLI}"
+if [[ ${HARNESS_M6_HELDOUT_ONLY:-0} == 1 ]]; then
+  source integration/m6-heldout/preflight.sh
+fi
 base_image=${AGENT_TEST_BASE_IMAGE:-openneko-agent:dev}
 if ! docker image inspect "$base_image" >/dev/null 2>&1; then
   echo "OpenNeko agent base image is unavailable locally: $base_image" >&2

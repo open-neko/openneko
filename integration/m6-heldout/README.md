@@ -119,7 +119,8 @@ HARNESS_M5_FAST=1 HARNESS_M6_HELDOUT_ONLY=1 \
   ./integration/openneko/run.sh
 ```
 
-The gate refuses missing settings, an existing output directory, non-HTTPS
+The gate refuses missing settings and an existing output directory before
+building images or starting Docker. It also refuses non-HTTPS
 route URLs, or a GraphJin status whose effective profile differs from the
 approved one. Before **each** admission, it checks the database snapshot and
 GraphJin evaluation fingerprint. It writes one mode/case receipt with final

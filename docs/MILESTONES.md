@@ -968,6 +968,9 @@ The corrected profile then passed the isolated matched OpenShell 0.1.2
 imported and created through the gateway. Its owned containers and network
 were removed after the run. This validates the broker profile shape, not a
 credentialed Typesafe request.
+The opt-in real held-out runner now checks its credential and profile settings
+before any Docker build or container start. A missing-key probe exited at the
+named setting with no Harness containers or networks created.
 The review-manifest builder requires all eight manually labelled outcomes,
 rehashes persisted checkpoints, and rejects a changed GraphJin environment
 across runs or a claimed successful CSV without oracle verification.
