@@ -482,6 +482,9 @@ parity, not a held-out cost-per-success improvement or a production decision.
 A subsequent rerun asserted the persisted telemetry summary for both runs:
 `provider=fixture` and the outer work model, rather than the classifier route;
 per-call classifier usage and cost remained in the aggregate once.
+The paired gate also runs the checkpoint-bound comparator documented in
+[the M6 budget protocol](../../docs/M6-BUDGET-EVAL.md). It validates both
+stopped runs and their digests, modes, charged cost and usage coverage.
 
 The focused M6 actor-exhaustion gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_FINALIZER_ONLY=1`. It sends two queued

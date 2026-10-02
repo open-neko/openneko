@@ -918,6 +918,10 @@ slower in this single pair. Held-out quality and a controlled multi-case
 fixed-versus-canary comparison remain open. The
 migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
+The paired synthetic gate now feeds both validated checkpoint digests to
+`harness-budget-compare`, which rejects wrong modes, changed checkpoints and
+duplicate runs, and reports outcome regressions by task class plus cost and
+usage coverage. This remains one calibration pair, not held-out evidence.
 
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably

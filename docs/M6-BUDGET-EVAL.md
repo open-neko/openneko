@@ -79,3 +79,32 @@ before the remote reservation when a candidate cap is too small.
 Then compare a small, switchable dynamic-budget canary against fixed-budget runs using cost
 per verified success and false-low rates. This offline evaluator deliberately
 never marks a canary ready or changes admission.
+
+Use `harness-budget-compare` for the paired comparison. Give each pair a shared
+case ID, split (`calibration` or `held_out`), source (`synthetic` or `live`), and
+independently verified task class (`short`, `investigation`, or `artifact`).
+For each fixed and canary run, record its `.harness` directory, run ID, final
+checkpoint SHA-256, independently verified outcome, and wall time in
+milliseconds. Both runs must use the same task, data snapshot, approved model
+routes, tool grants, and terminal acceptance check; the budget mode is the
+experimental difference. A manifest has this shape:
+
+```json
+{
+  "version": 1,
+  "pairs": [{
+    "id": "artifact-001", "split": "held_out", "source": "live",
+    "task_class": "artifact",
+    "fixed": {"root": "/absolute/fixed/.harness", "run_id": "fixed-run-id", "checkpoint_sha256": "64-lowercase-hex-characters", "outcome": "verified_success", "wall_ms": 10000},
+    "canary": {"root": "/absolute/canary/.harness", "run_id": "canary-run-id", "checkpoint_sha256": "64-lowercase-hex-characters", "outcome": "verified_success", "wall_ms": 9000}
+  }]
+}
+```
+
+Run `go run ./cmd/harness-budget-compare < manifest.json > comparison.json`.
+The command validates each stopped checkpoint, its digest, run identity and
+fixed/canary mode. It reports verified successes, canary regressions by task
+class, actual charged cost per verified success, wall time and usage coverage
+for calibration and held-out splits. A cheaper failed canary is counted as a
+regression, not a saving. Pair equivalence and outcome labels still require
+independent review; the command never enables the canary.

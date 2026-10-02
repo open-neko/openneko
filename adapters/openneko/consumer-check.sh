@@ -505,6 +505,7 @@ YAML
       if [[ ${HARNESS_M6_CANARY_ONLY:-0} == 1 ]]; then
         export OPENNEKO_HARNESS_BUDGET_CANARY=1
         export HARNESS_BUDGET_COMPARISON_REPORT="$HARNESS_STATE/m6-budget-canary.json"
+        go build -o "$HARNESS_STATE/harness-budget-compare" ./cmd/harness-budget-compare
       else
         export HARNESS_BUDGET_EVAL_MANIFEST="$HARNESS_STATE/m6-budget-eval-manifest.json"
         go build -o "$HARNESS_STATE/harness-budget-eval" ./cmd/harness-budget-eval
@@ -522,7 +523,7 @@ YAML
         cd "$product"
         pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-approval-live.ts
       )
-      python3 - "$HARNESS_STATE/m6-budget-canary.json" "$HARNESS_STATE/m6-budget-fixed.json" <<'PY'
+      python3 - "$HARNESS_STATE/m6-budget-canary.json" "$HARNESS_STATE/m6-budget-fixed.json" "$HARNESS_STATE/m6-budget-comparison-manifest.json" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     canary = json.load(f)
@@ -534,7 +535,28 @@ assert canary["modelCalls"] == fixed["modelCalls"]
 assert canary["ordinaryCalls"] == fixed["ordinaryCalls"]
 assert canary["triageCalls"] == fixed["triageCalls"] == 1
 assert canary["chargedMicros"] == fixed["chargedMicros"]
+manifest = {"version": 1, "pairs": [{"id": "connected-approval-compaction", "split": "calibration",
+    "source": "synthetic", "task_class": "investigation",
+    "fixed": {"root": fixed["checkpointRoot"], "run_id": fixed["runId"],
+        "checkpoint_sha256": fixed["checkpointSha256"], "outcome": "verified_success", "wall_ms": fixed["wallMS"]},
+    "canary": {"root": canary["checkpointRoot"], "run_id": canary["runId"],
+        "checkpoint_sha256": canary["checkpointSha256"], "outcome": "verified_success", "wall_ms": canary["wallMS"]}}]}
+with open(sys.argv[3], "w", encoding="utf-8") as f:
+    json.dump(manifest, f)
 print("M6_CONNECTED_BUDGET_COMPARISON", json.dumps({"canary": canary, "fixed": fixed}, sort_keys=True))
+PY
+      "$HARNESS_STATE/harness-budget-compare" < "$HARNESS_STATE/m6-budget-comparison-manifest.json" > "$HARNESS_STATE/m6-budget-comparison-report.json"
+      python3 - "$HARNESS_STATE/m6-budget-comparison-report.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    report = json.load(f)
+assert report["calibration"]["pairs"] == 1
+assert report["held_out"]["pairs"] == 0
+assert report["summary"]["fixed_success"] == report["summary"]["canary_success"] == 1
+assert report["summary"]["canary_regressions"] == 0
+assert report["summary"]["incomplete_cost_pairs"] == 0
+assert report["summary"]["incomplete_usage_pairs"] == 0
+assert report["pairs"][0]["fixed"]["charged_micros"] == report["pairs"][0]["canary"]["charged_micros"]
 PY
       echo M6_CONNECTED_BUDGET_CANARY_PASS
     elif [[ ${HARNESS_M6_TRIAGE_ONLY:-0} == 1 ]]; then
