@@ -1211,7 +1211,17 @@ with one artifact event and a canonical workflow result path. The connected
 query-to-file API gate now also publishes an 8,000,011-byte CSV with 1,000,000
 rows after one brokered GraphJin query; its pinned executor has no model
 credential or egress, and the public route returns the exact bytes and length.
-Other artifact kinds remain open. A separate Postgres-backed
+The API artifact resolver previously mislabeled every ordinary workflow file
+as CSV. It now derives a safe download extension and media type from the
+recorded file path; an isolated Postgres-backed route test checks `.xlsx` and
+`.docx` bytes and headers for both public and operator downloads, alongside
+cross-organization token denial. The connected OpenShell 0.1.2 gate now runs
+two API-queued workflows that create actual XLSX and DOCX packages in a
+separate credential-free process sandbox. It validates each ZIP/XML package,
+the one recorded file output, exact public and operator download bytes and
+headers, and inert API redelivery (`HARNESS_M6_OFFICE_API_ONLY=1`). This
+required extending the scoped `process_run` grant from Work turns to workflow
+turns. A separate Postgres-backed
 route gate verifies the same recorded artifact returns 404 when the request
 resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). The Postgres-backed
 public API route also accepts the owner's valid token and returns 401 for a

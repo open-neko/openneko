@@ -84,6 +84,14 @@ The file-backed API batch gate also produced and downloaded an exact
 8,000,011-byte CSV from one seeded GraphJin lookup, with one million output
 rows and no model credential in the executor. This verifies the large-file
 transport, not customer Daily Lead Union correctness.
+The OpenNeko feature branch fixes API artifact metadata for non-CSV files:
+Postgres-backed route tests now verify `.xlsx` and `.docx` content types,
+download names and bytes through both public and operator routes, with a
+second organization's valid token denied. A connected 0.1.2 OpenShell gate
+also passed two API-queued workflows that generated valid XLSX and DOCX
+packages through the workflow-scoped `process_run` grant, recorded one file
+output per run, downloaded exact bytes and headers from both routes, and
+replayed each API delivery without duplicating the output.
 
 The 2026-09-28 M5c user-administration slice adds a run-bound internal
 `user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,

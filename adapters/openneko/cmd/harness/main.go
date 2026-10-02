@@ -314,7 +314,8 @@ func main() {
 		closeTools = append(closeTools, skills.Close)
 	}
 	if enabled := os.Getenv("OPENNEKO_HARNESS_PROCESS_RUN"); enabled != "" {
-		if enabled != "1" || recordsOnly == "1" || os.Getenv("OPENNEKO_MCP_MODE") != "work" {
+		mode := os.Getenv("OPENNEKO_MCP_MODE")
+		if enabled != "1" || recordsOnly == "1" || (mode != "work" && mode != "workflow") {
 			fmt.Fprintln(os.Stderr, "invalid isolated process capability binding")
 			os.Exit(2)
 		}
@@ -326,7 +327,7 @@ func main() {
 		var binding string
 		tools.Capabilities = append(tools.Capabilities, agent.Capability{
 			Name: "process_run", Version: "1", Origin: "openneko", Effect: "durable",
-			Description: "Run a bounded Python or shell script in a separate credential-free OpenShell sandbox. Select only named uploads as inputs and declare output files before execution. Successful files become Work artifacts after the run completes.",
+			Description: "Run a bounded Python or shell script in a separate credential-free OpenShell sandbox. Select only named uploads as inputs and declare output files before execution. Successful files become run artifacts after the process completes.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["language","script","outputs"],"properties":{"language":{"type":"string","enum":["python","shell"]},"script":{"type":"string","minLength":1,"maxLength":65536},"uploads":{"type":"array","maxItems":16,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":128}},"outputs":{"type":"array","minItems":1,"maxItems":16,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":128}}},"additionalProperties":false}`),
 			Call: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 				return run(ctx, raw, binding)

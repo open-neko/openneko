@@ -237,6 +237,39 @@ fi
   export RECORDS_PG_HOST=127.0.0.1 RECORDS_PG_PORT=18119 RECORDS_PG_USER=neko RECORDS_PG_PASSWORD=synthetic-m3 RECORDS_PG_DATABASE=neko
   export OPENNEKO_HOST_WEB_DEV=1 NODE_ENV=development OPENNEKO_AGENT_HOME="$HARNESS_STATE/user" WORKER_ADMIN_URL=http://127.0.0.1:18122 OPENNEKO_BROKER_PORT=18123
   docker compose -p harness-m3 -f integration/openneko/compose.yml restart model
+  if [[ ${HARNESS_M6_OFFICE_API_ONLY:-0} == 1 ]]; then
+    register_workflow_priced_provider
+    workflow_child_priced_route
+    export OPENNEKO_HARNESS_ROUTING=$(python3 - <<'PY'
+import json, os
+routing = json.loads(os.environ["OPENNEKO_HARNESS_ROUTING"])
+routing["routes"][0]["model"] = "harness-workflow-office-fixture"
+print(json.dumps(routing, separators=(",", ":")))
+PY
+)
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    if lsof -nP -iTCP:18121 -sTCP:LISTEN >/dev/null 2>&1; then
+      echo 'Port 18121 is already in use; refusing to test against an existing web server' >&2
+      exit 1
+    fi
+    [[ ! -d "$product/apps/web/.next/dev" ]] || mv "$product/apps/web/.next/dev" "$HARNESS_STATE/m6-office-next-dev-cache"
+    set -m
+    (cd "$product" && exec pnpm --filter @neko/web exec next dev --port 18121) > "$HARNESS_STATE/m6-office-web.log" 2>&1 &
+    web_pid=$!
+    set +m
+    trap 'kill -TERM -- "-$web_pid" 2>/dev/null || true; wait "$web_pid" 2>/dev/null || true' EXIT
+    ready=0
+    for ((n=0; n<90; n++)); do
+      if curl -sS --max-time 3 -o /dev/null http://localhost:18121/ 2>/dev/null; then ready=1; break; fi
+      kill -0 "$web_pid" || exit 1
+      sleep 1
+    done
+    [[ "$ready" == 1 ]] || { echo 'Isolated M6 Office API web server did not start' >&2; exit 1; }
+    export HARNESS_M6_PUBLIC_HTTP_BASE=http://localhost:18121
+    (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-office-api-live.ts)
+    echo M6_CONNECTED_WORKFLOW_OFFICE_API_PASS
+    exit 0
+  fi
   if [[ ${HARNESS_M5_AGENT_JOB_CHILD_ONLY:-0} == 1 ]]; then
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-agent-job-child-live.ts)

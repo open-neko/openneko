@@ -113,7 +113,7 @@ emits one finding through a journaled, workflow-bound broker tool. API-admitted
 workflow runs and one governed pack-action proposal passed connected checks;
 other product action families remain open.
 
-`process_run` is an opt-in, model-visible Work tool backed by the run-bound
+`process_run` is an opt-in, model-visible Work and workflow tool backed by the run-bound
 broker and a separate host-side `processshell` executable. The host accepts
 selected current-thread upload basenames, stages bounded regular files in a
 run-owned input directory, and supplies approved argv and declared output
@@ -121,8 +121,8 @@ names after acquiring the durable run lease. The executor snapshots those
 inputs, starts a separate no-provider/no-network OpenShell sandbox, limits
 output and execution time, then publishes only validated files after successful
 completion and mandatory sandbox deletion. The broker journals the durable
-operation, and the worker emits the validated result through its existing Work
-artifact route. The connected queue and browser fixtures verify an exact CSV,
+operation, and the worker emits validated Work artifacts or records workflow
+file outputs. The connected queue and browser fixtures verify an exact CSV,
 one artifact event, one operation receipt, credential and network isolation,
 symlink rejection, cancellation and teardown. This is a bounded process
 capability; the separate real OpenShell suite also rejects publication after

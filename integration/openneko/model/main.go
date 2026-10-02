@@ -27,6 +27,7 @@ func main() {
 	processOversize := false
 	processFlood := false
 	processOffice := false
+	officeOutput := "xlsx"
 	management := false
 	audit := false
 	auditDenied := false
@@ -73,6 +74,7 @@ func main() {
 			ProcessOversize      bool   `json:"process_oversize"`
 			ProcessFlood         bool   `json:"process_flood"`
 			ProcessOffice        bool   `json:"process_office"`
+			OfficeOutput         string `json:"office_output"`
 			Management           bool   `json:"management"`
 			Audit                bool   `json:"audit"`
 			AuditDenied          bool   `json:"audit_denied"`
@@ -97,6 +99,7 @@ func main() {
 			TriageChoice         string `json:"triage_choice"`
 		}
 		if json.NewDecoder(r.Body).Decode(&c) != nil || c.Delay < 0 || c.Delay > 30 ||
+			(c.OfficeOutput != "" && c.OfficeOutput != "xlsx" && c.OfficeOutput != "docx") ||
 			(c.TriageChoice != "" && c.TriageChoice != "short_answer" && c.TriageChoice != "multi_step" && c.TriageChoice != "artifact_pipeline" && c.TriageChoice != "uncertain") {
 			http.Error(w, "invalid", 400)
 			return
@@ -123,6 +126,10 @@ func main() {
 		processOversize = c.ProcessOversize
 		processFlood = c.ProcessFlood
 		processOffice = c.ProcessOffice
+		officeOutput = c.OfficeOutput
+		if officeOutput == "" {
+			officeOutput = "xlsx"
+		}
 		management = c.Management
 		audit = c.Audit
 		auditDenied = c.AuditDenied
@@ -271,6 +278,7 @@ func main() {
 		runOversizeProcess := processOversize
 		runFloodProcess := processFlood
 		runOfficeProcess := processOffice
+		selectedOfficeOutput := officeOutput
 		readManagement := management
 		readAudit := audit
 		readUploadedLibrary := uploadedLibrary
@@ -549,7 +557,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-stream-fixture" && req.Model != "harness-budget-short-fixture" && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-workflow-office-fixture" && req.Model != "harness-stream-fixture" && req.Model != "harness-budget-short-fixture" && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -594,6 +602,23 @@ func main() {
 					`{"answer":"Recorded a finding supported by two child investigations: REF-42."}`,
 				}
 			}
+		} else if req.Model == "harness-workflow-office-fixture" {
+			const uploadedLead = `with open('lead.csv', newline='') as source:
+    rows = list(csv.DictReader(source))
+assert len(rows) == 1 and rows[0]['lead_id'] == 'LEAD-42'
+lead = escape(rows[0]['lead_id'])`
+			script := strings.Replace(officeScript, uploadedLead, "lead = 'LEAD-42'", 1)
+			if script == officeScript {
+				http.Error(w, "Office workflow fixture could not isolate the upload", 500)
+				return
+			}
+			name := "leads.xlsx"
+			if selectedOfficeOutput == "docx" {
+				name = "summary.docx"
+			}
+			call := fmt.Sprintf("const result=process_run({language:'python',script:%q,uploads:[],outputs:['leads.xlsx','summary.docx']}); const output=workflow_output_emit({kind:'file',title:'Office package',artifactPath:'process-1/%s'}); final('Report the recorded Office package',{result,output});", script, name)
+			encoded, _ := json.Marshal(map[string]string{"javascriptCode": call})
+			responses = []string{`{"javascriptCode":"final('Create and record the Office package',{})"}`, string(encoded), fmt.Sprintf(`{"answer":"Recorded %s as a workflow file output."}`, name)}
 		} else if req.Model == "harness-compaction-approval-fixture" {
 			if compactionSummary {
 				responses = []string{"Objective: Report the saved REF-42 finding and pending action request.\nCurrent state and artifacts: a workflow finding is committed and an action request awaits approval.\nEvidence: REF-42; pending_approval.\nUser constraints and preferences: Never execute a change without approval.\nNext step: report the saved output and pending approval without executing it."}

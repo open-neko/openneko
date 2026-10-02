@@ -439,8 +439,17 @@ Postgres, it serves a recorded workflow artifact under its owning org and
 returns 404 for the same run ID under another org. It isolates the artifact
 route's organization boundary. The same focused test now gives each org a valid
 public workflow API token: the owner downloads the file, while the other org's
-valid token gets 401 for the owner's workflow. OpenNeko's current web server resolves one org,
+valid token gets 401 for the owner's workflow. It also checks `.xlsx` and
+`.docx` response names, media types and exact bytes on public and operator
+routes after the feature branch stopped labeling every API artifact as CSV.
+The fixture files have Office extensions but are not generated documents;
+OpenNeko's current web server resolves one org,
 so it is not a multi-tenant browser qualification.
+The separate connected Office gate uses
+`HARNESS_M5_FAST=1 HARNESS_M6_OFFICE_API_ONLY=1` and generates real XLSX and
+DOCX packages through two API-queued workflow runs. It verifies ZIP/XML
+contents, durable file outputs, exact public and operator HTTP responses,
+and idempotent queue redelivery under OpenShell 0.1.2.
 
 The focused M6 API pricing preflight runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_PRICING_PREFLIGHT_ONLY=1`. An unpriced
