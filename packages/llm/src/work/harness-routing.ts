@@ -109,7 +109,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   if (priced && (typeof value.pricing_version !== "string" || !value.pricing_version || value.pricing_version.length > 128 ||
       value.pricing_version.trim() !== value.pricing_version)) throw new Error("Invalid Harness pricing version");
   const graphjinPrice = value.graphjin_price === undefined ? undefined : parsePrice(value.graphjin_price);
-  const routes: Array<{ key: string; model: string; url: string; api_key_env: string; price?: HarnessPrice }> = [];
+  const routes: Array<{ key: string; model: string; url: string; api_key_env: string; classifier?: string; price?: HarnessPrice }> = [];
   const providers: string[] = [];
   const modelHosts: Array<{ host: string; port?: number }> = [];
   const keyAliases: Array<{ from: string; to: string }> = [];
@@ -120,12 +120,13 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
   for (const entry of value.routes) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid Harness route");
     const route = entry as Record<string, unknown>;
-    if (Object.keys(route).some(key => !["key", "model", "url", "provider", "credential_env", "api_key_env", "price"].includes(key)) ||
+    if (Object.keys(route).some(key => !["key", "model", "url", "provider", "credential_env", "api_key_env", "classifier", "price"].includes(key)) ||
         typeof route.key !== "string" || !routeKey.test(route.key) || keys.has(route.key) ||
         typeof route.model !== "string" || !route.model || route.model.length > 128 ||
         typeof route.url !== "string" || typeof route.provider !== "string" || !providerName.test(route.provider) ||
         typeof route.credential_env !== "string" || !envName.test(route.credential_env) || credentialNames.has(route.credential_env) ||
-        typeof route.api_key_env !== "string" || !harnessKeyEnv.test(route.api_key_env) || aliasTargets.has(route.api_key_env)) {
+        typeof route.api_key_env !== "string" || !harnessKeyEnv.test(route.api_key_env) || aliasTargets.has(route.api_key_env) ||
+        (route.classifier !== undefined && !["typesafe-native", "ax-chat-json"].includes(route.classifier as string))) {
       throw new Error("Invalid Harness route");
     }
     if (priced && route.price === undefined) throw new Error("Missing Harness route price");
@@ -140,6 +141,7 @@ export function parseHarnessRouting(raw: string): HarnessRouting {
     credentialNames.add(route.credential_env);
     aliasTargets.add(route.api_key_env);
     routes.push({ key: route.key, model: route.model, url: route.url, api_key_env: route.api_key_env,
+      ...(route.classifier ? {classifier: route.classifier as string} : {}),
       ...(price ? {price} : {}) });
     if (!providers.includes(route.provider)) providers.push(route.provider);
     keyAliases.push({ from: route.credential_env, to: route.api_key_env });
