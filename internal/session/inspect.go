@@ -195,6 +195,14 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 	}
+	if s.CatalogFingerprint != "" {
+		if len(s.CatalogFingerprint) != 64 {
+			return invalid()
+		}
+		if _, err := hex.DecodeString(s.CatalogFingerprint); err != nil {
+			return invalid()
+		}
+	}
 	if s.ScopeHash != "" {
 		if len(s.ScopeHash) != 64 {
 			return invalid()

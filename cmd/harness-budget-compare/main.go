@@ -219,9 +219,10 @@ func compareWithTrace(input []byte, readTrace func(string, string) (session.Budg
 		if err != nil {
 			return output{}, fmt.Errorf("pair %s canary: %w", p.ID, err)
 		}
-		if fixedTrace.RoutingDigest != canaryTrace.RoutingDigest || fixedTrace.Hard != canaryTrace.Hard ||
+		if fixedTrace.CatalogFingerprint == "" || fixedTrace.CatalogFingerprint != canaryTrace.CatalogFingerprint ||
+			fixedTrace.RoutingDigest != canaryTrace.RoutingDigest || fixedTrace.Hard != canaryTrace.Hard ||
 			fixedTrace.MaxOperations != canaryTrace.MaxOperations {
-			return output{}, fmt.Errorf("pair %s: approved route or hard admission limits differ", p.ID)
+			return output{}, fmt.Errorf("pair %s: admitted catalog, approved route or hard admission limits differ", p.ID)
 		}
 		shadow, err := budgeteval.Evaluate(fixedTrace, budgeteval.Label{TaskClass: p.TaskClass, Outcome: p.Fixed.Outcome, WallMS: p.Fixed.WallMS})
 		if err != nil {

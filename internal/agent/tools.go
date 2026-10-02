@@ -235,6 +235,15 @@ func (t Tools) CatalogHash() (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// CatalogFingerprint identifies the admitted capability definitions, child
+// grants, staged skills and hooks without the run-specific scope. It is for
+// comparing two otherwise independent runs; CatalogHash remains the authority
+// for resume and tenant isolation.
+func (t Tools) CatalogFingerprint() (string, error) {
+	t.Scope = ""
+	return t.CatalogHash()
+}
+
 func (t Tools) childReads(admitted []admittedTool) ([]admittedTool, error) {
 	if len(t.ChildReads) > 8 {
 		return nil, fmt.Errorf("too many child capabilities")

@@ -34,6 +34,36 @@ func TestCapabilityOrderIsStable(t *testing.T) {
 	}
 }
 
+func TestCatalogFingerprintSeparatesScopeFromAdmittedContract(t *testing.T) {
+	read := Capability{Name: "catalog", Version: "1", Origin: "host", Effect: "read",
+		Description: "Read catalog.", InputSchema: json.RawMessage(`{"type":"object"}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
+	first := Tools{Scope: "org:a", Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}
+	second := first
+	second.Scope = "org:b"
+	firstScoped, err := first.CatalogHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondScoped, err := second.CatalogHash()
+	if err != nil || firstScoped == secondScoped {
+		t.Fatalf("run scope was not bound: %q %q %v", firstScoped, secondScoped, err)
+	}
+	firstComparable, err := first.CatalogFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondComparable, err := second.CatalogFingerprint()
+	if err != nil || firstComparable != secondComparable {
+		t.Fatalf("same admitted contract differed by scope: %q %q %v", firstComparable, secondComparable, err)
+	}
+	second.ChildReads = nil
+	changed, err := second.CatalogFingerprint()
+	if err != nil || changed == firstComparable {
+		t.Fatalf("changed child grant reused fingerprint: %q %q %v", firstComparable, changed, err)
+	}
+}
+
 func TestChildReadsRejectEffectsAndMissingTools(t *testing.T) {
 	read := Capability{Name: "catalog", Version: "1", Origin: "host", Effect: "read", Description: "Read catalog.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
 	write := read

@@ -21,13 +21,14 @@ import (
 type operation = agent.SavedOperation
 
 type checkpoint struct {
-	Version    int           `json:"version"`
-	Catalog    string        `json:"catalog,omitempty"`
-	ScopeHash  string        `json:"scope_hash,omitempty"`
-	Spec       agent.Spec    `json:"spec"`
-	Events     []agent.Event `json:"events"`
-	Operations []operation   `json:"operations"`
-	Result     *agent.Result `json:"result,omitempty"`
+	Version            int           `json:"version"`
+	Catalog            string        `json:"catalog,omitempty"`
+	CatalogFingerprint string        `json:"catalog_fingerprint,omitempty"`
+	ScopeHash          string        `json:"scope_hash,omitempty"`
+	Spec               agent.Spec    `json:"spec"`
+	Events             []agent.Event `json:"events"`
+	Operations         []operation   `json:"operations"`
+	Result             *agent.Result `json:"result,omitempty"`
 }
 
 // Run requires a trusted, consumer-scoped local directory. It rejects concurrent
@@ -59,6 +60,10 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 	if err != nil {
 		return agent.Result{}, err
 	}
+	catalogFingerprint, err := tools.CatalogFingerprint()
+	if err != nil {
+		return agent.Result{}, err
+	}
 	if !resume {
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return agent.Result{}, err
@@ -79,7 +84,8 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		return agent.Result{}, fmt.Errorf("run already executing")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	state := checkpoint{Version: 1, Catalog: catalog, ScopeHash: scopeHash(tools.Scope), Spec: spec}
+	state := checkpoint{Version: 1, Catalog: catalog, CatalogFingerprint: catalogFingerprint,
+		ScopeHash: scopeHash(tools.Scope), Spec: spec}
 	file, err := os.Open(path + ".json")
 	var data []byte
 	if err == nil {
@@ -100,6 +106,9 @@ func run(ctx context.Context, root string, spec agent.Spec, client ax.AIClient, 
 		if state.Result == nil {
 			if state.Catalog != "" && state.Catalog != catalog {
 				return agent.Result{}, fmt.Errorf("admitted capability catalog changed; new run required")
+			}
+			if state.CatalogFingerprint != "" && state.CatalogFingerprint != catalogFingerprint {
+				return agent.Result{}, fmt.Errorf("admitted capability fingerprint changed; new run required")
 			}
 			if !resume {
 				return agent.Result{}, fmt.Errorf("interrupted run requires reconciliation; stored operations retained")

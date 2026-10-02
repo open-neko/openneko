@@ -928,7 +928,10 @@ migration details are in
 The paired synthetic gate feeds all six validated checkpoint digests to
 `harness-budget-compare`, which rejects wrong modes, changed checkpoints and
 duplicate runs, and reports outcome regressions by task class plus cost and
-usage coverage. Its three pairs are calibration evidence, not held-out evidence.
+usage coverage. It now also rejects pairs whose trusted route and price
+manifest, scope-independent admitted tool and gate catalog, or hard admission
+limits differ. The 0.1.2 queued calibration rerun passes this stricter check.
+Its three pairs are calibration evidence, not held-out evidence.
 The artifact pair also exposed an OpenNeko API finalization handoff that erased
 the file path after the workflow turn published it. The feature branch now
 passes the validated path through finalization; the connected API artifact

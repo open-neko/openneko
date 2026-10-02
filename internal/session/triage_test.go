@@ -234,8 +234,10 @@ func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 		t.Fatalf("terminal replay contained %d extensions", replayedExtensions)
 	}
 	trace, err := ReadBudgetTrace(root, spec.RunID)
+	fingerprint, fingerprintErr := tools.CatalogFingerprint()
 	if err != nil || trace.Status != "completed" || len(trace.Events) == 0 ||
-		trace.RoutingDigest != spec.HostRoutingDigest || trace.MaxOperations != spec.OperationLimit() {
+		trace.RoutingDigest != spec.HostRoutingDigest || trace.MaxOperations != spec.OperationLimit() ||
+		fingerprintErr != nil || trace.CatalogFingerprint != fingerprint {
 		t.Fatalf("validated budget trace=%+v err=%v", trace, err)
 	}
 	traceJSON, err := json.Marshal(trace)

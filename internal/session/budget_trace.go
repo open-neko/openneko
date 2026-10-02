@@ -17,14 +17,15 @@ import (
 // BudgetTrace contains only validated budget metadata. It excludes the prompt,
 // tool arguments and results, Ax state, and the terminal answer.
 type BudgetTrace struct {
-	RunID            string              `json:"run_id"`
-	CheckpointSHA256 string              `json:"checkpoint_sha256"`
-	Mode             string              `json:"mode"` // fixed or canary, from the validated host spec.
-	RoutingDigest    string              `json:"routing_digest,omitempty"`
-	Hard             budgettriage.Limits `json:"hard"`
-	MaxOperations    int                 `json:"max_operations"`
-	Status           string              `json:"status"`
-	Events           []agent.Event       `json:"events"`
+	RunID              string              `json:"run_id"`
+	CheckpointSHA256   string              `json:"checkpoint_sha256"`
+	Mode               string              `json:"mode"` // fixed or canary, from the validated host spec.
+	RoutingDigest      string              `json:"routing_digest,omitempty"`
+	CatalogFingerprint string              `json:"catalog_fingerprint,omitempty"`
+	Hard               budgettriage.Limits `json:"hard"`
+	MaxOperations      int                 `json:"max_operations"`
+	Status             string              `json:"status"`
+	Events             []agent.Event       `json:"events"`
 }
 
 // ReadBudgetTrace reads a stopped run under its execution lock and validates
@@ -70,7 +71,8 @@ func ReadBudgetTrace(root, runID string) (BudgetTrace, error) {
 		mode = "canary"
 	}
 	trace := BudgetTrace{RunID: runID, CheckpointSHA256: hex.EncodeToString(digest[:]), Mode: mode,
-		RoutingDigest: header.Spec.HostRoutingDigest, MaxOperations: header.Spec.OperationLimit(),
+		RoutingDigest: header.Spec.HostRoutingDigest, CatalogFingerprint: state.CatalogFingerprint,
+		MaxOperations: header.Spec.OperationLimit(),
 		Hard: budgettriage.Limits{MaxModelCalls: header.Spec.ModelCallLimit(), MaxModelTokens: header.Spec.MaxModelTokens,
 			MaxCostMicros: header.Spec.MaxCostMicros}, Status: "interrupted"}
 	if state.Result != nil {
