@@ -1210,8 +1210,10 @@ URL returns 404, and a missing workflow-run URL returns 404. This gate passed
 with one artifact event and a canonical workflow result path. A larger batch
 artifact and other artifact kinds remain open. A separate Postgres-backed
 route gate verifies the same recorded artifact returns 404 when the request
-resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). This checks the
-artifact route's org scope; a multi-tenant browser deployment remains open.
+resolves another org (`HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`). The Postgres-backed
+public API route also accepts the owner's valid token and returns 401 for a
+different organization's valid token. This checks both artifact route scopes;
+a multi-tenant browser deployment remains open.
 
 A second connected workflow API run now keeps a governed action request pending
 through Ax compaction. It uses a trusted priced OpenShell route, makes five

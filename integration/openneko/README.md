@@ -432,7 +432,9 @@ The focused organization-scope gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_ARTIFACT_SCOPE_ONLY=1`. Against isolated
 Postgres, it serves a recorded workflow artifact under its owning org and
 returns 404 for the same run ID under another org. It isolates the artifact
-route's organization boundary; OpenNeko's current web server resolves one org,
+route's organization boundary. The same focused test now gives each org a valid
+public workflow API token: the owner downloads the file, while the other org's
+valid token gets 401 for the owner's workflow. OpenNeko's current web server resolves one org,
 so it is not a multi-tenant browser qualification.
 
 The focused M6 API pricing preflight runs with

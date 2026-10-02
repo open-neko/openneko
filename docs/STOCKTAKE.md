@@ -77,6 +77,9 @@ HTTP rerun additionally downloaded the exact CSV from the public route in
 both modes, checked headers and invalid-token denial, and observed 404 for
 both short findings. These are synthetic calibration cases, not held-out
 evidence or proof of savings.
+An isolated Postgres-backed route gate also accepted the owner's workflow API
+token and denied a valid token issued to a second organization. This proves
+the public route's token boundary, not a multi-tenant browser deployment.
 
 The 2026-09-28 M5c user-administration slice adds a run-bound internal
 `user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,
