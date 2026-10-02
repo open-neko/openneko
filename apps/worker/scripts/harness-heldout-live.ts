@@ -136,7 +136,7 @@ try {
     throw new Error(`terminal ${status.status} workflow has no Harness checkpoint; see ${reportPath}`);
   });
   const checkpoint = JSON.parse(checkpointBytes.toString("utf8")) as {
-    result?: { status?: string; answer?: string }; spec?: { host_budget_mode?: string };
+    result?: { status?: string; code?: string; answer?: string }; spec?: { host_budget_mode?: string };
   };
   assert.equal(checkpoint.spec?.host_budget_mode ?? "fixed", mode);
   let artifactPath: string | undefined;
@@ -165,7 +165,9 @@ try {
     version: 1, dataset: cases.dataset, cases_sha256: frozenCasesSha256,
     case_id: selected.id, mode,
     workflow_run_id: admitted.runId, run_id: workRunId, api_status: status.status,
-    checkpoint_status: checkpoint.result?.status ?? null, root: checkpointRoot,
+    api_error_code: status.error?.code ?? null,
+    checkpoint_status: checkpoint.result?.status ?? null,
+    checkpoint_code: checkpoint.result?.code ?? null, root: checkpointRoot,
     checkpoint_sha256: createHash("sha256").update(checkpointBytes).digest("hex"),
     graphjin_environment: graphjinEnvironment,
     wall_ms: Date.now() - startedAt, artifact_path: artifactPath ?? null,
