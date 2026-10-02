@@ -1,6 +1,7 @@
 # OpenShell integration with the Go/Ax harness
 
-Status: design research, 2026-09-19. Companion to [DESIGN.md](DESIGN.md).
+Status: historical design research from 2026-09-19, with the current 0.1.2
+migration gate recorded below. Companion to [DESIGN.md](DESIGN.md).
 
 Scope: generic transport/security findings apply to the standalone harness.
 OpenNeko-specific broker, launcher, persistence and rollout findings describe the
@@ -14,7 +15,14 @@ Evidence levels used below:
 - **Documented upstream:** current NVIDIA documentation; not proof of availability in OpenNeko's pinned version.
 - **Proposed:** implementation direction that still needs integration tests.
 
-Research below is supplemented by [M2's initial live compatibility results](../integration/README.md). A separate 0.0.116 test gateway/sandbox now passes synthetic HTTP credential and policy checks; the active application stack was not changed and no real-provider credentials or requests were used. Read-only worker/queue/browser gates now have local evidence in [M3 acceptance](../integration/openneko/README.md); M4 recovery also has [live acceptance evidence](M4-RECOVERY.md). Upstream idle-stream cancellation is an accepted nonblocking limitation as of 2026-09-20; provider work may consume additional tokens until closure or sandbox teardown.
+Research below is supplemented by [M2's live compatibility results](../integration/README.md).
+The 0.0.116 findings in the historical sections are retained for provenance;
+0.1.2 is the current OpenNeko target and has separate connected acceptance
+evidence in the migration gate below. Read-only worker/queue/browser gates are
+recorded in [M3 acceptance](../integration/openneko/README.md), and M4 recovery
+in [M4-RECOVERY.md](M4-RECOVERY.md). Upstream idle-stream cancellation remains
+an accepted nonblocking limitation; provider work may consume additional tokens
+until closure or sandbox teardown.
 
 ### OpenShell 0.1.2 migration gate (2026-10-02)
 
@@ -94,11 +102,15 @@ Retain the existing broker for GraphJin and product operations. A Go harness doe
 
 Do not use a gateway-wide `inference.local` route as the default for multi-provider Ax balancing. Do not transplant Hermes' provider names, Python executable allowance or environment aliases unchanged into the Go runtime.
 
-## 2. Version boundary: an implementation prerequisite
+## 2. Historical version research (0.0.54 to 0.0.116)
 
-**Source-verified:** OpenNeko's Dockerfile and both development/packaged Compose defaults select OpenShell `0.0.54`. Environment overrides may change actual deployments; no live version was inspected. The tagged source inspected for `v0.0.54` resolves to `79aa355dd008e496a7d8f97b361a7b2866066fbc`.
+**Source-verified at the 2026-09-19 snapshot:** OpenNeko's Dockerfile and both
+development/packaged Compose defaults selected OpenShell `0.0.54`. This is no
+longer the checked-in target. The tagged source inspected for `v0.0.54`
+resolves to `79aa355dd008e496a7d8f97b361a7b2866066fbc`.
 
-**Documented upstream:** current documentation identifies `0.0.116`. Its static credential endpoint binding and rotation behavior differ materially from the tagged implementation reviewed here.
+**Documented upstream at that snapshot:** `0.0.116` had different static
+credential endpoint binding and rotation behavior from the older implementation.
 
 | Area | OpenNeko / tagged evidence | Consequence |
 | --- | --- | --- |
@@ -109,11 +121,17 @@ Do not use a gateway-wide `inference.local` route as the default for multi-provi
 | Multi-provider routes | Current launcher carries one model provider and generic credential name | Introduce distinct provider slots and an explicit approved route set |
 | Executable policy | Model traffic is allowed for `/usr/bin/python3.11`, broker traffic for `/usr/local/bin/node` | A new Go executable needs its own exact policy entry |
 
-**Upgrade recommendation: qualify and pin v0.0.116**, rather than building the new harness around 0.0.54. GitHub's latest non-prerelease release is v0.0.116, published August 28, 2026, commit `d1155aa` (checked September 19). This is a candidate supported by source review, not a completed compatibility qualification. No deployment version or runtime was changed. Avoid the rolling `dev` and experimental `vm-runtime` releases for the initial baseline.
+**Historical recommendation (superseded by 0.1.2):** On 2026-09-19 the
+candidate was v0.0.116 rather than 0.0.54, based on tagged source review.
+OpenNeko main and the harness feature branch now target 0.1.2; use the migration
+gate above and the connected acceptance record, not this old recommendation,
+for implementation and rollout decisions.
 
 ### Released improvements relevant to this harness
 
-These milestones come from tagged GitHub release notes, rather than assuming current documentation describes 0.0.54. All are included in the recommended target.
+These historical milestones come from tagged GitHub release notes rather than
+assuming the 0.0.54 documentation described later releases. All were included
+in the then-recommended 0.0.116 target.
 
 | Release | Relevant change | Impact on our design |
 | --- | --- | --- |
