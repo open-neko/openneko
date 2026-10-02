@@ -96,6 +96,59 @@ if [[ ${HARNESS_M5_FAST:-0} != 1 ]]; then
   bash ./integration/batch/batch-check.sh
 fi
 export HARNESS_M3_LIVE=1 OPENNEKO_PG_ENV_OVERRIDE=1 NEKO_PG_HOST=127.0.0.1 NEKO_PG_PORT=18119 NEKO_PG_USER=neko NEKO_PG_PASSWORD=synthetic-m3 NEKO_PG_DATABASE=neko
+if [[ ${HARNESS_M6_HELDOUT_ONLY:-0} == 1 ]]; then
+  [[ ${HARNESS_M5_FAST:-0} == 1 ]] || { echo 'Held-out gate requires HARNESS_M5_FAST=1' >&2; exit 1; }
+  [[ ${HARNESS_M6_BUSINESS_SEED:-} == "$PWD/integration/m6-heldout/seed.sql" ]] || { echo 'Held-out gate requires the frozen absolute seed path' >&2; exit 1; }
+  for name in HARNESS_M6_MODEL_SOURCE_KEY HARNESS_M6_TRIAGE_SOURCE_KEY HARNESS_M6_MODEL_URL HARNESS_M6_MODEL_NAME HARNESS_M6_TRIAGE_URL HARNESS_M6_TRIAGE_MODEL HARNESS_M6_MODEL_INPUT_PRICE HARNESS_M6_MODEL_OUTPUT_PRICE HARNESS_M6_TRIAGE_INPUT_PRICE HARNESS_M6_TRIAGE_OUTPUT_PRICE HARNESS_M6_GRAPHJIN_INPUT_PRICE HARNESS_M6_GRAPHJIN_OUTPUT_PRICE HARNESS_M6_OUTPUT_DIR GRAPHJIN_AGENT_API_KEY GRAPHJIN_AGENT_PROVIDER GRAPHJIN_AGENT_MODEL GRAPHJIN_AGENT_REASONING GRAPHJIN_AGENT_BASE_URL; do
+    [[ -n ${!name:-} ]] || { echo "Missing held-out setting: $name" >&2; exit 1; }
+  done
+  [[ "$HARNESS_M6_OUTPUT_DIR" == /* && "$HARNESS_M6_OUTPUT_DIR" != "$HARNESS_STATE"* ]] || { echo 'HARNESS_M6_OUTPUT_DIR must be an absolute path outside transient state' >&2; exit 1; }
+  [[ ! -e "$HARNESS_M6_OUTPUT_DIR" ]] || { echo 'Held-out output directory already exists' >&2; exit 1; }
+  mkdir -m 700 "$HARNESS_M6_OUTPUT_DIR"
+  python3 integration/m6-heldout/provision-routes.py --output-dir "$HARNESS_STATE/m6-routes" \
+    --model-url "$HARNESS_M6_MODEL_URL" --model-name "$HARNESS_M6_MODEL_NAME" \
+    --triage-url "$HARNESS_M6_TRIAGE_URL" --triage-model "$HARNESS_M6_TRIAGE_MODEL" \
+    --model-input-price "$HARNESS_M6_MODEL_INPUT_PRICE" --model-output-price "$HARNESS_M6_MODEL_OUTPUT_PRICE" \
+    --triage-input-price "$HARNESS_M6_TRIAGE_INPUT_PRICE" --triage-output-price "$HARNESS_M6_TRIAGE_OUTPUT_PRICE" \
+    --graphjin-input-price "$HARNESS_M6_GRAPHJIN_INPUT_PRICE" --graphjin-output-price "$HARNESS_M6_GRAPHJIN_OUTPUT_PRICE"
+  "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m6-routes/model-provider.json"
+  "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m6-routes/triage-provider.json"
+  "$cli" --gateway harness-m2 provider create --name harness-m6-model --type harness-m6-model --credential HARNESS_M6_MODEL_SOURCE_KEY
+  "$cli" --gateway harness-m2 provider create --name harness-m6-triage --type harness-m6-triage --credential HARNESS_M6_TRIAGE_SOURCE_KEY
+  unset HARNESS_M6_MODEL_SOURCE_KEY HARNESS_M6_TRIAGE_SOURCE_KEY GRAPHJIN_AGENT_API_KEY
+  export OPENNEKO_HARNESS_ROUTING
+  OPENNEKO_HARNESS_ROUTING=$(cat "$HARNESS_STATE/m6-routes/routing.json")
+  export OPENNEKO_HARNESS_TRIAGE_SHADOW=1
+  mkdir -p "$HARNESS_STATE/bin"
+  ln -sfn "$HARNESS_M3_CLI" "$HARNESS_STATE/bin/openshell"
+  export PATH="$HARNESS_STATE/bin:$PATH" OPENNEKO_AGENT_BACKEND=harness OPENNEKO_AGENT_IMAGE=harness-openneko:m3 OPENNEKO_AGENT_WARM_POOL_SIZE=0 OPENSHELL_GATEWAY=harness-m2
+  export OPENNEKO_AGENT_MODEL_PROVIDER=harness-m6-model OPENNEKO_AGENT_HERMES_HOME="$HARNESS_STATE/provider-config" OPENNEKO_AGENT_MODEL_HOST="$HARNESS_M6_MODEL_URL"
+  export OPENNEKO_AGENT_HOME="$HARNESS_M6_OUTPUT_DIR/agent-home" OPENNEKO_BROKER_PORT=18123
+  python3 - "$HARNESS_STATE/provider-config/config.yaml" <<'PY'
+import json, os, sys
+with open(sys.argv[1], 'w', encoding='utf-8') as out:
+    json.dump({'model': {'provider': 'custom', 'default': os.environ['HARNESS_M6_MODEL_NAME'],
+                         'base_url': os.environ['HARNESS_M6_MODEL_URL']}}, out)
+PY
+  (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+  export HARNESS_M6_CASES_FILE="$PWD/integration/m6-heldout/cases.json"
+  export HARNESS_M6_ATTEST_SCRIPT="$PWD/integration/m6-heldout/attest.py"
+  export HARNESS_M6_VERIFY_SCRIPT="$PWD/integration/m6-heldout/verify.py"
+  export HARNESS_M6_GJ_STATUS_URL=http://127.0.0.1:18117/api/v1/agent/status
+  export HARNESS_M6_GJ_PROVIDER="$GRAPHJIN_AGENT_PROVIDER" HARNESS_M6_GJ_MODEL="$GRAPHJIN_AGENT_MODEL" HARNESS_M6_GJ_REASONING="$GRAPHJIN_AGENT_REASONING"
+  export PGHOST=127.0.0.1 PGPORT=18120 PGUSER=fixture PGPASSWORD=fixture PGDATABASE=fixture
+  for case_id in reference-short-001 lead-count-misleading-001 lead-overlap-investigation-001 lead-csv-artifact-001; do
+    for mode in fixed canary; do
+      export HARNESS_M6_CASE_ID="$case_id" HARNESS_M6_MODE="$mode"
+      export OPENNEKO_HARNESS_BUDGET_CANARY=0
+      if [[ "$mode" == canary ]]; then export OPENNEKO_HARNESS_BUDGET_CANARY=1; fi
+      export HARNESS_M6_RUN_REPORT="$HARNESS_M6_OUTPUT_DIR/$case_id-$mode.json"
+      (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-heldout-live.ts)
+    done
+  done
+  echo M6_HELDOUT_RUNS_RECORDED
+  exit 0
+fi
 if [[ ${HARNESS_M3_LIVE_ONLY:-0} == 1 ]]; then
   (cd "$product" && pnpm --filter @neko/llm exec vitest run test/harness-live.test.ts)
   echo M3_CONNECTED_HARNESS_LIVE_PASS

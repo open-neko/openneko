@@ -190,3 +190,9 @@ existing GraphJin image exposes all three source roots from the opt-in seed.
 These no-key checks do not score any Gemini or Ax agent run. The held-out
 fixed/canary comparison and effective strong GraphJin profile attestation
 remain open.
+The opt-in [queued held-out gate](../integration/m6-heldout/README.md#queued-real-model-gate)
+now prepares all eight real-model runs and retains local review receipts. Its
+generated OpenShell 0.1.2 provider profiles, environment-key provisioning and
+OpenNeko route parsing passed a connected synthetic-key preflight. No real
+held-out run has been scored, and the gate does not assign success labels to
+fact answers or enable the canary.

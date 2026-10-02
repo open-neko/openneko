@@ -933,6 +933,19 @@ the effective provider, model, reasoning and evaluation fingerprint to a
 preflight that binds them to the frozen data snapshot; the local gate rejects
 a deliberately weaker reasoning claim. A real strong profile still needs
 deployment and verification.
+The held-out consumer gate now has a queued real-model runner for all four
+fixed/canary pairs. It freezes the case-file hash, checks GraphJin's effective
+server profile and database snapshot before each admission, records the final
+checkpoint and API artifact, and verifies CSV bytes against the independent
+database oracle while the isolated stack is up. Its OpenShell 0.1.2 route
+profiles imported and resolved synthetic environment-key credentials in a
+focused connected preflight; the generated route also passed OpenNeko's parser.
+The review-manifest builder requires all eight manually labelled outcomes,
+rehashes persisted checkpoints, and rejects a changed GraphJin environment
+across runs or a claimed successful CSV without oracle verification.
+This is execution plumbing, not held-out outcome evidence: real Gemini and Ax
+Typesafe keys, an approved strong GraphJin deployment profile, independent
+answer review, and the fixed/canary comparison are still required.
 The paired synthetic gate feeds all six validated checkpoint digests to
 `harness-budget-compare`, which rejects wrong modes, changed checkpoints and
 duplicate runs, and reports outcome regressions by task class plus cost and
