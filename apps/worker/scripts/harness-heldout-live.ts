@@ -32,6 +32,10 @@ if (process.env.OPENNEKO_HARNESS_TRIAGE_SHADOW !== "1") {
 }
 const mode = process.env.HARNESS_M6_MODE;
 if (mode !== "fixed" && mode !== "canary") throw new Error("HARNESS_M6_MODE must be fixed or canary");
+const source = process.env.HARNESS_M6_RUN_SOURCE;
+if (source !== "live" && source !== "synthetic") {
+  throw new Error("HARNESS_M6_RUN_SOURCE must be live or synthetic");
+}
 if ((process.env.OPENNEKO_HARNESS_BUDGET_CANARY === "1") !== (mode === "canary")) {
   throw new Error("Harness budget mode differs from requested mode");
 }
@@ -79,6 +83,9 @@ if (relative(agentHome, orgRoot).startsWith("..") || !relative(agentHome, orgRoo
 }
 const modelName = process.env.HARNESS_M6_MODEL_NAME;
 if (!modelName) throw new Error("HARNESS_M6_MODEL_NAME is required");
+if (source === "live" && (modelName.includes("fixture") || graphjinEnvironment.model.includes("fixture"))) {
+  throw new Error("fixture model cannot produce a live held-out receipt");
+}
 const queue = await boss();
 const startedAt = Date.now();
 let workflowId: string | undefined;
@@ -128,7 +135,8 @@ try {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     await writeFile(reportPath, JSON.stringify({
       version: 1, dataset: cases.dataset, cases_sha256: frozenCasesSha256,
-      case_id: selected.id, mode, workflow_run_id: admitted.runId, run_id: workRunId,
+      case_id: selected.id, mode, source, model_name: modelName,
+      workflow_run_id: admitted.runId, run_id: workRunId,
       api_status: status.status, api_error_code: status.error?.code ?? null,
       checkpoint_missing: true, graphjin_environment: graphjinEnvironment,
       wall_ms: Date.now() - startedAt,
@@ -163,7 +171,7 @@ try {
   }
   const receipt = {
     version: 1, dataset: cases.dataset, cases_sha256: frozenCasesSha256,
-    case_id: selected.id, mode,
+    case_id: selected.id, mode, source, model_name: modelName,
     workflow_run_id: admitted.runId, run_id: workRunId, api_status: status.status,
     api_error_code: status.error?.code ?? null,
     checkpoint_status: checkpoint.result?.status ?? null,
