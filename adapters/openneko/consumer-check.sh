@@ -500,7 +500,7 @@ binaries: [/usr/local/bin/harness-openneko]
 YAML
       "$cli" --gateway harness-m2 provider profile import --file "$HARNESS_STATE/m6-triage-provider.yaml"
       "$cli" --gateway harness-m2 provider create --name harness-m6-triage --type harness-m6-triage --credential HARNESS_TRIAGE_SOURCE_KEY=synthetic-m6-triage
-      export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","triage":"triage","budget_policy":{"version":"m6-shadow-v1","short":{"max_model_calls":2,"max_model_tokens":8000,"max_cost_micros":2000},"multi_step":{"max_model_calls":3,"max_model_tokens":40000,"max_cost_micros":20000},"artifact":{"max_model_calls":48,"max_model_tokens":100000,"max_cost_micros":1000000}},"pricing_version":"m6-triage-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-compaction-approval-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m6-approval","credential_env":"HARNESS_APPROVAL_SOURCE_KEY","api_key_env":"HARNESS_FIXTURE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}},{"key":"triage","model":"jev-fixture","url":"http://host.docker.internal:18118/route/triage","provider":"harness-m6-triage","credential_env":"HARNESS_TRIAGE_SOURCE_KEY","api_key_env":"HARNESS_TRIAGE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
+      export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","triage":"triage","budget_policy":{"version":"m6-shadow-v1","short":{"max_model_calls":4,"max_model_tokens":12000,"max_cost_micros":5000},"multi_step":{"max_model_calls":4,"max_model_tokens":40000,"max_cost_micros":20000},"artifact":{"max_model_calls":48,"max_model_tokens":100000,"max_cost_micros":1000000}},"pricing_version":"m6-triage-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-compaction-approval-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m6-approval","credential_env":"HARNESS_APPROVAL_SOURCE_KEY","api_key_env":"HARNESS_FIXTURE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}},{"key":"triage","model":"jev-fixture","url":"http://host.docker.internal:18118/route/triage","provider":"harness-m6-triage","credential_env":"HARNESS_TRIAGE_SOURCE_KEY","api_key_env":"HARNESS_TRIAGE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
       export OPENNEKO_HARNESS_TRIAGE_SHADOW=1
       if [[ ${HARNESS_M6_CANARY_ONLY:-0} == 1 ]]; then
         export OPENNEKO_HARNESS_BUDGET_CANARY=1
@@ -514,6 +514,19 @@ YAML
       export OPENNEKO_HARNESS_ROUTING='{"context":"fixture","executor":"fixture","responder":"fixture","pricing_version":"m6-approval-compaction-v1","graphjin_price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000},"routes":[{"key":"fixture","model":"harness-compaction-approval-fixture","url":"http://host.docker.internal:18118/v1","provider":"harness-m6-approval","credential_env":"HARNESS_APPROVAL_SOURCE_KEY","api_key_env":"HARNESS_FIXTURE_KEY","price":{"input_micros_per_million":1000000,"output_micros_per_million":1000000}}]}'
     fi
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-m3.ts --seed-only)
+    if [[ ${HARNESS_M6_SHORT_ONLY:-0} == 1 ]]; then
+      export OPENNEKO_HARNESS_ROUTING=$(python3 - <<'PY'
+import json, os
+routing = json.loads(os.environ["OPENNEKO_HARNESS_ROUTING"])
+routing["routes"][0]["model"] = "harness-budget-short-fixture"
+print(json.dumps(routing, separators=(",", ":")))
+PY
+)
+      export HARNESS_BUDGET_SHORT_CASE=1
+      (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-budget-artifact-live.ts)
+      echo M6_CONNECTED_SHORT_CALIBRATION_PASS
+      exit 0
+    fi
     (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-approval-live.ts)
     if [[ ${HARNESS_M6_CANARY_ONLY:-0} == 1 ]]; then
       (
@@ -523,40 +536,83 @@ YAML
         cd "$product"
         pnpm --filter @neko/worker exec tsx scripts/harness-workflow-compaction-approval-live.ts
       )
-      python3 - "$HARNESS_STATE/m6-budget-canary.json" "$HARNESS_STATE/m6-budget-fixed.json" "$HARNESS_STATE/m6-budget-comparison-manifest.json" <<'PY'
+      export OPENNEKO_HARNESS_ROUTING=$(python3 - <<'PY'
+import json, os
+routing = json.loads(os.environ["OPENNEKO_HARNESS_ROUTING"])
+routing["routes"][0]["model"] = "harness-compaction-output-fixture"
+print(json.dumps(routing, separators=(",", ":")))
+PY
+)
+      export HARNESS_BUDGET_COMPARISON_REPORT="$HARNESS_STATE/m6-budget-artifact-canary.json"
+      (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-budget-artifact-live.ts)
+      (
+        export OPENNEKO_HARNESS_BUDGET_CANARY=0
+        export HARNESS_BUDGET_COMPARISON_REPORT="$HARNESS_STATE/m6-budget-artifact-fixed.json"
+        cd "$product"
+        pnpm --filter @neko/worker exec tsx scripts/harness-budget-artifact-live.ts
+      )
+      export OPENNEKO_HARNESS_ROUTING=$(python3 - <<'PY'
+import json, os
+routing = json.loads(os.environ["OPENNEKO_HARNESS_ROUTING"])
+routing["routes"][0]["model"] = "harness-budget-short-fixture"
+print(json.dumps(routing, separators=(",", ":")))
+PY
+)
+      export HARNESS_BUDGET_SHORT_CASE=1
+      export HARNESS_BUDGET_COMPARISON_REPORT="$HARNESS_STATE/m6-budget-short-canary.json"
+      (cd "$product" && pnpm --filter @neko/worker exec tsx scripts/harness-budget-artifact-live.ts)
+      (
+        export OPENNEKO_HARNESS_BUDGET_CANARY=0
+        export HARNESS_BUDGET_COMPARISON_REPORT="$HARNESS_STATE/m6-budget-short-fixed.json"
+        cd "$product"
+        pnpm --filter @neko/worker exec tsx scripts/harness-budget-artifact-live.ts
+      )
+      python3 - "$HARNESS_STATE/m6-budget-canary.json" "$HARNESS_STATE/m6-budget-fixed.json" "$HARNESS_STATE/m6-budget-artifact-canary.json" "$HARNESS_STATE/m6-budget-artifact-fixed.json" "$HARNESS_STATE/m6-budget-short-canary.json" "$HARNESS_STATE/m6-budget-short-fixed.json" "$HARNESS_STATE/m6-budget-comparison-manifest.json" <<'PY'
 import json, sys
-with open(sys.argv[1], encoding="utf-8") as f:
-    canary = json.load(f)
-with open(sys.argv[2], encoding="utf-8") as f:
-    fixed = json.load(f)
-assert canary["mode"] == "canary" and fixed["mode"] == "fixed"
-assert canary["verified"] and fixed["verified"]
-assert canary["modelCalls"] == fixed["modelCalls"]
-assert canary["ordinaryCalls"] == fixed["ordinaryCalls"]
-assert canary["triageCalls"] == fixed["triageCalls"] == 1
-assert canary["chargedMicros"] == fixed["chargedMicros"]
-manifest = {"version": 1, "pairs": [{"id": "connected-approval-compaction", "split": "calibration",
-    "source": "synthetic", "task_class": "investigation",
-    "fixed": {"root": fixed["checkpointRoot"], "run_id": fixed["runId"],
-        "checkpoint_sha256": fixed["checkpointSha256"], "outcome": "verified_success", "wall_ms": fixed["wallMS"]},
-    "canary": {"root": canary["checkpointRoot"], "run_id": canary["runId"],
-        "checkpoint_sha256": canary["checkpointSha256"], "outcome": "verified_success", "wall_ms": canary["wallMS"]}}]}
-with open(sys.argv[3], "w", encoding="utf-8") as f:
+def load(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+def pair(case_id, task_class, canary, fixed):
+    assert canary["mode"] == "canary" and fixed["mode"] == "fixed"
+    assert canary["verified"] and fixed["verified"]
+    assert canary["modelCalls"] == fixed["modelCalls"]
+    assert canary["ordinaryCalls"] == fixed["ordinaryCalls"]
+    assert canary["triageCalls"] == fixed["triageCalls"] == 1
+    assert canary["chargedMicros"] == fixed["chargedMicros"]
+    def run(report):
+        return {"root": report["checkpointRoot"], "run_id": report["runId"],
+            "checkpoint_sha256": report["checkpointSha256"],
+            "outcome": "verified_success", "wall_ms": report["wallMS"]}
+    return {"id": case_id, "split": "calibration", "source": "synthetic",
+        "task_class": task_class, "fixed": run(fixed), "canary": run(canary)}
+approval_canary, approval_fixed, artifact_canary, artifact_fixed, short_canary, short_fixed = map(load, sys.argv[1:7])
+manifest = {"version": 1, "pairs": [
+    pair("connected-approval-compaction", "investigation", approval_canary, approval_fixed),
+    pair("connected-artifact-compaction", "artifact", artifact_canary, artifact_fixed),
+    pair("connected-short-finding", "short", short_canary, short_fixed)]}
+with open(sys.argv[7], "w", encoding="utf-8") as f:
     json.dump(manifest, f)
-print("M6_CONNECTED_BUDGET_COMPARISON", json.dumps({"canary": canary, "fixed": fixed}, sort_keys=True))
+print("M6_CONNECTED_BUDGET_COMPARISON", json.dumps({"pairs": len(manifest["pairs"]),
+    "approval": {"canary": approval_canary["chargedMicros"], "fixed": approval_fixed["chargedMicros"]},
+    "artifact": {"canary": artifact_canary["chargedMicros"], "fixed": artifact_fixed["chargedMicros"]},
+    "short": {"canary": short_canary["chargedMicros"], "fixed": short_fixed["chargedMicros"]}}, sort_keys=True))
 PY
       "$HARNESS_STATE/harness-budget-compare" < "$HARNESS_STATE/m6-budget-comparison-manifest.json" > "$HARNESS_STATE/m6-budget-comparison-report.json"
       python3 - "$HARNESS_STATE/m6-budget-comparison-report.json" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     report = json.load(f)
-assert report["calibration"]["pairs"] == 1
+assert report["calibration"]["pairs"] == 3
 assert report["held_out"]["pairs"] == 0
-assert report["summary"]["fixed_success"] == report["summary"]["canary_success"] == 1
+assert report["summary"]["fixed_success"] == report["summary"]["canary_success"] == 3
 assert report["summary"]["canary_regressions"] == 0
 assert report["summary"]["incomplete_cost_pairs"] == 0
 assert report["summary"]["incomplete_usage_pairs"] == 0
-assert report["pairs"][0]["fixed"]["charged_micros"] == report["pairs"][0]["canary"]["charged_micros"]
+assert {p["task_class"] for p in report["pairs"]} == {"short", "investigation", "artifact"}
+for p in report["pairs"]:
+    assert p["fixed"]["charged_micros"] == p["canary"]["charged_micros"]
+assert report["summary"]["fixed_cost_micros"] == report["summary"]["canary_cost_micros"] == 3096
+assert report["summary"]["fixed_cost_per_verified_success_micros"] == report["summary"]["canary_cost_per_verified_success_micros"] == 1032
 PY
       echo M6_CONNECTED_BUDGET_CANARY_PASS
     elif [[ ${HARNESS_M6_TRIAGE_ONLY:-0} == 1 ]]; then

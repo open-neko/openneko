@@ -62,12 +62,18 @@ limitation did not block M2/M4.
 | M5e delegation | Ax child execution shares parent operations, model budget, usage and cancellation; connected Work, queued/API workflow and agent-job runs exercised narrowed inline children through OpenShell and the host broker; model-only jobs had no GraphJin operation; connected disabled delegation rejected a child call without GraphJin dispatch; a killed child run resumed from its journaled lookup without another GraphJin call; a failed child read leaves the parent result incomplete even if its text claims success | Separately queued children are deferred until a concrete workflow needs them; complete M5a-d dependencies before broad parity claim |
 | M6 efficiency | Durable model, remote-token and priced-cost admission survives resume; connected OpenShell verifies distinct routes, provider fallback, executor escalation, forced compaction with file evidence and a pending approval, terminal output gates, queue redelivery, and a brokered Ax Typesafe classifier. The compaction run publishes its file output and verifies the exact CSV through the operator web download while denying the background run's personal Work-file URL. A Postgres-backed route test also proves the recorded artifact returns 404 under another org. A capped shadow proposal extends after a durable tool receipt or before a requested GraphJin lookup; journal failure blocks the remote dispatch. A metadata-only evaluator reads validated checkpoints, binds independently labelled outcomes to checkpoint digests, scores false-low decisions and first counterfactual budget blocks, and passes a connected synthetic calibration fixture. A disabled-by-default host canary passed local denial, extension, GraphJin preflight, skipped-classifier and recovery tests plus a paired canary/fixed queued synthetic workflow on OpenShell 0.1.2; both verified the same outcome, 12 model requests and 1,332 charged micros. | Real Gemini and database-backed GraphJin qualification; held-out short, investigation and Daily Lead-style artifact outcomes; controlled multi-case fixed-versus-canary outcome comparison; other-kind download checks and multi-tenant browser qualification. Synthetic calibration does not justify enabling the canary. |
 
-The M6 paired synthetic gate now also validates both stopped checkpoint digests
-and fixed/canary modes with `harness-budget-compare`, recording verified outcome,
-cost per success, regressions by task class, and cost/usage coverage. It is
-still one calibration pair; held-out and multi-case qualification remain open.
 | M7 parity | Capability inventory and evaluation rules documented | Full Hermes outcome comparison, tenant/load checks and task-quality evidence |
 | M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
+
+The M6 connected calibration now compares three fixed/canary pairs against
+validated checkpoint digests: a short finding, an investigation with pending
+approval, and a 52,008-byte CSV artifact. All six runs completed with the same
+verified outcome in each pair, complete priced usage, and no canary regression;
+the short, investigation, and artifact pairs each charged 572, 1,332, and
+1,192 micros per run respectively. The API artifact case exposed and fixed a
+path lost during API finalization; the authorized API artifact resolver now
+returns the exact CSV while the short finding has no download. These are
+synthetic calibration cases, not held-out evidence or proof of savings.
 
 The 2026-09-28 M5c user-administration slice adds a run-bound internal
 `user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,

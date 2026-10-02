@@ -108,3 +108,13 @@ class, actual charged cost per verified success, wall time and usage coverage
 for calibration and held-out splits. A cheaper failed canary is counted as a
 regression, not a saving. Pair equivalence and outcome labels still require
 independent review; the command never enables the canary.
+
+The OpenShell 0.1.2 calibration gate now exercises three synthetic paired API
+workflows: a short finding, an investigation with a pending approval, and a
+52,008-byte CSV artifact. All six finished with matching verified outcomes
+and complete priced usage. The first short policy (two model calls and 2,000
+micros) failed before the finding could be recorded because the classifier
+and Ax stages share the run allowance. The gate now uses a four-call,
+5,000-micro short proposal within the same fixed hard cap. This is a fixture
+calibration result only; retain shadow mode until the specified held-out live
+evaluation and real canary comparison are complete.

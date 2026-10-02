@@ -48,6 +48,7 @@ func main() {
 	answerClarification := false
 	continuation := false
 	pauseResponder := false
+	triageChoice := "multi_step"
 	http.HandleFunc("/control", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			mu.Lock()
@@ -60,41 +61,43 @@ func main() {
 			return
 		}
 		var c struct {
-			Delay                int  `json:"delay"`
-			EffectFences         bool `json:"effect_fences"`
-			Proposal             bool `json:"proposal"`
-			Upload               bool `json:"upload"`
-			Artifact             bool `json:"artifact"`
-			Process              bool `json:"process"`
-			ProcessFail          bool `json:"process_fail"`
-			ProcessLarge         bool `json:"process_large"`
-			ProcessCancel        bool `json:"process_cancel"`
-			ProcessOversize      bool `json:"process_oversize"`
-			ProcessFlood         bool `json:"process_flood"`
-			ProcessOffice        bool `json:"process_office"`
-			Management           bool `json:"management"`
-			Audit                bool `json:"audit"`
-			AuditDenied          bool `json:"audit_denied"`
-			UploadedLibrary      bool `json:"uploaded_library"`
-			SourceConfig         bool `json:"source_config"`
-			WorkflowSave         bool `json:"workflow_save"`
-			WorkflowEdit         bool `json:"workflow_edit"`
-			WorkflowDelete       bool `json:"workflow_delete"`
-			WorkflowDeleteDenied bool `json:"workflow_delete_denied"`
-			WorkflowWhen         bool `json:"workflow_when"`
-			WorkflowWhenEdit     bool `json:"workflow_when_edit"`
-			WorkflowWatch        bool `json:"workflow_watch"`
-			WorkflowBadTrigger   bool `json:"workflow_bad_trigger"`
-			RuleSave             bool `json:"rule_save"`
-			RuleEdit             bool `json:"rule_edit"`
-			Clarification        bool `json:"clarification"`
-			Card                 bool `json:"card"`
-			Skill                bool `json:"skill"`
-			AnswerClarification  bool `json:"answer_clarification"`
-			Continue             bool `json:"continue"`
-			PauseResponder       bool `json:"pause_responder"`
+			Delay                int    `json:"delay"`
+			EffectFences         bool   `json:"effect_fences"`
+			Proposal             bool   `json:"proposal"`
+			Upload               bool   `json:"upload"`
+			Artifact             bool   `json:"artifact"`
+			Process              bool   `json:"process"`
+			ProcessFail          bool   `json:"process_fail"`
+			ProcessLarge         bool   `json:"process_large"`
+			ProcessCancel        bool   `json:"process_cancel"`
+			ProcessOversize      bool   `json:"process_oversize"`
+			ProcessFlood         bool   `json:"process_flood"`
+			ProcessOffice        bool   `json:"process_office"`
+			Management           bool   `json:"management"`
+			Audit                bool   `json:"audit"`
+			AuditDenied          bool   `json:"audit_denied"`
+			UploadedLibrary      bool   `json:"uploaded_library"`
+			SourceConfig         bool   `json:"source_config"`
+			WorkflowSave         bool   `json:"workflow_save"`
+			WorkflowEdit         bool   `json:"workflow_edit"`
+			WorkflowDelete       bool   `json:"workflow_delete"`
+			WorkflowDeleteDenied bool   `json:"workflow_delete_denied"`
+			WorkflowWhen         bool   `json:"workflow_when"`
+			WorkflowWhenEdit     bool   `json:"workflow_when_edit"`
+			WorkflowWatch        bool   `json:"workflow_watch"`
+			WorkflowBadTrigger   bool   `json:"workflow_bad_trigger"`
+			RuleSave             bool   `json:"rule_save"`
+			RuleEdit             bool   `json:"rule_edit"`
+			Clarification        bool   `json:"clarification"`
+			Card                 bool   `json:"card"`
+			Skill                bool   `json:"skill"`
+			AnswerClarification  bool   `json:"answer_clarification"`
+			Continue             bool   `json:"continue"`
+			PauseResponder       bool   `json:"pause_responder"`
+			TriageChoice         string `json:"triage_choice"`
 		}
-		if json.NewDecoder(r.Body).Decode(&c) != nil || c.Delay < 0 || c.Delay > 30 {
+		if json.NewDecoder(r.Body).Decode(&c) != nil || c.Delay < 0 || c.Delay > 30 ||
+			(c.TriageChoice != "" && c.TriageChoice != "short_answer" && c.TriageChoice != "multi_step" && c.TriageChoice != "artifact_pipeline" && c.TriageChoice != "uncertain") {
 			http.Error(w, "invalid", 400)
 			return
 		}
@@ -104,6 +107,10 @@ func main() {
 		}
 		continuation = c.Continue
 		pauseResponder = c.PauseResponder
+		triageChoice = c.TriageChoice
+		if triageChoice == "" {
+			triageChoice = "multi_step"
+		}
 		delay = c.Delay
 		effectFences = c.EffectFences
 		proposal = c.Proposal
@@ -169,11 +176,19 @@ func main() {
 		}
 		mu.Lock()
 		counts["jev-fixture"]++
+		choice := triageChoice
 		mu.Unlock()
+		probabilities := map[string]float64{"short_answer": 0.05, "multi_step": 0.8, "artifact_pipeline": 0.1, "uncertain": 0.05}
+		confidence := 0.8
+		if choice != "multi_step" {
+			probabilities = map[string]float64{"short_answer": 0.04, "multi_step": 0.04, "artifact_pipeline": 0.04, "uncertain": 0.04}
+			probabilities[choice] = 0.88
+			confidence = 0.88
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": "jev-fixture", "answers": map[string]any{"workload": map[string]any{
-			"type": "choice", "choice": "multi_step", "confidence": 0.8,
-			"probabilities": map[string]float64{"short_answer": 0.05, "multi_step": 0.8, "artifact_pipeline": 0.1, "uncertain": 0.05}}},
+			"type": "choice", "choice": choice, "confidence": confidence,
+			"probabilities": probabilities}},
 			"usage": map[string]int{"input_tokens": 10, "output_tokens": 5}})
 	})
 	modelHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -534,7 +549,7 @@ func main() {
 			http.Error(w, "missing rule save receipt", 422)
 			return
 		}
-		if n == 2 && req.Model != "harness-stream-fixture" && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
+		if n == 2 && req.Model != "harness-stream-fixture" && req.Model != "harness-budget-short-fixture" && req.Model != "harness-compaction-approval-fixture" && req.Model != "harness-compaction-output-fixture" && req.Model != "harness-finalizer-output-fixture" && req.Model != "harness-finalizer-empty-fixture" && req.Model != "harness-memory-fixture" && req.Model != "harness-child-fixture" && req.Model != "harness-workflow-child-fixture" && req.Model != "harness-workflow-action-fixture" && req.Model != "harness-trigger-fixture" && req.Model != "harness-trigger-crash-fixture" && req.Model != "harness-job-child-fixture" && req.Model != "harness-job-child-crash-fixture" && req.Model != "harness-job-model-only-fixture" && req.Model != "harness-memory-save-fixture" && req.Model != "harness-skill-create-fixture" && req.Model != "harness-skill-read-fixture" && req.Model != "harness-skill-update-fixture" && req.Model != "harness-skill-read-updated-fixture" && req.Model != "harness-user-admin-fixture" && req.Model != "harness-user-deactivate-fixture" && req.Model != "harness-user-reactivate-fixture" && req.Model != "harness-user-promote-fixture" && req.Model != "harness-data-source-admin-fixture" && req.Model != "harness-group-admin-fixture" && req.Model != "harness-group-member-fixture" && req.Model != "harness-workflow-list-fixture" && req.Model != "harness-library-fixture" && req.Model != "harness-records-fixture" && req.Model != "harness-records-data-fixture" && req.Model != "harness-records-action-fixture" && req.Model != "harness-records-queue-fixture" && req.Model != "harness-records-create-fixture" && req.Model != "harness-records-delete-fixture" && req.Model != "harness-records-restore-fixture" && req.Model != "harness-installed-plugin-fixture" && !readUpload && !writeArtifact && !runProcess && !failProcess && !runLargeProcess && !runCancelProcess && !runOversizeProcess && !runFloodProcess && !runOfficeProcess && !readManagement && !readAudit && !readUploadedLibrary && !readSourceConfig && !createWorkflow && !editWorkflow && !deleteWorkflow && !denyWorkflowDelete && !createWorkflowWhen && !editWorkflowWhen && !createWorkflowWatch && !rejectWorkflowTrigger && !createRule && !editRule && !propose && !answerQuestion && !renderCard && !followSkill && !refused && (!strings.Contains(string(req.Messages), "REF-42") || (req.Model != "graphjin-fixture" && !strings.Contains(string(req.Messages), "trace_id"))) {
 			http.Error(w, "missing real lookup evidence", 422)
 			return
 		}
@@ -629,6 +644,12 @@ func main() {
 				`{"javascriptCode":"final('Answer the streaming check',{})"}`,
 				`{"javascriptCode":"final('No tools needed',{})"}`,
 				`{"answer":"STREAM-OK"}`,
+			}
+		} else if req.Model == "harness-budget-short-fixture" {
+			responses = []string{
+				`{"javascriptCode":"final('Record one short finding',{})"}`,
+				`{"javascriptCode":"const out=workflow_output_emit({kind:'finding',title:'Short budget finding',body:'The short check passed.',payload:{ok:true}}); final('Report the finding',{out});"}`,
+				`{"answer":"Recorded the short check finding."}`,
 			}
 		} else if req.Model == "harness-trigger-fixture" || req.Model == "harness-trigger-crash-fixture" {
 			responses = []string{

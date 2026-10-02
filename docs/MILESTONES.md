@@ -914,14 +914,28 @@ synthetic model/data fixtures passed its connected 0.1.2 canary path,
 including a GraphJin preflight extension before dispatch and inert redelivery.
 A paired fixed-budget run in the same isolated stack verified the same output
 and approval state, 12 model requests and 1,332 charged micros; the canary was
-slower in this single pair. Held-out quality and a controlled multi-case
-fixed-versus-canary comparison remain open. The
+slower in this single pair. The connected gate now compares three synthetic
+calibration pairs: that investigation, a short finding, and a 52,008-byte CSV
+artifact. All six runs completed with verified matching outcomes and complete
+priced usage; the short, investigation and artifact pairs charged 572, 1,332
+and 1,192 micros per run, respectively. The short fixture exposed that the
+initial two-call/2,000-micro proposal denied its output before dispatch;
+calibration raised that profile to four calls and 5,000 micros while keeping
+the policy ladder monotonic. This does not establish a cost saving.
+Held-out quality and a controlled real-provider comparison remain open. The
 migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
-The paired synthetic gate now feeds both validated checkpoint digests to
+The paired synthetic gate feeds all six validated checkpoint digests to
 `harness-budget-compare`, which rejects wrong modes, changed checkpoints and
 duplicate runs, and reports outcome regressions by task class plus cost and
-usage coverage. This remains one calibration pair, not held-out evidence.
+usage coverage. Its three pairs are calibration evidence, not held-out evidence.
+The artifact pair also exposed an OpenNeko API finalization handoff that erased
+the file path after the workflow turn published it. The feature branch now
+passes the validated path through finalization; the connected API artifact
+resolver returns the exact CSV, and a worker regression protects the handoff.
+After the handoff change, the full isolated 0.1.2 queue/API suite passed again,
+including the public GraphJin query-to-file HTTP download, approval restart,
+worker-death recovery and workflow child turns. Its owned stack was removed.
 
 **Local status (2026-09-29):** Ax's invocation-scoped rate limiter now admits a
 model request only after a content-free `model.request.started` event is durably
