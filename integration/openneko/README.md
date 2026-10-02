@@ -131,7 +131,7 @@ agent image and run:
 HARNESS_M5_FAST=1 HARNESS_M5_TRIGGER_ONLY=1 \
 AGENT_TEST_BASE_IMAGE=ghcr.io/open-neko/agent:v3.5.6 \
 OPENNEKO_TEST_SOURCE=/absolute/OpenNeko-integration-checkout \
-OPENSHELL_TEST_CLI=/absolute/openshell-0.0.116 \
+OPENSHELL_TEST_CLI=/absolute/openshell-0.1.2 \
 ./integration/openneko/run.sh
 ```
 
