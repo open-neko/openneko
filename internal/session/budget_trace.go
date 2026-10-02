@@ -93,14 +93,17 @@ func ReadBudgetTrace(root, runID string) (BudgetTrace, error) {
 	}
 	for _, e := range state.Events {
 		switch e.Type {
-		case "model.request.started", "model.request.finished", "tool.started", "tool.finished", "budget.triage.skipped", "budget.profile.proposed", "budget.profile.extended":
+		case "model.request.started", "model.request.finished", "tool.started", "tool.finished",
+			"tool.catalog.configured", "tool.input.rejected", "budget.triage.skipped",
+			"budget.profile.proposed", "budget.profile.extended":
 		default:
 			continue
 		}
 		clean := agent.Event{Version: e.Version, Sequence: e.Sequence, Type: e.Type,
 			CallID: e.CallID, OperationID: e.OperationID, Name: e.Name, Stage: e.Stage,
 			Origin: e.Origin, Effect: e.Effect, DurationMS: e.DurationMS,
-			Usage: e.Usage, RemoteUsage: e.RemoteUsage, CostMicros: e.CostMicros}
+			Error: e.Error, Usage: e.Usage, RemoteUsage: e.RemoteUsage,
+			CostMicros: e.CostMicros, ToolCatalog: e.ToolCatalog}
 		if e.Type == "budget.profile.proposed" || e.Type == "budget.profile.extended" ||
 			e.Type == "model.request.finished" && e.Stage == "budget_triage" {
 			clean.Data = append(clean.Data, e.Data...)

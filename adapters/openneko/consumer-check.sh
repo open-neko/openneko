@@ -664,6 +664,10 @@ assert report["summary"]["incomplete_usage_pairs"] == 0
 assert {p["task_class"] for p in report["pairs"]} == {"short", "investigation", "artifact"}
 for p in report["pairs"]:
     assert p["fixed"]["charged_micros"] == p["canary"]["charged_micros"]
+    assert p["fixed"]["parent_schema_bytes"] > 0 and p["canary"]["parent_schema_bytes"] > 0
+    assert p["fixed"]["parent_descriptor_bytes"] >= p["fixed"]["parent_schema_bytes"]
+    assert p["canary"]["parent_descriptor_bytes"] >= p["canary"]["parent_schema_bytes"]
+    assert p["fixed"]["invalid_tool_inputs"] == p["canary"]["invalid_tool_inputs"] == 0
 assert report["summary"]["fixed_cost_micros"] == report["summary"]["canary_cost_micros"] == 3096
 assert report["summary"]["fixed_cost_per_verified_success_micros"] == report["summary"]["canary_cost_per_verified_success_micros"] == 1032
 PY

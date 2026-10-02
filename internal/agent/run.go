@@ -144,11 +144,20 @@ type Event struct {
 	DurationMS  int64               `json:"duration_ms,omitempty"`
 	Usage       *ModelUsage         `json:"usage,omitempty"`
 	StageUsage  *ModelUsage         `json:"stage_usage,omitempty"`
+	ToolCatalog *ToolCatalogProfile `json:"tool_catalog,omitempty"`
 	RemoteUsage *RemoteUsage        `json:"remote_usage,omitempty"`
 	CostMicros  *int64              `json:"cost_micros,omitempty"`
 	StateUpdate *RuntimeStateUpdate `json:"state_update,omitempty"`
 	Terminal    *TerminalDecision   `json:"terminal,omitempty"`
 	Result      *Result             `json:"result,omitempty"`
+}
+
+// ToolCatalogProfile records the bytes of host-authored tool declarations
+// offered to an Ax actor. It contains no schema, description or call input.
+type ToolCatalogProfile struct {
+	Count           int `json:"count"`
+	SchemaBytes     int `json:"schema_bytes"`
+	DescriptorBytes int `json:"descriptor_bytes"`
 }
 
 type operationKey struct{}
@@ -348,6 +357,12 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 	if len(childReads) > 0 {
 		events.send(Event{Type: "child.admitted", Name: "team.researcher"})
 	}
+	parentCatalog := toolCatalogProfile(admitted, true)
+	events.send(Event{Type: "tool.catalog.configured", Name: "parent", ToolCatalog: &parentCatalog})
+	if len(childReads) > 0 {
+		childCatalog := toolCatalogProfile(childReads, false)
+		events.send(Event{Type: "tool.catalog.configured", Name: "child.team.researcher", ToolCatalog: &childCatalog})
+	}
 	result := Result{Status: "failed", Kind: "failure", Code: "model_failed"}
 	var delegations []json.RawMessage
 	var proposals []ProposalReceipt
@@ -449,6 +464,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				}
 				instruction, err := capability.input(value)
 				if err != nil {
+					events.send(Event{Type: "tool.input.rejected", Name: name, Error: "invalid_input"})
 					return nil, err
 				}
 				for _, saved := range prior.Operations {
@@ -604,7 +620,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			}
 		}
 		for _, capability := range admitted {
-			instruction += " Available JavaScript function " + capability.Name + "(input): " + capability.Description + " Input JSON schema: " + string(capability.InputSchema) + ". Effect: " + capability.Effect + "."
+			instruction += capability.promptDescriptor(true)
 		}
 		signature := "question:string -> answer:string"
 		values := ax.Object("question", spec.Prompt)
@@ -632,7 +648,7 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 			childInstruction := "Investigate only the assigned question. Return concise evidence with uncertainty. Do not claim action or tool access beyond the listed read functions."
 			for _, capability := range childReads {
 				register(childRuntime, capability, childView)
-				childInstruction += " Available JavaScript function " + capability.Name + "(input): " + capability.Description + " Input JSON schema: " + string(capability.InputSchema) + "."
+				childInstruction += capability.promptDescriptor(false)
 			}
 			registerSaved(childRuntime, childView)
 			childOptions := ax.Object("runtime", childRuntime, "instruction", childInstruction, "directResponse", "off", "max_actor_steps", 3, "validationRetries", 0, "infraRetries", 0,

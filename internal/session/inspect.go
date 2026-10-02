@@ -256,7 +256,9 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 	ended := map[uint64]bool{}
 	children := map[uint64]bool{}
 	finishedChildren := map[uint64]bool{}
+	childrenAdmitted := false
 	stageSummaries := map[uint64]map[string]bool{}
+	catalogProfiles := map[uint64]map[string]bool{}
 	var terminalCheck *agent.Event
 	finalizerEvent := false
 	finalizerAdmitted := false
@@ -271,7 +273,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			return invalid()
 		}
 		if finalizerEvent && !finalizerAdmitted && e.Type != "run.finished" && e.Type != "run.resumed" ||
-			finalizerAdmitted && (e.Type == "tool.started" || e.Type == "model.request.started" && e.Stage != "terminal_finalizer") {
+			finalizerAdmitted && (e.Type == "tool.started" || e.Type == "tool.input.rejected" ||
+				e.Type == "model.request.started" && e.Stage != "terminal_finalizer") {
 			return invalid()
 		}
 		if e.Version != 1 || e.RunID != spec.RunID || e.InputID != spec.InputID || e.Sequence != uint64(i+1) {
@@ -285,6 +288,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" ||
 			e.StageUsage != nil && e.Type != "model.stage_usage" ||
+			e.ToolCatalog != nil && e.Type != "tool.catalog.configured" ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.StateUpdate != nil && e.Type != "runtime.state.updated" ||
 			e.Terminal != nil && e.Type != "terminal.checked" && e.Type != "finalizer.admitted" ||
@@ -299,10 +303,32 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		}
 		switch e.Type {
 		case "run.started", "span.started", "span.finished":
-		case "child.admitted":
-			if e.Name != "team.researcher" || e.SpanID != 0 {
+		case "tool.catalog.configured":
+			if (e.Name != "parent" && e.Name != "child.team.researcher") || e.ToolCatalog == nil ||
+				e.ToolCatalog.Count < 0 || e.ToolCatalog.Count > 4096 ||
+				e.ToolCatalog.SchemaBytes < e.ToolCatalog.Count || e.ToolCatalog.SchemaBytes > 64<<20 ||
+				e.ToolCatalog.DescriptorBytes < e.ToolCatalog.SchemaBytes || e.ToolCatalog.DescriptorBytes > 100<<20 ||
+				e.Name == "child.team.researcher" && (!childrenAdmitted || e.ToolCatalog.Count == 0) ||
+				len(e.Data) != 0 || e.CallID != 0 || e.OperationID != 0 {
 				return invalid()
 			}
+			if catalogProfiles[attempt] == nil {
+				catalogProfiles[attempt] = map[string]bool{}
+			}
+			if catalogProfiles[attempt][e.Name] {
+				return invalid()
+			}
+			catalogProfiles[attempt][e.Name] = true
+		case "tool.input.rejected":
+			if !agent.ValidToolName(e.Name) || e.Error != "invalid_input" || modelCalls == 0 ||
+				len(e.Data) != 0 || e.OperationID != 0 || e.CallID != 0 || !catalogProfiles[attempt]["parent"] {
+				return invalid()
+			}
+		case "child.admitted":
+			if e.Name != "team.researcher" || e.SpanID != 0 || childrenAdmitted {
+				return invalid()
+			}
+			childrenAdmitted = true
 		case "child.started":
 			if e.Name != "team.researcher" || e.SpanID == 0 || e.ParentID == 0 || children[e.SpanID] {
 				return invalid()
@@ -456,6 +482,7 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			finalizerCalls = 0
 			finalizerEvidenceIDs = nil
 			lookupProposals = map[uint64]bool{}
+			childrenAdmitted = false
 		case "tool.reused":
 			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
 				return invalid()

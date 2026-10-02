@@ -40,7 +40,12 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 		price := int64(10)
 		proposal, _ := json.Marshal(budgettriage.Proposal{Version: "fixture-v1", Profile: "short",
 			Limits: budgettriage.Limits{MaxModelCalls: 1, MaxModelTokens: 50000, MaxCostMicros: 1000}})
-		events := []agent.Event{{Sequence: 1, Type: "budget.profile.proposed", Data: proposal}}
+		events := []agent.Event{{Sequence: 1, Type: "budget.profile.proposed", Data: proposal},
+			{Sequence: 2, Type: "tool.catalog.configured", Name: "parent",
+				ToolCatalog: &agent.ToolCatalogProfile{Count: 1, SchemaBytes: 27, DescriptorBytes: 120}}}
+		if runID == "short-canary" {
+			events = append(events, agent.Event{Type: "tool.input.rejected", Name: "catalog", Error: "invalid_input"})
+		}
 		for i := 0; i < calls; i++ {
 			id := uint64(i + 1)
 			events = append(events, agent.Event{Sequence: uint64(len(events) + 1), Type: "model.request.started", CallID: id, CostMicros: &price})
@@ -58,7 +63,9 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 		out.Summary.FixedCostMicros != 40 || out.Summary.CanaryCostMicros != 30 ||
 		out.Summary.FixedCostPerSuccess == nil || *out.Summary.FixedCostPerSuccess != 20 ||
 		out.Summary.CanaryCostPerSuccess == nil || *out.Summary.CanaryCostPerSuccess != 30 ||
-		out.Pairs[0].FixedShadowFirstBlock != "model_calls" {
+		out.Pairs[0].FixedShadowFirstBlock != "model_calls" ||
+		out.Pairs[0].Fixed.ParentSchemaBytes != 27 || out.Pairs[0].Fixed.ParentDescriptorBytes != 120 ||
+		out.Pairs[0].Canary.InvalidToolInputs != 1 {
 		t.Fatalf("output=%+v err=%v", out, err)
 	}
 	m.Pairs[0].Canary.CheckpointSHA256 = a

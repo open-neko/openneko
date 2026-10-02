@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -31,6 +32,81 @@ func TestCapabilityOrderIsStable(t *testing.T) {
 		if a[i].Name != want || b[i].Name != want {
 			t.Fatalf("tool order changed: %q, %q", a[i].Name, b[i].Name)
 		}
+	}
+}
+
+func TestCatalogProfileCountsOnlyHostToolDeclarations(t *testing.T) {
+	tool := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read",
+		Description: "Read a reference.", InputSchema: json.RawMessage(`{"type":"object","required":["id"]}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
+	list, err := (Tools{Capabilities: []Capability{tool}}).admitted()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := toolCatalogProfile(list, true)
+	if profile.Count != 1 || profile.SchemaBytes != len(tool.InputSchema) ||
+		profile.DescriptorBytes != len(list[0].promptDescriptor(true)) ||
+		profile.DescriptorBytes <= profile.SchemaBytes {
+		t.Fatalf("profile=%+v", profile)
+	}
+	encoded, _ := json.Marshal(profile)
+	if strings.Contains(string(encoded), "reference") || strings.Contains(string(encoded), "required") {
+		t.Fatalf("profile exposed a tool declaration: %s", encoded)
+	}
+}
+
+func TestInvalidToolSelectionEmitsMetadataWithoutDispatch(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Check the catalog',{})"}`,
+		`{"javascriptCode":"try { catalog({id:'wrong'}) } catch (error) {} final('No verified row',{})"}`,
+		`{"answer":"No verified row."}`,
+	}
+	var modelCalls, toolCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		index := int(modelCalls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message",
+			ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	tool := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read",
+		Description: "Read a row.", InputSchema: json.RawMessage(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer"}},"additionalProperties":false}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			toolCalls.Add(1)
+			return json.RawMessage(`{"id":42}`), nil
+		}}
+	var observed []Event
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "invalid-tool", InputID: "input", Prompt: "Check the catalog"},
+		client, Tools{Capabilities: []Capability{tool}}, func(e Event) error { observed = append(observed, e); return nil })
+	if err != nil || result.Status != "completed" || modelCalls.Load() != 3 || toolCalls.Load() != 0 {
+		t.Fatalf("result=%+v err=%v model=%d tool=%d", result, err, modelCalls.Load(), toolCalls.Load())
+	}
+	var catalogs, rejected, started int
+	for _, event := range observed {
+		switch event.Type {
+		case "tool.catalog.configured":
+			if event.Name == "parent" {
+				catalogs++
+				if event.ToolCatalog == nil || event.ToolCatalog.Count != 1 || event.ToolCatalog.SchemaBytes != len(tool.InputSchema) {
+					t.Fatalf("catalog event=%+v", event)
+				}
+			}
+		case "tool.input.rejected":
+			rejected++
+			if event.Name != "catalog" || event.Error != "invalid_input" || len(event.Data) != 0 {
+				t.Fatalf("rejection exposed input: %+v", event)
+			}
+		case "tool.started":
+			started++
+		}
+	}
+	if catalogs != 1 || rejected != 1 || started != 0 {
+		t.Fatalf("catalogs=%d rejected=%d started=%d", catalogs, rejected, started)
 	}
 }
 

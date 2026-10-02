@@ -119,6 +119,13 @@ for calibration and held-out splits. A cheaper failed canary is counted as a
 regression, not a saving. Pair equivalence and outcome labels still require
 independent review; the command never enables the canary.
 
+Each run report also sums the parent and child catalog schema/descriptor bytes
+configured across attempts and counts model-selected tool inputs rejected by
+schema validation. These are content-free size and selection-error measures,
+not tokenizer counts or a claim that every configured child catalog was used.
+Compare them with reported input tokens before deciding whether tool discovery
+would save meaningful context; retain the pinned admission catalog.
+
 The OpenShell 0.1.2 calibration gate now exercises three synthetic paired API
 workflows: a short finding, an investigation with a pending approval, and a
 52,008-byte CSV artifact. All six finished with matching verified outcomes

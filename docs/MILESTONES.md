@@ -1372,6 +1372,14 @@ Measure admitted-tool schema cost and selection errors. If they are material,
 add search/describe over the pinned run catalog while keeping frequent tools
 eager; discovery must not grant a new capability. Verify a previously discovered
 tool after compaction and catalog-version change on resume.
+The harness now journals the number of host-authored schema and descriptor
+bytes configured for the parent and child Ax actors on each attempt, plus
+content-free invalid tool-input selection counts. The M6 paired evaluator
+exports these counts without tool definitions or arguments. The connected
+OpenShell 0.1.2 calibration gate confirms nonzero parent catalog bytes and no
+invalid selections in all six synthetic runs. Real-provider input-token
+measurements are still needed to decide whether deferred tool discovery is
+worth its complexity.
 Evaluate the [SoL-Pi ideas](https://arxiv.org/html/2609.20519v1) individually: observation references first; cache-aware
 compaction next; edit-and-verify and cheaper-model log reduction only when measured
 benefit justifies them. Include summarization/retrieval costs and deterministic

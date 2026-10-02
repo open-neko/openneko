@@ -100,6 +100,24 @@ type admittedTool struct {
 	schema  *jsonschema.Resolved
 }
 
+func (c admittedTool) promptDescriptor(includeEffect bool) string {
+	text := " Available JavaScript function " + c.Name + "(input): " + c.Description +
+		" Input JSON schema: " + string(c.InputSchema) + "."
+	if includeEffect {
+		text += " Effect: " + c.Effect + "."
+	}
+	return text
+}
+
+func toolCatalogProfile(list []admittedTool, includeEffect bool) ToolCatalogProfile {
+	profile := ToolCatalogProfile{Count: len(list)}
+	for _, capability := range list {
+		profile.SchemaBytes += len(capability.InputSchema)
+		profile.DescriptorBytes += len(capability.promptDescriptor(includeEffect))
+	}
+	return profile
+}
+
 var capabilityName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 func ValidToolName(name string) bool { return capabilityName.MatchString(name) }

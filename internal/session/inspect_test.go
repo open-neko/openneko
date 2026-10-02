@@ -37,6 +37,36 @@ func prefix() checkpoint {
 		{Version: 1, RunID: "r", InputID: "i", Sequence: 2, Type: "tool.started", Name: "lookup", OperationID: 1},
 	}, Operations: []operation{{ID: 1, Instruction: "read"}}}
 }
+
+func TestInspectBoundsMetadataOnlyToolCatalogEvents(t *testing.T) {
+	spec := agent.Spec{Version: 1, RunID: "catalog-metrics", InputID: "input", Prompt: "Check a row"}
+	event := func(seq uint64, kind string) agent.Event {
+		return agent.Event{Version: 1, RunID: spec.RunID, InputID: spec.InputID, Sequence: seq, Type: kind}
+	}
+	state := checkpoint{Version: 1, Spec: spec, Events: []agent.Event{
+		event(1, "run.started"),
+		{Version: 1, RunID: spec.RunID, InputID: spec.InputID, Sequence: 2, Type: "tool.catalog.configured", Name: "parent",
+			ToolCatalog: &agent.ToolCatalogProfile{Count: 1, SchemaBytes: 20, DescriptorBytes: 75}},
+		{Version: 1, RunID: spec.RunID, InputID: spec.InputID, Sequence: 3, Type: "model.request.started", CallID: 1},
+		{Version: 1, RunID: spec.RunID, InputID: spec.InputID, Sequence: 4, Type: "model.request.finished", CallID: 1},
+		{Version: 1, RunID: spec.RunID, InputID: spec.InputID, Sequence: 5, Type: "tool.input.rejected", Name: "catalog", Error: "invalid_input"},
+	}}
+	valid, _ := json.Marshal(state)
+	if _, err := decodeCheckpoint(valid, spec); err != nil {
+		t.Fatalf("rejected valid metadata: %v", err)
+	}
+	state.Events[1].ToolCatalog.DescriptorBytes = 19
+	invalid, _ := json.Marshal(state)
+	if _, err := decodeCheckpoint(invalid, spec); err == nil {
+		t.Fatal("accepted impossible advertised byte count")
+	}
+	state.Events[1].ToolCatalog.DescriptorBytes = 75
+	state.Events[4].Data = json.RawMessage(`{"id":"secret"}`)
+	invalid, _ = json.Marshal(state)
+	if _, err := decodeCheckpoint(invalid, spec); err == nil {
+		t.Fatal("accepted rejected tool arguments in telemetry")
+	}
+}
 func TestInspectSeparatesUnknownFromSavedEvidence(t *testing.T) {
 	for _, finished := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unknown", true: "saved"}[finished], func(t *testing.T) {

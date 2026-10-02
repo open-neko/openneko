@@ -40,14 +40,19 @@ type manifest struct {
 }
 
 type runReport struct {
-	RunID         string `json:"run_id"`
-	Outcome       string `json:"outcome"`
-	Status        string `json:"status"`
-	WallMS        int64  `json:"wall_ms"`
-	ModelCalls    int    `json:"model_calls"`
-	ChargedMicros int64  `json:"charged_micros"`
-	CostCoverage  string `json:"cost_coverage"`
-	UsageCoverage string `json:"usage_coverage"`
+	RunID                 string `json:"run_id"`
+	Outcome               string `json:"outcome"`
+	Status                string `json:"status"`
+	WallMS                int64  `json:"wall_ms"`
+	ModelCalls            int    `json:"model_calls"`
+	ParentSchemaBytes     int    `json:"parent_schema_bytes"`
+	ParentDescriptorBytes int    `json:"parent_descriptor_bytes"`
+	ChildSchemaBytes      int    `json:"child_schema_bytes"`
+	ChildDescriptorBytes  int    `json:"child_descriptor_bytes"`
+	InvalidToolInputs     int    `json:"invalid_tool_inputs"`
+	ChargedMicros         int64  `json:"charged_micros"`
+	CostCoverage          string `json:"cost_coverage"`
+	UsageCoverage         string `json:"usage_coverage"`
 }
 
 type pairReport struct {
@@ -142,6 +147,19 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 	modelStarted, modelFinished, lookupStarted, lookupFinished := 0, 0, 0, 0
 	for _, e := range trace.Events {
 		switch e.Type {
+		case "tool.catalog.configured":
+			if e.ToolCatalog == nil {
+				return runReport{}, session.BudgetTrace{}, fmt.Errorf("run %s: missing catalog profile", c.RunID)
+			}
+			if e.Name == "parent" {
+				r.ParentSchemaBytes += e.ToolCatalog.SchemaBytes
+				r.ParentDescriptorBytes += e.ToolCatalog.DescriptorBytes
+			} else if e.Name == "child.team.researcher" {
+				r.ChildSchemaBytes += e.ToolCatalog.SchemaBytes
+				r.ChildDescriptorBytes += e.ToolCatalog.DescriptorBytes
+			}
+		case "tool.input.rejected":
+			r.InvalidToolInputs++
 		case "model.request.started":
 			r.ModelCalls++
 			modelStarted++
