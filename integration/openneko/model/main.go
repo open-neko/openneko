@@ -302,6 +302,14 @@ func main() {
 		compactionFixture := req.Model == "harness-compaction-output-fixture" || req.Model == "harness-compaction-approval-fixture"
 		compactionSummary := compactionFixture && strings.Contains(string(req.Messages), "You are an internal AxAgent trajectory summarizer")
 		n := counts[req.Model]
+		if req.Model == "harness-trigger-crash-fixture" {
+			if len(req.Messages) > counts["max-request:"+req.Model] {
+				counts["max-request:"+req.Model] = len(req.Messages)
+			}
+			if copies := strings.Count(string(req.Messages), "LEAD-42"); copies > counts["max-csv-markers:"+req.Model] {
+				counts["max-csv-markers:"+req.Model] = copies
+			}
+		}
 		if compactionFixture {
 			if len(req.Messages) > counts["max-request:"+req.Model] {
 				counts["max-request:"+req.Model] = len(req.Messages)
@@ -554,7 +562,17 @@ func main() {
 			return
 		}
 		if resume && n == 0 && req.Model == "harness-trigger-crash-fixture" && (!strings.Contains(string(req.Messages), "hostState") || !strings.Contains(string(req.Messages), "output_id")) {
+			mu.Lock()
+			counts["reject:resume-state"]++
+			mu.Unlock()
 			http.Error(w, "missing resumed host workflow state", 422)
+			return
+		}
+		if req.Model == "harness-trigger-crash-fixture" && strings.Count(string(req.Messages), "LEAD-42") > 150 {
+			mu.Lock()
+			counts["reject:csv-context"]++
+			mu.Unlock()
+			http.Error(w, "saved CSV body leaked into model context", 422)
 			return
 		}
 		if n == 2 && req.Model == "harness-fixture" && (createRule || editRule) && !strings.Contains(string(req.Messages), "ruleId") {
@@ -690,9 +708,11 @@ lead = escape(rows[0]['lead_id'])`
 			if resume && req.Model == "harness-trigger-crash-fixture" {
 				responses = []string{
 					`{"javascriptCode":"final('Report the saved workflow finding',{})"}`,
-					`{"javascriptCode":"const receipt=harnessSavedOperation(2); if(!JSON.stringify(receipt).includes('outputId')) throw Error('saved output missing'); final('Report saved finding',{receipt});"}`,
+					`{"javascriptCode":"const receipt=harnessSavedOperation(4),read=harnessSavedOperation(3); if(!JSON.stringify(receipt).includes('outputId')) throw Error('saved output missing'); if(read.result.content.length!==52008||!read.result.content.endsWith('LEAD-42\\n')) throw Error('large saved read missing after restart'); final('Report saved finding',{receipt,readBytes:read.result.content.length});"}`,
 					`{"answer":"Recovered the recorded trigger finding for REF-42."}`,
 				}
+			} else if req.Model == "harness-trigger-crash-fixture" {
+				responses[2] = `{"javascriptCode":"const written=file_write({path:'large.csv',content:'lead_id\\n'+'LEAD-42\\n'.repeat(6500)}); const read=file_read({path:'large.csv'}); if(!read.reference||read.result_bytes<52008) throw Error('large file read was not referenced'); const receipt=workflow_output_emit({kind:'finding',title:'Trigger reference',body:'The seeded reference is REF-42.',payload:{reference:'REF-42'}}); final('Report the finding',{receipt,readBytes:read.result_bytes});"}`
 			}
 		} else if req.Model == "harness-workflow-action-fixture" {
 			responses = []string{

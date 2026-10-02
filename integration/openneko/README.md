@@ -430,7 +430,11 @@ process after a source-change workflow has committed its lookup and output
 receipts and while its responder request is pending. The same worker reconciles
 and resumes the accepted run once; the test checks unchanged broker operations,
 one output, restored host state, terminal verification and inert queue
-redelivery. The test stack is removed on exit.
+redelivery. It now also writes and reads a 52,008-byte CSV before the output,
+keeps that read behind a saved reference, and retrieves the full bytes by ID
+after the restart. The test compares the saved result and file SHA-256, requires
+one retrieval receipt and a bounded provider request, and rejects a full CSV
+body in model context. The test stack is removed on exit.
 
 The focused M6 compaction gate runs with
 `HARNESS_M5_FAST=1 HARNESS_M6_COMPACTION_ONLY=1`. A queued source-change

@@ -1098,6 +1098,13 @@ and replaying its actual checkpoint under that foreign scope is denied before
 any event, model call or tool call. The same gate retrieves a 52,008-byte
 file-backed read by ID twice. The 200 KiB interrupted-result fixture remains
 local evidence; cross-host interrupted-reference isolation is not yet qualified.
+The connected 0.1.2 workflow crash gate now saves a 52,008-byte file read,
+stops and starts the sandbox while its responder is pending, and retrieves the
+full read by ID after checkpoint reconciliation. It verifies the exact saved
+bytes and artifact SHA-256, one retrieval receipt, bounded provider requests,
+the original broker/output receipts and inert queue redelivery. This qualifies
+large-reference recovery across a process restart on one host; a 200 KiB and
+different-host recovery gate remain open.
 The OpenNeko adapter also rejects a missing or ambiguous organization/thread
 binding before configuring a model or tool. The direct 0.1.2 multi-route,
 fallback, cost and executor-escalation gates pass with an explicit synthetic
