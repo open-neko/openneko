@@ -48,6 +48,7 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 				Usage: &agent.ModelUsage{TotalTokens: 10}, CostMicros: &price})
 		}
 		return session.BudgetTrace{RunID: runID, CheckpointSHA256: hash, Mode: mode, Status: status,
+			RoutingDigest: strings.Repeat("e", 64), MaxOperations: 4,
 			Hard: budgettriage.Limits{MaxModelCalls: 8, MaxModelTokens: 100000, MaxCostMicros: 100000}, Events: events}, nil
 	}
 	out, err := compareWithTrace(encode(), read)
@@ -76,6 +77,36 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	m.Pairs[1].Canary.RunID = "artifact-canary"
 	if _, err := compareWithTrace(encode(), wrongMode); err == nil {
 		t.Fatal("accepted unpaired fixed mode")
+	}
+	wrongRoute := func(root, runID string) (session.BudgetTrace, error) {
+		trace, err := read(root, runID)
+		if trace.Mode == "canary" {
+			trace.RoutingDigest = strings.Repeat("f", 64)
+		}
+		return trace, err
+	}
+	if _, err := compareWithTrace(encode(), wrongRoute); err == nil {
+		t.Fatal("accepted a changed model route or price profile")
+	}
+	wrongHardLimit := func(root, runID string) (session.BudgetTrace, error) {
+		trace, err := read(root, runID)
+		if trace.Mode == "canary" {
+			trace.Hard.MaxCostMicros++
+		}
+		return trace, err
+	}
+	if _, err := compareWithTrace(encode(), wrongHardLimit); err == nil {
+		t.Fatal("accepted a changed hard admission limit")
+	}
+	wrongOperationLimit := func(root, runID string) (session.BudgetTrace, error) {
+		trace, err := read(root, runID)
+		if trace.Mode == "canary" {
+			trace.MaxOperations++
+		}
+		return trace, err
+	}
+	if _, err := compareWithTrace(encode(), wrongOperationLimit); err == nil {
+		t.Fatal("accepted a changed operation limit")
 	}
 	missingCanaryPrice := func(root, runID string) (session.BudgetTrace, error) {
 		trace, err := read(root, runID)

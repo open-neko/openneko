@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -167,6 +168,8 @@ func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 		`{"answer":"Verified answer."}`}
 	spec, client, tools, triageCalls, chatCalls, closeServers := triageRunFixture(t, answers...)
 	defer closeServers()
+	spec.HostRoutingDigest = strings.Repeat("a", 64)
+	spec.MaxOperations = 5
 	tools.Triage.Policy.Short.MaxModelCalls = 1
 	tools.Triage.Policy.MultiStep.MaxModelCalls = 2
 	reads := 0
@@ -231,7 +234,8 @@ func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 		t.Fatalf("terminal replay contained %d extensions", replayedExtensions)
 	}
 	trace, err := ReadBudgetTrace(root, spec.RunID)
-	if err != nil || trace.Status != "completed" || len(trace.Events) == 0 {
+	if err != nil || trace.Status != "completed" || len(trace.Events) == 0 ||
+		trace.RoutingDigest != spec.HostRoutingDigest || trace.MaxOperations != spec.OperationLimit() {
 		t.Fatalf("validated budget trace=%+v err=%v", trace, err)
 	}
 	traceJSON, err := json.Marshal(trace)

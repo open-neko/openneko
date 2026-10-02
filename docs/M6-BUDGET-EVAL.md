@@ -103,7 +103,11 @@ experimental difference. A manifest has this shape:
 
 Run `go run ./cmd/harness-budget-compare < manifest.json > comparison.json`.
 The command validates each stopped checkpoint, its digest, run identity and
-fixed/canary mode. It reports verified successes, canary regressions by task
+fixed/canary mode. It also rejects pairs with different trusted route/price
+manifests or different hard model-call, token, cost or operation ceilings.
+This check does not establish that the two prompts, data snapshots, capability
+grants or acceptance checks were equivalent; the reviewer must still verify
+those independently. It reports verified successes, canary regressions by task
 class, actual charged cost per verified success, wall time and usage coverage
 for calibration and held-out splits. A cheaper failed canary is counted as a
 regression, not a saving. Pair equivalence and outcome labels still require
