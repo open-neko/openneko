@@ -83,7 +83,8 @@ if (relative(agentHome, orgRoot).startsWith("..") || !relative(agentHome, orgRoo
 }
 const modelName = process.env.HARNESS_M6_MODEL_NAME;
 if (!modelName) throw new Error("HARNESS_M6_MODEL_NAME is required");
-if (source === "live" && (modelName.includes("fixture") || graphjinEnvironment.model.includes("fixture"))) {
+if (source === "live" && (modelName.toLowerCase().includes("fixture") ||
+  graphjinEnvironment.model.toLowerCase().includes("fixture"))) {
   throw new Error("fixture model cannot produce a live held-out receipt");
 }
 const queue = await boss();
