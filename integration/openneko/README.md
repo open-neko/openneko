@@ -437,7 +437,10 @@ request size and inert queue redelivery. It now also retrieves the saved
 receipts, and rejects repeated CSV body text in model requests. The first
 connected retrieval found a Goja runtime-snapshot leak; the Harness now bounds
 both individual projected values and the total snapshot. The isolated stack
-is removed on exit.
+is removed on exit. The same connected gate creates a second organization and
+denies its attempt to load or dispatch the owning run's saved operation. A host
+probe then tries to replay the actual completed checkpoint under that foreign
+scope and confirms rejection before any event, model call or tool call.
 Set `HARNESS_M6_COMPACTION_WEB=1` with that gate to start an isolated web server
 on port 18121, then verify the same run's emitted CSV through the operator
 workflow download route. It compares exact bytes and attachment headers,

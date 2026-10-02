@@ -1092,9 +1092,12 @@ tool catalog is no longer installed; OpenNeko binds that scope to its org and
 thread IDs. The local cross-scope replay fixture denies a different scope.
 An owned child can retrieve its own large read result but cannot inspect that
 result from the parent's live runtime through the same numeric ID.
-Connected cross-tenant saved-reference isolation remains open. A connected
-52,008-byte file-backed read and explicit retrieval gate now passes below;
-the 200 KiB interrupted-result fixture remains local evidence.
+Connected cross-tenant isolation now passes for a completed 0.1.2 workflow:
+another organization cannot load or dispatch the run's saved host operation,
+and replaying its actual checkpoint under that foreign scope is denied before
+any event, model call or tool call. The same gate retrieves a 52,008-byte
+file-backed read by ID twice. The 200 KiB interrupted-result fixture remains
+local evidence; cross-host interrupted-reference isolation is not yet qualified.
 The OpenNeko branch now has an opt-in trusted route manifest for Harness-only
 multi-provider OpenShell launches. Local launcher tests check provider order,
 distinct credential aliases, route-specific egress, recovery manifest

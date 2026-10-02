@@ -13,9 +13,14 @@ fi
 arch=$(docker info --format '{{.Architecture}}')
 case "$arch" in aarch64|arm64) arch=arm64;; x86_64|amd64) arch=amd64;; *) exit 1;; esac
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o integration/openneko/model-bin ./integration/openneko/model
+if [[ ${HARNESS_M6_COMPACTION_ONLY:-0} == 1 ]]; then
+  scopeprobe=$(mktemp "${TMPDIR:-/tmp}/harness-scopeprobe.XXXXXX")
+  go build -o "$scopeprobe" ./integration/openneko/scopeprobe
+  export HARNESS_SCOPE_PROBE_BIN="$scopeprobe"
+fi
 ./adapters/openneko/build-image.sh "$OPENNEKO_TEST_SOURCE" "$base_image"
 compose=(docker compose -p harness-m3 -f integration/openneko/compose.yml)
-trap '"${compose[@]}" down --volumes --remove-orphans' EXIT
+trap '"${compose[@]}" down --volumes --remove-orphans; if [[ -n ${scopeprobe:-} ]]; then rm -f "$scopeprobe"; fi' EXIT
 "${compose[@]}" up -d
 ready=0
 for ((n=0; n<60; n++)); do
