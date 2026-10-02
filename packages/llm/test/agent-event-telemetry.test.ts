@@ -44,6 +44,7 @@ describe("agent event telemetry", () => {
     await telemetry.startAgent({backend:"harness"});
     await telemetry.observeEvent({type:"tool_catalog_profile",actor:"parent",count:3,schemaBytes:96,descriptorBytes:340});
     await telemetry.observeEvent({type:"tool_selection_error",name:"lookup",reason:"invalid_input"});
+    await telemetry.observeEvent({type:"observation_read",operationId:1,instructionBytes:12,resultBytes:12000});
     await telemetry.finishAgent({status:"ok",outputBytes:1});
     expect(sink.observations.find(item=>item.kind==="tool.catalog")).toMatchObject({
       attributes:{"openneko.tool.catalog.actor":"parent","openneko.tool.catalog.schema_bytes":96,
@@ -51,6 +52,10 @@ describe("agent event telemetry", () => {
     });
     expect(sink.observations.find(item=>item.kind==="tool.selection_error")).toMatchObject({
       attributes:{"gen_ai.tool.name":"lookup","openneko.tool.selection_error":"invalid_input"},
+    });
+    expect(sink.observations.find(item=>item.kind==="tool.observation_read")).toMatchObject({
+      attributes:{"openneko.tool.operation_id":1,"openneko.observation.instruction_bytes":12,
+        "openneko.observation.result_bytes":12000},
     });
     expect(summary.snapshot().counts.tools).toBe(0);
     expect(JSON.stringify(sink.observations)).not.toContain("private");

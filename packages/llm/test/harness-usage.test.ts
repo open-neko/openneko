@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { harnessCost, harnessModelCall, harnessProvisionalAnswer, harnessRemoteUsage, harnessResult, harnessStageUsage,
-  harnessToolCatalogProfile, harnessToolSelectionError, harnessUsage } from "../src/agent-backends/harness";
+  harnessObservationRead, harnessToolCatalogProfile, harnessToolSelectionError, harnessUsage } from "../src/agent-backends/harness";
 
 it("accepts only bounded content-free model route receipts", () => {
   const started={type:"model.request.started",call_id:2,name:"gemini-3.8-flash",origin:"google",stage:"responder"};
@@ -78,4 +78,13 @@ it("projects only bounded tool-catalog and invalid-selection metadata", () => {
     data:{private:"never forward"}})).toEqual({type:"tool_selection_error",name:"lookup",reason:"invalid_input"});
   expect(harnessToolSelectionError({type:"tool.input.rejected",name:"lookup",error:"database password"})).toBeUndefined();
   expect(harnessToolSelectionError({type:"tool.input.rejected",name:"bad\nname",error:"invalid_input"})).toBeUndefined();
+});
+
+it("projects saved-observation reads without forwarding content", () => {
+  const event={type:"observation.retrieved",operation_id:2,
+    observation_read:{instruction_bytes:24,result_bytes:12000},data:{private:"never forward"}};
+  expect(harnessObservationRead(event)).toEqual({type:"observation_read",operationId:2,
+    instructionBytes:24,resultBytes:12000});
+  expect(harnessObservationRead({...event,operation_id:33})).toBeUndefined();
+  expect(harnessObservationRead({...event,observation_read:{instruction_bytes:24,result_bytes:-1}})).toBeUndefined();
 });

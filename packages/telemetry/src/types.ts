@@ -14,6 +14,7 @@ export const OBSERVATION_KINDS = [
   "tool.start",
   "tool.end",
   "tool.catalog",
+  "tool.observation_read",
   "tool.selection_error",
   "delegation.start",
   "delegation.end",

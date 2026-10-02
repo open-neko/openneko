@@ -118,6 +118,10 @@ export class HarnessBackend implements AgentBackend {
                     const selection = harnessToolSelectionError(event);
                     if (selection) await opts.onEvent?.(selection);
                 }
+                else if (event.type === "observation.retrieved") {
+                    const read = harnessObservationRead(event);
+                    if (read) await opts.onEvent?.(read);
+                }
                 else if (event.type === "model.request.started" || event.type === "model.request.finished") {
                     const call = harnessModelCall(event);
                     // Telemetry must never fail an otherwise valid agent run.
@@ -246,6 +250,20 @@ export function harnessToolSelectionError(raw: unknown): Extract<AgentEvent, {ty
     if (event.type !== "tool.input.rejected" || event.error !== "invalid_input" ||
         typeof event.name !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(event.name)) return undefined;
     return {type:"tool_selection_error",name:event.name,reason:"invalid_input"};
+}
+
+/** Only byte counts and the bounded saved-operation ID leave the Go checkpoint. */
+export function harnessObservationRead(raw: unknown): Extract<AgentEvent, {type: "observation_read"}> | undefined {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const event = raw as Record<string, unknown>;
+    if (event.type !== "observation.retrieved" ||
+        !event.observation_read || typeof event.observation_read !== "object" || Array.isArray(event.observation_read)) return undefined;
+    const profile = event.observation_read as Record<string, unknown>;
+    if (!Number.isSafeInteger(event.operation_id) || (event.operation_id as number) < 1 || (event.operation_id as number) > 32 ||
+        !Number.isSafeInteger(profile.instruction_bytes) || (profile.instruction_bytes as number) < 1 || (profile.instruction_bytes as number) > 131072 ||
+        !Number.isSafeInteger(profile.result_bytes) || (profile.result_bytes as number) < 0 || (profile.result_bytes as number) > 262144) return undefined;
+    return {type:"observation_read",operationId:event.operation_id as number,
+        instructionBytes:profile.instruction_bytes as number,resultBytes:profile.result_bytes as number};
 }
 
 /** Accept only the content-free Go receipt; malformed or older events charge conservatively. */

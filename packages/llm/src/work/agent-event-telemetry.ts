@@ -44,6 +44,7 @@ export function createAgentEventTelemetry(input: {
   let stageOpen = false;
   let modelOpen = false;
   let costSeen = false;
+  let observationReads = 0;
   let outerUsage: Extract<AgentEvent, { type: "usage" }> | undefined;
 
   const observe = async (
@@ -249,6 +250,20 @@ export function createAgentEventTelemetry(input: {
         operationId: `${input.operationId}:tool-selection`,
         parentOperationId: stageOperationId,
         attributes: {"gen_ai.tool.name": event.name, "openneko.tool.selection_error": event.reason},
+      });
+      return;
+    }
+    if (event.type === "observation_read") {
+      observationReads++;
+      await observe({
+        kind: "tool.observation_read",
+        operationId: `${input.operationId}:observation-read:${observationReads}`,
+        parentOperationId: stageOperationId,
+        attributes: {
+          "openneko.tool.operation_id": event.operationId,
+          "openneko.observation.instruction_bytes": event.instructionBytes,
+          "openneko.observation.result_bytes": event.resultBytes,
+        },
       });
       return;
     }

@@ -163,6 +163,8 @@ export type AgentEvent =
       count: number; schemaBytes: number; descriptorBytes: number }
   /** A model-selected call failed host schema validation before dispatch. */
   | { type: "tool_selection_error"; name: string; reason: "invalid_input" }
+  /** A run-local saved operation was read by actor code; no content leaves the sandbox. */
+  | { type: "observation_read"; operationId: number; instructionBytes: number; resultBytes: number }
   /** Content-free operational summary persisted for clients and operators. */
   | { type: "telemetry"; summary: HarnessRunSummary }
   | { type: "error"; message: string }
