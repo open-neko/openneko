@@ -103,13 +103,16 @@ experimental difference. A manifest has this shape:
 
 Run `go run ./cmd/harness-budget-compare < manifest.json > comparison.json`.
 The command validates each stopped checkpoint, its digest, run identity and
-fixed/canary mode. It also rejects pairs with different trusted route/price
+fixed/canary mode. It also rejects pairs with different accepted prompt,
+streaming choice, skill query or classifier signals using a content-free task
+fingerprint. The queued calibration fixtures use stable workflow names so the
+fixed and canary runs receive the same task input. It rejects different trusted route/price
 manifests, admitted capability and gate definitions, or hard model-call,
 token, cost or operation ceilings. The comparable catalog fingerprint excludes
 the run's tenant scope; the separate scoped catalog remains authoritative for
 resume. Older checkpoints without a comparable fingerprint cannot be paired.
-This check does not establish that the two prompts, data snapshots or live
-tenant entitlements were equivalent; the reviewer must still verify those
+This check does not establish that the two data snapshots or live tenant
+entitlements were equivalent; the reviewer must still verify those
 independently. It reports verified successes, canary regressions by task
 class, actual charged cost per verified success, wall time and usage coverage
 for calibration and held-out splits. A cheaper failed canary is counted as a

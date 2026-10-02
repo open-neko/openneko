@@ -48,7 +48,8 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 				Usage: &agent.ModelUsage{TotalTokens: 10}, CostMicros: &price})
 		}
 		return session.BudgetTrace{RunID: runID, CheckpointSHA256: hash, Mode: mode, Status: status,
-			RoutingDigest: strings.Repeat("e", 64), CatalogFingerprint: strings.Repeat("1", 64), MaxOperations: 4,
+			TaskFingerprint: strings.Repeat("0", 64), RoutingDigest: strings.Repeat("e", 64),
+			CatalogFingerprint: strings.Repeat("1", 64), MaxOperations: 4,
 			Hard: budgettriage.Limits{MaxModelCalls: 8, MaxModelTokens: 100000, MaxCostMicros: 100000}, Events: events}, nil
 	}
 	out, err := compareWithTrace(encode(), read)
@@ -87,6 +88,16 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	}
 	if _, err := compareWithTrace(encode(), wrongRoute); err == nil {
 		t.Fatal("accepted a changed model route or price profile")
+	}
+	wrongTask := func(root, runID string) (session.BudgetTrace, error) {
+		trace, err := read(root, runID)
+		if trace.Mode == "canary" {
+			trace.TaskFingerprint = strings.Repeat("9", 64)
+		}
+		return trace, err
+	}
+	if _, err := compareWithTrace(encode(), wrongTask); err == nil {
+		t.Fatal("accepted different model task input")
 	}
 	wrongCatalog := func(root, runID string) (session.BudgetTrace, error) {
 		trace, err := read(root, runID)

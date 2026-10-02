@@ -20,12 +20,24 @@ type BudgetTrace struct {
 	RunID              string              `json:"run_id"`
 	CheckpointSHA256   string              `json:"checkpoint_sha256"`
 	Mode               string              `json:"mode"` // fixed or canary, from the validated host spec.
+	TaskFingerprint    string              `json:"task_fingerprint"`
 	RoutingDigest      string              `json:"routing_digest,omitempty"`
 	CatalogFingerprint string              `json:"catalog_fingerprint,omitempty"`
 	Hard               budgettriage.Limits `json:"hard"`
 	MaxOperations      int                 `json:"max_operations"`
 	Status             string              `json:"status"`
 	Events             []agent.Event       `json:"events"`
+}
+
+// taskFingerprint binds the accepted model input and classifier signals
+// without exporting their contents. Run identity, host mode and hard ceilings
+// are excluded because they intentionally differ or are compared separately.
+func taskFingerprint(spec agent.Spec) string {
+	data, _ := json.Marshal([]any{spec.Version, spec.Prompt, spec.StreamResponses,
+		spec.SkillQuery, spec.TriageSummary, spec.TriageArtifactRequested,
+		spec.TriageToolFamilies, spec.TriageInputBytes})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // ReadBudgetTrace reads a stopped run under its execution lock and validates
@@ -71,7 +83,8 @@ func ReadBudgetTrace(root, runID string) (BudgetTrace, error) {
 		mode = "canary"
 	}
 	trace := BudgetTrace{RunID: runID, CheckpointSHA256: hex.EncodeToString(digest[:]), Mode: mode,
-		RoutingDigest: header.Spec.HostRoutingDigest, CatalogFingerprint: state.CatalogFingerprint,
+		TaskFingerprint: taskFingerprint(header.Spec),
+		RoutingDigest:   header.Spec.HostRoutingDigest, CatalogFingerprint: state.CatalogFingerprint,
 		MaxOperations: header.Spec.OperationLimit(),
 		Hard: budgettriage.Limits{MaxModelCalls: header.Spec.ModelCallLimit(), MaxModelTokens: header.Spec.MaxModelTokens,
 			MaxCostMicros: header.Spec.MaxCostMicros}, Status: "interrupted"}

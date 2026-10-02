@@ -930,7 +930,10 @@ The paired synthetic gate feeds all six validated checkpoint digests to
 duplicate runs, and reports outcome regressions by task class plus cost and
 usage coverage. It now also rejects pairs whose trusted route and price
 manifest, scope-independent admitted tool and gate catalog, or hard admission
-limits differ. The 0.1.2 queued calibration rerun passes this stricter check.
+limits differ. A content-free fingerprint also binds the accepted prompt,
+skill query, streaming choice and classifier signals; the queued calibration
+fixtures now hold their workflow names stable across paired runs. The 0.1.2
+queued calibration rerun passes these stricter checks.
 Its three pairs are calibration evidence, not held-out evidence.
 The artifact pair also exposed an OpenNeko API finalization handoff that erased
 the file path after the workflow turn published it. The feature branch now

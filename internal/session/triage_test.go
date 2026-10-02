@@ -236,6 +236,7 @@ func TestShadowBudgetExtensionSurvivesInterruptedToolReceipt(t *testing.T) {
 	trace, err := ReadBudgetTrace(root, spec.RunID)
 	fingerprint, fingerprintErr := tools.CatalogFingerprint()
 	if err != nil || trace.Status != "completed" || len(trace.Events) == 0 ||
+		trace.TaskFingerprint != taskFingerprint(spec) ||
 		trace.RoutingDigest != spec.HostRoutingDigest || trace.MaxOperations != spec.OperationLimit() ||
 		fingerprintErr != nil || trace.CatalogFingerprint != fingerprint {
 		t.Fatalf("validated budget trace=%+v err=%v", trace, err)
