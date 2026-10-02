@@ -1,13 +1,15 @@
 // Connected M6 compaction: a file artifact, broker receipt and source constraint survive an Ax summary.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { data_source, db, eq, getOrgId, llm_provider_config, pool, workflow_definition } from "@neko/db";
+import { data_source, db, eq, getOrgId, llm_provider_config, organization, pool, workflow_definition } from "@neko/db";
 import { boss, QUEUE, type WorkflowRunFirePayload } from "@neko/db/jobs";
 import { getOrgAgentRoot, shutdownAgentBroker } from "@neko/llm/work";
 import { createSubscription, dispatchPendingSourceChangeDeliveries, recordSourceChangeDelivery } from "@neko/llm/workflows";
 import { runWorkflowRunFire } from "../src/jobs/workflow-run-fire.js";
+import { loadHarnessOperations, recordHarnessOperation } from "../../../packages/llm/src/work/harness-operation.js";
 
 if (process.env.HARNESS_M3_LIVE !== "1" || process.env.NEKO_PG_PORT !== "18119") throw Error("isolated M3 environment required");
 const orgId = await getOrgId();
@@ -19,7 +21,9 @@ assert.ok(prior);
 const configPath = join(process.env.OPENNEKO_AGENT_HERMES_HOME ?? "", "config.yaml");
 const priorConfig = await readFile(configPath, "utf8");
 let workflowId: string | undefined;
+const foreignOrgId = randomUUID();
 try {
+  await db().insert(organization).values({ id: foreignOrgId, name: "Foreign Harness receipt fixture" });
   assert.equal((await fetch(control, { method: "POST", body: "{}" })).status, 204);
   await db().update(llm_provider_config).set({ model }).where(eq(llm_provider_config.id, prior.id));
   await writeFile(configPath, `model:\n  provider: custom\n  default: ${model}\n  base_url: http://host.docker.internal:18118/v1\n`);
@@ -65,9 +69,22 @@ try {
       events: Array<{ type: string; stage?: string; operation_id?: number;
         observation_read?: { result_bytes?: number }; terminal?: { accepted: boolean } }>;
     };
+  const probe = process.env.HARNESS_SCOPE_PROBE_BIN;
+  assert.ok(probe, "connected foreign-scope replay probe is required");
+  const stateDir = join(getOrgAgentRoot(orgId), "runs", run.work_run_id, ".harness");
+  assert.match(execFileSync(probe, [stateDir, run.work_run_id, foreignOrgId], { encoding: "utf8" }),
+    /M6_CONNECTED_FOREIGN_SCOPE_REPLAY_DENIED/);
+  console.log("M6_CONNECTED_FOREIGN_SCOPE_REPLAY_DENIED");
   const operations = (await pool().query<{ operation_id: number; request: { tool?: string }; result: unknown }>(
     "select operation_id,request,result from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
     [orgId, run.work_run_id])).rows;
+  assert.equal((await loadHarnessOperations({ orgId: foreignOrgId, runId: run.work_run_id })).length, 0,
+    "another organization loaded the owning run's saved observations");
+  let foreignDispatch = false;
+  const foreignAttempt = await recordHarnessOperation({ orgId: foreignOrgId, runId: run.work_run_id }, 3,
+    { instruction: "Read the saved CSV" }, async () => { foreignDispatch = true; return { leaked: true }; });
+  assert.equal(foreignDispatch, false, "another organization dispatched an operation against the owning run");
+  assert.deepEqual(foreignAttempt, { error: "Harness operation run_not_admitted; automatic dispatch disabled" });
   const outputs = (await pool().query<{ id: string; kind: string; artifact_path: string | null }>(
     "select id,kind,artifact_path from workflow_output where workflow_run_id=$1", [run.id])).rows;
   const artifact = await readFile(join(getOrgAgentRoot(orgId), "runs", run.work_run_id, "artifacts", "result.csv"));
@@ -132,5 +149,6 @@ try {
   if (workflowId && process.env.HARNESS_M6_COMPACTION_WEB !== "1") {
     await db().delete(workflow_definition).where(eq(workflow_definition.id, workflowId));
   }
+  await db().delete(organization).where(eq(organization.id, foreignOrgId));
   await pool().end();
 }
