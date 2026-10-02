@@ -114,6 +114,26 @@ try {
     assert.equal(createHash("sha256").update(await readFile(apiArtifact.absolutePath)).digest("hex"),
       createHash("sha256").update(expected).digest("hex"));
   }
+  if (process.env.HARNESS_M6_PUBLIC_HTTP_BASE) {
+    const url = `${process.env.HARNESS_M6_PUBLIC_HTTP_BASE}/api/v1/workflows/${workflowId}/runs/${admitted.runId}/artifact`;
+    const response = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    if (shortCase) {
+      assert.equal(response.status, 404);
+      assert.equal((await response.json() as { error: { code: string } }).error.code, "artifact_not_ready");
+    } else {
+      assert.ok(expected);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "text/csv; charset=utf-8");
+      assert.equal(response.headers.get("content-length"), String(expected.length));
+      assert.equal(response.headers.get("content-disposition"), `attachment; filename="workflow-${admitted.runId}.csv"`);
+      assert.equal(response.headers.get("cache-control"), "no-store, private");
+      assert.equal(createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex"),
+        createHash("sha256").update(expected).digest("hex"));
+    }
+    const denied = await fetch(url, { headers: { authorization: "Bearer invalid-synthetic-token" } });
+    assert.equal(denied.status, 401);
+    assert.equal((await denied.json() as { error: { code: string } }).error.code, "invalid_credentials");
+  }
   const [admission] = (await pool().query<{ id: string; attempts: number }>(
     "select id,attempts from workflow_api_admission where workflow_run_id=$1", [admitted.runId])).rows;
   await runWorkflowRunFire({ orgId, workflowId, triggerKind: "api", apiAdmissionId: admission.id,
