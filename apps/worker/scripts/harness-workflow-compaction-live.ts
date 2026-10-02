@@ -62,7 +62,8 @@ try {
     ".harness", `${createHash("sha256").update(run.work_run_id).digest("hex")}.json`), "utf8")) as {
       result: { status: string; answer?: string; code?: string };
       operations: Array<{ tool: string; result: unknown }>;
-      events: Array<{ type: string; stage?: string; terminal?: { accepted: boolean } }>;
+      events: Array<{ type: string; stage?: string; operation_id?: number;
+        observation_read?: { result_bytes?: number }; terminal?: { accepted: boolean } }>;
     };
   const operations = (await pool().query<{ operation_id: number; request: { tool?: string }; result: unknown }>(
     "select operation_id,request,result from harness_operation where org_id=$1 and run_id=$2 order by operation_id",
@@ -86,6 +87,9 @@ try {
   assert.equal(checkpoint.operations.length, 7);
   assert.equal(checkpoint.operations[1]?.tool, "file_write");
   assert.equal(checkpoint.operations[2]?.tool, "file_read");
+  const savedRead = checkpoint.events.filter(event => event.type === "observation.retrieved" &&
+    event.operation_id === 3 && (event.observation_read?.result_bytes ?? 0) >= expectedArtifact.length);
+  assert.equal(savedRead.length, 2, "large saved file result was not retrieved twice by ID");
   assert.equal(checkpoint.operations[3]?.tool, "workflow_output_emit");
   assert.equal(artifact.length, expectedArtifact.length);
   assert.equal(createHash("sha256").update(artifact).digest("hex"),
