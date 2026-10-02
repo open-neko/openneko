@@ -10,6 +10,34 @@ import (
 	"github.com/open-neko/harness/internal/session"
 )
 
+func TestMeasuredRunSeparatesCacheTriageAndGraphJinUsage(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	reserveTriage, chargedTriage := int64(4), int64(6)
+	reserveOuter, chargedOuter := int64(20), int64(25)
+	reserveRemote, chargedRemote := int64(30), int64(40)
+	trace := session.BudgetTrace{RunID: "run", CheckpointSHA256: hash, Mode: "fixed", Status: "completed",
+		Events: []agent.Event{
+			{Type: "model.request.started", CallID: 1, Stage: "budget_triage", CostMicros: &reserveTriage},
+			{Type: "model.request.finished", CallID: 1, Stage: "budget_triage", DurationMS: 7,
+				Usage: &agent.ModelUsage{InputTokens: 10, OutputTokens: 2, CacheReadTokens: 3}, CostMicros: &chargedTriage},
+			{Type: "model.request.started", CallID: 2, Stage: "executor", CostMicros: &reserveOuter},
+			{Type: "model.request.finished", CallID: 2, Stage: "executor",
+				Usage: &agent.ModelUsage{InputTokens: 20, OutputTokens: 5, CacheWriteTokens: 4, ReasoningTokens: 2}, CostMicros: &chargedOuter},
+			{Type: "tool.started", OperationID: 1, Name: "lookup", CostMicros: &reserveRemote},
+			{Type: "tool.finished", OperationID: 1, Name: "lookup",
+				RemoteUsage: &agent.RemoteUsage{PromptTokens: 100, CompletionTokens: 15, Reported: true}, CostMicros: &chargedRemote},
+		}}
+	r, _, err := measuredRun(runCase{RunID: "run", CheckpointSHA256: hash, Outcome: "verified_success"}, "fixed",
+		func(_, _ string) (session.BudgetTrace, error) { return trace, nil })
+	if err != nil || r.ModelCalls != 2 || r.ModelInputTokens != 30 || r.ModelOutputTokens != 7 ||
+		r.CacheReadTokens != 3 || r.CacheWriteTokens != 4 || r.ReasoningTokens != 2 ||
+		r.GraphJinCalls != 1 || r.GraphJinPromptTokens != 100 || r.GraphJinOutputTokens != 15 ||
+		r.TriageCalls != 1 || r.TriageCostMicros != 6 || r.TriageDurationMS != 7 ||
+		r.ChargedMicros != 71 || r.CostCoverage != "complete" || r.UsageCoverage != "complete" {
+		t.Fatalf("usage breakdown = %+v, err = %v", r, err)
+	}
+}
+
 func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	a, b, c, d := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64)
 	m := manifest{Version: 1, Pairs: []pair{

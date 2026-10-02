@@ -45,6 +45,17 @@ type runReport struct {
 	Status                string `json:"status"`
 	WallMS                int64  `json:"wall_ms"`
 	ModelCalls            int    `json:"model_calls"`
+	ModelInputTokens      int64  `json:"model_input_tokens"`
+	ModelOutputTokens     int64  `json:"model_output_tokens"`
+	CacheReadTokens       int64  `json:"cache_read_tokens"`
+	CacheWriteTokens      int64  `json:"cache_write_tokens"`
+	ReasoningTokens       int64  `json:"reasoning_tokens"`
+	GraphJinCalls         int    `json:"graphjin_calls"`
+	GraphJinPromptTokens  int64  `json:"graphjin_prompt_tokens"`
+	GraphJinOutputTokens  int64  `json:"graphjin_output_tokens"`
+	TriageCalls           int    `json:"triage_calls"`
+	TriageCostMicros      int64  `json:"triage_cost_micros"`
+	TriageDurationMS      int64  `json:"triage_duration_ms"`
 	ParentSchemaBytes     int    `json:"parent_schema_bytes"`
 	ParentDescriptorBytes int    `json:"parent_descriptor_bytes"`
 	ChildSchemaBytes      int    `json:"child_schema_bytes"`
@@ -76,6 +87,12 @@ type summary struct {
 	CanaryCostMicros       int64          `json:"canary_cost_micros"`
 	FixedWallMS            int64          `json:"fixed_wall_ms"`
 	CanaryWallMS           int64          `json:"canary_wall_ms"`
+	FixedCacheReadTokens   int64          `json:"fixed_cache_read_tokens"`
+	CanaryCacheReadTokens  int64          `json:"canary_cache_read_tokens"`
+	FixedCacheWriteTokens  int64          `json:"fixed_cache_write_tokens"`
+	CanaryCacheWriteTokens int64          `json:"canary_cache_write_tokens"`
+	FixedTriageCostMicros  int64          `json:"fixed_triage_cost_micros"`
+	CanaryTriageCostMicros int64          `json:"canary_triage_cost_micros"`
 	FixedCostPerSuccess    *float64       `json:"fixed_cost_per_verified_success_micros,omitempty"`
 	CanaryCostPerSuccess   *float64       `json:"canary_cost_per_verified_success_micros,omitempty"`
 	IncompleteUsagePairs   int            `json:"incomplete_usage_pairs"`
@@ -109,6 +126,12 @@ func (s *summary) add(p pairReport) {
 	s.CanaryCostMicros += p.Canary.ChargedMicros
 	s.FixedWallMS += p.Fixed.WallMS
 	s.CanaryWallMS += p.Canary.WallMS
+	s.FixedCacheReadTokens += p.Fixed.CacheReadTokens
+	s.CanaryCacheReadTokens += p.Canary.CacheReadTokens
+	s.FixedCacheWriteTokens += p.Fixed.CacheWriteTokens
+	s.CanaryCacheWriteTokens += p.Canary.CacheWriteTokens
+	s.FixedTriageCostMicros += p.Fixed.TriageCostMicros
+	s.CanaryTriageCostMicros += p.Canary.TriageCostMicros
 	if p.Fixed.UsageCoverage != "complete" || p.Canary.UsageCoverage != "complete" {
 		s.IncompleteUsagePairs++
 	}
@@ -163,9 +186,15 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 		case "model.request.started":
 			r.ModelCalls++
 			modelStarted++
+			if e.Stage == "budget_triage" {
+				r.TriageCalls++
+			}
 			if e.CostMicros != nil {
 				modelCosts[e.CallID] = *e.CostMicros
 				r.ChargedMicros += *e.CostMicros
+				if e.Stage == "budget_triage" {
+					r.TriageCostMicros += *e.CostMicros
+				}
 			} else {
 				r.CostCoverage = "partial"
 			}
@@ -173,14 +202,27 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 			modelFinished++
 			if e.Usage == nil {
 				r.UsageCoverage = "partial"
+			} else {
+				r.ModelInputTokens += e.Usage.InputTokens
+				r.ModelOutputTokens += e.Usage.OutputTokens
+				r.CacheReadTokens += e.Usage.CacheReadTokens
+				r.CacheWriteTokens += e.Usage.CacheWriteTokens
+				r.ReasoningTokens += e.Usage.ReasoningTokens
+			}
+			if e.Stage == "budget_triage" {
+				r.TriageDurationMS += e.DurationMS
 			}
 			if e.CostMicros != nil {
 				r.ChargedMicros += *e.CostMicros - modelCosts[e.CallID]
+				if e.Stage == "budget_triage" {
+					r.TriageCostMicros += *e.CostMicros - modelCosts[e.CallID]
+				}
 			} else {
 				r.CostCoverage = "partial"
 			}
 		case "tool.started":
 			if e.Name == "lookup" {
+				r.GraphJinCalls++
 				lookupStarted++
 				if e.CostMicros != nil {
 					toolCosts[e.OperationID] = *e.CostMicros
@@ -196,6 +238,9 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 			lookupFinished++
 			if e.RemoteUsage == nil || !e.RemoteUsage.Reported {
 				r.UsageCoverage = "partial"
+			} else {
+				r.GraphJinPromptTokens += e.RemoteUsage.PromptTokens
+				r.GraphJinOutputTokens += e.RemoteUsage.CompletionTokens
 			}
 			if e.CostMicros != nil {
 				r.ChargedMicros += *e.CostMicros - toolCosts[e.OperationID]

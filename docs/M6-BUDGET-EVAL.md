@@ -133,6 +133,14 @@ schema validation. These are content-free size and selection-error measures,
 not tokenizer counts or a claim that every configured child catalog was used.
 Compare them with reported input tokens before deciding whether tool discovery
 would save meaningful context; retain the pinned admission catalog.
+The paired report now separates ordinary model input/output tokens, provider-
+reported cache reads/writes and reasoning tokens, GraphJin prompt/output tokens,
+and classifier calls, cost and latency. Its split summaries aggregate cache
+traffic and classifier cost. These are reported counters, not a provider invoice;
+`usage_coverage` and `cost_coverage` remain partial when a call lacks a final
+receipt. Cache counters may overlap ordinary input tokens, so do not add them
+to derive a total. Repeated-output and retrieval/compaction costs still need
+live measurement before choosing an optimization.
 
 The OpenShell 0.1.2 calibration gate now exercises three synthetic paired API
 workflows: a short finding, an investigation with a pending approval, and a
