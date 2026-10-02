@@ -963,6 +963,11 @@ base URL and grants its appended `/v1/systemone` path in the OpenShell profile.
 The previous `/v1` base would have sent the classifier to
 `/v1/v1/systemone`. No-key route generation and pinned Ax request-path tests
 pass; the credentialed held-out run remains pending.
+The corrected profile then passed the isolated matched OpenShell 0.1.2
+`M6_REAL_ROUTE_PROFILE_PREFLIGHT_PASS` gate: both provider profiles linted,
+imported and created through the gateway. Its owned containers and network
+were removed after the run. This validates the broker profile shape, not a
+credentialed Typesafe request.
 The review-manifest builder requires all eight manually labelled outcomes,
 rehashes persisted checkpoints, and rejects a changed GraphJin environment
 across runs or a claimed successful CSV without oracle verification.
