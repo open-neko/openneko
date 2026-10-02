@@ -24,8 +24,10 @@ func TestMeasuredRunSeparatesCacheTriageAndGraphJinUsage(t *testing.T) {
 			{Type: "model.request.finished", CallID: 2, Stage: "executor",
 				Usage: &agent.ModelUsage{InputTokens: 20, OutputTokens: 5, CacheWriteTokens: 4, ReasoningTokens: 2}, CostMicros: &chargedOuter},
 			{Type: "tool.started", OperationID: 1, Name: "lookup", CostMicros: &reserveRemote},
-			{Type: "tool.finished", OperationID: 1, Name: "lookup",
+			{Type: "tool.finished", OperationID: 1, Name: "lookup", ResultBytes: 10_000,
 				RemoteUsage: &agent.RemoteUsage{PromptTokens: 100, CompletionTokens: 15, Reported: true}, CostMicros: &chargedRemote},
+			{Type: "observation.retrieved", OperationID: 1,
+				ObservationRead: &agent.ObservationReadProfile{InstructionBytes: 12, ResultBytes: 10_000}},
 		}}
 	r, _, err := measuredRun(runCase{RunID: "run", CheckpointSHA256: hash, Outcome: "verified_success"}, "fixed",
 		func(_, _ string) (session.BudgetTrace, error) { return trace, nil })
@@ -33,6 +35,8 @@ func TestMeasuredRunSeparatesCacheTriageAndGraphJinUsage(t *testing.T) {
 		r.CacheReadTokens != 3 || r.CacheWriteTokens != 4 || r.ReasoningTokens != 2 ||
 		r.GraphJinCalls != 1 || r.GraphJinPromptTokens != 100 || r.GraphJinOutputTokens != 15 ||
 		r.TriageCalls != 1 || r.TriageCostMicros != 6 || r.TriageDurationMS != 7 ||
+		r.ToolResultBytes != 10_000 || r.ReferencedResultBytes != 10_000 ||
+		r.ObservationReadCalls != 1 || r.ObservationReadBytes != 10_012 ||
 		r.ChargedMicros != 71 || r.CostCoverage != "complete" || r.UsageCoverage != "complete" {
 		t.Fatalf("usage breakdown = %+v, err = %v", r, err)
 	}

@@ -67,6 +67,40 @@ func TestInspectBoundsMetadataOnlyToolCatalogEvents(t *testing.T) {
 		t.Fatal("accepted rejected tool arguments in telemetry")
 	}
 }
+
+func TestInspectBindsObservationReadToSavedOperation(t *testing.T) {
+	state := prefix()
+	result := json.RawMessage(`{"reference":"REF-42"}`)
+	state.Operations[0].Finished = true
+	state.Operations[0].Result = result
+	state.Events = append(state.Events,
+		agent.Event{Version: 1, RunID: "r", InputID: "i", Sequence: 3, Type: "tool.finished",
+			Name: "lookup", OperationID: 1, Data: result},
+		agent.Event{Version: 1, RunID: "r", InputID: "i", Sequence: 4, Type: "observation.retrieved",
+			OperationID: 1, ObservationRead: &agent.ObservationReadProfile{InstructionBytes: 4, ResultBytes: len(result)}})
+	encoded, _ := json.Marshal(state)
+	if _, err := decodeCheckpoint(encoded, state.Spec); err != nil {
+		t.Fatalf("valid observation read rejected: %v", err)
+	}
+	root, _ := fixture(t, state)
+	trace, err := ReadBudgetTrace(root, state.Spec.RunID)
+	if err != nil || len(trace.Events) != 3 || trace.Events[1].ResultBytes != len(result) ||
+		len(trace.Events[1].Data) != 0 || trace.Events[2].ObservationRead == nil ||
+		trace.Events[2].ObservationRead.ResultBytes != len(result) {
+		t.Fatalf("budget projection = %+v, err = %v", trace.Events, err)
+	}
+	state.Events[3].ObservationRead.ResultBytes++
+	encoded, _ = json.Marshal(state)
+	if _, err := decodeCheckpoint(encoded, state.Spec); err == nil {
+		t.Fatal("accepted forged retrieval byte count")
+	}
+	state.Events[3].ObservationRead.ResultBytes--
+	state.Events[2].ResultBytes = len(result)
+	encoded, _ = json.Marshal(state)
+	if _, err := decodeCheckpoint(encoded, state.Spec); err == nil {
+		t.Fatal("accepted projection-only result bytes in checkpoint")
+	}
+}
 func TestInspectSeparatesUnknownFromSavedEvidence(t *testing.T) {
 	for _, finished := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unknown", true: "saved"}[finished], func(t *testing.T) {

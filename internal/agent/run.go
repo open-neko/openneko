@@ -125,26 +125,30 @@ type Continuation struct {
 }
 
 type Event struct {
-	Attempt     uint64              `json:"attempt,omitempty"`
-	Data        json.RawMessage     `json:"data,omitempty"`
-	Error       string              `json:"error,omitempty"`
-	Version     int                 `json:"version"`
-	RunID       string              `json:"run_id"`
-	InputID     string              `json:"input_id"`
-	Sequence    uint64              `json:"sequence"`
-	Type        string              `json:"type"`
-	SpanID      uint64              `json:"span_id,omitempty"`
-	ParentID    uint64              `json:"parent_id,omitempty"`
-	OperationID uint64              `json:"operation_id,omitempty"`
-	CallID      uint64              `json:"call_id,omitempty"`
-	Name        string              `json:"name,omitempty"`
-	Stage       string              `json:"stage,omitempty"`
-	Origin      string              `json:"origin,omitempty"`
-	Effect      string              `json:"effect,omitempty"`
-	DurationMS  int64               `json:"duration_ms,omitempty"`
-	Usage       *ModelUsage         `json:"usage,omitempty"`
-	StageUsage  *ModelUsage         `json:"stage_usage,omitempty"`
-	ToolCatalog *ToolCatalogProfile `json:"tool_catalog,omitempty"`
+	Attempt         uint64                  `json:"attempt,omitempty"`
+	Data            json.RawMessage         `json:"data,omitempty"`
+	Error           string                  `json:"error,omitempty"`
+	Version         int                     `json:"version"`
+	RunID           string                  `json:"run_id"`
+	InputID         string                  `json:"input_id"`
+	Sequence        uint64                  `json:"sequence"`
+	Type            string                  `json:"type"`
+	SpanID          uint64                  `json:"span_id,omitempty"`
+	ParentID        uint64                  `json:"parent_id,omitempty"`
+	OperationID     uint64                  `json:"operation_id,omitempty"`
+	CallID          uint64                  `json:"call_id,omitempty"`
+	Name            string                  `json:"name,omitempty"`
+	Stage           string                  `json:"stage,omitempty"`
+	Origin          string                  `json:"origin,omitempty"`
+	Effect          string                  `json:"effect,omitempty"`
+	DurationMS      int64                   `json:"duration_ms,omitempty"`
+	Usage           *ModelUsage             `json:"usage,omitempty"`
+	StageUsage      *ModelUsage             `json:"stage_usage,omitempty"`
+	ToolCatalog     *ToolCatalogProfile     `json:"tool_catalog,omitempty"`
+	ObservationRead *ObservationReadProfile `json:"observation_read,omitempty"`
+	// ResultBytes is populated only in the metadata-only budget projection.
+	// The authoritative checkpoint already carries the tool result in Data.
+	ResultBytes int                 `json:"result_bytes,omitempty"`
 	RemoteUsage *RemoteUsage        `json:"remote_usage,omitempty"`
 	CostMicros  *int64              `json:"cost_micros,omitempty"`
 	StateUpdate *RuntimeStateUpdate `json:"state_update,omitempty"`
@@ -158,6 +162,13 @@ type ToolCatalogProfile struct {
 	Count           int `json:"count"`
 	SchemaBytes     int `json:"schema_bytes"`
 	DescriptorBytes int `json:"descriptor_bytes"`
+}
+
+// ObservationReadProfile counts the saved bytes exposed to actor code by one
+// explicit run-local retrieval. It never contains the operation's content.
+type ObservationReadProfile struct {
+	InstructionBytes int `json:"instruction_bytes"`
+	ResultBytes      int `json:"result_bytes"`
 }
 
 type operationKey struct{}
@@ -608,7 +619,18 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
-				return savedOperationValue(view.snapshot(), id)
+				operations := view.snapshot()
+				value, err := savedOperationValue(operations, id)
+				if err != nil {
+					return nil, err
+				}
+				operation := operations[int(id.(float64))-1]
+				events.send(Event{Type: "observation.retrieved", OperationID: uint64(operation.ID),
+					ObservationRead: &ObservationReadProfile{InstructionBytes: len(operation.Instruction), ResultBytes: len(operation.Result)}})
+				if events.hasError() {
+					return nil, fmt.Errorf("saved operation retrieval was not durably recorded")
+				}
+				return value, nil
 			})
 		}
 		registerSaved(runtime, parentView)

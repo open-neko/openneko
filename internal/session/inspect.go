@@ -289,6 +289,8 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 		if e.Result != nil && e.Type != "run.finished" || e.Usage != nil && e.Type != "model.request.finished" ||
 			e.StageUsage != nil && e.Type != "model.stage_usage" ||
 			e.ToolCatalog != nil && e.Type != "tool.catalog.configured" ||
+			e.ObservationRead != nil && e.Type != "observation.retrieved" ||
+			e.ResultBytes != 0 ||
 			e.RemoteUsage != nil && (e.Type != "tool.finished" || e.Name != "lookup") ||
 			e.StateUpdate != nil && e.Type != "runtime.state.updated" ||
 			e.Terminal != nil && e.Type != "terminal.checked" && e.Type != "finalizer.admitted" ||
@@ -485,6 +487,14 @@ func decodeCheckpoint(data []byte, spec agent.Spec) (checkpoint, error) {
 			childrenAdmitted = false
 		case "tool.reused":
 			if !ended[e.OperationID] || e.Name != started[e.OperationID] {
+				return invalid()
+			}
+		case "observation.retrieved":
+			if e.OperationID == 0 || e.OperationID > uint64(len(s.Operations)) || !ended[e.OperationID] ||
+				e.ObservationRead == nil || !s.Operations[e.OperationID-1].Finished ||
+				e.ObservationRead.InstructionBytes != len(s.Operations[e.OperationID-1].Instruction) ||
+				e.ObservationRead.ResultBytes != len(s.Operations[e.OperationID-1].Result) ||
+				len(e.Data) != 0 || e.Name != "" || e.CallID != 0 || e.Error != "" {
 				return invalid()
 			}
 		case "tool.proposed":

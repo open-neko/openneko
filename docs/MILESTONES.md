@@ -1397,6 +1397,11 @@ events. A connected source-change worker gate verifies catalog byte fields
 in local OTLP output and absence of the workflow prompt. Real-provider input-token
 measurements are still needed to decide whether deferred tool discovery is
 worth its complexity.
+The budget trace now counts saved tool-result bytes and large results kept
+behind references. An explicit `harnessSavedOperation` read emits a durable
+content-free byte receipt that checkpoint validation ties to that saved
+operation; the paired evaluator reports the number and bytes of those reads.
+This measures actor-side retrieval, not provider-side repeated context.
 Evaluate the [SoL-Pi ideas](https://arxiv.org/html/2609.20519v1) individually: observation references first; cache-aware
 compaction next; edit-and-verify and cheaper-model log reduction only when measured
 benefit justifies them. Include summarization/retrieval costs and deterministic

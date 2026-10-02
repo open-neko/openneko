@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/open-neko/harness/internal/agent"
 	"github.com/open-neko/harness/internal/budgeteval"
 	"github.com/open-neko/harness/internal/session"
 )
@@ -56,6 +57,10 @@ type runReport struct {
 	TriageCalls           int    `json:"triage_calls"`
 	TriageCostMicros      int64  `json:"triage_cost_micros"`
 	TriageDurationMS      int64  `json:"triage_duration_ms"`
+	ToolResultBytes       int64  `json:"tool_result_bytes"`
+	ReferencedResultBytes int64  `json:"referenced_result_bytes"`
+	ObservationReadCalls  int    `json:"observation_read_calls"`
+	ObservationReadBytes  int64  `json:"observation_read_bytes"`
 	ParentSchemaBytes     int    `json:"parent_schema_bytes"`
 	ParentDescriptorBytes int    `json:"parent_descriptor_bytes"`
 	ChildSchemaBytes      int    `json:"child_schema_bytes"`
@@ -232,6 +237,10 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 				}
 			}
 		case "tool.finished":
+			r.ToolResultBytes += int64(e.ResultBytes)
+			if e.ResultBytes > agent.InlineSavedResultBytes {
+				r.ReferencedResultBytes += int64(e.ResultBytes)
+			}
 			if e.Name != "lookup" {
 				continue
 			}
@@ -247,6 +256,12 @@ func measuredRun(c runCase, expectedMode string, readTrace func(string, string) 
 			} else {
 				r.CostCoverage = "partial"
 			}
+		case "observation.retrieved":
+			if e.ObservationRead == nil {
+				return runReport{}, session.BudgetTrace{}, fmt.Errorf("run %s: missing observation profile", c.RunID)
+			}
+			r.ObservationReadCalls++
+			r.ObservationReadBytes += int64(e.ObservationRead.InstructionBytes + e.ObservationRead.ResultBytes)
 		}
 	}
 	if modelFinished != modelStarted || lookupFinished != lookupStarted {

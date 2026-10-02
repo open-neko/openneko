@@ -11,7 +11,7 @@ import (
 	ax "github.com/ax-llm/ax/packages/go"
 )
 
-const inlineSavedResultBytes = 4096
+const InlineSavedResultBytes = 4096
 const inlineSavedInstructionBytes = 1024
 const maxRecoveryProjectionBytes = 32768
 
@@ -31,7 +31,7 @@ func recoveryProjection(operations []SavedOperation) string {
 		}
 		if op.Error != "" {
 			row["error"] = op.Error
-		} else if len(op.Result) <= inlineSavedResultBytes {
+		} else if len(op.Result) <= InlineSavedResultBytes {
 			row["result"] = json.RawMessage(op.Result)
 		} else {
 			row["result_ref"] = savedReference(op.ID, op.Result)
@@ -91,7 +91,7 @@ func safePrefix(value string, limit int) string {
 // operation record. The actor gets a bounded hint and can explicitly inspect
 // the full result through its run-local callable when a field is needed.
 func visibleOperationResult(id int, raw json.RawMessage, decoded ax.Value) ax.Value {
-	if len(raw) <= inlineSavedResultBytes {
+	if len(raw) <= InlineSavedResultBytes {
 		return decoded
 	}
 	return ax.Object(

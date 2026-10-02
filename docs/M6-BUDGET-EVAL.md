@@ -139,8 +139,12 @@ and classifier calls, cost and latency. Its split summaries aggregate cache
 traffic and classifier cost. These are reported counters, not a provider invoice;
 `usage_coverage` and `cost_coverage` remain partial when a call lacks a final
 receipt. Cache counters may overlap ordinary input tokens, so do not add them
-to derive a total. Repeated-output and retrieval/compaction costs still need
-live measurement before choosing an optimization.
+to derive a total. The report also counts raw tool-result bytes, bytes stored
+behind run-local references, and bytes explicitly retrieved by actor code.
+Retrieval receipts are checked against the saved operation and contain no
+result content. These byte counts do not establish how many bytes the provider
+received again; repeated model input and compaction cost still need live
+measurement before choosing an optimization.
 
 The OpenShell 0.1.2 calibration gate now exercises three synthetic paired API
 workflows: a short finding, an investigation with a pending approval, and a

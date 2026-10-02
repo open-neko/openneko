@@ -53,13 +53,23 @@ func TestDistillerToolEvidenceReachesExecutorWithoutAnotherRead(t *testing.T) {
 			}
 			return json.RawMessage(`{"ok":true}`), nil
 		}}
+	var retrieved []Event
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "handoff", InputID: "input", Prompt: "Use and verify the row"},
-		client, Tools{Capabilities: []Capability{read, verify}}, func(Event) error { return nil })
+		client, Tools{Capabilities: []Capability{read, verify}}, func(e Event) error {
+			if e.Type == "observation.retrieved" {
+				retrieved = append(retrieved, e)
+			}
+			return nil
+		})
 	if err != nil || result.Status != "completed" || reads.Load() != 1 || checks.Load() != 1 || modelCalls.Load() != 3 {
 		t.Fatalf("result=%+v err=%v reads=%d checks=%d model=%d", result, err, reads.Load(), checks.Load(), modelCalls.Load())
 	}
 	if strings.Contains(executorRequest, "BULK-OBSERVATION-") {
 		t.Fatal("bulk observation leaked into the executor model request")
+	}
+	if len(retrieved) != 1 || retrieved[0].OperationID != 1 || retrieved[0].ObservationRead == nil ||
+		retrieved[0].ObservationRead.ResultBytes < 80_000 || len(retrieved[0].Data) != 0 {
+		t.Fatalf("saved observation read receipt = %+v", retrieved)
 	}
 }
 
