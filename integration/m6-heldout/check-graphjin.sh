@@ -15,6 +15,7 @@ for port in 18117 18120; do
   fi
 done
 export HARNESS_M6_BUSINESS_SEED="$PWD/integration/m6-heldout/seed.sql"
+export GRAPHJIN_AGENT_PROVIDER=openai-compatible GRAPHJIN_AGENT_MODEL=graphjin-fixture GRAPHJIN_AGENT_REASONING=high
 compose=(docker compose -p "$project" -f integration/openneko/compose.yml)
 trap '"${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true' EXIT
 "${compose[@]}" up -d postgres graphjin
@@ -30,6 +31,13 @@ for ((n=0; n<60; n++)); do
 done
 [[ "$ready" == 1 ]] || { echo 'Held-out GraphJin stack did not become ready' >&2; exit 1; }
 python3 integration/m6-heldout/verify.py
+python3 integration/m6-heldout/attest.py --url http://127.0.0.1:18117/api/v1/agent/status \
+  --provider "$GRAPHJIN_AGENT_PROVIDER" --model "$GRAPHJIN_AGENT_MODEL" --reasoning "$GRAPHJIN_AGENT_REASONING"
+if python3 integration/m6-heldout/attest.py --url http://127.0.0.1:18117/api/v1/agent/status \
+  --provider "$GRAPHJIN_AGENT_PROVIDER" --model "$GRAPHJIN_AGENT_MODEL" --reasoning low >/dev/null 2>&1; then
+  echo 'GraphJin attestation accepted a weaker reasoning level' >&2
+  exit 1
+fi
 response=$(curl -fsS --max-time 15 -H 'content-type: application/json' \
   -d '{"query":"query { lead_web(limit: 1) { id email } lead_event(limit: 1) { id email } lead_crm(limit: 1) { id email } }"}' \
   http://127.0.0.1:18117/api/v1/graphql)

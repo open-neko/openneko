@@ -67,7 +67,7 @@ func TestMeasuredRunMarksMissingPerCallUsage(t *testing.T) {
 func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	a, b, c, d := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64)
 	graphjin := graphJinEnvironment{Provider: "google-gemini", Model: "approved-strong-model", Reasoning: "high",
-		DataSnapshotSHA256: strings.Repeat("e", 64)}
+		EvalFingerprint: strings.Repeat("d", 64), DataSnapshotSHA256: strings.Repeat("e", 64)}
 	m := manifest{Version: 1, Pairs: []pair{
 		{ID: "short-1", Split: "held_out", Source: "live", TaskClass: "short",
 			Fixed:  runCase{Root: "/fixture", RunID: "short-fixed", CheckpointSHA256: a, Outcome: "verified_success", WallMS: 100},
@@ -192,11 +192,23 @@ func TestPairedComparisonDetectsCheaperFailedCanary(t *testing.T) {
 	if _, err := compareWithTrace(encode(), read); err == nil {
 		t.Fatal("accepted live GraphJin pair without server and data attestation")
 	}
+	missingFingerprint := graphjin
+	missingFingerprint.EvalFingerprint = ""
+	m.Pairs[1].Canary.GraphJin = &missingFingerprint
+	if _, err := compareWithTrace(encode(), read); err == nil {
+		t.Fatal("accepted live GraphJin pair without server evaluation fingerprint")
+	}
 	changedGraphJin := graphjin
 	changedGraphJin.Reasoning = "low"
 	m.Pairs[1].Canary.GraphJin = &changedGraphJin
 	if _, err := compareWithTrace(encode(), read); err == nil {
 		t.Fatal("accepted live GraphJin pair with different server reasoning")
+	}
+	changedGraphJin = graphjin
+	changedGraphJin.EvalFingerprint = strings.Repeat("c", 64)
+	m.Pairs[1].Canary.GraphJin = &changedGraphJin
+	if _, err := compareWithTrace(encode(), read); err == nil {
+		t.Fatal("accepted live GraphJin pair with different server evaluation fingerprint")
 	}
 	changedGraphJin = graphjin
 	changedGraphJin.DataSnapshotSHA256 = strings.Repeat("f", 64)

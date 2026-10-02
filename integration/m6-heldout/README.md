@@ -41,6 +41,17 @@ volumes. The seed can also be selected in the larger OpenNeko integration stack
 with `HARNESS_M6_BUSINESS_SEED=/absolute/path/to/seed.sql`; the default seed
 and its existing calibration gates are unchanged.
 
+Before each real fixed or canary run, use `attest.py` against GraphJin's
+`/api/v1/agent/status` endpoint while `PG*` points at the held-out database.
+Pass the approved non-secret provider, model and reasoning level explicitly.
+The preflight requires a ready, read-only server-side agent and prints only
+the effective profile, GraphJin's evaluation fingerprint and the frozen data
+snapshot hash. A remote status URL must use HTTPS; if it requires a bearer
+token, pass the *name* of its environment variable with `--token-env`. Save
+the output separately for fixed and canary, and copy its
+`graphjin_environment` fields into the paired manifest. The comparator rejects
+a changed fingerprint or snapshot. These checks do not send a model request.
+
 These gates establish data and artifact acceptance only. The M6 exit still
 requires queued real-Gemini fixed and canary runs, a server-owned strong
 GraphJin model/reasoning profile verified from the deployment, independent

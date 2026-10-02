@@ -104,9 +104,9 @@ experimental difference. A manifest has this shape:
     "id": "artifact-001", "split": "held_out", "source": "live",
     "task_class": "artifact",
     "fixed": {"root": "/absolute/fixed/.harness", "run_id": "fixed-run-id", "checkpoint_sha256": "64-lowercase-hex-characters", "outcome": "verified_success", "wall_ms": 10000,
-      "graphjin_environment": {"provider": "approved-provider", "model": "approved-strong-model", "reasoning": "high", "data_snapshot_sha256": "64-lowercase-hex-characters"}},
+      "graphjin_environment": {"provider": "approved-provider", "model": "approved-strong-model", "reasoning": "high", "eval_fingerprint": "64-lowercase-hex-characters", "data_snapshot_sha256": "64-lowercase-hex-characters"}},
     "canary": {"root": "/absolute/canary/.harness", "run_id": "canary-run-id", "checkpoint_sha256": "64-lowercase-hex-characters", "outcome": "verified_success", "wall_ms": 9000,
-      "graphjin_environment": {"provider": "approved-provider", "model": "approved-strong-model", "reasoning": "high", "data_snapshot_sha256": "64-lowercase-hex-characters"}}
+      "graphjin_environment": {"provider": "approved-provider", "model": "approved-strong-model", "reasoning": "high", "eval_fingerprint": "64-lowercase-hex-characters", "data_snapshot_sha256": "64-lowercase-hex-characters"}}
   }]
 }
 ```
@@ -130,10 +130,13 @@ regression, not a saving. Pair equivalence and outcome labels still require
 independent review; the command never enables the canary.
 For a live pair in which either run called GraphJin, the comparator now requires
 both run entries to carry the same nonempty server provider, model and reasoning
-level plus a 64-character SHA-256 data-snapshot identity. Missing or different
-attestations fail the comparison. These values are reviewer claims, not runtime
-proof: inspect the server's effective configuration and the data snapshot for
-each run before recording them. Do not copy caller-supplied model fields into
+level, the GraphJin server's evaluation fingerprint, and a 64-character SHA-256
+data-snapshot identity. Missing or different attestations fail the comparison.
+Read the effective profile and fingerprint from GraphJin's
+`/api/v1/agent/status` endpoint before each run; the held-out
+[`attest.py`](../integration/m6-heldout/attest.py) preflight combines that response
+with the independent database oracle. A manifest can still be forged, so retain
+both preflight outputs for review. Do not copy caller-supplied model fields into
 this attestation.
 
 Each run report also sums the parent and child catalog schema/descriptor bytes

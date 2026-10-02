@@ -35,13 +35,14 @@ type graphJinEnvironment struct {
 	Provider           string `json:"provider"`
 	Model              string `json:"model"`
 	Reasoning          string `json:"reasoning"`
+	EvalFingerprint    string `json:"eval_fingerprint"`
 	DataSnapshotSHA256 string `json:"data_snapshot_sha256"`
 }
 
 func (g *graphJinEnvironment) valid() bool {
 	return g != nil && strings.TrimSpace(g.Provider) != "" && strings.TrimSpace(g.Model) != "" &&
 		strings.TrimSpace(g.Reasoning) != "" &&
-		digest.MatchString(g.DataSnapshotSHA256)
+		digest.MatchString(g.EvalFingerprint) && digest.MatchString(g.DataSnapshotSHA256)
 }
 
 type pair struct {
