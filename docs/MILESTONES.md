@@ -1377,7 +1377,11 @@ bytes configured for the parent and child Ax actors on each attempt, plus
 content-free invalid tool-input selection counts. The M6 paired evaluator
 exports these counts without tool definitions or arguments. The connected
 OpenShell 0.1.2 calibration gate confirms nonzero parent catalog bytes and no
-invalid selections in all six synthetic runs. Real-provider input-token
+invalid selections in all six synthetic runs. The OpenNeko feature branch now
+projects these receipts into metadata-only `tool.catalog` and
+`tool.selection_error` observations, suppressing them from user-facing run
+events. A connected source-change worker gate verifies catalog byte fields
+in local OTLP output and absence of the workflow prompt. Real-provider input-token
 measurements are still needed to decide whether deferred tool discovery is
 worth its complexity.
 Evaluate the [SoL-Pi ideas](https://arxiv.org/html/2609.20519v1) individually: observation references first; cache-aware
