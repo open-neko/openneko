@@ -72,8 +72,11 @@ verified outcome in each pair, complete priced usage, and no canary regression;
 the short, investigation, and artifact pairs each charged 572, 1,332, and
 1,192 micros per run respectively. The API artifact case exposed and fixed a
 path lost during API finalization; the authorized API artifact resolver now
-returns the exact CSV while the short finding has no download. These are
-synthetic calibration cases, not held-out evidence or proof of savings.
+returns the exact CSV while the short finding has no download. A connected
+HTTP rerun additionally downloaded the exact CSV from the public route in
+both modes, checked headers and invalid-token denial, and observed 404 for
+both short findings. These are synthetic calibration cases, not held-out
+evidence or proof of savings.
 
 The 2026-09-28 M5c user-administration slice adds a run-bound internal
 `user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,

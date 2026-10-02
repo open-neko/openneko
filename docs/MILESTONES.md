@@ -933,6 +933,11 @@ The artifact pair also exposed an OpenNeko API finalization handoff that erased
 the file path after the workflow turn published it. The feature branch now
 passes the validated path through finalization; the connected API artifact
 resolver returns the exact CSV, and a worker regression protects the handoff.
+The paired gate now also serves the public API from an isolated Next process:
+both artifact runs download the exact 52,008-byte CSV with attachment headers,
+both short-finding runs return 404 for the file endpoint, and an invalid bearer
+token returns 401. This verifies the HTTP boundary with the queued synthetic
+worker and OpenShell run; multi-tenant browser deployment remains unqualified.
 After the handoff change, the full isolated 0.1.2 queue/API suite passed again,
 including the public GraphJin query-to-file HTTP download, approval restart,
 worker-death recovery and workflow child turns. Its owned stack was removed.

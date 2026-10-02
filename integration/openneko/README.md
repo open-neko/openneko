@@ -490,7 +490,10 @@ finding, investigation with pending approval, and exact 52,008-byte CSV file.
 All six runs completed with matching verified outcomes, complete cost and
 usage coverage, and no canary regression. The short pair makes no GraphJin
 call and denies a file download; the artifact pair reads back the CSV through
-the authorized API artifact resolver. Its first run exposed an API finalizer
+the authorized API artifact resolver. A further 0.1.2 rerun started an isolated
+Next web server and checked the public HTTP route for both modes: exact 52,008-byte
+CSV download and headers for the artifact, 404 for the short finding, and 401
+for an invalid token. Its first run exposed an API finalizer
 that erased the workflow's artifact path, now fixed in the OpenNeko feature
 branch. `HARNESS_M6_SHORT_ONLY=1` with the canary gate isolates the short
 profile during calibration. These fixtures do not substitute for held-out

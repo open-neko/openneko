@@ -112,7 +112,10 @@ independent review; the command never enables the canary.
 The OpenShell 0.1.2 calibration gate now exercises three synthetic paired API
 workflows: a short finding, an investigation with a pending approval, and a
 52,008-byte CSV artifact. All six finished with matching verified outcomes
-and complete priced usage. The first short policy (two model calls and 2,000
+and complete priced usage. A connected rerun served the public API over HTTP:
+both artifact runs returned exact CSV bytes and attachment headers, both short
+runs returned 404 for the file endpoint, and invalid bearer tokens returned
+401. The first short policy (two model calls and 2,000
 micros) failed before the finding could be recorded because the classifier
 and Ax stages share the run allowance. The gate now uses a four-call,
 5,000-micro short proposal within the same fixed hard cap. This is a fixture
