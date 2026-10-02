@@ -432,7 +432,12 @@ workflow makes four GraphJin lookups, writes and rereads a 52,008-byte CSV,
 commits one broker file output, forces Ax's trajectory summary and verifies the
 accepted constraint plus saved output and file path in the post-summary
 responder request. It checks the artifact's exact bytes, bounded provider
-request size and inert queue redelivery. The isolated stack is removed on exit.
+request size and inert queue redelivery. It now also retrieves the saved
+52,008-byte read twice by operation ID, requires two content-free retrieval
+receipts, and rejects repeated CSV body text in model requests. The first
+connected retrieval found a Goja runtime-snapshot leak; the Harness now bounds
+both individual projected values and the total snapshot. The isolated stack
+is removed on exit.
 Set `HARNESS_M6_COMPACTION_WEB=1` with that gate to start an isolated web server
 on port 18121, then verify the same run's emitted CSV through the operator
 workflow download route. It compares exact bytes and attachment headers,

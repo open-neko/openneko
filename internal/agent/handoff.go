@@ -2,6 +2,8 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
@@ -9,6 +11,9 @@ import (
 
 const handoffName = "harnessEvidence"
 const maxHandoffBytes = 256 * 1024
+const maxVisibleRuntimeValueBytes = 4096
+const maxVisibleRuntimeArrayItems = 64
+const maxVisibleRuntimeProjectionBytes = 32768
 
 // handoffRuntime keeps distilled evidence in the run's code session. Ax drops
 // reserved distiller inputs during its stage patch, so the host restores only
@@ -124,7 +129,100 @@ func redactHandoff(value ax.Value) ax.Value {
 			out[field] = next
 		}
 	}
-	return out
+	return limitRuntimeProjection(boundRuntimeValue(out))
+}
+
+func limitRuntimeProjection(value ax.Value) ax.Value {
+	root, ok := value.(map[string]ax.Value)
+	if !ok || runtimeProjectionBytes(root) <= maxVisibleRuntimeProjectionBytes {
+		return value
+	}
+	bindings := root
+	if nested, ok := root["bindings"].(map[string]ax.Value); ok {
+		bindings = nested
+	}
+	type bindingSize struct {
+		name string
+		size int
+	}
+	ordered := make([]bindingSize, 0, len(bindings))
+	for name, item := range bindings {
+		encoded, _ := json.Marshal(item)
+		ordered = append(ordered, bindingSize{name: name, size: len(encoded)})
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].size == ordered[j].size {
+			return ordered[i].name < ordered[j].name
+		}
+		return ordered[i].size > ordered[j].size
+	})
+	for _, entry := range ordered {
+		marker := fmt.Sprintf("[runtime binding omitted: %d bytes; use harnessSavedOperation(id)]", entry.size)
+		bindings[entry.name] = marker
+		if globals, ok := root["globals"].(map[string]ax.Value); ok {
+			globals[entry.name] = marker
+		}
+		if runtimeProjectionBytes(root) <= maxVisibleRuntimeProjectionBytes {
+			return root
+		}
+	}
+	if _, hasBindings := root["bindings"]; hasBindings {
+		marker := map[string]ax.Value{"__ax_snapshot_truncated": true}
+		return map[string]ax.Value{"version": root["version"], "bindings": marker,
+			"globals": marker, "closed": root["closed"]}
+	}
+	return map[string]ax.Value{"__ax_snapshot_truncated": true}
+}
+
+func runtimeProjectionBytes(value ax.Value) int {
+	encoded, _ := json.Marshal(value)
+	return len(encoded)
+}
+
+// Ax Goja persists top-level const/let/var bindings between turns and includes
+// them in Inspect and SnapshotGlobals. A saved operation read can therefore
+// re-enter model context through an ordinary JS variable even when the tool
+// result itself was returned as a short reference. Bound only the projection;
+// the code session and authoritative operation checkpoint retain full bytes.
+func boundRuntimeValue(value ax.Value) ax.Value {
+	switch v := value.(type) {
+	case string:
+		if len(v) > maxVisibleRuntimeValueBytes {
+			return fmt.Sprintf("[runtime value omitted: %d bytes; use harnessSavedOperation(id)]", len(v))
+		}
+		return v
+	case map[string]ax.Value:
+		out := make(map[string]ax.Value, len(v))
+		for key, item := range v {
+			if key == "__ax_stdout" || key == "__ax_stderr" {
+				out[key] = "[cumulative runtime log omitted; current turn logs are shown separately]"
+				continue
+			}
+			out[key] = boundRuntimeValue(item)
+		}
+		return out
+	case []ax.Value:
+		limit := len(v)
+		if limit > maxVisibleRuntimeArrayItems {
+			limit = maxVisibleRuntimeArrayItems
+		}
+		out := make([]ax.Value, 0, limit+1)
+		for _, item := range v[:limit] {
+			out = append(out, boundRuntimeValue(item))
+		}
+		if len(v) > limit {
+			out = append(out, fmt.Sprintf("[runtime array omitted: %d further items]", len(v)-limit))
+		}
+		return out
+	case []string:
+		items := make([]ax.Value, len(v))
+		for i, item := range v {
+			items[i] = item
+		}
+		return boundRuntimeValue(items)
+	default:
+		return value
+	}
 }
 
 func cloneHandoffMap(source map[string]ax.Value) map[string]ax.Value {

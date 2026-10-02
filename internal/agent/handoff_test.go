@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -89,6 +90,50 @@ func TestHandoffEvidenceStaysOutOfRuntimeSnapshots(t *testing.T) {
 	for _, visible := range []ax.Value{session.Inspect(nil), session.SnapshotGlobals(nil)} {
 		if strings.Contains(toJSON(visible), "SECRET-REF-42") {
 			t.Fatalf("runtime evidence leaked into snapshot: %v", visible)
+		}
+	}
+}
+
+func TestLargeSavedValueStaysOutOfRuntimeProjection(t *testing.T) {
+	runtime := &handoffRuntime{Runtime: axgoja.NewRuntime()}
+	session, err := runtime.CreateSession(map[string]ax.Value{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	large := strings.Repeat("PRIVATE-RESULT-", 5000)
+	encoded, _ := json.Marshal(large)
+	session.Execute("const saved = {content:"+string(encoded)+"};", nil)
+	for _, projection := range []ax.Value{session.Inspect(nil), session.SnapshotGlobals(nil)} {
+		visible := toJSON(projection)
+		if strings.Contains(visible, "PRIVATE-RESULT-") || !strings.Contains(visible, "runtime value omitted") || len(visible) > 16_384 {
+			t.Fatalf("large local value escaped bounded projection: bytes=%d", len(visible))
+		}
+	}
+	used := session.Execute(`final("verified", {length:saved.content.length});`, nil)
+	if !strings.Contains(toJSON(used), `"length":75000`) {
+		t.Fatalf("bounded projection changed live JS value: %v", used)
+	}
+}
+
+func TestRuntimeProjectionBoundsAccumulatedSmallValues(t *testing.T) {
+	runtime := &handoffRuntime{Runtime: axgoja.NewRuntime()}
+	session, err := runtime.CreateSession(map[string]ax.Value{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	var code strings.Builder
+	for i := 0; i < 40; i++ {
+		code.WriteString(fmt.Sprintf("const item%d = %q;\n", i, strings.Repeat("X", 1000)))
+	}
+	code.WriteString(`console.log("CUMULATIVE-LOG-MARKER");`)
+	session.Execute(code.String(), nil)
+	for _, projection := range []ax.Value{session.Inspect(nil), session.SnapshotGlobals(nil)} {
+		visible := toJSON(projection)
+		if len(visible) > maxVisibleRuntimeProjectionBytes || !strings.Contains(visible, "runtime binding omitted") ||
+			strings.Contains(visible, "CUMULATIVE-LOG-MARKER") {
+			t.Fatalf("accumulated runtime values escaped total projection bound: bytes=%d", len(visible))
 		}
 	}
 }

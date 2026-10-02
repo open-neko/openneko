@@ -375,6 +375,10 @@ func main() {
 			http.Error(w, "responder lost committed workflow file output", 422)
 			return
 		}
+		if req.Model == "harness-compaction-output-fixture" && strings.Count(string(req.Messages), "LEAD-42") > 30 {
+			http.Error(w, "saved file body leaked into model context", 422)
+			return
+		}
 		if compactionFixture &&
 			!strings.Contains(string(req.Messages), "Never execute a change without approval") {
 			http.Error(w, "lost accepted no-execution constraint", 422)
@@ -646,11 +650,11 @@ lead = escape(rows[0]['lead_id'])`
 					`{"javascriptCode":"final('Read references, create a CSV, and record one file output without executing changes',{})"}`,
 					`{"javascriptCode":"const row=lookup('Find the seeded reference'); console.log('noise-'.repeat(3000),row);"}`,
 					`{"javascriptCode":"const written=file_write({path:'result.csv',content:'lead_id\\n'+'LEAD-42\\n'.repeat(6500)}); console.log('noise-'.repeat(3000),written);"}`,
-					`{"javascriptCode":"const read=file_read({path:'result.csv'}); if(read.content.length!==52008||!read.content.endsWith('LEAD-42\\n')) throw Error('CSV content lost'); console.log('noise-'.repeat(3000),{path:read.path,version:read.version,length:read.content.length});"}`,
+					`{"javascriptCode":"const read=file_read({path:'result.csv'}); if(!read.reference) throw Error('large file read was not referenced'); const full=harnessSavedOperation(3).result; if(full.content.length!==52008||!full.content.endsWith('LEAD-42\\n')) throw Error('CSV content lost'); console.log('noise-'.repeat(3000),{path:full.path,version:full.version,length:full.content.length});"}`,
 					`{"javascriptCode":"const out=workflow_output_emit({kind:'file',title:'Compacted reference CSV',body:'The source-change reference is REF-42.',artifactPath:'result.csv',payload:{reference:'REF-42'}}); console.log('noise-'.repeat(3000),out);"}`,
 					`{"javascriptCode":"const row=lookup('Verify the seeded reference independently'); console.log('noise-'.repeat(3000),row);"}`,
 					`{"javascriptCode":"const row=lookup('Check reference evidence again'); console.log('noise-'.repeat(3000),row);"}`,
-					`{"javascriptCode":"const row=lookup('Recheck the reference'); const saved=harnessSavedOperation(4); if(!JSON.stringify(saved).includes('outputId')||!JSON.stringify(saved).includes('result.csv')) throw Error('saved file output receipt missing'); console.log('noise-'.repeat(3000),row); final('Report the committed CSV',{saved});"}`,
+					`{"javascriptCode":"const row=lookup('Recheck the reference'); const saved=harnessSavedOperation(4),read=harnessSavedOperation(3); if(!JSON.stringify(saved).includes('outputId')||!JSON.stringify(saved).includes('result.csv')) throw Error('saved file output receipt missing'); if(read.result.content.length!==52008||!read.result.content.endsWith('LEAD-42\\n')) throw Error('saved CSV content missing'); console.log('noise-'.repeat(3000),{row,readBytes:read.result.content.length}); final('Report the committed CSV',{saved});"}`,
 					`{"answer":"The REF-42 CSV is recorded as result.csv; no change was executed."}`,
 				}
 			}
