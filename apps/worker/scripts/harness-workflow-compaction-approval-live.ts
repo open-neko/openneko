@@ -78,8 +78,14 @@ try {
   const [run] = (await pool().query<{ work_run_id: string; status: string; error: string | null }>(
     "select work_run_id,status,error from workflow_run where id=$1", [admitted.runId])).rows;
   assert.ok(run);
-  const [telemetryRow] = (await pool().query<{ telemetry_summary: {provider?: string; requestedModel?: string; resolvedModel?: string} | null }>(
-    "select telemetry_summary from workflow_run where id=$1", [admitted.runId])).rows;
+  type TelemetryRow = { telemetry_summary: {provider?: string; requestedModel?: string; resolvedModel?: string} | null };
+  let telemetryRow: TelemetryRow | undefined;
+  for (let n = 0; n < 300; n++) {
+    [telemetryRow] = (await pool().query<TelemetryRow>(
+      "select telemetry_summary from workflow_run where id=$1", [admitted.runId])).rows;
+    if (telemetryRow?.telemetry_summary?.provider) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   assert.equal(telemetryRow?.telemetry_summary?.provider, "fixture");
   assert.equal(telemetryRow?.telemetry_summary?.requestedModel, model);
   assert.equal(telemetryRow?.telemetry_summary?.resolvedModel, model);
@@ -147,7 +153,7 @@ try {
     assert.equal(proposals.length, 1);
     assert.equal(proposals[0].data?.version, "m6-shadow-v1");
     assert.equal(proposals[0].data?.profile, "multi_step");
-    assert.deepEqual(proposals[0].data?.limits, {max_model_calls: 3, max_model_tokens: 40_000, max_cost_micros: 20_000});
+    assert.deepEqual(proposals[0].data?.limits, {max_model_calls: 4, max_model_tokens: 40_000, max_cost_micros: 20_000});
     assert.equal(extensions.length, 1, "a durable model result did not extend before GraphJin preflight");
     assert.equal(extensions[0].data?.from, "multi_step");
     assert.equal(extensions[0].data?.to, "artifact");

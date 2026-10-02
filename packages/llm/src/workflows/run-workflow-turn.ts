@@ -320,6 +320,7 @@ export type RunWorkflowTurnResult = {
   threadId: string;
   finalText: string;
   error?: string;
+  resultArtifactPath?: string | null;
 };
 
 function synthesizeSeedMessage(
@@ -632,6 +633,7 @@ async function runWorkflowTurnTraced(
       threadId,
       finalText: persistedText,
       error: result.error,
+      resultArtifactPath,
     };
   } catch (error) {
     if (error instanceof WorkflowNeedsInputError || needsInput) {

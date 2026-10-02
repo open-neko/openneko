@@ -27,6 +27,7 @@ vi.mock("@neko/llm", async (importOriginal) => {
   return {
     normalizeGraphjinAgentUsage: actual.normalizeGraphjinAgentUsage,
     ensureHostConfigProvisioned: mocks.ensureHostConfigProvisioned,
+    resolveAgentBackend: vi.fn(async () => ({ id: "hermes" })),
     registerAgentCanceller: vi.fn(() => () => undefined),
   };
 });
@@ -281,6 +282,19 @@ describe("workflow API execution consumer", () => {
     expect(mocks.persistApiTelemetry).toHaveBeenCalledWith(
       expect.objectContaining({ workflowRunId: apiPayload.workflowRunId }),
     );
+  });
+
+  it("preserves a validated workflow file output through API finalization", async () => {
+    const path = `runs/${apiPayload.workRunId}/artifacts/result.csv`;
+    mocks.run.mockResolvedValueOnce({ status: "completed", finalText: "CSV ready", resultArtifactPath: path });
+
+    await runWorkflowRunFire(apiPayload);
+
+    expect(mocks.finishApi).toHaveBeenCalledWith(expect.objectContaining({
+      workflowRunId: apiPayload.workflowRunId,
+      status: "completed",
+      artifactPath: path,
+    }));
   });
 
   it("ignores a duplicate durable delivery without another paid run", async () => {

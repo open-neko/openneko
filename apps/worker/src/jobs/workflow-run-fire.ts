@@ -481,6 +481,7 @@ async function runWorkflowRunFireTraced(
       status: "completed" | "failed" | "cancelled" | "needs_input";
       finalText: string;
       error?: string;
+      resultArtifactPath?: string | null;
     };
     if (apiClaim?.mode === "single" && prepared.workflowRun.executorContract?.executor === "query-to-file") {
       const stageId = `${operationId}:query-to-file`;
@@ -598,6 +599,7 @@ async function runWorkflowRunFireTraced(
             result.finalText,
             apiClaim!.limits.maxResultBytes,
           ),
+          artifactPath: result.resultArtifactPath,
           error: result.error ?? null,
           errorCode:
             result.status === "completed" ? null : `workflow_${result.status}`,
