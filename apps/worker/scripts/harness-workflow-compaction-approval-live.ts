@@ -36,7 +36,7 @@ try {
     for (const job of jobs) await runWorkflowRunFire(job.data);
   });
   const [workflow] = await db().insert(workflow_definition).values({
-    org_id: orgId, name: `Compacted approval ${randomUUID()}`,
+    org_id: orgId, name: "Compacted approval calibration",
     goal: "Verify REF-42, propose a governed synthetic update, publish a finding, and report its pending approval. Never execute a change without approval.",
   }).returning({ id: workflow_definition.id });
   workflowId = workflow.id;

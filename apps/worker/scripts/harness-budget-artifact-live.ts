@@ -31,7 +31,7 @@ try {
     for (const job of jobs) await runWorkflowRunFire(job.data);
   });
   const [workflow] = await db().insert(workflow_definition).values({
-    org_id: orgId, name: `Budget ${shortCase ? "short" : "artifact"} ${randomUUID()}`,
+    org_id: orgId, name: `Budget ${shortCase ? "short" : "artifact"} calibration`,
     goal: shortCase
       ? "Record one short finding and report its receipt. Never execute a change without approval."
       : "Read REF-42, create a CSV artifact, emit a file output, then verify the saved receipt. Never execute a change without approval.",
