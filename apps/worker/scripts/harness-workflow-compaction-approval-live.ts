@@ -183,6 +183,9 @@ try {
       mode: checkpoint.spec?.host_budget_mode === "canary" ? "canary" : "fixed",
       verified: apiStatus?.status === "completed" && checkpoint.result.status === "completed" &&
         request.status === "pending_approval" && outputs.length === 1 && executions === 0 && effectCount === 0,
+      checkpointRoot,
+      runId: run.work_run_id,
+      checkpointSha256: createHash("sha256").update(checkpointBytes).digest("hex"),
       modelCalls: checkpoint.events.filter(event => event.type === "model.request.started").length,
       ordinaryCalls: counts[`ordinary:${model}`] ?? 0,
       triageCalls: counts["jev-fixture"] ?? 0,
