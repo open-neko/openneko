@@ -178,3 +178,12 @@ and Ax stages share the run allowance. The gate now uses a four-call,
 5,000-micro short proposal within the same fixed hard cap. This is a fixture
 calibration result only; retain shadow mode until the specified held-out live
 evaluation and real canary comparison are complete.
+
+The separate [frozen held-out dataset](../integration/m6-heldout/README.md)
+provides four tasks, including a misleading short count and a 1,016-row Daily
+Lead-style CSV. Its independent Postgres oracle fixes the target-day and
+deduplication rules before model evaluation. The database gate passes, and the
+existing GraphJin image exposes all three source roots from the opt-in seed.
+These no-key checks do not score any Gemini or Ax agent run. The held-out
+fixed/canary comparison and effective strong GraphJin profile attestation
+remain open.

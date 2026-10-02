@@ -925,6 +925,10 @@ the policy ladder monotonic. This does not establish a cost saving.
 Held-out quality and a controlled real-provider comparison remain open. The
 migration details are in
 [OPENSHELL.md](OPENSHELL.md#openshell-012-migration-gate-2026-10-02).
+A frozen, separate held-out Postgres dataset now defines four tasks, including
+a 1,016-row Daily Lead-style CSV with a database-derived oracle. Its no-key
+Postgres and GraphJin source-visibility gates pass; no real-model outcome has
+yet been labelled from this corpus.
 The paired synthetic gate feeds all six validated checkpoint digests to
 `harness-budget-compare`, which rejects wrong modes, changed checkpoints and
 duplicate runs, and reports outcome regressions by task class plus cost and
