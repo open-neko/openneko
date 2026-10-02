@@ -1012,7 +1012,10 @@ connected route selection and broker key replacement. The same isolated
 gateway also proved one approved fallback after a content-free 503, while a
 403 stopped before any secondary request. A 429 under a one-call ceiling
 journaled the fallback decision but denied the secondary dispatch before it
-could bypass the budget. A connected OpenNeko launcher run
+could bypass the budget. A later matched OpenShell 0.1.2 gate also verified
+that a content-free 429 uses the approved alternate and completes when four
+model calls are available; primary, alternate, executor and responder each
+account for one call. A connected OpenNeko launcher run
 now passed the trusted manifest and distinct provider credentials through the
 worker path, recorded a completed answer, and downloaded its checkpoint and
 receipt. A separate connected run now confirms that an executor code error

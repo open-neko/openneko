@@ -163,6 +163,31 @@ else:
  assert sum(counts.values())==1,counts
 PY
 done
+curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
+spec='{"version":1,"run_id":"m6-route-429-approved","input_id":"m6-route-429-approved-input","prompt":"Answer the routing check","max_model_calls":4}'
+"${oss[@]}" sandbox exec -n "$name" --no-tty --timeout 60 -- sh -c '
+  export HARNESS_MODEL_ROUTES="$1" OPENNEKO_HARNESS_LOOKUP_READ=0
+  printf "%s" "$2" | /usr/local/bin/harness-openneko
+' sh "$manifest" "$spec" > "$state/m6-429-approved-events.jsonl"
+python3 - "$state/m6-429-approved-events.jsonl" <<'PY'
+import json,sys
+events=[json.loads(line) for line in open(sys.argv[1]) if line.startswith('{')]
+routes=[e.get('name') for e in events if e.get('type')=='model.request.started']
+assert routes==['harness-route-context-429','harness-route-context-spare',
+                'harness-route-executor','harness-route-responder'],routes
+fallback=[e for e in events if e.get('type')=='model.route.fallback']
+assert len(fallback)==1 and fallback[0].get('error')=='transient_provider_failure',fallback
+done=[e for e in events if e.get('type')=='run.finished']
+assert len(done)==1 and done[0]['result']['status']=='completed' and done[0]['result']['answer']=='ROUTED-OK',done
+PY
+counts=$(curl -fsS http://127.0.0.1:18118/control)
+python3 - "$counts" <<'PY'
+import json,sys
+counts=json.loads(sys.argv[1])
+for stage in ('context-429','context-spare','executor','responder'):
+ assert counts.get('harness-route-'+stage)==1,counts
+assert sum(counts.values())==4,counts
+PY
 echo M6_CONNECTED_OPENSHELL_FALLBACK_PASS
 
 curl -fsS -X POST -d '{}' http://127.0.0.1:18118/control >/dev/null
