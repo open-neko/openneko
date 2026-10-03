@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.13.2](https://github.com/open-neko/openneko/compare/v3.13.1...v3.13.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* keep broker-posted cards and interim text in the Work transcript ([62cbe40](https://github.com/open-neko/openneko/commit/62cbe4013255c6a9f2672b1a90bc194997e3cba3))
+* keep broker-posted cards and interim text in the Work transcript ([c9479f2](https://github.com/open-neko/openneko/commit/c9479f2a68a824c3b94b04cc5d311eec31dd4681))
+
 ## [3.13.1](https://github.com/open-neko/openneko/compare/v3.13.0...v3.13.1) (2026-10-03)
 
 
