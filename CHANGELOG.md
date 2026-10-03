@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.13.0](https://github.com/open-neko/openneko/compare/v3.12.4...v3.13.0) (2026-10-03)
+
+
+### Features
+
+* make render_cards a typed, provider-portable answer tool ([de9e61d](https://github.com/open-neko/openneko/commit/de9e61d633de2bcbeb43046d8c378e6593337ac9))
+* make render_cards a typed, provider-portable answer tool ([3aded4d](https://github.com/open-neko/openneko/commit/3aded4d330c72c5a25787456e63367a0f338511a))
+
 ## [3.12.4](https://github.com/open-neko/openneko/compare/v3.12.3...v3.12.4) (2026-10-03)
 
 
