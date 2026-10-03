@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.12.3](https://github.com/open-neko/openneko/compare/v3.12.2...v3.12.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* keep Work answers in the transcript for follow-up turns ([e4a666b](https://github.com/open-neko/openneko/commit/e4a666b37462ca6db6728b5619796983b2666497))
+* make Work sandbox provisioning compatible with OpenShell 0.1.2 ([ad9f559](https://github.com/open-neko/openneko/commit/ad9f5590d49f9efcf4cbdbb324855304ad73c3c0))
+* make Work sandbox provisioning compatible with OpenShell 0.1.2 ([37f60ab](https://github.com/open-neko/openneko/commit/37f60abc68c46541820ff2bb8824c536c6a5490b))
+
 ## [3.12.2](https://github.com/open-neko/openneko/compare/v3.12.1...v3.12.2) (2026-10-02)
 
 
