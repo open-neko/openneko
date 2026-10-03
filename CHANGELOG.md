@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.12.4](https://github.com/open-neko/openneko/compare/v3.12.3...v3.12.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* recreate an OpenShell provider that stores the legacy credential key ([9bfb7c3](https://github.com/open-neko/openneko/commit/9bfb7c32a049224e1b475b44f9837a45a55bd5b0))
+* recreate an OpenShell provider that stores the legacy credential key ([800a473](https://github.com/open-neko/openneko/commit/800a4735fa5ce02d25e5b5f9f1d0cf2e1645509f))
+
 ## [3.12.3](https://github.com/open-neko/openneko/compare/v3.12.2...v3.12.3) (2026-10-03)
 
 
