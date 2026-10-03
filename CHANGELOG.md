@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.13.1](https://github.com/open-neko/openneko/compare/v3.13.0...v3.13.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* make render_cards flat text so cards work through tool search ([4f849b5](https://github.com/open-neko/openneko/commit/4f849b53c80781b74ebcbd3aab405260b9339a4e))
+* make render_cards flat text so cards work through tool search ([405cf7c](https://github.com/open-neko/openneko/commit/405cf7cb8f53a3865127234f5d4d4958b9f1e2c9))
+
 ## [3.13.0](https://github.com/open-neko/openneko/compare/v3.12.4...v3.13.0) (2026-10-03)
 
 
