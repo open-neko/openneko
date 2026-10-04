@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.15.0](https://github.com/open-neko/openneko/compare/v3.14.0...v3.15.0) (2026-10-04)
+
+
+### Features
+
+* connect the context repository over SSH with a deploy key ([ed0bbe1](https://github.com/open-neko/openneko/commit/ed0bbe128e42097db84c9b681892d435dafea7c8))
+* keep sandbox skill edits and sync context with a git remote ([191a130](https://github.com/open-neko/openneko/commit/191a1308536f6c647c9fcfd6119bf693b3280705))
+* keep sandbox skill edits and sync context with a git remote over HTTPS or SSH ([b55577b](https://github.com/open-neko/openneko/commit/b55577b647eb7d461e7bcca2a526da8c0039d201))
+
+
+### Bug Fixes
+
+* keep pack validation out of the web bundle ([b7e5f29](https://github.com/open-neko/openneko/commit/b7e5f29a4a5753b5b8c65a3299995427a7627f09))
+
 ## [3.14.0](https://github.com/open-neko/openneko/compare/v3.13.2...v3.14.0) (2026-10-04)
 
 
