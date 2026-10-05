@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.16.1](https://github.com/open-neko/openneko/compare/v3.16.0...v3.16.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* explain a GraphJin that is too old for pack configuration ([6602ecb](https://github.com/open-neko/openneko/commit/6602ecbbc8cdda380457c131b2d27b69805bcc78))
+* explain a GraphJin that is too old for pack configuration ([1ee43df](https://github.com/open-neko/openneko/commit/1ee43df15fbacf8c7412226781e1db589969e89f))
+
 ## [3.16.0](https://github.com/open-neko/openneko/compare/v3.15.1...v3.16.0) (2026-10-04)
 
 
