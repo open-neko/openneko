@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.17.1](https://github.com/open-neko/openneko/compare/v3.17.0...v3.17.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **packs:** wait for slow GraphJin config previews and applies ([7fdbeee](https://github.com/open-neko/openneko/commit/7fdbeee389c8efa688ac3dc2302eabe54c4fcefe))
+* **packs:** wait for slow GraphJin config previews and applies ([c051d66](https://github.com/open-neko/openneko/commit/c051d66e4fd8e942b0e3b43b5d1a629246205cf7))
+
 ## [3.17.0](https://github.com/open-neko/openneko/compare/v3.16.2...v3.17.0) (2026-10-06)
 
 
