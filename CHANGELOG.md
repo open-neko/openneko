@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.17.2](https://github.com/open-neko/openneko/compare/v3.17.1...v3.17.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **dev:** install the pinned OpenShell CLI and rebuild stale GraphJin images ([870df7b](https://github.com/open-neko/openneko/commit/870df7befe03bde6861fdee30b4f00a59af5e780))
+* pack and dev stack reliability from the Sierra install ([919f412](https://github.com/open-neko/openneko/commit/919f4128c6414e78c84afee290d7054a6d762dc8))
+* **packs:** explain a GraphJin without a secrets keystore key ([c6fc9d8](https://github.com/open-neko/openneko/commit/c6fc9d89f3fed051e2ebecbd49c8147c868aad5d))
+* **packs:** ignore empty values GraphJin fills in after a restart ([55003a0](https://github.com/open-neko/openneko/commit/55003a0810c4c4d08fed2dfdfb67b295dd9987ca))
+* **packs:** stop review when GraphJin cannot store pack secrets ([fb651c4](https://github.com/open-neko/openneko/commit/fb651c42ae93e34272f81765ede0dfb05b227f1f))
+* **worker:** survive Postgres restarts and cap metric refresh sandboxes ([c9863d3](https://github.com/open-neko/openneko/commit/c9863d34979d3599c77721288adcbb6b8d9a5a91))
+
 ## [3.17.1](https://github.com/open-neko/openneko/compare/v3.17.0...v3.17.1) (2026-10-06)
 
 
