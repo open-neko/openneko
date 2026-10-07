@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.17.3](https://github.com/open-neko/openneko/compare/v3.17.2...v3.17.3) (2026-10-07)
+
+
+### Bug Fixes
+
+* **packs:** send GraphJin only the config the pack declares ([c6b50b2](https://github.com/open-neko/openneko/commit/c6b50b238edf7899efb71041d17384276ef10cc2))
+* **packs:** send GraphJin only the config the pack declares ([aa0bd98](https://github.com/open-neko/openneko/commit/aa0bd98381936174c55c95829d289da45894fd24))
+
 ## [3.17.2](https://github.com/open-neko/openneko/compare/v3.17.1...v3.17.2) (2026-10-07)
 
 
