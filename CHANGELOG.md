@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.17.4](https://github.com/open-neko/openneko/compare/v3.17.3...v3.17.4) (2026-10-08)
+
+
+### Bug Fixes
+
+* **records:** send CSV import inputs, not a prebuilt plan ([2c24773](https://github.com/open-neko/openneko/commit/2c24773c9823625c05fddbdd7735a111d0a309c6))
+* **records:** send CSV import inputs, not a prebuilt plan ([ebeeab8](https://github.com/open-neko/openneko/commit/ebeeab8de9248596d9caab84ed5b80608082a078))
+
 ## [3.17.3](https://github.com/open-neko/openneko/compare/v3.17.2...v3.17.3) (2026-10-07)
 
 
