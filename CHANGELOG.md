@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.18.0](https://github.com/open-neko/openneko/compare/v3.17.4...v3.18.0) (2026-10-08)
+
+
+### Features
+
+* **ask:** save an Ask thread as an A4 PDF ([63fe812](https://github.com/open-neko/openneko/commit/63fe8125fcfc9551e5a6ca22196fb36c22f44909))
+* **ask:** shape answers to the question and fix the bugs found testing them ([bf77796](https://github.com/open-neko/openneko/commit/bf77796c1ac3d17b44d22479a8591347ddc71564))
+* **ask:** shape answers to the question and fix the bugs found testing them ([42433ad](https://github.com/open-neko/openneko/commit/42433ad3b89793d720280d2897564a282905488b))
+* **ask:** show progress before the answer card, add a map tiles setting ([a6741bd](https://github.com/open-neko/openneko/commit/a6741bd417592fe115b00385f72018d4c1b1399d))
+
+
+### Bug Fixes
+
+* **ask:** animate the tool frame with opacity only ([a54448c](https://github.com/open-neko/openneko/commit/a54448c545f1c6eededc2388f4b761872665d369))
+
 ## [3.17.4](https://github.com/open-neko/openneko/compare/v3.17.3...v3.17.4) (2026-10-08)
 
 
