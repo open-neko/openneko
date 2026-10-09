@@ -70,7 +70,7 @@ func events(t *testing.T, b *bytes.Buffer) []agent.Event {
 func TestRunHTTP(t *testing.T) {
 	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
 	calls := 0
-	responses := []string{`{"javascriptCode":"final('Find reference', {})"}`, `{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `{"answer":"REF-42"}`}
+	responses := []string{`{"javascriptCode":"final('Find reference', {})"}`, `{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `Answer: REF-42`}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		if r.Header.Get("Authorization") != "Bearer synthetic-test-key" {

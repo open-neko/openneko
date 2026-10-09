@@ -91,7 +91,7 @@ func TestHostRoutesSelectAxStagesAndPinResume(t *testing.T) {
 	}
 	cheap := serve("cheap", "fixture", "cheap-secret", []string{`{"javascriptCode":"final('Find reference', {})"}`})
 	defer cheap.Close()
-	work := serve("work", "fixture", "work-secret", []string{`{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `{"answer":"REF-42"}`})
+	work := serve("work", "fixture", "work-secret", []string{`{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `Answer: REF-42`})
 	defer work.Close()
 	config := func(responder string) string {
 		b, _ := json.Marshal(routeConfig{Context: "cheap", Executor: "work", Responder: responder, Routes: []modelRoute{
@@ -173,7 +173,7 @@ func TestExecutorErrorEscalatesOnlyLaterApprovedModelCalls(t *testing.T) {
 				"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
 		}))
 	}
-	contextServer := serve("context", "context-secret", []string{`{"javascriptCode":"final('Plan',{});"}`, `{"answer":"Done"}`})
+	contextServer := serve("context", "context-secret", []string{`{"javascriptCode":"final('Plan',{});"}`, `Answer: Done`})
 	defer contextServer.Close()
 	baseline := serve("base", "base-secret", []string{`{"javascriptCode":"throw new Error('retry this actor step');"}`})
 	defer baseline.Close()
@@ -328,7 +328,7 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": `{"answer":"Done"}`}, "finish_reason": "stop"}},
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": `Answer: Done`}, "finish_reason": "stop"}},
 			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
 	}))
 	defer primary.Close()
@@ -527,9 +527,9 @@ func TestSkillSelectionUsesApprovedCheapRoute(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
 		}))
 	}
-	cheap := serve("cheap", "cheap-secret", []string{`{"selected":"daily-lead-union"}`, `{"javascriptCode":"final('Find',{})"}`})
+	cheap := serve("cheap", "cheap-secret", []string{`Selected: daily-lead-union`, `{"javascriptCode":"final('Find',{})"}`})
 	defer cheap.Close()
-	work := serve("work", "work-secret", []string{`{"javascriptCode":"final('Answer',{})"}`, `{"answer":"Done"}`})
+	work := serve("work", "work-secret", []string{`{"javascriptCode":"final('Answer',{})"}`, `Answer: Done`})
 	defer work.Close()
 	raw, _ := json.Marshal(routeConfig{Context: "cheap", Executor: "work", Responder: "work", Skill: "cheap", Routes: []modelRoute{
 		{Key: "cheap", Model: "fixture", URL: cheap.URL, APIKeyEnv: "HARNESS_CHEAP_KEY"},
@@ -733,7 +733,7 @@ func TestMissingUsageRetainsCostReservation(t *testing.T) {
 func TestGraphJinCostReservationBlocksBrokerDispatch(t *testing.T) {
 	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
 	t.Setenv("HARNESS_TEST_KEY", "synthetic")
-	responses := []string{`{"javascriptCode":"final('Find the row',{})"}`, `{"javascriptCode":"const row=lookup('find row'); final('Done',{row});"}`, `{"answer":"Unable to finish"}`}
+	responses := []string{`{"javascriptCode":"final('Find the row',{})"}`, `{"javascriptCode":"const row=lookup('find row'); final('Done',{row});"}`, `Answer: Unable to finish`}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(responses) == 0 {
 			http.Error(w, "unexpected model call", 400)
@@ -774,7 +774,7 @@ func TestGraphJinCostReservationBlocksBrokerDispatch(t *testing.T) {
 func TestGraphJinReportedCostReplacesReservation(t *testing.T) {
 	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
 	t.Setenv("HARNESS_TEST_KEY", "synthetic")
-	responses := []string{`{"javascriptCode":"final('Find the row',{})"}`, `{"javascriptCode":"const row=lookup('find row'); final('Done',{row});"}`, `{"answer":"row"}`}
+	responses := []string{`{"javascriptCode":"final('Find the row',{})"}`, `{"javascriptCode":"const row=lookup('find row'); final('Done',{row});"}`, `Answer: row`}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(responses) == 0 {
 			http.Error(w, "unexpected model call", 400)

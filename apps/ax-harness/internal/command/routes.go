@@ -42,6 +42,10 @@ type routeConfig struct {
 	GraphJinPrice       *agent.TokenPrice    `json:"graphjin_price,omitempty"`
 }
 
+// noClientRetry turns off Ax's request-layer retry. The harness owns retries,
+// route fallback and the model-call ceiling; a hidden retry would bypass all three.
+func noClientRetry() ax.Value { return ax.Object("max_retries", 0) }
+
 // loadModelClient reads a host-owned allowlist. The run JSON cannot add a
 // provider, change a stage model, or name a credential. Keys remain outside the
 // config and are never included in the checkpoint digest.
@@ -52,7 +56,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		if err := validModelURL(base); err != nil || model == "" || key == "" {
 			return nil, "", fmt.Errorf("configure HARNESS_MODEL_URL, HARNESS_MODEL and HARNESS_MODEL_API_KEY")
 		}
-		return &agent.RoutedClient{AIClient: ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model)),
+		return &agent.RoutedClient{AIClient: ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model, "retry", noClientRetry())),
 			ModelNames: map[string]string{"openai-compatible": model}}, "", nil
 	}
 	cfg, digest, err := parseRouteConfig(raw)
@@ -64,7 +68,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, string, error) {
 		if getenv(route.APIKeyEnv) == "" {
 			return nil, "", fmt.Errorf("HARNESS_MODEL_ROUTES route missing credential")
 		}
-		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.URL, "api_key", getenv(route.APIKeyEnv), "model", route.Model))
+		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.URL, "api_key", getenv(route.APIKeyEnv), "model", route.Model, "retry", noClientRetry()))
 		// A logical key can distinguish two accounts that expose the same model.
 		// Ax's explicit router entry strips the key before the provider call, so
 		// the provider uses its configured actual model.

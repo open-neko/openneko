@@ -116,7 +116,7 @@ func TestNativeToolBoundaryHTTP(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &probe{}
-			client, requests := modelServer(t, ax.Object("role", "assistant", "tool_calls", ax.Array(call("call_1", tc.params))), answer(`{"answer":"done"}`))
+			client, requests := modelServer(t, ax.Object("role", "assistant", "tool_calls", ax.Array(call("call_1", tc.params))), answer(`Answer: done`))
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			gen := ax.NewAx("question:string -> answer:string", ax.Object("functions", ax.Array(axbridge.BindTool(ctx, ax.Fn("lookup"), p.invoke)), "validationRetries", 0))
@@ -151,7 +151,7 @@ func TestAgentGojaTwoCallbacksHTTP(t *testing.T) {
 	client, requests := modelServer(t,
 		answer(`{"javascriptCode":"final('Find reference', {})"}`),
 		answer(`{"javascriptCode":"const first=lookup({query:'reference'}); const denied=lookup({query:'denied'}); final('Report reference', {first,denied});"}`),
-		answer(`{"answer":"REF-42"}`))
+		answer(`Answer: REF-42`))
 	agent := ax.NewAgent("question:string -> answer:string", ax.Object("runtime", runtime, "directResponse", "off", "validationRetries", 0))
 	defer agent.CloseRuntimeSession()
 	out, err := agent.Forward(ctx, client, ax.Object("question", "Find reference"), nil)
@@ -263,7 +263,7 @@ func TestAgentSessionSnapshotBoundary(t *testing.T) {
 // ExportSessionState restores data, not the stage/statement at which Forward stopped.
 func TestAgentSnapshotDoesNotResumeForwardCursor(t *testing.T) {
 	var calls, lookups atomic.Int32
-	answers := []string{`{"javascriptCode":"final('Read reference', {})"}`, `{"javascriptCode":"const evidence=lookup('read'); final('Report reference',{evidence});"}`, `{"answer":"REF-42"}`}
+	answers := []string{`{"javascriptCode":"final('Read reference', {})"}`, `{"javascriptCode":"const evidence=lookup('read'); final('Report reference',{evidence});"}`, `Answer: REF-42`}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := int(calls.Add(1)) - 1
 		if n == 2 {

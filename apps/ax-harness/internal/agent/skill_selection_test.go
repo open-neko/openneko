@@ -29,7 +29,7 @@ func TestExactSkillNameSelectionNeedsNoModel(t *testing.T) {
 func TestSemanticSkillSelectionRejectsUnstagedName(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", `{"selected":"unapproved"}`), "finish_reason", "stop"))))
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", `Selected: unapproved`), "finish_reason", "stop"))))
 	}))
 	defer server.Close()
 	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))

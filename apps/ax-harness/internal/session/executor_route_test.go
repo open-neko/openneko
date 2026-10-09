@@ -39,7 +39,7 @@ func TestExecutorErrorRouteSurvivesInterruptedAttempt(t *testing.T) {
 	defer strongServer.Close()
 	entries := []ax.Value{}
 	for _, route := range []struct{ key, url string }{{"context", contextServer.URL}, {"base", baseServer.URL}, {"strong", strongServer.URL}} {
-		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.url, "api_key", "synthetic", "model", "fixture"))
+		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.url, "api_key", "synthetic", "model", "fixture", "retry", ax.Object("max_retries", 0)))
 		service.Name = route.key
 		entries = append(entries, ax.RouterServiceEntry{Key: route.key, Service: service})
 	}
@@ -103,7 +103,7 @@ func TestFallbackDecisionIsDurableBeforeSecondaryDispatch(t *testing.T) {
 	defer secondary.Close()
 	entries := []ax.Value{}
 	for _, route := range []struct{ key, url string }{{"primary", primary.URL}, {"secondary", secondary.URL}} {
-		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.url, "api_key", "synthetic", "model", "fixture"))
+		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.url, "api_key", "synthetic", "model", "fixture", "retry", ax.Object("max_retries", 0)))
 		service.Name = route.key
 		entries = append(entries, ax.RouterServiceEntry{Key: route.key, Service: service})
 	}

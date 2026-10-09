@@ -48,7 +48,7 @@ func TestRunScopedTelemetryHTTP(t *testing.T) {
 	ax.SetUsageObserver(func(ax.AxUsageEvent) { mu.Lock(); defer mu.Unlock(); usages++ })
 	defer ax.SetUsageObserver(nil)
 	p := &probe{}
-	client, _ := modelServer(t, ax.Object("role", "assistant", "tool_calls", ax.Array(call("call_1", `{"query":"reference"}`))), answer(`{"answer":"done"}`))
+	client, _ := modelServer(t, ax.Object("role", "assistant", "tool_calls", ax.Array(call("call_1", `{"query":"reference"}`))), answer(`Answer: done`))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	gen := ax.NewAx("question:string -> answer:string", ax.Object("functions", ax.Array(axbridge.BindTool(ctx, ax.Fn("lookup"), p.invoke))))
@@ -127,10 +127,13 @@ func TestNativeCancellationTranscriptHTTP(t *testing.T) {
 	visit = func(v any) {
 		switch x := v.(type) {
 		case map[string]any:
-			if x["role"] == "function" && x["function_id"] == "call_cancel" {
-				count++
-				if x["is_error"] != true {
-					t.Error("cancellation result was not an error")
+			// Ax 25 stores a tool result as [call, result, ok, result_text].
+			if result, ok := x["results"].([]any); ok && x["role"] == "function" && len(result) == 4 {
+				if call, ok := result[0].(map[string]any); ok && call["id"] == "call_cancel" {
+					count++
+					if result[2] != false {
+						t.Error("cancellation result was not an error")
+					}
 				}
 			}
 			for _, child := range x {

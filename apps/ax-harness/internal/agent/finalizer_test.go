@@ -28,7 +28,7 @@ func TestActorExhaustionFinalizesOnlyCommittedEvidence(t *testing.T) {
 				answers = append(answers, `{"javascriptCode":`+mustJSON(t, code)+`}`)
 			}
 			if useReceipt {
-				answers = append(answers, `{"answer":"Receipt R-42 was read."}`)
+				answers = append(answers, `Answer: Receipt R-42 was read.`)
 			}
 			var finalizerRequest string
 			calls := 0

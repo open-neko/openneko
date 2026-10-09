@@ -24,7 +24,7 @@ func TestMixedToolContextKeepsConstraintAndPendingApproval(t *testing.T) {
 		`{"javascriptCode":"const fourth=read({step:4}); console.log('noise-'.repeat(3000),fourth.label);"}`,
 		`{"javascriptCode":"const fifth=read({step:5}); console.log('noise-'.repeat(3000),fifth.label);"}`,
 		`{"javascriptCode":"const saved=harnessSavedOperation(2); final('Report the pending approval',{approvalId:saved.result.id});"}`,
-		`{"answer":"Approval approval-1 is pending; no update was executed."}`,
+		`Answer: Approval approval-1 is pending; no update was executed.`,
 	}
 	var mu sync.Mutex
 	var requests []string
@@ -99,7 +99,9 @@ func TestMixedToolContextKeepsConstraintAndPendingApproval(t *testing.T) {
 		if !strings.Contains(request, constraint) {
 			t.Fatalf("request %d lost the original constraint", i+1)
 		}
-		if i > 2 && strings.Contains(request, "approval-1") && strings.Contains(request, "pending_approval") {
+		// Ax 25 summarizes runtime bindings by shape, so the receipt status is
+		// read on demand; the id and the binding must stay in context.
+		if i > 2 && strings.Contains(request, "approval-1") && strings.Contains(request, "approval: object") {
 			approvalVisibleAfter = true
 		}
 		if len(request) > largest {

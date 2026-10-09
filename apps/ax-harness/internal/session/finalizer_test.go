@@ -21,7 +21,7 @@ func TestFinalizerCheckpointAndQueueRedelivery(t *testing.T) {
 		encoded, _ := json.Marshal(code)
 		answers = append(answers, `{"javascriptCode":`+string(encoded)+`}`)
 	}
-	answers = append(answers, `{"answer":"Receipt R-42 was read."}`)
+	answers = append(answers, `Answer: Receipt R-42 was read.`)
 	modelCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if modelCalls >= len(answers) {

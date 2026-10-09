@@ -721,6 +721,8 @@ func RunAttemptWithTools(ctx context.Context, spec Spec, client ax.AIClient, too
 		var providerError ax.AxError
 		if errors.As(err, &providerError) && providerError.Status > 0 {
 			result.Code = fmt.Sprintf("model_http_%d", providerError.Status)
+		} else if status := streamClient.lastStatus.Load(); err != nil && status > 0 {
+			result.Code = fmt.Sprintf("model_http_%d", status)
 		}
 		if err == nil {
 			object, ok := output.(map[string]ax.Value)
