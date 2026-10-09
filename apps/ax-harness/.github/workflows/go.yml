@@ -1,0 +1,21 @@
+name: Go
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race -count=1 -timeout 60s ./...
+      - run: go vet ./...
+      - run: python3 integration/check-telemetry.py --self-test
+      - name: Core must not import consumer adapters
+        run: |
+          deps=$(go list -deps ./internal/... ./compat/... ./integration/probe)
+          if grep -q '/adapters/' <<< "$deps"; then
+            echo 'Consumer adapter imported by core' >&2
+            exit 1
+          fi

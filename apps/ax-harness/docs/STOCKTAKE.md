@@ -1,0 +1,272 @@
+# Harness stocktake
+
+Reviewed 2026-09-28 against the current Harness worktree and milestone plan.
+
+## Implemented and verified locally
+
+The standalone Go runtime uses pinned Ax and has no dependency on an OpenNeko
+checkout. Its optional OpenNeko adapter provides server-side GraphJin lookup and
+governed action proposals; Hermes remains the default backend.
+
+| Area | Completed scope | Evidence |
+| --- | --- | --- |
+| M1 execution | Ax streaming, governed callbacks, tool pairing, cancellation, bounded actor work and run-scoped telemetry | Go race tests, vet and HTTP/Goja compatibility tests |
+| M2 transport | Real OpenShell 0.1.2 and historical 0.0.116, TLS/CA trust, credential replacement, destination/binary restrictions, rotation/detach, two slots, OAuth refresh, gateway restart and OTLP delivery | [Transport record](../integration/README.md) |
+| M3 integration | Browser and queue entrypoints, scoped GraphJin lookup, accepted-input deduplication, result/error projection, cancellation and Hermes regression coverage | [Consumer acceptance](../integration/openneko/README.md) |
+| M4 recovery | Host/session ownership, durable operation receipts, bounded continuation, sandbox/host terminal reconciliation, worker-death redelivery and one restored answer | [Recovery record](M4-RECOVERY.md) |
+| M4 effects | Frozen human approvals, fresh authorization before dispatch, durable execution claims, optional provider-status recovery and explicit unknown outcomes without redispatch | Real process-kill, queue, controlled HTTP effect and browser approval/reload checks in the recovery record |
+
+The historical M4 worker-death gate passed on 0.0.116. On OpenShell 0.1.2,
+worker death during an in-flight model request can cancel the sandbox's model
+transport after a GraphJin receipt was committed. A bounded Harness
+continuation now retains that receipt and retries only the model turn. The
+connected queue gate passed worker-death redelivery, one restored answer and
+approval restart on 0.1.2. The focused agent-job child crash/recovery gate
+also passes. The full isolated 0.1.2 queue/API suite subsequently passed,
+including the child gate and Work-file downloads; its owned containers and
+networks were removed.
+The focused process cancellation, output-limit, and live launcher/checkpoint
+gates also passed on 0.1.2. The host-death test now permits a bounded model
+continuation if OpenShell cancels the orphaned transport, while requiring the
+GraphJin receipt to be reused.
+
+The cumulative live suite has passed the consumer checks. Its previous exit 1
+was solely the raw idle-proxy cancellation check. On 2026-09-20 the user accepted
+this as a nonblocking upstream limitation. The runner keeps the observation as an
+explicit warning and continues to require sandbox teardown to close upstream work.
+Cleanup failure remains fatal. M2 and M4 are locally qualified at the documented scope.
+
+## Accepted upstream limitation
+
+OpenShell's idle HTTP response relay does not promptly notice downstream
+disconnect. Provider work may continue and consume tokens until closure is observed
+or the sandbox is torn down. The direct HTTPS control cancels; the proxied request
+remains open beyond the observation window. See the exact
+[source trace](OPENSHELL.md#source-trace-idle-response-cancellation).
+
+The 2026-09-20 check was against
+[v0.0.116](https://github.com/NVIDIA/OpenShell/releases/tag/v0.0.116).
+The isolated 0.1.2 transport suite later observed idle upstream cancellation;
+the connected consumer also passed its separate 0.1.2 gates. This historical
+limitation did not block M2/M4.
+
+## Milestone audit
+
+| Stage | Current evidence | Remaining exit work |
+| --- | --- | --- |
+| M1–M4 | Locally qualified at their bounded scope; recovery and real OpenShell/consumer checks recorded above | Preserve regression coverage as capabilities expand; accepted idle-proxy cancellation remains observable |
+| M5a catalog | Native/direct/MCP calls share Ax, schema admission, operation journal and catalog binding; pinned OpenNeko read, clarification and card tools pass connected worker/OpenShell turns; the host now binds 12 operations and 24 model calls in the run spec, broker token and checkpoint, while old unbound callers retain four; isolated Postgres admits a fifth journaled operation under the explicit limit and refuses later host dispatch after an unknown outcome; [tool inventory](TOOL-INVENTORY.md) separates admitted and excluded surfaces | Qualify effect/recovery behavior for the remaining product writes on connected runs |
+| M5b reads/batch | Seeded memory search, real pgvector/entitlement library search, empty-registry catalog/blueprints, and populated Records catalog/find/get/recycle reads passed real GraphJin, actor-bound broker, MCP, OpenShell and Ax. A queued Work run called six management list catalogs through pinned MCP and the actor-bound broker, received a seeded rule, and recorded no GraphJin or mutation operation. Queued admin/member audit turns proved host-gated disclosure and denial; a cross-org admin run was rejected in Postgres. Three feature-gated source metadata reads passed a queued admin Work turn; a member was denied, and import/config-change routes stayed outside the broker grant. A real Work HTTP upload flowed through queued extraction, deterministic distillation, embedding indexing and an Ax library search of its sourced concept. Queued clarification, operator-answer continuation and a validated card passed connected worker/OpenShell turns; Chromium verified the card exactly once before and after reload. The controlled query-to-file runner and scoped batch-read grant passed local fixtures; a separate no-provider/no-network OpenShell sandbox completed a synthetic CSV with host-owned query handoff and mandatory deletion; response-before-receipt crash recovery passed a local no-redispatch check; run-bound sandbox inventory/deletion refuses foreign labels; the production pg-boss queue used the Go runner, OpenShell, host-only GraphJin broker and seeded `REF-42` to publish one validated workflow CSV; duplicate delivery produced one artifact event; the workflow-run web route returned the exact CSV and attachment headers. The public workflow API also accepted a query-to-file run, kept its contract through a definition edit, executed it via the worker, returned status and exact CSV over HTTP, and fenced a stale attempt in isolated Postgres. A connected public HTTP admission reached the same Go/OpenShell/GraphJin path through the versioned executor registry, returned completed status, and downloaded the exact validated CSV. A queued v1 run executed after v2 became active, while changed registry bytes were rejected by the focused parser test. | Qualify remaining reads and broader channel presentation; real customer GraphJin data remains unconnected |
+| M5c mutations | Pack and plugin action proposals are narrowed to the exact run-bound kind, source and policy scope; an OpenShell Records-only turn passed a synthetic internal plugin proposal and one approved effect. A second connected turn proposed `record_update` against a seeded Records registry; worker-owned preflight checked its payload and actor before human approval, then the real GraphJin mutation changed the row. Duplicate execution restored the result and the row had one durable Records audit entry. A production pg-boss Work run proposed a second record update, awaited approval, applied the real GraphJin effect once, and restored its receipt on duplicate delivery. The same isolated queue qualified create, soft-delete and restore. Withheld Harness or Records receipts were reconciled from the Records engine and audit without redispatch. A queued Work run used an installed plugin manifest, approval, and a separate real OpenShell plugin VM for a synthetic effect; version, integrity, owner and policy changes after approval were rejected. A queued API workflow passed pack proposal, typed output, duplicate delivery and one approved effect. Customer Work runs created, edited and deleted workflows, including cron and data-change triggers, and created/edited approval rules and org skills. The real GraphJin websocket delivery ledger, atomic trigger preparation, queued-run lease recovery, definition-revision fencing and duplicate-model-call checks passed connected OpenShell gates. | Qualify remaining admitted admin writes at their effect boundaries; external plugin effects need their own provider-specific gate |
+| M5d local work | Opt-in Go file Read/Edit/Write/search uses `os.Root`, read-version checks, create-only writes, read/write exclusion and durable state restoration; a second-process test proves shared readers and exclusive writers coordinate on the workspace directory lock. Staged uploads and read-only skill access passed queued OpenShell turns. A separate no-provider/no-network process sandbox accepts model-visible `process_run` through the actor/run-bound broker; it stages selected uploads, journals the effect and publishes declared files only after validation and teardown. Production queue and browser gates passed small and 8 MiB artifacts, validated XLSX and DOCX generation, exact authenticated download bytes, symlink and cross-run isolation, cancellation, failure, resource limits and bounded output. The 2026-09-28 full grouped regression passed. | Noncooperating external writers cannot receive a strict atomic edit guarantee |
+| M5e delegation | Ax child execution shares parent operations, model budget, usage and cancellation; connected Work, queued/API workflow and agent-job runs exercised narrowed inline children through OpenShell and the host broker; model-only jobs had no GraphJin operation; connected disabled delegation rejected a child call without GraphJin dispatch; a killed child run resumed from its journaled lookup without another GraphJin call; a failed child read leaves the parent result incomplete even if its text claims success | Separately queued children are deferred until a concrete workflow needs them; complete M5a-d dependencies before broad parity claim |
+| M6 efficiency | Durable model, remote-token and priced-cost admission survives resume; connected OpenShell verifies distinct routes, provider fallback, executor escalation, forced compaction with file evidence and a pending approval, terminal output gates, queue redelivery, and a brokered Ax Typesafe classifier. The compaction run publishes its file output and verifies the exact CSV through the operator web download while denying the background run's personal Work-file URL. A Postgres-backed route test also proves the recorded artifact returns 404 under another org. A capped shadow proposal extends after a durable tool receipt or before a requested GraphJin lookup; journal failure blocks the remote dispatch. A metadata-only evaluator reads validated checkpoints, binds independently labelled outcomes to checkpoint digests, scores false-low decisions and first counterfactual budget blocks, and passes a connected synthetic calibration fixture. A disabled-by-default host canary passed local denial, extension, GraphJin preflight, skipped-classifier and recovery tests plus three fixed/canary queued synthetic workflow pairs on OpenShell 0.1.2 with matching verified outcomes and exact public HTTP artifact checks. API-queued XLSX and DOCX output-kind downloads also passed connected OpenShell and public/operator HTTP gates. A focused broker test proves caller-supplied model, provider and reasoning fields cannot change the GraphJin request. | Real Gemini and database-backed GraphJin qualification with an explicitly pinned strong server-side model/reasoning profile; held-out short, investigation and Daily Lead-style artifact outcomes; held-out fixed-versus-canary outcome comparison. Synthetic calibration does not justify enabling the canary. |
+
+| M7 parity | Capability inventory and evaluation rules documented | Full Hermes outcome comparison, tenant/load checks and task-quality evidence |
+| M8 rollout | Branch and local integration path exist | Staging upgrade/rollback, canary, hosted PR checks and separately budgeted live-provider smoke |
+
+The M6 connected calibration now compares three fixed/canary pairs against
+validated checkpoint digests: a short finding, an investigation with pending
+approval, and a 52,008-byte CSV artifact. All six runs completed with the same
+verified outcome in each pair, complete priced usage, and no canary regression;
+the short, investigation, and artifact pairs each charged 572, 1,332, and
+1,192 micros per run respectively. The API artifact case exposed and fixed a
+path lost during API finalization; the authorized API artifact resolver now
+returns the exact CSV while the short finding has no download. A connected
+HTTP rerun additionally downloaded the exact CSV from the public route in
+both modes, checked headers and invalid-token denial, and observed 404 for
+both short findings. These are synthetic calibration cases, not held-out
+evidence or proof of savings.
+An isolated Postgres-backed route gate also accepted the owner's workflow API
+token and denied a valid token issued to a second organization. This proves
+the public route's token boundary. The web app still resolves one organization
+per process; a true multi-tenant browser deployment is M7 product scope, not
+an M6 route-security gate.
+The file-backed API batch gate also produced and downloaded an exact
+8,000,011-byte CSV from one seeded GraphJin lookup, with one million output
+rows and no model credential in the executor. This verifies the large-file
+transport, not customer Daily Lead Union correctness.
+The OpenNeko feature branch fixes API artifact metadata for non-CSV files:
+Postgres-backed route tests now verify `.xlsx` and `.docx` content types,
+download names and bytes through both public and operator routes, with a
+second organization's valid token denied. A connected 0.1.2 OpenShell gate
+also passed two API-queued workflows that generated valid XLSX and DOCX
+packages through the workflow-scoped `process_run` grant, recorded one file
+output per run, downloaded exact bytes and headers from both routes, and
+replayed each API delivery without duplicating the output.
+
+The 2026-09-28 M5c user-administration slice adds a run-bound internal
+`user_admin` proposal. Connected Ax/OpenShell/pg-boss runs invited a member,
+then used pinned MCP user discovery to deactivate, reactivate and promote that
+member. Each run left the target unchanged pending approval, rejected a
+disabled requester or changed target before effect claim, applied one worker
+effect after approval and reused the request and receipt on redelivery.
+Chromium found each answer and terminal approval card once after reload.
+Administrator lockout-sensitive changes remain open.
+The same queue and browser path then qualified `group_admin.create_group`:
+an intervening same-name group and disabled requester both stopped execution
+before an effect claim; approval followed by worker execution created one
+group and duplicate delivery reused its receipt. Other group changes remain
+open. A second queued Work turn used management MCP lists to propose
+`add_member` for that custom group and the active administrator. The
+worker added one local membership after approval; replay reused its effect,
+and Chromium found one answer and card across reload.
+A further connected queue and browser run qualified
+`data_source_admin.register`: a pending proposal left the registry
+untouched, a disabled requester and intervening source stopped effect
+claim, and approved execution created one disabled API placeholder.
+Replay reused the result, and Chromium found one answer and card after
+reload. Other group, channel, data-source, plugin and source-config
+mutations remain open.
+
+The 2026-09-28 full isolated regression passed with OpenShell 0.0.116 and no
+real provider key. It included 38 initial OpenNeko tests, populated Records
+CRUD and approval, worker batch/cancellation, unchanged Hermes cold/warm runs,
+queued Work and workflow execution, public HTTP query-to-file CSV, child-agent
+recovery, and browser artifact/download checks. It exited 0 and removed the
+test containers. The Records fixture now uses the operator model-home path
+captured at module startup and restores its model config after the test; the
+runner supplies that path for the broad gate. The known upstream idle-proxy
+cancellation observation remained a warning, while sandbox teardown passed.
+
+The later source-bound action regression also exited 0 on the full connected
+suite (`/tmp/harness-m5-source-bound-final.log`). Native pack grants now require
+a worker adapter registered as `pack`, and approved Harness effects resolve an
+adapter with the same trusted pack/plugin/internal source. A plugin registration
+cannot make a pack action available or execute its approval. The connected
+effect crash matrix rejected a wrong-source adapter before any effect claim;
+queued pack approval, installed-plugin and Records effects, workflow output,
+Hermes cold/warm runs and browser artifact checks still passed. The declarative
+GraphJin API pack adapter also passed a separate isolated queue gate against
+a GraphJin-compatible HTTP provider (`/tmp/harness-m5-pack-effect-queue.log`).
+The production action handler recorded one approved provider effect and reused
+its receipt; a second provider commit lost its response and stayed unknown
+without redispatch. The installed-plugin external-provider gate subsequently
+passed from a real OpenShell plugin VM (`/tmp/harness-m5-plugin-provider-fixed.log`):
+one approved HTTP effect, one recorded receipt and no second call on duplicate
+execution. It builds the current plugin-base Dockerfile locally because the
+older v3.5.6 image lacks the OCI `USER` required by this OpenShell version.
+The final backend/transport regression then exited 0 at Harness `faee1db` and
+OpenNeko `fe7df069` (`/tmp/harness-m5-final-connected.log`). It passed the
+queued Work/workflow, GraphJin batch, child recovery and Hermes cold/warm gates;
+both isolated stacks were removed. The optional browser checks passed in the
+earlier source-bound regression; the final changes did not touch web behavior.
+The generic Go MCP adapter now preserves bounded resource links and structured
+content as separate result fields, while retaining text and `is_error`. Its
+focused SDK fixture covers paginated discovery, tool errors, unsupported image
+content, oversized results and call deadlines. A real OpenNeko stdio bridge
+was killed after admission; the next tool call failed. Product-broker stall
+cancellation was exercised with a deadline and bridge teardown: the child
+exited and the synthetic broker request closed. A nonterminal MCP checkpoint
+rejected catalog version drift before model/tool replay and reused its saved
+read when the catalog was unchanged. Other logical MCP servers still need
+their own cancellation qualification before admission.
+
+The 2026-09-28 replay gate also distinguished an already-deleted OpenShell
+sandbox from a teardown failure. The former now records a successful
+`harness_reconcile_cleanup` phase; an unrecognized deletion failure is
+propagated. The restored Work summary still reports model-usage coverage
+`unavailable`, a separate telemetry gap.
+
+Cron redelivery has a narrower Postgres-backed qualification: a stale firing
+cannot be claimed after the definition changes or is disabled; linking must
+affect the claimed firing; a linked failed run settles without a second
+dispatch. Source-change delivery now commits the observation, audit and durable
+identity together; an isolated Postgres and pg-boss test passes replay dedupe,
+stranded dispatch, stale subscription rejection and linked failure recovery.
+Connected queued OpenShell turns now pass for cron and source-change triggers:
+both record a workflow output and reject a second handler invocation without
+another run or model call. A real GraphJin websocket delivered the source
+match and replayed the same snapshot after restart; the delivery ledger
+dropped that replay without another workflow or model call.
+Trigger preparation now commits its delivery link with the thread, both run
+rows and spend reservation. The connected gate forced a link failure for each
+trigger kind and found no orphan rows, then passed the successful cron and
+websocket paths. The connected handler then recovered one expired linked,
+still-queued run of each trigger kind using the original run IDs and no second
+model call on redelivery. The production scheduler and source-change sweep
+re-enqueued those expired linked runs even without an active original job.
+Acknowledgement-race fixtures reclaimed each linked queued run before dispatch
+recorded the queue result, then denied reclaim after its work run was marked
+running. A queued-start compare-and-swap fences two workers racing to start
+the model on the same run.
+The next connected gate retained the exact admitting workflow-definition
+revision on both trigger deliveries. An edit before model start made each
+queued-to-running transition fail. Recovery cancelled the linked work and
+workflow runs, released the spend reservations, settled the deliveries and
+made no additional model call. A sub-millisecond cron fixture confirmed that
+scheduler state and firing rows keep the exact Postgres revision.
+
+The connected cancellation fixture now stops a queued Work `process_run`
+after its child has written a partial file: the worker observes the durable
+Stop state, both OpenShell sandboxes are deleted, no artifact or successful
+receipt appears, and late delivery cannot reopen the run. The HTTP Stop route
+was not invoked in that fixture; it uses the route's durable store transition.
+The shared Postgres-backed Work-run suite passed all 11 cases after the stop
+fence was added, including the deleted-thread path used by Hermes.
+
+Local tests do not close M5b–M8. The Daily Lead Union case still lacks its
+real GraphJin source and a validated real-data workflow artifact path. The
+seeded `REF-42` GraphJin path used no live Gemini key.
+The 2026-09-27 isolated worker/OpenShell run also passed a queued Harness
+clarification: one validated surface and question, no assistant answer, two
+outer model calls, and no repeat on queue redelivery. The broker rejects
+forged completion events. Card rendering passed the real MCP bridge with a
+synthetic event sink; browser card/reload and answer continuation remain open.
+
+Recovery is bounded to persisted evidence and new Ax attempts, not arbitrary VM
+resumption. Production adapters need explicit read-only status implementations
+before ambiguous effects can reconcile automatically. Unknown effects, unfinished
+approvals and unreconciled sandboxes are retained for operator resolution; no
+purge is enabled. Queue death tests expire after the original sandbox finishes;
+overlap refusal is separately tested at the live launcher boundary.
+
+## Repository and delivery state
+
+Both repositories use `feat/openneko-harness`. OpenNeko integration changes are in
+`../Open-Neko/OpenNeko-harness-m3`; the original OpenNeko checkout was not changed.
+Nothing has been pushed; Harness has no configured remote. No PR or main merge has
+been made. Earlier main commits documented in README are historical.
+
+All owned M2/M3 test services and volumes were cleaned up. The local Go race
+suite passes on 2026-09-26. The demo stack remains stopped to respect the Mac's
+Docker memory limit; no current live GraphJin database is connected. Browser
+acceptance for the batch artifact and the remaining M5 tool families is open.
+The 2026-09-26 isolated M3 rerun passed `M5_QUEUE_UPLOAD_PASS` and the existing
+Hermes, approval and worker-death gates; the accepted upstream idle-cancellation
+warning remained visible, while sandbox-delete closure passed. No real key was used.
+The subsequent rerun also passed `M5_QUEUE_ARTIFACT_PASS`: OpenShell returned the
+exact small CSV, Work emitted its artifact event and another run's file was not
+searchable. The isolated live Work HTTP route returned the exact `lead_id\nLEAD-42\n`
+bytes as a CSV attachment for the solo owner and rejected an unissued filename
+with 404. A fresh isolated run opened the owned Work thread at the documented
+`localhost:18121` origin, rendered the `result.csv` link, and requested it through
+the browser with HTTP 200. A direct fetch of that same link matched the sandbox
+bytes (SHA-256 `5ef30c71075a31302e3aa6f04ef043686bcf04ccf1eae271f487b43d0db3970b`).
+The earlier loading screen was caused by opening the Next dev server via
+`127.0.0.1`, whose dev resources it rejected as a cross-origin request. This
+qualifies the small solo-owner artifact path; multi-user authorization and the
+full batch artifact still need connected verification.
+The optional M3 web run now repeats the exact-byte/attachment/404 route checks
+against each newly created queue artifact and reports `M5_WEB_ARTIFACT_PASS`.
+On 2026-09-27 the same isolated suite reported `M5_QUEUE_BATCH_GRAPHJIN_PASS`
+and `M5_WEB_BATCH_PASS`: the workflow-run URL returned the pinned script's
+`reference\r\nREF-42\r\n` bytes with CSV attachment headers; an unknown run
+returned 404. The earlier Work file route correctly denied a workflow-channel
+thread. A stale Next dev route cache once returned HTML 404 for every API route;
+the test now moves that generated cache aside before starting Next. The
+workflow detail page then rendered the completed public API run and its
+Download CSV link in the isolated browser. Clicking the link returned HTTP 200;
+a direct fetch matched the exact 19-byte CSV and attachment filename. The
+subsequent live worker check also confirmed one API queue attempt and complete
+zero-model-usage telemetry. No real model key or customer database was used.
+The isolated M3 suite also passed a library search against its actual Postgres
+pgvector row and server-side run entitlement, using a deterministic embedding
+response. The fixture organization is deleted before queued acceptance so it
+cannot be selected as the queue's default org. This is not yet a browser task
+against an uploaded customer document.
+The isolated records-only turn reached the live records catalog through the
+worker, OpenShell, MCP bridge and actor-scoped broker, with no generated apps in
+the fixture registry. GraphJin lookup, general GraphJin agent and customer memory
+were denied for that run. Find/get passed the real bridge with a synthetic broker;
+data-backed records and browser acceptance remain open.
