@@ -16,10 +16,10 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// Terminal limits match Hermes: 120 s default, 600 s maximum, and 50,000
+// Terminal limits match Hermes: 180 s default, 600 s maximum, and 50,000
 // characters of combined output.
 const (
-	defaultShellTimeout = 120
+	defaultShellTimeout = 180
 	maxShellTimeout     = 600
 	maxShellOutput      = 50_000
 )
@@ -48,7 +48,7 @@ func OpenShell(dir string, strip []string) (*Shell, error) {
 
 func (s *Shell) Capability() agent.Capability {
 	return agent.Capability{Name: "terminal", Version: "1", Origin: "workspace", Effect: "durable",
-		Description: "Run a shell command with /bin/sh in the run workspace. Returns the exit code and the combined output, capped at 50,000 characters. Default timeout 120 seconds, maximum 600.",
+		Description: "Run a shell command with /bin/sh in the run workspace. Returns the exit code and the combined output, capped at 50,000 characters. Default timeout 180 seconds, maximum 600.",
 		InputSchema: json.RawMessage(`{"type":"object","required":["command"],"properties":{"command":{"type":"string","minLength":1,"maxLength":16384},"timeout_seconds":{"type":"integer","minimum":1,"maximum":600}},"additionalProperties":false}`),
 		Call:        s.run}
 }

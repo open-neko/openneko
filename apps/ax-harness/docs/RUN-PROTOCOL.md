@@ -46,7 +46,7 @@ The limits match Hermes, so the two backends behave the same.
 | Saved result preview | 1,500 characters | `DEFAULT_PREVIEW_SIZE_CHARS` |
 | Inline results per actor step | 200,000 characters | `DEFAULT_TURN_BUDGET_CHARS` |
 | Stored tool result | 16 MiB; MCP results 8 MiB, below the MCP SDK frame limit | Spilled to a file |
-| Terminal timeout | Default 120 s, maximum 600 s | Default 120, `FOREGROUND_MAX_TIMEOUT` 600 |
+| Terminal timeout | Default 180 s, maximum 600 s | `TERMINAL_TIMEOUT` default 180, `FOREGROUND_MAX_TIMEOUT` 600 |
 | Terminal output | 50,000 characters, head and tail | `DEFAULT_MAX_BYTES` 50,000 |
 | File read | 100,000 characters, 2,000 lines, 2,000 characters per line | `_DEFAULT_MAX_READ_CHARS`, `DEFAULT_MAX_LINES`, `DEFAULT_MAX_LINE_LENGTH` |
 | File write and edit | 1 MiB of content; readable files up to 10 MiB | No direct equivalent |
