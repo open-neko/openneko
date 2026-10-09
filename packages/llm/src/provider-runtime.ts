@@ -200,3 +200,35 @@ export function resolveHermesProviderRuntime(args: {
     }
   }
 }
+
+/** Non-secret Ax Harness model route. The key reaches the box as an OpenShell placeholder in keyEnv. */
+export type AxModelRoute = {
+  provider: "openai" | "anthropic" | "google-gemini" | "openai-compatible";
+  model: string;
+  url?: string;
+  keyEnv?: string;
+};
+
+/**
+ * Ax Harness has native OpenAI, Anthropic and Gemini clients. Other providers
+ * use their OpenAI-compatible endpoint, as Hermes does.
+ */
+export function resolveAxModelRoute(args: {
+  provider: PrimaryProviderId;
+  model: string;
+  config?: Record<string, unknown> | null;
+}): AxModelRoute {
+  if (args.provider === "azure-openai") {
+    throw new Error("Ax does not support Azure OpenAI yet. Use Hermes for this provider.");
+  }
+  const runtime = resolveHermesProviderRuntime(args);
+  const keyEnv = runtime.keyEnv ? { keyEnv: runtime.keyEnv } : {};
+  switch (args.provider) {
+    case "openai":
+    case "anthropic":
+    case "google-gemini":
+      return { provider: args.provider, model: runtime.model, ...keyEnv };
+    default:
+      return { provider: "openai-compatible", model: runtime.model, url: runtime.baseUrl, ...keyEnv };
+  }
+}

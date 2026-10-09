@@ -5,7 +5,7 @@ import {
   type AgentReasoningEffort,
 } from "./agent-limits";
 
-export const AGENT_BACKEND_IDS = ["hermes"] as const;
+export const AGENT_BACKEND_IDS = ["hermes", "ax"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
 export { AGENT_DEFAULT_GLOBAL_CAP, METRIC_REFRESH_DEFAULT_CAP } from "./agent-limits";
@@ -22,6 +22,11 @@ export const AGENT_BACKEND_OPTIONS = [
     value: "hermes",
     label: "Hermes",
     description: "Subprocess agent. Works with any LLM provider.",
+  },
+  {
+    value: "ax",
+    label: "Ax",
+    description: "OpenNeko's Go agent. Calls tools from code, so one model step can run many tools.",
   },
 ] as const;
 
@@ -308,6 +313,8 @@ export type AgentRunOptions = {
   reasoningEffort?: AgentReasoningEffort;
   /** Caps tool-calling iterations; the agent then stops and summarizes. */
   maxToolIterations?: number;
+  /** Workflow hosts the run may reach. Backends with a web tool allow only these. */
+  networkHosts?: string[];
 };
 
 export type AgentRunResult = {

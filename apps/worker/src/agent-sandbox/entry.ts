@@ -9,7 +9,7 @@ import {
   type AgentRunResult,
   type AgentWorkspace,
 } from "@neko/llm";
-import { makeAgentBackend } from "@neko/llm/agent-runtime";
+import { makeAgentBackend, type AxBackendConfig } from "@neko/llm/agent-runtime";
 import {
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
@@ -49,6 +49,7 @@ interface SandboxJob {
   prompt: string;
   backendId: AgentBackendId;
   configuredIdentity?: AgentModelIdentity;
+  ax?: AxBackendConfig;
   model?: string;
   backendState?: Record<string, unknown>;
   pluginActions?: RunAgentBackendInput["pluginActions"];
@@ -129,6 +130,7 @@ export async function main(job = loadJob()): Promise<void> {
   const backend = makeAgentBackend({
     id: job.backendId,
     configuredIdentity: job.configuredIdentity,
+    ...(job.ax ? { ax: job.ax } : {}),
   });
 
   // MCP tools reach the control plane through stdio bridge children that

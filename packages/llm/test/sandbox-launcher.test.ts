@@ -1110,6 +1110,37 @@ describe("makeSandboxRunCore", () => {
     ).toBe(1_200_000 + 120_000);
   });
 
+  it("pins Ax model and workflow egress to the harness binary and passes its route", async () => {
+    const runCore = makeSandboxWorkflowRunCore({
+      agentImage: "ghcr.io/open-neko/agent:test",
+      modelHosts: [{ host: "api.anthropic.com" }],
+      onLog: () => {},
+    });
+    const ax = { route: { provider: "anthropic", model: "claude-sonnet-5-5", keyEnv: "ANTHROPIC_API_KEY" } };
+    const input = fakeWorkflowInput(async () => {}, {
+      id: "ax",
+      ax,
+      capabilities: { mcpTools: true, sessionResume: false },
+      run: async () => ({ finalText: "", status: "completed" }),
+    } as unknown as RunWorkflowAgentBackendInput["backend"]);
+    input.networkHosts = ["helpx.adobe.com"];
+
+    await runCore(input);
+
+    const policies = Object.values(
+      (jobCapture.policies.at(-1)?.network_policies ?? {}) as Record<
+        string,
+        { binaries: Array<{ path: string }>; endpoints: Array<{ host: string }> }
+      >,
+    );
+    const hosts = policies
+      .filter((policy) => policy.binaries[0]?.path === "/usr/local/bin/ax-harness")
+      .flatMap((policy) => policy.endpoints.map((endpoint) => endpoint.host));
+    expect(hosts.sort()).toEqual(["api.anthropic.com", "helpx.adobe.com"]);
+    expect(policies.some((policy) => policy.binaries[0]?.path === "/usr/bin/python3.11")).toBe(false);
+    expect(jobCapture.jobs.at(-1)).toMatchObject({ backendId: "ax", ax });
+  });
+
   it("adds pack-declared workflow hosts to the OpenShell policy", async () => {
     const runCore = makeSandboxWorkflowRunCore({
       agentImage: "ghcr.io/open-neko/agent:test",

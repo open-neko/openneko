@@ -36,8 +36,10 @@ type SettingsPayload = {
 type AgentSettingsPayload = {
   agent: {
     source: "org" | "default";
+    backend: string;
     globalCap: number;
   };
+  options: readonly ProviderOption[];
   defaults: { globalCap: number };
 };
 
@@ -46,6 +48,7 @@ export default function AgentForm({
 }: {
   initial: { agent: AgentSettingsPayload; providers: SettingsPayload };
 }) {
+  const [backend, setBackend] = useState(initial.agent.agent.backend);
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
@@ -78,15 +81,6 @@ export default function AgentForm({
   async function save() {
     setSaving(true);
     try {
-      const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
-      const agentRes = await fetch("/api/settings/agent", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ globalCap: cap }),
-      });
-      const agentBody = await agentRes.json();
-      if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
-
       const secretsPayload: Record<string, string | null> = {};
       const configPayload: Record<string, string> = {};
       for (const field of fields) {
@@ -114,6 +108,16 @@ export default function AgentForm({
       const providerBody = await providerRes.json();
       if (!providerRes.ok) throw new Error(providerBody.error ?? "Primary provider save failed");
 
+      // After the provider: switching to Ax checks the saved provider.
+      const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
+      const agentRes = await fetch("/api/settings/agent", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backend, globalCap: cap }),
+      });
+      const agentBody = await agentRes.json();
+      if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
+
       toast.success("Agent settings saved.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -127,11 +131,24 @@ export default function AgentForm({
       <AppHeader back={{ href: "/admin/settings", label: "Settings" }} />
       <PageHeading
         title="Agent"
-        description="Configure the model provider and worker concurrency used by the Hermes agent runtime."
+        description="Choose the agent backend for the whole organization, its model provider and worker concurrency."
       />
 
       <section className="settings-card">
         <div className="grid gap-4">
+          <Field
+            label="Agent backend"
+            hint={initial.agent.options.find((o) => o.value === backend)?.description}
+          >
+            <Select
+              id="agent-backend"
+              value={backend}
+              onChange={setBackend}
+              options={initial.agent.options}
+              ariaLabel="Agent backend"
+            />
+          </Field>
+
           <div className="settings-grid">
             <Field label="Provider">
               <Select

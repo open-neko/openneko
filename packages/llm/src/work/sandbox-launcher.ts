@@ -24,7 +24,8 @@ import {
 import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
 import type { RunAgentBackendInput } from "./agent-core";
-import { VENDORED_HERMES_MODEL_BINARY } from "../agent-runtime-contract";
+import { AX_HARNESS_BINARY, VENDORED_HERMES_MODEL_BINARY } from "../agent-runtime-contract";
+import type { AxBackend } from "../agent-backends/ax";
 import type { RunBinding } from "./broker";
 import type { RunChatTurnDeps } from "./run-chat-turn";
 import { copySkillOverrides } from "./workspace";
@@ -659,7 +660,9 @@ function makeSandboxCore(
   const runInSandbox = async function (
     input: SandboxRunInput,
   ): Promise<AgentRunResult> {
-    let pool = kind === "work" ? getSandboxPool(opts, input.workspace) : undefined;
+    // Warm slots preload Hermes, so Ax runs start cold.
+    const hermes = input.backend.id === "hermes";
+    let pool = kind === "work" && hermes ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
     const signal = isJob
@@ -733,7 +736,8 @@ function makeSandboxCore(
       prompt: toBox(inputPrompt),
       backendId: input.backend.id,
       configuredIdentity: input.backend.configuredIdentity,
-      // Hermes reads its model from the staged config.yaml.
+      // Hermes reads its model from the staged config.yaml; Ax gets its route here.
+      ...(input.backend.id === "ax" ? { ax: (input.backend as AxBackend).ax } : {}),
       workspace: boxWorkspace,
       ...(input.allowedSkills ? { allowedSkills: [...input.allowedSkills] } : {}),
       ...(kind === "work"
@@ -801,10 +805,12 @@ function makeSandboxCore(
           ];
         })()
       : [];
+    // OpenShell binds model egress to the process that calls the model.
+    const modelBinary = hermes ? VENDORED_HERMES_MODEL_BINARY : AX_HARNESS_BINARY;
     const egressRules: SandboxEgressRule[] = [
       ...(opts.modelHosts ?? []).map((endpoint, index) => ({
         ...endpoint,
-        binary: VENDORED_HERMES_MODEL_BINARY,
+        binary: modelBinary,
         ...(index === 0 && opts.modelProvider
           ? { credentialProvider: opts.modelProvider }
           : {}),
@@ -812,7 +818,7 @@ function makeSandboxCore(
       ...(kind === "workflow"
         ? ((input as RunWorkflowAgentBackendInput).networkHosts ?? []).map((host) => ({
             host,
-            binary: VENDORED_HERMES_MODEL_BINARY,
+            binary: modelBinary,
           }))
         : []),
       ...brokerEgress,
@@ -866,7 +872,7 @@ function makeSandboxCore(
       await mkdir(stageRuntimeRoot, { recursive: true });
       const jobFile = path.join(stageRuntimeRoot, "job.json");
       await writeFile(jobFile, JSON.stringify(job));
-      const hermesStage = opts.hermesHomeHostPath
+      const hermesStage = opts.hermesHomeHostPath && hermes
         ? await stageKeylessHermesHome(
             opts.hermesHomeHostPath,
             pool ? path.join(stageDir, "hermes-home") : path.join(stageRuntimeRoot, "hermes-home"),
