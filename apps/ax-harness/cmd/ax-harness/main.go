@@ -58,6 +58,13 @@ func main() {
 		}
 		tools.Capabilities = append(tools.Capabilities, shell.Capability())
 	}
+	if hosts := os.Getenv("OPENNEKO_HARNESS_WEB_HOSTS"); hosts != "" {
+		web, err := localtool.OpenWeb(hosts)
+		if err != nil {
+			fail(err)
+		}
+		tools.Capabilities = append(tools.Capabilities, web.Capability())
+	}
 	if dir := os.Getenv("OPENNEKO_HARNESS_UPLOADS_DIR"); dir != "" {
 		uploads, err := localtool.OpenFiles(dir)
 		if err != nil {

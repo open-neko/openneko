@@ -168,3 +168,37 @@ func TestToolErrorReachesTheModel(t *testing.T) {
 		t.Fatal("the responder did not see the tool error")
 	}
 }
+
+// Tools are JavaScript functions in the actor, so five calls in one step cost
+// no more model calls than one.
+func TestManyToolCallsShareOneActorStep(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Total five regions',{})"}`,
+		`{"javascriptCode":"let total=0; for (const r of ['n','s','e','w','c']) total+=sales({region:r}).total; final('Report the total',{total});"}`,
+		`{"answer":"Total 15."}`,
+	}
+	var modelCalls, toolCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		index := int(modelCalls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message",
+			ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	tool := Capability{Name: "sales", Version: "1", Origin: "fixture", Effect: "read", Description: "Sales total for a region.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["region"],"properties":{"region":{"type":"string"}},"additionalProperties":false}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			toolCalls.Add(1)
+			return json.RawMessage(`{"total":3}`), nil
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "many-tools", InputID: "input", Prompt: "Total sales"},
+		client, Tools{Capabilities: []Capability{tool}}, func(Event) error { return nil })
+	if err != nil || result.Status != "completed" || toolCalls.Load() != 5 || modelCalls.Load() != 3 {
+		t.Fatalf("result=%+v err=%v tools=%d model=%d", result, err, toolCalls.Load(), modelCalls.Load())
+	}
+}

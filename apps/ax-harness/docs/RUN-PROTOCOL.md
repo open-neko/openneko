@@ -174,6 +174,7 @@ budget on other providers. Anthropic routes use the prompt cache.
 | `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace. |
 | `OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS` | Default terminal timeout, 1 to 600. Default 180. |
 | `OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT` | Terminal output cap in characters, 1,000 to 1,000,000. Default 50,000. |
+| `OPENNEKO_HARNESS_WEB_HOSTS` | Comma list of hosts for `web_fetch`. `*.example.com` matches subdomains; `*` matches any public host. Unset means no `web_fetch`. |
 | `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
 | `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
 | `OPENNEKO_HARNESS_CHILD_READS` | Comma list of read tools for the child agent. |
@@ -184,3 +185,20 @@ binding and no model credential: the entry removes `OPENNEKO_BROKER_URL`,
 `OPENNEKO_BROKER_TOKEN`, `HARNESS_MODEL_API_KEY`, `HARNESS_MODEL_ROUTES` and
 every route's key variable. A non-zero exit is a normal result with
 `exit_code` and `output`.
+
+`file_edit` replaces `old_string` with `new_string`. The file must be read in
+this run and unchanged since the last read or edit. `old_string` must match
+once unless `replace_all` is true.
+
+`file_search` takes an RE2 `pattern`, a `glob`, or both. A pattern returns
+`{path, line, text}` matches; a glob alone returns paths. The default limit is
+50 and the maximum is 200.
+
+`web_fetch` sends a GET with no cookies or credentials. Each redirect must stay
+on the allowlist. Without a proxy, connections reach public addresses only.
+HTML returns as plain text. The cap is 10 MiB of body and 2,000,000 characters,
+as in Hermes `web_extract`.
+
+Every tool is a JavaScript function in the Goja actor. One actor step can call
+many tools, loop over results and filter them, so extra tool calls add no model
+calls.

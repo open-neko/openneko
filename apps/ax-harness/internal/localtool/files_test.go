@@ -38,12 +38,12 @@ func TestFileFreshnessAndContainment(t *testing.T) {
 		_ = json.Unmarshal(data, &output)
 		return output.Version, err
 	}
-	edit := func(version, content string) error {
-		input, _ := json.Marshal(map[string]string{"path": "note.txt", "version": version, "content": content})
+	edit := func(old, new string) error {
+		input, _ := json.Marshal(map[string]string{"path": "note.txt", "old_string": old, "new_string": new})
 		_, err := cap[1].Call(context.Background(), input)
 		return err
 	}
-	if err := edit(strings.Repeat("0", 64), "bad"); err == nil {
+	if err := edit("first", "bad"); err == nil {
 		t.Fatal("edit before read admitted")
 	}
 	version, err := read("note.txt")
@@ -53,15 +53,14 @@ func TestFileFreshnessAndContainment(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("external"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := edit(version, "bad"); err == nil {
+	if err := edit("external", "bad"); err == nil {
 		t.Fatal("stale edit admitted")
 	}
-	version, err = read("note.txt")
-	if err != nil || edit(version, "second") != nil {
-		t.Fatalf("fresh edit failed: %v", err)
+	if _, err = read("note.txt"); err != nil || edit("external", "second") != nil || edit("second", "third") != nil {
+		t.Fatalf("fresh edits failed: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(workspace, "note.txt"))
-	if err != nil || string(data) != "second" {
+	if err != nil || string(data) != "third" {
 		t.Fatalf("edited content=%q err=%v", data, err)
 	}
 	if _, err := read("../" + filepath.Base(other) + "/secret.txt"); err == nil {
@@ -88,15 +87,10 @@ func TestReadCanOverlapReadButEditWaits(t *testing.T) {
 	read := f.Capabilities()[0].Call
 	edit := f.Capabilities()[1].Call
 	input := json.RawMessage(`{"path":"note.txt"}`)
-	result, err := read(context.Background(), input)
-	if err != nil {
+	if _, err := read(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
-	var version struct{ Version string }
-	if err := json.Unmarshal(result, &version); err != nil {
-		t.Fatal(err)
-	}
-	editInput, _ := json.Marshal(map[string]string{"path": "note.txt", "version": version.Version, "content": "second"})
+	editInput := json.RawMessage(`{"path":"note.txt","old_string":"first","new_string":"second"}`)
 	f.gate.RLock() // Simulates an admitted read still in progress.
 	if _, err := read(context.Background(), input); err != nil {
 		t.Fatalf("second read did not overlap: %v", err)
@@ -175,16 +169,73 @@ func TestFileSearchStaysInsideWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	result, err := f.Capabilities()[3].Call(context.Background(), json.RawMessage(`{"query":"answer"}`))
+	result, err := f.Capabilities()[3].Call(context.Background(), json.RawMessage(`{"pattern":"answer"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var found struct {
-		Paths     []string
-		Truncated bool
-	}
-	if json.Unmarshal(result, &found) != nil || len(found.Paths) != 1 || found.Paths[0] != "nested/note.txt" || found.Truncated {
+	if string(result) != `{"matches":[{"path":"nested/note.txt","line":1,"text":"The answer is here"}],"truncated":false}` {
 		t.Fatalf("unexpected search result: %s", result)
+	}
+}
+
+func TestEditReplacesOneExactMatch(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "a.txt"), []byte("x = 1\ny = 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	read, edit := f.Capabilities()[0].Call, f.Capabilities()[1].Call
+	if _, err := read(context.Background(), json.RawMessage(`{"path":"a.txt"}`)); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{`{"path":"a.txt","old_string":"= 1","new_string":"= 2"}`, `{"path":"a.txt","old_string":"z","new_string":"w"}`, `{"path":"a.txt","old_string":"x","new_string":"x"}`} {
+		if _, err := edit(context.Background(), json.RawMessage(bad)); err == nil {
+			t.Fatalf("edit admitted: %s", bad)
+		}
+	}
+	result, err := edit(context.Background(), json.RawMessage(`{"path":"a.txt","old_string":"= 1","new_string":"= 2","replace_all":true}`))
+	if err != nil || !strings.Contains(string(result), `"replacements":2`) {
+		t.Fatalf("result=%s err=%v", result, err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(workspace, "a.txt")); string(data) != "x = 2\ny = 2\n" {
+		t.Fatalf("edited=%q", data)
+	}
+}
+
+func TestSearchByRegexAndGlob(t *testing.T) {
+	workspace := t.TempDir()
+	for path, body := range map[string]string{"q1.csv": "id,total\n7,120\n", "reports/2026/q2.csv": "id,total\n9,300\n", "reports/notes.md": "total 300\n", ".git/x.csv": "total\n"} {
+		_ = os.MkdirAll(filepath.Join(workspace, filepath.Dir(path)), 0700)
+		if err := os.WriteFile(filepath.Join(workspace, path), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	search := f.Capabilities()[3].Call
+	cases := map[string]string{
+		`{"glob":"*.csv"}`:                                 `{"paths":["q1.csv","reports/2026/q2.csv"],"truncated":false}`,
+		`{"glob":"reports/**/*.csv"}`:                      `{"paths":["reports/2026/q2.csv"],"truncated":false}`,
+		`{"pattern":"^\\d+,3\\d\\d$","glob":"*.csv"}`:      `{"matches":[{"path":"reports/2026/q2.csv","line":2,"text":"9,300"}],"truncated":false}`,
+		`{"pattern":"TOTAL","ignore_case":true,"limit":1}`: `{"matches":[{"path":"q1.csv","line":1,"text":"id,total"}],"truncated":true}`,
+	}
+	for input, want := range cases {
+		result, err := search(context.Background(), json.RawMessage(input))
+		if err != nil || string(result) != want {
+			t.Fatalf("%s: result=%s err=%v", input, result, err)
+		}
+	}
+	for _, bad := range []string{`{}`, `{"pattern":"("}`, `{"glob":"*","limit":500}`} {
+		if _, err := search(context.Background(), json.RawMessage(bad)); err == nil {
+			t.Fatalf("search admitted: %s", bad)
+		}
 	}
 }
 
@@ -275,7 +326,7 @@ func TestUploadReadsRunThroughAgent(t *testing.T) {
 	defer f.Close()
 	answers := []string{
 		`{"javascriptCode":"final('Find the invoice',{})"}`,
-		`{"javascriptCode":"const matches=upload_search({query:'invoice'}); const file=upload_read({path:matches.paths[0]}); final('Found the invoice',{matches,file});"}`,
+		`{"javascriptCode":"const matches=upload_search({glob:'invoice*'}); const file=upload_read({path:matches.paths[0]}); final('Found the invoice',{matches,file});"}`,
 		`{"answer":"Invoice approved"}`,
 	}
 	calls := 0
@@ -315,7 +366,7 @@ func TestFileCapabilitiesRunThroughAgent(t *testing.T) {
 	defer f.Close()
 	answers := []string{
 		`{"javascriptCode":"final('Update the note',{})"}`,
-		`{"javascriptCode":"const r=file_read({path:'note.txt'}); const e=file_edit({path:'note.txt',version:r.version,content:'done'}); const w=file_write({path:'result.txt',content:'created'}); final('Updated the note',{r,e,w});"}`,
+		`{"javascriptCode":"const r=file_read({path:'note.txt'}); const e=file_edit({path:'note.txt',old_string:r.content,new_string:'done'}); const w=file_write({path:'result.txt',content:'created'}); final('Updated the note',{r,e,w});"}`,
 		`{"answer":"Updated the note"}`,
 	}
 	calls := 0
