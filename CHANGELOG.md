@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.19.0](https://github.com/open-neko/openneko/compare/v3.18.0...v3.19.0) (2026-10-09)
+
+
+### Features
+
+* **ax-harness:** close the 12 audit gaps and match Hermes limits ([52ee6fe](https://github.com/open-neko/openneko/commit/52ee6fefd7dc08a6a0f677a43eb6507edc16b2bf))
+* **ax-harness:** close the 12 audit gaps, match Hermes limits, share agent limits ([9c6b3a2](https://github.com/open-neko/openneko/commit/9c6b3a2849969bc507b5047caf7613a24ab8a17c))
+* **ax-harness:** string-replace edits, regex search and web_fetch ([431e465](https://github.com/open-neko/openneko/commit/431e4655a5e2146ce830d81eebf94ff28570d4c9))
+* **llm:** manage agent limits for Hermes and Ax from one source ([6fab131](https://github.com/open-neko/openneko/commit/6fab131d93d6aece8cc24d63d53e2a15dfab75cf))
+
+
+### Bug Fixes
+
+* **ax-harness:** match the Hermes terminal default of 180 seconds ([1d70dff](https://github.com/open-neko/openneko/commit/1d70dfff31add740087baf73364fdafe3234b6f9))
+
 ## [3.18.0](https://github.com/open-neko/openneko/compare/v3.17.4...v3.18.0) (2026-10-08)
 
 
