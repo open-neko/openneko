@@ -31,38 +31,6 @@ type RoutedClient struct {
 	Fallbacks      map[string]string
 	PricingVersion string
 	Prices         map[string]TokenPrice
-	GraphJinPrice  *TokenPrice
-}
-
-// uniqueRouteStages is a fallback when Ax emits no usable stage lifecycle.
-// A shared alias has no reliable stage from its provider name alone; leave it
-// unattributed rather than guessing from request order. Approved alternate
-// routes inherit a source stage only when that source is unique.
-func uniqueRouteStages(stages StageModels, fallbacks map[string]string) map[string]string {
-	labels := map[string]string{}
-	ambiguous := map[string]bool{}
-	add := func(route, stage string) {
-		if route == "" || ambiguous[route] {
-			return
-		}
-		if current, ok := labels[route]; ok && current != stage {
-			delete(labels, route)
-			ambiguous[route] = true
-			return
-		}
-		labels[route] = stage
-	}
-	add(stages.Context, "distiller")
-	add(stages.Executor, "executor")
-	add(stages.Responder, "responder")
-	add(stages.Skill, "skill_selection")
-	add(stages.ExecutorEscalation, "executor")
-	for from, to := range fallbacks {
-		if stage, ok := labels[from]; ok {
-			add(to, stage)
-		}
-	}
-	return labels
 }
 
 // transientRouteFallback changes only a failed model-generation request. Ax
@@ -88,8 +56,8 @@ func (r *transientRouteFallback) Chat(ctx context.Context, request, options map[
 		return result, err
 	}
 	if r.before != nil {
-		if journalErr := r.before(from, to); journalErr != nil {
-			return nil, journalErr
+		if recordErr := r.before(from, to); recordErr != nil {
+			return nil, recordErr
 		}
 	}
 	copy := make(map[string]ax.Value, len(request))
@@ -199,17 +167,4 @@ func (r *executorErrorRoute) GetFeatures(model string) map[string]ax.Value {
 		return features.GetFeatures(r.selected(model))
 	}
 	return nil
-}
-
-func routedProfile(client ax.AIClient) *RoutedClient {
-	switch current := client.(type) {
-	case *RoutedClient:
-		return current
-	case *executorErrorRoute:
-		return routedProfile(current.AIClient)
-	case *transientRouteFallback:
-		return routedProfile(current.AIClient)
-	default:
-		return nil
-	}
 }

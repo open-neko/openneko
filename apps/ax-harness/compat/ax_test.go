@@ -1,5 +1,4 @@
-// Package compat exercises the pinned Ax implementation over real HTTP and Goja.
-// It is a qualification suite, not the production durable execution engine.
+// Package compat checks the pinned Ax behavior that the harness relies on, over real HTTP and Goja.
 package compat
 
 import (
@@ -11,17 +10,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
-	"github.com/open-neko/openneko/apps/ax-harness/internal/axbridge"
 )
 
-// probe records metadata only. The production journal must be durable and must
-// admit an operation before dispatch; this in-memory probe proves callback placement.
+// probe records callback metadata only, to prove callback placement.
 type probe struct {
 	mu       sync.Mutex
 	events   []string
@@ -31,7 +27,7 @@ type probe struct {
 func (p *probe) invoke(ctx context.Context, args map[string]ax.Value) (ax.Value, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.events = append(p.events, "proposed")
+	p.events = append(p.events, "started")
 	status := "completed"
 	defer func() { p.events = append(p.events, status) }()
 	if ctx.Err() != nil {
@@ -101,48 +97,6 @@ func modelServer(t *testing.T, messages ...map[string]ax.Value) (*ax.OpenAICompa
 	return ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic-test-key", "model", "fixture")), requests
 }
 func answer(s string) map[string]ax.Value { return ax.Object("role", "assistant", "content", s) }
-func call(id, params string) ax.Value {
-	return ax.Object("id", id, "type", "function", "function", ax.Object("name", "lookup", "arguments", params))
-}
-
-func TestNativeToolBoundaryHTTP(t *testing.T) {
-	for _, tc := range []struct {
-		name, params, status string
-		executed             int
-	}{
-		{"allowed", `{"query":"reference"}`, "completed", 1},
-		{"denied", `{"query":"denied"}`, "denied", 0},
-		{"invalid", `{"query":7}`, "invalid", 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p := &probe{}
-			client, requests := modelServer(t, ax.Object("role", "assistant", "tool_calls", ax.Array(call("call_1", tc.params))), answer(`Answer: done`))
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			gen := ax.NewAx("question:string -> answer:string", ax.Object("functions", ax.Array(axbridge.BindTool(ctx, ax.Fn("lookup"), p.invoke)), "validationRetries", 0))
-			out, err := gen.Forward(ctx, client, ax.Object("question", "Find reference"), nil)
-			if err != nil || object(out)["answer"] != "done" {
-				t.Fatalf("output=%v error=%v", out, err)
-			}
-			p.check(t, tc.executed, "proposed", tc.status)
-			if len(requests.snapshot()) != 2 {
-				t.Fatalf("requests=%d", len(requests.snapshot()))
-			}
-			// Verify the provider-visible transcript, rather than only callback counts.
-			count := 0
-			for _, v := range requests.snapshot()[1]["messages"].([]any) {
-				m := v.(map[string]any)
-				if m["role"] == "tool" && m["tool_call_id"] == "call_1" {
-					count++
-				}
-			}
-			if count != 1 {
-				t.Fatalf("want one matching result, got %d", count)
-			}
-		})
-	}
-}
-
 func TestAgentGojaTwoCallbacksHTTP(t *testing.T) {
 	p := &probe{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -158,7 +112,7 @@ func TestAgentGojaTwoCallbacksHTTP(t *testing.T) {
 	if err != nil || object(out)["answer"] != "REF-42" {
 		t.Fatalf("output=%v error=%v requests=%d", out, err, len(requests.snapshot()))
 	}
-	p.check(t, 1, "proposed", "completed", "proposed", "denied")
+	p.check(t, 1, "started", "completed", "started", "denied")
 	if len(requests.snapshot()) != 3 || !strings.Contains(encoded(requests.snapshot()[2]), "REF-42") || !strings.Contains(encoded(requests.snapshot()[2]), "permission denied") {
 		t.Fatal("responder did not receive actual callback outcomes")
 	}
@@ -197,133 +151,5 @@ func TestHTTPStreamingCancellation(t *testing.T) {
 	case <-observed:
 	case <-time.After(time.Second):
 		t.Fatal("HTTP upstream did not observe cancellation")
-	}
-}
-
-func TestGojaSnapshotBoundary(t *testing.T) {
-	runtime := axgoja.NewRuntime()
-	session, err := runtime.CreateSession(nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer session.Close()
-	session.Execute("counter=42; fn=function(){return 1}; final({counter})", nil)
-	snapshot := session.SnapshotGlobals(nil)
-	restored, err := runtime.CreateSession(nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer restored.Close()
-	restored.PatchGlobals(snapshot, nil)
-	state := object(restored.Inspect(nil))
-	if fmt.Sprint(state["counter"]) != "42" {
-		t.Fatalf("data lost: %v", state)
-	}
-	if _, exists := state["fn"]; exists {
-		t.Fatal("function unexpectedly persisted; re-evaluate checkpoint contract")
-	}
-	capped, err := runtime.CreateSession(nil, ax.Object("runtimePolicy", ax.Object("maxSnapshotBytes", 64)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer capped.Close()
-	capped.Execute("large='x'.repeat(1000)", nil)
-	if object(object(capped.SnapshotGlobals(nil))["bindings"])["__ax_snapshot_truncated"] != true {
-		t.Fatal("missing truncation marker")
-	}
-}
-
-func TestAgentSessionSnapshotBoundary(t *testing.T) {
-	runtime := axgoja.NewRuntime()
-	agent := ax.NewAgent("question:string -> answer:string", ax.Object("runtime", runtime))
-	defer agent.CloseRuntimeSession()
-	_, err := agent.ExecuteActorStep(runtime, "counter=42; final({answer:'saved'})", ax.Object("question", "save"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshot := agent.ExportSessionState(nil)
-	restoredRuntime := axgoja.NewRuntime()
-	restored := ax.NewAgent("question:string -> answer:string", ax.Object("runtime", restoredRuntime))
-	defer restored.CloseRuntimeSession()
-	if _, err = restored.ExecuteActorStep(restoredRuntime, "counter=0", ax.Object("question", "restore"), nil); err != nil {
-		t.Fatal(err)
-	}
-	restored.RestoreSessionState(snapshot, nil)
-	if fmt.Sprint(object(restored.InspectRuntime(nil))["counter"]) != "42" {
-		t.Fatal("Agent-level restore lost runtime data")
-	}
-	if !strings.Contains(encoded(agent.ExportTrace()), "state_export") || !strings.Contains(encoded(restored.ExportTrace()), "state_restore") {
-		t.Fatal("snapshot lifecycle not observable")
-	}
-	if _, ok := object(agent.ExportRuntimeState())["context_events"]; !ok {
-		t.Fatal("context event state unavailable")
-	}
-}
-
-// ExportSessionState restores data, not the stage/statement at which Forward stopped.
-func TestAgentSnapshotDoesNotResumeForwardCursor(t *testing.T) {
-	var calls, lookups atomic.Int32
-	answers := []string{`{"javascriptCode":"final('Read reference', {})"}`, `{"javascriptCode":"const evidence=lookup('read'); final('Report reference',{evidence});"}`, `Answer: REF-42`}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := int(calls.Add(1)) - 1
-		if n == 2 {
-			http.Error(w, "injected responder failure", 400)
-			return
-		}
-		if n >= 6 {
-			http.Error(w, "unexpected model call", 400)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[n%3]), "finish_reason", "stop"))))
-	}))
-	defer server.Close()
-	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
-	makeAgent := func() (*ax.AxAgent, ax.CodeRuntime) {
-		runtime := axgoja.NewRuntime(axgoja.WithCallable("lookup", func(ax.Value) (ax.Value, error) { lookups.Add(1); return ax.Object("reference", "REF-42"), nil }))
-		return ax.NewAgent("question:string -> answer:string", ax.Object("runtime", runtime, "directResponse", "off", "validationRetries", 0, "infraRetries", 0)), runtime
-	}
-	first, _ := makeAgent()
-	defer first.CloseRuntimeSession()
-	opts := ax.Object("validationRetries", 0, "infraRetries", 0)
-	if _, err := first.Forward(context.Background(), client, ax.Object("question", "Read the reference"), opts); err == nil {
-		t.Fatal("expected interrupted responder")
-	}
-	if calls.Load() != 3 || lookups.Load() != 1 {
-		t.Fatalf("unexpected first attempt: calls=%d lookups=%d", calls.Load(), lookups.Load())
-	}
-	func() {
-		defer func() {
-			if value := recover(); fmt.Sprint(value) != "runtime session snapshot globals must be an object" {
-				t.Errorf("failed Forward snapshot contract changed: %v", value)
-			}
-		}()
-		first.ExportSessionState(nil)
-	}()
-	// The supported export boundary is a separately completed actor step.
-	seed, seedRuntime := makeAgent()
-	defer seed.CloseRuntimeSession()
-	if _, err := seed.ExecuteActorStep(seedRuntime, "const evidence=lookup('read'); final('Report reference',{evidence});", ax.Object("question", "read"), nil); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(seed.ExportSessionState(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snapshot ax.Value
-	if err = json.Unmarshal(encoded, &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	restored, runtime := makeAgent()
-	defer restored.CloseRuntimeSession()
-	if _, err = restored.ExecuteActorStep(runtime, "checkpointMarker=1", ax.Object("question", "restore"), nil); err != nil {
-		t.Fatal(err)
-	}
-	restored.RestoreSessionState(snapshot, nil)
-	if _, err = restored.Forward(context.Background(), client, ax.Object("question", "Read the reference"), opts); err != nil {
-		t.Fatal(err)
-	}
-	if calls.Load() != 6 || lookups.Load() != 3 {
-		t.Fatalf("Ax continuation contract changed: calls=%d lookups=%d", calls.Load(), lookups.Load())
 	}
 }

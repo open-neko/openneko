@@ -38,14 +38,3 @@ jobs:
 
       - name: go test
         run: go test -race -count=1 -timeout 10m ./...
-
-      - name: telemetry check self-test
-        run: python3 integration/check-telemetry.py --self-test
-
-      - name: Core must not import consumer adapters
-        run: |
-          deps=$(go list -deps ./internal/... ./compat/... ./integration/probe)
-          if grep -q '/adapters/' <<< "$deps"; then
-            echo 'Consumer adapter imported by core' >&2
-            exit 1
-          fi

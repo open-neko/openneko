@@ -1,4 +1,4 @@
-// harness accepts one JSON run specification and emits NDJSON lifecycle events.
+// Package command accepts one JSON run specification and emits NDJSON lifecycle events.
 package command
 
 import (
@@ -12,16 +12,7 @@ import (
 	"syscall"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
-	"github.com/open-neko/openneko/apps/ax-harness/internal/session"
 )
-
-func Main(lookup func(context.Context, string) (json.RawMessage, error)) {
-	MainWithTools(agent.Tools{Lookup: lookup})
-}
-
-func MainWithTools(tools agent.Tools) {
-	MainWithToolsAndCleanup(tools, nil)
-}
 
 // MainWithToolsAndCleanup closes external tool sessions before exiting.
 func MainWithToolsAndCleanup(tools agent.Tools, cleanup func() error) {
@@ -39,11 +30,9 @@ func MainWithToolsAndCleanup(tools agent.Tools, cleanup func() error) {
 	}
 	os.Exit(code)
 }
+
 func run(ctx context.Context, input io.Reader, output io.Writer) (int, error) {
-	return execute(ctx, input, output, nil)
-}
-func execute(ctx context.Context, input io.Reader, output io.Writer, lookup func(context.Context, string) (json.RawMessage, error)) (int, error) {
-	return executeWithTools(ctx, input, output, agent.Tools{Lookup: lookup})
+	return executeWithTools(ctx, input, output, agent.Tools{})
 }
 
 func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, tools agent.Tools) (int, error) {
@@ -61,46 +50,12 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return 2, fmt.Errorf("expected exactly one run specification")
 	}
-	if spec.HostRoutingDigest != "" || spec.HostBudgetMode != "" {
-		return 2, fmt.Errorf("host routing or budget mode cannot be selected by run input")
-	}
-	spec.HostBudgetMode = os.Getenv("HARNESS_BUDGET_MODE")
-	if !spec.ValidBudgetMode() {
-		return 2, fmt.Errorf("HARNESS_BUDGET_MODE requires approved triage and hard budgets")
-	}
-	client, digest, err := loadModelClient(os.Getenv)
+	client, err := loadModelClient(os.Getenv)
 	if err != nil {
 		return 2, err
 	}
-	if spec.TriageSummary != "" {
-		tools.Triage, err = loadTriageClient(os.Getenv("HARNESS_MODEL_ROUTES"), os.Getenv)
-		if err != nil {
-			return 2, err
-		}
-	}
-	spec.HostRoutingDigest = digest
 	encoder := json.NewEncoder(output)
-	emit := func(e agent.Event) error { return encoder.Encode(e) }
-	var result agent.Result
-	resume := os.Getenv("HARNESS_RESUME")
-	if resume != "" && resume != "1" {
-		return 2, fmt.Errorf("HARNESS_RESUME must be unset or 1")
-	}
-	if root := os.Getenv("HARNESS_STATE_DIR"); root != "" {
-		if resume == "1" {
-			result, err = session.ResumeWithTools(ctx, root, spec, client, tools, emit)
-		} else {
-			result, err = session.RunWithTools(ctx, root, spec, client, tools, emit)
-		}
-	} else {
-		if resume != "" {
-			return 2, fmt.Errorf("continuation requires HARNESS_STATE_DIR")
-		}
-		if tools.Lookup != nil || tools.Propose != nil || len(tools.Capabilities) != 0 || spec.TriageSummary != "" {
-			return 2, fmt.Errorf("tool execution requires HARNESS_STATE_DIR")
-		}
-		result, err = agent.RunWithTools(ctx, spec, client, tools, emit)
-	}
+	result, err := agent.RunWithTools(ctx, spec, client, tools, func(e agent.Event) error { return encoder.Encode(e) })
 	if err != nil {
 		return 1, fmt.Errorf("run input or event delivery failed")
 	}

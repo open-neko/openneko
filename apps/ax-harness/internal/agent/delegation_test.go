@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -52,7 +51,6 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 		t.Fatalf("result=%+v err=%v calls=%d reads=%d writes=%d events=%d", result, err, modelCalls.Load(), reads.Load(), writes.Load(), len(events))
 	}
 	started, finished := 0, 0
-	stageCalls := map[string]int{}
 	for _, event := range events {
 		if event.Type == "child.started" {
 			started++
@@ -60,17 +58,9 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 		if event.Type == "child.finished" {
 			finished++
 		}
-		if event.Type == "model.stage_usage" && event.StageUsage != nil {
-			stageCalls[event.Name] = event.StageUsage.Requests
-		}
 	}
 	if started != 2 || finished != 2 {
 		t.Fatalf("child lifecycle events started=%d finished=%d", started, finished)
-	}
-	for _, stage := range []string{"distiller", "executor", "responder"} {
-		if stageCalls[stage] != 1 || stageCalls["child."+stage] != 2 {
-			t.Fatalf("stage request counts=%v", stageCalls)
-		}
 	}
 	modelCalls.Store(0)
 	reads.Store(0)
@@ -164,19 +154,18 @@ func TestChildLargeResultReferenceStaysInChildRuntime(t *testing.T) {
 			reads.Add(1)
 			return json.Marshal(ax.Object("label", "REF-42", "noise", strings.Repeat("X", 200_000)))
 		}}
-	var modelStages []string
+	modelRequests := 0
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-reference", InputID: "input", Prompt: "Verify receipt", MaxOperations: 4, MaxModelCalls: 8}, client,
 		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(event Event) error {
 			if event.Type == "model.request.started" {
-				modelStages = append(modelStages, event.Stage)
+				modelRequests++
 			}
 			return nil
 		})
 	if err != nil || result.Status != "completed" || reads.Load() != 1 || calls.Load() != int32(len(answers)) {
 		t.Fatalf("result=%+v err=%v reads=%d calls=%d", result, err, reads.Load(), calls.Load())
 	}
-	wantStages := []string{"distiller", "executor", "child.distiller", "child.executor", "child.responder", "responder"}
-	if !reflect.DeepEqual(modelStages, wantStages) {
-		t.Fatalf("model call stages = %v, want %v", modelStages, wantStages)
+	if modelRequests != 6 {
+		t.Fatalf("model requests = %d, want 6", modelRequests)
 	}
 }

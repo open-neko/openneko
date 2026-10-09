@@ -8,7 +8,7 @@ type TokenPrice struct {
 	OutputMicrosPerMillion int64 `json:"output_micros_per_million"`
 }
 
-// CostSummary is the durable admission charge in USD micros. Missing provider
+// CostSummary is the admission charge in USD micros. Missing provider
 // usage retains its reservation. It is an estimate, not a provider invoice.
 type CostSummary struct {
 	PricingVersion string `json:"pricing_version"`

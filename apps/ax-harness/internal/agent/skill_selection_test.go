@@ -46,19 +46,3 @@ func TestSemanticSkillSelectionRejectsUnstagedName(t *testing.T) {
 		t.Fatalf("name=%q event=%+v calls=%d", name, selected, events.modelCalls)
 	}
 }
-
-func TestSkillCatalogChangesCheckpointIdentity(t *testing.T) {
-	a := Tools{SkillCatalog: []SkillMetadata{{Name: "daily", Description: "First"}}}
-	b := Tools{SkillCatalog: []SkillMetadata{{Name: "daily", Description: "Changed"}}}
-	one, err := a.CatalogHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	two, err := b.CatalogHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if one == two {
-		t.Fatal("changed skill metadata retained checkpoint identity")
-	}
-}

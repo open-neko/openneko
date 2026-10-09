@@ -1,55 +1,32 @@
 # Ax Harness
 
-Go agent harness built on the [Ax](https://github.com/ax-llm/ax) framework, with
-OpenShell execution support. OpenNeko offers it as the Ax backend, an
-alternative to Hermes. The engine under `internal/` does not import the OpenNeko
-application; only `adapters/openneko` knows the OpenNeko run contract.
+Ax Harness is a Go agent harness built on the [Ax](https://github.com/ax-llm/ax)
+framework. OpenNeko offers it as the Ax backend, an alternative to Hermes.
 
-## Current implementation
+The harness runs one agent turn per process. It reads one run specification
+on stdin, runs an Ax agent with tools, and writes events as JSON lines on
+stdout. The host owns history, approvals, the sandbox and scheduling.
 
-- `cmd/harness`, `internal/agent`: initial headless AxAgent run and NDJSON lifecycle.
-- `internal/axbridge`: run-bound Ax tool callbacks for cancellation and telemetry.
-- `compat`: actual HTTP/Goja checks for tool pairing, cancellation and snapshots.
-- `integration`: isolated real OpenShell transport and credential-policy checks.
-- `internal/session`: bounded durable acceptance, typed operation receipts and recovery.
-- `internal/localtool`: opt-in run-scoped file Read/Edit with freshness and resume checks.
-- `internal/batch`: controlled file-backed script and brokered query-cache runner.
-- `adapters/openneko`: optional GraphJin lookup, governed proposals and product launch adapter.
+## Layout
 
-The [headless run protocol](docs/RUN-PROTOCOL.md), M3 product path and
-[M4 governed recovery](docs/M4-RECOVERY.md) are implemented and locally verified.
-Acceptance covers real web approval/reload, queue worker death, broker, OpenShell,
-GraphJin and controlled HTTP effects. Unknown effects are never automatically
-redispatched. M2 raw OpenShell proxy cancellation is an accepted upstream limitation;
-arbitrary VM recovery, M5–M8 and production rollout are not qualified.
+| Path | Contents |
+| --- | --- |
+| `internal/agent` | The agent loop, budgets, usage and cost, model routes and fallback, the child agent and skill selection. |
+| `internal/command` | Run input, model route configuration and the event stream. |
+| `internal/mcp` | A stdio MCP client that exposes server tools as capabilities. |
+| `internal/localtool` | File, upload and skill tools confined to one directory. |
+| `cmd/ax-harness` | The OpenNeko entry point. It is the only OpenNeko-aware code. |
+| `compat` | Checks of the pinned Ax behavior that the harness uses. |
+
+The protocol is in [docs/RUN-PROTOCOL.md](docs/RUN-PROTOCOL.md). Notes on Ax
+development are in [docs/AX-DEVELOPMENT.md](docs/AX-DEVELOPMENT.md).
+
+## Checks
 
 ```sh
-go test -race -count=1 -timeout 60s ./...
 go vet ./...
-OPENSHELL_TEST_CLI=/absolute/path/to/openshell-0.0.116 ./integration/run.sh
+go test -race -count=1 -timeout 10m ./...
 ```
 
-The default integration suite requires Docker and the pinned OpenShell CLI; it
-requires no application worker, broker, database or web app. Consumer acceptance
-checks are separate and will progressively exercise those real services.
-
-## Integration boundary
-
-The harness owns execution semantics, Ax routing, tools, recovery and neutral
-telemetry. Consumers supply trusted run configuration, authorization, model routes,
-scoped capabilities and persistence/telemetry bindings. Consumer adapters translate
-launch, event and result contracts; core packages never import them. No dynamic
-plugin loader or consumer-specific policy is built into the core. OpenNeko is the
-concrete first integration target, not a reason to generalize for hypothetical consumers.
-Prefer a small, justified product entrypoint change over a permanent compatibility
-workaround when it reduces total complexity.
-
-See [the OpenNeko adapter](adapters/openneko/README.md) for its build and test commands.
-The earlier M1 copy was committed to OpenNeko main as `643b4a8`; that historical
-commit remains. The runtime lives here; the opt-in product adapter is a small separate OpenNeko change.
-
-See [building blocks](docs/BUILDING-BLOCKS.md), [design](docs/DESIGN.md), [milestones](docs/MILESTONES.md), [OpenShell findings](docs/OPENSHELL.md)
-and [live integration evidence](integration/README.md). The `claude_code` reference
-dump and generated binaries are excluded from version control.
-
-Current inventory and gaps: [stocktake](docs/STOCKTAKE.md).
+`internal/mcp` has opt-in tests against the real OpenNeko bridge. Install the
+`apps/worker` dependencies, then set `OPENNEKO_BRIDGE_TEST=1`.

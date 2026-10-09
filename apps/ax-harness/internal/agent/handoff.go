@@ -203,7 +203,7 @@ func runtimeProjectionBytes(value ax.Value) int {
 // them in Inspect and SnapshotGlobals. A saved operation read can therefore
 // re-enter model context through an ordinary JS variable even when the tool
 // result itself was returned as a short reference. Bound only the projection;
-// the code session and authoritative operation checkpoint retain full bytes.
+// the code session and the run's saved operation keep the full bytes.
 func boundRuntimeValue(value ax.Value) ax.Value {
 	switch v := value.(type) {
 	case string:

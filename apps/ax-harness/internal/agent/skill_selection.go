@@ -32,10 +32,8 @@ func selectSkill(ctx context.Context, client ax.AIClient, route, query string, c
 	))
 	output, err := selector.ForwardWithHooks(modelContext, client, ax.Object("request", query, "catalog", string(metadata)),
 		ax.Object("validationRetries", 0, "infraRetries", 0), ax.AxRuntimeHooks{
-			Tracer: events,
-			RateLimiter: ax.AxRateLimiterFunc(func(next ax.AxRequestExecutor, info ax.AxRateLimitInfo) (ax.Value, error) {
-				return events.admitModelStage(next, info, "skill_selection")
-			}),
+			Tracer:      events,
+			RateLimiter: ax.AxRateLimiterFunc(events.admitModel),
 		})
 	if err != nil {
 		events.send(Event{Type: "skill.selected", Origin: "semantic", Error: "selection_unavailable"})
