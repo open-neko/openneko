@@ -1,0 +1,9 @@
+# OpenShell 0.1.2 runs upstream TLS in a separate, distroless supervisor.
+# Extend its existing public roots with this suite's ephemeral fixture CA.
+FROM ghcr.io/nvidia/openshell/supervisor:0.1.2 AS supervisor
+FROM debian:bookworm-slim AS certs
+COPY --from=supervisor /etc/ssl/certs/ca-certificates.crt /tmp/public-roots.crt
+COPY fixture.crt /tmp/fixture-ca.crt
+RUN cat /tmp/public-roots.crt /tmp/fixture-ca.crt > /tmp/combined-roots.crt
+FROM supervisor
+COPY --from=certs /tmp/combined-roots.crt /etc/ssl/certs/ca-certificates.crt
