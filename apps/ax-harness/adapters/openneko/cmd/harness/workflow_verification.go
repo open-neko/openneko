@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 // A queued workflow's final answer is successful only after the host broker

@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/open-neko/harness/adapters/openneko/internal/openshellcompat"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/internal/openshellcompat"
 )
 
 func main() {

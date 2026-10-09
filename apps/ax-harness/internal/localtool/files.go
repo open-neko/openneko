@@ -19,7 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 const maxFile = 64 << 10

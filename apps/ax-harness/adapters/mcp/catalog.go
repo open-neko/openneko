@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 // Admission is supplied by the host, never by MCP discovery or model output.

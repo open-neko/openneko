@@ -3,7 +3,7 @@ package broker
 import (
 	"context"
 	"encoding/json"
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 	"net/http"
 	"net/http/httptest"
 	"strings"

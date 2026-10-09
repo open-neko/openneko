@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/open-neko/harness/internal/budgettriage"
-	"github.com/open-neko/harness/internal/session"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/session"
 )
 
 const missingModelTokens int64 = 4096

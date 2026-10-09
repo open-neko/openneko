@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
-	shared "github.com/open-neko/harness/adapters/mcp"
-	"github.com/open-neko/harness/internal/agent"
+	shared "github.com/open-neko/openneko/apps/ax-harness/adapters/mcp"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 // ReadConfig is trusted launch context, never a model-selected tool argument.

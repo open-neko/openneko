@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 // GraphJin binds URL, token and source at the trusted host boundary. Actor input

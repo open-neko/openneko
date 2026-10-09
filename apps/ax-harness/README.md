@@ -1,10 +1,9 @@
-# Harness
+# Ax Harness
 
-Independent Go agent harness using Ax, with OpenShell execution support.
-OpenNeko is the first consumer, integrated through an optional adapter. The Go
-module namespace `github.com/open-neko/harness` names this repository; it does not
-import or require the OpenNeko application. No sibling checkout is needed to build
-or run the standalone checks.
+Go agent harness built on the [Ax](https://github.com/ax-llm/ax) framework, with
+OpenShell execution support. OpenNeko offers it as the Ax backend, an
+alternative to Hermes. The engine under `internal/` does not import the OpenNeko
+application; only `adapters/openneko` knows the OpenNeko run contract.
 
 ## Current implementation
 

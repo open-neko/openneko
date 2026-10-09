@@ -14,7 +14,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
-	"github.com/open-neko/harness/internal/axbridge"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/axbridge"
 )
 
 type traceProbe struct {

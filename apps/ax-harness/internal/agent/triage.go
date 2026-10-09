@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 // runBudgetTriage charges one optional Typesafe request. Its proposal only

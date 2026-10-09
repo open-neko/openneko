@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-neko/harness/adapters/openneko/processshell"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/processshell"
 )
 
 const isolatedProcessScript = `import os, pathlib, socket, urllib.error, urllib.request

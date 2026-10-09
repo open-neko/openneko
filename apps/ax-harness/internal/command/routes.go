@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	ax "github.com/ax-llm/ax/packages/go"
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 type modelRoute struct {

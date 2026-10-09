@@ -12,9 +12,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/budgeteval"
-	"github.com/open-neko/harness/internal/session"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgeteval"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/session"
 )
 
 var pairID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)

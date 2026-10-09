@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 // BudgetTrace contains only validated budget metadata. It excludes the prompt,

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	ax "github.com/ax-llm/ax/packages/go"
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 func TestDedicatedTypesafeRouteUsesNativePathAndBrokerCredential(t *testing.T) {

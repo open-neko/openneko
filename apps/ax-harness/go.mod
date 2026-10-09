@@ -1,4 +1,4 @@
-module github.com/open-neko/harness
+module github.com/open-neko/openneko/apps/ax-harness
 
 go 1.25.0
 

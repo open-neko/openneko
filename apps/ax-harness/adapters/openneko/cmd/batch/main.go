@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/open-neko/harness/adapters/openneko/batchshell"
-	"github.com/open-neko/harness/adapters/openneko/broker"
-	"github.com/open-neko/harness/internal/batch"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/batchshell"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/broker"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/batch"
 )
 
 func main() {

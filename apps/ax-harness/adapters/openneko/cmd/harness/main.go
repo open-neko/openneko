@@ -7,11 +7,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/open-neko/harness/adapters/openneko/broker"
-	productmcp "github.com/open-neko/harness/adapters/openneko/mcp"
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/command"
-	"github.com/open-neko/harness/internal/localtool"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/broker"
+	productmcp "github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/mcp"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/command"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 )
 
 func main() {

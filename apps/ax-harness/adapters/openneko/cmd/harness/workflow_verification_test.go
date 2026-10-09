@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	ax "github.com/ax-llm/ax/packages/go"
-	"github.com/open-neko/harness/adapters/openneko/broker"
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/session"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/broker"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/session"
 )
 
 func TestWorkflowCompletionNeedsBrokerConfirmedOutput(t *testing.T) {

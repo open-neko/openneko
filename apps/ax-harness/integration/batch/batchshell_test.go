@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-neko/harness/adapters/openneko/batchshell"
-	"github.com/open-neko/harness/internal/batch"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/batchshell"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/batch"
 )
 
 const batchScript = `import argparse, csv, hashlib, json, os, pathlib, socket, sys, urllib.error, urllib.request

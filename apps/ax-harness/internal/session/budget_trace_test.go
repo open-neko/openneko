@@ -3,7 +3,7 @@ package session
 import (
 	"testing"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 func TestTaskFingerprintIgnoresRunIdentityButBindsAcceptedInput(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 func TestProcessRunSendsRuntimeIdentityAndRequiresFileReceipt(t *testing.T) {

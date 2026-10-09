@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/open-neko/harness/internal/batch"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/batch"
 )
 
 const RemoteWorkDir = "/sandbox/batch/work"

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 func TestTerminalGateReplaysCommittedEvidenceAfterInterruptedDelivery(t *testing.T) {

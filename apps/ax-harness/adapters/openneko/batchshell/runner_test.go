@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/open-neko/harness/internal/batch"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/batch"
 )
 
 func TestBundlePinIncludesImportsAndRejectsLinks(t *testing.T) {

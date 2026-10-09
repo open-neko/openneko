@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 // Tools are host-installed capabilities. Propose only creates an approval request;

@@ -12,8 +12,8 @@ import (
 	"reflect"
 	"syscall"
 
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 // Recovery is evidence, not authorization to repeat an operation. Inspect never

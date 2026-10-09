@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 const request = `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference"}`

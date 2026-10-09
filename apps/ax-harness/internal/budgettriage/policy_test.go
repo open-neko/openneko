@@ -3,7 +3,7 @@ package budgettriage_test
 import (
 	"testing"
 
-	"github.com/open-neko/harness/internal/budgettriage"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/budgettriage"
 )
 
 func testBudgetPolicy() budgettriage.Policy {

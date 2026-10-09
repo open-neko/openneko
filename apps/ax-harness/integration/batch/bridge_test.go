@@ -14,9 +14,9 @@ import (
 	"time"
 
 	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
-	adapter "github.com/open-neko/harness/adapters/mcp"
-	product "github.com/open-neko/harness/adapters/openneko/mcp"
-	"github.com/open-neko/harness/internal/agent"
+	adapter "github.com/open-neko/openneko/apps/ax-harness/adapters/mcp"
+	product "github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/mcp"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 // Runs the actual OpenNeko stdio multiplexer through the Go MCP SDK. The

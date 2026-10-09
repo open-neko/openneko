@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/open-neko/harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
 func fixture(t *testing.T, s checkpoint) (string, string) {

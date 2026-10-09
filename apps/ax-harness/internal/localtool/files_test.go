@@ -14,8 +14,8 @@ import (
 	"time"
 
 	ax "github.com/ax-llm/ax/packages/go"
-	"github.com/open-neko/harness/internal/agent"
-	"github.com/open-neko/harness/internal/session"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/session"
 )
 
 func TestFileFreshnessAndContainment(t *testing.T) {

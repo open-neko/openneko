@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/open-neko/harness/adapters/openneko/processshell"
+	"github.com/open-neko/openneko/apps/ax-harness/adapters/openneko/processshell"
 )
 
 const maxRequestBytes = 32 << 10
