@@ -16,18 +16,21 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-// Terminal limits match Hermes: 180 s default, 600 s maximum, and 50,000
-// characters of combined output.
+// Default terminal limits match Hermes: 180 s default, 600 s maximum, and
+// 50,000 characters of combined output. The host can set both defaults.
 const (
 	defaultShellTimeout = 180
 	maxShellTimeout     = 600
-	maxShellOutput      = 50_000
+	defaultShellOutput  = 50_000
+	maxShellOutput      = 1_000_000
 )
 
 // Shell runs commands in the run workspace without the host's credentials.
 type Shell struct {
-	dir   string
-	strip map[string]bool
+	dir       string
+	strip     map[string]bool
+	timeout   int
+	maxOutput int
 }
 
 // OpenShell checks the workspace and records the variables to remove from
@@ -43,12 +46,21 @@ func OpenShell(dir string, strip []string) (*Shell, error) {
 	for _, name := range strip {
 		set[name] = true
 	}
-	return &Shell{dir: dir, strip: set}, nil
+	return &Shell{dir: dir, strip: set, timeout: defaultShellTimeout, maxOutput: defaultShellOutput}, nil
+}
+
+// SetLimits sets the default command timeout and the output cap.
+func (s *Shell) SetLimits(timeoutSeconds, maxOutput int) error {
+	if timeoutSeconds < 1 || timeoutSeconds > maxShellTimeout || maxOutput < 1_000 || maxOutput > maxShellOutput {
+		return fmt.Errorf("invalid terminal limits")
+	}
+	s.timeout, s.maxOutput = timeoutSeconds, maxOutput
+	return nil
 }
 
 func (s *Shell) Capability() agent.Capability {
 	return agent.Capability{Name: "terminal", Version: "1", Origin: "workspace", Effect: "durable",
-		Description: "Run a shell command with /bin/sh in the run workspace. Returns the exit code and the combined output, capped at 50,000 characters. Default timeout 180 seconds, maximum 600.",
+		Description: fmt.Sprintf("Run a shell command with /bin/sh in the run workspace. Returns the exit code and the combined output, capped at %d characters. Default timeout %d seconds, maximum %d.", s.maxOutput, s.timeout, maxShellTimeout),
 		InputSchema: json.RawMessage(`{"type":"object","required":["command"],"properties":{"command":{"type":"string","minLength":1,"maxLength":16384},"timeout_seconds":{"type":"integer","minimum":1,"maximum":600}},"additionalProperties":false}`),
 		Call:        s.run}
 }
@@ -70,7 +82,7 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 		return nil, fmt.Errorf("invalid terminal command")
 	}
 	if input.TimeoutSeconds == 0 {
-		input.TimeoutSeconds = defaultShellTimeout
+		input.TimeoutSeconds = s.timeout
 	}
 	cmd := exec.Command("/bin/sh", "-c", input.Command)
 	cmd.Dir = s.dir
@@ -81,7 +93,7 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
-	output := &capturedOutput{}
+	output := &capturedOutput{max: s.maxOutput}
 	cmd.Stdout, cmd.Stderr = output, output
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
@@ -122,17 +134,17 @@ func (s *Shell) run(ctx context.Context, raw json.RawMessage) (json.RawMessage, 
 // capturedOutput keeps the first and last halves of the output budget.
 type capturedOutput struct {
 	mu      sync.Mutex
+	max     int
 	head    []byte
 	tail    []byte
 	dropped int
 }
 
-const outputHalf = maxShellOutput / 2
-
 func (c *capturedOutput) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	n := len(p)
+	outputHalf := c.max / 2
 	if room := outputHalf*4 - len(c.head); room > 0 {
 		take := min(room, len(p))
 		c.head = append(c.head, p[:take]...)
@@ -146,13 +158,14 @@ func (c *capturedOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// text returns at most maxShellOutput characters, head and tail around a marker.
+// text returns at most max characters, head and tail around a marker.
 func (c *capturedOutput) text() (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	outputHalf := c.max / 2
 	all := strings.ToValidUTF8(string(c.head)+string(c.tail), "�")
 	runes := []rune(all)
-	if c.dropped == 0 && len(runes) <= maxShellOutput {
+	if c.dropped == 0 && len(runes) <= c.max {
 		return all, false
 	}
 	return string(runes[:outputHalf]) + "\n[... output truncated ...]\n" + string(runes[len(runes)-outputHalf:]), true

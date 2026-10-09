@@ -24,17 +24,13 @@ import {
   type HermesProviderRuntime,
   type ProviderEndpoint,
 } from "./provider-runtime";
+import { agentLimits, hermesLimitConfigLines } from "./agent-limits";
 import {
   ensureOpenShellProvider,
   verifyOpenShellGateway,
   type AgentRuntimeLaunchConfig,
 } from "./work/sandbox-launcher";
 
-const HERMES_DEFAULT_MAX_TURNS = 25;
-const HERMES_DELEGATION_DEFAULT_MAX_ITERATIONS = 50;
-const HERMES_DELEGATION_DEFAULT_MAX_CONCURRENT_CHILDREN = 3;
-const HERMES_DELEGATION_DEFAULT_MAX_SPAWN_DEPTH = 1;
-const HERMES_DELEGATION_DEFAULT_CHILD_TIMEOUT_SECONDS = 0;
 
 type StoredRow = {
   provider: string;
@@ -297,65 +293,7 @@ function decryptSecrets(secrets: Record<string, unknown> | null): Record<string,
 
 export { hermesHomeForOrg } from "./hermes-home";
 
-function readIntEnv(
-  name: string,
-  fallback: number,
-  opts: { min: number; max?: number },
-): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const n = Math.floor(Number(raw));
-  if (!Number.isFinite(n)) return fallback;
-  if (n < opts.min) return opts.min;
-  if (opts.max !== undefined && n > opts.max) return opts.max;
-  return n;
-}
-
-function readBoolEnv(name: string, fallback: boolean): boolean {
-  const raw = process.env[name]?.trim().toLowerCase();
-  if (!raw) return fallback;
-  if (["1", "true", "yes", "on"].includes(raw)) return true;
-  if (["0", "false", "no", "off"].includes(raw)) return false;
-  return fallback;
-}
-
 export { VENDORED_HERMES_MODEL_BINARY } from "./agent-runtime-contract";
-
-function hermesDelegationConfigLines(): string[] {
-  const maxIterations = readIntEnv(
-    "OPENNEKO_AGENT_DELEGATION_MAX_ITERATIONS",
-    HERMES_DELEGATION_DEFAULT_MAX_ITERATIONS,
-    { min: 1 },
-  );
-  const maxConcurrentChildren = readIntEnv(
-    "OPENNEKO_AGENT_DELEGATION_MAX_CONCURRENT_CHILDREN",
-    HERMES_DELEGATION_DEFAULT_MAX_CONCURRENT_CHILDREN,
-    { min: 1 },
-  );
-  const maxSpawnDepth = readIntEnv(
-    "OPENNEKO_AGENT_DELEGATION_MAX_SPAWN_DEPTH",
-    HERMES_DELEGATION_DEFAULT_MAX_SPAWN_DEPTH,
-    { min: 1, max: 3 },
-  );
-  const childTimeoutSeconds = readIntEnv(
-    "OPENNEKO_AGENT_DELEGATION_CHILD_TIMEOUT_SECONDS",
-    HERMES_DELEGATION_DEFAULT_CHILD_TIMEOUT_SECONDS,
-    { min: 0 },
-  );
-  const orchestratorEnabled = readBoolEnv(
-    "OPENNEKO_AGENT_DELEGATION_ORCHESTRATOR_ENABLED",
-    true,
-  );
-
-  return [
-    "delegation:",
-    `  max_iterations: ${maxIterations}`,
-    `  max_concurrent_children: ${maxConcurrentChildren}`,
-    `  max_spawn_depth: ${maxSpawnDepth}`,
-    `  orchestrator_enabled: ${orchestratorEnabled ? "true" : "false"}`,
-    `  child_timeout_seconds: ${childTimeoutSeconds}`,
-  ];
-}
 
 export function hermesNativeReasoningConfigLines(nekoProvider: string): string[] {
   if (nekoProvider === "anthropic" || nekoProvider === "google-gemini") {
@@ -451,14 +389,15 @@ async function provisionHermes(orgId: string): Promise<void> {
   yamlLines.push(...hermesModelBudgetConfigLines(row.config));
   yamlLines.push("");
   yamlLines.push("agent:");
-  yamlLines.push(`  max_turns: ${HERMES_DEFAULT_MAX_TURNS}`);
+  const limits = agentLimits("chat");
+  yamlLines.push(`  max_turns: ${limits.maxTurns}`);
   // Hermes translates this into the provider's native thinking controls on
   // the same request. Gemini receives includeThoughts=true; Anthropic receives
   // thinking.display="summarized". Neither path makes a second model call or
   // asks the model to narrate progress in the prompt.
   yamlLines.push(...hermesNativeReasoningConfigLines(row.provider));
   yamlLines.push("");
-  yamlLines.push(...hermesDelegationConfigLines());
+  yamlLines.push(...hermesLimitConfigLines(limits));
   yamlLines.push("");
 
   await atomicWriteFile(join(hermesHome, "config.yaml"), yamlLines.join("\n"));

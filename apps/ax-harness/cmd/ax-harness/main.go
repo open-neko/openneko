@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
@@ -51,6 +52,9 @@ func main() {
 		shell, err := localtool.OpenShell(workspace, shellStripList(os.Getenv))
 		if err != nil {
 			fail(fmt.Errorf("terminal unavailable: %w", err))
+		}
+		if err := shell.SetLimits(intEnv("OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180), intEnv("OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT", 50_000)); err != nil {
+			fail(err)
 		}
 		tools.Capabilities = append(tools.Capabilities, shell.Capability())
 	}
@@ -116,6 +120,19 @@ func bridgeCommand(bridge, servers string, environ []string) *exec.Cmd {
 // the broker binding and every model credential.
 func shellStripList(getenv func(string) string) []string {
 	return append([]string{"OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN"}, command.KeyEnvNames(getenv)...)
+}
+
+// intEnv reads a host limit; an unset variable keeps the default and a malformed one fails the run.
+func intEnv(name string, fallback int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		fail(fmt.Errorf("invalid %s", name))
+	}
+	return n
 }
 
 func validateScope(orgID, threadID string) error {

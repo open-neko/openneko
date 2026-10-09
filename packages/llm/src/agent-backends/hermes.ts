@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { agentLimits, hermesLimitEnv } from "../agent-limits";
 import {
   agentTurnTimeoutMs,
   type AgentBackend,
@@ -464,6 +465,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
     env[HERMES_NATIVE_DELEGATION_ENV] = HERMES_NATIVE_DELEGATION_DISABLED;
   }
   // Read by scripts/patches/hermes-acp-run-budget.patch.
+  Object.assign(env, hermesLimitEnv(agentLimits()));
   delete env.OPENNEKO_HERMES_REASONING_EFFORT;
   delete env.OPENNEKO_HERMES_MAX_ITERATIONS;
   if (reasoningEffort) env.OPENNEKO_HERMES_REASONING_EFFORT = reasoningEffort;

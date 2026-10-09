@@ -31,7 +31,9 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 
 ## Limits
 
-The limits match Hermes, so the two backends behave the same.
+The limits match Hermes, so the two backends behave the same. OpenNeko sets
+them for both backends from one source, `packages/llm/src/agent-limits.ts`.
+The defaults below apply only when the host does not set a value.
 
 | Limit | Ax Harness | Hermes equivalent |
 | --- | --- | --- |
@@ -170,6 +172,8 @@ budget on other providers. Anthropic routes use the prompt cache.
 | `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
 | `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |
 | `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace. |
+| `OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS` | Default terminal timeout, 1 to 600. Default 180. |
+| `OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT` | Terminal output cap in characters, 1,000 to 1,000,000. Default 50,000. |
 | `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
 | `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
 | `OPENNEKO_HARNESS_CHILD_READS` | Comma list of read tools for the child agent. |

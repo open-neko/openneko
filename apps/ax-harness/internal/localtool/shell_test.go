@@ -103,3 +103,27 @@ func TestShellRejectsBadInput(t *testing.T) {
 		t.Fatal("accepted a relative workspace")
 	}
 }
+
+func TestShellHostLimits(t *testing.T) {
+	s, _ := OpenShell(t.TempDir(), nil)
+	if err := s.SetLimits(0, 50_000); err == nil {
+		t.Fatal("zero timeout was accepted")
+	}
+	if err := s.SetLimits(30, 2_000); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s.Capability().Description, "2000 characters") || !strings.Contains(s.Capability().Description, "30 seconds") {
+		t.Fatalf("description does not show host limits: %s", s.Capability().Description)
+	}
+	raw, err := s.Capability().Call(context.Background(), json.RawMessage(`{"command":"yes x | head -c 10000"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Output    string `json:"output"`
+		Truncated bool   `json:"truncated"`
+	}
+	if json.Unmarshal(raw, &out) != nil || !out.Truncated || len([]rune(out.Output)) > 2_000+40 {
+		t.Fatalf("host output cap not applied: truncated=%v len=%d", out.Truncated, len(out.Output))
+	}
+}
