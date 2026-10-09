@@ -133,7 +133,7 @@ func TestRejectInputAndFailedSink(t *testing.T) {
 	}))
 	defer server.Close()
 	configure(t, server.URL)
-	for _, input := range []string{request + request, strings.Replace(request, `"version":1`, `"version":2`, 1), strings.Replace(request, `"version":1`, `"endpoint":"http://other","version":1`, 1), request + strings.Repeat(" ", 131072)} {
+	for _, input := range []string{request + request, strings.Replace(request, `"version":1`, `"version":2`, 1), strings.Replace(request, `"version":1`, `"endpoint":"http://other","version":1`, 1), request + strings.Repeat(" ", agent.MaxInputBytes)} {
 		var out bytes.Buffer
 		code, err := run(context.Background(), strings.NewReader(input), &out)
 		if code == 0 || err == nil || out.Len() != 0 {

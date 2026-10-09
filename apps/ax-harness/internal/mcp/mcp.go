@@ -15,7 +15,7 @@ import (
 const (
 	maxPages       = 32
 	maxTools       = 512
-	maxResultBytes = 262144
+	maxResultBytes = 8 << 20 // below the MCP SDK 16 MiB frame limit
 	maxDescription = 1000
 	maxSchemaBytes = 16384
 )

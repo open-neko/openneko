@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -242,7 +243,7 @@ func TestSkillCapabilitiesAreReadOnlyAndConfined(t *testing.T) {
 	}
 }
 
-func TestSkillCatalogReadsOnlyStagedFrontmatter(t *testing.T) {
+func TestSkillsReadFrontmatterAndBody(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "daily-lead-union"), 0700); err != nil {
 		t.Fatal(err)
@@ -255,8 +256,9 @@ func TestSkillCatalogReadsOnlyStagedFrontmatter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	catalog, err := f.SkillCatalog()
-	if err != nil || len(catalog) != 1 || catalog[0].Name != "daily-lead-union" || catalog[0].Description != "Build the daily report" {
+	catalog, err := f.Skills()
+	if err != nil || len(catalog) != 1 || catalog[0].Name != "daily-lead-union" || catalog[0].Description != "Build the daily report" ||
+		catalog[0].Content != "Long instructions remain in the file." {
 		t.Fatalf("catalog=%+v err=%v", catalog, err)
 	}
 }
@@ -355,5 +357,40 @@ func finishedTools(names *[]string) func(agent.Event) error {
 			*names = append(*names, e.Name)
 		}
 		return nil
+	}
+}
+
+func TestReadFollowsHermesLimits(t *testing.T) {
+	root := t.TempDir()
+	var lines []string
+	for i := 1; i <= 2500; i++ {
+		lines = append(lines, "line "+strconv.Itoa(i))
+	}
+	lines[0] = strings.Repeat("w", 3000)
+	if err := os.WriteFile(filepath.Join(root, "big.txt"), []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var out struct {
+		Content    string `json:"content"`
+		StartLine  int    `json:"start_line"`
+		EndLine    int    `json:"end_line"`
+		TotalLines int    `json:"total_lines"`
+		Truncated  bool   `json:"truncated"`
+	}
+	raw, err := f.read(context.Background(), json.RawMessage(`{"path":"big.txt"}`))
+	if err != nil || json.Unmarshal(raw, &out) != nil {
+		t.Fatal(err)
+	}
+	if out.EndLine != 2000 || out.TotalLines != 2500 || !out.Truncated || !strings.Contains(out.Content, "[line truncated]") {
+		t.Fatalf("start=%d end=%d total=%d truncated=%v", out.StartLine, out.EndLine, out.TotalLines, out.Truncated)
+	}
+	raw, err = f.read(context.Background(), json.RawMessage(`{"path":"big.txt","offset":2400,"limit":50}`))
+	if err != nil || json.Unmarshal(raw, &out) != nil || out.StartLine != 2400 || out.EndLine != 2449 || !strings.HasPrefix(out.Content, "line 2400\n") {
+		t.Fatalf("paged read=%+v err=%v", out, err)
 	}
 }

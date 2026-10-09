@@ -54,7 +54,7 @@ func TestMCPResultKindsAndBoundaries(t *testing.T) {
 		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.ImageContent{Data: []byte("image"), MIMEType: "image/png"}}}, nil
 	})
 	server.AddTool(&protocol.Tool{Name: "large", InputSchema: schema}, func(context.Context, *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
-		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.TextContent{Text: strings.Repeat("x", 262144)}}}, nil
+		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.TextContent{Text: strings.Repeat("x", maxResultBytes)}}}, nil
 	})
 	server.AddTool(&protocol.Tool{Name: "slow", InputSchema: schema}, func(ctx context.Context, _ *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
 		<-ctx.Done()

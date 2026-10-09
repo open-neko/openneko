@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -127,14 +130,20 @@ func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
 	}
 }
 
-func TestFailedDurableToolCannotReportCompletedAction(t *testing.T) {
+func TestToolErrorReachesTheModel(t *testing.T) {
 	answers := []string{
 		`{"javascriptCode":"final('Save the file',{})"}`,
-		`{"javascriptCode":"const receipt=file_write({}); final('Report completion',{receipt});"}`,
-		`{"answer":"I saved the file."}`,
+		`{"javascriptCode":"const receipt=file_write({}); final('Report the outcome',{receipt});"}`,
+		`Answer: The file was not saved: write_denied.`,
 	}
 	var calls atomic.Int32
+	var mu sync.Mutex
+	var bodies []string
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
 		index := int(calls.Add(1)) - 1
 		if index >= len(answers) {
 			http.Error(w, "unexpected model call", http.StatusBadRequest)
@@ -150,7 +159,12 @@ func TestFailedDurableToolCannotReportCompletedAction(t *testing.T) {
 	}}
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "failed-write", InputID: "input", Prompt: "Save the file"},
 		client, Tools{Capabilities: []Capability{tool}}, func(Event) error { return nil })
-	if err != nil || result.Status != "failed" || result.Kind != "partial" || result.Code != "incomplete_result" || result.Answer != "The run did not complete; a tool returned an incomplete or failed result." || calls.Load() != 3 {
+	if err != nil || result.Status != "completed" || result.Kind != "answer" || calls.Load() != 3 {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(bodies[2], "write_denied") {
+		t.Fatal("the responder did not see the tool error")
 	}
 }

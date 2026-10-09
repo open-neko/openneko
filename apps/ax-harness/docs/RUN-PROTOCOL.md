@@ -2,29 +2,58 @@
 
 Ax Harness runs one agent turn per process. The host writes one JSON run
 specification to stdin. The harness writes one JSON event per line to stdout.
-The host owns history, compaction, approvals, the sandbox and scheduling.
+The host owns history, compaction across turns, approvals, the sandbox and
+scheduling.
 
 Build the binary with `go build -o bin/ax-harness ./cmd/ax-harness`.
 
 ## Input
 
-Send exactly one object, at most 128 KiB. Unknown fields fail the run.
+Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 
 | Field | Type | Rule |
 | --- | --- | --- |
 | `version` | integer | Must be `1`. |
 | `run_id` | string | Required. 128 characters or fewer. |
 | `input_id` | string | Required. 128 characters or fewer. |
-| `prompt` | string | Required. 64 KiB or less. It carries the whole turn, including history. |
-| `stream_responses` | boolean | Optional. Sends `answer.delta` events from the responder. |
-| `skill_query` | string | Optional. 8 KiB or less. Used to pick a staged skill. |
-| `max_operations` | integer | Optional. Tool calls per run, 1 to 32. Default 4. |
-| `max_model_calls` | integer | Optional. Model calls per run, 1 to 64. Default 16. |
+| `prompt` | string | Required. It carries the whole turn, including history. Only the model context window bounds it. |
+| `stream_responses` | boolean | Optional. Sends live `answer.delta`, `thought.delta` and `actor.step` events. |
+| `timeout_ms` | integer | Optional. Run wall clock, 1,000 to 1,800,000. Default 540,000 (9 minutes). |
+| `max_actor_steps` | integer | Optional. Actor steps, 1 to 500. Default 25. |
+| `max_child_steps` | integer | Optional. Child agent steps, 1 to 500. Default 50. |
+| `max_operations` | integer | Optional. Tool calls per run, 0 to 4,000. 0 means no cap. |
+| `max_model_calls` | integer | Optional. Model calls per run, 0 to 2,000. 0 means no cap. |
 | `max_model_tokens` | integer | Optional. Token ceiling, up to 10,000,000. 0 means no ceiling. |
 | `max_cost_micros` | integer | Optional. Cost ceiling in USD micros. Needs a priced route profile. |
+| `reasoning_effort` | string | Optional. `low`, `medium` or `high`. |
+| `context_window_tokens` | integer | Optional. The model context window. A prompt larger than this estimate fails before any model call. |
+| `max_output_tokens` | integer | Optional. Maximum output tokens per model call. Must be below `context_window_tokens`. |
 
-The run has a fixed wall clock of 2 minutes. The agent has 8 actor steps. A
-child agent has 3.
+## Limits
+
+The limits match Hermes, so the two backends behave the same.
+
+| Limit | Ax Harness | Hermes equivalent |
+| --- | --- | --- |
+| Prompt size | Model context window only; 16 MiB stdin sanity limit | No fixed cap; `model.context_length` |
+| Context window, output tokens | `context_window_tokens`, `max_output_tokens` | `model.context_length`, `model.max_tokens` |
+| Actor steps | Default 25, 1 to 500 | `agent.max_turns` 25; OpenNeko per-run override |
+| Child agent steps | Default 50, 1 to 500 | `delegation.max_iterations` 50 |
+| Tool calls, model calls | No cap unless set | No separate caps |
+| Run wall clock | Default 9 minutes, maximum 30 minutes | OpenNeko turn timeout, 9 minutes |
+| Actor code time | The run wall clock, including tool waits | No separate limit |
+| Inline tool result | 100,000 characters | `DEFAULT_RESULT_SIZE_CHARS` |
+| Saved result preview | 1,500 characters | `DEFAULT_PREVIEW_SIZE_CHARS` |
+| Inline results per actor step | 200,000 characters | `DEFAULT_TURN_BUDGET_CHARS` |
+| Stored tool result | 16 MiB; MCP results 8 MiB, below the MCP SDK frame limit | Spilled to a file |
+| Terminal timeout | Default 120 s, maximum 600 s | Default 120, `FOREGROUND_MAX_TIMEOUT` 600 |
+| Terminal output | 50,000 characters, head and tail | `DEFAULT_MAX_BYTES` 50,000 |
+| File read | 100,000 characters, 2,000 lines, 2,000 characters per line | `_DEFAULT_MAX_READ_CHARS`, `DEFAULT_MAX_LINES`, `DEFAULT_MAX_LINE_LENGTH` |
+| File write and edit | 1 MiB of content; readable files up to 10 MiB | No direct equivalent |
+
+A result above the inline limit, or above the step budget, returns a run-local
+reference with a preview. Actor code reads the full result with
+`harnessSavedOperation(id)`.
 
 ## Output events
 
@@ -36,11 +65,11 @@ credentials. `tool.finished` carries the tool result in `data`.
 | --- | --- |
 | `run.started` | The run started. |
 | `child.admitted` | The run has a read-only child agent. |
-| `model.request.started` | A model call passed admission. `name` is the model, `origin` the route, `call_id` the count. |
-| `model.request.finished` | A model call ended. `usage` holds the tokens; `error` is set on failure. |
+| `model.request.started` | A model call passed admission. `name` is the configured model, `origin` the route, `provider` the provider type, `call_id` the count. |
+| `model.request.finished` | A model call ended. `usage` holds the tokens, `observed_model` the model the provider reported, and `error` is set on failure. |
 | `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
 | `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
-| `skill.selected` | A staged skill was picked as a hint, or not (`error`). |
+| `skill.used` | The agent declared that the staged skill `name` influenced the turn. |
 | `tool.input.rejected` | Tool input failed its schema. The tool did not run. |
 | `tool.started`, `tool.finished` | One tool call, with `operation_id`, `effect` and, when finished, `data` or `error`. |
 | `observation.retrieved` | Actor code read a saved tool result by `operation_id`. |
@@ -48,29 +77,44 @@ credentials. `tool.finished` carries the tool result in `data`.
 | `child.started`, `child.finished` | Child agent lifecycle. |
 | `run.finished` | The last event. `result` holds the outcome. |
 
-`answer.delta` is a live event with `sequence` 0. Its `data` is
-`{version, index, text}`. A new `version` replaces the earlier text. Treat it as
-provisional; only `run.finished` holds the answer.
+Live events have `sequence` 0 and appear only with `stream_responses`. Treat
+them as provisional; only `run.finished` holds the answer.
+
+| Type | `data` |
+| --- | --- |
+| `answer.delta` | `{version, index, text}` from the responder. A new `version` replaces the earlier text. |
+| `thought.delta` | `{version, index, text}`. Provider thought summaries, from Anthropic and Gemini routes with `reasoning_effort` set. |
+| `actor.step` | `{text}`. The short request the actor writes when it hands work to the executor. |
 
 ## Result
 
 | Field | Values |
 | --- | --- |
 | `status` | `completed`, `failed`, `cancelled` |
-| `kind` | `answer`, `clarification`, `partial`, `failure` |
+| `kind` | `answer`, `summary`, `clarification`, `failure` |
 | `answer` | The final text, unchanged, with any fences. |
-| `code` | Set when the run did not complete (see below). |
+| `code` | Set when the run did not complete, or names the budget for a `summary`. |
 | `usage` | Requests, reported calls, tokens and `coverage`: `complete`, `partial` or `unavailable`. |
 | `cost` | Present when `max_cost_micros` is set. |
 
-Codes: `model_failed`, `model_http_<status>`, `actor_steps_exhausted`,
-`invalid_output`, `incomplete_result`, `model_budget_exceeded`,
+A tool error is a normal result. The model sees it and can adapt; the run does
+not fail because of it.
+
+When the run stops at `max_operations`, `max_actor_steps` or `max_model_calls`,
+the harness makes one more model call with no tools. That call answers from the
+tool results. The result is `completed` with kind `summary` and code
+`operations_exhausted`, `actor_steps_exhausted` or `model_calls_exhausted`.
+When `max_model_calls` is set, the agent stops one call early to keep that call
+inside the cap. A token, cost, deadline or cancel stop never makes this call.
+
+Failure codes: `model_failed`, `model_http_<status>`, `model_context_overflow`,
+`model_output_truncated`, `actor_steps_exhausted`, `operations_exhausted`,
+`model_calls_exhausted`, `invalid_output`, `model_budget_exceeded`,
 `model_token_budget_exceeded`, `cost_budget_exceeded`, `deadline_exceeded`,
 `cancelled`.
 
 A tool with effect `pause` ends the turn as `clarification` with the answer
-"Awaiting operator input." A failed tool turns a completed answer into
-`failed` with kind `partial`.
+"Awaiting operator input."
 
 ## Exit codes and signals
 
@@ -87,22 +131,32 @@ SIGINT and SIGTERM cancel the run. The run then finishes with status
 
 The host sets the model. Run input cannot change it.
 
-- One model: `HARNESS_MODEL_URL`, `HARNESS_MODEL` and `HARNESS_MODEL_API_KEY`.
+- One model: `HARNESS_MODEL`, `HARNESS_MODEL_API_KEY`, and optionally
+  `HARNESS_MODEL_PROVIDER` and `HARNESS_MODEL_URL`. `HARNESS_MODEL_URL` is
+  required for the default provider, `openai-compatible`.
 - Several routes: `HARNESS_MODEL_ROUTES`, a JSON object:
 
 ```json
-{"context":"cheap","executor":"work","responder":"work","skill":"cheap",
+{"context":"cheap","executor":"work","responder":"work",
  "fallbacks":[{"from":"work","to":"spare"}],
  "routes":[
   {"key":"cheap","model":"model-a","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},
-  {"key":"work","model":"model-b","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"},
-  {"key":"spare","model":"model-c","url":"https://provider.example/v1","api_key_env":"HARNESS_SPARE_KEY"}]}
+  {"key":"work","provider":"anthropic","model":"model-b","api_key_env":"HARNESS_WORK_KEY"},
+  {"key":"spare","provider":"google-gemini","model":"model-c","api_key_env":"HARNESS_SPARE_KEY"}]}
 ```
+
+`provider` is `openai-compatible` (the default, which needs `url`) or any Ax
+provider, for example `anthropic`, `google-gemini` or `openai`. A native
+provider uses its default URL when `url` is absent. An unknown provider is a
+configuration error.
 
 `executor_escalation` and `executor_after_errors` (1 to 8) name a stronger
 executor route after actor-code errors. `pricing_version` and a `price` on
 every route enable the cost ceiling. Each route names the environment variable
 that holds its key. Ax client retries are off; the harness owns fallback.
+
+`reasoning_effort` sets `reasoning_effort` on OpenAI routes and Ax's thinking
+budget on other providers. Anthropic routes use the prompt cache.
 
 ## OpenNeko entry
 
@@ -115,10 +169,14 @@ that holds its key. Ax client retries are off; the harness owns fallback.
 | `OPENNEKO_MCP_SERVERS` | Comma list of bridge servers to start. |
 | `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
 | `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |
+| `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace. |
 | `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
-| `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds skill tools and, with a `skill` route, the skill catalog. |
+| `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds the staged skills to the Ax skills catalog, and `skill_read` and `skill_search` for supporting files. |
 | `OPENNEKO_HARNESS_CHILD_READS` | Comma list of read tools for the child agent. |
 
-The bridge gets a clean environment: `PATH`, every `OPENNEKO_MCP_*` variable,
-the broker binding and the proxy variables. Every bridge tool becomes
-`mcp_neko_<tool>`. `interaction_ask_user_question` has effect `pause`.
+`terminal` runs `/bin/sh -c` in the workspace in its own process group. A
+timeout or a cancel kills the whole group. Its environment has no broker
+binding and no model credential: the entry removes `OPENNEKO_BROKER_URL`,
+`OPENNEKO_BROKER_TOKEN`, `HARNESS_MODEL_API_KEY`, `HARNESS_MODEL_ROUTES` and
+every route's key variable. A non-zero exit is a normal result with
+`exit_code` and `output`.

@@ -6,16 +6,54 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sync"
 	"unicode/utf8"
 
 	ax "github.com/ax-llm/ax/packages/go"
 )
 
-const InlineSavedResultBytes = 4096
+// Tool result sizes match Hermes: a result up to 100,000 characters stays
+// inline, a larger one becomes a saved reference with a 1,500-character
+// preview, and one actor step inlines at most 200,000 characters.
+const (
+	InlineResultChars  = 100_000
+	PreviewChars       = 1_500
+	StepInlineChars    = 200_000
+	MaxStoredResultLen = 16 << 20
+)
+
+// inlineBudget counts inline characters within one actor step.
+type inlineBudget struct {
+	mu   sync.Mutex
+	used int
+}
+
+func (b *inlineBudget) reset() {
+	b.mu.Lock()
+	b.used = 0
+	b.mu.Unlock()
+}
+
+func (b *inlineBudget) take(chars int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if chars > InlineResultChars || b.used+chars > StepInlineChars {
+		return false
+	}
+	b.used += chars
+	return true
+}
 
 func savedReference(id int, data []byte) string {
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("saved:%d:%s", id, hex.EncodeToString(sum[:]))
+}
+
+func runePrefix(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 func safePrefix(value string, limit int) string {
@@ -32,14 +70,14 @@ func safePrefix(value string, limit int) string {
 // visibleOperationResult keeps large tool data in the run's authoritative
 // operation record. The actor gets a bounded hint and can explicitly inspect
 // the full result through its run-local callable when a field is needed.
-func visibleOperationResult(id int, raw json.RawMessage, decoded ax.Value) ax.Value {
-	if len(raw) <= InlineSavedResultBytes {
+func visibleOperationResult(id int, raw json.RawMessage, decoded ax.Value, budget *inlineBudget) ax.Value {
+	if budget.take(utf8.RuneCount(raw)) {
 		return decoded
 	}
 	return ax.Object(
 		"reference", savedReference(id, raw),
 		"result_bytes", len(raw),
-		"result_preview", safePrefix(string(raw), 256),
+		"result_preview", runePrefix(string(raw), PreviewChars),
 		"retrieve", fmt.Sprintf("harnessSavedOperation(%d)", id),
 		"is_error", toolResultFailed(raw),
 	)

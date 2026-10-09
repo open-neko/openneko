@@ -13,7 +13,6 @@ type StageModels struct {
 	Context   string
 	Executor  string
 	Responder string
-	Skill     string
 	// An optional approved route for later executor turns after actor-code
 	// errors. The host chooses both aliases; the model cannot change them.
 	ExecutorEscalation  string
@@ -27,10 +26,13 @@ type RoutedClient struct {
 	Stages StageModels
 	// ModelNames comes only from the trusted host route configuration. Ax's
 	// OpenAI-compatible rate-limit callback can omit the actual model name.
-	ModelNames     map[string]string
-	Fallbacks      map[string]string
-	PricingVersion string
-	Prices         map[string]TokenPrice
+	ModelNames map[string]string
+	// Providers maps a route key to its provider type, for example "anthropic".
+	Providers       map[string]string
+	DefaultProvider string
+	Fallbacks       map[string]string
+	PricingVersion  string
+	Prices          map[string]TokenPrice
 }
 
 // transientRouteFallback changes only a failed model-generation request. Ax
@@ -96,21 +98,12 @@ func (r *RoutedClient) StreamEvents(ctx context.Context, request, options map[st
 	return streamEvents(ctx, r.AIClient, request, options)
 }
 
-func stageOptions(stages StageModels) map[string]ax.Value {
-	options := ax.Object()
-	// OpenAI-compatible routes currently advertise function-mode structured
-	// output; explicit stage models otherwise make this Ax build request native
-	// JSON Schema, which the provider profile rejects before transport.
-	if stages.Context != "" {
-		options["contextOptions"] = ax.Object("model", stages.Context, "structuredOutputMode", "function")
+// providerFor returns the provider type behind a stage route.
+func (r *RoutedClient) providerFor(route string) string {
+	if provider := r.Providers[route]; provider != "" {
+		return provider
 	}
-	if stages.Executor != "" {
-		options["executorOptions"] = ax.Object("model", stages.Executor, "structuredOutputMode", "function")
-	}
-	if stages.Responder != "" {
-		options["responderOptions"] = ax.Object("model", stages.Responder, "structuredOutputMode", "function")
-	}
-	return options
+	return r.DefaultProvider
 }
 
 // executorErrorRoute rewrites only an executor alias after a committed error

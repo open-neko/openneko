@@ -20,7 +20,16 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
 )
 
-const maxFile = 64 << 10
+// Read limits match Hermes read_file: 100,000 characters, 2,000 lines and
+// 2,000 characters per line for one read.
+const (
+	maxFile       = 10 << 20
+	maxWrite      = 1 << 20
+	maxSearchFile = 1 << 20
+	maxReadChars  = 100_000
+	maxReadLines  = 2_000
+	maxLineChars  = 2_000
+)
 
 type Files struct {
 	root  *os.Root
@@ -44,9 +53,9 @@ func (f *Files) Close() error { return f.root.Close() }
 
 func (f *Files) Capabilities() []agent.Capability {
 	return []agent.Capability{
-		{Name: "file_read", Version: "1", Origin: "workspace", Effect: "read", Description: "Read a small regular file in the run workspace and receive its version.", InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024}},"additionalProperties":false}`), Call: f.read},
-		{Name: "file_edit", Version: "1", Origin: "workspace", Effect: "durable", Description: "Replace an existing file previously read in this run; supply its exact version. This is a workspace mutation.", InputSchema: json.RawMessage(`{"type":"object","required":["path","version","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"version":{"type":"string","minLength":64,"maxLength":64},"content":{"type":"string","maxLength":65536}},"additionalProperties":false}`), Call: f.edit},
-		{Name: "file_write", Version: "1", Origin: "workspace", Effect: "durable", Description: "Create a new small text file in the run workspace; refuse to replace an existing path.", InputSchema: json.RawMessage(`{"type":"object","required":["path","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"content":{"type":"string","maxLength":65536}},"additionalProperties":false}`), Call: f.write},
+		{Name: "file_read", Version: "1", Origin: "workspace", Effect: "read", Description: "Read a text file in the run workspace and receive its version. One read returns at most 2,000 lines and 100,000 characters; use offset and limit for later lines.", InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000}},"additionalProperties":false}`), Call: f.read},
+		{Name: "file_edit", Version: "1", Origin: "workspace", Effect: "durable", Description: "Replace the whole content of an existing file read in this run; supply its exact version. This is a workspace mutation.", InputSchema: json.RawMessage(`{"type":"object","required":["path","version","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"version":{"type":"string","minLength":64,"maxLength":64},"content":{"type":"string","maxLength":1048576}},"additionalProperties":false}`), Call: f.edit},
+		{Name: "file_write", Version: "1", Origin: "workspace", Effect: "durable", Description: "Create a new text file in the run workspace; refuse to replace an existing path.", InputSchema: json.RawMessage(`{"type":"object","required":["path","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":1024},"content":{"type":"string","maxLength":1048576}},"additionalProperties":false}`), Call: f.write},
 		{Name: "file_search", Version: "1", Origin: "workspace", Effect: "read", Description: "Find small text files in the run workspace whose path or content contains a literal query; returns bounded paths only.", InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string","minLength":1,"maxLength":256}},"additionalProperties":false}`), Call: f.search},
 	}
 }
@@ -57,7 +66,7 @@ func (f *Files) UploadCapabilities() []agent.Capability {
 	all := f.Capabilities()
 	read, search := all[0], all[3]
 	read.Name, read.Origin = "upload_read", "uploads"
-	read.Description = "Read a small text file by path relative to this run's staged uploads directory."
+	read.Description = "Read a text file by path relative to this run's staged uploads directory. One read returns at most 2,000 lines and 100,000 characters; use offset and limit for later lines."
 	search.Name, search.Origin = "upload_search", "uploads"
 	search.Description = "Search staged uploads by literal path or text content; returns bounded relative paths only."
 	return []agent.Capability{read, search}
@@ -73,9 +82,11 @@ func (f *Files) SkillCapabilities() []agent.Capability {
 	return all
 }
 
-// SkillCatalog reads only bounded frontmatter from the staged skill root.
-// Instructions are read later through skill_read after the agent selects one.
-func (f *Files) SkillCatalog() ([]agent.SkillMetadata, error) {
+const maxSkillContent = 64 << 10
+
+// Skills reads each staged SKILL.md for the Ax skills catalog: the name from
+// the folder, the description from frontmatter and the body as content.
+func (f *Files) Skills() ([]agent.Skill, error) {
 	root, err := f.root.Open(".")
 	if err != nil {
 		return nil, err
@@ -85,7 +96,7 @@ func (f *Files) SkillCatalog() ([]agent.SkillMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	var catalog []agent.SkillMetadata
+	var skills []agent.Skill
 	for _, entry := range entries {
 		if !entry.IsDir() || !agent.ValidSkillName(entry.Name()) {
 			continue
@@ -94,36 +105,45 @@ func (f *Files) SkillCatalog() ([]agent.SkillMetadata, error) {
 		if err != nil {
 			continue
 		}
-		data, readErr := io.ReadAll(io.LimitReader(file, 8192))
+		data, readErr := io.ReadAll(io.LimitReader(file, maxSkillContent+8192))
 		file.Close()
 		if readErr != nil {
 			return nil, readErr
 		}
 		text := string(data)
-		if !strings.HasPrefix(text, "---\n") {
+		if !utf8.ValidString(text) || !strings.HasPrefix(text, "---\n") {
 			continue
 		}
 		end := strings.Index(text[4:], "\n---")
 		if end < 0 {
 			continue
 		}
-		frontmatter := text[4 : 4+end]
 		var description string
-		for _, line := range strings.Split(frontmatter, "\n") {
+		for _, line := range strings.Split(text[4:4+end], "\n") {
 			if strings.HasPrefix(line, "description:") {
-				description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+				description = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "description:")), `"'`)
 				break
 			}
 		}
-		if len(description) > 500 {
-			description = description[:500]
+		description = runePrefix(description, 500)
+		body := strings.TrimLeft(text[4+end+4:], "\n")
+		if len(body) > maxSkillContent {
+			body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read " + entry.Name() + "/SKILL.md with skill_read]"
 		}
-		catalog = append(catalog, agent.SkillMetadata{Name: entry.Name(), Description: description})
-		if len(catalog) > 64 {
+		skills = append(skills, agent.Skill{Name: entry.Name(), Description: description, Content: body})
+		if len(skills) > 64 {
 			return nil, fmt.Errorf("too many staged skills")
 		}
 	}
-	return catalog, nil
+	return skills, nil
+}
+
+func runePrefix(text string, limit int) string {
+	if utf8.RuneCountInString(text) <= limit {
+		return text
+	}
+	runes := []rune(text)
+	return string(runes[:limit])
 }
 
 func validPath(path string) bool {
@@ -132,9 +152,11 @@ func validPath(path string) bool {
 
 func (f *Files) read(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	var input struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) {
+	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || input.Offset < 0 || input.Limit < 0 || input.Limit > maxReadLines {
 		return nil, fmt.Errorf("invalid workspace path")
 	}
 	f.gate.RLock()
@@ -150,11 +172,44 @@ func (f *Files) read(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	f.mu.Lock()
 	f.reads[input.Path] = version
 	f.mu.Unlock()
+	lines := strings.SplitAfter(string(data), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	start := max(input.Offset, 1)
+	limit := input.Limit
+	if limit == 0 {
+		limit = maxReadLines
+	}
+	var content strings.Builder
+	chars, end, truncated := 0, start-1, false
+	for i := start - 1; i < len(lines); i++ {
+		if i-(start-1) >= limit {
+			truncated = true
+			break
+		}
+		line := lines[i]
+		if utf8.RuneCountInString(line) > maxLineChars {
+			line = runePrefix(line, maxLineChars) + " [line truncated]\n"
+		}
+		count := utf8.RuneCountInString(line)
+		if chars+count > maxReadChars {
+			truncated = true
+			break
+		}
+		content.WriteString(line)
+		chars += count
+		end = i + 1
+	}
 	return json.Marshal(struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-		Version string `json:"version"`
-	}{input.Path, string(data), version})
+		Path       string `json:"path"`
+		Content    string `json:"content"`
+		Version    string `json:"version"`
+		StartLine  int    `json:"start_line"`
+		EndLine    int    `json:"end_line"`
+		TotalLines int    `json:"total_lines"`
+		Truncated  bool   `json:"truncated"`
+	}{input.Path, content.String(), version, start, end, len(lines), truncated})
 }
 
 func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
@@ -163,7 +218,7 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 		Version string `json:"version"`
 		Content string `json:"content"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || len(input.Content) > maxFile || len(input.Version) != 64 {
+	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || len(input.Content) > maxWrite || len(input.Version) != 64 {
 		return nil, fmt.Errorf("invalid file edit")
 	}
 	f.gate.Lock()
@@ -241,7 +296,7 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 		Path    string `json:"path"`
 		Content string `json:"content"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || len(input.Content) > maxFile {
+	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || len(input.Content) > maxWrite {
 		return nil, fmt.Errorf("invalid file write")
 	}
 	f.gate.Lock()
@@ -320,7 +375,7 @@ func (f *Files) search(ctx context.Context, raw json.RawMessage) (json.RawMessag
 			return nil // WalkDir does not follow directory symlinks.
 		}
 		info, err := entry.Info()
-		if err != nil || info.Size() > maxFile {
+		if err != nil || info.Size() > maxSearchFile {
 			return err
 		}
 		data, _, err := f.load(path)
