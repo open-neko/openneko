@@ -200,3 +200,65 @@ export function resolveHermesProviderRuntime(args: {
     }
   }
 }
+
+/** Non-secret Ax Harness model route. The key reaches the box as an OpenShell placeholder in keyEnv. */
+export type AxModelRoute = {
+  /** An Ax provider profile, or openai-compatible. */
+  provider: string;
+  model: string;
+  url?: string;
+  keyEnv?: string;
+  /** Ax provider settings, for example Azure's resource and deployment. */
+  options?: Record<string, string>;
+};
+
+// Ax has a profile for each of these. A profile keeps the provider's auth
+// header, request shape and model rules.
+const AX_PROFILES: Partial<Record<PrimaryProviderId, string>> = {
+  mistral: "mistral",
+  groq: "groq",
+  cohere: "cohere",
+  together: "together",
+  deepseek: "deepseek",
+  huggingface: "huggingface-router",
+  openrouter: "openrouter",
+  reka: "reka",
+  "x-grok": "grok",
+  vertex: "vertex-ai",
+};
+
+/** Azure API version Ax sends; structured outputs need 2024-08-01 or later. */
+export const AX_AZURE_API_VERSION = "2024-10-21";
+
+/**
+ * Maps the admin provider onto an Ax provider profile. Profiles that call an
+ * OpenAI-style endpoint keep the Hermes base URL, so model egress reaches the
+ * same host for both backends.
+ */
+export function resolveAxModelRoute(args: {
+  provider: PrimaryProviderId;
+  model: string;
+  config?: Record<string, unknown> | null;
+}): AxModelRoute {
+  const runtime = resolveHermesProviderRuntime(args);
+  const keyEnv = runtime.keyEnv ? { keyEnv: runtime.keyEnv } : {};
+  switch (args.provider) {
+    case "openai":
+    case "anthropic":
+    case "google-gemini":
+      return { provider: args.provider, model: runtime.model, ...keyEnv };
+    case "azure-openai":
+      return {
+        provider: "azure-openai",
+        model: runtime.model,
+        ...keyEnv,
+        options: {
+          resource_name: requiredConfig(args.config ?? {}, "resourceName", "Azure resource name"),
+          deployment_name: runtime.model,
+          api_version: AX_AZURE_API_VERSION,
+        },
+      };
+    default:
+      return { provider: AX_PROFILES[args.provider] ?? "openai-compatible", model: runtime.model, url: runtime.baseUrl, ...keyEnv };
+  }
+}

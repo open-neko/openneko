@@ -138,7 +138,8 @@ operator and stop; re-attempting after a denial is wasted effort.
 }
 
 function buildNativeDelegationBlock(backend: AgentBackendId): string {
-  void backend;
+  // Only Hermes has delegate_task.
+  if (backend !== "hermes") return "";
   return `<delegation>
 Use Hermes native \`delegate_task\` when an independent workflow step would
 benefit from fresh context or parallel investigation. You decide whether to

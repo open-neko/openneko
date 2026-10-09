@@ -21,6 +21,7 @@ export * from "./industry-researcher";
 export * from "./agent-backend";
 export { makeAgentBackend } from "./agent-runtime";
 export {
+  assertAxSupported,
   resolveAgentBackend,
   resolveAgentBackendId,
   resolveAgentConcurrency,

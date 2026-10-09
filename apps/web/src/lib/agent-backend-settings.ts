@@ -4,19 +4,21 @@ import { and, db, eq, llm_provider_config } from "@neko/db";
 import {
   AGENT_BACKEND_OPTIONS,
   AGENT_DEFAULT_GLOBAL_CAP,
+  assertAxSupported,
+  isAgentBackendId,
+  type AgentBackendId,
 } from "@neko/llm";
 
 const AGENT_SCOPE = "agent";
 export type AgentSettings = {
   source: "org" | "default";
-  /** Compatibility field for pre-Hermes-only setup clients. */
-  backend: "hermes";
+  /** Org-wide agent backend. */
+  backend: AgentBackendId;
   globalCap: number;
 };
 
 export type AgentSettingsPayload = {
   agent: AgentSettings;
-  /** Compatibility list for pre-Hermes-only setup clients. */
   options: typeof AGENT_BACKEND_OPTIONS;
   defaults: {
     globalCap: number;
@@ -63,12 +65,13 @@ export async function getAgentSettings(
 ): Promise<AgentSettings> {
   const row = await loadAgentRow(orgId);
   const cfg = (row?.config ?? {}) as {
+    backend?: unknown;
     globalCap?: unknown;
   };
   const globalCap = readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP);
   return {
     source: row ? "org" : "default",
-    backend: "hermes",
+    backend: typeof cfg.backend === "string" && isAgentBackendId(cfg.backend) ? cfg.backend : "hermes",
     globalCap,
   };
 }
@@ -87,7 +90,6 @@ export async function getAgentSettingsPayload(
 }
 
 export type AgentSaveDraft = {
-  /** Accepted only as the legacy no-op value "hermes". */
   backend?: unknown;
   globalCap?: number | string;
 };
@@ -96,18 +98,23 @@ export async function saveAgentSettingsDraft(
   orgId: string,
   draft: AgentSaveDraft,
 ): Promise<AgentSettings> {
-  if (draft.backend !== undefined && draft.backend !== "hermes") {
+  if (draft.backend !== undefined && (typeof draft.backend !== "string" || !isAgentBackendId(draft.backend))) {
     throw new Error(`Unsupported agent backend: ${String(draft.backend)}`);
   }
   const existing = await loadAgentRow(orgId);
   const existingCfg = (existing?.config ?? {}) as {
+    backend?: unknown;
     globalCap?: unknown;
   };
+  const backend: AgentBackendId =
+    (draft.backend as AgentBackendId | undefined) ??
+    (typeof existingCfg.backend === "string" && isAgentBackendId(existingCfg.backend) ? existingCfg.backend : "hermes");
+  if (backend === "ax") await assertAxSupported(orgId);
   const globalCap = readPositiveInt(
     draft.globalCap ?? existingCfg.globalCap,
     AGENT_DEFAULT_GLOBAL_CAP,
   );
-  const config = { globalCap };
+  const config = { backend, globalCap };
 
   if (existing) {
     await db()
@@ -129,5 +136,5 @@ export async function saveAgentSettingsDraft(
     });
   }
 
-  return { source: "org", backend: "hermes", globalCap };
+  return { source: "org", backend, globalCap };
 }

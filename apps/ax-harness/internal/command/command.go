@@ -57,7 +57,7 @@ func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, to
 	encoder := json.NewEncoder(output)
 	result, err := agent.RunWithTools(ctx, spec, client, tools, func(e agent.Event) error { return encoder.Encode(e) })
 	if err != nil {
-		return 1, fmt.Errorf("run input or event delivery failed")
+		return 1, fmt.Errorf("run input or event delivery failed: %w", err)
 	}
 	if result.Status != "completed" {
 		return 1, nil

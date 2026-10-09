@@ -335,6 +335,34 @@ RUN cd apps/openneko && \
     go build -trimpath -ldflags "-s -w" \
       -o /out/openneko-graphjin-config ./cmd/graphjin-config
 
+# Ax Harness: the Go agent behind the Ax backend. OpenShell pins model egress
+# to /usr/local/bin/ax-harness for Ax runs (AX_HARNESS_BINARY).
+FROM golang:1.25-bookworm AS ax-harness-build
+WORKDIR /src
+COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
+RUN cd apps/ax-harness && go mod download
+COPY apps/ax-harness apps/ax-harness
+RUN cd apps/ax-harness && CGO_ENABLED=0 GOOS=linux \
+    go build -trimpath -ldflags "-s -w" -o /out/ax-harness ./cmd/ax-harness
+
+# DuckDB CLI for data work in the agent terminal, pinned by checksum.
+FROM debian:bookworm-slim AS duckdb-bin
+ARG TARGETARCH
+ARG DUCKDB_VERSION=v1.5.5
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && case "$TARGETARCH" in \
+         amd64) sum=c61f21485e6e41d3a0c28ce9904ea18346309cf427b4cf9479bc3564348dc885 ;; \
+         arm64) sum=50c719e603a4e599d435e5321542458edc1cfc5f7eed65979fe9bc5ae4e3ba23 ;; \
+         *) echo "unsupported arch $TARGETARCH" && exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o /tmp/duckdb.gz \
+         "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-${TARGETARCH}.gz" \
+    && echo "$sum  /tmp/duckdb.gz" | sha256sum -c - \
+    && gunzip -c /tmp/duckdb.gz > /usr/local/bin/duckdb \
+    && chmod 0755 /usr/local/bin/duckdb \
+    && /usr/local/bin/duckdb --version
+
 # Small Node one-shots. Bundling them prevents demo/config initialization from
 # reusing the full worker image and its production dependency closure.
 FROM source AS init-tools-deploy
@@ -550,8 +578,10 @@ ENV HERMES_DISABLE_LAZY_INSTALLS=1
 # Supervisor egress-netns tools + a non-root `sandbox` user (high UID, OpenShell
 # convention). GraphJin never enters this image; the agent can reach it only
 # through the authenticated host broker.
-RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables \
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables jq ripgrep \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=ax-harness-build /out/ax-harness /usr/local/bin/ax-harness
+COPY --from=duckdb-bin /usr/local/bin/duckdb /usr/local/bin/duckdb
 RUN groupadd -g 1000660000 sandbox \
     && useradd -u 1000660000 -g sandbox -d /sandbox -M sandbox \
     && install -d -o sandbox -g sandbox /sandbox

@@ -70,6 +70,7 @@ export async function runWorkflowAgentBackend(
     workflowRunId,
     mode,
     triggeredByObservationId,
+    networkHosts,
     workspace,
     controlPlane,
     emit,
@@ -178,6 +179,7 @@ export async function runWorkflowAgentBackend(
       timeoutMs,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(maxToolIterations ? { maxToolIterations } : {}),
+      networkHosts,
     });
     if (!result.timedOut || continuation >= maxContinuations || signal?.aborted) {
       if (heldTimeoutError) await emit(heldTimeoutError);

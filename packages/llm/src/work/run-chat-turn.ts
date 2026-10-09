@@ -177,8 +177,7 @@ function needsInputText(
 }
 
 function backendLabel(id: string): string {
-  void id;
-  return "Hermes";
+  return id === "ax" ? "Ax" : "Hermes";
 }
 
 /**

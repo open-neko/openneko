@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
@@ -444,4 +445,30 @@ func TestReadFollowsHermesLimits(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &out) != nil || out.StartLine != 2400 || out.EndLine != 2449 || !strings.HasPrefix(out.Content, "line 2400\n") {
 		t.Fatalf("paged read=%+v err=%v", out, err)
 	}
+}
+
+// Every bundled OpenNeko skill must fit the Ax skills catalog.
+func TestBuiltinSkillsFitTheCatalog(t *testing.T) {
+	f, err := OpenFiles(filepath.Join(mustAbs(t, "../../../../packages/llm/assets/builtin-skills")))
+	if err != nil {
+		t.Skip("built-in skills are outside this checkout")
+	}
+	defer f.Close()
+	catalog, err := f.Skills()
+	if err != nil || len(catalog) == 0 {
+		t.Fatalf("catalog=%d err=%v", len(catalog), err)
+	}
+	for _, skill := range catalog {
+		if utf8.RuneCountInString(skill.Description) > 1024 || skill.Description == "" {
+			t.Fatalf("%s description has %d characters", skill.Name, utf8.RuneCountInString(skill.Description))
+		}
+	}
+}
+
+func mustAbs(t *testing.T, path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
 }

@@ -125,13 +125,13 @@ func (f *Files) Skills() ([]agent.Skill, error) {
 				break
 			}
 		}
-		description = runePrefix(description, 500)
+		description = runePrefix(description, 1024)
 		body := strings.TrimLeft(text[4+end+4:], "\n")
 		if len(body) > maxSkillContent {
 			body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read " + entry.Name() + "/SKILL.md with skill_read]"
 		}
 		skills = append(skills, agent.Skill{Name: entry.Name(), Description: description, Content: body})
-		if len(skills) > 64 {
+		if len(skills) > 256 {
 			return nil, fmt.Errorf("too many staged skills")
 		}
 	}

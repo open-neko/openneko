@@ -1,10 +1,10 @@
 /**
  * Per-org agent backend resolution.
  *
- * Hermes is the sole runtime. The agent row only stores concurrency settings;
- * provider credentials are provisioned independently. The non-secret primary
- * provider/model selection is retained so callers can attest it against the
- * identity reported by the live Hermes ACP session.
+ * The agent row holds the org-wide backend choice (Hermes or Ax) and the
+ * concurrency settings. Provider credentials are provisioned independently.
+ * The non-secret primary provider/model selection is retained so callers can
+ * attest it against the identity the live backend reports.
  */
 
 import { and, db, eq, llm_provider_config } from "@neko/db";
@@ -13,10 +13,12 @@ import {
   type AgentBackend,
   type AgentBackendId,
   type AgentModelIdentity,
+  isAgentBackendId,
 } from "./agent-backend";
+import type { AxBackendConfig } from "./agent-backends/ax";
 import { makeAgentBackend } from "./agent-runtime";
 import { isPrimaryProvider } from "./config";
-import { resolveHermesProviderRuntime } from "./provider-runtime";
+import { resolveAxModelRoute, resolveHermesProviderRuntime } from "./provider-runtime";
 
 type StoredRow = {
   provider: string;
@@ -49,8 +51,9 @@ async function loadRow(orgId: string, scope: string): Promise<StoredRow | null> 
 }
 
 export async function resolveAgentBackendId(orgId: string): Promise<AgentBackendId> {
-  void orgId;
-  return "hermes";
+  const row = await loadRow(orgId, "agent");
+  const backend = (row?.config ?? {}).backend;
+  return typeof backend === "string" && isAgentBackendId(backend) ? backend : "hermes";
 }
 
 export type AgentConcurrency = {
@@ -100,8 +103,34 @@ function configuredHermesModelIdentity(
   return { provider: runtime.provider, model: runtime.model };
 }
 
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/** Ax needs the route itself, not only the identity; the key stays in OpenShell. */
+export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefined {
+  const model = row?.model?.trim();
+  if (!row?.enabled || !model || !isPrimaryProvider(row.provider)) return undefined;
+  const config = row.config ?? {};
+  return {
+    route: resolveAxModelRoute({ provider: row.provider, model, config }),
+    ...(positiveInt(config.context_window_tokens) ? { contextWindowTokens: positiveInt(config.context_window_tokens) } : {}),
+    ...(positiveInt(config.max_output_tokens) ? { maxOutputTokens: positiveInt(config.max_output_tokens) } : {}),
+    // Same as Hermes: native thought summaries need high effort on these providers.
+    ...(row.provider === "anthropic" || row.provider === "google-gemini" ? { reasoningEffort: "high" as const } : {}),
+  };
+}
+
+/** Refuses the Ax switch when the primary provider has no Ax route. */
+export async function assertAxSupported(orgId: string): Promise<void> {
+  const primary = await loadRow(orgId, "primary");
+  if (!axBackendConfig(primary)) {
+    throw new Error("Configure and enable a primary model provider before switching to Ax.");
+  }
+}
+
 /**
- * Resolve the sole backend and its non-secret configured model identity. The
+ * Resolve the org's backend and its non-secret configured model identity. The
  * real provider key remains independently provisioned through OpenShell and is
  * never returned with the backend.
  */
@@ -110,6 +139,7 @@ export async function resolveAgentBackend(orgId: string): Promise<AgentBackend> 
     resolveAgentBackendId(orgId),
     loadRow(orgId, "primary"),
   ]);
+  if (id === "ax") return makeAgentBackend({ id, ax: axBackendConfig(primary) });
   return makeAgentBackend({
     id,
     ...(primary

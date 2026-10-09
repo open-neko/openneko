@@ -18,6 +18,37 @@ type modelRoute struct {
 	URL       string            `json:"url,omitempty"`
 	APIKeyEnv string            `json:"api_key_env"`
 	Price     *agent.TokenPrice `json:"price,omitempty"`
+	// Options are Ax provider settings, for example Azure's resource_name,
+	// deployment_name and api_version.
+	Options map[string]string `json:"options,omitempty"`
+}
+
+// reservedOptions belong to the harness: the key, the endpoint, the model and the transport.
+var reservedOptions = map[string]bool{"api_key": true, "apiKey": true, "base_url": true, "baseUrl": true, "model": true,
+	"credential_provider": true, "credentialProvider": true, "transport": true, "runtimeHooks": true, "retry": true}
+
+func validOptions(options map[string]string) bool {
+	if len(options) > 16 {
+		return false
+	}
+	for key, value := range options {
+		if reservedOptions[key] || !validOptionKey(key) || len(value) > 256 {
+			return false
+		}
+	}
+	return true
+}
+
+func validOptionKey(key string) bool {
+	if key == "" || len(key) > 64 {
+		return false
+	}
+	for _, c := range key {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 const openAICompatible = "openai-compatible"
@@ -51,8 +82,15 @@ func noClientRetry() ax.Value { return ax.Object("max_retries", 0) }
 
 // newClient builds one provider client with Ax client retry off. A native
 // provider without a URL uses Ax's default base URL.
-func newClient(provider, base, key, model string) (client ax.AxAIService, err error) {
+func newClient(provider, base, key, model string, extra map[string]string) (client ax.AxAIService, err error) {
+	// Ax checks Azure's endpoint only at the first request; fail at start instead.
+	if provider == "azure-openai" && base == "" && (extra["resource_name"] == "" || extra["deployment_name"] == "") {
+		return nil, fmt.Errorf("azure-openai needs a URL, or resource_name and deployment_name options")
+	}
 	options := ax.Object("api_key", key, "model", model, "retry", noClientRetry())
+	for name, value := range extra {
+		options[name] = value
+	}
 	if base != "" {
 		options["base_url"] = base
 	}
@@ -106,7 +144,12 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 		if err := validProviderURL(route.provider(), route.URL); err != nil || route.Model == "" || key == "" {
 			return nil, fmt.Errorf("configure HARNESS_MODEL_URL, HARNESS_MODEL and HARNESS_MODEL_API_KEY")
 		}
-		client, err := newClient(route.provider(), route.URL, key, route.Model)
+		if raw := getenv("HARNESS_MODEL_OPTIONS"); raw != "" {
+			if len(raw) > 8192 || json.Unmarshal([]byte(raw), &route.Options) != nil || !validOptions(route.Options) {
+				return nil, fmt.Errorf("invalid HARNESS_MODEL_OPTIONS")
+			}
+		}
+		client, err := newClient(route.provider(), route.URL, key, route.Model, route.Options)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +169,7 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 		if getenv(route.APIKeyEnv) == "" {
 			return nil, fmt.Errorf("HARNESS_MODEL_ROUTES route missing credential")
 		}
-		service, err := newClient(route.provider(), route.URL, getenv(route.APIKeyEnv), route.Model)
+		service, err := newClient(route.provider(), route.URL, getenv(route.APIKeyEnv), route.Model, route.Options)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +242,7 @@ func parseRouteConfig(raw string) (routeConfig, error) {
 	}
 	for _, route := range cfg.Routes {
 		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || len(route.Provider) > 64 || validProviderURL(route.provider(), route.URL) != nil ||
-			!validEnvName(route.APIKeyEnv) || route.Price != nil && !route.Price.Valid() || priced && route.Price == nil || !priced && route.Price != nil {
+			!validEnvName(route.APIKeyEnv) || !validOptions(route.Options) || route.Price != nil && !route.Price.Valid() || priced && route.Price == nil || !priced && route.Price != nil {
 			return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES route")
 		}
 		known[route.Key] = true

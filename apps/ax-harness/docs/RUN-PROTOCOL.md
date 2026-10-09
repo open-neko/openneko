@@ -52,6 +52,7 @@ The defaults below apply only when the host does not set a value.
 | Terminal output | 50,000 characters, head and tail | `DEFAULT_MAX_BYTES` 50,000 |
 | File read | 100,000 characters, 2,000 lines, 2,000 characters per line | `_DEFAULT_MAX_READ_CHARS`, `DEFAULT_MAX_LINES`, `DEFAULT_MAX_LINE_LENGTH` |
 | File write and edit | 1 MiB of content; readable files up to 10 MiB | No direct equivalent |
+| Skills catalog | 256 skills; descriptions up to 1,024 characters; bodies up to 64 KiB | No cap |
 
 A result above the inline limit, or above the step budget, returns a run-local
 reference with a preview. Actor code reads the full result with
@@ -134,8 +135,8 @@ SIGINT and SIGTERM cancel the run. The run then finishes with status
 The host sets the model. Run input cannot change it.
 
 - One model: `HARNESS_MODEL`, `HARNESS_MODEL_API_KEY`, and optionally
-  `HARNESS_MODEL_PROVIDER` and `HARNESS_MODEL_URL`. `HARNESS_MODEL_URL` is
-  required for the default provider, `openai-compatible`.
+  `HARNESS_MODEL_PROVIDER`, `HARNESS_MODEL_URL` and `HARNESS_MODEL_OPTIONS`.
+  `HARNESS_MODEL_URL` is required for the default provider, `openai-compatible`.
 - Several routes: `HARNESS_MODEL_ROUTES`, a JSON object:
 
 ```json
@@ -148,9 +149,16 @@ The host sets the model. Run input cannot change it.
 ```
 
 `provider` is `openai-compatible` (the default, which needs `url`) or any Ax
-provider, for example `anthropic`, `google-gemini` or `openai`. A native
-provider uses its default URL when `url` is absent. An unknown provider is a
+provider profile, for example `anthropic`, `google-gemini`, `openai`,
+`azure-openai`, `mistral`, `groq`, `deepseek` or `openrouter`. A profile keeps
+its provider's auth header, request shape and model rules. A native provider
+uses its default URL when `url` is absent. An unknown provider is a
 configuration error.
+
+`HARNESS_MODEL_OPTIONS`, or `options` on a route, is a JSON object of string
+provider settings. Azure needs `resource_name` and `deployment_name`, and
+takes `api_version`; Ax builds the endpoint from them. Options cannot set the
+key, the URL, the model or the transport.
 
 `executor_escalation` and `executor_after_errors` (1 to 8) name a stronger
 executor route after actor-code errors. `pricing_version` and a `price` on
