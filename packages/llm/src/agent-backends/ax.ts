@@ -282,6 +282,7 @@ export class AxBackend implements AgentBackend {
       HARNESS_MODEL: route.model,
       HARNESS_MODEL_API_KEY: key,
       HARNESS_MODEL_URL: route.url ?? "",
+      HARNESS_MODEL_OPTIONS: route.options ? JSON.stringify(route.options) : "",
     });
     Object.assign(env, limitEnv);
 

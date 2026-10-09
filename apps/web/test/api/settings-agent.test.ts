@@ -15,7 +15,7 @@ import {
   uniqueOrgId,
 } from "@neko/db/test-helpers";
 import { and, db, eq, llm_provider_config, pool } from "@neko/db";
-import { AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
+import { AGENT_BACKEND_OPTIONS, AGENT_DEFAULT_GLOBAL_CAP } from "@neko/llm";
 import { callRoute } from "../_helpers/route";
 
 const { mockGetOrgId, mockProvisionHostConfig } = vi.hoisted(() => ({
@@ -64,7 +64,7 @@ describeIfDb("/api/settings/agent", () => {
     await pool().end();
   });
 
-  it("GET exposes only Hermes concurrency settings", async () => {
+  it("GET exposes the backend choice and concurrency", async () => {
     const res = await callRoute(GET);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -73,13 +73,7 @@ describeIfDb("/api/settings/agent", () => {
         backend: "hermes",
         globalCap: AGENT_DEFAULT_GLOBAL_CAP,
       },
-      options: [
-        {
-          value: "hermes",
-          label: "Hermes",
-          description: "Subprocess agent. Works with any LLM provider.",
-        },
-      ],
+      options: AGENT_BACKEND_OPTIONS,
       defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
     });
   });
@@ -94,7 +88,7 @@ describeIfDb("/api/settings/agent", () => {
     expect(mockProvisionHostConfig).not.toHaveBeenCalled();
   });
 
-  it("PUT accepts the legacy Hermes-only field", async () => {
+  it("PUT accepts Hermes", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
       body: { backend: "hermes", globalCap: 12 },
@@ -107,7 +101,7 @@ describeIfDb("/api/settings/agent", () => {
     });
   });
 
-  it("PUT persists the Hermes globalCap", async () => {
+  it("PUT persists the backend and globalCap", async () => {
     const res = await callRoute(PUT, {
       method: "PUT",
       body: { globalCap: 30 },
@@ -125,7 +119,7 @@ describeIfDb("/api/settings/agent", () => {
           eq(llm_provider_config.scope, "agent"),
         ),
       );
-    expect(row).toEqual({ provider: "hermes", config: { globalCap: 30 } });
+    expect(row).toEqual({ provider: "hermes", config: { backend: "hermes", globalCap: 30 } });
   });
 
   it("PUT falls back for an invalid cap", async () => {
