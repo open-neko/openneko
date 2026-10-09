@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
@@ -35,13 +36,34 @@ func main() {
 	// Only the bridge may reach the broker.
 	_ = os.Unsetenv("OPENNEKO_BROKER_URL")
 	_ = os.Unsetenv("OPENNEKO_BROKER_TOKEN")
-	if dir := os.Getenv("OPENNEKO_HARNESS_WORKSPACE_DIR"); dir != "" {
-		files, err := localtool.OpenFiles(dir)
+	workspace := os.Getenv("OPENNEKO_HARNESS_WORKSPACE_DIR")
+	if workspace != "" {
+		files, err := localtool.OpenFiles(workspace)
 		if err != nil {
 			fail(fmt.Errorf("file workspace unavailable: %w", err))
 		}
 		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
 		closers = append(closers, files.Close)
+	}
+	if enabled := os.Getenv("OPENNEKO_HARNESS_SHELL"); enabled != "" {
+		if enabled != "1" || workspace == "" {
+			fail(fmt.Errorf("the terminal needs OPENNEKO_HARNESS_SHELL=1 and OPENNEKO_HARNESS_WORKSPACE_DIR"))
+		}
+		shell, err := localtool.OpenShell(workspace, shellStripList(os.Getenv))
+		if err != nil {
+			fail(fmt.Errorf("terminal unavailable: %w", err))
+		}
+		if err := shell.SetLimits(intEnv("OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS", 180), intEnv("OPENNEKO_HARNESS_TERMINAL_MAX_OUTPUT", 50_000)); err != nil {
+			fail(err)
+		}
+		tools.Capabilities = append(tools.Capabilities, shell.Capability())
+	}
+	if hosts := os.Getenv("OPENNEKO_HARNESS_WEB_HOSTS"); hosts != "" {
+		web, err := localtool.OpenWeb(hosts)
+		if err != nil {
+			fail(err)
+		}
+		tools.Capabilities = append(tools.Capabilities, web.Capability())
 	}
 	if dir := os.Getenv("OPENNEKO_HARNESS_UPLOADS_DIR"); dir != "" {
 		uploads, err := localtool.OpenFiles(dir)
@@ -60,14 +82,8 @@ func main() {
 			fail(fmt.Errorf("skill workspace unavailable: %w", err))
 		}
 		tools.Capabilities = append(tools.Capabilities, skills.SkillCapabilities()...)
-		skillRoute, err := command.RouteHasSkill(os.Getenv("HARNESS_MODEL_ROUTES"))
-		if err != nil {
-			fail(fmt.Errorf("invalid skill route: %w", err))
-		}
-		if skillRoute {
-			if tools.SkillCatalog, err = skills.SkillCatalog(); err != nil {
-				fail(fmt.Errorf("staged skill catalog unavailable: %w", err))
-			}
+		if tools.Skills, err = skills.Skills(); err != nil {
+			fail(fmt.Errorf("staged skills unavailable: %w", err))
 		}
 		closers = append(closers, skills.Close)
 	}
@@ -105,6 +121,25 @@ func bridgeCommand(bridge, servers string, environ []string) *exec.Cmd {
 		}
 	}
 	return cmd
+}
+
+// shellStripList names the variables a terminal command must not inherit:
+// the broker binding and every model credential.
+func shellStripList(getenv func(string) string) []string {
+	return append([]string{"OPENNEKO_BROKER_URL", "OPENNEKO_BROKER_TOKEN"}, command.KeyEnvNames(getenv)...)
+}
+
+// intEnv reads a host limit; an unset variable keeps the default and a malformed one fails the run.
+func intEnv(name string, fallback int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		fail(fmt.Errorf("invalid %s", name))
+	}
+	return n
 }
 
 func validateScope(orgID, threadID string) error {

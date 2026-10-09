@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -66,7 +67,8 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 	reads.Store(0)
 	events = nil
 	result, err = RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-budget", InputID: "input", Prompt: "Find two references", MaxOperations: 4, MaxModelCalls: 4}, client, Tools{Capabilities: []Capability{read, write}, ChildReads: []string{"catalog"}}, func(e Event) error { events = append(events, e); return nil })
-	if err != nil || result.Status != "failed" || result.Code != "model_budget_exceeded" || modelCalls.Load() != 4 || writes.Load() != 0 {
+	// Three agent calls, then the reserved summary call.
+	if err != nil || result.Status != "completed" || result.Kind != "summary" || result.Code != "model_calls_exhausted" || modelCalls.Load() != 4 || writes.Load() != 0 {
 		t.Fatalf("child escaped shared budget: result=%+v err=%v calls=%d writes=%d", result, err, modelCalls.Load(), writes.Load())
 	}
 	modelCalls.Store(0)
@@ -89,17 +91,23 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 	}
 }
 
-func TestChildToolFailureCannotBecomeSuccessfulParentAnswer(t *testing.T) {
+func TestChildToolErrorReachesTheParent(t *testing.T) {
 	answers := []string{
 		`{"javascriptCode":"final('Delegate verification',{})"}`,
 		`{"javascriptCode":"const child=team.researcher({question:'Verify reference'}); final('Use child result',{child});"}`,
 		`{"javascriptCode":"final('Read the reference',{})"}`,
 		`{"javascriptCode":"const found=catalog({key:'reference'}); final('Report evidence',{found});"}`,
-		`{"answer":"Reference verified"}`,
-		`{"answer":"The reference is verified."}`,
+		`Answer: The reference is unavailable.`,
+		`Answer: The reference could not be verified.`,
 	}
 	var calls, reads atomic.Int32
+	var mu sync.Mutex
+	var bodies []string
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
 		index := int(calls.Add(1)) - 1
 		if index >= len(answers) {
 			http.Error(w, "unexpected model call", http.StatusBadRequest)
@@ -118,8 +126,13 @@ func TestChildToolFailureCannotBecomeSuccessfulParentAnswer(t *testing.T) {
 		}}
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "child-failed-read", InputID: "input", Prompt: "Verify the reference", MaxOperations: 4, MaxModelCalls: 12}, client,
 		Tools{Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}, func(Event) error { return nil })
-	if err != nil || result.Status != "failed" || result.Code != "incomplete_result" || reads.Load() != 1 {
-		t.Fatalf("failed child read was reported as success: result=%+v err=%v reads=%d models=%d", result, err, reads.Load(), calls.Load())
+	if err != nil || result.Status != "completed" || reads.Load() != 1 {
+		t.Fatalf("result=%+v err=%v reads=%d models=%d", result, err, reads.Load(), calls.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(bodies[4], "reference unavailable") {
+		t.Fatal("the child responder did not see the tool error")
 	}
 }
 

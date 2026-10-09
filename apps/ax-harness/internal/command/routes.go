@@ -13,10 +13,20 @@ import (
 
 type modelRoute struct {
 	Key       string            `json:"key"`
+	Provider  string            `json:"provider,omitempty"`
 	Model     string            `json:"model"`
-	URL       string            `json:"url"`
+	URL       string            `json:"url,omitempty"`
 	APIKeyEnv string            `json:"api_key_env"`
 	Price     *agent.TokenPrice `json:"price,omitempty"`
+}
+
+const openAICompatible = "openai-compatible"
+
+func (r modelRoute) provider() string {
+	if r.Provider == "" {
+		return openAICompatible
+	}
+	return r.Provider
 }
 
 type modelFallback struct {
@@ -30,7 +40,6 @@ type routeConfig struct {
 	ExecutorEscalation  string          `json:"executor_escalation,omitempty"`
 	ExecutorAfterErrors int             `json:"executor_after_errors,omitempty"`
 	Responder           string          `json:"responder"`
-	Skill               string          `json:"skill,omitempty"`
 	Fallbacks           []modelFallback `json:"fallbacks,omitempty"`
 	Routes              []modelRoute    `json:"routes"`
 	PricingVersion      string          `json:"pricing_version,omitempty"`
@@ -40,17 +49,73 @@ type routeConfig struct {
 // route fallback and the model-call ceiling; a hidden retry would bypass all three.
 func noClientRetry() ax.Value { return ax.Object("max_retries", 0) }
 
+// newClient builds one provider client with Ax client retry off. A native
+// provider without a URL uses Ax's default base URL.
+func newClient(provider, base, key, model string) (client ax.AxAIService, err error) {
+	options := ax.Object("api_key", key, "model", model, "retry", noClientRetry())
+	if base != "" {
+		options["base_url"] = base
+	}
+	if provider == openAICompatible {
+		return ax.NewOpenAICompatibleClient(options), nil
+	}
+	defer func() {
+		if recover() != nil {
+			client, err = nil, fmt.Errorf("model provider %q is unsupported or needs a URL", provider)
+		}
+	}()
+	service, ok := ax.NewAI(provider, options).(ax.AxAIService)
+	if !ok {
+		return nil, fmt.Errorf("model provider %q is unsupported", provider)
+	}
+	return service, nil
+}
+
+// setRouteName makes the rate-limit hook report the route key, which keys
+// prices, fallbacks and model names.
+func setRouteName(client ax.AxAIService, key string) error {
+	switch c := client.(type) {
+	case *ax.OpenAICompatibleClient:
+		c.Name = key
+	case *ax.AnthropicClient:
+		c.Name = key
+	case *ax.GoogleGeminiClient:
+		c.Name = key
+	case *ax.OpenAIResponsesClient:
+		c.Name = key
+	default:
+		return fmt.Errorf("model provider cannot carry a route key")
+	}
+	return nil
+}
+
+func validProviderURL(provider, base string) error {
+	if base == "" && provider != openAICompatible {
+		return nil
+	}
+	return validModelURL(base)
+}
+
 // loadModelClient reads a host-owned allowlist. The run JSON cannot add a
 // provider, change a stage model, or name a credential.
 func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 	raw := getenv("HARNESS_MODEL_ROUTES")
 	if raw == "" {
-		base, model, key := getenv("HARNESS_MODEL_URL"), getenv("HARNESS_MODEL"), getenv("HARNESS_MODEL_API_KEY")
-		if err := validModelURL(base); err != nil || model == "" || key == "" {
+		route := modelRoute{Key: "default", Provider: getenv("HARNESS_MODEL_PROVIDER"), Model: getenv("HARNESS_MODEL"), URL: getenv("HARNESS_MODEL_URL")}
+		key := getenv("HARNESS_MODEL_API_KEY")
+		if err := validProviderURL(route.provider(), route.URL); err != nil || route.Model == "" || key == "" {
 			return nil, fmt.Errorf("configure HARNESS_MODEL_URL, HARNESS_MODEL and HARNESS_MODEL_API_KEY")
 		}
-		return &agent.RoutedClient{AIClient: ax.NewOpenAICompatibleClient(ax.Object("base_url", base, "api_key", key, "model", model, "retry", noClientRetry())),
-			ModelNames: map[string]string{"openai-compatible": model}}, nil
+		client, err := newClient(route.provider(), route.URL, key, route.Model)
+		if err != nil {
+			return nil, err
+		}
+		name := route.provider()
+		if err := setRouteName(client, name); err != nil {
+			return nil, err
+		}
+		return &agent.RoutedClient{AIClient: client, ModelNames: map[string]string{name: route.Model},
+			Providers: map[string]string{name: route.provider()}, DefaultProvider: route.provider()}, nil
 	}
 	cfg, err := parseRouteConfig(raw)
 	if err != nil {
@@ -61,11 +126,16 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 		if getenv(route.APIKeyEnv) == "" {
 			return nil, fmt.Errorf("HARNESS_MODEL_ROUTES route missing credential")
 		}
-		service := ax.NewOpenAICompatibleClient(ax.Object("base_url", route.URL, "api_key", getenv(route.APIKeyEnv), "model", route.Model, "retry", noClientRetry()))
+		service, err := newClient(route.provider(), route.URL, getenv(route.APIKeyEnv), route.Model)
+		if err != nil {
+			return nil, err
+		}
 		// A logical key can distinguish two accounts that expose the same model.
 		// Ax's explicit router entry strips the key before the provider call, so
 		// the provider uses its configured actual model.
-		service.Name = route.Key
+		if err := setRouteName(service, route.Key); err != nil {
+			return nil, err
+		}
 		entries = append(entries, ax.RouterServiceEntry{Key: route.Key, Description: route.Model, Service: service})
 	}
 	router, err := ax.NewMultiServiceRouter(entries)
@@ -74,9 +144,11 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 	}
 	prices := make(map[string]agent.TokenPrice, len(cfg.Routes))
 	modelNames := make(map[string]string, len(cfg.Routes))
+	providers := make(map[string]string, len(cfg.Routes))
 	fallbacks := make(map[string]string, len(cfg.Fallbacks))
 	for _, route := range cfg.Routes {
 		modelNames[route.Key] = route.Model
+		providers[route.Key] = route.provider()
 		if route.Price != nil {
 			prices[route.Key] = *route.Price
 		}
@@ -85,19 +157,23 @@ func loadModelClient(getenv func(string) string) (ax.AIClient, error) {
 		fallbacks[fallback.From] = fallback.To
 	}
 	return &agent.RoutedClient{AIClient: router, Stages: agent.StageModels{
-		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder, Skill: cfg.Skill,
+		Context: cfg.Context, Executor: cfg.Executor, Responder: cfg.Responder,
 		ExecutorEscalation: cfg.ExecutorEscalation, ExecutorAfterErrors: cfg.ExecutorAfterErrors,
-	}, ModelNames: modelNames, Fallbacks: fallbacks, PricingVersion: cfg.PricingVersion, Prices: prices}, nil
+	}, ModelNames: modelNames, Providers: providers, Fallbacks: fallbacks, PricingVersion: cfg.PricingVersion, Prices: prices}, nil
 }
 
-// RouteHasSkill lets the product adapter load staged skill metadata only when
-// the trusted routing profile enables the separate semantic selector.
-func RouteHasSkill(raw string) (bool, error) {
-	if raw == "" {
-		return false, nil
+// KeyEnvNames lists the environment variables that hold model credentials,
+// so a child process can run without them.
+func KeyEnvNames(getenv func(string) string) []string {
+	names := []string{"HARNESS_MODEL_API_KEY", "HARNESS_MODEL_ROUTES"}
+	if raw := getenv("HARNESS_MODEL_ROUTES"); raw != "" {
+		if cfg, err := parseRouteConfig(raw); err == nil {
+			for _, route := range cfg.Routes {
+				names = append(names, route.APIKeyEnv)
+			}
+		}
 	}
-	cfg, err := parseRouteConfig(raw)
-	return cfg.Skill != "", err
+	return names
 }
 
 func parseRouteConfig(raw string) (routeConfig, error) {
@@ -122,13 +198,13 @@ func parseRouteConfig(raw string) (routeConfig, error) {
 		return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES pricing profile")
 	}
 	for _, route := range cfg.Routes {
-		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || validModelURL(route.URL) != nil ||
+		if !validRouteKey(route.Key) || route.Model == "" || len(route.Model) > 128 || known[route.Key] || len(route.Provider) > 64 || validProviderURL(route.provider(), route.URL) != nil ||
 			!validEnvName(route.APIKeyEnv) || route.Price != nil && !route.Price.Valid() || priced && route.Price == nil || !priced && route.Price != nil {
 			return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES route")
 		}
 		known[route.Key] = true
 	}
-	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.Skill, cfg.ExecutorEscalation} {
+	for _, model := range []string{cfg.Context, cfg.Executor, cfg.Responder, cfg.ExecutorEscalation} {
 		if model == "" {
 			continue
 		}
@@ -138,16 +214,13 @@ func parseRouteConfig(raw string) (routeConfig, error) {
 	}
 	if cfg.ExecutorEscalation == "" && cfg.ExecutorAfterErrors != 0 ||
 		cfg.ExecutorEscalation != "" && (cfg.ExecutorAfterErrors < 1 || cfg.ExecutorAfterErrors > 8 ||
-			cfg.ExecutorEscalation == cfg.Executor || cfg.Executor == cfg.Context || cfg.Executor == cfg.Responder || cfg.Executor == cfg.Skill) {
+			cfg.ExecutorEscalation == cfg.Executor || cfg.Executor == cfg.Context || cfg.Executor == cfg.Responder) {
 		return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES executor escalation")
 	}
 	if len(cfg.Fallbacks) > len(cfg.Routes) {
 		return routeConfig{}, fmt.Errorf("invalid HARNESS_MODEL_ROUTES fallback profile")
 	}
 	active := map[string]bool{cfg.Context: true, cfg.Executor: true, cfg.Responder: true}
-	if cfg.Skill != "" {
-		active[cfg.Skill] = true
-	}
 	if cfg.ExecutorEscalation != "" {
 		active[cfg.ExecutorEscalation] = true
 	}

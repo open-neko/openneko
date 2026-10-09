@@ -37,8 +37,8 @@ func run(ctx context.Context, input io.Reader, output io.Writer) (int, error) {
 
 func executeWithTools(ctx context.Context, input io.Reader, output io.Writer, tools agent.Tools) (int, error) {
 	var spec agent.Spec
-	data, readErr := io.ReadAll(io.LimitReader(input, 131073))
-	if readErr != nil || len(data) > 131072 {
+	data, readErr := io.ReadAll(io.LimitReader(input, agent.MaxInputBytes+1))
+	if readErr != nil || len(data) > agent.MaxInputBytes {
 		return 2, fmt.Errorf("run input exceeds limit or could not be read")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))

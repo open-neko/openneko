@@ -3,7 +3,7 @@
 Ax Harness is a Go agent harness built on the [Ax](https://github.com/ax-llm/ax)
 framework. OpenNeko offers it as the Ax backend, an alternative to Hermes.
 
-The harness runs one agent turn per process. It reads one run specification
+The harness runs one agent turn per process. Its limits match Hermes. It reads one run specification
 on stdin, runs an Ax agent with tools, and writes events as JSON lines on
 stdout. The host owns history, approvals, the sandbox and scheduling.
 
@@ -11,10 +11,10 @@ stdout. The host owns history, approvals, the sandbox and scheduling.
 
 | Path | Contents |
 | --- | --- |
-| `internal/agent` | The agent loop, budgets, usage and cost, model routes and fallback, the child agent and skill selection. |
-| `internal/command` | Run input, model route configuration and the event stream. |
+| `internal/agent` | The agent loop, budgets, the budget summary, usage and cost, model routes and fallback, reasoning, the child agent and the skills catalog. |
+| `internal/command` | Run input, model routes for any Ax provider, and the event stream. |
 | `internal/mcp` | A stdio MCP client that exposes server tools as capabilities. |
-| `internal/localtool` | File, upload and skill tools confined to one directory. |
+| `internal/localtool` | File, upload and skill tools confined to one directory, and the `terminal` tool. |
 | `cmd/ax-harness` | The OpenNeko entry point. It is the only OpenNeko-aware code. |
 | `compat` | Checks of the pinned Ax behavior that the harness uses. |
 

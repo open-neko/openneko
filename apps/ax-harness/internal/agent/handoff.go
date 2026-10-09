@@ -25,6 +25,8 @@ const maxVisibleRuntimeProjectionBytes = 32768
 type handoffRuntime struct {
 	*axgoja.Runtime
 	onExecutorError func()
+	onStep          func(title string)
+	inline          inlineBudget
 }
 
 func (r *handoffRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {
@@ -32,7 +34,7 @@ func (r *handoffRuntime) CreateSession(globals map[string]ax.Value, options map[
 	if err != nil {
 		return nil, err
 	}
-	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError}, nil
+	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError, onStep: r.onStep, inline: &r.inline}, nil
 }
 
 type handoffSession struct {
@@ -40,9 +42,12 @@ type handoffSession struct {
 	evidence        ax.Value
 	patched         bool
 	onExecutorError func()
+	onStep          func(title string)
+	inline          *inlineBudget
 }
 
 func (s *handoffSession) Execute(code string, options map[string]ax.Value) ax.Value {
+	s.inline.reset()
 	result := s.CodeSession.Execute(code, options)
 	if s.patched {
 		if envelope, ok := result.(map[string]ax.Value); ok && envelope["is_error"] == true && s.onExecutorError != nil {
@@ -63,6 +68,11 @@ func (s *handoffSession) Execute(code string, options map[string]ax.Value) ax.Va
 	}
 	s.evidence = nil
 	args, ok := payload["args"].([]ax.Value)
+	if ok && len(args) > 0 && s.onStep != nil {
+		if title, isText := args[0].(string); isText && title != "" {
+			s.onStep(title)
+		}
+	}
 	if !ok || len(args) < 2 || args[1] == nil {
 		return result
 	}

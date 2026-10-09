@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -127,14 +130,20 @@ func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
 	}
 }
 
-func TestFailedDurableToolCannotReportCompletedAction(t *testing.T) {
+func TestToolErrorReachesTheModel(t *testing.T) {
 	answers := []string{
 		`{"javascriptCode":"final('Save the file',{})"}`,
-		`{"javascriptCode":"const receipt=file_write({}); final('Report completion',{receipt});"}`,
-		`{"answer":"I saved the file."}`,
+		`{"javascriptCode":"const receipt=file_write({}); final('Report the outcome',{receipt});"}`,
+		`Answer: The file was not saved: write_denied.`,
 	}
 	var calls atomic.Int32
+	var mu sync.Mutex
+	var bodies []string
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
 		index := int(calls.Add(1)) - 1
 		if index >= len(answers) {
 			http.Error(w, "unexpected model call", http.StatusBadRequest)
@@ -150,7 +159,46 @@ func TestFailedDurableToolCannotReportCompletedAction(t *testing.T) {
 	}}
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "failed-write", InputID: "input", Prompt: "Save the file"},
 		client, Tools{Capabilities: []Capability{tool}}, func(Event) error { return nil })
-	if err != nil || result.Status != "failed" || result.Kind != "partial" || result.Code != "incomplete_result" || result.Answer != "The run did not complete; a tool returned an incomplete or failed result." || calls.Load() != 3 {
+	if err != nil || result.Status != "completed" || result.Kind != "answer" || calls.Load() != 3 {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(bodies[2], "write_denied") {
+		t.Fatal("the responder did not see the tool error")
+	}
+}
+
+// Tools are JavaScript functions in the actor, so five calls in one step cost
+// no more model calls than one.
+func TestManyToolCallsShareOneActorStep(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Total five regions',{})"}`,
+		`{"javascriptCode":"let total=0; for (const r of ['n','s','e','w','c']) total+=sales({region:r}).total; final('Report the total',{total});"}`,
+		`{"answer":"Total 15."}`,
+	}
+	var modelCalls, toolCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		index := int(modelCalls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message",
+			ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer server.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
+	tool := Capability{Name: "sales", Version: "1", Origin: "fixture", Effect: "read", Description: "Sales total for a region.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["region"],"properties":{"region":{"type":"string"}},"additionalProperties":false}`),
+		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			toolCalls.Add(1)
+			return json.RawMessage(`{"total":3}`), nil
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "many-tools", InputID: "input", Prompt: "Total sales"},
+		client, Tools{Capabilities: []Capability{tool}}, func(Event) error { return nil })
+	if err != nil || result.Status != "completed" || toolCalls.Load() != 5 || modelCalls.Load() != 3 {
+		t.Fatalf("result=%+v err=%v tools=%d model=%d", result, err, toolCalls.Load(), modelCalls.Load())
 	}
 }

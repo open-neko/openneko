@@ -13,27 +13,34 @@ import (
 // Tools are host-installed capabilities for one run.
 type Tools struct {
 	Capabilities []Capability
-	ChildReads   []string        // Exact host-admitted read tools for one owned child agent.
-	SkillCatalog []SkillMetadata // Host-staged catalog hints; never capability grants.
+	ChildReads   []string // Exact host-admitted read tools for one owned child agent.
+	Skills       []Skill  // Host-staged skill guides for the Ax skills catalog.
 }
 
-type SkillMetadata struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+// Skill is one staged guide. Content is the SKILL.md body.
+type Skill struct {
+	Name        string
+	Description string
+	Content     string
 }
+
+const (
+	maxSkills       = 64
+	maxSkillContent = 64 << 10
+)
 
 var skillName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 func ValidSkillName(name string) bool { return skillName.MatchString(name) }
 
-func (t Tools) skills() ([]SkillMetadata, error) {
-	if len(t.SkillCatalog) > 64 {
+func (t Tools) skills() ([]Skill, error) {
+	if len(t.Skills) > maxSkills {
 		return nil, fmt.Errorf("too many staged skills")
 	}
-	list := append([]SkillMetadata(nil), t.SkillCatalog...)
+	list := append([]Skill(nil), t.Skills...)
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	for i, skill := range list {
-		if !skillName.MatchString(skill.Name) || len(skill.Description) > 500 ||
+		if !skillName.MatchString(skill.Name) || len(skill.Description) > 500 || len(skill.Content) > maxSkillContent ||
 			(i > 0 && list[i-1].Name == skill.Name) {
 			return nil, fmt.Errorf("invalid staged skill catalog")
 		}

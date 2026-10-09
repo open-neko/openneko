@@ -1,16 +1,14 @@
 import type { HarnessRunSummary, NormalizedUsage } from "@neko/telemetry";
+import {
+  METRIC_REFRESH_DEFAULT_CAP,
+  agentLimits,
+  type AgentReasoningEffort,
+} from "./agent-limits";
 
 export const AGENT_BACKEND_IDS = ["hermes"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
-// Every concurrent job can own an OpenShell sandbox. Keep the out-of-box
-// ceiling deliberately small; operators can raise it after sizing their
-// gateway and model-provider quota.
-export const AGENT_DEFAULT_GLOBAL_CAP = 3;
-
-// Metric refreshes run in the background, each in its own sandbox. Two at a
-// time leaves sandbox room for chat on a small host.
-export const METRIC_REFRESH_DEFAULT_CAP = 2;
+export { AGENT_DEFAULT_GLOBAL_CAP, METRIC_REFRESH_DEFAULT_CAP } from "./agent-limits";
 
 /** Concurrent metric refreshes: OPENNEKO_METRIC_REFRESH_CONCURRENCY, else the default, never above globalCap. */
 export function metricRefreshConcurrency(globalCap: number, configured?: string): number {
@@ -252,45 +250,27 @@ export type AgentWorkspace = {
   binRoot: string;
 };
 
-/**
- * Wall-clock budget for ONE agent turn. When it expires the backend kills
- * the agent process mid-stream, so it must comfortably exceed real turn
- * times: discovery-heavy asks measured at 280–450s against a live source.
- * The old 5-minute default terminated every longer run and surfaced as a
- * mysterious "hermes exited mid-turn" death (signal=SIGTERM).
- */
+/** Wall clock for one chat turn, from the shared agent limits. */
 export function agentTurnTimeoutMs(): number {
-  const env = Number(process.env.OPENNEKO_AGENT_TURN_TIMEOUT_MS);
-  return Number.isFinite(env) && env > 0 ? env : 9 * 60_000;
+  return agentLimits("chat").timeoutMs;
 }
 
-/**
- * Budget for one workflow turn. Workflows are mechanical loops, so they run at
- * lower reasoning effort, with a tool-call cap and a longer wall clock than chat.
- */
+/** Budget for one workflow turn, from the shared agent limits. */
 export function workflowTurnBudget(): Required<
   Pick<AgentRunOptions, "timeoutMs" | "reasoningEffort" | "maxToolIterations">
 > & {
   maxContinuations: number;
 } {
-  const num = (name: string, fallback: number) => {
-    const value = Number(process.env[name]);
-    return Number.isFinite(value) && value > 0 ? value : fallback;
-  };
-  const effort = process.env.OPENNEKO_WORKFLOW_REASONING_EFFORT?.trim();
+  const limits = agentLimits("workflow");
   return {
-    timeoutMs: num("OPENNEKO_WORKFLOW_TURN_TIMEOUT_MS", 15 * 60_000),
-    reasoningEffort: isReasoningEffort(effort) ? effort : "medium",
-    maxToolIterations: Math.floor(num("OPENNEKO_WORKFLOW_MAX_TOOL_CALLS", 150)),
-    maxContinuations: Math.floor(num("OPENNEKO_WORKFLOW_MAX_CONTINUATIONS", 2)),
+    timeoutMs: limits.timeoutMs,
+    reasoningEffort: limits.reasoningEffort ?? "medium",
+    maxToolIterations: limits.maxToolCalls ?? limits.maxTurns,
+    maxContinuations: limits.maxContinuations,
   };
 }
 
-export type AgentReasoningEffort = "low" | "medium" | "high";
-
-function isReasoningEffort(value: unknown): value is AgentReasoningEffort {
-  return value === "low" || value === "medium" || value === "high";
-}
+export type { AgentReasoningEffort } from "./agent-limits";
 
 /** Per-run policy for a backend's own sub-agent primitive. */
 export type AgentNativeDelegationPolicy = "enabled" | "disabled";

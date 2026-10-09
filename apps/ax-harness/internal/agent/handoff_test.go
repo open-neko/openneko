@@ -17,10 +17,10 @@ import (
 
 func TestDistillerToolEvidenceReachesExecutorWithoutAnotherRead(t *testing.T) {
 	var modelCalls, reads, checks atomic.Int32
-	bulk := strings.Repeat("BULK-OBSERVATION-", 5000)
+	bulk := strings.Repeat("BULK-OBSERVATION-", 7000)
 	var executorRequest string
 	answers := []string{
-		`{"javascriptCode":"const ref=seed({}); if (!ref.reference || ref.result_bytes < 80000) throw new Error('missing run reference'); const row=harnessSavedOperation(1); final('Use the row', {token: row.result.token});"}`,
+		`{"javascriptCode":"const ref=seed({}); if (!ref.reference || ref.result_bytes < 110000) throw new Error('missing run reference'); const row=harnessSavedOperation(1); final('Use the row', {token: row.result.token});"}`,
 		`{"javascriptCode":"const check=verify({token: harnessEvidence.token}); final('Report the row', {check});"}`,
 		`{"answer":"REF-42"}`,
 	}
