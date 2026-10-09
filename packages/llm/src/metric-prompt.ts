@@ -191,6 +191,7 @@ snapshot. No prose around the JSON.
       shellTool,
       queryTool,
       agentTool: dataAgentTool,
+      agentPurpose: "metric",
       workspace,
       knowledge,
       readOnly: true,

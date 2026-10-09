@@ -14,6 +14,18 @@ export type GraphjinMcpToolPolicy = Readonly<{
 export const GRAPHJIN_DIRECT_GOVERNED_POLICY: GraphjinMcpToolPolicy =
   Object.freeze({ mode: "direct-governed" });
 
+/**
+ * How a run reaches customer data: GraphJin's direct tools, or only GraphJin's
+ * server-side agent when the org opted in.
+ */
+export type GraphjinDataPath = "direct" | "agent";
+
+/**
+ * GraphJin's own agent tool. Runs reach that agent only through the
+ * neko_graphjin_agent server, which the org opt-in controls.
+ */
+export const GRAPHJIN_SERVER_AGENT_TOOL = "ask_graphjin_agent";
+
 export const GRAPHJIN_TOOL_POLICY_ENV =
   "OPENNEKO_MCP_GRAPHJIN_TOOL_POLICY" as const;
 
@@ -72,7 +84,7 @@ export function applyGraphjinMcpToolPolicy(
   tools: readonly Tool[],
   policy: GraphjinMcpToolPolicy | undefined,
 ): Tool[] {
-  if (!policy) return [...tools];
+  if (!policy) return tools.filter((tool) => tool.name !== GRAPHJIN_SERVER_AGENT_TOOL);
   switch (policy.mode) {
     case "direct-governed":
       return tools.flatMap((tool) => {
@@ -91,7 +103,12 @@ export function assertGraphjinMcpToolCallAllowed(
   policy: GraphjinMcpToolPolicy | undefined,
   input: { name: string; arguments?: Record<string, unknown> },
 ): void {
-  if (!policy) return;
+  if (!policy) {
+    if (input.name === GRAPHJIN_SERVER_AGENT_TOOL) {
+      throw new Error(`GraphJin MCP tool ${GRAPHJIN_SERVER_AGENT_TOOL} is reached through neko_graphjin_agent`);
+    }
+    return;
+  }
   if (!DIRECT_GOVERNED_TOOL_NAMES.has(input.name)) {
     throw new Error(
       `GraphJin MCP ${policy.mode} policy blocked tool ${JSON.stringify(input.name)}`,

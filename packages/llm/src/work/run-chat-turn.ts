@@ -1,5 +1,5 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
-import { getGraphjinConfigSettingsForOrg, heldItems } from "@neko/db";
+import { getGraphjinConfigSettingsForOrg, graphjinAgentEnabledForOrg, heldItems } from "@neko/db";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
@@ -56,7 +56,7 @@ import {
   setWorkRunValue,
   setWorkThreadBackendState,
 } from "./store";
-import type { GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
+import type { GraphjinDataPath, GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
 import type { PluginActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
@@ -279,9 +279,17 @@ async function runChatTurnTraced(
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
   const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
 
+  // An eval's direct-tool policy keeps the direct path.
+  const graphjinDataPath: GraphjinDataPath =
+    dataSurface === "customer" && !opts.graphjinToolPolicy &&
+    await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId))
+      ? "agent"
+      : "direct";
+
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
-  // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
-  if (dataSurface === "customer") {
+  // gj_catalog bootstrap; legacy ones keep the broad discovery dumps. GraphJin's
+  // agent does its own discovery, so the agent path needs no pack.
+  if (dataSurface === "customer" && graphjinDataPath === "direct") {
     const refresh = await startupPhase("knowledge.prefetch", () => prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot));
     if (!refresh.ok) {
       console.warn(
@@ -289,7 +297,7 @@ async function runChatTurnTraced(
       );
     }
   }
-  const knowledge = dataSurface === "records"
+  const knowledge = dataSurface === "records" || graphjinDataPath === "agent"
     ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
     : await startupPhase("knowledge.read_pack", () => readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot)));
 
@@ -529,6 +537,7 @@ async function runChatTurnTraced(
       inlineTranscript,
       pluginActions: customerSurface ? heldPluginActions : [],
       dataSurface,
+      graphjinDataPath,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
     });
@@ -565,6 +574,7 @@ async function runChatTurnTraced(
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
         : {}),
+      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       ...(opts.nativeDelegation
         ? { nativeDelegation: opts.nativeDelegation }
         : {}),

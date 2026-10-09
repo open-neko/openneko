@@ -48,6 +48,7 @@ function build(
       default_mode?: "auto" | "ask" | "deny";
     }>;
     dataSurface?: "customer" | "records";
+    graphjinDataPath?: "direct" | "agent";
   } = {},
 ): string {
   return buildWorkPrompt({
@@ -71,6 +72,7 @@ function build(
     installedSkills: overrides.installedSkills,
     pluginActions: overrides.pluginActions,
     dataSurface: overrides.dataSurface,
+    ...(overrides.graphjinDataPath ? { graphjinDataPath: overrides.graphjinDataPath } : {}),
     ...(overrides.dataSurface === "records"
       ? {
           appContext: {
@@ -100,6 +102,25 @@ describe("buildWorkPrompt UX metadata", () => {
       expect(evaluation).not.toContain(block);
     }
     expect(evaluation).toBe(production.replace(/\n\n<closing>[\s\S]*?<\/closing>/, ""));
+  });
+});
+
+describe("buildWorkPrompt GraphJin agent path", () => {
+  it("describes only GraphJin's agent for data, including workflow triggers", () => {
+    const agent = build("hermes", { graphjinDataPath: "agent", supportsWorkflowTool: true });
+    expect(agent).toContain("`mcp_neko_graphjin_agent_ask`");
+    expect(agent).not.toMatch(/mcp_neko_graphjin_(execute_graphql|query_catalog|validate_where_clause)/);
+    expect(agent).not.toContain(knowledge.syntax);
+    expect(agent).not.toContain("- Knowledge:");
+    expect(agent).not.toMatch(/hidden|not available/i);
+  });
+
+  it("keeps the direct path unchanged", () => {
+    const direct = build("hermes", { supportsWorkflowTool: true });
+    expect(direct).toBe(build("hermes", { graphjinDataPath: "direct", supportsWorkflowTool: true }));
+    expect(direct).toContain("`mcp_neko_graphjin_execute_graphql`");
+    expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
+    expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");
   });
 });
 

@@ -1,5 +1,5 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { data_source, db, desc, eq } from "@neko/db";
+import { data_source, db, desc, eq, graphjinAgentEnabledForOrg } from "@neko/db";
 import { observeSafely, type HarnessObserver } from "@neko/telemetry";
 import {
   shellToolName,
@@ -29,7 +29,7 @@ import {
   ensureWorkWorkspace,
 } from "./work/workspace";
 import { normalizeGraphjinAgentUsage } from "./usage-normalization";
-import { GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "./graphjin/mcp-names";
+import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "./graphjin/mcp-names";
 
 // Keep in sync with ROLE_FOCUS (bootstrap-metrics-writer.ts) and the
 // onboarding ALL_SEATS list — every seat the product offers must be here.
@@ -65,7 +65,8 @@ export type MetricAgentInput = {
   onDiagnostics?: (diagnostics: MetricAgentDiagnostics) => void;
 };
 
-export type GraphjinDataPath = "direct" | "agent";
+export type { GraphjinDataPath } from "./work/graphjin-tool-policy";
+import type { GraphjinDataPath } from "./work/graphjin-tool-policy";
 
 export type MetricAgentDiagnostics = {
   graphjinPath: GraphjinDataPath;
@@ -119,7 +120,8 @@ async function runMetricAgentTraced(
   input: MetricAgentInput,
 ): Promise<MetricAgentResult> {
   const observedStartedAt = Date.now();
-  const graphjinPath = input.graphjinPath ?? "direct";
+  const graphjinPath: GraphjinDataPath = input.graphjinPath ??
+    (await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(input.orgId)) ? "agent" : "direct");
   const sources = await startupPhase("metric.db_read", async () => db()
     .select({
       graphql_url: data_source.graphql_url,
@@ -147,23 +149,10 @@ async function runMetricAgentTraced(
     "metric-agent",
     input.jobId ?? input.slug,
   ));
-  const refreshResult = await startupPhase("knowledge.prefetch", async () => prefetchKnowledgeForOrg(
-    input.orgId,
-    knowledgeWorkspace.knowledgeRoot,
-  ));
-  if (refreshResult.ok) {
-    const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
-    console.log(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refreshed (${refreshResult.files.length} files, ${totalBytes}B)`,
-    );
-  } else {
-    console.warn(
-      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refresh failed (${refreshResult.error}); proceeding with on-disk pack`,
-    );
-  }
-  const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
-    knowledgePackPaths(knowledgeWorkspace.knowledgeRoot),
-  ));
+  // GraphJin's agent does its own discovery, so the agent path needs no pack.
+  const knowledge = graphjinPath === "agent"
+    ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
+    : await loadMetricKnowledge(input, knowledgeWorkspace.knowledgeRoot);
 
   const backend = await startupPhase("config.backend", async () => resolveAgentBackend(input.orgId));
   const debug = input.debug === true;
@@ -219,12 +208,12 @@ async function runMetricAgentTraced(
       shellTool: shellToolName(backend.id),
       ...(graphjinPath === "direct"
         ? { queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE }
-        : { dataAgentTool: "mcp_neko_graphjin_agent_ask" }),
+        : { dataAgentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE }),
       memoryContext,
       supportsMemorySearch,
     });
     // GJ3: role-shaped warm-start for discovery (cached per org/role/intent).
-    const pathwaysSection = buildDiscoveryPathwaysSection(
+    const pathwaysSection = graphjinPath === "agent" ? "" : buildDiscoveryPathwaysSection(
       getDiscoveryPathways({
         orgId: input.orgId,
         role: input.role,
@@ -664,3 +653,23 @@ function combinedUsage(
 }
 
 const findGraphjinUsage = normalizeGraphjinAgentUsage;
+
+async function loadMetricKnowledge(input: MetricAgentInput, knowledgeRoot: string) {
+  const refreshResult = await startupPhase("knowledge.prefetch", async () => prefetchKnowledgeForOrg(
+    input.orgId,
+    knowledgeRoot,
+  ));
+  if (refreshResult.ok) {
+    const totalBytes = refreshResult.files.reduce((n, f) => n + f.bytes, 0);
+    console.log(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refreshed (${refreshResult.files.length} files, ${totalBytes}B)`,
+    );
+  } else {
+    console.warn(
+      `[metric-agent] org=${input.orgId} slug=${input.slug} knowledge refresh failed (${refreshResult.error}); proceeding with on-disk pack`,
+    );
+  }
+  return startupPhase("knowledge.read_pack", async () => readKnowledgePack(
+    knowledgePackPaths(knowledgeRoot),
+  ));
+}

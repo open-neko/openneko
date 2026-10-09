@@ -755,6 +755,9 @@ function makeSandboxCore(
                     .graphjinToolPolicy,
                 }
               : {}),
+            ...((input as RunAgentBackendInput).graphjinDataPath === "agent"
+              ? { graphjinDataPath: "agent" }
+              : {}),
             ...((input as RunAgentBackendInput).nativeDelegation
               ? {
                   nativeDelegation: (input as RunAgentBackendInput)
@@ -771,6 +774,9 @@ function makeSandboxCore(
             workflowRunId: (input as RunWorkflowAgentBackendInput).workflowRunId,
             mode: (input as RunWorkflowAgentBackendInput).mode,
             networkHosts: (input as RunWorkflowAgentBackendInput).networkHosts,
+            ...((input as RunWorkflowAgentBackendInput).graphjinDataPath === "agent"
+              ? { graphjinDataPath: "agent" }
+              : {}),
             triggeredByObservationId:
               (input as RunWorkflowAgentBackendInput).triggeredByObservationId ?? null,
             steps: (input as RunWorkflowAgentBackendInput).steps ?? [],
@@ -912,7 +918,7 @@ function makeSandboxCore(
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
             workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
-            workInput.dataSurface, workInput.graphjinToolPolicy, workInput.nativeDelegation,
+            workInput.dataSurface, workInput.graphjinToolPolicy, workInput.graphjinDataPath, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,
           ])).digest("hex"),

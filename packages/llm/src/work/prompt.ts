@@ -8,7 +8,9 @@ import {
 } from "../prompts/sections";
 import type { InstalledSkill } from "./workspace";
 import type { PluginCatalog } from "./control-plane";
+import type { GraphjinDataPath } from "./graphjin-tool-policy";
 import {
+  GRAPHJIN_AGENT_ASK_TOOL_TITLE,
   GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
   GRAPHJIN_QUERY_CATALOG_TOOL_TITLE,
   GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE,
@@ -299,8 +301,20 @@ spawn depth allows it.
 </delegation>`;
 }
 
+function triggerDiscovery(graphjinDataPath: GraphjinDataPath): string {
+  return graphjinDataPath === "agent"
+    ? `call \`${GRAPHJIN_AGENT_ASK_TOOL_TITLE}\` with the operator's natural-language
+condition. Ask for the table, its primary key, the columns the condition uses,
+and a where filter that GraphJin has validated against that table.`
+    : `call \`${GRAPHJIN_QUERY_CATALOG_TOOL_TITLE}\` with the operator's natural-language
+condition. Inspect the returned table card, columns, and relationship edges,
+then confirm the table, columns, and primary key. Validate the finished
+filter with \`${GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE}\`.`;
+}
+
 function buildWorkflowToolsSection(
   supportsWorkflowTool: boolean,
+  graphjinDataPath: GraphjinDataPath,
 ): string {
   if (supportsWorkflowTool) {
     return `<workflows>
@@ -341,12 +355,7 @@ A workflow can run on a schedule, when the data changes, or both:
   The workflow's \`steps\` are the response (e.g. "DM Amit on Slack with
   the low-stock details"); \`triggers.when\` is the condition.
 
-  Before setting \`triggers.when\`, call
-  \`${GRAPHJIN_QUERY_CATALOG_TOOL_TITLE}\` with the operator's natural-language
-  condition. Inspect the returned table card, columns, and relationship edges,
-  then confirm the table, columns, and primary key. Validate the finished
-  filter with \`${GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE}\`. Do not use shell
-  commands or GraphJin dev tools.
+  Before setting \`triggers.when\`, ${triggerDiscovery(graphjinDataPath)}
 
 - \`batch\` — an optional workflow-native API contract with a record-array
   field and deterministic CSV columns (each column maps a name to a dotted
@@ -415,11 +424,7 @@ both:
   \`triggers.when\` is the condition. Omit \`triggers\` entirely for a
   manual workflow.
 
-Before writing \`triggers.when\`, call
-\`${GRAPHJIN_QUERY_CATALOG_TOOL_TITLE}\` with the operator's natural-language
-condition, inspect the returned table card, columns, and relationships, then
-confirm the table, columns, and \`primary_key\`. Validate the finished filter
-with \`${GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE}\`. \`primary_key\` is required
+Before writing \`triggers.when\`, ${triggerDiscovery(graphjinDataPath)} \`primary_key\` is required
 and drives idempotency. If the workflow's steps write back to the watched
 table, add \`triggers.when.idempotency_key_template\` (e.g.
 \`"reorder-{primary_key}"\`).
@@ -594,13 +599,14 @@ ${creationGuidance}
 function buildWorkspaceSection(
   workspace: AgentWorkspace,
   shellTool: string,
+  knowledgePack = true,
 ): string {
   return `<workspace>
 Your cwd is ${workspace.orgRoot}. Shared directories:
 
 - Skills: ${workspace.skillsRoot}
-- Memory: ${workspace.memoryRoot}
-- Knowledge: ${workspace.knowledgeRoot}
+- Memory: ${workspace.memoryRoot}${knowledgePack ? `
+- Knowledge: ${workspace.knowledgeRoot}` : ""}
 - Team library (approved knowledge from uploaded documents, OKF
   markdown): ${workspace.orgRoot}/library/okf — when present, start at
   its index.md and follow links; each concept's frontmatter cites the
@@ -828,6 +834,8 @@ export function buildWorkPrompt(args: {
   supportsWorkflowTool: boolean;
   supportsPolicyTool: boolean;
   supportsSourceConfigTool: boolean;
+  /** "agent" when the org opted in to GraphJin's server-side agent. */
+  graphjinDataPath?: GraphjinDataPath;
   supportsClarificationTool?: boolean;
   supportsPluginManagerTool?: boolean;
   /** True only when this run may expose the backend's native sub-agent tool. */
@@ -869,6 +877,7 @@ export function buildWorkPrompt(args: {
     inlineTranscript,
     pluginActions,
     dataSurface = "customer",
+    graphjinDataPath = "direct",
     appContext,
     recordContext,
   } = args;
@@ -908,7 +917,7 @@ that flags churn risk every Monday."
         })
       : "",
     dataSurface === "customer"
-      ? buildWorkflowToolsSection(supportsWorkflowTool)
+      ? buildWorkflowToolsSection(supportsWorkflowTool, graphjinDataPath)
       : "",
     dataSurface === "customer" ? buildPoliciesSection(supportsPolicyTool) : "",
     dataSurface === "customer"
@@ -920,16 +929,18 @@ that flags churn risk every Monday."
     buildNativeDelegationSection(supportsNativeDelegation),
     dataSurface === "records"
       ? buildRecordsAccessSection(appContext, recordContext)
-      : buildDataAccessSection({
-          shellTool,
-          queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
-          queryIdentity: "actor",
-          scriptAccess: true,
-          workspace,
-          knowledge,
-          inlineKnowledge: "syntax",
-        }),
-    buildWorkspaceSection(workspace, shellTool),
+      : graphjinDataPath === "agent"
+        ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
+        : buildDataAccessSection({
+            shellTool,
+            queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
+            queryIdentity: "actor",
+            scriptAccess: true,
+            workspace,
+            knowledge,
+            inlineKnowledge: "syntax",
+          }),
+    buildWorkspaceSection(workspace, shellTool, graphjinDataPath === "direct"),
     dataSurface === "customer"
       ? buildPluginActionsSection(pluginActions ?? [], !supportsCardTool)
       : "",

@@ -21,7 +21,9 @@ import {
   ensureIsolatedJobWorkspace,
   ensureWorkWorkspace,
 } from "./work/workspace";
+import { graphjinAgentEnabledForOrg } from "@neko/db";
 import {
+  GRAPHJIN_AGENT_ASK_TOOL_TITLE,
   GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
   graphjinMcpToolTitle,
 } from "./graphjin/mcp-names";
@@ -32,8 +34,11 @@ export function buildProfilerPrompt(args: {
   knowledge: KnowledgePackContents;
   shellTool: string;
   queryTool: string;
+  /** Set when the org opted in to GraphJin's server-side agent. */
+  agentTool?: string;
 }): string {
   const { orgName, companyNote, knowledge, queryTool } = args;
+  if (args.agentTool) return buildProfilerAgentInstructions(args.agentTool) + profilerOutput(orgName, companyNote);
   const agentic = knowledge.mode === "agentic";
   const catalogTool = graphjinMcpToolTitle("query_catalog");
   const helpTool = graphjinMcpToolTitle("graphql_help");
@@ -139,7 +144,31 @@ Syntax — authoritative GraphJin DSL reference (operators, aggregations, pagina
 ${knowledge.syntax}`
 }
 
-================================================================================
+` + profilerOutput(orgName, companyNote);
+}
+
+function buildProfilerAgentInstructions(agentTool: string): string {
+  return `You build a short markdown business profile about a customer company from its database.
+
+EXECUTION PATTERN:
+1. Call \`${agentTool}\` with {"instruction":"<one complete business question>","maxSteps":8}. GraphJin's agent finds the tables, runs validated read-only queries and returns status, answer, data and evidence.
+2. Ask first what the business does: its main business event with the date range, recent volume and value, and the tables that describe customers, products and locations.
+3. Then ask focused questions for each output section: top categories, products or services; geography; who is served; who does the work. Put what you already learned in each instruction; GraphJin's agent keeps no memory between calls.
+4. Ask for aggregates and grouped summaries, not raw rows. Anchor periods to the latest date in the data.
+5. When you have enough facts, emit the final markdown body exactly per the OUTPUT FORMAT. No prose around it, no code fences.
+
+COMPLETION CONTRACT:
+- Treat the requested output sections as an evidence checklist, not an invitation to explore everything.
+- A section is ready when you have representative evidence for it, or the data does not cover it and the section can honestly say "Not measured."
+- Stop asking and write the profile as soon as every section is ready.
+- If a response is blocked, denied, has errors, or lacks evidence, use what you already have and mark that fact "Not measured."
+- Every number in the profile must come from response.data or response.evidence in this run. Never invent or interpolate.
+
+`;
+}
+
+function profilerOutput(orgName: string, companyNote: string): string {
+  return `================================================================================
 OUTPUT FORMAT — respond with EXACTLY this markdown body, no code fences, no prose around it:
 ================================================================================
 
@@ -225,23 +254,11 @@ export async function runProfiler(args: {
     "profiler",
     jobId ?? orgId,
   );
-  const refresh = await prefetchKnowledgeForOrg(
-    orgId,
-    knowledgeWorkspace.knowledgeRoot,
-  );
-  if (refresh.ok) {
-    const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
-    console.log(
-      `[profiler] org=${orgId} knowledge refreshed (${refresh.files.length} files, ${totalBytes}B)`,
-    );
-  } else {
-    console.warn(
-      `[profiler] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
-    );
-  }
-  const knowledge = await readKnowledgePack(
-    knowledgePackPaths(knowledgeWorkspace.knowledgeRoot),
-  );
+  // GraphJin's agent does its own discovery, so the agent path needs no pack.
+  const agentPath = await graphjinAgentEnabledForOrg(orgId);
+  const knowledge = agentPath
+    ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
+    : await loadProfilerKnowledge(orgId, knowledgeWorkspace.knowledgeRoot);
 
   const backend = await resolveAgentBackend(orgId);
   const isolated = await ensureIsolatedJobWorkspace(
@@ -253,7 +270,7 @@ export async function runProfiler(args: {
       orgId,
       runId: jobId ?? orgId,
       workspace: isolated.workspace,
-      access: { graphjinRead: true },
+      access: agentPath ? { graphjinAgent: true } : { graphjinRead: true },
     });
     console.log(
       `[profiler] org=${orgId} backend=${backend.id} runtime=openshell`,
@@ -265,6 +282,7 @@ export async function runProfiler(args: {
       knowledge,
       shellTool: shellToolName(backend.id),
       queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
+      ...(agentPath ? { agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE } : {}),
     });
 
     if (onProgress) onProgress("Running profiler agent…");
@@ -317,4 +335,24 @@ export function validateBusinessProfile(raw: string, _orgName: string): string {
     );
   }
   return profile;
+}
+
+async function loadProfilerKnowledge(orgId: string, knowledgeRoot: string) {
+  const refresh = await prefetchKnowledgeForOrg(
+    orgId,
+    knowledgeRoot,
+  );
+  if (refresh.ok) {
+    const totalBytes = refresh.files.reduce((n, f) => n + f.bytes, 0);
+    console.log(
+      `[profiler] org=${orgId} knowledge refreshed (${refresh.files.length} files, ${totalBytes}B)`,
+    );
+  } else {
+    console.warn(
+      `[profiler] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
+    );
+  }
+  return readKnowledgePack(
+    knowledgePackPaths(knowledgeRoot),
+  );
 }

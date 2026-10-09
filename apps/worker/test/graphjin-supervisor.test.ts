@@ -70,4 +70,43 @@ while :; do sleep 1; done
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("gives GraphJin the agent key from the key file on each start", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "openneko-graphjin-supervisor-"));
+    const binary = join(directory, "graphjin");
+    const starts = join(directory, "starts.log");
+    await writeFile(binary, `#!/bin/sh
+printf '%s\\n' "\${OPENNEKO_GRAPHJIN_AGENT_API_KEY:-none}" >> "$GRAPHJIN_TEST_STARTS"
+trap 'exit 0' TERM INT
+while :; do sleep 1; done
+`);
+    await chmod(binary, 0o755);
+    await writeFile(join(directory, ".openneko-graphjin-agent-key"), "key-1", { mode: 0o600 });
+    const supervisor = spawn(
+      "/bin/sh",
+      [resolve(process.cwd(), "../../scripts/graphjin-supervisor.sh"), "serve", "--path", directory],
+      {
+        cwd: resolve(process.cwd(), "../.."),
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH ?? ""}`,
+          GRAPHJIN_TEST_STARTS: starts,
+          OPENNEKO_GRAPHJIN_CONFIG_DIR: directory,
+        },
+        stdio: "ignore",
+      },
+    );
+    children.push(supervisor);
+    try {
+      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).includes("key-1"));
+      await writeFile(join(directory, ".openneko-graphjin-agent-key"), "key-2", { mode: 0o600 });
+      await writeFile(join(directory, ".openneko-graphjin-restart"), "restart-key");
+      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).trim().split("\n").at(-1) === "key-2");
+    } finally {
+      supervisor.kill("SIGTERM");
+      await new Promise((resolveExit) => supervisor.once("exit", resolveExit));
+      children.splice(children.indexOf(supervisor), 1);
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

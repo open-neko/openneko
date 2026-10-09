@@ -108,7 +108,7 @@ describe("AxBackend", () => {
       timeoutMs: 120_000,
       maxToolIterations: 40,
       networkHosts: ["api.example.com"],
-      mcpServers: { neko_graphjin: {}, neko_ui: {}, other: {} },
+      mcpServers: { neko_graphjin_agent: {}, neko_ui: {}, other: {} },
       mcpBridgeEnv: { OPENNEKO_MCP_ORG_ID: "org-1", OPENNEKO_MCP_THREAD_ID: "t-1", OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot },
     });
     const [{ command, env, stdin }] = spawned;
@@ -117,7 +117,7 @@ describe("AxBackend", () => {
       HARNESS_MODEL_PROVIDER: "anthropic",
       HARNESS_MODEL: "claude-sonnet-5-5",
       HARNESS_MODEL_API_KEY: "openshell:resolve:env:MODEL_API_KEY",
-      OPENNEKO_MCP_SERVERS: "neko_graphjin",
+      OPENNEKO_MCP_SERVERS: "neko_graphjin_agent",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_BROKER_TOKEN: "broker-secret",
       OPENNEKO_HARNESS_WORKSPACE_DIR: workspace.orgRoot,

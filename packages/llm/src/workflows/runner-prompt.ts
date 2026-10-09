@@ -11,7 +11,8 @@ import {
   buildMemorySection,
 } from "../prompts/sections";
 import type { WorkflowRecord } from "./store";
-import { GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
+import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
+import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 
 export type BuildWorkflowRunnerPromptInput = {
   workflow: WorkflowRecord;
@@ -24,6 +25,8 @@ export type BuildWorkflowRunnerPromptInput = {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
+  /** "agent" when the org opted in to GraphJin's server-side agent. */
+  graphjinDataPath?: GraphjinDataPath;
   /** Installed plugin action kinds, so the runner uses real kinds (e.g. send_slack_dm) not generic ones. */
   pluginActions?: readonly PluginActionPromptDescriptor[];
 };
@@ -163,16 +166,18 @@ export function buildWorkflowRunnerPrompt(
   }
   const pluginActions = input.pluginActions ?? [];
   const shellTool = shellToolName(backend);
-  const dataAccessSection = buildDataAccessSection({
-    shellTool,
-    queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
-    queryIdentity: "actor",
-    readOnly: true,
-    scriptAccess: true,
-    workspace,
-    knowledge,
-    inlineKnowledge: "syntax",
-  });
+  const dataAccessSection = input.graphjinDataPath === "agent"
+    ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
+    : buildDataAccessSection({
+        shellTool,
+        queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
+        queryIdentity: "actor",
+        readOnly: true,
+        scriptAccess: true,
+        workspace,
+        knowledge,
+        inlineKnowledge: "syntax",
+      });
 
   const stepsBlock = workflow.steps
     .map((step, index) =>

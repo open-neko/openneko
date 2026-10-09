@@ -1,5 +1,6 @@
 import { startupPhase, withStartupTrace } from "@neko/telemetry/startup";
-import { heldItems, pool, resolveUserGroups } from "@neko/db";
+import { graphjinAgentEnabledForOrg, heldItems, pool, resolveUserGroups } from "@neko/db";
+import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "../work/entitlement-scope";
 import { getWorkRunActor } from "../work/personas";
 import { workflowTurnBudget, type AgentEvent } from "../agent-backend";
@@ -268,9 +269,14 @@ async function runWorkflowTurnTraced(
     const memoryContext = await startupPhase("context.memory", async () =>
       formatGlobalMemoryPromptContext(orgId, 5, await heldItems(runActor, "team_memory")));
 
-    const knowledge = await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
-      knowledgePackPaths(workspace.knowledgeRoot),
-    ));
+    const graphjinDataPath: GraphjinDataPath =
+      await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId)) ? "agent" : "direct";
+    // GraphJin's agent does its own discovery, so the agent path needs no pack.
+    const knowledge = graphjinDataPath === "agent"
+      ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
+      : await startupPhase("knowledge.read_pack", async () => readKnowledgePack(
+        knowledgePackPaths(workspace.knowledgeRoot),
+      ));
 
     const prompt = buildWorkflowRunnerPrompt({
       workflow,
@@ -281,6 +287,7 @@ async function runWorkflowTurnTraced(
       backend: backend.id,
       workspace,
       knowledge,
+      graphjinDataPath,
       pluginActions: await filterHeldActions(runActor, opts.pluginActions ?? []),
     });
 
@@ -310,6 +317,7 @@ async function runWorkflowTurnTraced(
       workflowRunId: workflowRun.id,
       mode,
       networkHosts: workflow.networkHosts,
+      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       triggeredByObservationId:
         workflowRun.triggeredByObservationId ?? null,
       workspace,

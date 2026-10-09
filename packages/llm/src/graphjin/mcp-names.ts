@@ -18,3 +18,6 @@ export const GRAPHJIN_QUERY_CATALOG_TOOL_TITLE = graphjinMcpToolTitle(
 export const GRAPHJIN_VALIDATE_WHERE_TOOL_TITLE = graphjinMcpToolTitle(
   "validate_where_clause",
 );
+
+/** The ask tool of the neko_graphjin_agent server (GraphJin's server-side agent). */
+export const GRAPHJIN_AGENT_ASK_TOOL_TITLE = "mcp_neko_graphjin_agent_ask" as const;

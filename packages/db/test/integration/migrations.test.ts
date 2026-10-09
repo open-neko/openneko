@@ -35,6 +35,7 @@ const M_0010 = join(REPO_ROOT, "db", "migrations", "0010_subscriptions_observati
 const M_0011 = join(REPO_ROOT, "db", "migrations", "0011_action_stack.sql");
 const M_0019 = join(REPO_ROOT, "db", "migrations", "0019_install_policy_scope.sql");
 const M_0048 = join(REPO_ROOT, "db", "migrations", "0048_graphjin_config_scope.sql");
+const M_0110 = join(REPO_ROOT, "db", "migrations", "0110_graphjin_agent_scope.sql");
 const M_0051 = join(REPO_ROOT, "db", "migrations", "0051_app_state.sql");
 const M_0062 = join(REPO_ROOT, "db", "migrations", "0062_hermes_only_agent.sql");
 const M_0063 = join(
@@ -211,6 +212,23 @@ describeIfDb("schema migrations", () => {
         await client.query(
           `insert into llm_provider_config (org_id, scope, provider) values ($1, $2, 'anthropic')`,
           ["chk2", scope],
+        );
+      }
+    });
+  });
+
+  it("0110 extends the scope check for the GraphJin agent opt-in", async () => {
+    await withTempDb(async (client) => {
+      await applyFile(client, M_0001);
+      await applyFile(client, M_0002);
+      await applyFile(client, M_0048);
+      await applyFile(client, M_0110);
+
+      await client.query(`insert into organization (id, name) values ('chk110', 'Check Test 110')`);
+      for (const scope of ["primary", "research", "agent", "install-policy", "graphjin-config", "graphjin-agent"]) {
+        await client.query(
+          `insert into llm_provider_config (org_id, scope, provider) values ($1, $2, 'settings')`,
+          ["chk110", scope],
         );
       }
     });

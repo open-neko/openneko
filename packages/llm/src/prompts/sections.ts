@@ -118,8 +118,10 @@ export type DataAccessOptions = {
   readOnly?: boolean;
   /** Skill scripts can run the query tool through the run's data socket. */
   scriptAccess?: boolean;
-  /** Read-only GraphJin server-agent tool used by delegated jobs. */
+  /** GraphJin server-agent tool, when the org opted in to GraphJin's agent. */
   agentTool?: string;
+  /** Metric cards ask once for a value, a baseline and chart rows. */
+  agentPurpose?: "metric";
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
   // 'syntax': inline only the DSL reference, point at the other knowledge
@@ -141,52 +143,48 @@ export function buildDataAccessSection(opts: DataAccessOptions): string {
 function buildBrokeredAgentDataAccessSection(opts: DataAccessOptions): string {
   const { agentTool } = opts;
   if (!agentTool) throw new Error("agent data access requires agentTool");
+  const metric = opts.agentPurpose === "metric";
 
-  return `<data_access>
-The configured GraphJin database is the authoritative source for operational
-questions. When the user attaches a file or explicitly references uploaded
-data, read the file and use it as the source of truth for that turn. Otherwise
-default to the database.
-Delegate database discovery and querying by calling \`${agentTool}\` once with:
+  const ask = metric
+    ? `Call \`${agentTool}\` once with:
 
   {
     "instruction": "<the complete metric question, including the exact time window, aggregation, comparison baseline, grouping, and values needed for the output>",
     "maxSteps": 6
   }
 
-GraphJin's built-in agent performs catalog-first discovery, validates its
-queries, executes them under the configured source identity, and returns a
-typed response containing status, answer, data, and evidence. The trusted
-OpenNeko host selects the source, verifies that GraphJin's server agent is
-globally read-only, and keeps its credential outside your sandbox.
+Include the card title and rationale, anchor dates to the latest date in live
+data, ask for the current value and a comparable baseline in the same call, and
+ask for the smallest grouped result that can populate chartData. You own the
+final OpenNeko JSON object; ask GraphJin for the data, not for that format.`
+    : `Call \`${agentTool}\` with:
 
-Your instruction must be self-contained. Include the card title and rationale,
-state that dates must be anchored to the latest date in live data, request the
-current value and a comparable baseline in the same run, and ask for the
-smallest grouped result that can populate chartData. Do not ask GraphJin to
-format the final OpenNeko JSON object; you own that output contract.
+  {
+    "instruction": "<the complete business question>",
+    "maxSteps": 8
+  }
 
-Use response.data and response.evidence as the basis for every number. The
-answer field explains the result but is not a substitute for evidence. If the
-response is blocked, denied, has errors, or lacks enough evidence, do not
-invent a metric. Retry only when its structured refusal says retryable and
-gives a concrete lawful unblock step.
+Ask one complete question per call. Name the time window, the grouping, the
+comparison you need and the figures you will report. Ask for aggregates and
+grouped summaries, not raw rows. Use more calls for follow-up questions, and
+put what you learned in each new instruction: GraphJin's agent keeps no memory
+between calls.`;
 
-No direct GraphQL tool, GraphJin CLI, shell, raw HTTP, configuration, or write
-path is available in this treatment. Do not try to bypass the delegated tool.
+  return `<data_access>
+The configured GraphJin database is the authoritative source for operational
+questions. When the user attaches a file or explicitly references uploaded
+data, read the file and use it as the source of truth for that turn. Otherwise
+default to the database.
 
-Include these correctness constraints in the delegated instruction when they
-apply:
+GraphJin's agent finds the right tables, writes and validates the queries, and
+runs them under the configured source identity. ${ask}
 
-${GRAPHJIN_DATE_RULE}
-
-${GRAPHJIN_FANOUT_RULE}
-
-${GRAPHJIN_AGGREGATE_RULE}
-
-- Keep results small. Ask GraphJin for server-side aggregates and grouped
-  summaries, not raw row dumps.
-- Never invent or interpolate. If GraphJin returns no rows, there is no data.
+The response has status, answer, data and evidence. Base every number on
+response.data and response.evidence; the answer field explains the result but
+does not replace them. If the response is blocked, denied, has errors, or lacks
+enough evidence, say so and do not invent a number. Retry only when its
+structured refusal says retryable and gives a concrete unblock step. If
+GraphJin returns no rows, there is no data.
 </data_access>`;
 }
 
