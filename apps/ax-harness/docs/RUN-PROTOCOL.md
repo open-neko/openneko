@@ -52,6 +52,7 @@ The defaults below apply only when the host does not set a value.
 | Terminal output | 50,000 characters, head and tail | `DEFAULT_MAX_BYTES` 50,000 |
 | File read | 100,000 characters, 2,000 lines, 2,000 characters per line | `_DEFAULT_MAX_READ_CHARS`, `DEFAULT_MAX_LINES`, `DEFAULT_MAX_LINE_LENGTH` |
 | File write and edit | 1 MiB of content; readable files up to 10 MiB | No direct equivalent |
+| Skills catalog | 256 skills; descriptions up to 1,024 characters; bodies up to 64 KiB | No cap |
 
 A result above the inline limit, or above the step budget, returns a run-local
 reference with a preview. Actor code reads the full result with

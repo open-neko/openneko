@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -24,9 +25,11 @@ type Skill struct {
 	Content     string
 }
 
+// The Agent Skills format allows descriptions of up to 1,024 characters.
 const (
-	maxSkills       = 64
-	maxSkillContent = 64 << 10
+	maxSkills           = 256
+	maxSkillContent     = 64 << 10
+	maxSkillDescription = 1024
 )
 
 var skillName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
@@ -40,7 +43,7 @@ func (t Tools) skills() ([]Skill, error) {
 	list := append([]Skill(nil), t.Skills...)
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	for i, skill := range list {
-		if !skillName.MatchString(skill.Name) || len(skill.Description) > 500 || len(skill.Content) > maxSkillContent ||
+		if !skillName.MatchString(skill.Name) || utf8.RuneCountInString(skill.Description) > maxSkillDescription || len(skill.Content) > maxSkillContent ||
 			(i > 0 && list[i-1].Name == skill.Name) {
 			return nil, fmt.Errorf("invalid staged skill catalog")
 		}

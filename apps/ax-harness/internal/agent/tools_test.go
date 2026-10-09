@@ -202,3 +202,14 @@ func TestManyToolCallsShareOneActorStep(t *testing.T) {
 		t.Fatalf("result=%+v err=%v tools=%d model=%d", result, err, toolCalls.Load(), modelCalls.Load())
 	}
 }
+
+func TestSkillDescriptionsFollowAgentSkillsLimit(t *testing.T) {
+	ok := Tools{Skills: []Skill{{Name: "docx", Description: strings.Repeat("é", 1024)}}}
+	if _, err := ok.skills(); err != nil {
+		t.Fatalf("1,024-character description refused: %v", err)
+	}
+	long := Tools{Skills: []Skill{{Name: "docx", Description: strings.Repeat("é", 1025)}}}
+	if _, err := long.skills(); err == nil {
+		t.Fatal("1,025-character description admitted")
+	}
+}
