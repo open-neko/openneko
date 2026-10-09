@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -32,26 +31,6 @@ func TestCapabilityOrderIsStable(t *testing.T) {
 		if a[i].Name != want || b[i].Name != want {
 			t.Fatalf("tool order changed: %q, %q", a[i].Name, b[i].Name)
 		}
-	}
-}
-
-func TestCatalogProfileCountsOnlyHostToolDeclarations(t *testing.T) {
-	tool := Capability{Name: "catalog", Version: "1", Origin: "fixture", Effect: "read",
-		Description: "Read a reference.", InputSchema: json.RawMessage(`{"type":"object","required":["id"]}`),
-		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
-	list, err := (Tools{Capabilities: []Capability{tool}}).admitted()
-	if err != nil {
-		t.Fatal(err)
-	}
-	profile := toolCatalogProfile(list, true)
-	if profile.Count != 1 || profile.SchemaBytes != len(tool.InputSchema) ||
-		profile.DescriptorBytes != len(list[0].promptDescriptor(true)) ||
-		profile.DescriptorBytes <= profile.SchemaBytes {
-		t.Fatalf("profile=%+v", profile)
-	}
-	encoded, _ := json.Marshal(profile)
-	if strings.Contains(string(encoded), "reference") || strings.Contains(string(encoded), "required") {
-		t.Fatalf("profile exposed a tool declaration: %s", encoded)
 	}
 }
 
@@ -86,16 +65,9 @@ func TestInvalidToolSelectionEmitsMetadataWithoutDispatch(t *testing.T) {
 	if err != nil || result.Status != "completed" || modelCalls.Load() != 3 || toolCalls.Load() != 0 {
 		t.Fatalf("result=%+v err=%v model=%d tool=%d", result, err, modelCalls.Load(), toolCalls.Load())
 	}
-	var catalogs, rejected, started int
+	var rejected, started int
 	for _, event := range observed {
 		switch event.Type {
-		case "tool.catalog.configured":
-			if event.Name == "parent" {
-				catalogs++
-				if event.ToolCatalog == nil || event.ToolCatalog.Count != 1 || event.ToolCatalog.SchemaBytes != len(tool.InputSchema) {
-					t.Fatalf("catalog event=%+v", event)
-				}
-			}
 		case "tool.input.rejected":
 			rejected++
 			if event.Name != "catalog" || event.Error != "invalid_input" || len(event.Data) != 0 {
@@ -105,38 +77,8 @@ func TestInvalidToolSelectionEmitsMetadataWithoutDispatch(t *testing.T) {
 			started++
 		}
 	}
-	if catalogs != 1 || rejected != 1 || started != 0 {
-		t.Fatalf("catalogs=%d rejected=%d started=%d", catalogs, rejected, started)
-	}
-}
-
-func TestCatalogFingerprintSeparatesScopeFromAdmittedContract(t *testing.T) {
-	read := Capability{Name: "catalog", Version: "1", Origin: "host", Effect: "read",
-		Description: "Read catalog.", InputSchema: json.RawMessage(`{"type":"object"}`),
-		Call: func(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
-	first := Tools{Scope: "org:a", Capabilities: []Capability{read}, ChildReads: []string{"catalog"}}
-	second := first
-	second.Scope = "org:b"
-	firstScoped, err := first.CatalogHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondScoped, err := second.CatalogHash()
-	if err != nil || firstScoped == secondScoped {
-		t.Fatalf("run scope was not bound: %q %q %v", firstScoped, secondScoped, err)
-	}
-	firstComparable, err := first.CatalogFingerprint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondComparable, err := second.CatalogFingerprint()
-	if err != nil || firstComparable != secondComparable {
-		t.Fatalf("same admitted contract differed by scope: %q %q %v", firstComparable, secondComparable, err)
-	}
-	second.ChildReads = nil
-	changed, err := second.CatalogFingerprint()
-	if err != nil || changed == firstComparable {
-		t.Fatalf("changed child grant reused fingerprint: %q %q %v", firstComparable, changed, err)
+	if rejected != 1 || started != 0 {
+		t.Fatalf("rejected=%d started=%d", rejected, started)
 	}
 }
 
@@ -163,35 +105,6 @@ func TestChildReadsRejectEffectsAndMissingTools(t *testing.T) {
 	if err != nil || len(child) != 1 || child[0].Name != "catalog" {
 		t.Fatalf("child=%v err=%v", child, err)
 	}
-	withChild, _ := tools.CatalogHash()
-	tools.ChildReads = nil
-	withoutChild, _ := tools.CatalogHash()
-	if withChild == withoutChild {
-		t.Fatal("delegation grant did not affect catalog binding")
-	}
-}
-
-func TestFinalizerRequiresTerminalVerificationAndPinsVersion(t *testing.T) {
-	finalizer := func(context.Context, []SavedOperation) (TerminalDecision, error) {
-		return TerminalDecision{Accepted: false}, nil
-	}
-	tools := Tools{FinalizerGate: finalizer, FinalizerGateVersion: "v1"}
-	if _, err := tools.CatalogHash(); err == nil {
-		t.Fatal("accepted a finalizer without terminal verification")
-	}
-	tools.TerminalGate = func(context.Context, Result, []SavedOperation) (TerminalDecision, error) {
-		return TerminalDecision{Accepted: false}, nil
-	}
-	tools.TerminalGateVersion = "v1"
-	first, err := tools.CatalogHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tools.FinalizerGateVersion = "v2"
-	second, err := tools.CatalogHash()
-	if err != nil || first == second {
-		t.Fatalf("finalizer policy version did not bind catalog: %q %q %v", first, second, err)
-	}
 }
 
 func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
@@ -205,7 +118,7 @@ func TestModelAdmissionEventFailurePreventsDispatch(t *testing.T) {
 	spec := Spec{Version: 1, RunID: "model-admission", InputID: "input", Prompt: "Answer"}
 	_, err := RunWithTools(context.Background(), spec, client, Tools{}, func(e Event) error {
 		if e.Type == "model.request.started" {
-			return errors.New("journal unavailable")
+			return errors.New("event sink unavailable")
 		}
 		return nil
 	})
@@ -239,32 +152,5 @@ func TestFailedDurableToolCannotReportCompletedAction(t *testing.T) {
 		client, Tools{Capabilities: []Capability{tool}}, func(Event) error { return nil })
 	if err != nil || result.Status != "failed" || result.Kind != "partial" || result.Code != "incomplete_result" || result.Answer != "The run did not complete; a tool returned an incomplete or failed result." || calls.Load() != 3 {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
-	}
-}
-
-func TestProposalTrustBoundary(t *testing.T) {
-	for _, input := range []string{
-		`{"action":"a","arguments":{},"summary":"Ask","status":"approved"}`,
-		`{"action":"a","arguments":null,"summary":"Ask"}`,
-		`{"action":"a","arguments":[],"summary":"Ask"}`,
-		`{"action":"","arguments":{},"summary":"Ask"}`,
-	} {
-		if _, err := ParseProposal([]byte(input)); err == nil {
-			t.Errorf("accepted %s", input)
-		}
-	}
-	for _, input := range []string{
-		`{"id":"r","status":"executed"}`,
-		`{"id":"r","status":"approved"}`,
-		`{"status":"pending_approval"}`,
-		`{"status":"denied"}`,
-		`{"id":"r","status":"pending_approval","executed":true}`,
-	} {
-		if _, err := ParseProposalReceipt([]byte(input)); err == nil {
-			t.Errorf("accepted %s", input)
-		}
-	}
-	if _, err := ParseProposalReceipt([]byte(`{"status":"denied","reason":"Not authorized"}`)); err != nil {
-		t.Fatal(err)
 	}
 }

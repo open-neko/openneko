@@ -15,8 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
-	"time"
 	"unicode/utf8"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
@@ -43,92 +41,6 @@ func OpenFiles(dir string) (*Files, error) {
 }
 
 func (f *Files) Close() error { return f.root.Close() }
-
-// lock coordinates all harness processes using this directory, while gate
-// coordinates concurrent calls sharing one Files instance. Other writers must
-// use the same lock protocol for an atomic read-version/edit contract.
-func (f *Files) lock(ctx context.Context, exclusive bool) (func(), error) {
-	// Each concurrent reader needs its own open file description. Reusing one
-	// descriptor would let the first reader's unlock release every reader.
-	file, err := f.root.Open(".")
-	if err != nil {
-		return nil, err
-	}
-	mode := syscall.LOCK_SH | syscall.LOCK_NB
-	if exclusive {
-		mode = syscall.LOCK_EX | syscall.LOCK_NB
-	}
-	for {
-		if err := ctx.Err(); err != nil {
-			_ = file.Close()
-			return nil, err
-		}
-		err := syscall.Flock(int(file.Fd()), mode)
-		if err == nil {
-			return func() {
-				_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-				_ = file.Close()
-			}, nil
-		}
-		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN && err != syscall.EINTR {
-			_ = file.Close()
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			_ = file.Close()
-			return nil, ctx.Err()
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-}
-
-// Restore rebuilds read-version state from the validated durable operation log.
-// Changed files still fail the freshness check when the next edit runs.
-func (f *Files) Restore(ctx context.Context, operations []agent.SavedOperation) error {
-	f.gate.Lock()
-	defer f.gate.Unlock()
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	clear(f.reads)
-	for _, op := range operations {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if !op.Finished || op.Error != "" {
-			continue
-		}
-		if op.Tool != "file_read" && op.Tool != "file_edit" {
-			continue
-		}
-		var input struct {
-			Path string `json:"path"`
-		}
-		if json.Unmarshal([]byte(op.Instruction), &input) != nil || !validPath(input.Path) {
-			return fmt.Errorf("invalid saved file path")
-		}
-		switch op.Tool {
-		case "file_read":
-			var result struct {
-				Path, Content, Version string
-			}
-			if json.Unmarshal(op.Result, &result) != nil || result.Path != input.Path || digest([]byte(result.Content)) != result.Version {
-				return fmt.Errorf("invalid saved file read")
-			}
-			f.reads[input.Path] = result.Version
-		case "file_edit":
-			var request struct {
-				Content string `json:"content"`
-			}
-			var result struct{ Path, Version string }
-			if json.Unmarshal([]byte(op.Instruction), &request) != nil || json.Unmarshal(op.Result, &result) != nil || result.Path != input.Path || digest([]byte(request.Content)) != result.Version {
-				return fmt.Errorf("invalid saved file edit")
-			}
-			f.reads[input.Path] = result.Version
-		}
-	}
-	return nil
-}
 
 func (f *Files) Capabilities() []agent.Capability {
 	return []agent.Capability{
@@ -227,11 +139,6 @@ func (f *Files) read(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	}
 	f.gate.RLock()
 	defer f.gate.RUnlock()
-	unlock, err := f.lock(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -261,11 +168,6 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	}
 	f.gate.Lock()
 	defer f.gate.Unlock()
-	unlock, err := f.lock(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -305,8 +207,7 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	// Catch external edits during the write. Harness-owned edits are serialized
-	// by gate; external writers require a shared lock for strict atomic CAS.
+	// Catch external edits during the write. Harness-owned edits are serialized by gate.
 	current, _, err := f.load(input.Path)
 	if err != nil || digest(current) != readVersion {
 		return nil, fmt.Errorf("file changed during edit")
@@ -345,11 +246,6 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 	}
 	f.gate.Lock()
 	defer f.gate.Unlock()
-	unlock, err := f.lock(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -404,16 +300,11 @@ func (f *Files) search(ctx context.Context, raw json.RawMessage) (json.RawMessag
 	}
 	f.gate.RLock()
 	defer f.gate.RUnlock()
-	unlock, err := f.lock(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	query := []byte(strings.ToLower(input.Query))
 	paths := make([]string, 0)
 	visited, truncated := 0, false
 	stop := fmt.Errorf("file search limit reached")
-	err = fs.WalkDir(f.root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(f.root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

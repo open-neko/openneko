@@ -3,11 +3,9 @@ package localtool
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,7 +13,6 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
-	"github.com/open-neko/openneko/apps/ax-harness/internal/session"
 )
 
 func TestFileFreshnessAndContainment(t *testing.T) {
@@ -119,143 +116,6 @@ func TestReadCanOverlapReadButEditWaits(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("edit stayed blocked")
 	}
-}
-
-func TestFileLockChild(t *testing.T) {
-	workspace := os.Getenv("HARNESS_FILE_LOCK_WORKSPACE")
-	if workspace == "" {
-		return
-	}
-	f, err := OpenFiles(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	if err := os.WriteFile(os.Getenv("HARNESS_FILE_LOCK_READY"), []byte("ready"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	var input json.RawMessage
-	var capability agent.Capability
-	if os.Getenv("HARNESS_FILE_LOCK_MODE") == "edit" {
-		read, err := f.Capabilities()[0].Call(context.Background(), json.RawMessage(`{"path":"note.txt"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var result struct{ Version string }
-		if err := json.Unmarshal(read, &result); err != nil || result.Version != os.Getenv("HARNESS_FILE_LOCK_VERSION") {
-			t.Fatalf("child read version=%q err=%v", result.Version, err)
-		}
-		capability = f.Capabilities()[1]
-		input, _ = json.Marshal(map[string]string{"path": "note.txt", "version": os.Getenv("HARNESS_FILE_LOCK_VERSION"), "content": "second"})
-	} else {
-		capability = f.Capabilities()[0]
-		input = json.RawMessage(`{"path":"note.txt"}`)
-	}
-	if _, err := capability.Call(context.Background(), input); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestWorkspaceLockCoordinatesSeparateProcesses(t *testing.T) {
-	workspace := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	f, err := OpenFiles(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	read, err := f.Capabilities()[0].Call(context.Background(), json.RawMessage(`{"path":"note.txt"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var version struct{ Version string }
-	if err := json.Unmarshal(read, &version); err != nil {
-		t.Fatal(err)
-	}
-	runChild := func(mode string, shouldBlock bool, partialRelease, release func()) {
-		t.Helper()
-		ready := filepath.Join(t.TempDir(), "ready")
-		cmd := exec.Command(os.Args[0], "-test.run=^TestFileLockChild$")
-		cmd.Env = append(os.Environ(),
-			"HARNESS_FILE_LOCK_WORKSPACE="+workspace,
-			"HARNESS_FILE_LOCK_READY="+ready,
-			"HARNESS_FILE_LOCK_MODE="+mode,
-			"HARNESS_FILE_LOCK_VERSION="+version.Version)
-		if err := cmd.Start(); err != nil {
-			t.Fatal(err)
-		}
-		finished := make(chan error, 1)
-		go func() { finished <- cmd.Wait() }()
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			if _, err := os.Stat(ready); err == nil {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("child did not reach file operation")
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if shouldBlock {
-			select {
-			case err := <-finished:
-				if partialRelease != nil {
-					partialRelease()
-				}
-				if release != nil {
-					release()
-				}
-				t.Fatalf("child bypassed workspace lock: %v", err)
-			case <-time.After(80 * time.Millisecond):
-			}
-			if partialRelease != nil {
-				partialRelease()
-				select {
-				case err := <-finished:
-					if release != nil {
-						release()
-					}
-					t.Fatalf("child bypassed second reader lock: %v", err)
-				case <-time.After(80 * time.Millisecond):
-				}
-			}
-		}
-		if release != nil {
-			release()
-		}
-		select {
-		case err := <-finished:
-			if err != nil {
-				t.Fatal(err)
-			}
-		case <-time.After(2 * time.Second):
-			_ = cmd.Process.Kill()
-			t.Fatal("child file operation stayed blocked")
-		}
-	}
-	sharedUnlock, err := f.lock(context.Background(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runChild("read", false, nil, nil) // Shared locks allow separate process reads.
-	sharedUnlock2, err := f.lock(context.Background(), false)
-	if err != nil {
-		sharedUnlock()
-		t.Fatal(err)
-	}
-	runChild("edit", true, sharedUnlock, sharedUnlock2)
-	if data, err := os.ReadFile(filepath.Join(workspace, "note.txt")); err != nil || string(data) != "second" {
-		t.Fatalf("cross-process edit=%q err=%v", data, err)
-	}
-
-	// An exclusive lock held in this process must block a separate reader.
-	exclusiveUnlock, err := f.lock(context.Background(), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runChild("read", true, nil, exclusiveUnlock)
 }
 
 func TestFileWriteCreatesOnlyInsideWorkspace(t *testing.T) {
@@ -401,7 +261,7 @@ func TestSkillCatalogReadsOnlyStagedFrontmatter(t *testing.T) {
 	}
 }
 
-func TestUploadReadsUseAxJournal(t *testing.T) {
+func TestUploadReadsRunThroughAgent(t *testing.T) {
 	uploads := t.TempDir()
 	if err := os.WriteFile(filepath.Join(uploads, "invoice.txt"), []byte("Invoice approved"), 0600); err != nil {
 		t.Fatal(err)
@@ -431,18 +291,17 @@ func TestUploadReadsUseAxJournal(t *testing.T) {
 	defer model.Close()
 	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
 	spec := agent.Spec{Version: 1, RunID: "upload", InputID: "input", Prompt: "Read the uploaded invoice"}
-	state := t.TempDir()
-	result, err := session.RunWithTools(context.Background(), state, spec, client, agent.Tools{Capabilities: f.UploadCapabilities(), Scope: uploads}, func(agent.Event) error { return nil })
+	var tools []string
+	result, err := agent.RunWithTools(context.Background(), spec, client, agent.Tools{Capabilities: f.UploadCapabilities()}, finishedTools(&tools))
 	if err != nil || result.Status != "completed" || result.Answer != "Invoice approved" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	recovery, err := session.Inspect(state, spec)
-	if err != nil || len(recovery.Operations) != 2 || recovery.Operations[0].Tool != "upload_search" || recovery.Operations[1].Tool != "upload_read" {
-		t.Fatalf("recovery=%+v err=%v", recovery, err)
+	if strings.Join(tools, ",") != "upload_search,upload_read" {
+		t.Fatalf("finished tools=%v", tools)
 	}
 }
 
-func TestFileCapabilitiesUseAxJournal(t *testing.T) {
+func TestFileCapabilitiesRunThroughAgent(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
 		t.Fatal(err)
@@ -472,14 +331,13 @@ func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 	defer model.Close()
 	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
 	spec := agent.Spec{Version: 1, RunID: "files", InputID: "input", Prompt: "Update the note"}
-	state := t.TempDir()
-	result, err := session.RunWithTools(context.Background(), state, spec, client, agent.Tools{Capabilities: f.Capabilities()}, func(agent.Event) error { return nil })
+	var tools []string
+	result, err := agent.RunWithTools(context.Background(), spec, client, agent.Tools{Capabilities: f.Capabilities()}, finishedTools(&tools))
 	if err != nil || result.Status != "completed" || result.Kind != "answer" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	recovery, err := session.Inspect(state, spec)
-	if err != nil || len(recovery.Operations) != 3 || recovery.Operations[0].Tool != "file_read" || recovery.Operations[1].Tool != "file_edit" || recovery.Operations[2].Tool != "file_write" || !recovery.Operations[2].Finished {
-		t.Fatalf("recovery=%+v err=%v", recovery, err)
+	if strings.Join(tools, ",") != "file_read,file_edit,file_write" {
+		t.Fatalf("finished tools=%v", tools)
 	}
 	data, err := os.ReadFile(filepath.Join(workspace, "note.txt"))
 	if err != nil || string(data) != "done" {
@@ -491,99 +349,11 @@ func TestFileCapabilitiesUseAxJournal(t *testing.T) {
 	}
 }
 
-func TestReadVersionRestoresAfterRestart(t *testing.T) {
-	workspace := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	first, err := OpenFiles(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	readInput := json.RawMessage(`{"path":"note.txt"}`)
-	result, err := first.Capabilities()[0].Call(context.Background(), readInput)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = first.Close()
-	var read struct{ Version string }
-	if err := json.Unmarshal(result, &read); err != nil {
-		t.Fatal(err)
-	}
-	second, err := OpenFiles(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer second.Close()
-	if err := second.Restore(context.Background(), []agent.SavedOperation{{Tool: "file_read", ID: 1, Instruction: string(readInput), Result: result, Finished: true}}); err != nil {
-		t.Fatal(err)
-	}
-	input, _ := json.Marshal(map[string]string{"path": "note.txt", "version": read.Version, "content": "second"})
-	if _, err := second.Capabilities()[1].Call(context.Background(), input); err != nil {
-		t.Fatalf("restored read could not support edit: %v", err)
-	}
-}
-
-func TestFileReadResumeThenEdit(t *testing.T) {
-	workspace := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("first"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	answers := []string{
-		`{"javascriptCode":"final('Read the note',{})"}`,
-		`{"javascriptCode":"const r=file_read({path:'note.txt'}); final('Read',{r});"}`,
-		`{"javascriptCode":"final('Continue the update',{})"}`,
-		`{"javascriptCode":"const r=file_read({path:'note.txt'}); const e=file_edit({path:'note.txt',version:r.version,content:'done'}); final('Updated',{r,e});"}`,
-		`{"answer":"Updated"}`,
-	}
-	calls := 0
-	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if calls >= len(answers) {
-			t.Errorf("unexpected model call")
-			http.Error(w, "unexpected", 400)
-			return
-		}
-		response := answers[calls]
-		calls++
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", response), "finish_reason", "stop"))))
-	}))
-	defer model.Close()
-	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
-	spec := agent.Spec{Version: 1, RunID: "files-resume", InputID: "input", Prompt: "Update the note"}
-	state := t.TempDir()
-	first, err := OpenFiles(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = session.RunWithTools(context.Background(), state, spec, client, agent.Tools{Capabilities: first.Capabilities()}, func(e agent.Event) error {
-		if e.Type == "tool.finished" && e.Name == "file_read" {
-			return errors.New("delivery interrupted")
+func finishedTools(names *[]string) func(agent.Event) error {
+	return func(e agent.Event) error {
+		if e.Type == "tool.finished" && e.Error == "" {
+			*names = append(*names, e.Name)
 		}
 		return nil
-	})
-	_ = first.Close()
-	if err == nil {
-		t.Fatal("expected interrupted delivery")
-	}
-	second, err := OpenFiles(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer second.Close()
-	reused := 0
-	result, err := session.ResumeWithTools(context.Background(), state, spec, client, agent.Tools{Capabilities: second.Capabilities(), OnResume: second.Restore}, func(e agent.Event) error {
-		if e.Type == "tool.reused" && e.Name == "file_read" {
-			reused++
-		}
-		return nil
-	})
-	if err != nil || result.Status != "completed" || result.Kind != "answer" || reused != 1 {
-		t.Fatalf("result=%+v err=%v reused=%d", result, err, reused)
-	}
-	data, err := os.ReadFile(filepath.Join(workspace, "note.txt"))
-	if err != nil || string(data) != "done" {
-		report, _ := session.Inspect(state, spec)
-		t.Fatalf("file=%q err=%v result=%+v report=%+v", data, err, result, report)
 	}
 }

@@ -10,14 +10,18 @@ import (
 )
 
 const handoffName = "harnessEvidence"
+const handoffMarker = "[runtime evidence available]"
+
+// Ax 25 also keeps the distiller's selection in the runtime as distilledContext.
+var handoffNames = []string{handoffName, "distilledContext"}
+
 const maxHandoffBytes = 256 * 1024
 const maxVisibleRuntimeValueBytes = 4096
 const maxVisibleRuntimeArrayItems = 64
 const maxVisibleRuntimeProjectionBytes = 32768
 
-// handoffRuntime keeps distilled evidence in the run's code session. Ax drops
-// reserved distiller inputs during its stage patch, so the host restores only
-// the model's narrowed evidence under a non-input binding.
+// handoffRuntime keeps distilled evidence in the run's code session under a
+// non-input binding, and keeps it out of every model-visible runtime projection.
 type handoffRuntime struct {
 	*axgoja.Runtime
 	onExecutorError func()
@@ -98,9 +102,11 @@ func handoffBinding(value, evidence ax.Value) ax.Value {
 		return value
 	}
 	out := cloneHandoffMap(original)
+	restoreRedacted(out, evidence)
 	for _, field := range []string{"bindings", "globals"} {
 		if bindings, ok := original[field].(map[string]ax.Value); ok {
 			next := cloneHandoffMap(bindings)
+			restoreRedacted(next, evidence)
 			next[handoffName] = evidence
 			out[field] = next
 		}
@@ -111,21 +117,35 @@ func handoffBinding(value, evidence ax.Value) ax.Value {
 	return out
 }
 
+// restoreRedacted puts the evidence back where a snapshot carries the marker,
+// so a projection patched back into the session does not replace real values.
+func restoreRedacted(bindings map[string]ax.Value, evidence ax.Value) {
+	for _, name := range handoffNames {
+		if bindings[name] == handoffMarker {
+			bindings[name] = evidence
+		}
+	}
+}
+
+func redactNames(bindings map[string]ax.Value) {
+	for _, name := range handoffNames {
+		if _, ok := bindings[name]; ok {
+			bindings[name] = handoffMarker
+		}
+	}
+}
+
 func redactHandoff(value ax.Value) ax.Value {
 	original, ok := value.(map[string]ax.Value)
 	if !ok {
 		return value
 	}
 	out := cloneHandoffMap(original)
-	if _, ok := out[handoffName]; ok {
-		out[handoffName] = "[runtime evidence available]"
-	}
+	redactNames(out)
 	for _, field := range []string{"bindings", "globals"} {
 		if bindings, ok := original[field].(map[string]ax.Value); ok {
 			next := cloneHandoffMap(bindings)
-			if _, ok := next[handoffName]; ok {
-				next[handoffName] = "[runtime evidence available]"
-			}
+			redactNames(next)
 			out[field] = next
 		}
 	}
@@ -183,7 +203,7 @@ func runtimeProjectionBytes(value ax.Value) int {
 // them in Inspect and SnapshotGlobals. A saved operation read can therefore
 // re-enter model context through an ordinary JS variable even when the tool
 // result itself was returned as a short reference. Bound only the projection;
-// the code session and authoritative operation checkpoint retain full bytes.
+// the code session and the run's saved operation keep the full bytes.
 func boundRuntimeValue(value ax.Value) ax.Value {
 	switch v := value.(type) {
 	case string:

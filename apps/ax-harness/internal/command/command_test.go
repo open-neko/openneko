@@ -18,20 +18,6 @@ import (
 
 const request = `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference"}`
 
-func TestBudgetCanaryIsHostOnly(t *testing.T) {
-	var output bytes.Buffer
-	injected := `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference","host_budget_mode":"canary"}`
-	code, err := run(context.Background(), strings.NewReader(injected), &output)
-	if code != 2 || err == nil || !strings.Contains(err.Error(), "cannot be selected") || output.Len() != 0 {
-		t.Fatalf("run input selected canary: code=%d err=%v output=%s", code, err, output.String())
-	}
-	t.Setenv("HARNESS_BUDGET_MODE", "canary")
-	code, err = run(context.Background(), strings.NewReader(request), &output)
-	if code != 2 || err == nil || !strings.Contains(err.Error(), "requires approved triage") || output.Len() != 0 {
-		t.Fatalf("unpriced canary accepted: code=%d err=%v output=%s", code, err, output.String())
-	}
-}
-
 func configure(t *testing.T, url string) {
 	t.Helper()
 	t.Setenv("HARNESS_MODEL_URL", url)
@@ -68,9 +54,8 @@ func events(t *testing.T, b *bytes.Buffer) []agent.Event {
 	return out
 }
 func TestRunHTTP(t *testing.T) {
-	t.Setenv("HARNESS_STATE_DIR", t.TempDir())
 	calls := 0
-	responses := []string{`{"javascriptCode":"final('Find reference', {})"}`, `{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `{"answer":"REF-42"}`}
+	responses := []string{`{"javascriptCode":"final('Find reference', {})"}`, `{"javascriptCode":"final('Report reference', {reference:'REF-42'});"}`, `Answer: REF-42`}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		if r.Header.Get("Authorization") != "Bearer synthetic-test-key" {
@@ -105,28 +90,11 @@ func TestRunHTTP(t *testing.T) {
 	if strings.Contains(raw, "synthetic-test-key") || strings.Contains(raw, "Find reference") {
 		t.Fatal("content leaked into lifecycle metadata")
 	}
-	var replay bytes.Buffer
-	code, err = run(context.Background(), strings.NewReader(request), &replay)
-	if code != 0 || err != nil || replay.String() != raw || calls != 3 {
-		t.Fatalf("replay repeated execution or changed events: %d %v", code, err)
-	}
 	if len(es) < 4 {
 		t.Fatal("missing Ax lifecycle spans")
 	}
 }
 
-func TestToolRunRequiresDurableState(t *testing.T) {
-	configure(t, "http://127.0.0.1:1/v1")
-	t.Setenv("HARNESS_STATE_DIR", "")
-	var out bytes.Buffer
-	code, err := executeWithTools(context.Background(), strings.NewReader(request), &out, agent.Tools{Lookup: func(context.Context, string) (json.RawMessage, error) {
-		t.Fatal("tool dispatched without journal")
-		return nil, nil
-	}})
-	if code != 2 || err == nil || out.Len() != 0 {
-		t.Fatalf("code=%d err=%v output=%q", code, err, out.String())
-	}
-}
 func TestRunCancellationHTTP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -196,30 +164,5 @@ func TestModelFailureHasOneRedactedTerminal(t *testing.T) {
 	result := es[len(es)-1].Result
 	if result.Status != "failed" || result.Code != "model_http_401" {
 		t.Fatalf("unexpected result %+v", result)
-	}
-}
-
-func TestContinuationRequiresExplicitValidState(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("invalid continuation called model")
-		http.Error(w, "unexpected", 400)
-	}))
-	defer server.Close()
-	configure(t, server.URL)
-	for _, tc := range []struct {
-		name, resume, root string
-		code               int
-	}{
-		{"missing root", "1", "", 2}, {"invalid flag", "yes", t.TempDir(), 2}, {"missing checkpoint", "1", t.TempDir(), 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("HARNESS_RESUME", tc.resume)
-			t.Setenv("HARNESS_STATE_DIR", tc.root)
-			var output bytes.Buffer
-			code, err := run(context.Background(), strings.NewReader(request), &output)
-			if code != tc.code || err == nil || output.Len() != 0 {
-				t.Fatalf("invalid continuation accepted: code=%d err=%v output=%s", code, err, output.String())
-			}
-		})
 	}
 }

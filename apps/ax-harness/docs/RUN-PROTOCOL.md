@@ -1,245 +1,124 @@
-# Headless run protocol v1
+# Run protocol
 
-Build `go build -o bin/harness ./cmd/harness`. For a single model, the trusted
-host supplies `HARNESS_MODEL_URL`, `HARNESS_MODEL` and `HARNESS_MODEL_API_KEY`;
-inside OpenShell use its injected placeholder. For stage routing, the trusted
-host instead supplies `HARNESS_MODEL_ROUTES` as JSON, for example:
+Ax Harness runs one agent turn per process. The host writes one JSON run
+specification to stdin. The harness writes one JSON event per line to stdout.
+The host owns history, compaction, approvals, the sandbox and scheduling.
 
-```json
-{"context":"cheap","executor":"work","responder":"work","skill":"cheap","routes":[{"key":"cheap","model":"model-a","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},{"key":"work","model":"model-b","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"}]}
-```
+Build the binary with `go build -o bin/ax-harness ./cmd/ax-harness`.
 
-Each route has a distinct logical key. Two routes may use the same actual model
-with different accounts or endpoints. The named key
-environment variables hold credentials or OpenShell-replaced placeholders;
-neither credentials nor routes may be selected by run input. Ax's context,
-executor and responder stages use the approved models. A host-derived digest of the
-nonsecret routing configuration is pinned in the checkpoint, so replay/resume
-rejects a changed profile. Model-call events record the route key and actual
-model. This
-does not configure GraphJin: its server-side Ax agent owns its own strong model.
-The optional `skill` key names an approved route for semantic selection among
-staged skills. The OpenNeko adapter supplies a bounded `skill_query` containing
-the current request; the Go runtime reads at most 64 staged skill names and
-frontmatter descriptions. One exact name match needs no model call. Ambiguous
-requests make one Ax selection call on the `skill` route, counted against the
-same durable model-call limit, with a 12-second deadline. The selected name must
-exist in the staged catalog; it is only a hint to read `SKILL.md` through the
-already admitted `skill_read` capability. It cannot add tools or authorize an
-effect. Without a configured `skill` route, the adapter does not load the
-catalog or change the prior checkpoint identity. With the route enabled, its
-metadata participates in checkpoint identity. Selection
-events are content-free and include route/stage, mode, latency and usage when
-the provider reports it. This local route is not yet qualified through a live
-multi-provider OpenShell gateway.
-Multi-route OpenShell transport and credential replacement still need connected
-qualification before enabling this profile in production.
-The optional host manifest may set `executor_escalation` to a second approved
-route key and `executor_after_errors` to an integer from one through eight.
-When enabled, the baseline executor key must be distinct from context,
-responder and skill keys. A committed `executor.step.failed` receipt records
-each failed actor-code turn. Only later executor model requests use the second
-route; the original request and tool operations are never retried by this
-switch. The provider rate limiter records the actual selected route and charges
-its pinned price before dispatch. Resume rebuilds the error count from the
-journal. If model or cost admission denies the next call, the stronger route is
-not contacted. This is a Harness implementation because the pinned Ax Go build
-accepts `executorModelPolicy` without applying it in the live executor loop.
-Local no-key model and checkpoint fixtures pass; the multi-provider OpenShell
-path still needs connected qualification.
+## Input
 
-The optional `fallbacks` list holds explicit `{ "from": "route-key", "to":
-"alternate-key" }` pairs. A source must be a configured context, executor,
-responder, skill or escalated-executor route; each source has at most one
-alternate, which must be another approved route. A failed, content-free Ax
-`Chat` call is retried once on the alternate only when Ax classifies its error
-as transient. A 403 denial, cancellation, or a call that returned content stays
-on the original route. The Harness commits `model.route.fallback` after the
-failed attempt and before the alternate dispatch. Both attempts cross the
-ordinary model-call and cost gates, and an unavailable usage report retains
-its reservation. `Stream` is not retried because its slice-returning interface
-cannot prove that no content reached the caller before failure. No fallback
-changes GraphJin's server-owned model or grants another capability. Local
-fixtures cover 503 fallback, 403 denial, 429 with an exhausted call ceiling,
-crash before alternate dispatch, cost and terminal replay. Connected OpenShell
-credential replacement and connected streaming first-content qualification remain open.
+Send exactly one object, at most 128 KiB. Unknown fields fail the run.
 
-Ax Go's `AxAgent.StreamingForward` now drives the responder path. A trusted
-`stream_responses` run field enables incremental provider transport after that
-route has passed qualification; the engine uses the same forward path with a
-single buffered response for legacy non-SSE routes. On an incremental route,
-`answer.delta` carries `{version,index,text}` as a live-only event with
-`sequence: 0`. A new version replaces the prior candidate. Consumers must not
-advance the durable sequence, checkpoint these chunks, or display them as a
-verified answer. The final `run.finished` result still passes the host terminal
-gate. Local HTTP SSE tests prove first content arrives before stream completion
-and terminal replay omits the provisional chunks. OpenNeko projection and a
-connected OpenShell first-content run remain to be qualified before the host
-sets `stream_responses` for production runs.
+| Field | Type | Rule |
+| --- | --- | --- |
+| `version` | integer | Must be `1`. |
+| `run_id` | string | Required. 128 characters or fewer. |
+| `input_id` | string | Required. 128 characters or fewer. |
+| `prompt` | string | Required. 64 KiB or less. It carries the whole turn, including history. |
+| `stream_responses` | boolean | Optional. Sends `answer.delta` events from the responder. |
+| `skill_query` | string | Optional. 8 KiB or less. Used to pick a staged skill. |
+| `max_operations` | integer | Optional. Tool calls per run, 1 to 32. Default 4. |
+| `max_model_calls` | integer | Optional. Model calls per run, 1 to 64. Default 16. |
+| `max_model_tokens` | integer | Optional. Token ceiling, up to 10,000,000. 0 means no ceiling. |
+| `max_cost_micros` | integer | Optional. Cost ceiling in USD micros. Needs a priced route profile. |
 
-The optional OpenNeko adapter accepts the operator-owned
-`OPENNEKO_HARNESS_ROUTING` manifest. Each route adds `provider` (an existing
-OpenShell provider name) and `credential_env` (that provider's unique injected
-credential variable) to the Go fields above. The launcher removes these two
-host-only fields before passing `HARNESS_MODEL_ROUTES` to Go, attaches all named
-providers before Harness execution, scopes model egress to their URL hosts, and
-aliases each injected placeholder to its route's `api_key_env`. The same manifest
-is passed to `harness-inspect` during recovery so checkpoint profile comparison
-does not require credentials. This is opt-in for Harness; Hermes keeps its
-primary-provider launch path. The named providers must be provisioned on the
-gateway before launch. Local command fixtures cover this contract; credential
-replacement through a live OpenShell gateway remains to be qualified.
+The run has a fixed wall clock of 2 minutes. The agent has 8 actor steps. A
+child agent has 3.
 
-One bounded JSON object on stdin followed by EOF:
+## Output events
+
+Every event has `version`, `run_id`, `input_id`, `sequence` and `type`.
+`sequence` counts up from 1. Model events carry no prompt text. No event carries
+credentials. `tool.finished` carries the tool result in `data`.
+
+| Type | Meaning |
+| --- | --- |
+| `run.started` | The run started. |
+| `child.admitted` | The run has a read-only child agent. |
+| `model.request.started` | A model call passed admission. `name` is the model, `origin` the route, `call_id` the count. |
+| `model.request.finished` | A model call ended. `usage` holds the tokens; `error` is set on failure. |
+| `model.route.fallback` | A transient provider error moved the call from `name` to `origin`. |
+| `executor.step.failed` | Actor code failed. Later executor calls can use the escalation route. |
+| `skill.selected` | A staged skill was picked as a hint, or not (`error`). |
+| `tool.input.rejected` | Tool input failed its schema. The tool did not run. |
+| `tool.started`, `tool.finished` | One tool call, with `operation_id`, `effect` and, when finished, `data` or `error`. |
+| `observation.retrieved` | Actor code read a saved tool result by `operation_id`. |
+| `span.started`, `span.finished` | Ax span lifecycle. |
+| `child.started`, `child.finished` | Child agent lifecycle. |
+| `run.finished` | The last event. `result` holds the outcome. |
+
+`answer.delta` is a live event with `sequence` 0. Its `data` is
+`{version, index, text}`. A new `version` replaces the earlier text. Treat it as
+provisional; only `run.finished` holds the answer.
+
+## Result
+
+| Field | Values |
+| --- | --- |
+| `status` | `completed`, `failed`, `cancelled` |
+| `kind` | `answer`, `clarification`, `partial`, `failure` |
+| `answer` | The final text, unchanged, with any fences. |
+| `code` | Set when the run did not complete (see below). |
+| `usage` | Requests, reported calls, tokens and `coverage`: `complete`, `partial` or `unavailable`. |
+| `cost` | Present when `max_cost_micros` is set. |
+
+Codes: `model_failed`, `model_http_<status>`, `actor_steps_exhausted`,
+`invalid_output`, `incomplete_result`, `model_budget_exceeded`,
+`model_token_budget_exceeded`, `cost_budget_exceeded`, `deadline_exceeded`,
+`cancelled`.
+
+A tool with effect `pause` ends the turn as `clarification` with the answer
+"Awaiting operator input." A failed tool turns a completed answer into
+`failed` with kind `partial`.
+
+## Exit codes and signals
+
+| Code | Meaning |
+| --- | --- |
+| 0 | The run completed. |
+| 1 | The run did not complete, or event delivery failed. |
+| 2 | The input or the configuration is invalid. Nothing ran. |
+
+SIGINT and SIGTERM cancel the run. The run then finishes with status
+`cancelled`.
+
+## Model configuration
+
+The host sets the model. Run input cannot change it.
+
+- One model: `HARNESS_MODEL_URL`, `HARNESS_MODEL` and `HARNESS_MODEL_API_KEY`.
+- Several routes: `HARNESS_MODEL_ROUTES`, a JSON object:
 
 ```json
-{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Explain the supplied task","skill_query":"Explain this task"}
+{"context":"cheap","executor":"work","responder":"work","skill":"cheap",
+ "fallbacks":[{"from":"work","to":"spare"}],
+ "routes":[
+  {"key":"cheap","model":"model-a","url":"https://provider.example/v1","api_key_env":"HARNESS_CHEAP_KEY"},
+  {"key":"work","model":"model-b","url":"https://provider.example/v1","api_key_env":"HARNESS_WORK_KEY"},
+  {"key":"spare","model":"model-c","url":"https://provider.example/v1","api_key_env":"HARNESS_SPARE_KEY"}]}
 ```
 
-Unknown fields, caller-supplied routing digests, blank/oversized values and
-trailing input are rejected. Stdout is
-ordered NDJSON: `run.started`, Ax `span.started`/`span.finished`, optional
-`tool.started`/`tool.finished`, and `run.finished`. Events carry version, run/input
-IDs and sequence; spans have local parent IDs; host tool operations have stable local
-IDs. Result status is `completed`, `failed` or `cancelled`; completed results have
-an `answer`, `clarification`, `refusal`, `partial` or `approval` kind. Failed lookup transport
-cannot produce an unqualified `answer` kind. Raw delegated envelopes retain source,
-evidence, status, trace ID and usage. Tool data and final answers are **content**,
-not content-free telemetry. Raw Ax attributes, reasoning and upstream errors are
-excluded from lifecycle observations.
+`executor_escalation` and `executor_after_errors` (1 to 8) name a stronger
+executor route after actor-code errors. `pricing_version` and a `price` on
+every route enable the cost ceiling. Each route names the environment variable
+that holds its key. Ax client retries are off; the harness owns fallback.
 
-Limits: 64 KiB prompt/answer, 128 KiB stdin, two-minute run deadline, eight Ax actor
-steps, four shared host operations, 8 KiB lookup instruction, 256 KiB lookup response,
-zero configured validation/infrastructure retries. Goja has its default five-second
-CPU execution bound. The adapter exposes `lookup(instruction)`. A trusted host may additionally install
-`propose({action, arguments, summary})`; no actor shell, file, arbitrary HTTP or
-direct mutation capability is installed.
+## OpenNeko entry
 
-The optional trusted `max_model_tokens` field admits the next outer Ax model
-request only when observed tokens plus a reservation fit. The reservation is
-at least 4096 tokens (or the whole configured ceiling if smaller) and rises to
-the largest reported request; an unreported request consumes 4096 tokens in
-the accounting. The OpenNeko launcher pins a one-million-token ceiling, or a
-lower workflow API claim. Usage and reservations survive checkpoint resume.
-A provider may exceed its reservation within one request; that run fails with
-`model_token_budget_exceeded` and cannot dispatch another model request. A
-GraphJin lookup additionally reserves 49,152 tokens before broker dispatch,
-then replaces that reservation with the server's flat `response.usage`
-total. Missing usage keeps the reservation. Saved lookup receipts rebuild the
-charge on resume. The result's `usage` field still reports **outer Ax usage**;
-the admission ceiling includes outer and GraphJin tokens without merging the
-two telemetry scopes. A lookup's `tool.finished.remote_usage` reports only the
-server's flat aggregate token and call counts plus the tokens charged for
-admission. `reported: false` means the charged amount is the conservative
-reservation, not observed provider usage. This content-free projection is
-replayed from the durable checkpoint without dispatching another lookup.
-This is an admission/stop rule, not a guarantee that
-provider billing cannot overshoot one request or one remote lookup.
+`cmd/ax-harness` reads these environment variables:
 
-`HARNESS_STATE_DIR` enables atomic, fsynced, bounded 8 MiB checkpoints in a trusted
-consumer-scoped directory. The process locks the hashed run ID, persists accepted
-input before model work and operation intent before lookup, then saves results
-before publishing events. Completed duplicate input replays events without model
-or tool calls. Conflicting input and concurrent execution are rejected. Interrupted
-attempts retain completed read evidence but require reconciliation; they never
-silently execute again. Directory retention and encryption belong to the host.
-The trusted host can repair missing results with `harness-inspect --reconcile`
-and matching durable receipts, without executing callbacks. This closes the lost
-result window but does not resume the interrupted Ax program or synthesize an answer.
-A trusted host may explicitly request `HARNESS_RESUME=1` with the exact accepted
-specification and existing state directory. Unknown/unpaired operations prevent
-execution. Resolved evidence seeds a new Ax attempt; exact matching lookups reuse
-that evidence. `run.resumed` records the attempt before model work, and `tool.reused`
-references the prior operation. Attempts are capped at three and dispatched
-lookups at four across the run; event sequences and span IDs continue monotonically.
-This per-run checkpoint is not an arbitrary-crash continuation engine.
+| Variable | Use |
+| --- | --- |
+| `OPENNEKO_MCP_ORG_ID`, `OPENNEKO_MCP_THREAD_ID` | Required run scope. |
+| `OPENNEKO_MCP_BRIDGE` | Path of the OpenNeko MCP bridge. Starts `node` with it. |
+| `OPENNEKO_MCP_SERVERS` | Comma list of bridge servers to start. |
+| `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
+| `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |
+| `OPENNEKO_HARNESS_UPLOADS_DIR` | Adds read-only upload tools. |
+| `OPENNEKO_HARNESS_SKILLS_READ`, `OPENNEKO_MCP_SKILLS_ROOT` | Adds skill tools and, with a `skill` route, the skill catalog. |
+| `OPENNEKO_HARNESS_CHILD_READS` | Comma list of read tools for the child agent. |
 
-Resume supplies a bounded (32 KiB) index of saved operations. Small results may
-appear inline; large results and instructions appear as digest-bearing references.
-Executor code can call `harnessSavedOperation(id)` to retrieve one full operation
-from the validated checkpoint for that run. This reads saved evidence without
-another broker dispatch or authorization grant. The original prompt and saved
-operations remain authoritative; the index is only a context projection.
-Ax's internal trajectory summarizer may receive only compacted working code.
-Before an Ax execution-loop model dispatch, the Harness restores the accepted prompt if that
-request omitted it and supplies the approved context route when a summarizer
-request has no model key. The restored prompt is sent to the provider but never
-written to ordinary telemetry. Summarizer calls pass the same model admission
-and usage receipts as executor calls.
-
-SIGINT/SIGTERM cancel admission and ignore late results. Broken sinks cancel work;
-a terminal event cannot be delivered to a broken sink. Sinks must return promptly.
-Exit codes: 0 completed, 1 runtime/cancellation/delivery failure, 2 CLI input or
-configuration failure. OpenShell local cancellation does **not** prove remote work
-has stopped; the upstream idle-stream issue remains open in [OPENSHELL.md](OPENSHELL.md).
-
-The optional `adapters/openneko/cmd/harness` binds a trusted broker URL/token/source
-from environment and uses `/v1/harness/lookup`. The runtime attaches its numeric
-operation ID; the model supplies only instructions. The broker saves a bounded
-intent/result in PostgreSQL around the existing server-side GraphJin delegation.
-Repeated IDs never dispatch again: completed records require host recovery, and
-unfinished records report an unknown outcome. The legacy `/v1/graphjin/agent`
-route remains available to existing clients.
-The broker resolves actor and tenant from the authenticated run and checks that the
-server agent is read-only. OpenNeko stages/retrieves checkpoints around cold sandbox
-execution; a worker kill before retrieval is outside the M3 recovery claim.
-
-OpenNeko translates tool results through its existing GraphJin usage normalizer:
-aggregate remote usage is counted once, never summed again with nested actor usage.
-Outer Ax token accounting and collector export remain unqualified and are explicitly
-reported as incomplete. Ax stage timings and remote trace IDs are retained locally.
-See [M3 acceptance](../integration/openneko/README.md) for actual product evidence.
-
-For non-executing recovery evidence, build `cmd/harness-inspect` and supply the
-same trusted input and `HARNESS_STATE_DIR`, without model credentials. It rejects
-active locks and inconsistent snapshots and reports terminal/interrupted/unknown
-operation outcomes. The `can_resume` boolean and optional `next_attempt` use the
-same operation-pairing and attempt-budget checks as `session.Resume`. Terminal,
-unknown, and exhausted checkpoints have `can_resume: false`. This is checkpoint
-eligibility, not host authorization or proof that a different checkpoint copy is
-current. It never resumes an agent. The optional OpenNeko host uses terminal inspection
-to adopt a durable receipt under a host launch lock; see [recovery](M4-RECOVERY.md).
-
-
-With broker lookups configured, the Goja step deadline is 60 seconds because it includes time spent inside host
-callbacks; the broker lookup deadline is 45 seconds and a complete attempt is
-bounded to two minutes. The SDK's default five seconds is insufficient for real
-GraphJin investigations. A slow-callback regression verifies that evidence from a
-lookup taking more than five seconds reaches the responder. This is a wall-clock
-step limit, not separate CPU accounting for JavaScript.
-
-## Optional approval capability
-
-`command.MainWithTools` installs typed callbacks without an OpenNeko dependency.
-The OpenNeko launcher binds a `harness-governed` broker token only for a Work run
-with held pack actions. It passes their exact kinds in
-`OPENNEKO_HARNESS_ACTION_KINDS`; otherwise it uses `harness-read-only` and the Go
-runtime does not install `propose`. A forged or unlisted kind is denied before
-broker dispatch, and the broker independently rechecks current authorization.
-Model input cannot select this profile, credentials, identity or an approval state.
-
-A proposal contains an action name (128 bytes), object arguments and a summary
-(1000 bytes), bounded to 64 KiB total. The broker resolves the installed ready pack
-contract, checks its schema, current actor entitlement and policy, and uses the
-existing worker preflight and approval store. Even an auto-allow policy creates a
-human approval request. The shared operation journal binds the exact proposal
-input and tool name before dispatch; the result is durable before delivery.
-
-Receipts are either `{id,status:"pending_approval"}` or
-`{status:"denied",reason}`. They never claim an effect executed. Pending receipts
-produce result kind `approval`; `completed` still means the model turn ended.
-Approval IDs are projected into product cards by the trusted launcher, including
-terminal recovery. Saved proposal receipts are immutable and reused on bounded
-continuation; human decisions and effect receipts are separate host records.
-
-The existing action queue dispatches approved Harness actions through a dedicated
-claim in `action_execution`. It rechecks actor, approver, policy, installed contract
-and frozen arguments. A PostgreSQL owner lock fences live executions and a unique
-index preserves the claim across death. A stable host idempotency key is supplied
-to the adapter. Optional adapter `reconcile` reads provider status by that key;
-missing/failed status never authorizes redispatch. Without a receipt the product
-records an explicit unknown outcome. Successful receipts and terminal action
-status commit together; repeated delivery returns the receipt without an effect.
-
-Apply OpenNeko migrations 0084–0089 before deploying matching worker and Harness
-images. Drain old workers first. Hermes keeps its existing execution path.
+The bridge gets a clean environment: `PATH`, every `OPENNEKO_MCP_*` variable,
+the broker binding and the proxy variables. Every bridge tool becomes
+`mcp_neko_<tool>`. `interaction_ask_user_question` has effect `pause`.

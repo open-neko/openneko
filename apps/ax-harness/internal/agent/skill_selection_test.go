@@ -29,7 +29,7 @@ func TestExactSkillNameSelectionNeedsNoModel(t *testing.T) {
 func TestSemanticSkillSelectionRejectsUnstagedName(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", `{"selected":"unapproved"}`), "finish_reason", "stop"))))
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", `Selected: unapproved`), "finish_reason", "stop"))))
 	}))
 	defer server.Close()
 	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
@@ -44,21 +44,5 @@ func TestSemanticSkillSelectionRejectsUnstagedName(t *testing.T) {
 		[]SkillMetadata{{Name: "daily", Description: "Daily report"}}, events)
 	if name != "" || selected.Error != "invalid_selection" || events.modelCalls != 1 {
 		t.Fatalf("name=%q event=%+v calls=%d", name, selected, events.modelCalls)
-	}
-}
-
-func TestSkillCatalogChangesCheckpointIdentity(t *testing.T) {
-	a := Tools{SkillCatalog: []SkillMetadata{{Name: "daily", Description: "First"}}}
-	b := Tools{SkillCatalog: []SkillMetadata{{Name: "daily", Description: "Changed"}}}
-	one, err := a.CatalogHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	two, err := b.CatalogHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if one == two {
-		t.Fatal("changed skill metadata retained checkpoint identity")
 	}
 }

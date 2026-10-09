@@ -68,8 +68,7 @@ func TestDistillerToolEvidenceReachesExecutorWithoutAnotherRead(t *testing.T) {
 	if strings.Contains(executorRequest, "BULK-OBSERVATION-") {
 		t.Fatal("bulk observation leaked into the executor model request")
 	}
-	if len(retrieved) != 1 || retrieved[0].OperationID != 1 || retrieved[0].ObservationRead == nil ||
-		retrieved[0].ObservationRead.ResultBytes < 80_000 || len(retrieved[0].Data) != 0 {
+	if len(retrieved) != 1 || retrieved[0].OperationID != 1 || len(retrieved[0].Data) != 0 {
 		t.Fatalf("saved observation read receipt = %+v", retrieved)
 	}
 }
