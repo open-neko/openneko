@@ -31,7 +31,7 @@ describe("GraphJin agent settings", () => {
     );
   });
 
-  it("writes the agent block and asks for a restart only when GraphJin reads the change at start", () => {
+  it("writes the agent block and restarts GraphJin on any change", () => {
     const provider = patchGraphjinAgentBlock(config, { provider: "anthropic", model: "claude-sonnet-5-5" });
     expect(provider.restart).toBe(true);
     const agent = parse(provider.content).agent;
@@ -47,7 +47,7 @@ describe("GraphJin agent settings", () => {
     expect(parse(provider.content).mcp).toEqual({ include_tools_with_agent: true });
 
     const model = patchGraphjinAgentBlock(provider.content, { provider: "anthropic", model: "claude-haiku-5-5" });
-    expect(model).toMatchObject({ changed: true, restart: false });
+    expect(model).toMatchObject({ changed: true, restart: true });
     expect(patchGraphjinAgentBlock(model.content, { provider: "anthropic", model: "claude-haiku-5-5" }).changed).toBe(false);
   });
 });

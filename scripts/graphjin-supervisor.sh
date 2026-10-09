@@ -19,6 +19,8 @@ start_graphjin() {
   if [ -f "$agent_key_file" ]; then
     OPENNEKO_GRAPHJIN_AGENT_API_KEY=$(cat "$agent_key_file")
     export OPENNEKO_GRAPHJIN_AGENT_API_KEY
+    # OpenNeko writes the agent block; compose defaults must not override it.
+    unset GJ_AGENT_PROVIDER GJ_AGENT_MODEL GJ_AGENT_BASE_URL GJ_AGENT_API_KEY_ENV
   fi
   graphjin "$@" &
   child_pid=$!

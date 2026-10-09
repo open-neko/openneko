@@ -76,7 +76,7 @@ while :; do sleep 1; done
     const binary = join(directory, "graphjin");
     const starts = join(directory, "starts.log");
     await writeFile(binary, `#!/bin/sh
-printf '%s\\n' "\${OPENNEKO_GRAPHJIN_AGENT_API_KEY:-none}" >> "$GRAPHJIN_TEST_STARTS"
+printf '%s\\n' "\${OPENNEKO_GRAPHJIN_AGENT_API_KEY:-none}:\${GJ_AGENT_MODEL:-file}" >> "$GRAPHJIN_TEST_STARTS"
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 `);
@@ -92,16 +92,17 @@ while :; do sleep 1; done
           PATH: `${directory}:${process.env.PATH ?? ""}`,
           GRAPHJIN_TEST_STARTS: starts,
           OPENNEKO_GRAPHJIN_CONFIG_DIR: directory,
+          GJ_AGENT_MODEL: "compose-default",
         },
         stdio: "ignore",
       },
     );
     children.push(supervisor);
     try {
-      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).includes("key-1"));
+      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).includes("key-1:file"));
       await writeFile(join(directory, ".openneko-graphjin-agent-key"), "key-2", { mode: 0o600 });
       await writeFile(join(directory, ".openneko-graphjin-restart"), "restart-key");
-      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).trim().split("\n").at(-1) === "key-2");
+      await waitFor(async () => (await readFile(starts, "utf8").catch(() => "")).trim().split("\n").at(-1) === "key-2:file");
     } finally {
       supervisor.kill("SIGTERM");
       await new Promise((resolveExit) => supervisor.once("exit", resolveExit));

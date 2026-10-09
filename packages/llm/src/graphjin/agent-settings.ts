@@ -87,7 +87,7 @@ export async function resolveGraphjinAgentModel(orgId: string): Promise<Graphjin
 
 /**
  * Write the agent block. Returns the new text and whether GraphJin must
- * restart: it reads provider, base_url and api_key_env only at start.
+ * restart: GraphJin reads its config file only at start.
  */
 export function patchGraphjinAgentBlock(
   yamlText: string,
@@ -106,11 +106,10 @@ export function patchGraphjinAgentBlock(
   };
   if (model.baseUrl) next.base_url = model.baseUrl;
   else delete next.base_url;
-  const restart = ["enabled", "provider", "base_url", "api_key_env"].some((key) => current[key] !== next[key]);
-  const changed = restart || ["model", "read_only"].some((key) => current[key] !== next[key]);
+  const changed = ["enabled", "provider", "model", "base_url", "api_key_env", "read_only"].some((key) => current[key] !== next[key]);
   if (!changed) return { content: yamlText, changed: false, restart: false };
   document.set("agent", document.createNode(next));
-  return { content: document.toString(), changed: true, restart };
+  return { content: document.toString(), changed: true, restart: true };
 }
 
 async function writePrivate(path: string, content: string, mode: number): Promise<void> {
@@ -135,8 +134,8 @@ async function graphjinEndpoint(orgId: string): Promise<string | null> {
 }
 
 /**
- * Apply the opt-in to GraphJin's config and key file. A change of provider,
- * base URL or key restarts GraphJin; a model change does not.
+ * Apply the opt-in to GraphJin's config and key file. Any change restarts
+ * GraphJin, which reads both only at start.
  * TODO(dosco/graphjin#655): use agent.api_key_file and gj_config so no change needs a restart.
  */
 export async function provisionGraphjinAgent(orgId: string, configFile = process.env.OPENNEKO_GRAPHJIN_CONFIG?.trim()): Promise<void> {

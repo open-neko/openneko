@@ -9,7 +9,7 @@
 # Usage (alongside the agentic GraphJin overlay):
 #   OPENNEKO_PORT=3000 GRAPHJIN_AGENT_API_KEY=... \
 #   GRAPHJIN_AGENT_PROVIDER=google-gemini \
-#   GRAPHJIN_AGENT_MODEL=gemini-3.5-flash \
+#   GRAPHJIN_AGENT_MODEL=gemini-3.8-flash \
 #   docker compose -p openneko-agentic \
 #     -f compose.yml -f compose.adventureworks.yml \
 #     -f compose.graphjin-agent.yml -f compose.openshell-host.yml up -d --build
