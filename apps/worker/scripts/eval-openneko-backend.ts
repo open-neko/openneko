@@ -733,6 +733,22 @@ async function verifyFrozenGraphjinPolicy(
   };
 }
 
+async function runGrantDiagnostic(binding: RunBinding): Promise<string> {
+  try {
+    const { db, sql } = await import("@neko/db");
+    const result = await db().execute(sql`
+      select r.actor_user_id, r.actor_role, u.disabled_at is not null as disabled,
+        (select string_agg(g.slug, ',') from user_group g where g.org_id = r.org_id) as org_groups,
+        (select count(*) from item_grant i where i.org_id = r.org_id and i.item_type = 'data_source') as data_source_grants
+      from work_run r left join app_user u on u.id = r.actor_user_id
+      where r.id = ${binding.runId} and r.org_id = ${binding.orgId}`);
+    const rows = (result as unknown as { rows?: unknown[] }).rows ?? (result as unknown as unknown[]);
+    return `grant diagnostic: ${JSON.stringify(rows[0] ?? "work_run not found")}`;
+  } catch (cause) {
+    return `grant diagnostic failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+  }
+}
+
 async function verifyBrokerGraphjinActorPolicy(
   broker: AgentBrokerHandle,
   binding: RunBinding,
@@ -763,9 +779,9 @@ async function verifyBrokerGraphjinActorPolicy(
     >,
     boundary: string,
   ): Promise<void> => {
-    const tools = await actorControlPlane.listGraphjinTools(identity).catch((cause) => {
+    const tools = await actorControlPlane.listGraphjinTools(identity).catch(async (cause) => {
       throw new EvalEnvironmentError(
-        `${boundary} tool discovery preflight failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `${boundary} tool discovery preflight failed: ${cause instanceof Error ? cause.message : String(cause)}; ${await runGrantDiagnostic(binding)}`,
         "graphjin_api_operation_not_discoverable",
       );
     });
