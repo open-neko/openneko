@@ -357,7 +357,7 @@ export function createAdventureWorksMetricDriver(context: {
       definition: {
         classification: "natural question to card metadata via production classifier",
         numeric: "relative error against host SQL",
-        baseline: "prior-period chart target relative error against host SQL",
+        baseline: "baselineValue (else the first chart target) relative error against host SQL",
         timeWindow: "exact grain/start/end",
         contract: "OpenNeko metric result contract",
       },
@@ -735,7 +735,7 @@ export function createAdventureWorksMetricDriver(context: {
         }
         if (assertion.kind === "numeric.baseline-relative-error") {
           const tolerance = Number(assertion.params?.max_relative_error ?? 0.01);
-          const actual = output.chartData[0]?.t;
+          const actual = output.baselineValue ?? output.chartData[0]?.t;
           const relativeError =
             actual == null
               ? Number.POSITIVE_INFINITY
@@ -811,7 +811,7 @@ export function createAdventureWorksMetricDriver(context: {
         scorerDefinition: {
           classification: "natural question to card metadata via production classifier",
           numeric: "relative error against host SQL",
-          baseline: "prior-period chart target relative error against host SQL",
+          baseline: "baselineValue (else the first chart target) relative error against host SQL",
           timeWindow: "exact grain/start/end",
           contract: "OpenNeko metric result contract",
         },

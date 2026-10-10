@@ -338,6 +338,7 @@ export function mapSavedQueryMetric(input: {
       mood: mood(mapped.value, baseline, definition.directionGood),
       chartType: type,
       chartData,
+      baselineValue: baseline,
       timeWindow: {
         grain: "month",
         start: new Date(now.getTime() - positive(definition.execution.runtime?.windowDays, 30) * 86_400_000).toISOString().slice(0, 10),

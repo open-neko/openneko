@@ -118,6 +118,7 @@ export type MetricAgentResult = {
   mood: "good" | "watch" | "bad";
   chartType: "kpi" | "line" | "bar" | "donut" | "area";
   chartData: Array<{ d: string; v: number; t?: number }>;
+  baselineValue: number | null;
   timeWindow: TimeWindow;
 };
 
@@ -483,6 +484,9 @@ async function runMetricAgentTraced(
       chartData: Array.isArray(parsed.chartData)
         ? (parsed.chartData as MetricAgentResult["chartData"])
         : [],
+      baselineValue: typeof parsed.baselineValue === "number" && Number.isFinite(parsed.baselineValue)
+        ? parsed.baselineValue
+        : null,
       timeWindow: {
         grain: tw.grain as TimeWindowGrain,
         start: tw.start === null ? null : tw.start ? String(tw.start) : null,

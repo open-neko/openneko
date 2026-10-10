@@ -76,6 +76,29 @@ describe("AdventureWorks eval adapter", () => {
       },
     });
     expect(badBaseline.verdict).toBe("fail");
+
+    const quarterlyChart = await driver.score({
+      case: evalCase,
+      variant,
+      oracle,
+      phase: "initial",
+      repetition: 1,
+      execution: {
+        ...execution,
+        output: {
+          ...(execution.output as Record<string, unknown>),
+          chartType: "line",
+          chartData: [
+            { d: "Q3", v: 20, t: 18 },
+            { d: "Q4", v: 25, t: 22 },
+            { d: "Q1", v: 27, t: 24 },
+            { d: "Q2", v: 28, t: 26 },
+          ],
+          baselineValue: 90,
+        },
+      },
+    });
+    expect(quarterlyChart.verdict).toBe("pass");
     await driver.close?.();
   });
 });
