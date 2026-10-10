@@ -19,6 +19,7 @@ import { isPrimaryProvider } from "../config";
 import { resolveAxModelRoute, type AxModelRoute } from "../provider-runtime";
 import { maybeDecryptSecret } from "../secrets";
 import { acquireGraphjinConfigLock } from "./persist-source-config";
+import { GRAPHJIN_AGENT_MAX_STEPS } from "./agent";
 import { requestGraphjinRestart } from "./restart";
 
 /** GraphJin reads the key from this variable; the supervisor fills it from the key file. */
@@ -105,11 +106,12 @@ export function patchGraphjinAgentBlock(
     model: model.model,
     api_key_env: GRAPHJIN_AGENT_KEY_ENV,
     read_only: true,
+    max_steps: GRAPHJIN_AGENT_MAX_STEPS,
     timeout_seconds: GRAPHJIN_AGENT_TIMEOUT_SECONDS,
   };
   if (model.baseUrl) next.base_url = model.baseUrl;
   else delete next.base_url;
-  const changed = ["enabled", "provider", "model", "base_url", "api_key_env", "read_only", "timeout_seconds"].some((key) => current[key] !== next[key]);
+  const changed = ["enabled", "provider", "model", "base_url", "api_key_env", "read_only", "max_steps", "timeout_seconds"].some((key) => current[key] !== next[key]);
   if (!changed) return { content: yamlText, changed: false, restart: false };
   document.set("agent", document.createNode(next));
   return { content: document.toString(), changed: true, restart: true };

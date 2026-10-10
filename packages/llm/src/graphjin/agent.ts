@@ -1,4 +1,7 @@
 import { packUserConnectionHeaders } from "./pack-user-connections";
+/** Steps per GraphJin agent call: the cap OpenNeko writes and the default it asks for. */
+export const GRAPHJIN_AGENT_MAX_STEPS = 12;
+
 export type GraphjinAgentTurn = {
   role: "user" | "assistant";
   content: string;

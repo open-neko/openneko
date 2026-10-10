@@ -1128,7 +1128,7 @@ export class InProcessControlPlane implements AgentControlPlane {
       host: hostnameOf(src.graphqlUrl),
     };
     try {
-      const { askGraphjinAgent, getGraphjinAgentStatus } = await import(
+      const { GRAPHJIN_AGENT_MAX_STEPS, askGraphjinAgent, getGraphjinAgentStatus } = await import(
         "../graphjin/agent"
       );
       const agentStatus = await getGraphjinAgentStatus({
@@ -1158,7 +1158,7 @@ export class InProcessControlPlane implements AgentControlPlane {
         signal: AbortSignal.timeout(180_000),
         request: {
           instruction,
-          max_steps: Math.min(Math.max(input.maxSteps ?? 8, 1), 12),
+          max_steps: Math.min(Math.max(input.maxSteps ?? GRAPHJIN_AGENT_MAX_STEPS, 1), GRAPHJIN_AGENT_MAX_STEPS),
           return_trace: false,
           context: {
             caller: "OpenNeko data agent",

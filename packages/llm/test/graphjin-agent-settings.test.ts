@@ -41,7 +41,7 @@ describe("GraphJin agent settings", () => {
       model: "claude-sonnet-5-5",
       api_key_env: "OPENNEKO_GRAPHJIN_AGENT_API_KEY",
       read_only: true,
-      max_steps: 8,
+      max_steps: 12,
       timeout_seconds: 170,
     });
     expect(agent.base_url).toBeUndefined();
