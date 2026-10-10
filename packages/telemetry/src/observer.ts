@@ -1,4 +1,8 @@
-import { sanitizeAttributes, sanitizeErrorType } from "./redaction";
+import {
+  sanitizeAttributes,
+  sanitizeErrorMessage,
+  sanitizeErrorType,
+} from "./redaction";
 import {
   OBSERVATION_SCHEMA_VERSION,
   type HarnessObservation,
@@ -19,6 +23,12 @@ export class MemoryObservationSink implements ObservationSink {
   }
 }
 
+/** A string `code` on an error (Node system errors, OpenNeko typed failures). */
+export function errorCodeOf(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
 /** Invoke any observer without allowing instrumentation failure to escape. */
 export async function observeSafely(
   observer: HarnessObserver | undefined,
@@ -30,6 +40,12 @@ export async function observeSafely(
     // Telemetry must never change a product-path outcome.
   }
 }
+
+const ERROR_DETAIL_KINDS = new Set<ObservationInput["kind"]>([
+  "run.end",
+  "stage.end",
+  "error",
+]);
 
 export function createHarnessObserver(options: {
   runId: string;
@@ -57,6 +73,11 @@ export function createHarnessObserver(options: {
 
   return {
     async observe(input: ObservationInput): Promise<HarnessObservation> {
+      const detailed = ERROR_DETAIL_KINDS.has(input.kind);
+      const errorCode = detailed ? sanitizeErrorType(input.errorCode) : undefined;
+      const errorMessage = detailed
+        ? sanitizeErrorMessage(input.errorMessage)
+        : undefined;
       const observation: HarnessObservation = {
         schemaVersion: OBSERVATION_SCHEMA_VERSION,
         sequence: ++sequence,
@@ -75,6 +96,8 @@ export function createHarnessObserver(options: {
         ...(sanitizeErrorType(input.errorType)
           ? { errorType: sanitizeErrorType(input.errorType) }
           : {}),
+        ...(errorCode ? { errorCode } : {}),
+        ...(errorMessage ? { errorMessage } : {}),
       };
       await Promise.all(
         sinks.map((sink) => callWithoutAffectingRun(sink, "emit", observation)),

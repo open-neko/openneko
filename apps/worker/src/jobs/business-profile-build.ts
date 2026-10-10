@@ -11,6 +11,7 @@ import {
 } from "@neko/db";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { updateProgress } from "../progress.js";
+import { createWorkerHarnessObserver } from "../telemetry.js";
 import {
   ensureHostConfigProvisioned,
   resolveResearchProviderConfig,
@@ -72,6 +73,7 @@ export async function runBusinessProfileBuild(jobId: string, orgId: string) {
     onProgress: async (note) => {
       await updateProgress(jobId, note);
     },
+    observer: createWorkerHarnessObserver(jobId).observer,
   });
 
   await updateProgress(jobId, "Saving profile");

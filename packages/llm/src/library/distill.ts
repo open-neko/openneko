@@ -3,6 +3,8 @@
 // stage consumes its normalized Markdown and sends every chunk to the model.
 // The model call and text read are injectable so tests run without a provider.
 
+import type { HarnessObserver } from "@neko/telemetry";
+import { observeAgentJob } from "../agent-job-telemetry";
 import {
   clearLibraryDistillCheckpoint,
   clearLibraryTransientState,
@@ -60,14 +62,28 @@ async function defaultLlm(orgId: string): Promise<DistillLlm> {
   };
 }
 
-export async function runLibraryDistill(input: {
+type LibraryDistillInput = {
   orgId: string;
   documentId: string;
   /** Re-run an explicitly retried failed/skipped document. */
   force?: boolean;
   llm?: DistillLlm;
   extract?: DistillExtract;
-}): Promise<LibraryDistillResult> {
+  observer?: HarnessObserver;
+};
+
+export function runLibraryDistill(input: LibraryDistillInput): Promise<LibraryDistillResult> {
+  return observeAgentJob(
+    {
+      observer: input.observer,
+      operationId: `library-distill:${input.documentId}`,
+      productPath: "library_distill",
+    },
+    () => distill(input),
+  );
+}
+
+async function distill(input: LibraryDistillInput): Promise<LibraryDistillResult> {
   const { orgId, documentId } = input;
   const document = await getLibraryDocument(orgId, documentId);
   if (!document) throw new Error(`library document not found: ${documentId}`);

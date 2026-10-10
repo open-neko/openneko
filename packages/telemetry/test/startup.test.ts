@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createHarnessObserver, HarnessRunSummaryAccumulator, MemoryObservationSink } from "../src";
-import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "../src/startup";
+import { bindStartupRun, failStartupRun, startupEvent, startupPhase, withStartupTrace } from "../src/startup";
 afterEach(() => vi.restoreAllMocks());
 it("links preflight phases, pairs failures, persists durations, and redacts values", async () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -20,6 +20,7 @@ it("links preflight phases, pairs failures, persists durations, and redacts valu
     { name: "identity", durationMs: expect.any(Number), ok: true },
     { name: "broken", durationMs: expect.any(Number), ok: false },
   ]);
+  expect(sink.observations[3]).toMatchObject({ status: "error", errorType: "Error", errorMessage: "original" });
   const event = JSON.parse(log.mock.calls.at(-1)![0]);
   expect(event).toMatchObject({ requestId: "q", threadId: "t", runId: "r", outcome: "hit" });
   expect(event).not.toHaveProperty("authorization");
@@ -54,4 +55,42 @@ it("attaches workflow preflight phases to the workflow root", async () => {
     await startupPhase("ready", async () => 2);
   });
   expect(sink.observations.every(o => o.parentOperationId === "workflow:r")).toBe(true);
+});
+
+it("ends a request that failed before its run existed as a failed run with its phases", async () => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const sink = new MemoryObservationSink();
+  const summary = new HarnessRunSummaryAccumulator("q");
+  const created: string[] = [];
+  await withStartupTrace({ requestId: "q" }, async () => {
+    const error = await startupPhase("http.submit", () =>
+      startupPhase("config.provision", async () => { throw new Error("gateway sync failed key=sk-abcdefghijklmnop"); }),
+    ).catch((e: unknown) => e);
+    await failStartupRun(error, (runId) => {
+      created.push(runId);
+      return createHarnessObserver({ runId, sinks: [sink, summary] });
+    }, { "openneko.product.path": "work" });
+  });
+  expect(created).toEqual(["q"]);
+  expect(sink.observations.map(o => o.kind)).toEqual(["run.start", "stage.start", "stage.start", "stage.end", "stage.end", "run.end"]);
+  expect(sink.observations.at(-1)).toMatchObject({
+    operationId: "work:q",
+    status: "error",
+    errorCode: "startup.config.provision",
+    errorMessage: "gateway sync failed key=[REDACTED]",
+  });
+  expect(summary.snapshot()).toMatchObject({ status: "failed", productPath: "work", errorCode: "startup.config.provision" });
+});
+
+it("ends a bound run on its own observer when a later startup step fails", async () => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const sink = new MemoryObservationSink();
+  const observer = createHarnessObserver({ runId: "r", sinks: [sink] });
+  const create = vi.fn();
+  await withStartupTrace({ requestId: "q" }, async () => {
+    await bindStartupRun("r", observer, "workflow:r");
+    await failStartupRun(new Error("save failed"), create);
+  });
+  expect(create).not.toHaveBeenCalled();
+  expect(sink.observations.at(-1)).toMatchObject({ kind: "run.end", operationId: "workflow:r", errorCode: "startup_failed", errorMessage: "save failed" });
 });

@@ -1,4 +1,7 @@
+import type { HarnessObserver } from "@neko/telemetry";
+import type { AgentBackend } from "./agent-backend";
 import { resolveAgentBackend } from "./agent-backend-resolver";
+import { observeAgentJob } from "./agent-job-telemetry";
 import { parseJsonFromOutput } from "./agent-backends/hermes";
 import { sandboxAgentBackendForJob } from "./work/sandbox-launcher";
 import { ensureIsolatedJobWorkspace } from "./work/workspace";
@@ -105,7 +108,7 @@ Rules for the JSON:
 `;
 }
 
-export async function runBootstrapMetricsWriter(args: {
+type BootstrapMetricsArgs = {
   orgId: string;
   orgName: string;
   businessProfile: string;
@@ -114,7 +117,26 @@ export async function runBootstrapMetricsWriter(args: {
   jobId?: string;
   onProgress?: BootstrapMetricsProgress;
   debug?: boolean;
-}): Promise<{ metrics: BootstrapMetric[] }> {
+  observer?: HarnessObserver;
+};
+
+export function runBootstrapMetricsWriter(
+  args: BootstrapMetricsArgs,
+): Promise<{ metrics: BootstrapMetric[] }> {
+  return observeAgentJob(
+    {
+      observer: args.observer,
+      operationId: `bootstrap-metrics:${args.jobId ?? args.orgId}`,
+      productPath: "bootstrap_metrics",
+    },
+    (observed) => writeBootstrapMetrics(args, observed),
+  );
+}
+
+async function writeBootstrapMetrics(
+  args: BootstrapMetricsArgs,
+  observed: (backend: AgentBackend) => AgentBackend,
+): Promise<{ metrics: BootstrapMetric[] }> {
   const { orgId, orgName, businessProfile, industryInsights, seats, jobId, onProgress, debug } = args;
 
   if (seats.length === 0) {
@@ -147,7 +169,7 @@ export async function runBootstrapMetricsWriter(args: {
 
     onProgress?.("Generating bootstrap metrics");
     const startedAt = Date.now();
-    const result = await sandboxedBackend.run({
+    const result = await observed(sandboxedBackend).run({
       prompt,
       orgId,
       tag: jobId ?? orgId,

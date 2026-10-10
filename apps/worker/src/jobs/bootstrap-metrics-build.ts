@@ -10,6 +10,7 @@ import {
 } from "@neko/db";
 import { enqueue, QUEUE } from "@neko/db/jobs";
 import { updateProgress } from "../progress.js";
+import { createWorkerHarnessObserver } from "../telemetry.js";
 import {
   ensureHostConfigProvisioned,
   runBootstrapMetricsWriter,
@@ -110,6 +111,7 @@ export async function runBootstrapMetricsBuild(jobId: string, orgId: string) {
     onProgress: async (note) => {
       await updateProgress(jobId, note);
     },
+    observer: createWorkerHarnessObserver(jobId).observer,
   });
 
   await updateProgress(jobId, "Saving cards");

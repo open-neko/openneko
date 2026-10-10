@@ -7,7 +7,11 @@ import {
   type Span,
   type Tracer,
 } from "@opentelemetry/api";
-import { sanitizeAttributes, sanitizeErrorType } from "./redaction";
+import {
+  sanitizeAttributes,
+  sanitizeErrorMessage,
+  sanitizeErrorType,
+} from "./redaction";
 import type {
   HarnessObservation,
   ObservationMeasurements,
@@ -230,6 +234,8 @@ function spanAttributes(observation: HarnessObservation): Attributes {
   if (operationName) attributes["gen_ai.operation.name"] = operationName;
   const errorType = sanitizeErrorType(observation.errorType);
   if (errorType) attributes["error.type"] = errorType;
+  const errorCode = sanitizeErrorType(observation.errorCode);
+  if (errorCode) attributes["openneko.error.code"] = errorCode;
   return attributes;
 }
 
@@ -332,11 +338,12 @@ function assignNumber(
 
 function applyStatus(span: Span, observation: HarnessObservation): void {
   if (observation.status === "error") {
+    const message =
+      sanitizeErrorMessage(observation.errorMessage) ??
+      sanitizeErrorType(observation.errorType);
     span.setStatus({
       code: SpanStatusCode.ERROR,
-      ...(observation.errorType
-        ? { message: sanitizeErrorType(observation.errorType) }
-        : {}),
+      ...(message ? { message } : {}),
     });
   } else if (observation.status === "ok") {
     span.setStatus({ code: SpanStatusCode.OK });

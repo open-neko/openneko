@@ -140,6 +140,8 @@ export type AgentEvent =
     }
   /** Content-free operational summary persisted for clients and operators. */
   | { type: "telemetry"; summary: HarnessRunSummary }
+  /** Content-free: the backend retried or rerouted a model step. */
+  | { type: "retry"; reason: string }
   | { type: "error"; message: string }
   | {
       /**
@@ -333,6 +335,10 @@ export type AgentRunResult = {
   error?: string;
   /** The turn hit its wall-clock budget; work in the run directory survives. */
   timedOut?: boolean;
+  /** The backend's own failure code, e.g. "timeout" or "model_http_429". */
+  errorCode?: string;
+  /** Completed with a fallback answer; errorCode names the trigger. */
+  degraded?: boolean;
 };
 
 export type AgentNativeDelegation = "hermes-delegate-task";

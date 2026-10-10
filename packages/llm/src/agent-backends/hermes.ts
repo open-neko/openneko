@@ -204,6 +204,7 @@ export class HermesBackend implements AgentBackend {
     // or when all observed calls were read-only discovery tools.
     const maxAttempts = retries + 1;
     let lastErr: Error | undefined;
+    let lastCode: string | undefined;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -226,6 +227,7 @@ export class HermesBackend implements AgentBackend {
         });
         if (out.error) {
           lastErr = new Error(out.error);
+          lastCode = out.errorCode;
           if (debug) {
             console.warn(
               `[hermes] attempt ${attempt + 1}/${maxAttempts} failed: ${out.error}`,
@@ -233,6 +235,7 @@ export class HermesBackend implements AgentBackend {
           }
           if (onEvent && !out.retryable) break;
           if (onEvent && attempt + 1 < maxAttempts) {
+            await onEvent({ type: "retry", reason: out.errorCode ?? "empty_output" });
             await onEvent({
               type: "status",
               message: "Hermes returned no answer; retrying…",
@@ -248,6 +251,7 @@ export class HermesBackend implements AgentBackend {
         };
       } catch (e) {
         lastErr = e instanceof Error ? e : new Error(String(e));
+        lastCode = thrownErrorCode(lastErr);
         if (debug) {
           console.warn(
             `[hermes] attempt ${attempt + 1}/${maxAttempts} failed: ${lastErr.message}`,
@@ -269,12 +273,20 @@ export class HermesBackend implements AgentBackend {
       status: "failed",
       backendState,
       error: message,
+      ...(lastCode ? { errorCode: lastCode } : {}),
       ...(message.startsWith(HERMES_TURN_TIMEOUT_PREFIX) ? { timedOut: true } : {}),
     };
   }
 }
 
 const HERMES_TURN_TIMEOUT_PREFIX = "hermes turn exceeded its ";
+
+function thrownErrorCode(error: Error): string | undefined {
+  if (error.message.startsWith(HERMES_TURN_TIMEOUT_PREFIX)) return "timeout";
+  if (error instanceof AcpProtocolError) return "protocol";
+  if (/^hermes (?:exited mid-turn|spawn failed)/.test(error.message)) return "exit";
+  return undefined;
+}
 
 type RunOnceArgs = {
   prompt: string;
@@ -298,6 +310,7 @@ type RunOnceOutcome = {
   finalText: string;
   rawText?: string;
   error?: string;
+  errorCode?: string;
   retryable?: boolean;
 };
 
@@ -761,7 +774,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       );
     }
     if (promptError) {
-      return { finalText: "", error: promptError };
+      return { finalText: "", error: promptError, errorCode: "protocol" };
     }
     await eventQueue;
     if (eventError) throw eventError;
@@ -776,6 +789,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         error:
           `hermes completed without assistant output or surface` +
           ` (stopReason=${promptStopReason ?? "unknown"})`,
+        errorCode: "empty_output",
         retryable: !toolActivityObserved,
       };
     }
@@ -809,6 +823,7 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
         error:
           `hermes response truncated due to output length limit` +
           ` (stopReason=${promptStopReason ?? "unknown"})`,
+        errorCode: "output_truncated",
         retryable: !toolActivityObserved || (!unsafeToolActivityObserved && !surfaceEmittedDuringStream),
       };
     }

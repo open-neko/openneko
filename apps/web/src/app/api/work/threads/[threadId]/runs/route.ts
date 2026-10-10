@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
+import { bindStartupRun, failStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveAgentBackend,
@@ -38,7 +38,7 @@ import {
 import { getAuthorizedWorkThread } from "@/lib/work-thread-auth";
 import { recordsApiError } from "@/lib/records-api";
 import { createWebHarnessObserver } from "@/lib/telemetry";
-import { observeSafely, type HarnessRunSummary } from "@neko/telemetry";
+import { errorCodeOf, observeSafely, type HarnessRunSummary } from "@neko/telemetry";
 
 type RouteContext = {
   params: Promise<{ threadId: string }>;
@@ -49,11 +49,27 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { threadId } = await context.params;
-  return withStartupTrace({ requestId: randomUUID(), threadId }, () => startupPhase("http.submit", async () => {
-    const response = await postRun(request, context);
-    startupEvent("http.response", { statusCode: response.status });
-    return response;
-  }));
+  return withStartupTrace({ requestId: randomUUID(), threadId }, async () => {
+    try {
+      return await startupPhase("http.submit", async () => {
+        const response = await postRun(request, context);
+        startupEvent("http.response", { statusCode: response.status });
+        return response;
+      });
+    } catch (error) {
+      await failPreRun(error);
+      throw error;
+    }
+  });
+}
+
+function failPreRun(error: unknown): Promise<void> {
+  return failStartupRun(error, (runId) => createWebHarnessObserver(runId).observer, {
+    "openneko.run.kind": "production",
+    "openneko.product.path": "work",
+    "openneko.job.kind": "work_run",
+    "openneko.delivery.channel": "web",
+  });
 }
 
 async function postRun(request: NextRequest, context: RouteContext) {
@@ -129,6 +145,7 @@ async function postRun(request: NextRequest, context: RouteContext) {
     run = await startupPhase("run.create", () => createWorkRun(orgId, threadId, backend.id, actor, { source: "chat" }));
   } catch (error) {
     if (error instanceof SpendBudgetExceeded) {
+      await failPreRun(error);
       return NextResponse.json(
         {
           error: error.message,
@@ -213,8 +230,11 @@ async function postRun(request: NextRequest, context: RouteContext) {
           result.status === "completed" || result.status === "needs_input"
             ? "ok"
             : "error",
-        ...(result.error ? { errorType: "work_run_error" } : {}),
-        attributes: { "openneko.outcome": result.status },
+        ...(result.error
+          ? { errorType: result.errorCode ?? "work_run_error", errorMessage: result.error }
+          : {}),
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+        attributes: { "openneko.outcome": result.degraded ? "degraded" : result.status },
         measurements: {
           durationMs: Date.now() - telemetryStartedAt,
           coverage: "unavailable",
@@ -228,6 +248,8 @@ async function postRun(request: NextRequest, context: RouteContext) {
         operationId: telemetryOperationId,
         status: "error",
         errorType: err instanceof Error ? err.name : "unknown",
+        errorCode: errorCodeOf(err),
+        errorMessage: err instanceof Error ? err.message : String(err),
         attributes: { "openneko.outcome": "failed" },
         measurements: {
           durationMs: Date.now() - telemetryStartedAt,

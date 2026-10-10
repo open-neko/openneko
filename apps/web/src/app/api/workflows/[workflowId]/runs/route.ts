@@ -1,4 +1,4 @@
-import { bindStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
+import { bindStartupRun, failStartupRun, startupEvent, startupPhase, withStartupTrace } from "@neko/telemetry/startup";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db, eq, workflow_run } from "@neko/db";
@@ -15,7 +15,7 @@ import {
   prepareWorkflowRun,
   runWorkflowTurn,
 } from "@neko/llm/workflows";
-import { observeSafely, type HarnessRunSummary } from "@neko/telemetry";
+import { errorCodeOf, observeSafely, type HarnessRunSummary } from "@neko/telemetry";
 import { getPluginActionDescriptors } from "@/lib/auth";
 import { createCoalescingEmit } from "@/lib/coalescing-emit";
 import { getOrgId } from "@/lib/db";
@@ -34,11 +34,27 @@ type RouteContext = {
 };
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  return withStartupTrace({ requestId: randomUUID() }, () => startupPhase("workflow.http_submit", async () => {
-    const response = await postWorkflow(request, context);
-    startupEvent("workflow.http_response", { statusCode: response.status });
-    return response;
-  }));
+  return withStartupTrace({ requestId: randomUUID() }, async () => {
+    try {
+      return await startupPhase("workflow.http_submit", async () => {
+        const response = await postWorkflow(request, context);
+        startupEvent("workflow.http_response", { statusCode: response.status });
+        return response;
+      });
+    } catch (error) {
+      await failPreRun(error);
+      throw error;
+    }
+  });
+}
+
+function failPreRun(error: unknown): Promise<void> {
+  return failStartupRun(error, (runId) => createWebHarnessObserver(runId).observer, {
+    "openneko.run.kind": "production",
+    "openneko.product.path": "workflow",
+    "openneko.job.kind": "workflow_manual",
+    "openneko.trigger.kind": "manual",
+  });
 }
 
 async function postWorkflow(request: NextRequest, context: RouteContext) {
@@ -62,6 +78,7 @@ async function postWorkflow(request: NextRequest, context: RouteContext) {
       triggerPayload: { userMessage: userMessage ?? null },
     }));
   } catch (e) {
+    await failPreRun(e);
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 400 });
   }
@@ -144,8 +161,11 @@ async function postWorkflow(request: NextRequest, context: RouteContext) {
           result.status === "completed" || result.status === "needs_input"
             ? "ok"
             : "error",
-        ...(result.error ? { errorType: "workflow_run_error" } : {}),
-        attributes: { "openneko.outcome": result.status },
+        ...(result.error
+          ? { errorType: result.errorCode ?? "workflow_run_error", errorMessage: result.error }
+          : {}),
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+        attributes: { "openneko.outcome": result.degraded ? "degraded" : result.status },
         measurements: {
           durationMs: Date.now() - telemetryStartedAt,
           queueDurationMs: 0,
@@ -163,6 +183,8 @@ async function postWorkflow(request: NextRequest, context: RouteContext) {
         operationId: telemetryOperationId,
         status: "error",
         errorType: err instanceof Error ? err.name : "unknown",
+        errorCode: errorCodeOf(err),
+        errorMessage: err instanceof Error ? err.message : String(err),
         attributes: { "openneko.outcome": "failed" },
         measurements: {
           durationMs: Date.now() - telemetryStartedAt,

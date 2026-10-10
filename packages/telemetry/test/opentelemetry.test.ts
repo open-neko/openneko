@@ -138,4 +138,26 @@ describe("OpenTelemetryObservationSink", () => {
     expect(span?.status.code).toBe(SpanStatusCode.ERROR);
     await provider.shutdown();
   });
+
+  it("exports the error message as the span status message", async () => {
+    const { exporter, sink } = setup();
+    const observer = createHarnessObserver({ runId: "job-3", sinks: [sink] });
+    await observer.observe({ kind: "run.start", operationId: "run-3" });
+    await observer.observe({
+      kind: "run.end",
+      operationId: "run-3",
+      status: "error",
+      errorType: "agent_backend_error",
+      errorCode: "deadline_exceeded",
+      errorMessage: "run deadline exceeded after 300s",
+    });
+    const span = exporter.getFinishedSpans()[0];
+    expect(span?.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: "run deadline exceeded after 300s",
+    });
+    expect(span?.attributes["openneko.error.code"]).toBe("deadline_exceeded");
+    expect(span?.attributes["error.type"]).toBe("agent_backend_error");
+    await sink.shutdown();
+  });
 });
