@@ -341,7 +341,7 @@ export type AgentRunResult = {
   degraded?: boolean;
 };
 
-export type AgentNativeDelegation = "hermes-delegate-task";
+export type AgentNativeDelegation = "hermes-delegate-task" | "ax-researcher";
 
 // Per-backend feature flags so shared runtime code (runChatTurn, prompt
 // builder, auto-memory dispatch) never branches on backend.id. Adding a new

@@ -5,6 +5,7 @@ import {
 } from "../agent-backend";
 import type { KnowledgePackContents } from "../knowledge-pack";
 import {
+  AX_DELEGATION,
   GRAPHJIN_DATE_RULE,
   VALUE_ESTIMATE_INSTRUCTIONS,
   buildDataAccessSection,
@@ -141,7 +142,7 @@ operator and stop; re-attempting after a denial is wasted effort.
 }
 
 function buildNativeDelegationBlock(backend: AgentBackendId): string {
-  // Only Hermes has delegate_task.
+  if (backend === "ax") return AX_DELEGATION;
   if (backend !== "hermes") return "";
   return `<delegation>
 Use Hermes native \`delegate_task\` when an independent workflow step would

@@ -140,6 +140,18 @@ describe("AxBackend", () => {
     });
   });
 
+  it("admits the read-only child agent unless the run disables delegation", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(spawned[0].env.OPENNEKO_HARNESS_CHILD_READS?.split(",")).toEqual(
+      expect.arrayContaining(["mcp_neko_graphjin_execute_graphql", "mcp_neko_memory_search", "file_read"]),
+    );
+    expect(spawned[0].env.OPENNEKO_HARNESS_CHILD_READS).not.toMatch(/terminal|file_write|file_edit/);
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace, nativeDelegation: "disabled" });
+    expect(spawned[1].env.OPENNEKO_HARNESS_CHILD_READS).toBeUndefined();
+  });
+
   it("drops the broker binding when no bridge server runs", async () => {
     vi.stubEnv("OPENNEKO_BROKER_TOKEN", "broker-secret");
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };

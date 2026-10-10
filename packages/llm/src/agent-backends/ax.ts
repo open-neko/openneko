@@ -65,6 +65,16 @@ type AxEvent = {
 };
 
 const KILL_GRACE_MS = 15_000;
+// Read tools for the delegated child; the harness skips names this run lacks.
+const AX_CHILD_READS = [
+  "mcp_neko_graphjin_query_catalog",
+  "mcp_neko_graphjin_execute_graphql",
+  "mcp_neko_graphjin_agent_ask",
+  "mcp_neko_memory_search",
+  "mcp_neko_library_search",
+  "file_read",
+  "file_search",
+] as const;
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
@@ -102,7 +112,7 @@ export function normalizeAxUsage(usage: AxUsage | undefined): AgentTokenUsage {
 
 export class AxBackend implements AgentBackend {
   readonly id = "ax" as const;
-  readonly capabilities = { mcpTools: true, sessionResume: false } as const;
+  readonly capabilities = { mcpTools: true, sessionResume: false, nativeDelegation: "ax-researcher" } as const;
   readonly configuredIdentity?: AgentModelIdentity;
   readonly model?: string;
 
@@ -323,7 +333,8 @@ export class AxBackend implements AgentBackend {
     }
     if (opts.networkHosts?.length) env.OPENNEKO_HARNESS_WEB_HOSTS = opts.networkHosts.join(",");
     else delete env.OPENNEKO_HARNESS_WEB_HOSTS;
-    delete env.OPENNEKO_HARNESS_CHILD_READS;
+    if (opts.nativeDelegation === "disabled") delete env.OPENNEKO_HARNESS_CHILD_READS;
+    else env.OPENNEKO_HARNESS_CHILD_READS = AX_CHILD_READS.join(",");
     return env;
   }
 }

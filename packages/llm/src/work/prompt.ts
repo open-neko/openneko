@@ -1,6 +1,7 @@
 import { shellToolName, type AgentBackendId, type AgentChatMessage, type AgentWorkspace } from "../agent-backend";
 import { type KnowledgePackContents } from "../knowledge-pack";
 import {
+  AX_DELEGATION,
   GRAPHJIN_DATE_RULE,
   VALUE_ESTIMATE_INSTRUCTIONS,
   buildDataAccessSection,
@@ -283,8 +284,9 @@ Never invent a package name and never request credentials in chat.
 </plugin_management>`;
 }
 
-function buildNativeDelegationSection(supportedForRun: boolean): string {
+function buildNativeDelegationSection(supportedForRun: boolean, backend: AgentBackendId): string {
   if (!supportedForRun) return "";
+  if (backend === "ax") return AX_DELEGATION;
   return `<delegation>
 You have Hermes native subagent delegation through \`delegate_task\`. Use it
 when a focused subtask would benefit from a fresh context, parallel work, or
@@ -925,7 +927,7 @@ that flags churn risk every Monday."
     dataSurface === "customer"
       ? buildPluginManagementSection(supportsPluginManagerTool, pluginCatalog)
       : "",
-    buildNativeDelegationSection(supportsNativeDelegation),
+    buildNativeDelegationSection(supportsNativeDelegation, backend),
     dataSurface === "records"
       ? buildRecordsAccessSection(appContext, recordContext)
       : graphjinDataPath === "agent"
